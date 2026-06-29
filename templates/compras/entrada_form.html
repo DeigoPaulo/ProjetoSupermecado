@@ -1,0 +1,47 @@
+{% extends "base.html" %}
+
+{% block title %}Entrada de Compra{% endblock %}
+
+{% block content %}
+<header class="page-header">
+  <div>
+    <h1>{% if object %}Editar entrada{% else %}Nova entrada{% endif %}</h1>
+    <p>Informe fornecedor, filial e os produtos recebidos.</p>
+  </div>
+</header>
+
+<form method="post" class="panel purchase-form">
+  {% csrf_token %}
+  <section class="form-grid purchase-head">
+    {% for field in form %}
+      <label class="form-field">
+        <span>{{ field.label }}</span>
+        {{ field }}
+        {% if field.errors %}<small class="field-error">{{ field.errors|striptags }}</small>{% endif %}
+      </label>
+    {% endfor %}
+  </section>
+
+  <div class="panel-title">Itens da entrada</div>
+  {{ formset.management_form }}
+  <div class="purchase-items">
+    {% for item_form in formset %}
+      <div class="purchase-item-row">
+        {% for hidden in item_form.hidden_fields %}{{ hidden }}{% endfor %}
+        {% for field in item_form.visible_fields %}
+          <label class="form-field">
+            <span>{{ field.label }}</span>
+            {{ field }}
+            {% if field.errors %}<small class="field-error">{{ field.errors|striptags }}</small>{% endif %}
+          </label>
+        {% endfor %}
+      </div>
+    {% endfor %}
+  </div>
+
+  <div class="form-actions purchase-actions">
+    <a class="secondary-button" href="{% if object %}{% url 'compras:detalhe' object.pk %}{% else %}{% url 'compras:lista' %}{% endif %}">Cancelar</a>
+    <button class="primary-button" type="submit">Salvar rascunho</button>
+  </div>
+</form>
+{% endblock %}

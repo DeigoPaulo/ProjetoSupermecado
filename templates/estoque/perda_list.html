@@ -1,0 +1,37 @@
+{% extends "base.html" %}
+
+{% block title %}Perdas{% endblock %}
+
+{% block content %}
+<header class="page-header">
+  <div>
+    <h1>Perdas</h1>
+    <p>Vencimentos, avarias, quebras, extravios e consumo interno.</p>
+  </div>
+  <a class="primary-button" href="{% url 'estoque:perda_nova' %}">Registrar perda</a>
+</header>
+
+<div class="panel">
+  <table>
+    <thead>
+      <tr><th>Data</th><th>Produto</th><th>Filial</th><th>Tipo</th><th>Qtd</th><th>Custo estimado</th><th>Venda estimada</th><th>Motivo</th></tr>
+    </thead>
+    <tbody>
+      {% for perda in perdas %}
+        <tr>
+          <td>{{ perda.data|date:"d/m/Y H:i" }}</td>
+          <td>{{ perda.produto }}</td>
+          <td>{{ perda.filial }}</td>
+          <td><span class="status">{{ perda.get_tipo_display }}</span></td>
+          <td>{{ perda.quantidade }}</td>
+          <td>R$ {{ perda.valor_custo_estimado|floatformat:2 }}</td>
+          <td>R$ {{ perda.valor_venda_estimado|floatformat:2 }}</td>
+          <td>{{ perda.motivo }}</td>
+        </tr>
+      {% empty %}
+        <tr><td colspan="8" class="empty">Nenhuma perda registrada.</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endblock %}

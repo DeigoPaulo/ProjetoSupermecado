@@ -1,0 +1,42 @@
+{% extends "base.html" %}
+
+{% block title %}Clientes{% endblock %}
+
+{% block content %}
+<header class="page-header">
+  <div>
+    <h1>Clientes</h1>
+    <p>Cadastro para vendas identificadas, historico e futuro crediario.</p>
+  </div>
+  <a class="primary-button" href="{% url 'clientes:novo' %}">
+    <i class="fa-solid fa-user-plus"></i> Novo cliente
+  </a>
+</header>
+
+<form method="get" class="toolbar">
+  <input type="search" name="q" value="{{ request.GET.q }}" placeholder="Buscar por nome, CPF ou CNPJ">
+  <button type="submit">Buscar</button>
+</form>
+
+<div class="panel">
+  <table>
+    <thead>
+      <tr><th>Nome</th><th>CPF/CNPJ</th><th>Telefone</th><th>Email</th><th>Status</th><th></th></tr>
+    </thead>
+    <tbody>
+      {% for cliente in clientes %}
+        <tr>
+          <td>{{ cliente.nome }}</td>
+          <td>{{ cliente.cpf_cnpj|default:"-" }}</td>
+          <td>{{ cliente.telefone|default:"-" }}</td>
+          <td>{{ cliente.email|default:"-" }}</td>
+          <td><span class="status">{{ cliente.is_active|yesno:"Ativo,Inativo" }}</span></td>
+          <td><a href="{% url 'clientes:editar' cliente.pk %}">Editar</a></td>
+        </tr>
+      {% empty %}
+        <tr><td colspan="6" class="empty">Nenhum cliente cadastrado.</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endblock %}

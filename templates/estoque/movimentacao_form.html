@@ -1,0 +1,11 @@
+{% extends "base.html" %}
+
+{% block title %}Movimentar estoque{% endblock %}
+
+{% block content %}
+<header class="page-header"><div><h1>Movimentar estoque</h1><p>Entradas, saidas, ajustes e reservas com trava transacional.</p></div></header>
+<form method="post" class="form-grid panel">
+  {% include "includes/form.html" %}
+  <div class="form-actions"><a class="secondary-button" href="{% url 'estoque:lista' %}">Cancelar</a><button class="primary-button" type="submit">Registrar</button></div>
+</form>
+{% endblock %}

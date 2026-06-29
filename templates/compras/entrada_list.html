@@ -1,0 +1,44 @@
+{% extends "base.html" %}
+
+{% block title %}Compras{% endblock %}
+
+{% block content %}
+<header class="page-header">
+  <div>
+    <h1>Compras</h1>
+    <p>Entradas de mercadoria por fornecedor, com atualizacao de estoque.</p>
+  </div>
+  <a class="primary-button" href="{% url 'compras:nova' %}">
+    <i class="fa-solid fa-circle-plus"></i> Nova entrada
+  </a>
+</header>
+
+<form method="get" class="toolbar">
+  <input type="search" name="q" value="{{ request.GET.q }}" placeholder="Buscar por fornecedor ou documento">
+  <button type="submit">Buscar</button>
+</form>
+
+<div class="panel">
+  <table>
+    <thead>
+      <tr><th>ID</th><th>Fornecedor</th><th>Filial</th><th>Documento</th><th>Total</th><th>Status</th><th>Recebimento</th><th></th></tr>
+    </thead>
+    <tbody>
+      {% for entrada in entradas %}
+        <tr>
+          <td>{{ entrada.id }}</td>
+          <td>{{ entrada.fornecedor }}</td>
+          <td>{{ entrada.filial }}</td>
+          <td>{{ entrada.numero_documento|default:"-" }}</td>
+          <td>R$ {{ entrada.total_produtos|floatformat:2 }}</td>
+          <td><span class="status">{{ entrada.status }}</span></td>
+          <td>{{ entrada.data_recebimento|date:"d/m/Y H:i" }}</td>
+          <td><a href="{% url 'compras:detalhe' entrada.pk %}">Abrir</a></td>
+        </tr>
+      {% empty %}
+        <tr><td colspan="8" class="empty">Nenhuma entrada de compra registrada.</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endblock %}

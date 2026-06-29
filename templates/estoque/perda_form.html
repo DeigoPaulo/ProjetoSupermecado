@@ -1,0 +1,20 @@
+{% extends "base.html" %}
+
+{% block title %}Registrar Perda{% endblock %}
+
+{% block content %}
+<header class="page-header">
+  <div>
+    <h1>Registrar perda</h1>
+    <p>A baixa reduz o estoque e registra valor estimado perdido.</p>
+  </div>
+</header>
+
+<form method="post" class="form-grid panel form-confirm" data-msg="Confirmar baixa de estoque por perda?">
+  {% include "includes/form.html" %}
+  <div class="form-actions">
+    <a class="secondary-button" href="{% url 'estoque:perdas' %}">Cancelar</a>
+    <button class="primary-button" type="submit">Registrar perda</button>
+  </div>
+</form>
+{% endblock %}

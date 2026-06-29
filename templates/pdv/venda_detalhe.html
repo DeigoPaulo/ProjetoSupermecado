@@ -1,0 +1,62 @@
+{% extends "base.html" %}
+
+{% block title %}Venda {{ venda.id }}{% endblock %}
+
+{% block content %}
+<header class="page-header">
+  <div>
+    <h1>Venda {{ venda.id }}</h1>
+    <p>{{ venda.filial }} - {{ venda.data|date:"d/m/Y H:i" }}</p>
+  </div>
+  <div class="actions">
+    {% if venda.status == "FINALIZADA" %}
+      <form method="post" action="{% url 'pdv:cancelar_venda' venda.id %}" class="inline-form form-confirm" data-msg="Cancelar esta venda e devolver os itens ao estoque?">
+        {% csrf_token %}
+        <input type="text" name="motivo" placeholder="Motivo do cancelamento" required>
+        <button class="secondary-button danger-button" type="submit">Cancelar venda</button>
+      </form>
+    {% endif %}
+    <a class="secondary-button" href="{% url 'pdv:recibo_venda' venda.id %}" target="_blank">Recibo</a>
+    <a class="primary-button" href="{% url 'pdv:pdv' %}">Nova venda</a>
+  </div>
+</header>
+
+<section class="two-column">
+  <div class="panel">
+    <div class="panel-title">Itens</div>
+    <table>
+      <thead><tr><th>Produto</th><th>Qtd</th><th>Unitario</th><th>Total</th></tr></thead>
+      <tbody>
+        {% for item in venda.itens.all %}
+          <tr>
+            <td>{{ item.produto.nome }}</td>
+            <td>{{ item.quantidade }}</td>
+            <td>R$ {{ item.preco_unitario_venda|floatformat:2 }}</td>
+            <td>R$ {{ item.total|floatformat:2 }}</td>
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  <div class="panel">
+    <div class="panel-title">Resumo</div>
+    <dl class="summary-list">
+      <dt>Status</dt><dd>{{ venda.status }}</dd>
+      <dt>Operador</dt><dd>{{ venda.usuario }}</dd>
+      <dt>Cliente</dt><dd>{{ venda.cliente|default:"Venda nao identificada" }}</dd>
+      <dt>Caixa</dt><dd>{{ venda.caixa.id }}</dd>
+      <dt>Total bruto</dt><dd>R$ {{ venda.total_bruto|floatformat:2 }}</dd>
+      <dt>Desconto</dt><dd>R$ {{ venda.desconto|floatformat:2 }}</dd>
+      <dt>Total liquido</dt><dd><strong>R$ {{ venda.total_liquido|floatformat:2 }}</strong></dd>
+    </dl>
+    <div class="panel-title">Pagamento</div>
+    <table>
+      <tbody>
+        {% for pagamento in venda.pagamentos.all %}
+          <tr><td>{{ pagamento.forma_pagamento }}</td><td>R$ {{ pagamento.valor|floatformat:2 }}</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</section>
+{% endblock %}

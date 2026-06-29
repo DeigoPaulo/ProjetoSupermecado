@@ -1,0 +1,10 @@
+{% csrf_token %}
+{% for field in form %}
+  <label class="form-field">
+    <span>{{ field.label }}</span>
+    {{ field }}
+    {% if field.errors %}
+      <small class="field-error">{{ field.errors|striptags }}</small>
+    {% endif %}
+  </label>
+{% endfor %}

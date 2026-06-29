@@ -1,0 +1,20 @@
+{% extends "base.html" %}
+
+{% block title %}Usuario{% endblock %}
+
+{% block content %}
+<header class="page-header">
+  <div>
+    <h1>{% if usuario_obj %}Editar usuario{% else %}Novo usuario{% endif %}</h1>
+    <p>Defina acesso, perfil operacional e filial vinculada.</p>
+  </div>
+</header>
+
+<form method="post" class="form-grid panel">
+  {% include "includes/form.html" %}
+  <div class="form-actions">
+    <a class="secondary-button" href="{% url 'accounts:usuarios' %}">Voltar</a>
+    <button class="primary-button" type="submit">Salvar</button>
+  </div>
+</form>
+{% endblock %}

@@ -1,0 +1,20 @@
+{% extends "base.html" %}
+
+{% block title %}Adicionar Contagem{% endblock %}
+
+{% block content %}
+<header class="page-header">
+  <div>
+    <h1>Adicionar contagem</h1>
+    <p>Inventario {{ inventario.id }} - {{ inventario.filial }}</p>
+  </div>
+</header>
+
+<form method="post" class="form-grid panel">
+  {% include "includes/form.html" %}
+  <div class="form-actions">
+    <a class="secondary-button" href="{% url 'estoque:inventario_detalhe' inventario.pk %}">Cancelar</a>
+    <button class="primary-button" type="submit">Adicionar</button>
+  </div>
+</form>
+{% endblock %}

@@ -1,0 +1,55 @@
+{% extends "base.html" %}
+
+{% block title %}Importar Produtos{% endblock %}
+
+{% block content %}
+<header class="page-header">
+  <div>
+    <h1>Importar produtos</h1>
+    <p>Envie um CSV para criar ou atualizar produtos pelo codigo de barras.</p>
+  </div>
+  <a class="secondary-button" href="{% url 'produtos:lista' %}">Voltar</a>
+</header>
+
+<section class="two-column">
+  <form method="post" enctype="multipart/form-data" class="panel compact-form">
+    {% csrf_token %}
+    {% for field in form %}
+      <label class="form-field">
+        <span>{{ field.label }}</span>
+        {{ field }}
+        {% if field.errors %}<small class="field-error">{{ field.errors|striptags }}</small>{% endif %}
+      </label>
+    {% endfor %}
+    <button class="primary-button" type="submit">Importar</button>
+  </form>
+
+  <div class="panel">
+    <div class="panel-title">Modelo de CSV</div>
+    <div class="code-sample">
+      <code>codigo_barras;nome;categoria;marca;unidade;preco_custo;preco_venda;estoque_minimo;produto_pesavel</code>
+      <code>789100000001;ARROZ TIPO 1 5KG;Mercearia;Marca propria;UN;18,90;24,90;5;nao</code>
+      <code>789100000002;BANANA PRATA KG;Hortifruti;Fornecedor local;KG;3,20;5,99;10;sim</code>
+    </div>
+  </div>
+</section>
+
+{% if resultado %}
+  <section class="panel mt-panel">
+    <div class="panel-title">Resultado</div>
+    <div class="summary-list">
+      <dt>Criados</dt><dd>{{ resultado.criados }}</dd>
+      <dt>Atualizados</dt><dd>{{ resultado.atualizados }}</dd>
+      <dt>Ignorados</dt><dd>{{ resultado.ignorados }}</dd>
+    </div>
+    {% if resultado.erros %}
+      <div class="panel-title">Linhas com erro</div>
+      <ul class="error-list">
+        {% for erro in resultado.erros %}
+          <li>{{ erro }}</li>
+        {% endfor %}
+      </ul>
+    {% endif %}
+  </section>
+{% endif %}
+{% endblock %}

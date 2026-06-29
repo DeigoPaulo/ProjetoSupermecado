@@ -1,0 +1,34 @@
+{% extends "base.html" %}
+
+{% block title %}Inventarios{% endblock %}
+
+{% block content %}
+<header class="page-header">
+  <div>
+    <h1>Inventarios</h1>
+    <p>Contagem fisica e ajuste controlado do estoque.</p>
+  </div>
+  <a class="primary-button" href="{% url 'estoque:inventario_novo' %}">Novo inventario</a>
+</header>
+
+<div class="panel">
+  <table>
+    <thead><tr><th>ID</th><th>Filial</th><th>Descricao</th><th>Status</th><th>Criado</th><th>Aplicado</th><th></th></tr></thead>
+    <tbody>
+      {% for inventario in inventarios %}
+        <tr>
+          <td>{{ inventario.id }}</td>
+          <td>{{ inventario.filial }}</td>
+          <td>{{ inventario.descricao }}</td>
+          <td><span class="status">{{ inventario.status }}</span></td>
+          <td>{{ inventario.criado_em|date:"d/m/Y H:i" }}</td>
+          <td>{{ inventario.aplicado_em|date:"d/m/Y H:i"|default:"-" }}</td>
+          <td><a href="{% url 'estoque:inventario_detalhe' inventario.pk %}">Abrir</a></td>
+        </tr>
+      {% empty %}
+        <tr><td colspan="7" class="empty">Nenhum inventario registrado.</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endblock %}

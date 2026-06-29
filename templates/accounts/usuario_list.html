@@ -1,0 +1,41 @@
+{% extends "base.html" %}
+
+{% block title %}Usuarios{% endblock %}
+
+{% block content %}
+<header class="page-header">
+  <div>
+    <h1>Usuarios</h1>
+    <p>Operadores, gerentes e perfis internos do supermercado.</p>
+  </div>
+  <a class="primary-button" href="{% url 'accounts:usuario_novo' %}">Novo usuario</a>
+</header>
+
+<form method="get" class="toolbar">
+  <input type="search" name="q" value="{{ request.GET.q }}" placeholder="Buscar por usuario, nome ou email">
+  <button type="submit">Buscar</button>
+</form>
+
+<div class="panel">
+  <table>
+    <thead>
+      <tr><th>Usuario</th><th>Nome</th><th>Email</th><th>Perfil</th><th>Filial</th><th>Status</th><th></th></tr>
+    </thead>
+    <tbody>
+      {% for usuario in usuarios %}
+        <tr>
+          <td>{{ usuario.username }}</td>
+          <td>{{ usuario.get_full_name|default:"-" }}</td>
+          <td>{{ usuario.email|default:"-" }}</td>
+          <td>{{ usuario.perfil_supermercado.get_tipo_display|default:"-" }}</td>
+          <td>{{ usuario.perfil_supermercado.filial|default:"-" }}</td>
+          <td><span class="status">{{ usuario.is_active|yesno:"Ativo,Inativo" }}</span></td>
+          <td><a href="{% url 'accounts:usuario_editar' usuario.pk %}">Editar</a></td>
+        </tr>
+      {% empty %}
+        <tr><td colspan="7" class="empty">Nenhum usuario cadastrado.</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endblock %}

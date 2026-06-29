@@ -1,0 +1,11 @@
+{% extends "base.html" %}
+
+{% block title %}Abrir caixa{% endblock %}
+
+{% block content %}
+<header class="page-header"><div><h1>Abrir caixa</h1><p>Informe a filial e o valor inicial do turno.</p></div></header>
+<form method="post" class="form-grid panel">
+  {% include "includes/form.html" %}
+  <div class="form-actions"><a class="secondary-button" href="{% url 'pdv:caixas' %}">Cancelar</a><button class="primary-button" type="submit">Abrir</button></div>
+</form>
+{% endblock %}

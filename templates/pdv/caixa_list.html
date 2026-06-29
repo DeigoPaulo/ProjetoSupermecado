@@ -1,0 +1,33 @@
+{% extends "base.html" %}
+
+{% block title %}Caixas{% endblock %}
+
+{% block content %}
+<header class="page-header">
+  <div>
+    <h1>Caixas</h1>
+    <p>Abertura e acompanhamento dos caixas do PDV.</p>
+  </div>
+  <a class="primary-button" href="{% url 'pdv:abrir_caixa' %}">Abrir caixa</a>
+</header>
+<div class="panel">
+  <table>
+    <thead><tr><th>ID</th><th>Filial</th><th>Operador</th><th>Abertura</th><th>Valor inicial</th><th>Status</th><th></th></tr></thead>
+    <tbody>
+      {% for caixa in caixas %}
+        <tr>
+          <td>{{ caixa.id }}</td>
+          <td>{{ caixa.filial }}</td>
+          <td>{{ caixa.usuario_abertura }}</td>
+          <td>{{ caixa.data_abertura|date:"d/m/Y H:i" }}</td>
+          <td>R$ {{ caixa.valor_inicial|floatformat:2 }}</td>
+          <td><span class="status">{{ caixa.status }}</span></td>
+          <td><a href="{% url 'pdv:caixa_detalhe' caixa.id %}">Abrir</a></td>
+        </tr>
+      {% empty %}
+        <tr><td colspan="7" class="empty">Nenhum caixa registrado.</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endblock %}

@@ -1,0 +1,43 @@
+{% extends "base.html" %}
+
+{% block title %}Fornecedores{% endblock %}
+
+{% block content %}
+<header class="page-header">
+  <div>
+    <h1>Fornecedores</h1>
+    <p>Base para compras, entrada de mercadoria e contas a pagar.</p>
+  </div>
+  <a class="primary-button" href="{% url 'fornecedores:novo' %}">
+    <i class="fa-solid fa-circle-plus"></i> Novo fornecedor
+  </a>
+</header>
+
+<form method="get" class="toolbar">
+  <input type="search" name="q" value="{{ request.GET.q }}" placeholder="Buscar por razao social, fantasia ou CNPJ">
+  <button type="submit">Buscar</button>
+</form>
+
+<div class="panel">
+  <table>
+    <thead>
+      <tr><th>Razao social</th><th>Fantasia</th><th>CNPJ</th><th>Telefone</th><th>Prazo</th><th>Status</th><th></th></tr>
+    </thead>
+    <tbody>
+      {% for fornecedor in fornecedores %}
+        <tr>
+          <td>{{ fornecedor.razao_social }}</td>
+          <td>{{ fornecedor.nome_fantasia|default:"-" }}</td>
+          <td>{{ fornecedor.cnpj|default:"-" }}</td>
+          <td>{{ fornecedor.telefone|default:"-" }}</td>
+          <td>{{ fornecedor.prazo_entrega_dias }} dia(s)</td>
+          <td><span class="status">{{ fornecedor.is_active|yesno:"Ativo,Inativo" }}</span></td>
+          <td><a href="{% url 'fornecedores:editar' fornecedor.pk %}">Editar</a></td>
+        </tr>
+      {% empty %}
+        <tr><td colspan="7" class="empty">Nenhum fornecedor cadastrado.</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endblock %}

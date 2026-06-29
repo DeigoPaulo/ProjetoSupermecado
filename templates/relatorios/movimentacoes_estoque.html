@@ -1,0 +1,69 @@
+{% extends "base.html" %}
+
+{% block title %}Movimentacoes de Estoque{% endblock %}
+
+{% block content %}
+<header class="page-header">
+  <div>
+    <h1>Movimentacoes de estoque</h1>
+    <p>Entradas, saidas, vendas, devolucoes, reservas e ajustes.</p>
+  </div>
+  <div class="actions">
+    <a class="secondary-button" href="{% url 'relatorios:estoque_baixo' %}">Estoque baixo</a>
+    <a class="secondary-button" href="{% url 'relatorios:vendas' %}">Vendas</a>
+    <a class="primary-button" href="{% url 'estoque:movimentar' %}">Movimentar</a>
+  </div>
+</header>
+
+<form method="get" class="toolbar report-filter">
+  <label>
+    <span>Inicio</span>
+    <input type="date" name="data_inicio" value="{{ data_inicio|date:'Y-m-d' }}">
+  </label>
+  <label>
+    <span>Fim</span>
+    <input type="date" name="data_fim" value="{{ data_fim|date:'Y-m-d' }}">
+  </label>
+  <label>
+    <span>Tipo</span>
+    <select name="tipo">
+      <option value="">Todos</option>
+      {% for value,label in tipos %}
+        <option value="{{ value }}" {% if tipo == value %}selected{% endif %}>{{ label }}</option>
+      {% endfor %}
+    </select>
+  </label>
+  <button type="submit">Filtrar</button>
+</form>
+
+<section class="metrics-grid">
+  <article class="metric"><span>Movimentacoes</span><strong>{{ total_movimentacoes }}</strong></article>
+  <article class="metric"><span>Quantidade total</span><strong>{{ quantidade_total }}</strong></article>
+  <article class="metric"><span>Inicio</span><strong>{{ data_inicio|date:"d/m/Y" }}</strong></article>
+  <article class="metric"><span>Fim</span><strong>{{ data_fim|date:"d/m/Y" }}</strong></article>
+</section>
+
+<div class="panel">
+  <table>
+    <thead>
+      <tr><th>Data</th><th>Produto</th><th>Filial</th><th>Tipo</th><th>Quantidade</th><th>Referencia</th><th>Usuario</th><th>Motivo</th></tr>
+    </thead>
+    <tbody>
+      {% for mov in movimentacoes %}
+        <tr>
+          <td>{{ mov.data|date:"d/m/Y H:i" }}</td>
+          <td>{{ mov.produto }}</td>
+          <td>{{ mov.filial }}</td>
+          <td><span class="status">{{ mov.tipo }}</span></td>
+          <td><strong>{{ mov.quantidade }}</strong></td>
+          <td>{{ mov.referencia|default:"-" }}</td>
+          <td>{{ mov.usuario|default:"-" }}</td>
+          <td>{{ mov.motivo|default:"-" }}</td>
+        </tr>
+      {% empty %}
+        <tr><td colspan="8" class="empty">Nenhuma movimentacao no periodo.</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endblock %}

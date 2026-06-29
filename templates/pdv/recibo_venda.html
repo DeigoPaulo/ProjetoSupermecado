@@ -1,0 +1,201 @@
+<!doctype html>
+<html lang="pt-br">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Recibo venda {{ venda.id }}</title>
+  <style>
+    @page {
+      size: 80mm auto;
+      margin: 4mm;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      background: #f4f6f8;
+      color: #111827;
+      font-family: Arial, Helvetica, sans-serif;
+      font-size: 11px;
+      line-height: 1.35;
+    }
+
+    .toolbar {
+      display: flex;
+      gap: 8px;
+      justify-content: center;
+      padding: 14px;
+    }
+
+    .toolbar button,
+    .toolbar a {
+      border: 1px solid #d1d5db;
+      border-radius: 6px;
+      background: #ffffff;
+      color: #111827;
+      cursor: pointer;
+      padding: 8px 12px;
+      text-decoration: none;
+      font-weight: 700;
+    }
+
+    .receipt {
+      width: 80mm;
+      min-height: 100vh;
+      margin: 0 auto 24px;
+      padding: 8px;
+      background: #ffffff;
+    }
+
+    .center {
+      text-align: center;
+    }
+
+    .title {
+      margin: 0;
+      font-size: 14px;
+      text-transform: uppercase;
+    }
+
+    .muted {
+      color: #4b5563;
+    }
+
+    .line {
+      border-top: 1px dashed #9ca3af;
+      margin: 8px 0;
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+    }
+
+    th,
+    td {
+      padding: 3px 0;
+      vertical-align: top;
+    }
+
+    th {
+      border-bottom: 1px solid #d1d5db;
+      text-align: left;
+      font-size: 10px;
+    }
+
+    .right {
+      text-align: right;
+    }
+
+    .totals td {
+      padding: 2px 0;
+    }
+
+    .grand-total {
+      font-size: 13px;
+      font-weight: 700;
+    }
+
+    @media print {
+      body {
+        background: #ffffff;
+      }
+
+      .toolbar {
+        display: none;
+      }
+
+      .receipt {
+        width: auto;
+        margin: 0;
+        padding: 0;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="toolbar">
+    <button type="button" onclick="window.print()">Imprimir</button>
+    <a href="{% url 'pdv:venda_detalhe' venda.id %}">Voltar</a>
+  </div>
+
+  <main class="receipt">
+    <section class="center">
+      <h1 class="title">{{ venda.filial.empresa.nome_fantasia }}</h1>
+      <div>{{ venda.filial.empresa.razao_social }}</div>
+      <div>CNPJ: {{ venda.filial.cnpj|default:venda.filial.empresa.cnpj }}</div>
+      <div>{{ venda.filial.endereco|default:venda.filial.empresa.endereco }}</div>
+      <div>{{ venda.filial.telefone|default:venda.filial.empresa.telefone }}</div>
+    </section>
+
+    <div class="line"></div>
+    <section class="center">
+      <strong>CUPOM NAO FISCAL</strong>
+      <div class="muted">Venda {{ venda.id }} - {{ venda.status }}</div>
+      <div>{{ venda.data|date:"d/m/Y H:i:s" }}</div>
+    </section>
+
+    <div class="line"></div>
+    <section>
+      <div>Operador: {{ venda.usuario }}</div>
+      <div>Caixa: {{ venda.caixa.id }}</div>
+      <div>Cliente: {{ venda.cliente|default:"Nao identificado" }}</div>
+    </section>
+
+    <div class="line"></div>
+    <table>
+      <thead>
+        <tr>
+          <th>Item</th>
+          <th class="right">Qtd</th>
+          <th class="right">Unit</th>
+          <th class="right">Total</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for item in venda.itens.all %}
+          <tr>
+            <td>
+              {{ item.produto.nome }}<br>
+              <span class="muted">{{ item.produto.codigo_barras }}</span>
+            </td>
+            <td class="right">{{ item.quantidade }}</td>
+            <td class="right">{{ item.preco_unitario_venda|floatformat:2 }}</td>
+            <td class="right">{{ item.total|floatformat:2 }}</td>
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+
+    <div class="line"></div>
+    <table class="totals">
+      <tbody>
+        <tr><td>Subtotal</td><td class="right">R$ {{ venda.total_bruto|floatformat:2 }}</td></tr>
+        <tr><td>Desconto</td><td class="right">R$ {{ venda.desconto|floatformat:2 }}</td></tr>
+        <tr class="grand-total"><td>Total</td><td class="right">R$ {{ venda.total_liquido|floatformat:2 }}</td></tr>
+      </tbody>
+    </table>
+
+    <div class="line"></div>
+    <section>
+      <strong>Pagamento</strong>
+      <table class="totals">
+        <tbody>
+          {% for pagamento in venda.pagamentos.all %}
+            <tr><td>{{ pagamento.forma_pagamento }}</td><td class="right">R$ {{ pagamento.valor|floatformat:2 }}</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </section>
+
+    <div class="line"></div>
+    <section class="center muted">
+      <div>Documento sem valor fiscal.</div>
+      <div>Obrigado pela preferencia.</div>
+    </section>
+  </main>
+</body>
+</html>

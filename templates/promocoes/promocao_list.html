@@ -1,0 +1,39 @@
+{% extends "base.html" %}
+
+{% block title %}Promocoes{% endblock %}
+
+{% block content %}
+<header class="page-header">
+  <div>
+    <h1>Promocoes</h1>
+    <p>Precos promocionais programados por produto.</p>
+  </div>
+  <a class="primary-button" href="{% url 'promocoes:nova' %}">Nova promocao</a>
+</header>
+
+<form method="get" class="toolbar">
+  <input type="search" name="q" value="{{ request.GET.q }}" placeholder="Buscar promocao ou produto">
+  <button type="submit">Buscar</button>
+</form>
+
+<div class="panel">
+  <table>
+    <thead><tr><th>Produto</th><th>Nome</th><th>Preco</th><th>Inicio</th><th>Fim</th><th>Status</th><th></th></tr></thead>
+    <tbody>
+      {% for promocao in promocoes %}
+        <tr>
+          <td>{{ promocao.produto }}</td>
+          <td>{{ promocao.nome }}</td>
+          <td>R$ {{ promocao.preco_promocional|floatformat:2 }}</td>
+          <td>{{ promocao.inicio|date:"d/m/Y H:i" }}</td>
+          <td>{{ promocao.fim|date:"d/m/Y H:i" }}</td>
+          <td><span class="status">{{ promocao.ativa|yesno:"Ativa,Inativa" }}</span></td>
+          <td><a href="{% url 'promocoes:editar' promocao.pk %}">Editar</a></td>
+        </tr>
+      {% empty %}
+        <tr><td colspan="7" class="empty">Nenhuma promocao cadastrada.</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endblock %}

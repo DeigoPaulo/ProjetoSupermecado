@@ -1,0 +1,48 @@
+{% extends "base.html" %}
+
+{% block title %}Produtos{% endblock %}
+
+{% block content %}
+<header class="page-header">
+  <div>
+    <h1>Produtos</h1>
+    <p>Cadastro central para PDV, estoque e futuro marketplace.</p>
+  </div>
+  <div class="actions">
+    <a class="secondary-button" href="{% url 'produtos:categoria_nova' %}">Nova categoria</a>
+    <a class="secondary-button" href="{% url 'produtos:marca_nova' %}">Nova marca</a>
+    <a class="secondary-button" href="{% url 'produtos:importar_csv' %}">Importar CSV</a>
+    <a class="secondary-button" href="{% url 'produtos:reajustar_precos' %}">Reajustar preços</a>
+    <a class="secondary-button" href="{% url 'produtos:etiquetas' %}">Etiquetas</a>
+    <a class="primary-button" href="{% url 'produtos:novo' %}">Novo produto</a>
+  </div>
+</header>
+
+<form method="get" class="toolbar">
+  <input type="search" name="q" value="{{ request.GET.q }}" placeholder="Buscar por nome ou codigo de barras">
+  <button type="submit">Buscar</button>
+</form>
+
+<div class="panel">
+  <table>
+    <thead>
+      <tr><th>Produto</th><th>Codigo</th><th>Categoria</th><th>Preco</th><th>Unidade</th><th>Status</th><th></th></tr>
+    </thead>
+    <tbody>
+      {% for produto in produtos %}
+        <tr>
+          <td>{{ produto.nome }}</td>
+          <td>{{ produto.codigo_barras }}</td>
+          <td>{{ produto.categoria }}</td>
+          <td>R$ {{ produto.preco_venda|floatformat:2 }}</td>
+          <td>{{ produto.unidade }}</td>
+          <td><span class="status">{{ produto.is_active|yesno:"Ativo,Inativo" }}</span></td>
+          <td><a href="{% url 'produtos:editar' produto.pk %}">Editar</a></td>
+        </tr>
+      {% empty %}
+        <tr><td colspan="7" class="empty">Nenhum produto cadastrado.</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endblock %}

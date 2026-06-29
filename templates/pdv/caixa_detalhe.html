@@ -1,0 +1,120 @@
+{% extends "base.html" %}
+
+{% block title %}Caixa {{ caixa.id }}{% endblock %}
+
+{% block content %}
+<header class="page-header">
+  <div>
+    <h1>Caixa {{ caixa.id }}</h1>
+    <p>{{ caixa.filial }} - aberto por {{ caixa.usuario_abertura }}</p>
+  </div>
+  <div class="actions">
+    <a class="secondary-button" href="{% url 'pdv:caixas' %}">Voltar</a>
+    {% if caixa.status == "ABERTO" %}
+      <a class="primary-button" href="{% url 'pdv:pdv' %}">Ir para PDV</a>
+    {% endif %}
+  </div>
+</header>
+
+<section class="metrics-grid">
+  <article class="metric"><span>Status</span><strong>{{ caixa.status }}</strong></article>
+  <article class="metric"><span>Vendas</span><strong>R$ {{ resumo.total_vendas|floatformat:2 }}</strong></article>
+  <article class="metric"><span>Suprimentos</span><strong>R$ {{ resumo.total_suprimentos|floatformat:2 }}</strong></article>
+  <article class="metric"><span>Esperado</span><strong>R$ {{ resumo.total_esperado|floatformat:2 }}</strong></article>
+</section>
+
+<section class="two-column">
+  <div class="panel">
+    <div class="panel-title">Resumo financeiro</div>
+    <dl class="summary-list">
+      <dt>Valor inicial</dt><dd>R$ {{ caixa.valor_inicial|floatformat:2 }}</dd>
+      <dt>Total de vendas</dt><dd>R$ {{ resumo.total_vendas|floatformat:2 }}</dd>
+      <dt>Suprimentos</dt><dd>R$ {{ resumo.total_suprimentos|floatformat:2 }}</dd>
+      <dt>Sangrias</dt><dd>R$ {{ resumo.total_sangrias|floatformat:2 }}</dd>
+      <dt>Valor esperado</dt><dd><strong>R$ {{ resumo.total_esperado|floatformat:2 }}</strong></dd>
+      <dt>Valor informado</dt><dd>R$ {{ caixa.valor_final|floatformat:2|default:"-" }}</dd>
+      <dt>Abertura</dt><dd>{{ caixa.data_abertura|date:"d/m/Y H:i" }}</dd>
+      <dt>Fechamento</dt><dd>{{ caixa.data_fechamento|date:"d/m/Y H:i"|default:"-" }}</dd>
+    </dl>
+  </div>
+
+  <div class="panel">
+    <div class="panel-title">Fechamento</div>
+    {% if caixa.status == "ABERTO" %}
+      <form method="post" action="{% url 'pdv:fechar_caixa' caixa.id %}" class="compact-form form-confirm" data-msg="Fechar este caixa?">
+        {% csrf_token %}
+        {% for field in fechar_form %}
+          <label class="form-field"><span>{{ field.label }}</span>{{ field }}</label>
+        {% endfor %}
+        <button class="primary-button" type="submit">Fechar caixa</button>
+      </form>
+    {% else %}
+      <div class="empty p-3">Caixa fechado por {{ caixa.usuario_fechamento|default:"-" }}.</div>
+    {% endif %}
+  </div>
+</section>
+
+{% if caixa.status == "ABERTO" %}
+<section class="two-column mt-panel">
+  <div class="panel">
+    <div class="panel-title">Registrar suprimento</div>
+    <form method="post" action="{% url 'pdv:registrar_suprimento' caixa.id %}" class="compact-form">
+      {% csrf_token %}
+      {% for field in suprimento_form %}
+        <label class="form-field"><span>{{ field.label }}</span>{{ field }}</label>
+      {% endfor %}
+      <button class="primary-button" type="submit">Registrar suprimento</button>
+    </form>
+  </div>
+  <div class="panel">
+    <div class="panel-title">Registrar sangria</div>
+    <form method="post" action="{% url 'pdv:registrar_sangria' caixa.id %}" class="compact-form">
+      {% csrf_token %}
+      {% for field in sangria_form %}
+        <label class="form-field"><span>{{ field.label }}</span>{{ field }}</label>
+      {% endfor %}
+      <button class="primary-button" type="submit">Registrar sangria</button>
+    </form>
+  </div>
+</section>
+{% endif %}
+
+<section class="two-column mt-panel">
+  <div class="panel">
+    <div class="panel-title">Vendas do caixa</div>
+    <table>
+      <thead><tr><th>ID</th><th>Data</th><th>Cliente</th><th>Total</th></tr></thead>
+      <tbody>
+        {% for venda in caixa.vendas.all %}
+          <tr>
+            <td><a href="{% url 'pdv:venda_detalhe' venda.id %}">{{ venda.id }}</a></td>
+            <td>{{ venda.data|date:"d/m/Y H:i" }}</td>
+            <td>{{ venda.cliente|default:"-" }}</td>
+            <td>R$ {{ venda.total_liquido|floatformat:2 }}</td>
+          </tr>
+        {% empty %}
+          <tr><td colspan="4" class="empty">Nenhuma venda neste caixa.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+
+  <div class="panel">
+    <div class="panel-title">Movimentos manuais</div>
+    <table>
+      <thead><tr><th>Tipo</th><th>Data</th><th>Valor</th><th>Motivo</th></tr></thead>
+      <tbody>
+        {% for item in caixa.suprimentos.all %}
+          <tr><td>Suprimento</td><td>{{ item.data|date:"d/m/Y H:i" }}</td><td>R$ {{ item.valor|floatformat:2 }}</td><td>{{ item.motivo }}</td></tr>
+        {% endfor %}
+        {% for item in caixa.sangrias.all %}
+          <tr><td>Sangria</td><td>{{ item.data|date:"d/m/Y H:i" }}</td><td>R$ {{ item.valor|floatformat:2 }}</td><td>{{ item.motivo }}</td></tr>
+        {% endfor %}
+        {% if not has_movimentos %}
+          <tr><td colspan="4" class="empty">Nenhuma sangria ou suprimento.</td></tr>
+        {% endif %}
+      </tbody>
+    </table>
+  </div>
+</section>
+{% endblock %}

@@ -1,0 +1,47 @@
+{% extends "base.html" %}
+
+{% block title %}Relatorio de Caixas{% endblock %}
+
+{% block content %}
+<header class="page-header">
+  <div>
+    <h1>Caixas</h1>
+    <p>Aberturas, fechamentos e totais do periodo.</p>
+  </div>
+  <div class="actions">
+    <a class="secondary-button" href="{% url 'relatorios:vendas' %}">Vendas</a>
+    <a class="secondary-button" href="{% url 'pdv:caixas' %}">Gerenciar caixas</a>
+  </div>
+</header>
+
+{% include "relatorios/includes/periodo_form.html" %}
+
+<section class="metrics-grid">
+  <article class="metric"><span>Abertos</span><strong>{{ caixas_abertos }}</strong></article>
+  <article class="metric"><span>Fechados</span><strong>{{ caixas_fechados }}</strong></article>
+  <article class="metric"><span>Valor inicial</span><strong>R$ {{ valor_inicial_total|floatformat:2 }}</strong></article>
+  <article class="metric"><span>Valor final</span><strong>R$ {{ valor_final_total|floatformat:2 }}</strong></article>
+</section>
+
+<div class="panel">
+  <table>
+    <thead><tr><th>ID</th><th>Filial</th><th>Operador</th><th>Abertura</th><th>Fechamento</th><th>Inicial</th><th>Final</th><th>Status</th></tr></thead>
+    <tbody>
+      {% for caixa in caixas %}
+        <tr>
+          <td>{{ caixa.id }}</td>
+          <td>{{ caixa.filial }}</td>
+          <td>{{ caixa.usuario_abertura }}</td>
+          <td>{{ caixa.data_abertura|date:"d/m/Y H:i" }}</td>
+          <td>{{ caixa.data_fechamento|date:"d/m/Y H:i"|default:"-" }}</td>
+          <td>R$ {{ caixa.valor_inicial|floatformat:2 }}</td>
+          <td>R$ {{ caixa.valor_final|floatformat:2 }}</td>
+          <td><span class="status">{{ caixa.status }}</span></td>
+        </tr>
+      {% empty %}
+        <tr><td colspan="8" class="empty">Nenhum caixa no periodo.</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endblock %}

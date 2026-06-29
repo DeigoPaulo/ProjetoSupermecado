@@ -1,0 +1,65 @@
+{% extends "base.html" %}
+
+{% block title %}Relatorio de Compras{% endblock %}
+
+{% block content %}
+<header class="page-header">
+  <div>
+    <h1>Compras</h1>
+    <p>Entradas finalizadas e volume comprado por fornecedor.</p>
+  </div>
+  <div class="actions">
+    <a class="secondary-button" href="{% url 'relatorios:vendas' %}">Vendas</a>
+    <a class="secondary-button" href="{% url 'relatorios:caixas' %}">Caixas</a>
+    <a class="primary-button" href="{% url 'compras:nova' %}">Nova entrada</a>
+  </div>
+</header>
+
+{% include "relatorios/includes/periodo_form.html" %}
+
+<section class="metrics-grid">
+  <article class="metric"><span>Entradas</span><strong>{{ total_entradas }}</strong></article>
+  <article class="metric"><span>Total comprado</span><strong>R$ {{ total_compras|floatformat:2 }}</strong></article>
+  <article class="metric"><span>Inicio</span><strong>{{ data_inicio|date:"d/m/Y" }}</strong></article>
+  <article class="metric"><span>Fim</span><strong>{{ data_fim|date:"d/m/Y" }}</strong></article>
+</section>
+
+<section class="two-column">
+  <div class="panel">
+    <div class="panel-title">Entradas finalizadas</div>
+    <table>
+      <thead><tr><th>ID</th><th>Data</th><th>Fornecedor</th><th>Filial</th><th>Total</th></tr></thead>
+      <tbody>
+        {% for entrada in entradas %}
+          <tr>
+            <td>{{ entrada.id }}</td>
+            <td>{{ entrada.data_recebimento|date:"d/m/Y H:i" }}</td>
+            <td>{{ entrada.fornecedor }}</td>
+            <td>{{ entrada.filial }}</td>
+            <td>R$ {{ entrada.total_produtos|floatformat:2 }}</td>
+          </tr>
+        {% empty %}
+          <tr><td colspan="5" class="empty">Nenhuma entrada finalizada no periodo.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  <div class="panel">
+    <div class="panel-title">Compras por fornecedor</div>
+    <table>
+      <thead><tr><th>Fornecedor</th><th>Entradas</th><th>Total</th></tr></thead>
+      <tbody>
+        {% for item in compras_por_fornecedor %}
+          <tr>
+            <td>{{ item.fornecedor__razao_social }}</td>
+            <td>{{ item.quantidade }}</td>
+            <td>R$ {{ item.total|floatformat:2 }}</td>
+          </tr>
+        {% empty %}
+          <tr><td colspan="3" class="empty">Sem compras agrupadas.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</section>
+{% endblock %}

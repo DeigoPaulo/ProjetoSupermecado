@@ -1,0 +1,19 @@
+{% extends "base.html" %}
+
+{% block title %}Produto{% endblock %}
+
+{% block content %}
+<header class="page-header">
+  <div>
+    <h1>{% if object %}Editar produto{% else %}Novo produto{% endif %}</h1>
+    <p>Use valores decimais para precos e quantidades pesaveis.</p>
+  </div>
+</header>
+<form method="post" class="form-grid panel">
+  {% include "includes/form.html" %}
+  <div class="form-actions">
+    <a class="secondary-button" href="{% url 'produtos:lista' %}">Cancelar</a>
+    <button class="primary-button" type="submit">Salvar</button>
+  </div>
+</form>
+{% endblock %}

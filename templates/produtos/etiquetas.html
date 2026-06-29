@@ -1,0 +1,41 @@
+{% extends "base.html" %}
+
+{% block title %}Etiquetas{% endblock %}
+
+{% block content %}
+<header class="page-header">
+  <div>
+    <h1>Etiquetas</h1>
+    <p>Gere etiquetas de gondola com nome, codigo e preco.</p>
+  </div>
+  <a class="secondary-button" href="{% url 'produtos:lista' %}">Voltar</a>
+</header>
+
+<form method="get" class="form-grid panel">
+  {% include "includes/form.html" %}
+  <div class="form-actions">
+    <button class="primary-button" type="submit">Gerar etiquetas</button>
+    {% if etiquetas %}
+      <button class="secondary-button" type="button" onclick="window.print()">Imprimir</button>
+    {% endif %}
+  </div>
+</form>
+
+{% if etiquetas %}
+  <section class="label-sheet mt-panel">
+    {% for produto in etiquetas %}
+      <article class="price-label">
+        <div class="label-store">SUPERMERCADO</div>
+        <div class="label-name">{{ produto.nome }}</div>
+        <div class="label-code">{{ produto.codigo_barras }}</div>
+        <div class="label-price">R$ {{ produto.preco_venda|floatformat:2 }}</div>
+        <div class="label-meta">{{ produto.unidade }}{% if produto.marca %} - {{ produto.marca }}{% endif %}</div>
+      </article>
+    {% endfor %}
+  </section>
+{% elif request.GET %}
+  <div class="panel mt-panel">
+    <div class="empty p-3">Nenhum produto encontrado para os filtros informados.</div>
+  </div>
+{% endif %}
+{% endblock %}

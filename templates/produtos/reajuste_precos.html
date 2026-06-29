@@ -1,0 +1,59 @@
+{% extends "base.html" %}
+
+{% block title %}Reajustar Precos{% endblock %}
+
+{% block content %}
+<header class="page-header">
+  <div>
+    <h1>Reajustar precos</h1>
+    <p>Simule e aplique reajustes em massa por categoria, marca ou ambos.</p>
+  </div>
+  <a class="secondary-button" href="{% url 'produtos:lista' %}">Voltar</a>
+</header>
+
+<form method="post" class="form-grid panel">
+  {% csrf_token %}
+  {% include "includes/form.html" %}
+  <div class="form-actions">
+    <button class="secondary-button" type="submit">Simular</button>
+    {% if preview %}
+      <button class="primary-button" name="confirmar" value="1" type="submit" onclick="return confirm('Aplicar reajuste em {{ total_afetado }} produto(s)?')">Aplicar reajuste</button>
+    {% endif %}
+  </div>
+</form>
+
+{% if preview %}
+  <section class="panel mt-panel">
+    <div class="panel-title">Simulacao - {{ total_afetado }} produto(s) afetado(s)</div>
+    <table>
+      <thead>
+        <tr>
+          <th>Produto</th>
+          <th>Categoria</th>
+          <th>Marca</th>
+          <th>Venda atual</th>
+          <th>Venda nova</th>
+          <th>Promocional atual</th>
+          <th>Promocional novo</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for item in preview %}
+          <tr>
+            <td>{{ item.produto.nome }}</td>
+            <td>{{ item.produto.categoria }}</td>
+            <td>{{ item.produto.marca|default:"-" }}</td>
+            <td>R$ {{ item.preco_venda_atual|floatformat:2 }}</td>
+            <td><strong>R$ {{ item.preco_venda_novo|floatformat:2 }}</strong></td>
+            <td>{{ item.preco_promocional_atual|default:"-" }}</td>
+            <td>{% if item.preco_promocional_novo %}R$ {{ item.preco_promocional_novo|floatformat:2 }}{% else %}-{% endif %}</td>
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    {% if total_afetado > 100 %}
+      <div class="message warning">Mostrando os primeiros 100 produtos. O reajuste sera aplicado em todos os {{ total_afetado }} produtos filtrados.</div>
+    {% endif %}
+  </section>
+{% endif %}
+{% endblock %}

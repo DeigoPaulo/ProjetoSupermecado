@@ -1,0 +1,79 @@
+{% extends "base.html" %}
+
+{% block title %}PDV{% endblock %}
+
+{% block content %}
+<header class="page-header">
+  <div>
+    <h1>PDV</h1>
+    <p>Venda rapida com carrinho, pagamento e baixa automatica de estoque.</p>
+  </div>
+  <div class="actions">
+    <a class="secondary-button" href="{% url 'pdv:caixas' %}">Caixas</a>
+    <a class="primary-button" href="{% url 'pdv:abrir_caixa' %}">Abrir caixa</a>
+  </div>
+</header>
+
+<section class="pdv-grid">
+  <div class="panel pdv-entry">
+    <div class="panel-title">Adicionar item</div>
+    <form method="post" class="compact-form">
+      {% csrf_token %}
+      <input type="hidden" name="action" value="add">
+      {% for field in add_form %}
+        <label class="form-field">
+          <span>{{ field.label }}</span>
+          {{ field }}
+          {% if field.errors %}<small class="field-error">{{ field.errors|striptags }}</small>{% endif %}
+        </label>
+      {% endfor %}
+      <button class="primary-button" type="submit">Adicionar</button>
+    </form>
+  </div>
+
+  <div class="panel pdv-cart">
+    <div class="panel-title">Carrinho</div>
+    <table>
+      <thead><tr><th>Produto</th><th>Qtd</th><th>Unitario</th><th>Subtotal</th><th></th></tr></thead>
+      <tbody>
+        {% for item in items %}
+          <tr>
+            <td>{{ item.produto.nome }}</td>
+            <td>{{ item.quantidade }}</td>
+            <td>R$ {{ item.produto.preco_venda|floatformat:2 }}</td>
+            <td><strong>R$ {{ item.subtotal|floatformat:2 }}</strong></td>
+            <td><a href="{% url 'pdv:remover_item' item.produto.id %}">Remover</a></td>
+          </tr>
+        {% empty %}
+          <tr><td colspan="5" class="empty">Nenhum item no carrinho.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    <div class="cart-total">
+      <span>Total</span>
+      <strong>R$ {{ total|floatformat:2 }}</strong>
+    </div>
+    {% if items %}
+      <div class="form-actions">
+        <a class="secondary-button" href="{% url 'pdv:limpar_carrinho' %}">Limpar</a>
+      </div>
+    {% endif %}
+  </div>
+
+  <div class="panel pdv-finish">
+    <div class="panel-title">Finalizar venda</div>
+    <form method="post" class="compact-form">
+      {% csrf_token %}
+      <input type="hidden" name="action" value="finish">
+      {% for field in finish_form %}
+        <label class="form-field">
+          <span>{{ field.label }}</span>
+          {{ field }}
+          {% if field.errors %}<small class="field-error">{{ field.errors|striptags }}</small>{% endif %}
+        </label>
+      {% endfor %}
+      <button class="primary-button" type="submit" {% if not items %}disabled{% endif %}>Finalizar</button>
+    </form>
+  </div>
+</section>
+{% endblock %}

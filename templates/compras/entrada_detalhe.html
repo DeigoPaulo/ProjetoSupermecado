@@ -1,0 +1,49 @@
+{% extends "base.html" %}
+
+{% block title %}Entrada {{ entrada.id }}{% endblock %}
+
+{% block content %}
+<header class="page-header">
+  <div>
+    <h1>Entrada {{ entrada.id }}</h1>
+    <p>{{ entrada.fornecedor }} - {{ entrada.filial }}</p>
+  </div>
+  <div class="actions">
+    {% if entrada.status == "RASCUNHO" %}
+      <a class="secondary-button" href="{% url 'compras:editar' entrada.pk %}">Editar</a>
+      <form method="post" action="{% url 'compras:finalizar' entrada.pk %}" class="form-confirm inline-form" data-msg="Finalizar esta entrada e atualizar o estoque?">
+        {% csrf_token %}
+        <button class="primary-button" type="submit">Finalizar entrada</button>
+      </form>
+    {% endif %}
+    <a class="secondary-button" href="{% url 'compras:lista' %}">Voltar</a>
+  </div>
+</header>
+
+<section class="metrics-grid">
+  <article class="metric"><span>Status</span><strong>{{ entrada.status }}</strong></article>
+  <article class="metric"><span>Total</span><strong>R$ {{ entrada.total_produtos|floatformat:2 }}</strong></article>
+  <article class="metric"><span>Documento</span><strong>{{ entrada.numero_documento|default:"-" }}</strong></article>
+  <article class="metric"><span>Recebimento</span><strong>{{ entrada.data_recebimento|date:"d/m H:i" }}</strong></article>
+</section>
+
+<div class="panel">
+  <div class="panel-title">Itens recebidos</div>
+  <table>
+    <thead><tr><th>Produto</th><th>Quantidade</th><th>Custo unitario</th><th>Total</th><th>Atualiza custo</th></tr></thead>
+    <tbody>
+      {% for item in entrada.itens.all %}
+        <tr>
+          <td>{{ item.produto }}</td>
+          <td>{{ item.quantidade }}</td>
+          <td>R$ {{ item.custo_unitario|floatformat:2 }}</td>
+          <td>R$ {{ item.total|floatformat:2 }}</td>
+          <td>{{ item.atualizar_preco_custo|yesno:"Sim,Nao" }}</td>
+        </tr>
+      {% empty %}
+        <tr><td colspan="5" class="empty">Nenhum item informado.</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endblock %}

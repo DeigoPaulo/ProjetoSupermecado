@@ -1,0 +1,20 @@
+{% extends "base.html" %}
+
+{% block title %}Novo Inventario{% endblock %}
+
+{% block content %}
+<header class="page-header">
+  <div>
+    <h1>Novo inventario</h1>
+    <p>Abra uma contagem para uma filial.</p>
+  </div>
+</header>
+
+<form method="post" class="form-grid panel">
+  {% include "includes/form.html" %}
+  <div class="form-actions">
+    <a class="secondary-button" href="{% url 'estoque:inventarios' %}">Cancelar</a>
+    <button class="primary-button" type="submit">Criar</button>
+  </div>
+</form>
+{% endblock %}

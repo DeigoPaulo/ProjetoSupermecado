@@ -1,0 +1,49 @@
+{% extends "base.html" %}
+
+{% block title %}Inventario {{ inventario.id }}{% endblock %}
+
+{% block content %}
+<header class="page-header">
+  <div>
+    <h1>Inventario {{ inventario.id }}</h1>
+    <p>{{ inventario.filial }} - {{ inventario.descricao }}</p>
+  </div>
+  <div class="actions">
+    {% if inventario.status == "ABERTO" %}
+      <a class="secondary-button" href="{% url 'estoque:inventario_item_novo' inventario.pk %}">Adicionar contagem</a>
+      <form method="post" action="{% url 'estoque:inventario_aplicar' inventario.pk %}" class="inline-form form-confirm" data-msg="Aplicar inventario e ajustar estoque?">
+        {% csrf_token %}
+        <button class="primary-button" type="submit">Aplicar inventario</button>
+      </form>
+    {% endif %}
+    <a class="secondary-button" href="{% url 'estoque:inventarios' %}">Voltar</a>
+  </div>
+</header>
+
+<section class="metrics-grid">
+  <article class="metric"><span>Status</span><strong>{{ inventario.status }}</strong></article>
+  <article class="metric"><span>Itens</span><strong>{{ inventario.itens.count }}</strong></article>
+  <article class="metric"><span>Criado</span><strong>{{ inventario.criado_em|date:"d/m H:i" }}</strong></article>
+  <article class="metric"><span>Aplicado</span><strong>{{ inventario.aplicado_em|date:"d/m H:i"|default:"-" }}</strong></article>
+</section>
+
+<div class="panel">
+  <div class="panel-title">Itens contados</div>
+  <table>
+    <thead><tr><th>Produto</th><th>Sistema</th><th>Contado</th><th>Diferenca</th><th>Observacao</th></tr></thead>
+    <tbody>
+      {% for item in inventario.itens.all %}
+        <tr>
+          <td>{{ item.produto }}</td>
+          <td>{{ item.quantidade_sistema }}</td>
+          <td>{{ item.quantidade_contada }}</td>
+          <td><strong>{{ item.diferenca }}</strong></td>
+          <td>{{ item.observacao|default:"-" }}</td>
+        </tr>
+      {% empty %}
+        <tr><td colspan="5" class="empty">Nenhum item contado.</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endblock %}

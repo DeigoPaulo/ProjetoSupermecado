@@ -1,0 +1,65 @@
+{% extends "base.html" %}
+
+{% block title %}Relatorio de Perdas{% endblock %}
+
+{% block content %}
+<header class="page-header">
+  <div>
+    <h1>Perdas</h1>
+    <p>Valor estimado perdido por vencimento, avaria, quebra e outros motivos.</p>
+  </div>
+  <div class="actions">
+    <a class="secondary-button" href="{% url 'estoque:perdas' %}">Lista de perdas</a>
+    <a class="primary-button" href="{% url 'estoque:perda_nova' %}">Registrar perda</a>
+  </div>
+</header>
+
+{% include "relatorios/includes/periodo_form.html" %}
+
+<section class="metrics-grid">
+  <article class="metric"><span>Registros</span><strong>{{ total_perdas }}</strong></article>
+  <article class="metric"><span>Custo perdido</span><strong>R$ {{ valor_custo_total|floatformat:2 }}</strong></article>
+  <article class="metric"><span>Venda estimada</span><strong>R$ {{ valor_venda_total|floatformat:2 }}</strong></article>
+  <article class="metric"><span>Periodo</span><strong>{{ data_inicio|date:"d/m" }} - {{ data_fim|date:"d/m" }}</strong></article>
+</section>
+
+<section class="two-column">
+  <div class="panel">
+    <div class="panel-title">Perdas por tipo</div>
+    <table>
+      <thead><tr><th>Tipo</th><th>Registros</th><th>Custo</th><th>Venda estimada</th></tr></thead>
+      <tbody>
+        {% for item in perdas_por_tipo %}
+          <tr>
+            <td>{{ item.tipo }}</td>
+            <td>{{ item.quantidade }}</td>
+            <td>R$ {{ item.custo|floatformat:2 }}</td>
+            <td>R$ {{ item.venda|floatformat:2 }}</td>
+          </tr>
+        {% empty %}
+          <tr><td colspan="4" class="empty">Sem perdas agrupadas.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  <div class="panel">
+    <div class="panel-title">Ultimos registros</div>
+    <table>
+      <thead><tr><th>Data</th><th>Produto</th><th>Tipo</th><th>Qtd</th><th>Custo</th></tr></thead>
+      <tbody>
+        {% for perda in perdas %}
+          <tr>
+            <td>{{ perda.data|date:"d/m H:i" }}</td>
+            <td>{{ perda.produto }}</td>
+            <td>{{ perda.get_tipo_display }}</td>
+            <td>{{ perda.quantidade }}</td>
+            <td>R$ {{ perda.valor_custo_estimado|floatformat:2 }}</td>
+          </tr>
+        {% empty %}
+          <tr><td colspan="5" class="empty">Nenhuma perda no periodo.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</section>
+{% endblock %}
