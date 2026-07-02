@@ -14,6 +14,10 @@
 <form method="post" class="form-grid panel">
   {% csrf_token %}
   {% include "includes/form.html" %}
+  {% if preview %}
+    <label class="form-field"><span>Supervisor ou admin</span><input type="text" name="supervisor_usuario" autocomplete="username" required></label>
+    <label class="form-field"><span>Senha</span><input type="password" name="supervisor_senha" autocomplete="current-password" required></label>
+  {% endif %}
   <div class="form-actions">
     <button class="secondary-button" type="submit">Simular</button>
     {% if preview %}

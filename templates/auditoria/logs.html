@@ -1,0 +1,96 @@
+{% extends "base.html" %}
+
+{% block title %}Auditoria{% endblock %}
+
+{% block content %}
+<header class="page-header">
+  <div>
+    <h1>Auditoria</h1>
+    <p>Consulta de acoes sensiveis registradas no sistema.</p>
+  </div>
+  <div class="actions">
+    <a class="secondary-button" href="{{ csv_url }}"><i class="fa-solid fa-file-csv"></i> Excel/CSV</a>
+  </div>
+</header>
+
+<form method="get" class="toolbar audit-filter">
+  <label>
+    <span>Inicio</span>
+    <input type="date" name="data_inicio" value="{{ data_inicio|date:'Y-m-d' }}">
+  </label>
+  <label>
+    <span>Fim</span>
+    <input type="date" name="data_fim" value="{{ data_fim|date:'Y-m-d' }}">
+  </label>
+  <label>
+    <span>Modulo</span>
+    <select name="modulo">
+      <option value="">Todos</option>
+      {% for item in modulos %}
+        <option value="{{ item }}" {% if item == modulo %}selected{% endif %}>{{ item }}</option>
+      {% endfor %}
+    </select>
+  </label>
+  <label>
+    <span>Acao</span>
+    <select name="acao">
+      <option value="">Todas</option>
+      {% for item in acoes %}
+        <option value="{{ item }}" {% if item == acao %}selected{% endif %}>{{ item }}</option>
+      {% endfor %}
+    </select>
+  </label>
+  <label>
+    <span>Usuario</span>
+    <input type="search" name="usuario" value="{{ usuario }}" placeholder="Login">
+  </label>
+  <label>
+    <span>Busca</span>
+    <input type="search" name="q" value="{{ q }}" placeholder="Descricao, objeto ou IP">
+  </label>
+  <button type="submit">Filtrar</button>
+</form>
+
+<section class="metrics-grid">
+  <article class="metric"><span>Registros encontrados</span><strong>{{ total_logs }}</strong></article>
+  <article class="metric"><span>Periodo</span><strong>{{ data_inicio|date:"d/m" }} a {{ data_fim|date:"d/m" }}</strong></article>
+  <article class="metric"><span>Modulos</span><strong>{{ modulos|length }}</strong></article>
+  <article class="metric"><span>Acoes</span><strong>{{ acoes|length }}</strong></article>
+</section>
+
+<section class="panel">
+  <div class="table-wrapper">
+    <table>
+      <thead>
+        <tr>
+          <th>Data</th>
+          <th>Modulo</th>
+          <th>Acao</th>
+          <th>Usuario</th>
+          <th>Objeto</th>
+          <th>IP</th>
+          <th>Descricao</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for log in logs %}
+          <tr>
+            <td>{{ log.criado_em|date:"d/m/Y H:i" }}</td>
+            <td><span class="status">{{ log.modulo }}</span></td>
+            <td>{{ log.acao }}</td>
+            <td>{{ log.usuario|default:"-" }}</td>
+            <td>{{ log.objeto_tipo }}{% if log.objeto_id %} #{{ log.objeto_id }}{% endif %}</td>
+            <td>{{ log.ip|default:"-" }}</td>
+            <td>{{ log.descricao|default:"-" }}</td>
+          </tr>
+        {% empty %}
+          <tr><td colspan="7" class="empty">Nenhum log encontrado para os filtros informados.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% if total_logs > 300 %}
+    <div class="message warning">Mostrando os primeiros 300 registros. Use filtros ou exporte CSV para conferir o periodo completo.</div>
+  {% endif %}
+</section>
+{% endblock %}

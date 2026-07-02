@@ -9,6 +9,8 @@
     <p>Entradas, saidas, vendas, devolucoes, reservas e ajustes.</p>
   </div>
   <div class="actions">
+    <a class="secondary-button" href="{% url 'relatorios:movimentacoes_estoque_csv' %}?data_inicio={{ data_inicio|date:'Y-m-d' }}&amp;data_fim={{ data_fim|date:'Y-m-d' }}&amp;tipo={{ tipo }}"><i class="fa-solid fa-file-csv"></i> Excel/CSV</a>
+    <a class="secondary-button" href="{% url 'relatorios:movimentacoes_estoque_imprimir' %}?data_inicio={{ data_inicio|date:'Y-m-d' }}&amp;data_fim={{ data_fim|date:'Y-m-d' }}&amp;tipo={{ tipo }}" target="_blank"><i class="fa-solid fa-file-pdf"></i> PDF</a>
     <a class="secondary-button" href="{% url 'relatorios:estoque_baixo' %}">Estoque baixo</a>
     <a class="secondary-button" href="{% url 'relatorios:vendas' %}">Vendas</a>
     <a class="primary-button" href="{% url 'estoque:movimentar' %}">Movimentar</a>

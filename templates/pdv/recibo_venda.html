@@ -6,8 +6,8 @@
   <title>Recibo venda {{ venda.id }}</title>
   <style>
     @page {
-      size: 80mm auto;
-      margin: 4mm;
+      size: {{ estilos_impressao.page_size }};
+      margin: {{ estilos_impressao.margem_css }};
     }
 
     * {
@@ -19,7 +19,7 @@
       background: #f4f6f8;
       color: #111827;
       font-family: Arial, Helvetica, sans-serif;
-      font-size: 11px;
+      font-size: {{ estilos_impressao.fonte }}px;
       line-height: 1.35;
     }
 
@@ -43,7 +43,7 @@
     }
 
     .receipt {
-      width: 80mm;
+      width: {{ estilos_impressao.largura }};
       min-height: 100vh;
       margin: 0 auto 24px;
       padding: 8px;
@@ -58,6 +58,13 @@
       margin: 0;
       font-size: 14px;
       text-transform: uppercase;
+    }
+
+    .receipt-logo {
+      max-width: 42mm;
+      max-height: 18mm;
+      object-fit: contain;
+      margin-bottom: 4px;
     }
 
     .muted {
@@ -124,6 +131,9 @@
 
   <main class="receipt">
     <section class="center">
+      {% if impressao.exibir_logo and venda.filial.empresa.logo %}
+        <img class="receipt-logo" src="{{ venda.filial.empresa.logo.url }}" alt="{{ venda.filial.empresa.nome_fantasia }}">
+      {% endif %}
       <h1 class="title">{{ venda.filial.empresa.nome_fantasia }}</h1>
       <div>{{ venda.filial.empresa.razao_social }}</div>
       <div>CNPJ: {{ venda.filial.cnpj|default:venda.filial.empresa.cnpj }}</div>
@@ -142,7 +152,7 @@
     <section>
       <div>Operador: {{ venda.usuario }}</div>
       <div>Caixa: {{ venda.caixa.id }}</div>
-      <div>Cliente: {{ venda.cliente|default:"Nao identificado" }}</div>
+      <div>Cliente: {{ venda.cliente|default:"Cliente avulso" }}</div>
     </section>
 
     <div class="line"></div>
@@ -193,9 +203,16 @@
 
     <div class="line"></div>
     <section class="center muted">
-      <div>Documento sem valor fiscal.</div>
-      <div>Obrigado pela preferencia.</div>
+      {% if impressao.mensagem_rodape %}
+        <div>{{ impressao.mensagem_rodape|linebreaksbr }}</div>
+      {% else %}
+        <div>Documento sem valor fiscal.</div>
+        <div>Obrigado pela preferencia.</div>
+      {% endif %}
     </section>
   </main>
+  {% if impressao.impressao_automatica %}
+    <script>window.addEventListener("load", function () { window.print(); });</script>
+  {% endif %}
 </body>
 </html>

@@ -1,0 +1,55 @@
+{% extends "base.html" %}
+
+{% block title %}Pedidos online{% endblock %}
+
+{% block content %}
+<header class="page-header">
+  <div>
+    <h1>Pedidos online</h1>
+    <p>Recebimento, reserva, separacao e entrega de pedidos externos.</p>
+  </div>
+  <div class="actions">
+    {% if access.sistema %}<a class="secondary-button" href="{% url 'marketplace:politicas_entrega' %}"><i class="fa-solid fa-truck-fast"></i> Entregas</a><a class="secondary-button" href="{% url 'marketplace:integracoes' %}"><i class="fa-solid fa-plug"></i> Integracoes</a>{% endif %}
+    <a class="primary-button" href="{% url 'marketplace:novo' %}"><i class="fa-solid fa-circle-plus"></i> Novo pedido</a>
+  </div>
+</header>
+
+<section class="metrics-grid">
+  <article class="metric"><span>Rascunhos</span><strong>{{ painel.rascunho }}</strong></article>
+  <article class="metric"><span>Em separacao</span><strong>{{ painel.separacao }}</strong></article>
+  <article class="metric"><span>Prontos</span><strong>{{ painel.pronto }}</strong></article>
+  <article class="metric"><span>Em entrega</span><strong>{{ painel.entrega }}</strong></article>
+  <article class="metric"><span>Valor filtrado</span><strong>R$ {{ valor_total|floatformat:2 }}</strong></article>
+</section>
+
+<form method="get" class="toolbar">
+  <input type="search" name="q" value="{{ request.GET.q }}" placeholder="Numero, cliente ou referencia externa">
+  <select name="status">
+    <option value="">Todos os status</option>
+    {% for valor, rotulo in status_opcoes %}<option value="{{ valor }}" {% if request.GET.status == valor %}selected{% endif %}>{{ rotulo }}</option>{% endfor %}
+  </select>
+  <button type="submit">Filtrar</button>
+</form>
+
+<div class="panel">
+  <table>
+    <thead><tr><th>Pedido</th><th>Cliente</th><th>Canal</th><th>Entrega</th><th>Filial</th><th>Total</th><th>Status</th><th></th></tr></thead>
+    <tbody>
+      {% for pedido in pedidos %}
+        <tr>
+          <td>#{{ pedido.pk }}<br><small>{{ pedido.criado_em|date:"d/m/Y H:i" }}</small></td>
+          <td>{{ pedido.nome_cliente }}<br><small>{{ pedido.referencia_externa|default:"Sem referencia externa" }}</small></td>
+          <td>{{ pedido.get_canal_display }}</td>
+          <td>{{ pedido.get_tipo_entrega_display }}</td>
+          <td>{{ pedido.filial }}</td>
+          <td>R$ {{ pedido.total|floatformat:2 }}</td>
+          <td><span class="status">{{ pedido.get_status_display }}</span></td>
+          <td><a href="{% url 'marketplace:detalhe' pedido.pk %}">Abrir</a></td>
+        </tr>
+      {% empty %}
+        <tr><td colspan="8" class="empty">Nenhum pedido online encontrado.</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endblock %}

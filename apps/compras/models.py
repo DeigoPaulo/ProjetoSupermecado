@@ -14,6 +14,8 @@ class EntradaCompra(models.Model):
     usuario = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.PROTECT, related_name="entradas_compra")
     numero_documento = models.CharField(max_length=80, blank=True)
     data_emissao = models.DateField(null=True, blank=True)
+    vencimento_financeiro = models.DateField(null=True, blank=True)
+    gerar_conta_financeira = models.BooleanField(default=True)
     data_recebimento = models.DateTimeField(auto_now_add=True)
     observacoes = models.TextField(blank=True)
     status = models.CharField(max_length=20, choices=StatusEntradaCompra.choices, default=StatusEntradaCompra.RASCUNHO)

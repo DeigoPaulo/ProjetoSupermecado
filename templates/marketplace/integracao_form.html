@@ -1,0 +1,6 @@
+{% extends "base.html" %}
+{% block title %}Nova integracao{% endblock %}
+{% block content %}
+<header class="page-header"><div><h1>Nova integracao</h1><p>Crie uma credencial exclusiva para uma plataforma e filial.</p></div><a class="secondary-button" href="{% url 'marketplace:integracoes' %}">Voltar</a></header>
+<section class="panel form-panel"><form method="post" class="form-grid">{% csrf_token %}{% for field in form %}<label class="form-field"><span>{{ field.label }}</span>{{ field }}{{ field.errors }}</label>{% endfor %}<div class="form-actions"><button class="primary-button" type="submit">Gerar integracao</button></div></form></section>
+{% endblock %}

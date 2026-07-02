@@ -14,22 +14,41 @@ import os
 from pathlib import Path
 
 from dotenv import load_dotenv
+from django.core.exceptions import ImproperlyConfigured
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
 load_dotenv(BASE_DIR / ".env")
 
 
-# Quick-start development settings - unsuitable for production
-# See https://docs.djangoproject.com/en/6.0/howto/deployment/checklist/
+def env_bool(name, default=False):
+    value = os.getenv(name)
+    if value is None:
+        return default
+    return value.strip().lower() in {"1", "true", "yes", "on"}
 
-# SECURITY WARNING: keep the secret key used in production secret!
+
+def env_list(name, default=""):
+    value = os.getenv(name, default)
+    return [item.strip() for item in value.split(",") if item.strip()]
+
+
+def env_path(name, default):
+    raw = os.getenv(name)
+    path = Path(raw) if raw else Path(default)
+    return path if path.is_absolute() else BASE_DIR / path
+
+
+ENVIRONMENT = os.getenv("DJANGO_ENV", "development")
+
 SECRET_KEY = os.getenv("SECRET_KEY", "django-insecure-dev-supermercado")
+DEBUG = env_bool("DEBUG", ENVIRONMENT != "production")
 
-# SECURITY WARNING: don't run with debug turned on in production!
-DEBUG = os.getenv("DEBUG", "true").lower() == "true"
+if not DEBUG and SECRET_KEY == "django-insecure-dev-supermercado":
+    raise ImproperlyConfigured("Defina SECRET_KEY no ambiente antes de rodar fora do modo DEBUG.")
 
-ALLOWED_HOSTS = os.getenv("ALLOWED_HOSTS", "127.0.0.1,localhost").split(",")
+ALLOWED_HOSTS = env_list("ALLOWED_HOSTS", "127.0.0.1,localhost")
+CSRF_TRUSTED_ORIGINS = env_list("CSRF_TRUSTED_ORIGINS")
 
 
 # Application definition
@@ -52,6 +71,9 @@ INSTALLED_APPS = [
     'apps.promocoes',
     'apps.pdv',
     'apps.vendas',
+    'apps.financeiro',
+    'apps.fiscal',
+    'apps.marketplace',
     'apps.relatorios',
     'apps.auditoria',
     'apps.configuracoes',
@@ -79,6 +101,7 @@ TEMPLATES = [
                 'django.template.context_processors.request',
                 'django.contrib.auth.context_processors.auth',
                 'django.contrib.messages.context_processors.messages',
+                'apps.accounts.context_processors.supermarket_access',
             ],
         },
     },
@@ -90,7 +113,7 @@ WSGI_APPLICATION = 'config.wsgi.application'
 # Database
 # https://docs.djangoproject.com/en/6.0/ref/settings/#databases
 
-if os.getenv("DATABASE_URL"):
+if os.getenv("DATABASE_URL") or os.getenv("POSTGRES_DB"):
     DATABASES = {
         "default": {
             "ENGINE": "django.db.backends.postgresql",
@@ -99,13 +122,14 @@ if os.getenv("DATABASE_URL"):
             "PASSWORD": os.getenv("POSTGRES_PASSWORD", ""),
             "HOST": os.getenv("POSTGRES_HOST", "localhost"),
             "PORT": os.getenv("POSTGRES_PORT", "5432"),
+            "CONN_MAX_AGE": int(os.getenv("POSTGRES_CONN_MAX_AGE", "60")),
         }
     }
 else:
     DATABASES = {
         'default': {
             'ENGINE': 'django.db.backends.sqlite3',
-            'NAME': BASE_DIR / 'db.sqlite3',
+            'NAME': env_path("SQLITE_PATH", BASE_DIR / 'db.sqlite3'),
         }
     }
 
@@ -146,13 +170,65 @@ USE_TZ = True
 
 STATIC_URL = 'static/'
 STATICFILES_DIRS = [BASE_DIR / 'static']
-STATIC_ROOT = BASE_DIR / 'staticfiles'
+STATIC_ROOT = env_path("STATIC_ROOT", BASE_DIR / 'staticfiles')
 
 MEDIA_URL = 'media/'
-MEDIA_ROOT = BASE_DIR / 'media'
+MEDIA_ROOT = env_path("MEDIA_ROOT", BASE_DIR / 'media')
+
+SESSION_COOKIE_SECURE = env_bool("SESSION_COOKIE_SECURE", not DEBUG)
+CSRF_COOKIE_SECURE = env_bool("CSRF_COOKIE_SECURE", not DEBUG)
+SECURE_SSL_REDIRECT = env_bool("SECURE_SSL_REDIRECT", False)
+SECURE_HSTS_SECONDS = int(os.getenv("SECURE_HSTS_SECONDS", "0" if DEBUG else "31536000"))
+SECURE_HSTS_INCLUDE_SUBDOMAINS = env_bool("SECURE_HSTS_INCLUDE_SUBDOMAINS", not DEBUG)
+SECURE_HSTS_PRELOAD = env_bool("SECURE_HSTS_PRELOAD", False)
+SECURE_PROXY_SSL_HEADER = ("HTTP_X_FORWARDED_PROTO", "https") if env_bool("USE_X_FORWARDED_PROTO", False) else None
+X_FRAME_OPTIONS = os.getenv("X_FRAME_OPTIONS", "DENY")
 
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 
 LOGIN_URL = 'login'
 LOGIN_REDIRECT_URL = 'relatorios:dashboard'
 LOGOUT_REDIRECT_URL = 'login'
+
+PDV_NUVEM_REQUER_APROVACAO = env_bool("PDV_NUVEM_REQUER_APROVACAO", False)
+FISCAL_CERTIFICATE_KEY = os.getenv("FISCAL_CERTIFICATE_KEY", SECRET_KEY)
+
+LOG_LEVEL = os.getenv("LOG_LEVEL", "INFO")
+LOG_DIR = env_path("LOG_DIR", BASE_DIR / "logs")
+LOG_DIR.mkdir(parents=True, exist_ok=True)
+
+LOGGING = {
+    "version": 1,
+    "disable_existing_loggers": False,
+    "formatters": {
+        "padrao": {
+            "format": "[{levelname}] {asctime} {name}: {message}",
+            "style": "{",
+        }
+    },
+    "handlers": {
+        "console": {
+            "class": "logging.StreamHandler",
+            "formatter": "padrao",
+        },
+        "arquivo": {
+            "class": "logging.handlers.RotatingFileHandler",
+            "filename": LOG_DIR / "supermercado.log",
+            "maxBytes": int(os.getenv("LOG_MAX_BYTES", "10485760")),
+            "backupCount": int(os.getenv("LOG_BACKUP_COUNT", "5")),
+            "formatter": "padrao",
+            "encoding": "utf-8",
+        },
+    },
+    "root": {
+        "handlers": ["console", "arquivo"],
+        "level": LOG_LEVEL,
+    },
+    "loggers": {
+        "django.security": {
+            "handlers": ["console", "arquivo"],
+            "level": "WARNING",
+            "propagate": False,
+        },
+    },
+}

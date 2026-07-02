@@ -3,11 +3,14 @@ from django.contrib.auth.mixins import LoginRequiredMixin
 from django.urls import reverse_lazy
 from django.views.generic import CreateView, ListView, UpdateView
 
+from apps.accounts.permissions import CADASTROS, RoleRequiredMixin
+
 from .forms import PromocaoProdutoForm
 from .models import PromocaoProduto
 
 
-class PromocaoListView(LoginRequiredMixin, ListView):
+class PromocaoListView(LoginRequiredMixin, RoleRequiredMixin, ListView):
+    required_roles = CADASTROS
     model = PromocaoProduto
     template_name = "promocoes/promocao_list.html"
     context_object_name = "promocoes"
@@ -21,7 +24,8 @@ class PromocaoListView(LoginRequiredMixin, ListView):
         return queryset
 
 
-class PromocaoCreateView(LoginRequiredMixin, CreateView):
+class PromocaoCreateView(LoginRequiredMixin, RoleRequiredMixin, CreateView):
+    required_roles = CADASTROS
     model = PromocaoProduto
     form_class = PromocaoProdutoForm
     template_name = "promocoes/promocao_form.html"
@@ -33,7 +37,8 @@ class PromocaoCreateView(LoginRequiredMixin, CreateView):
         return super().form_valid(form)
 
 
-class PromocaoUpdateView(LoginRequiredMixin, UpdateView):
+class PromocaoUpdateView(LoginRequiredMixin, RoleRequiredMixin, UpdateView):
+    required_roles = CADASTROS
     model = PromocaoProduto
     form_class = PromocaoProdutoForm
     template_name = "promocoes/promocao_form.html"

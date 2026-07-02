@@ -1,0 +1,75 @@
+{% extends "base.html" %}
+
+{% block title %}Acessos PDV em nuvem{% endblock %}
+
+{% block content %}
+<header class="page-header">
+  <div>
+    <h1>Acessos PDV em nuvem</h1>
+    <p>Aprove ou recuse operadores que tentaram entrar no caixa pela nuvem.</p>
+  </div>
+  <a class="secondary-button" href="{% url 'pdv:caixas' %}"><i class="fa-solid fa-vault"></i> Caixas</a>
+</header>
+
+<section class="metrics-grid">
+  <article class="metric"><span>Pendentes</span><strong>{{ resumo.pendentes }}</strong></article>
+  <article class="metric"><span>Aprovados</span><strong>{{ resumo.aprovados }}</strong></article>
+  <article class="metric"><span>Recusados</span><strong>{{ resumo.recusados }}</strong></article>
+</section>
+
+{% if resumo.pendentes %}
+<section class="operation-notice operation-notice-warning">
+  <i class="fa-solid fa-bell"></i>
+  <div>
+    <strong>Ha operador aguardando liberacao do PDV em nuvem.</strong>
+    <span>Analise a filial, o horario e o IP antes de aprovar o acesso ao caixa.</span>
+  </div>
+</section>
+{% endif %}
+
+<section class="panel mt-panel">
+  <div class="panel-title">Solicitacoes pendentes</div>
+  <div class="cloud-access-list">
+    {% for acesso in pendentes %}
+      <article class="cloud-access-card">
+        <div>
+          <strong>{{ acesso.usuario.username }}</strong>
+          <span>{{ acesso.filial|default:"Sem filial vinculada" }} - {{ acesso.criado_em|date:"d/m/Y H:i" }}</span>
+          <small>IP {{ acesso.ip|default:"-" }}{% if acesso.user_agent %} - {{ acesso.user_agent|truncatechars:80 }}{% endif %}</small>
+        </div>
+        <form method="post" action="{% url 'pdv:decidir_acesso_pdv_nuvem' acesso.id %}" class="cloud-access-actions">
+          {% csrf_token %}
+          <input type="text" name="justificativa" placeholder="Observacao opcional">
+          <button class="secondary-button danger-button" type="submit" name="acao" value="recusar"><i class="fa-solid fa-ban"></i> Recusar</button>
+          <button class="primary-button" type="submit" name="acao" value="aprovar"><i class="fa-solid fa-check"></i> Aprovar</button>
+        </form>
+      </article>
+    {% empty %}
+      <div class="empty">Nenhuma solicitacao pendente.</div>
+    {% endfor %}
+  </div>
+</section>
+
+<section class="panel mt-panel">
+  <div class="panel-title">Historico recente</div>
+  <table>
+    <thead>
+      <tr><th>Operador</th><th>Filial</th><th>Status</th><th>Decidido por</th><th>Data</th><th>Observacao</th></tr>
+    </thead>
+    <tbody>
+      {% for acesso in historico %}
+        <tr>
+          <td>{{ acesso.usuario.username }}</td>
+          <td>{{ acesso.filial|default:"-" }}</td>
+          <td><span class="status {% if acesso.status == 'APROVADO' %}status-success{% elif acesso.status == 'RECUSADO' %}status-danger{% else %}status-muted{% endif %}">{{ acesso.get_status_display }}</span></td>
+          <td>{{ acesso.decidido_por|default:"-" }}</td>
+          <td>{{ acesso.decidido_em|date:"d/m/Y H:i"|default:"-" }}</td>
+          <td>{{ acesso.justificativa|default:"-" }}</td>
+        </tr>
+      {% empty %}
+        <tr><td colspan="6" class="empty">Nenhuma decisao registrada.</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</section>
+{% endblock %}

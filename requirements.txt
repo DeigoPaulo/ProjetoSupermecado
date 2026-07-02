@@ -3,3 +3,4 @@ djangorestframework==3.17.1
 psycopg[binary]==3.3.4
 python-dotenv==1.2.2
 Pillow==12.2.0
+cryptography==49.0.0

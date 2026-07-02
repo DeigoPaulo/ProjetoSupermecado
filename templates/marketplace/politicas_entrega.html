@@ -1,0 +1,60 @@
+{% extends "base.html" %}
+{% block title %}Politicas de entrega{% endblock %}
+{% block content %}
+<header class="page-header">
+  <div>
+    <h1>Politicas de entrega</h1>
+    <p>Raio, pedido minimo, frete gratis e faixas configuradas por filial.</p>
+  </div>
+  <div class="actions">
+    <a class="secondary-button" href="{% url 'marketplace:pedidos' %}"><i class="fa-solid fa-cart-shopping"></i> Pedidos</a>
+    <a class="primary-button" href="{% url 'marketplace:nova_politica_entrega' %}"><i class="fa-solid fa-plus"></i> Nova politica</a>
+  </div>
+</header>
+
+<section class="delivery-policy-grid">
+  {% for politica in politicas %}
+    <article class="delivery-policy-card">
+      <div class="delivery-policy-head">
+        <div>
+          <span class="eyebrow">Filial</span>
+          <h2>{{ politica.filial }}</h2>
+        </div>
+        <span class="status {% if politica.is_active %}status-success{% else %}status-muted{% endif %}">{{ politica.is_active|yesno:"Ativa,Inativa" }}</span>
+      </div>
+
+      <div class="delivery-policy-metrics">
+        <div><span>Raio</span><strong>{{ politica.raio_maximo_km }} km</strong></div>
+        <div><span>Pedido minimo</span><strong>R$ {{ politica.valor_minimo_pedido|floatformat:2 }}</strong></div>
+        <div><span>Frete gratis</span><strong>{% if politica.frete_gratis_acima is not None %}R$ {{ politica.frete_gratis_acima|floatformat:2 }}{% else %}-{% endif %}</strong></div>
+      </div>
+
+      <div class="delivery-rules">
+        {% if politica.bairros_atendidos %}<p><i class="fa-solid fa-location-dot"></i> Atende: {{ politica.bairros_atendidos }}</p>{% endif %}
+        {% if politica.bairros_bloqueados %}<p><i class="fa-solid fa-ban"></i> Bloqueia: {{ politica.bairros_bloqueados }}</p>{% endif %}
+        {% if politica.horarios_entrega %}<p><i class="fa-solid fa-clock"></i> {{ politica.horarios_entrega }}</p>{% endif %}
+      </div>
+
+      <div class="delivery-band-list">
+        {% for faixa in politica.faixas.all %}
+          <span>{{ faixa.distancia_inicial_km }}-{{ faixa.distancia_final_km }} km: R$ {{ faixa.taxa|floatformat:2 }}</span>
+        {% empty %}
+          <span>Nenhuma faixa cadastrada</span>
+        {% endfor %}
+      </div>
+
+      <div class="card-actions">
+        <span>{{ politica.permite_retirada|yesno:"Permite retirada,Nao permite retirada" }}</span>
+        <a class="secondary-button" href="{% url 'marketplace:editar_politica_entrega' politica.pk %}"><i class="fa-solid fa-pen"></i> Editar</a>
+      </div>
+    </article>
+  {% empty %}
+    <article class="panel empty-state">
+      <i class="fa-solid fa-truck-fast"></i>
+      <strong>Nenhuma politica de entrega configurada.</strong>
+      <span>Crie uma regra por filial para controlar raio, pedido minimo, taxa e frete gratis.</span>
+      <a class="primary-button" href="{% url 'marketplace:nova_politica_entrega' %}">Criar primeira politica</a>
+    </article>
+  {% endfor %}
+</section>
+{% endblock %}

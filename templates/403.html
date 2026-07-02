@@ -1,0 +1,36 @@
+{% load static %}
+<!doctype html>
+<html lang="pt-br">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Acesso negado</title>
+  <link rel="stylesheet" href="{% static 'css/bootstrap.min.css' %}">
+  <link rel="stylesheet" href="{% static 'fontawesome/css/all.min.css' %}">
+  <link rel="stylesheet" href="{% static 'css/custom.css' %}">
+</head>
+<body>
+  <main class="login-page">
+    <section class="login-panel text-center">
+      <i class="fa-solid fa-shield-halved fs-1 text-primary"></i>
+      <h1>Acesso negado</h1>
+      <p class="text-muted">Seu perfil nao tem permissao para abrir esta area.</p>
+      <div class="access-actions">
+        {% if access.pdv %}
+          <a href="{% url 'pdv:pdv' %}" class="primary-button">Ir para o PDV</a>
+        {% endif %}
+        {% if access.estoque %}
+          <a href="{% url 'estoque:lista' %}" class="secondary-button">Ir para estoque</a>
+        {% endif %}
+        {% if access.compras %}
+          <a href="{% url 'compras:lista' %}" class="secondary-button">Ir para compras</a>
+        {% endif %}
+        {% if access.relatorios %}
+          <a href="{% url 'relatorios:dashboard' %}" class="primary-button">Ir para dashboard</a>
+        {% endif %}
+        <button type="button" class="secondary-button" onclick="history.back()">Voltar</button>
+      </div>
+    </section>
+  </main>
+</body>
+</html>

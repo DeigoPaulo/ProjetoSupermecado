@@ -1,0 +1,63 @@
+{% extends "base.html" %}
+
+{% block title %}Fluxo de caixa{% endblock %}
+
+{% block content %}
+<header class="page-header">
+  <div>
+    <h1>Fluxo de caixa</h1>
+    <p>Previsao e realizacao diaria de entradas e saidas financeiras.</p>
+  </div>
+  <div class="actions">
+    <a class="secondary-button" href="{% url 'financeiro:fluxo_caixa_csv' %}?data_inicio={{ data_inicio|date:'Y-m-d' }}&amp;data_fim={{ data_fim|date:'Y-m-d' }}"><i class="fa-solid fa-file-csv"></i> Excel/CSV</a>
+    <a class="secondary-button" href="{% url 'financeiro:conciliacao' %}">Conciliacao</a>
+    <a class="secondary-button" href="{% url 'financeiro:contas' %}">Contas</a>
+  </div>
+</header>
+
+<form method="get" class="toolbar report-filter">
+  <label><span>Inicio</span><input type="date" name="data_inicio" value="{{ data_inicio|date:'Y-m-d' }}"></label>
+  <label><span>Fim</span><input type="date" name="data_fim" value="{{ data_fim|date:'Y-m-d' }}"></label>
+  <button type="submit">Filtrar</button>
+</form>
+
+<section class="metrics-grid">
+  <article class="metric"><span>Previsto receber</span><strong>R$ {{ total_previsto_receber|floatformat:2 }}</strong></article>
+  <article class="metric"><span>Previsto pagar</span><strong>R$ {{ total_previsto_pagar|floatformat:2 }}</strong></article>
+  <article class="metric"><span>Saldo previsto</span><strong>R$ {{ saldo_previsto|floatformat:2 }}</strong></article>
+  <article class="metric"><span>Saldo realizado</span><strong>R$ {{ saldo_realizado|floatformat:2 }}</strong></article>
+</section>
+
+<section class="panel">
+  <div class="table-wrapper">
+    <table>
+      <thead>
+        <tr>
+          <th>Data</th>
+          <th>Previsto receber</th>
+          <th>Previsto pagar</th>
+          <th>Saldo previsto</th>
+          <th>Realizado receber</th>
+          <th>Realizado pagar</th>
+          <th>Saldo realizado</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for linha in linhas %}
+          <tr>
+            <td>{{ linha.data|date:"d/m/Y" }}</td>
+            <td>R$ {{ linha.previsto_receber|floatformat:2 }}</td>
+            <td>R$ {{ linha.previsto_pagar|floatformat:2 }}</td>
+            <td><strong>R$ {{ linha.saldo_previsto|floatformat:2 }}</strong></td>
+            <td>R$ {{ linha.realizado_receber|floatformat:2 }}</td>
+            <td>R$ {{ linha.realizado_pagar|floatformat:2 }}</td>
+            <td><strong>R$ {{ linha.saldo_realizado|floatformat:2 }}</strong></td>
+          </tr>
+        {% empty %}
+          <tr><td colspan="7" class="empty">Nenhum movimento no periodo.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</section>
+{% endblock %}

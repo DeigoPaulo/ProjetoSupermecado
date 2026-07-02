@@ -1,0 +1,112 @@
+{% extends "base.html" %}
+
+{% block title %}Documento fiscal {{ documento.serie }}/{{ documento.numero|default:"-" }}{% endblock %}
+
+{% block content %}
+<header class="page-header">
+  <div>
+    <h1>{{ documento.get_tipo_documento_display }} {{ documento.serie }}/{{ documento.numero|default:"-" }}</h1>
+    <p>Espelho de conferencia do documento fiscal antes da transmissao oficial.</p>
+  </div>
+  <div class="actions">
+    <a class="secondary-button" href="{% url 'fiscal:documentos' %}">Voltar</a>
+    {% if not imprimir %}
+      <a class="primary-button" href="{% url 'fiscal:imprimir' documento.pk %}" target="_blank"><i class="fa-solid fa-print"></i> Imprimir</a>
+      <a class="secondary-button" href="{% url 'fiscal:baixar_xml' documento.pk %}"><i class="fa-solid fa-code"></i> Baixar XML</a>
+    {% else %}
+      <button class="primary-button" type="button" onclick="window.print()"><i class="fa-solid fa-print"></i> Imprimir</button>
+    {% endif %}
+  </div>
+</header>
+
+<section class="metrics-grid">
+  <article class="metric"><span>Status</span><strong>{{ documento.get_status_display }}</strong></article>
+  <article class="metric"><span>Ambiente</span><strong>{{ documento.get_ambiente_display }}</strong></article>
+  <article class="metric"><span>Total</span><strong>R$ {{ documento.valor_total|floatformat:2 }}</strong></article>
+  <article class="metric"><span>Venda</span><strong>{% if documento.venda %}#{{ documento.venda_id }}{% else %}-{% endif %}</strong></article>
+</section>
+
+<section class="split-grid">
+  <article class="panel">
+    <h2>Emitente</h2>
+    <p><strong>{{ documento.filial.empresa.nome_fantasia|default:documento.filial.empresa.razao_social }}</strong></p>
+    <p>CNPJ: {{ documento.filial.cnpj|default:documento.filial.empresa.cnpj }}</p>
+    <p>Filial: {{ documento.filial }}</p>
+  </article>
+  <article class="panel">
+    <h2>Documento</h2>
+    <p>Natureza: {{ documento.natureza_operacao|default:"Nao informada" }}</p>
+    <p>Chave: {{ documento.chave_acesso|default:"Aguardando transmissao" }}</p>
+    <p>Protocolo: {{ documento.protocolo|default:"Aguardando transmissao" }}</p>
+    <p>XML: {% if documento.xml_gerado_em %}Gerado em {{ documento.xml_gerado_em|date:"d/m/Y H:i" }}{% else %}Aguardando geracao{% endif %}</p>
+    {% if documento.mensagem_retorno %}<p>{{ documento.mensagem_retorno }}</p>{% endif %}
+  </article>
+</section>
+
+{% if documento.venda %}
+<section class="panel">
+  <h2>Itens da venda</h2>
+  <div class="table-wrapper">
+    <table>
+      <thead>
+        <tr>
+          <th>Produto</th>
+          <th>Codigo</th>
+          <th>Qtd</th>
+          <th>Unitario</th>
+          <th>Desconto</th>
+          <th>Total</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for item in documento.venda.itens.all %}
+          <tr>
+            <td><strong>{{ item.produto.nome }}</strong></td>
+            <td>{{ item.produto.codigo_barras }}</td>
+            <td>{{ item.quantidade|floatformat:3 }} {{ item.produto.unidade }}</td>
+            <td>R$ {{ item.preco_unitario_venda|floatformat:2 }}</td>
+            <td>R$ {{ item.desconto|floatformat:2 }}</td>
+            <td><strong>R$ {{ item.total|floatformat:2 }}</strong></td>
+          </tr>
+        {% empty %}
+          <tr><td colspan="6" class="empty">Venda sem itens registrados.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</section>
+
+<section class="split-grid">
+  <article class="panel">
+    <h2>Pagamentos</h2>
+    <div class="table-wrapper">
+      <table>
+        <thead><tr><th>Forma</th><th>Status</th><th>Valor</th></tr></thead>
+        <tbody>
+          {% for pagamento in documento.venda.pagamentos.all %}
+            <tr>
+              <td>{{ pagamento.forma_pagamento.nome }}</td>
+              <td>{{ pagamento.status }}</td>
+              <td>R$ {{ pagamento.valor|floatformat:2 }}</td>
+            </tr>
+          {% empty %}
+            <tr><td colspan="3" class="empty">Nenhum pagamento registrado.</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </article>
+  <article class="panel">
+    <h2>Resumo da venda</h2>
+    <p>Cliente: {{ documento.venda.cliente|default:"Cliente avulso" }}</p>
+    <p>Subtotal: R$ {{ documento.venda.total_bruto|floatformat:2 }}</p>
+    <p>Desconto: R$ {{ documento.venda.desconto|floatformat:2 }}</p>
+    <p><strong>Total: R$ {{ documento.venda.total_liquido|floatformat:2 }}</strong></p>
+  </article>
+</section>
+{% endif %}
+
+{% if imprimir %}
+  <script>window.addEventListener("load", function () { window.print(); });</script>
+{% endif %}
+{% endblock %}

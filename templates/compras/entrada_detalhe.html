@@ -11,10 +11,6 @@
   <div class="actions">
     {% if entrada.status == "RASCUNHO" %}
       <a class="secondary-button" href="{% url 'compras:editar' entrada.pk %}">Editar</a>
-      <form method="post" action="{% url 'compras:finalizar' entrada.pk %}" class="form-confirm inline-form" data-msg="Finalizar esta entrada e atualizar o estoque?">
-        {% csrf_token %}
-        <button class="primary-button" type="submit">Finalizar entrada</button>
-      </form>
     {% endif %}
     <a class="secondary-button" href="{% url 'compras:lista' %}">Voltar</a>
   </div>
@@ -24,8 +20,42 @@
   <article class="metric"><span>Status</span><strong>{{ entrada.status }}</strong></article>
   <article class="metric"><span>Total</span><strong>R$ {{ entrada.total_produtos|floatformat:2 }}</strong></article>
   <article class="metric"><span>Documento</span><strong>{{ entrada.numero_documento|default:"-" }}</strong></article>
-  <article class="metric"><span>Recebimento</span><strong>{{ entrada.data_recebimento|date:"d/m H:i" }}</strong></article>
+  <article class="metric"><span>Vencimento</span><strong>{{ entrada.vencimento_financeiro|date:"d/m/Y"|default:"Ao finalizar" }}</strong></article>
 </section>
+
+{% if entrada.contas_financeiras.exists %}
+  <section class="panel mt-panel">
+    <div class="panel-title">Financeiro vinculado</div>
+    <table>
+      <thead><tr><th>Conta</th><th>Status</th><th>Vencimento</th><th>Valor</th><th></th></tr></thead>
+      <tbody>
+        {% for conta in entrada.contas_financeiras.all %}
+          <tr>
+            <td>{{ conta.descricao }}</td>
+            <td><span class="status {% if conta.status == 'PAGA' %}status-success{% elif conta.status == 'CANCELADA' %}status-muted{% endif %}">{{ conta.get_status_display }}</span></td>
+            <td>{{ conta.vencimento|date:"d/m/Y" }}</td>
+            <td>R$ {{ conta.valor|floatformat:2 }}</td>
+            <td><a class="secondary-button" href="{% url 'financeiro:contas' %}?q={{ conta.descricao }}">Abrir financeiro</a></td>
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </section>
+{% endif %}
+
+{% if entrada.status == "RASCUNHO" %}
+  <section class="panel mt-panel">
+    <div class="panel-title">Finalizar entrada</div>
+    <form method="post" action="{% url 'compras:finalizar' entrada.pk %}" class="form-grid form-confirm" data-msg="Finalizar esta entrada e atualizar o estoque?">
+      {% csrf_token %}
+      <label class="form-field"><span>Supervisor ou admin</span><input type="text" name="supervisor_usuario" autocomplete="username" required></label>
+      <label class="form-field"><span>Senha</span><input type="password" name="supervisor_senha" autocomplete="current-password" required></label>
+      <div class="form-actions">
+        <button class="primary-button" type="submit">Finalizar entrada</button>
+      </div>
+    </form>
+  </section>
+{% endif %}
 
 <div class="panel">
   <div class="panel-title">Itens recebidos</div>

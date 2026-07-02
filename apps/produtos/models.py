@@ -49,6 +49,18 @@ class UnidadeMedida(models.TextChoices):
     METRO = "M", "Metro"
 
 
+class OrigemMercadoria(models.TextChoices):
+    NACIONAL = "0", "0 - Nacional"
+    ESTRANGEIRA_IMPORTACAO_DIRETA = "1", "1 - Estrangeira, importacao direta"
+    ESTRANGEIRA_MERCADO_INTERNO = "2", "2 - Estrangeira, adquirida no mercado interno"
+    NACIONAL_CONTEUDO_IMPORTACAO_SUPERIOR_40 = "3", "3 - Nacional, conteudo importado superior a 40%"
+    NACIONAL_PROCESSOS_BASICOS = "4", "4 - Nacional, processos produtivos basicos"
+    NACIONAL_CONTEUDO_IMPORTACAO_INFERIOR_40 = "5", "5 - Nacional, conteudo importado ate 40%"
+    ESTRANGEIRA_SEM_SIMILAR = "6", "6 - Estrangeira, sem similar nacional"
+    ESTRANGEIRA_MERCADO_INTERNO_SEM_SIMILAR = "7", "7 - Estrangeira interna, sem similar nacional"
+    NACIONAL_CONTEUDO_IMPORTACAO_SUPERIOR_70 = "8", "8 - Nacional, conteudo importado superior a 70%"
+
+
 class Produto(models.Model):
     codigo_barras = models.CharField(max_length=80, unique=True)
     codigo_interno = models.CharField(max_length=80, blank=True)
@@ -65,6 +77,12 @@ class Produto(models.Model):
     vendido_no_pdv = models.BooleanField(default=True)
     vendido_no_marketplace = models.BooleanField(default=False)
     imagem = models.ImageField(upload_to="produtos/", blank=True, null=True)
+    ncm = models.CharField("NCM", max_length=8, blank=True)
+    cest = models.CharField("CEST", max_length=7, blank=True)
+    origem_mercadoria = models.CharField(max_length=1, choices=OrigemMercadoria.choices, blank=True)
+    cst_icms = models.CharField("CST ICMS", max_length=2, blank=True)
+    csosn = models.CharField("CSOSN", max_length=3, blank=True)
+    aliquota_icms = models.DecimalField("Aliquota ICMS (%)", max_digits=5, decimal_places=2, null=True, blank=True)
     is_active = models.BooleanField(default=True)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)

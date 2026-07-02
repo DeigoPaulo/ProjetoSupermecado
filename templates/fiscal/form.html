@@ -1,0 +1,32 @@
+{% extends "base.html" %}
+
+{% block title %}{{ titulo }}{% endblock %}
+
+{% block content %}
+<header class="page-header">
+  <div>
+    <h1>{{ titulo }}</h1>
+    <p>Parametros usados na preparacao fiscal da loja.</p>
+  </div>
+  <div class="actions">
+    <a class="secondary-button" href="{% url 'fiscal:documentos' %}">Voltar</a>
+  </div>
+</header>
+
+<section class="panel">
+  <form method="post" enctype="multipart/form-data" class="form-grid">
+    {% csrf_token %}
+    {% if form.instance.pk and form.instance.certificado_configurado %}
+      <div class="form-note">
+        <strong>Certificado atual:</strong> {{ form.instance.certificado_nome }}
+        {% if form.instance.certificado_validade %} - valido ate {{ form.instance.certificado_validade|date:"d/m/Y" }}{% endif %}
+      </div>
+    {% endif %}
+    {{ form.as_p }}
+    <div class="form-actions">
+      <button type="submit" class="primary-button">Salvar</button>
+      <a class="secondary-button" href="{% url 'fiscal:documentos' %}">Cancelar</a>
+    </div>
+  </form>
+</section>
+{% endblock %}

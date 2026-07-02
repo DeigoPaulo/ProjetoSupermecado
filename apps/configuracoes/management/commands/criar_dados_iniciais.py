@@ -1,5 +1,6 @@
 from django.core.management.base import BaseCommand
 
+from apps.configuracoes.services import criar_configuracoes_padrao
 from apps.empresas.models import Empresa, Filial
 from apps.produtos.models import Categoria, Marca
 from apps.vendas.models import FormaPagamento
@@ -27,6 +28,9 @@ class Command(BaseCommand):
                 "cnpj": empresa.cnpj,
                 "telefone": empresa.telefone,
                 "endereco": empresa.endereco,
+                "municipio": "Sao Paulo",
+                "uf": "SP",
+                "codigo_municipio_ibge": "3550308",
             },
         )
 
@@ -50,6 +54,7 @@ class Command(BaseCommand):
             ("Pix", "PIX", False, False),
             ("Cartao de debito", "DEBITO", False, True),
             ("Cartao de credito", "CREDITO", False, True),
+            ("Crediario", "CREDIARIO", False, True),
         ]
         for nome, tipo, permite_troco, exige_autorizacao in formas:
             FormaPagamento.objects.get_or_create(
@@ -60,5 +65,7 @@ class Command(BaseCommand):
                     "exige_autorizacao": exige_autorizacao,
                 },
             )
+
+        criar_configuracoes_padrao()
 
         self.stdout.write(self.style.SUCCESS("Dados iniciais criados/atualizados."))

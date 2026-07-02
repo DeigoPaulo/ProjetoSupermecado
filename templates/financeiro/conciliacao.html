@@ -1,0 +1,59 @@
+{% extends "base.html" %}
+
+{% block title %}Conciliação financeira{% endblock %}
+
+{% block content %}
+<header class="page-header">
+  <div>
+    <h1>Conciliação financeira</h1>
+    <p>Compare entradas do PDV, recebimentos e saidas financeiras baixadas.</p>
+  </div>
+  <div class="actions">
+    <a class="secondary-button" href="{% url 'financeiro:conciliacao_csv' %}?data_inicio={{ data_inicio|date:'Y-m-d' }}&amp;data_fim={{ data_fim|date:'Y-m-d' }}"><i class="fa-solid fa-file-csv"></i> Excel/CSV</a>
+    <a class="secondary-button" href="{% url 'financeiro:fluxo_caixa' %}">Fluxo</a>
+    <a class="secondary-button" href="{% url 'financeiro:contas' %}">Contas</a>
+  </div>
+</header>
+
+<form method="get" class="toolbar report-filter">
+  <label><span>Inicio</span><input type="date" name="data_inicio" value="{{ data_inicio|date:'Y-m-d' }}"></label>
+  <label><span>Fim</span><input type="date" name="data_fim" value="{{ data_fim|date:'Y-m-d' }}"></label>
+  <button type="submit">Filtrar</button>
+</form>
+
+<section class="metrics-grid">
+  <article class="metric"><span>Entradas PDV</span><strong>R$ {{ total_entradas_pdv|floatformat:2 }}</strong></article>
+  <article class="metric"><span>Recebimentos financeiros</span><strong>R$ {{ total_recebimentos_financeiros|floatformat:2 }}</strong></article>
+  <article class="metric"><span>Saidas financeiras</span><strong>R$ {{ total_saidas_financeiras|floatformat:2 }}</strong></article>
+  <article class="metric"><span>Saldo operacional</span><strong>R$ {{ saldo_operacional|floatformat:2 }}</strong></article>
+</section>
+
+<section class="panel">
+  <div class="table-wrapper">
+    <table>
+      <thead>
+        <tr>
+          <th>Data</th>
+          <th>Entradas PDV</th>
+          <th>Recebimentos financeiros</th>
+          <th>Saidas financeiras</th>
+          <th>Saldo operacional</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for linha in linhas %}
+          <tr>
+            <td>{{ linha.data|date:"d/m/Y" }}</td>
+            <td>R$ {{ linha.entradas_pdv|floatformat:2 }}</td>
+            <td>R$ {{ linha.recebimentos_financeiros|floatformat:2 }}</td>
+            <td>R$ {{ linha.saidas_financeiras|floatformat:2 }}</td>
+            <td><strong>R$ {{ linha.saldo_operacional|floatformat:2 }}</strong></td>
+          </tr>
+        {% empty %}
+          <tr><td colspan="5" class="empty">Nenhum movimento no periodo.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</section>
+{% endblock %}

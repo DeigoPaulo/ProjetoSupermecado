@@ -9,6 +9,8 @@
     <p>Aberturas, fechamentos e totais do periodo.</p>
   </div>
   <div class="actions">
+    <a class="secondary-button" href="{% url 'relatorios:caixas_csv' %}?data_inicio={{ data_inicio|date:'Y-m-d' }}&amp;data_fim={{ data_fim|date:'Y-m-d' }}"><i class="fa-solid fa-file-csv"></i> Excel/CSV</a>
+    <a class="secondary-button" href="{% url 'relatorios:caixas_imprimir' %}?data_inicio={{ data_inicio|date:'Y-m-d' }}&amp;data_fim={{ data_fim|date:'Y-m-d' }}" target="_blank"><i class="fa-solid fa-file-pdf"></i> PDF</a>
     <a class="secondary-button" href="{% url 'relatorios:vendas' %}">Vendas</a>
     <a class="secondary-button" href="{% url 'pdv:caixas' %}">Gerenciar caixas</a>
   </div>
@@ -18,28 +20,49 @@
 
 <section class="metrics-grid">
   <article class="metric"><span>Abertos</span><strong>{{ caixas_abertos }}</strong></article>
-  <article class="metric"><span>Fechados</span><strong>{{ caixas_fechados }}</strong></article>
+  <article class="metric"><span>Aguardando conferencia</span><strong>{{ caixas_fechados }}</strong></article>
+  <article class="metric"><span>Conferidos</span><strong>{{ caixas_conferidos }}</strong></article>
   <article class="metric"><span>Valor inicial</span><strong>R$ {{ valor_inicial_total|floatformat:2 }}</strong></article>
-  <article class="metric"><span>Valor final</span><strong>R$ {{ valor_final_total|floatformat:2 }}</strong></article>
+  <article class="metric"><span>Declarado</span><strong>R$ {{ valor_final_total|floatformat:2 }}</strong></article>
+  <article class="metric"><span>Conferido</span><strong>R$ {{ valor_conferido_total|floatformat:2 }}</strong></article>
 </section>
 
 <div class="panel">
   <table>
-    <thead><tr><th>ID</th><th>Filial</th><th>Operador</th><th>Abertura</th><th>Fechamento</th><th>Inicial</th><th>Final</th><th>Status</th></tr></thead>
+    <thead><tr><th>ID</th><th>Filial</th><th>Operador</th><th>Conferente</th><th>Abertura</th><th>Fechamento</th><th>Inicial</th><th>Declarado</th><th>Conferido</th><th>Status</th></tr></thead>
     <tbody>
       {% for caixa in caixas %}
         <tr>
           <td>{{ caixa.id }}</td>
           <td>{{ caixa.filial }}</td>
           <td>{{ caixa.usuario_abertura }}</td>
+          <td>{{ caixa.usuario_conferencia|default:"-" }}</td>
           <td>{{ caixa.data_abertura|date:"d/m/Y H:i" }}</td>
           <td>{{ caixa.data_fechamento|date:"d/m/Y H:i"|default:"-" }}</td>
           <td>R$ {{ caixa.valor_inicial|floatformat:2 }}</td>
-          <td>R$ {{ caixa.valor_final|floatformat:2 }}</td>
+          <td>{% if caixa.valor_final is not None %}R$ {{ caixa.valor_final|floatformat:2 }}{% else %}-{% endif %}</td>
+          <td>{% if caixa.valor_conferido is not None %}R$ {{ caixa.valor_conferido|floatformat:2 }}{% else %}-{% endif %}</td>
           <td><span class="status">{{ caixa.status }}</span></td>
         </tr>
       {% empty %}
-        <tr><td colspan="8" class="empty">Nenhum caixa no periodo.</td></tr>
+        <tr><td colspan="10" class="empty">Nenhum caixa no periodo.</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+
+<div class="panel mt-panel">
+  <div class="panel-title">Pagamentos por forma</div>
+  <table>
+    <thead><tr><th>Forma</th><th>Total</th></tr></thead>
+    <tbody>
+      {% for item in pagamentos_por_forma %}
+        <tr>
+          <td>{{ item.forma_pagamento__nome }}</td>
+          <td><strong>R$ {{ item.total|floatformat:2 }}</strong></td>
+        </tr>
+      {% empty %}
+        <tr><td colspan="2" class="empty">Nenhum pagamento no periodo.</td></tr>
       {% endfor %}
     </tbody>
   </table>

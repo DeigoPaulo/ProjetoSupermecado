@@ -1,0 +1,68 @@
+{% extends "base.html" %}
+
+{% block title %}Devolucao venda {{ venda.id }}{% endblock %}
+
+{% block content %}
+<header class="page-header">
+  <div>
+    <h1>Devolucao venda {{ venda.id }}</h1>
+    <p>Informe somente as quantidades que serao devolvidas ao estoque.</p>
+  </div>
+  <div class="actions">
+    <a class="secondary-button" href="{% url 'pdv:venda_detalhe' venda.id %}">Voltar</a>
+  </div>
+</header>
+
+<form method="post" class="panel purchase-form">
+  {% csrf_token %}
+  <div class="purchase-head compact-form">
+    <label class="form-field">
+      <span>Motivo</span>
+      <input type="text" name="motivo" maxlength="255" required placeholder="Ex: troca, arrependimento, avaria">
+    </label>
+    <label class="form-field">
+      <span>Supervisor</span>
+      <input type="text" name="supervisor_usuario" required placeholder="Usuario supervisor">
+    </label>
+    <label class="form-field">
+      <span>Senha</span>
+      <input type="password" name="supervisor_senha" required placeholder="Senha do supervisor">
+    </label>
+  </div>
+
+  <div class="purchase-items">
+    {% for item in itens %}
+      <div class="purchase-item-row return-item-row">
+        <div>
+          <strong>{{ item.produto.nome }}</strong>
+          <div class="muted">{{ item.produto.codigo_barras }}</div>
+        </div>
+        <div>
+          <span class="form-help">Vendido</span>
+          <strong>{{ item.quantidade|floatformat:3 }}</strong>
+        </div>
+        <div>
+          <span class="form-help">Ja devolvido</span>
+          <strong>{{ item.quantidade_devolvida|floatformat:3 }}</strong>
+        </div>
+        <label class="form-field">
+          <span>Devolver</span>
+          <input
+            type="number"
+            name="quantidade_{{ item.id }}"
+            min="0"
+            step="0.001"
+            value="0"
+            {% if item.quantidade_disponivel_devolucao <= 0 %}disabled{% endif %}
+          >
+          <small class="form-help">Disponivel: {{ item.quantidade_disponivel_devolucao|floatformat:3 }}</small>
+        </label>
+      </div>
+    {% endfor %}
+  </div>
+
+  <div class="purchase-actions form-actions">
+    <button class="primary-button" type="submit">Registrar devolucao</button>
+  </div>
+</form>
+{% endblock %}

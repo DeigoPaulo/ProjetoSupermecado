@@ -33,8 +33,27 @@ class ProdutoForm(forms.ModelForm):
             "estoque_minimo",
             "vendido_no_pdv",
             "vendido_no_marketplace",
+            "imagem",
+            "ncm",
+            "cest",
+            "origem_mercadoria",
+            "cst_icms",
+            "csosn",
+            "aliquota_icms",
             "is_active",
         ]
+
+    def clean_ncm(self):
+        ncm = "".join(filter(str.isdigit, self.cleaned_data.get("ncm", "")))
+        if ncm and len(ncm) != 8:
+            raise forms.ValidationError("NCM deve possuir 8 digitos.")
+        return ncm
+
+    def clean_cest(self):
+        cest = "".join(filter(str.isdigit, self.cleaned_data.get("cest", "")))
+        if cest and len(cest) != 7:
+            raise forms.ValidationError("CEST deve possuir 7 digitos.")
+        return cest
 
 
 class ProdutoImportCSVForm(forms.Form):

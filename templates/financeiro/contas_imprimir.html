@@ -1,0 +1,21 @@
+<!doctype html>
+<html lang="pt-br"><head><meta charset="utf-8"><title>Financeiro</title>
+<style>
+@page{size:A4 landscape;margin:10mm}*{box-sizing:border-box}body{margin:0;color:#172033;font:9px Arial,sans-serif}header{display:flex;justify-content:space-between;gap:20px;border-bottom:2px solid #0050e8;padding-bottom:8px}h1{margin:0 0 3px;font-size:20px}p{margin:2px 0;color:#53657d}.actions{margin:9px 0;text-align:right}button{border:0;border-radius:5px;background:#0050e8;color:#fff;padding:8px 13px;font-weight:700}.summary{display:flex;gap:8px;margin:10px 0}.summary div{min-width:145px;border:1px solid #d8e1ef;padding:8px}.summary span{display:block;color:#607089}.summary strong{display:block;margin-top:3px;font-size:13px}table{width:100%;border-collapse:collapse}th,td{border:1px solid #d8e1ef;padding:5px;text-align:left}th{background:#edf3ff;font-size:8px;text-transform:uppercase}tr{break-inside:avoid}.money{text-align:right;white-space:nowrap}footer{margin-top:8px;color:#718096;text-align:right}@media print{.actions{display:none}}
+</style></head><body>
+<header><div><h1>Financeiro</h1><p>Contas por vencimento - {{ data_inicio|date:"d/m/Y" }} a {{ data_fim|date:"d/m/Y" }}</p></div><p>Gerado em {{ gerado_em|date:"d/m/Y H:i" }}</p></header>
+<div class="actions"><button type="button" onclick="window.print()">Imprimir / Salvar como PDF</button></div>
+<section class="summary">
+  <div><span>A pagar aberto</span><strong>R$ {{ total_pagar|floatformat:2 }}</strong></div>
+  <div><span>A receber aberto</span><strong>R$ {{ total_receber|floatformat:2 }}</strong></div>
+  <div><span>Saldo previsto</span><strong>R$ {{ saldo_previsto|floatformat:2 }}</strong></div>
+  <div><span>Baixado</span><strong>R$ {{ total_pago|floatformat:2 }}</strong></div>
+  <div><span>Vencidas</span><strong>{{ vencidas }}</strong></div>
+</section>
+<table><thead><tr><th>Vencimento</th><th>Tipo</th><th>Descricao</th><th>Parceiro</th><th>Status</th><th>Valor</th><th>Pagamento</th><th>Pago</th></tr></thead><tbody>
+{% for conta in contas %}
+  <tr><td>{{ conta.vencimento|date:"d/m/Y" }}</td><td>{{ conta.get_tipo_display }}</td><td>{{ conta.descricao }}</td><td>{% if conta.fornecedor %}{{ conta.fornecedor }}{% elif conta.cliente %}{{ conta.cliente }}{% else %}-{% endif %}</td><td>{{ conta.get_status_display }}</td><td class="money">R$ {{ conta.valor|floatformat:2 }}</td><td>{{ conta.data_pagamento|date:"d/m/Y"|default:"-" }}</td><td class="money">{% if conta.valor_pago is not None %}R$ {{ conta.valor_pago|floatformat:2 }}{% else %}-{% endif %}</td></tr>
+{% empty %}
+  <tr><td colspan="8">Nenhuma conta no periodo.</td></tr>
+{% endfor %}
+</tbody></table><footer>Sistema Supermercado</footer></body></html>

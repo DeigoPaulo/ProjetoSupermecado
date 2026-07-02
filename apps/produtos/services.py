@@ -135,7 +135,7 @@ def simular_reajuste_precos(*, categoria=None, marca=None, percentual, aplicar_e
 
 
 @transaction.atomic
-def aplicar_reajuste_precos(*, usuario, categoria=None, marca=None, percentual, motivo, aplicar_em_promocional=False, ip=None):
+def aplicar_reajuste_precos(*, usuario, categoria=None, marca=None, percentual, motivo, aplicar_em_promocional=False, supervisor=None, ip=None):
     produtos = list(produtos_para_reajuste(categoria=categoria, marca=marca).select_for_update())
     for produto in produtos:
         produto.preco_venda = calcular_preco_reajustado(produto.preco_venda, percentual)
@@ -151,7 +151,8 @@ def aplicar_reajuste_precos(*, usuario, categoria=None, marca=None, percentual, 
         acao="REAJUSTE_PRECO_MASSA",
         descricao=(
             f"Reajuste de {percentual}% aplicado em {len(produtos)} produto(s). "
-            f"Categoria={categoria or '-'}; Marca={marca or '-'}; Motivo={motivo}"
+            f"Categoria={categoria or '-'}; Marca={marca or '-'}; Motivo={motivo}; "
+            f"Autorizado por={supervisor or '-'}"
         ),
         objeto_tipo="Produto",
         objeto_id="lote",

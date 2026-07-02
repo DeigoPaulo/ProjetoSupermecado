@@ -1,12 +1,14 @@
 from django.core.exceptions import ValidationError
 from django.db import transaction
+from django.utils import timezone
 
+from apps.auditoria.models import LogAuditoria
 from apps.estoque.models import TipoMovimentacaoEstoque, movimentar_estoque
 
 from .models import StatusEntradaCompra
 
 
-def finalizar_entrada_compra(entrada):
+def finalizar_entrada_compra(entrada, *, supervisor=None, ip=None):
     if entrada.status != StatusEntradaCompra.RASCUNHO:
         raise ValidationError("Apenas entradas em rascunho podem ser finalizadas.")
 
@@ -44,4 +46,52 @@ def finalizar_entrada_compra(entrada):
         entrada.total_produtos = total_produtos
         entrada.status = StatusEntradaCompra.FINALIZADA
         entrada.save(update_fields=["total_produtos", "status", "updated_at"])
+        _criar_conta_pagar_compra(entrada)
+        LogAuditoria.objects.create(
+            usuario=entrada.usuario,
+            modulo="compras",
+            acao="FINALIZACAO_ENTRADA",
+            descricao=(
+                f"Entrada {entrada.id} finalizada com {len(itens)} item(ns), total R$ {total_produtos}. "
+                f"Autorizado por: {supervisor or '-'}."
+            ),
+            objeto_tipo="EntradaCompra",
+            objeto_id=str(entrada.id),
+            ip=ip,
+        )
         return entrada
+
+
+def _criar_conta_pagar_compra(entrada):
+    if not entrada.gerar_conta_financeira or entrada.total_produtos <= 0:
+        return None
+
+    from apps.financeiro.models import CategoriaFinanceira, ContaFinanceira, TipoContaFinanceira
+
+    categoria, _ = CategoriaFinanceira.objects.get_or_create(
+        nome="Compras de mercadorias",
+        defaults={"tipo": TipoContaFinanceira.PAGAR},
+    )
+    vencimento = entrada.vencimento_financeiro or entrada.data_emissao or timezone.localdate()
+    conta, criada = ContaFinanceira.objects.get_or_create(
+        entrada_compra=entrada,
+        tipo=TipoContaFinanceira.PAGAR,
+        defaults={
+            "descricao": f"Compra {entrada.id} - {entrada.fornecedor}",
+            "categoria": categoria,
+            "filial": entrada.filial,
+            "fornecedor": entrada.fornecedor,
+            "valor": entrada.total_produtos,
+            "vencimento": vencimento,
+            "usuario": entrada.usuario,
+        },
+    )
+    if not criada:
+        conta.descricao = f"Compra {entrada.id} - {entrada.fornecedor}"
+        conta.categoria = categoria
+        conta.filial = entrada.filial
+        conta.fornecedor = entrada.fornecedor
+        conta.valor = entrada.total_produtos
+        conta.vencimento = vencimento
+        conta.save(update_fields=["descricao", "categoria", "filial", "fornecedor", "valor", "vencimento", "atualizado_em"])
+    return conta

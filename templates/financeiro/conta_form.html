@@ -1,0 +1,22 @@
+{% extends "base.html" %}
+
+{% block title %}Conta financeira{% endblock %}
+
+{% block content %}
+<header class="page-header">
+  <div>
+    <h1>{% if conta %}Editar conta{% else %}Nova conta{% endif %}</h1>
+    <p>Lance contas a pagar e receber para acompanhamento financeiro.</p>
+  </div>
+  <a class="secondary-button" href="{% url 'financeiro:contas' %}">Voltar</a>
+</header>
+
+<form method="post" class="form-grid panel">
+  {% csrf_token %}
+  {% include "includes/form.html" %}
+  <div class="form-actions">
+    <a class="secondary-button" href="{% url 'financeiro:contas' %}">Cancelar</a>
+    <button class="primary-button" type="submit">Salvar</button>
+  </div>
+</form>
+{% endblock %}

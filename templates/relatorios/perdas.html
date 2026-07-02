@@ -9,6 +9,8 @@
     <p>Valor estimado perdido por vencimento, avaria, quebra e outros motivos.</p>
   </div>
   <div class="actions">
+    <a class="secondary-button" href="{% url 'relatorios:perdas_csv' %}?data_inicio={{ data_inicio|date:'Y-m-d' }}&amp;data_fim={{ data_fim|date:'Y-m-d' }}"><i class="fa-solid fa-file-csv"></i> Excel/CSV</a>
+    <a class="secondary-button" href="{% url 'relatorios:perdas_imprimir' %}?data_inicio={{ data_inicio|date:'Y-m-d' }}&amp;data_fim={{ data_fim|date:'Y-m-d' }}" target="_blank"><i class="fa-solid fa-file-pdf"></i> PDF</a>
     <a class="secondary-button" href="{% url 'estoque:perdas' %}">Lista de perdas</a>
     <a class="primary-button" href="{% url 'estoque:perda_nova' %}">Registrar perda</a>
   </div>

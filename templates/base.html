@@ -9,7 +9,7 @@
   <link rel="stylesheet" href="{% static 'fontawesome/css/all.min.css' %}">
   <link rel="stylesheet" href="{% static 'css/custom.css' %}">
 </head>
-<body>
+<body class="{% block body_class %}{% endblock %}">
   <div class="app-shell">
     {% if user.is_authenticated %}
       <aside class="sidebar">
@@ -21,20 +21,65 @@
           </div>
         </div>
         <nav class="nav-menu">
-          <a href="{% url 'relatorios:dashboard' %}"><i class="fa-solid fa-chart-line"></i> Dashboard</a>
-          <a href="{% url 'relatorios:vendas' %}"><i class="fa-solid fa-chart-simple"></i> Relatorios</a>
-          <a href="{% url 'pdv:pdv' %}"><i class="fa-solid fa-cash-register"></i> PDV</a>
-          <a href="{% url 'produtos:lista' %}"><i class="fa-solid fa-boxes-stacked"></i> Produtos</a>
-          <a href="{% url 'promocoes:lista' %}"><i class="fa-solid fa-tags"></i> Promoções</a>
-          <a href="{% url 'estoque:lista' %}"><i class="fa-solid fa-warehouse"></i> Estoque</a>
-          <a href="{% url 'estoque:inventarios' %}"><i class="fa-solid fa-clipboard-check"></i> Inventarios</a>
-          <a href="{% url 'estoque:perdas' %}"><i class="fa-solid fa-triangle-exclamation"></i> Perdas</a>
-          <a href="{% url 'clientes:lista' %}"><i class="fa-solid fa-users"></i> Clientes</a>
-          <a href="{% url 'fornecedores:lista' %}"><i class="fa-solid fa-truck-field"></i> Fornecedores</a>
-          <a href="{% url 'compras:lista' %}"><i class="fa-solid fa-cart-flatbed"></i> Compras</a>
-          <a href="{% url 'pdv:caixas' %}"><i class="fa-solid fa-vault"></i> Caixas</a>
-          <a href="{% url 'accounts:usuarios' %}"><i class="fa-solid fa-user-gear"></i> Usuarios</a>
-          <a href="{% url 'admin:index' %}"><i class="fa-solid fa-screwdriver-wrench"></i> Admin</a>
+          {% if access.pdv %}
+            <details class="nav-section" open>
+              <summary><i class="fa-solid fa-store"></i> Operacao</summary>
+              <a href="{% url 'pdv:pdv' %}"><i class="fa-solid fa-cash-register"></i> PDV</a>
+              <a href="{% url 'pdv:consulta_preco' %}"><i class="fa-solid fa-magnifying-glass-dollar"></i> Consulta</a>
+              <a href="{% url 'pdv:pre_vendas' %}"><i class="fa-solid fa-file-invoice-dollar"></i> DAV</a>
+              <a href="{% url 'pdv:caixas' %}"><i class="fa-solid fa-vault"></i> Caixas</a>
+            </details>
+          {% endif %}
+          {% if access.cadastros %}
+            <details class="nav-section">
+              <summary><i class="fa-solid fa-boxes-stacked"></i> Cadastros</summary>
+              <a href="{% url 'produtos:lista' %}"><i class="fa-solid fa-boxes-stacked"></i> Produtos</a>
+              <a href="{% url 'promocoes:lista' %}"><i class="fa-solid fa-tags"></i> Promocoes</a>
+              <a href="{% url 'clientes:lista' %}"><i class="fa-solid fa-users"></i> Clientes</a>
+              <a href="{% url 'fornecedores:lista' %}"><i class="fa-solid fa-truck-field"></i> Fornecedores</a>
+              <a href="{% url 'marketplace:pedidos' %}"><i class="fa-solid fa-basket-shopping"></i> Pedidos online</a>
+            </details>
+          {% endif %}
+          {% if access.estoque or access.compras %}
+            <details class="nav-section">
+              <summary><i class="fa-solid fa-warehouse"></i> Estoque e compras</summary>
+              {% if access.estoque %}
+                <a href="{% url 'estoque:lista' %}"><i class="fa-solid fa-warehouse"></i> Estoque</a>
+                <a href="{% url 'estoque:inventarios' %}"><i class="fa-solid fa-clipboard-check"></i> Inventarios</a>
+                <a href="{% url 'estoque:perdas' %}"><i class="fa-solid fa-triangle-exclamation"></i> Perdas</a>
+              {% endif %}
+              {% if access.compras %}
+                <a href="{% url 'compras:lista' %}"><i class="fa-solid fa-cart-flatbed"></i> Compras</a>
+              {% endif %}
+            </details>
+          {% endif %}
+          {% if access.relatorios %}
+            <details class="nav-section">
+              <summary><i class="fa-solid fa-chart-simple"></i> Relatorios</summary>
+              <a href="{% url 'relatorios:dashboard' %}"><i class="fa-solid fa-chart-line"></i> Dashboard</a>
+              <a href="{% url 'relatorios:vendas' %}"><i class="fa-solid fa-chart-simple"></i> Vendas</a>
+              <a href="{% url 'financeiro:contas' %}"><i class="fa-solid fa-file-invoice-dollar"></i> Financeiro</a>
+              <a href="{% url 'fiscal:documentos' %}"><i class="fa-solid fa-receipt"></i> Fiscal</a>
+              <a href="{% url 'relatorios:curva_abc' %}"><i class="fa-solid fa-ranking-star"></i> Curva ABC</a>
+              <a href="{% url 'relatorios:sugestao_reposicao' %}"><i class="fa-solid fa-cart-arrow-down"></i> Reposicao</a>
+              <a href="{% url 'relatorios:devolucoes' %}"><i class="fa-solid fa-rotate-left"></i> Devolucoes</a>
+            </details>
+          {% endif %}
+          {% if access.sistema %}
+            <details class="nav-section">
+              <summary><i class="fa-solid fa-gear"></i> Sistema</summary>
+              <a href="{% url 'configuracoes:checklist' %}"><i class="fa-solid fa-list-check"></i> Checklist do projeto</a>
+              <a href="{% url 'configuracoes:backup' %}"><i class="fa-solid fa-database"></i> Backup</a>
+              <a href="{% url 'configuracoes:impressoes' %}"><i class="fa-solid fa-print"></i> Impressoes</a>
+              <a href="{% url 'pdv:acessos_pdv_nuvem' %}" class="{% if pdv_nuvem_pendentes %}nav-alert-link{% endif %}">
+                <i class="fa-solid fa-user-lock"></i> Acessos PDV nuvem
+                {% if pdv_nuvem_pendentes %}<span class="nav-badge">{{ pdv_nuvem_pendentes }}</span>{% endif %}
+              </a>
+              <a href="{% url 'auditoria:logs' %}"><i class="fa-solid fa-shield-halved"></i> Auditoria</a>
+              <a href="{% url 'accounts:usuarios' %}"><i class="fa-solid fa-user-gear"></i> Usuarios</a>
+              <a href="{% url 'admin:index' %}"><i class="fa-solid fa-screwdriver-wrench"></i> Admin</a>
+            </details>
+          {% endif %}
         </nav>
         <form action="{% url 'logout' %}" method="post" class="logout-form">
           {% csrf_token %}
@@ -43,6 +88,22 @@
       </aside>
     {% endif %}
     <main class="content">
+      {% if user.is_authenticated %}
+        <div class="topbar">
+          <form class="global-search" action="{% url 'produtos:lista' %}" method="get">
+            <i class="fa-solid fa-magnifying-glass"></i>
+            <input type="search" name="q" placeholder="Buscar produto, codigo ou cadastro">
+          </form>
+          <div class="topbar-meta">
+            {% if pdv_nuvem_pendentes %}
+              <a class="topbar-alert" href="{% url 'pdv:acessos_pdv_nuvem' %}"><i class="fa-solid fa-bell"></i> {{ pdv_nuvem_pendentes }} acesso{{ pdv_nuvem_pendentes|pluralize }} pendente{{ pdv_nuvem_pendentes|pluralize }}</a>
+            {% endif %}
+            <span class="topbar-pill"><i class="fa-solid fa-store"></i> Loja principal</span>
+            <span class="topbar-pill"><i class="fa-solid fa-calendar-day"></i> {% now "d/m/Y" %}</span>
+            <span class="topbar-pill"><i class="fa-solid fa-user"></i> {{ user.username }}</span>
+          </div>
+        </div>
+      {% endif %}
       {% if messages %}
         <div class="messages">
           {% for message in messages %}

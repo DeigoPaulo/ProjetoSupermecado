@@ -9,7 +9,11 @@
     <p>Faturamento, descontos, lucro estimado e produtos mais vendidos.</p>
   </div>
   <div class="actions">
+    <a class="secondary-button" href="{% url 'relatorios:vendas_csv' %}?data_inicio={{ data_inicio|date:'Y-m-d' }}&amp;data_fim={{ data_fim|date:'Y-m-d' }}"><i class="fa-solid fa-file-csv"></i> Excel/CSV</a>
+    <a class="secondary-button" href="{% url 'relatorios:vendas_imprimir' %}?data_inicio={{ data_inicio|date:'Y-m-d' }}&amp;data_fim={{ data_fim|date:'Y-m-d' }}" target="_blank"><i class="fa-solid fa-file-pdf"></i> PDF</a>
+    <a class="secondary-button" href="{% url 'relatorios:curva_abc' %}">Curva ABC</a>
     <a class="secondary-button" href="{% url 'relatorios:estoque_baixo' %}">Estoque baixo</a>
+    <a class="secondary-button" href="{% url 'relatorios:devolucoes' %}">Devolucoes</a>
     <a class="secondary-button" href="{% url 'relatorios:compras' %}">Compras</a>
     <a class="secondary-button" href="{% url 'relatorios:caixas' %}">Caixas</a>
   </div>
@@ -19,7 +23,9 @@
 
 <section class="metrics-grid">
   <article class="metric"><span>Vendas</span><strong>{{ total_vendas }}</strong></article>
-  <article class="metric"><span>Faturamento</span><strong>R$ {{ faturamento|floatformat:2 }}</strong></article>
+  <article class="metric"><span>Faturamento bruto</span><strong>R$ {{ faturamento|floatformat:2 }}</strong></article>
+  <article class="metric"><span>Devolucoes</span><strong>R$ {{ valor_devolucoes|floatformat:2 }}</strong></article>
+  <article class="metric"><span>Faturamento liquido</span><strong>R$ {{ faturamento_liquido|floatformat:2 }}</strong></article>
   <article class="metric"><span>Descontos</span><strong>R$ {{ descontos|floatformat:2 }}</strong></article>
   <article class="metric"><span>Lucro estimado</span><strong>R$ {{ lucro_estimado|floatformat:2 }}</strong></article>
 </section>
@@ -35,7 +41,7 @@
             <td>{{ venda.id }}</td>
             <td>{{ venda.data|date:"d/m/Y H:i" }}</td>
             <td>{{ venda.filial }}</td>
-            <td>{{ venda.cliente|default:"-" }}</td>
+            <td>{{ venda.cliente|default:"Cliente avulso" }}</td>
             <td>{{ venda.usuario }}</td>
             <td>R$ {{ venda.total_liquido|floatformat:2 }}</td>
           </tr>

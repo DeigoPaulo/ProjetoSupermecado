@@ -1,0 +1,68 @@
+{% extends "base.html" %}
+
+{% block title %}Relatorio de Devolucoes{% endblock %}
+
+{% block content %}
+<header class="page-header">
+  <div>
+    <h1>Devolucoes</h1>
+    <p>Acompanhe trocas, devolucoes parciais, motivos e impacto no faturamento.</p>
+  </div>
+  <div class="actions">
+    <a class="secondary-button" href="{% url 'relatorios:devolucoes_csv' %}?data_inicio={{ data_inicio|date:'Y-m-d' }}&amp;data_fim={{ data_fim|date:'Y-m-d' }}"><i class="fa-solid fa-file-csv"></i> Excel/CSV</a>
+    <a class="secondary-button" href="{% url 'relatorios:devolucoes_imprimir' %}?data_inicio={{ data_inicio|date:'Y-m-d' }}&amp;data_fim={{ data_fim|date:'Y-m-d' }}" target="_blank"><i class="fa-solid fa-file-pdf"></i> PDF</a>
+    <a class="secondary-button" href="{% url 'relatorios:vendas' %}">Vendas</a>
+    <a class="secondary-button" href="{% url 'relatorios:perdas' %}">Perdas</a>
+    <a class="secondary-button" href="{% url 'relatorios:caixas' %}">Caixas</a>
+  </div>
+</header>
+
+{% include "relatorios/includes/periodo_form.html" %}
+
+<section class="metrics-grid">
+  <article class="metric"><span>Devolucoes</span><strong>{{ total_devolucoes }}</strong></article>
+  <article class="metric"><span>Valor devolvido</span><strong>R$ {{ valor_total|floatformat:2 }}</strong></article>
+  <article class="metric"><span>Itens devolvidos</span><strong>{{ quantidade_itens|floatformat:3 }}</strong></article>
+  <article class="metric"><span>Periodo</span><strong>{{ data_inicio|date:"d/m" }} - {{ data_fim|date:"d/m" }}</strong></article>
+</section>
+
+<section class="two-column">
+  <div class="panel">
+    <div class="panel-title">Devolucoes do periodo</div>
+    <table>
+      <thead><tr><th>Data</th><th>Venda</th><th>Cliente</th><th>Operador</th><th>Motivo</th><th>Valor</th></tr></thead>
+      <tbody>
+        {% for devolucao in devolucoes %}
+          <tr>
+            <td>{{ devolucao.data|date:"d/m/Y H:i" }}</td>
+            <td><a href="{% url 'pdv:venda_detalhe' devolucao.venda.id %}">{{ devolucao.venda.id }}</a></td>
+            <td>{{ devolucao.venda.cliente|default:"Cliente avulso" }}</td>
+            <td>{{ devolucao.usuario }}</td>
+            <td>{{ devolucao.motivo }}</td>
+            <td><strong>R$ {{ devolucao.valor_total|floatformat:2 }}</strong></td>
+          </tr>
+        {% empty %}
+          <tr><td colspan="6" class="empty">Nenhuma devolucao no periodo.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  <div class="panel">
+    <div class="panel-title">Produtos mais devolvidos</div>
+    <table>
+      <thead><tr><th>Produto</th><th>Qtd</th><th>Valor</th></tr></thead>
+      <tbody>
+        {% for item in produtos_mais_devolvidos %}
+          <tr>
+            <td>{{ item.produto__nome }}</td>
+            <td>{{ item.quantidade|floatformat:3 }}</td>
+            <td>R$ {{ item.valor|floatformat:2 }}</td>
+          </tr>
+        {% empty %}
+          <tr><td colspan="3" class="empty">Sem itens devolvidos no periodo.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</section>
+{% endblock %}

@@ -1,0 +1,52 @@
+<!doctype html>
+<html lang="pt-br">
+<head>
+  <meta charset="utf-8">
+  <title>Separacao do pedido {{ pedido.pk }}</title>
+  <style>
+    @page { size: {{ estilos_impressao.page_size }}; margin: {{ estilos_impressao.margem_css }}; }
+    * { box-sizing: border-box; }
+    body { margin: 0; color: #111827; background: #eef2f7; font-family: Arial, sans-serif; font-size: {{ estilos_impressao.fonte }}px; }
+    .toolbar { display: flex; justify-content: center; gap: 8px; padding: 14px; }
+    .toolbar button { padding: 9px 14px; border: 0; color: #fff; background: #0b57d0; font-weight: 700; cursor: pointer; }
+    .sheet { width: {{ estilos_impressao.largura }}; min-height: 120mm; margin: 0 auto 24px; padding: 5mm; background: #fff; }
+    .header { display: flex; align-items: center; gap: 10px; padding-bottom: 10px; border-bottom: 2px solid #111827; }
+    .logo { max-width: 42mm; max-height: 18mm; object-fit: contain; }
+    h1 { margin: 0; font-size: 1.35em; }
+    h2 { margin: 14px 0 7px; font-size: 1.05em; }
+    p { margin: 3px 0; }
+    table { width: 100%; border-collapse: collapse; }
+    th, td { padding: 7px 4px; border-bottom: 1px solid #9ca3af; text-align: left; vertical-align: top; }
+    th { font-size: .84em; text-transform: uppercase; }
+    .qty { width: 22%; text-align: center; font-weight: 700; }
+    .check { display: inline-block; width: 15px; height: 15px; border: 1px solid #111827; vertical-align: middle; }
+    .meta { display: grid; grid-template-columns: 1fr 1fr; gap: 5px 12px; margin-top: 10px; }
+    .footer { margin-top: 16px; padding-top: 8px; border-top: 1px dashed #6b7280; text-align: center; font-size: .86em; }
+    @media print { body { background: #fff; } .toolbar { display: none; } .sheet { margin: 0; } }
+  </style>
+</head>
+<body>
+  <div class="toolbar"><button type="button" onclick="window.print()">Imprimir / Salvar PDF</button></div>
+  <main class="sheet">
+    <header class="header">
+      {% if impressao.exibir_logo and pedido.filial.empresa.logo %}<img class="logo" src="{{ pedido.filial.empresa.logo.url }}" alt="Logo">{% endif %}
+      <div><h1>Pedido de separacao #{{ pedido.pk }}</h1><p>{{ pedido.filial }}</p><p>{{ pedido.criado_em|date:"d/m/Y H:i" }}</p></div>
+    </header>
+    <div class="meta">
+      <p><strong>Cliente:</strong> {{ pedido.nome_cliente }}</p>
+      <p><strong>Telefone:</strong> {{ pedido.telefone|default:"-" }}</p>
+      <p><strong>Canal:</strong> {{ pedido.get_canal_display }}</p>
+      <p><strong>Modalidade:</strong> {{ pedido.get_tipo_entrega_display }}</p>
+    </div>
+    {% if pedido.endereco_entrega %}<p><strong>Endereco:</strong> {{ pedido.endereco_entrega }}</p>{% endif %}
+    <h2>Produtos</h2>
+    <table>
+      <thead><tr><th></th><th>Produto</th><th class="qty">Quantidade</th></tr></thead>
+      <tbody>{% for item in pedido.itens.all %}<tr><td><span class="check"></span></td><td><strong>{{ item.produto.nome }}</strong><br>{{ item.produto.codigo_barras }}</td><td class="qty">{{ item.quantidade }} {{ item.produto.unidade }}</td></tr>{% empty %}<tr><td colspan="3">Nenhum item.</td></tr>{% endfor %}</tbody>
+    </table>
+    {% if pedido.observacoes %}<h2>Observacoes</h2><p>{{ pedido.observacoes|linebreaksbr }}</p>{% endif %}
+    <div class="footer"><p>Separado por: __________________________________</p><p>Conferido por: _________________________________</p>{% if impressao.mensagem_rodape %}<p>{{ impressao.mensagem_rodape|linebreaksbr }}</p>{% endif %}</div>
+  </main>
+  {% if impressao.impressao_automatica %}<script>window.addEventListener("load", function () { window.print(); });</script>{% endif %}
+</body>
+</html>

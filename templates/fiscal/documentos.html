@@ -1,0 +1,209 @@
+{% extends "base.html" %}
+
+{% block title %}Fiscal{% endblock %}
+
+{% block content %}
+<header class="page-header">
+  <div>
+    <h1>Fiscal</h1>
+    <p>Preparacao e acompanhamento de documentos fiscais da operacao.</p>
+  </div>
+  <div class="actions">
+    <a class="secondary-button" href="{% url 'fiscal:produtos_fiscais' %}"><i class="fa-solid fa-boxes-stacked"></i> Produtos fiscais</a>
+    <a class="secondary-button" href="{% url 'fiscal:configuracao_nova' %}"><i class="fa-solid fa-gear"></i> Configuracao</a>
+    <a class="secondary-button" href="{% url 'fiscal:serie_nova' %}"><i class="fa-solid fa-hashtag"></i> Serie</a>
+    <a class="primary-button" href="{% url 'fiscal:natureza_nova' %}"><i class="fa-solid fa-plus"></i> Natureza</a>
+  </div>
+</header>
+
+<section class="metrics-grid">
+  <article class="metric"><span>Documentos</span><strong>{{ total_documentos }}</strong></article>
+  <article class="metric"><span>Prontos</span><strong>{{ pendentes }}</strong></article>
+  <article class="metric"><span>Emitidos</span><strong>{{ emitidos }}</strong></article>
+  <article class="metric"><span>Rejeitados</span><strong>{{ rejeitados }}</strong></article>
+</section>
+
+<form method="get" class="toolbar report-filter">
+  <label>
+    <span>Status</span>
+    <select name="status">
+      <option value="">Todos</option>
+      {% for valor, rotulo in status_choices %}<option value="{{ valor }}" {% if valor == status %}selected{% endif %}>{{ rotulo }}</option>{% endfor %}
+    </select>
+  </label>
+  <label><span>Numero</span><input type="search" name="q" value="{{ q }}" placeholder="Numero fiscal"></label>
+  <button type="submit">Filtrar</button>
+</form>
+
+<section class="panel">
+  <h2>Vendas aguardando NFC-e</h2>
+  <div class="table-wrapper">
+    <table>
+      <thead>
+        <tr>
+          <th>Venda</th>
+          <th>Data</th>
+          <th>Filial</th>
+          <th>Cliente</th>
+          <th>Total</th>
+          <th>Situacao fiscal</th>
+          <th></th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for venda in vendas_pendentes %}
+          <tr>
+            <td><strong>#{{ venda.id }}</strong></td>
+            <td>{{ venda.data|date:"d/m/Y H:i" }}</td>
+            <td>{{ venda.filial }}</td>
+            <td>{{ venda.cliente|default:"Cliente avulso" }}</td>
+            <td>R$ {{ venda.total_liquido|floatformat:2 }}</td>
+            <td>
+              {% if venda.pronta_fiscal %}
+                <span class="status status-success"><i class="fa-solid fa-circle-check"></i> Pronta</span>
+              {% else %}
+                <details class="fiscal-pending-details">
+                  <summary><span class="status status-danger"><i class="fa-solid fa-triangle-exclamation"></i> {{ venda.pendencias_fiscais|length }} pendencia{{ venda.pendencias_fiscais|length|pluralize }}</span></summary>
+                  <ul>{% for pendencia in venda.pendencias_fiscais %}<li>{{ pendencia }}</li>{% endfor %}</ul>
+                </details>
+              {% endif %}
+            </td>
+            <td class="row-actions">
+              <form method="post" action="{% url 'fiscal:preparar_venda' venda.pk %}" class="inline-form">
+                {% csrf_token %}
+                <button class="primary-button" type="submit" {% if not venda.pronta_fiscal %}disabled title="Corrija as pendencias fiscais antes de preparar"{% endif %}><i class="fa-solid fa-receipt"></i> Preparar NFC-e</button>
+              </form>
+            </td>
+          </tr>
+        {% empty %}
+          <tr><td colspan="7" class="empty">Nenhuma venda finalizada pendente de documento fiscal.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</section>
+
+<section class="panel">
+  <h2>Documentos fiscais</h2>
+  <div class="table-wrapper">
+    <table>
+      <thead>
+        <tr>
+          <th>Data</th>
+          <th>Tipo</th>
+          <th>Serie/numero</th>
+          <th>Venda</th>
+          <th>Status</th>
+          <th>Total</th>
+          <th></th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for documento in documentos %}
+          <tr>
+            <td>{{ documento.criado_em|date:"d/m/Y H:i" }}</td>
+            <td>{{ documento.get_tipo_documento_display }}<br><small>{{ documento.get_ambiente_display }}</small></td>
+            <td><strong>{{ documento.serie }}/{{ documento.numero|default:"-" }}</strong></td>
+            <td>{% if documento.venda %}Venda {{ documento.venda_id }}{% else %}-{% endif %}</td>
+            <td><span class="status {% if documento.status == 'EMITIDO' %}status-success{% elif documento.status == 'REJEITADO' or documento.status == 'CANCELADO' %}status-danger{% endif %}">{{ documento.get_status_display }}</span></td>
+            <td>R$ {{ documento.valor_total|floatformat:2 }}</td>
+            <td class="row-actions">
+              <a class="secondary-button" href="{% url 'fiscal:detalhe' documento.pk %}">Ver</a>
+              <a class="secondary-button" href="{% url 'fiscal:imprimir' documento.pk %}" target="_blank">Imprimir</a>
+              <a class="secondary-button" href="{% url 'fiscal:baixar_xml' documento.pk %}">XML</a>
+              {% if documento.status == "PRONTO" or documento.status == "REJEITADO" %}
+                <form method="post" action="{% url 'fiscal:cancelar' documento.pk %}" class="inline-form form-confirm" data-msg="Cancelar este documento fiscal?">
+                  {% csrf_token %}
+                  <input type="hidden" name="motivo" value="Cancelamento operacional antes da transmissao">
+                  <button class="secondary-button danger-button" type="submit">Cancelar</button>
+                </form>
+              {% endif %}
+            </td>
+          </tr>
+        {% empty %}
+          <tr><td colspan="7" class="empty">Nenhum documento fiscal preparado.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</section>
+
+<section class="split-grid">
+  <article class="panel">
+    <h2>Configuracoes por filial</h2>
+    <div class="table-wrapper">
+      <table>
+        <thead><tr><th>Filial</th><th>Ambiente</th><th>Certificado</th><th></th></tr></thead>
+        <tbody>
+          {% for configuracao in configuracoes %}
+            <tr>
+              <td>{{ configuracao.filial }}</td>
+              <td>{{ configuracao.get_ambiente_display }}</td>
+              <td>
+                {% if configuracao.certificado_status == "valido" %}
+                  <span class="status status-success">Valido ate {{ configuracao.certificado_validade|date:"d/m/Y" }}</span>
+                {% elif configuracao.certificado_status == "vence_em_breve" %}
+                  <span class="status status-warning">Vence em {{ configuracao.certificado_dias_para_vencer }} dia{{ configuracao.certificado_dias_para_vencer|pluralize }}</span>
+                {% elif configuracao.certificado_status == "vencido" %}
+                  <span class="status status-danger">Vencido em {{ configuracao.certificado_validade|date:"d/m/Y" }}</span>
+                {% elif configuracao.certificado_status == "sem_validade" %}
+                  <span class="status status-warning">Sem validade lida</span>
+                {% else %}
+                  <span class="status status-danger">Nao enviado</span>
+                {% endif %}
+              </td>
+              <td><a class="secondary-button" href="{% url 'fiscal:configuracao_editar' configuracao.pk %}">Editar</a></td>
+            </tr>
+          {% empty %}
+            <tr><td colspan="4" class="empty">Nenhuma configuracao fiscal cadastrada.</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </article>
+
+  <article class="panel">
+    <h2>Series fiscais</h2>
+    <div class="table-wrapper">
+      <table>
+        <thead><tr><th>Filial</th><th>Tipo</th><th>Serie</th><th>Proximo</th><th></th></tr></thead>
+        <tbody>
+          {% for serie in series %}
+            <tr>
+              <td>{{ serie.filial }}</td>
+              <td>{{ serie.get_tipo_documento_display }}</td>
+              <td>{{ serie.serie }}</td>
+              <td>{{ serie.proximo_numero }}</td>
+              <td><a class="secondary-button" href="{% url 'fiscal:serie_editar' serie.pk %}">Editar</a></td>
+            </tr>
+          {% empty %}
+            <tr><td colspan="5" class="empty">Nenhuma serie fiscal cadastrada.</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </article>
+</section>
+
+<section class="panel">
+  <h2>Naturezas de operacao</h2>
+  <div class="table-wrapper">
+    <table>
+      <thead><tr><th>Descricao</th><th>CFOP</th><th>Tipo</th><th>Estoque</th><th></th></tr></thead>
+      <tbody>
+        {% for natureza in naturezas %}
+          <tr>
+            <td>{{ natureza.descricao }}</td>
+            <td>{{ natureza.cfop|default:"-" }}</td>
+            <td>{{ natureza.get_tipo_documento_display }}</td>
+            <td>{% if natureza.movimenta_estoque %}Sim{% else %}Nao{% endif %}</td>
+            <td><a class="secondary-button" href="{% url 'fiscal:natureza_editar' natureza.pk %}">Editar</a></td>
+          </tr>
+        {% empty %}
+          <tr><td colspan="5" class="empty">Nenhuma natureza de operacao cadastrada.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</section>
+{% endblock %}

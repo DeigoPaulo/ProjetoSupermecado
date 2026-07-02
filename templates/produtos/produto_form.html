@@ -9,7 +9,7 @@
     <p>Use valores decimais para precos e quantidades pesaveis.</p>
   </div>
 </header>
-<form method="post" class="form-grid panel">
+<form method="post" enctype="multipart/form-data" class="form-grid panel">
   {% include "includes/form.html" %}
   <div class="form-actions">
     <a class="secondary-button" href="{% url 'produtos:lista' %}">Cancelar</a>

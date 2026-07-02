@@ -1,0 +1,81 @@
+{% extends "base.html" %}
+
+{% block title %}Produtos fiscais{% endblock %}
+
+{% block content %}
+<header class="page-header">
+  <div>
+    <h1>Produtos fiscais</h1>
+    <p>Conferencia dos campos tributarios exigidos antes de preparar NFC-e.</p>
+  </div>
+  <div class="actions">
+    <a class="secondary-button" href="{% url 'fiscal:documentos' %}">Voltar</a>
+  </div>
+</header>
+
+<section class="metrics-grid">
+  <article class="metric"><span>Analisados</span><strong>{{ total_analisados }}</strong></article>
+  <article class="metric"><span>Pendentes</span><strong>{{ total_pendentes }}</strong></article>
+  <article class="metric"><span>Prontos</span><strong>{{ total_prontos }}</strong></article>
+</section>
+
+<form method="get" class="toolbar report-filter">
+  <label><span>Produto</span><input type="search" name="q" value="{{ q }}" placeholder="Nome ou codigo"></label>
+  <label>
+    <span>Filtro</span>
+    <select name="filtro">
+      <option value="pendentes" {% if filtro == "pendentes" %}selected{% endif %}>Pendentes</option>
+      <option value="prontos" {% if filtro == "prontos" %}selected{% endif %}>Prontos</option>
+      <option value="todos" {% if filtro == "todos" %}selected{% endif %}>Todos</option>
+    </select>
+  </label>
+  <button type="submit">Filtrar</button>
+</form>
+
+<section class="panel">
+  <h2>Conferencia fiscal</h2>
+  <div class="table-wrapper">
+    <table>
+      <thead>
+        <tr>
+          <th>Produto</th>
+          <th>Categoria</th>
+          <th>NCM</th>
+          <th>CEST</th>
+          <th>Origem</th>
+          <th>CST/CSOSN</th>
+          <th>Aliquota</th>
+          <th>Situacao</th>
+          <th></th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for produto in produtos %}
+          <tr>
+            <td><strong>{{ produto.nome }}</strong><br><small>{{ produto.codigo_barras }}</small></td>
+            <td>{{ produto.categoria }}</td>
+            <td>{{ produto.ncm|default:"-" }}</td>
+            <td>{{ produto.cest|default:"-" }}</td>
+            <td>{{ produto.origem_mercadoria|default:"-" }}</td>
+            <td>{{ produto.cst_icms|default:"-" }} / {{ produto.csosn|default:"-" }}</td>
+            <td>{% if produto.aliquota_icms is None %}-{% else %}{{ produto.aliquota_icms|floatformat:2 }}%{% endif %}</td>
+            <td>
+              {% if produto.pronto_fiscal %}
+                <span class="status status-success">Pronto</span>
+              {% else %}
+                <details class="fiscal-pending-details">
+                  <summary><span class="status status-danger">{{ produto.pendencias_fiscais|length }} pendencia{{ produto.pendencias_fiscais|length|pluralize }}</span></summary>
+                  <ul>{% for pendencia in produto.pendencias_fiscais %}<li>{{ pendencia }}</li>{% endfor %}</ul>
+                </details>
+              {% endif %}
+            </td>
+            <td class="row-actions"><a class="secondary-button" href="{% url 'produtos:editar' produto.pk %}">Editar</a></td>
+          </tr>
+        {% empty %}
+          <tr><td colspan="9" class="empty">Nenhum produto encontrado para o filtro informado.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</section>
+{% endblock %}

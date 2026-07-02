@@ -9,7 +9,10 @@
     <p>Produtos com saldo fisico igual ou abaixo do minimo configurado.</p>
   </div>
   <div class="actions">
+    <a class="secondary-button" href="{% url 'relatorios:estoque_baixo_csv' %}"><i class="fa-solid fa-file-csv"></i> Excel/CSV</a>
+    <a class="secondary-button" href="{% url 'relatorios:estoque_baixo_imprimir' %}" target="_blank"><i class="fa-solid fa-file-pdf"></i> PDF</a>
     <a class="secondary-button" href="{% url 'relatorios:vendas' %}">Vendas</a>
+    <a class="secondary-button" href="{% url 'relatorios:sugestao_reposicao' %}">Reposicao</a>
     <a class="secondary-button" href="{% url 'relatorios:movimentacoes_estoque' %}">Movimentações</a>
     <a class="secondary-button" href="{% url 'relatorios:compras' %}">Compras</a>
     <a class="primary-button" href="{% url 'compras:nova' %}">Nova entrada</a>

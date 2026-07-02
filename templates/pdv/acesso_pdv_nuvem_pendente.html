@@ -1,0 +1,39 @@
+{% extends "base.html" %}
+
+{% block title %}Acesso ao PDV pendente{% endblock %}
+
+{% block content %}
+<section class="pdv-cloud-access">
+  <div class="pdv-cloud-card">
+    <span class="pdv-cloud-icon"><i class="fa-solid fa-user-lock"></i></span>
+    <h1>Acesso ao PDV em nuvem pendente</h1>
+    <p>
+      Sua entrada no caixa foi enviada para aprovacao do admin ou gerente da empresa.
+      Aguarde a liberacao antes de iniciar a operacao.
+    </p>
+    <div class="pdv-cloud-details">
+      <div><span>Status</span><strong>{{ solicitacao.get_status_display }}</strong></div>
+      <div><span>Filial</span><strong>{{ solicitacao.filial|default:"Nao vinculada" }}</strong></div>
+      <div><span>Solicitado em</span><strong>{{ solicitacao.criado_em|date:"d/m/Y H:i" }}</strong></div>
+    </div>
+    {% if criada %}
+      <div class="operation-notice operation-notice-warning">
+        <i class="fa-solid fa-bell"></i>
+        <div>
+          <strong>Nova solicitacao registrada.</strong>
+          <span>Na proxima etapa essa solicitacao aparecera no painel do admin para aceitar ou recusar.</span>
+        </div>
+      </div>
+    {% else %}
+      <div class="operation-notice">
+        <i class="fa-solid fa-clock"></i>
+        <div>
+          <strong>Solicitacao ja estava em analise.</strong>
+          <span>Nao foi criada duplicidade para evitar varias notificacoes repetidas.</span>
+        </div>
+      </div>
+    {% endif %}
+    <a class="secondary-button" href="{% url 'relatorios:dashboard' %}"><i class="fa-solid fa-arrow-left"></i> Voltar</a>
+  </div>
+</section>
+{% endblock %}

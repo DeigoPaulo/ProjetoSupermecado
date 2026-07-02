@@ -1,0 +1,60 @@
+{% extends "base.html" %}
+
+{% block title %}Configuracao de impressao{% endblock %}
+
+{% block content %}
+<header class="page-header">
+  <div>
+    <h1>{% if configuracao %}Editar impressao{% else %}Nova impressao{% endif %}</h1>
+    <p>Defina escopo, impressora, papel, fonte, margens, vias e comportamento de impressao.</p>
+  </div>
+  <a class="secondary-button" href="{% url 'configuracoes:impressoes' %}">Voltar</a>
+</header>
+
+<form method="post" class="print-config-form">
+  {% csrf_token %}
+  {{ form.non_field_errors }}
+
+  <section class="panel">
+    <div class="panel-title">Escopo do documento</div>
+    <div class="form-grid">
+      <label class="form-field"><span>{{ form.empresa.label }}</span>{{ form.empresa }}{{ form.empresa.errors }}</label>
+      <label class="form-field"><span>{{ form.filial.label }}</span>{{ form.filial }}{{ form.filial.errors }}</label>
+      <label class="form-field"><span>{{ form.tipo_documento.label }}</span>{{ form.tipo_documento }}{{ form.tipo_documento.errors }}</label>
+      <label class="toggle-field">{{ form.is_active }} <span>{{ form.is_active.label }}</span>{{ form.is_active.errors }}</label>
+    </div>
+  </section>
+
+  <section class="panel">
+    <div class="panel-title">Impressora e comportamento</div>
+    <div class="form-grid">
+      <label class="form-field form-field-wide"><span>{{ form.impressora_padrao.label }}</span>{{ form.impressora_padrao }}{{ form.impressora_padrao.errors }}<small>Use o mesmo nome instalado no Windows ou no app desktop futuramente.</small></label>
+      <label class="form-field"><span>{{ form.numero_vias.label }}</span>{{ form.numero_vias }}{{ form.numero_vias.errors }}</label>
+      <label class="toggle-field">{{ form.impressao_automatica }} <span>{{ form.impressao_automatica.label }}</span>{{ form.impressao_automatica.errors }}</label>
+      <label class="toggle-field">{{ form.exibir_logo }} <span>{{ form.exibir_logo.label }}</span>{{ form.exibir_logo.errors }}</label>
+    </div>
+  </section>
+
+  <section class="panel">
+    <div class="panel-title">Papel e layout</div>
+    <div class="form-grid">
+      <label class="form-field"><span>{{ form.modelo_papel.label }}</span>{{ form.modelo_papel }}{{ form.modelo_papel.errors }}</label>
+      <label class="form-field"><span>{{ form.tamanho_fonte.label }}</span>{{ form.tamanho_fonte }}{{ form.tamanho_fonte.errors }}</label>
+      <label class="form-field"><span>{{ form.margem_superior_mm.label }}</span>{{ form.margem_superior_mm }}{{ form.margem_superior_mm.errors }}</label>
+      <label class="form-field"><span>{{ form.margem_inferior_mm.label }}</span>{{ form.margem_inferior_mm }}{{ form.margem_inferior_mm.errors }}</label>
+      <label class="form-field"><span>{{ form.margem_esquerda_mm.label }}</span>{{ form.margem_esquerda_mm }}{{ form.margem_esquerda_mm.errors }}</label>
+      <label class="form-field"><span>{{ form.margem_direita_mm.label }}</span>{{ form.margem_direita_mm }}{{ form.margem_direita_mm.errors }}</label>
+    </div>
+  </section>
+
+  <section class="panel">
+    <div class="panel-title">Rodape</div>
+    <label class="form-field"><span>{{ form.mensagem_rodape.label }}</span>{{ form.mensagem_rodape }}{{ form.mensagem_rodape.errors }}</label>
+  </section>
+
+  <div class="sticky-form-actions">
+    <a class="secondary-button" href="{% url 'configuracoes:impressoes' %}">Cancelar</a>
+    <button class="primary-button" type="submit">Salvar configuracao</button>
+  </div>
+</form>
+{% endblock %}

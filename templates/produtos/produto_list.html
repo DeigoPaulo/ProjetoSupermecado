@@ -37,7 +37,11 @@
           <td>R$ {{ produto.preco_venda|floatformat:2 }}</td>
           <td>{{ produto.unidade }}</td>
           <td><span class="status">{{ produto.is_active|yesno:"Ativo,Inativo" }}</span></td>
-          <td><a href="{% url 'produtos:editar' produto.pk %}">Editar</a></td>
+          <td>
+            <a href="{% url 'produtos:kardex' produto.pk %}">Kardex</a>
+            &nbsp;
+            <a href="{% url 'produtos:editar' produto.pk %}">Editar</a>
+          </td>
         </tr>
       {% empty %}
         <tr><td colspan="7" class="empty">Nenhum produto cadastrado.</td></tr>

@@ -1,0 +1,65 @@
+{% extends "base.html" %}
+
+{% block title %}DAV {{ pre_venda.id }}{% endblock %}
+
+{% block content %}
+<header class="page-header">
+  <div>
+    <h1>DAV {{ pre_venda.id }}</h1>
+    <p>{{ pre_venda.filial }} - {{ pre_venda.criada_em|date:"d/m/Y H:i" }}</p>
+  </div>
+  <div class="actions">
+    {% if pre_venda.status == "ABERTA" %}
+      <form method="post" action="{% url 'pdv:cancelar_pre_venda' pre_venda.id %}" class="inline-form form-confirm" data-msg="Cancelar este DAV?">
+        {% csrf_token %}
+        <input type="text" name="motivo" placeholder="Motivo do cancelamento" required>
+        <input type="text" name="supervisor_usuario" placeholder="Supervisor" required>
+        <input type="password" name="supervisor_senha" placeholder="Senha" required>
+        <button class="secondary-button danger-button" type="submit">Cancelar</button>
+      </form>
+      <a class="primary-button" href="{% url 'pdv:carregar_pre_venda' pre_venda.id %}">Carregar no PDV</a>
+    {% endif %}
+    {% if pre_venda.venda %}
+      <a class="secondary-button" href="{% url 'pdv:venda_detalhe' pre_venda.venda.id %}">Ver venda</a>
+    {% endif %}
+    <a class="secondary-button" href="{% url 'pdv:recibo_pre_venda' pre_venda.id %}" target="_blank">Imprimir</a>
+    <a class="secondary-button" href="{% url 'pdv:pre_vendas' %}">Voltar</a>
+  </div>
+</header>
+
+<section class="two-column">
+  <div class="panel">
+    <div class="panel-title">Itens</div>
+    <table>
+      <thead><tr><th>Produto</th><th>Qtd</th><th>Unitario</th><th>Total</th></tr></thead>
+      <tbody>
+        {% for item in pre_venda.itens.all %}
+          <tr>
+            <td>{{ item.produto.nome }}</td>
+            <td>{{ item.quantidade }}</td>
+            <td>R$ {{ item.preco_unitario|floatformat:2 }}</td>
+            <td>R$ {{ item.total|floatformat:2 }}</td>
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+
+  <div class="panel">
+    <div class="panel-title">Resumo</div>
+    <dl class="summary-list">
+      <dt>Status</dt><dd>{{ pre_venda.get_status_display }}</dd>
+      <dt>Operador</dt><dd>{{ pre_venda.usuario }}</dd>
+      <dt>Cliente</dt><dd>{{ pre_venda.cliente|default:"Cliente avulso" }}</dd>
+      <dt>Validade</dt><dd>{{ pre_venda.validade|date:"d/m/Y"|default:"-" }}</dd>
+      <dt>Total bruto</dt><dd>R$ {{ pre_venda.total_bruto|floatformat:2 }}</dd>
+      <dt>Desconto</dt><dd>R$ {{ pre_venda.desconto|floatformat:2 }}</dd>
+      <dt>Total liquido</dt><dd><strong>R$ {{ pre_venda.total_liquido|floatformat:2 }}</strong></dd>
+    </dl>
+    {% if pre_venda.observacao %}
+      <div class="panel-title">Observacao</div>
+      <div class="compact-form">{{ pre_venda.observacao|linebreaksbr }}</div>
+    {% endif %}
+  </div>
+</section>
+{% endblock %}

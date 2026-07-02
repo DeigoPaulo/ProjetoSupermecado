@@ -1,79 +1,434 @@
 {% extends "base.html" %}
 
 {% block title %}PDV{% endblock %}
+{% block body_class %}pdv-mode{% endblock %}
 
 {% block content %}
-<header class="page-header">
-  <div>
-    <h1>PDV</h1>
-    <p>Venda rapida com carrinho, pagamento e baixa automatica de estoque.</p>
-  </div>
-  <div class="actions">
-    <a class="secondary-button" href="{% url 'pdv:caixas' %}">Caixas</a>
-    <a class="primary-button" href="{% url 'pdv:abrir_caixa' %}">Abrir caixa</a>
-  </div>
-</header>
-
-<section class="pdv-grid">
-  <div class="panel pdv-entry">
-    <div class="panel-title">Adicionar item</div>
-    <form method="post" class="compact-form">
-      {% csrf_token %}
-      <input type="hidden" name="action" value="add">
-      {% for field in add_form %}
-        <label class="form-field">
-          <span>{{ field.label }}</span>
-          {{ field }}
-          {% if field.errors %}<small class="field-error">{{ field.errors|striptags }}</small>{% endif %}
-        </label>
-      {% endfor %}
-      <button class="primary-button" type="submit">Adicionar</button>
-    </form>
-  </div>
-
-  <div class="panel pdv-cart">
-    <div class="panel-title">Carrinho</div>
-    <table>
-      <thead><tr><th>Produto</th><th>Qtd</th><th>Unitario</th><th>Subtotal</th><th></th></tr></thead>
-      <tbody>
-        {% for item in items %}
-          <tr>
-            <td>{{ item.produto.nome }}</td>
-            <td>{{ item.quantidade }}</td>
-            <td>R$ {{ item.produto.preco_venda|floatformat:2 }}</td>
-            <td><strong>R$ {{ item.subtotal|floatformat:2 }}</strong></td>
-            <td><a href="{% url 'pdv:remover_item' item.produto.id %}">Remover</a></td>
-          </tr>
-        {% empty %}
-          <tr><td colspan="5" class="empty">Nenhum item no carrinho.</td></tr>
-        {% endfor %}
-      </tbody>
-    </table>
-    <div class="cart-total">
-      <span>Total</span>
-      <strong>R$ {{ total|floatformat:2 }}</strong>
-    </div>
-    {% if items %}
-      <div class="form-actions">
-        <a class="secondary-button" href="{% url 'pdv:limpar_carrinho' %}">Limpar</a>
+<section class="pdv-screen">
+  <header class="pdv-header">
+    <div class="pdv-title">
+      <span class="pdv-logo">
+        {% if filial_visual and filial_visual.empresa.logo %}
+          <img src="{{ filial_visual.empresa.logo.url }}" alt="{{ filial_visual.empresa.nome_fantasia }}">
+        {% else %}
+          <i class="fa-solid fa-cart-shopping"></i>
+        {% endif %}
+      </span>
+      <div>
+        <h1>{% if filial_visual %}{{ filial_visual.empresa.nome_fantasia }}{% else %}Supermercado{% endif %}</h1>
+        <p>PDV operacional</p>
       </div>
-    {% endif %}
+    </div>
+    <div class="pdv-info">
+      <div><i class="fa-regular fa-user"></i><span>Operador</span><strong>{{ request.user.username }}</strong></div>
+      <div><i class="fa-regular fa-calendar-days"></i><span>Data / Hora</span><strong>{% now "d/m/Y H:i" %}</strong></div>
+      <div><i class="fa-solid fa-vault"></i><span>Caixa</span><strong>{% if caixa_aberto %}#{{ caixa_aberto.id }}{% else %}Fechado{% endif %}</strong></div>
+    </div>
+    <div class="pdv-stats">
+      <div><span>Itens</span><strong>{{ quantidade_itens|floatformat:-3 }}</strong></div>
+      <div class="pdv-total-stat"><span>Total da venda</span><strong>R$ {{ total|floatformat:2 }}</strong></div>
+    </div>
+    <div class="actions pdv-actions">
+      <a class="secondary-button" id="pdv-menu-link" href="{% url 'relatorios:dashboard' %}"><i class="fa-solid fa-bars"></i> <span><kbd>Shift+M</kbd> Menu</span></a>
+      {% if not caixa_aberto %}
+        <a class="primary-button" href="{% url 'pdv:abrir_caixa' %}"><i class="fa-solid fa-lock-open"></i> Abrir caixa</a>
+      {% endif %}
+    </div>
+  </header>
+
+  {% if pre_venda_origem %}
+    <div class="pdv-messages">
+      <div class="message">DAV {{ pre_venda_origem.id }} carregado no carrinho.</div>
+    </div>
+  {% endif %}
+
+  <div class="pdv-workspace">
+    <aside class="panel pdv-entry">
+      <div class="panel-title">Adicionar item</div>
+      <form method="post" id="pdv-add-form" class="compact-form">
+        {% csrf_token %}
+        <input type="hidden" name="action" value="add">
+        <label class="form-field">
+          <span>Buscar produto</span>
+          <div class="pdv-search-field">
+            {{ add_form.busca }}
+            <i class="fa-solid fa-magnifying-glass"></i>
+          </div>
+          {% if add_form.busca.errors %}<small class="field-error">{{ add_form.busca.errors|striptags }}</small>{% endif %}
+        </label>
+        <label class="form-field">
+          <span>Quantidade</span>
+          {{ add_form.quantidade }}
+          {% if add_form.quantidade.errors %}<small class="field-error">{{ add_form.quantidade.errors|striptags }}</small>{% endif %}
+        </label>
+        <button class="primary-button pdv-main-action" type="submit"><i class="fa-solid fa-circle-plus"></i> Adicionar</button>
+      </form>
+
+      <div class="pdv-quick-grid">
+        <button type="button" data-pdv-modal-open="products"><i class="fa-solid fa-star"></i><span>Produtos</span></button>
+        <button type="button" data-pdv-modal-open="price"><i class="fa-solid fa-tag"></i><span>Preco</span></button>
+        <button type="button" data-pdv-modal-open="clients"><i class="fa-solid fa-user"></i><span>Clientes</span></button>
+        <button type="button" data-pdv-modal-open="promos"><i class="fa-solid fa-percent"></i><span>Promocoes</span></button>
+      </div>
+    </aside>
+
+    <main class="panel pdv-cart {% if filial_visual and filial_visual.empresa.logo %}has-watermark{% endif %}" data-remove-url="" {% if filial_visual and filial_visual.empresa.logo %}style="--pdv-watermark: url('{{ filial_visual.empresa.logo.url }}')"{% endif %}>
+      <div class="pdv-cart-header">
+        <div class="panel-title">Carrinho de compras</div>
+        <div class="pdv-total-display">
+          <span>Total</span>
+          <strong>R$ {{ total|floatformat:2 }}</strong>
+        </div>
+      </div>
+      <div class="cart-table-wrap">
+        <table class="pdv-cart-table">
+          <thead>
+            <tr><th>#</th><th>Produto</th><th>Qtd</th><th>Unitario</th><th>Subtotal</th><th></th></tr>
+          </thead>
+          <tbody>
+            {% for item in items %}
+              <tr class="pdv-cart-row{% if forloop.last %} is-selected{% endif %}" tabindex="0" aria-selected="{% if forloop.last %}true{% else %}false{% endif %}" data-remove-url="{% url 'pdv:remover_item' item.produto.id %}">
+                <td>{{ forloop.counter }}</td>
+                <td>
+                  <strong>{{ item.produto.nome }}</strong>
+                  <small>{{ item.produto.codigo_barras }}</small>
+                </td>
+                <td>{{ item.quantidade|floatformat:-3 }}</td>
+                <td>R$ {{ item.produto.preco_venda|floatformat:2 }}</td>
+                <td><strong>R$ {{ item.subtotal|floatformat:2 }}</strong></td>
+                <td><a class="icon-action danger-button" href="{% url 'pdv:remover_item' item.produto.id %}" title="Remover item (Del)" aria-label="Remover item (Del)"><i class="fa-regular fa-trash-can"></i></a></td>
+              </tr>
+            {% empty %}
+              <tr><td colspan="6" class="empty">Nenhum item no carrinho.</td></tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+      <div class="pdv-cart-footer">
+        {% if items %}
+          <a class="secondary-button danger-button" id="pdv-clear-cart" href="{% url 'pdv:limpar_carrinho' %}"><i class="fa-regular fa-trash-can"></i> Limpar tudo <kbd>Ctrl+Del</kbd></a>
+        {% else %}
+          <span></span>
+        {% endif %}
+        <div class="pdv-cart-footer-info">
+          <span title="Remover item (Del)">Remover item (<kbd>Del</kbd>)</span>
+          <span title="Limpar carrinho (Ctrl+Del)">Limpar tudo (<kbd>Ctrl+Del</kbd>)</span>
+          <strong>Itens: {{ quantidade_itens|floatformat:-3 }}</strong>
+        </div>
+      </div>
+    </main>
+
+    <aside class="panel pdv-finish">
+      <div class="panel-title">Finalizar venda</div>
+      <form method="post" id="pdv-finish-form" class="compact-form">
+        {% csrf_token %}
+        <input type="hidden" name="action" value="finish">
+        {% if caixa_aberto %}
+          <input type="hidden" name="caixa" value="{{ caixa_aberto.id }}">
+        {% endif %}
+        <div class="pdv-client-line">
+          <label class="form-field">
+            <span>Cliente</span>
+            {{ finish_form.cliente }}
+          </label>
+          <button class="secondary-button pdv-icon-button" id="pdv-cliente-link" type="button" data-pdv-modal-open="clients" title="Consultar clientes" aria-label="Consultar clientes">
+            <i class="fa-solid fa-user-plus"></i>
+          </button>
+        </div>
+        <div class="pdv-payment-preview">
+          <span>Total lancado</span><strong id="pdv-pagamento-lancado">R$ 0,00</strong>
+          <span>Restante</span><strong id="pdv-pagamento-restante">R$ {{ total|floatformat:2 }}</strong>
+        </div>
+        <div class="pdv-summary" data-total="{{ total|floatformat:2 }}">
+          <div><span>Subtotal</span><strong>R$ {{ total|floatformat:2 }}</strong></div>
+          <div><span>Descontos</span><strong id="pdv-desconto-display">R$ 0,00</strong></div>
+          <div class="pdv-summary-total"><span>Total final</span><strong id="pdv-total-final">R$ {{ total|floatformat:2 }}</strong></div>
+          <div class="pdv-change-line"><span>Troco estimado</span><strong id="pdv-troco-estimado">R$ 0,00</strong></div>
+        </div>
+        <div class="pdv-payment-modal" id="pdv-payment-modal" aria-hidden="true">
+          <div class="pdv-payment-dialog">
+            <div class="pdv-payment-header">
+              <div>
+                <strong>Pagamentos</strong>
+                <span>Adicione quantas formas forem necessarias</span>
+              </div>
+              <button type="button" id="pdv-close-payment" aria-label="Fechar"><i class="fa-solid fa-xmark"></i></button>
+            </div>
+            <div class="pdv-payment-adjustments">
+              <label class="form-field"><span>Desconto da venda</span>{{ finish_form.desconto }}</label>
+              <label class="form-field"><span>Vencimento crediario</span>{{ finish_form.vencimento_financeiro }}</label>
+            </div>
+            <div class="pdv-payment-shortcuts" aria-label="Atalhos de pagamento">
+              <span><kbd>F1</kbd> Dinheiro</span><span><kbd>F2</kbd> Convenio</span><span><kbd>F3</kbd> Eletronico</span><span><kbd>F4</kbd> Outros</span>
+            </div>
+            <div class="pdv-electronic-choice" id="pdv-electronic-choice" aria-hidden="true">
+              <div>
+                <strong>Tipo de pagamento</strong>
+                <span>Escolha a forma eletronica confirmada no caixa</span>
+              </div>
+              <button type="button" data-pdv-electronic-payment="credito"><kbd>F1</kbd> Credito</button>
+              <button type="button" data-pdv-electronic-payment="debito"><kbd>F2</kbd> Debito</button>
+              <button type="button" data-pdv-electronic-payment="pix"><kbd>F3</kbd> PIX</button>
+            </div>
+            <div class="pdv-payment-rows" id="pdv-payment-rows">
+              <div class="pdv-payment-row">
+                <select name="pagamento_forma">
+                  <option value="">Forma</option>
+                  {% for forma in formas_pagamento %}
+                    <option value="{{ forma.id }}">{{ forma.nome }}</option>
+                  {% endfor %}
+                </select>
+                <div class="money-input money-input-lg"><span>R$</span><input type="number" name="pagamento_valor" step="0.01" inputmode="decimal" placeholder="0,00"></div>
+                <button type="button" class="pdv-remove-payment" aria-label="Remover forma de pagamento" title="Remover forma de pagamento (Del)"><i class="fa-regular fa-trash-can"></i><kbd>Del</kbd></button>
+              </div>
+            </div>
+            <template id="pdv-payment-row-template">
+              <div class="pdv-payment-row">
+                <select name="pagamento_forma">
+                  <option value="">Forma</option>
+                  {% for forma in formas_pagamento %}
+                    <option value="{{ forma.id }}">{{ forma.nome }}</option>
+                  {% endfor %}
+                </select>
+                <div class="money-input money-input-lg"><span>R$</span><input type="number" name="pagamento_valor" step="0.01" inputmode="decimal" placeholder="0,00"></div>
+                <button type="button" class="pdv-remove-payment" aria-label="Remover forma de pagamento" title="Remover forma de pagamento (Del)"><i class="fa-regular fa-trash-can"></i><kbd>Del</kbd></button>
+              </div>
+            </template>
+            <div class="pdv-payment-totals">
+              <div><span>Total final</span><strong id="pdv-modal-total">R$ {{ total|floatformat:2 }}</strong></div>
+              <div><span>Lancado</span><strong id="pdv-modal-lancado">R$ 0,00</strong></div>
+              <div><span>Restante</span><strong id="pdv-modal-restante">R$ {{ total|floatformat:2 }}</strong></div>
+              <div><span>Troco</span><strong id="pdv-modal-troco">R$ 0,00</strong></div>
+            </div>
+            <div class="form-actions">
+              <button type="button" class="secondary-button" id="pdv-add-payment"><i class="fa-solid fa-plus"></i> Adicionar forma <kbd>Shift +</kbd></button>
+              <button type="button" class="primary-button" id="pdv-confirm-payment">Finalizar venda <kbd>Enter</kbd></button>
+            </div>
+            <p class="pdv-payment-feedback" id="pdv-payment-feedback" aria-live="polite"></p>
+          </div>
+        </div>
+        <button class="primary-button pdv-main-action" id="pdv-finalize-button" type="button" {% if not items %}disabled{% endif %}><i class="fa-solid fa-credit-card"></i> Pagamento / finalizar <kbd>F9</kbd></button>
+      </form>
+
+      <form method="post" id="pdv-dav-form" class="compact-form pdv-dav-form">
+        {% csrf_token %}
+        <input type="hidden" name="action" value="save_pre_venda">
+        <div class="pdv-dav-fields">
+          {{ pre_venda_form.filial }}
+          {{ pre_venda_form.cliente }}
+          {{ pre_venda_form.desconto }}
+          {{ pre_venda_form.validade }}
+          {{ pre_venda_form.observacao }}
+        </div>
+        <button class="secondary-button" type="submit" {% if not items %}disabled{% endif %}><i class="fa-regular fa-file-lines"></i> Salvar DAV</button>
+      </form>
+    </aside>
   </div>
 
-  <div class="panel pdv-finish">
-    <div class="panel-title">Finalizar venda</div>
-    <form method="post" class="compact-form">
-      {% csrf_token %}
-      <input type="hidden" name="action" value="finish">
-      {% for field in finish_form %}
-        <label class="form-field">
-          <span>{{ field.label }}</span>
-          {{ field }}
-          {% if field.errors %}<small class="field-error">{{ field.errors|striptags }}</small>{% endif %}
-        </label>
-      {% endfor %}
-      <button class="primary-button" type="submit" {% if not items %}disabled{% endif %}>Finalizar</button>
-    </form>
+  <footer class="pdv-shortcut-bar">
+    <button type="button" data-pdv-focus-search><i class="fa-solid fa-magnifying-glass"></i><span><kbd>F2</kbd> Buscar produto</span></button>
+    <button type="button" data-pdv-modal-open="price"><i class="fa-solid fa-tag"></i><span><kbd>F3</kbd> Consulta preco</span></button>
+    <button type="button" data-pdv-modal-open="clients"><i class="fa-regular fa-user"></i><span><kbd>F4</kbd> Cliente</span></button>
+    <button type="button" data-pdv-modal-open="refunds"><i class="fa-solid fa-rotate-left"></i><span><kbd>F6</kbd> Estorno</span></button>
+    <button type="submit" id="pdv-dav-shortcut" form="pdv-dav-form" {% if not items %}disabled{% endif %}><i class="fa-regular fa-file-lines"></i><span><kbd>F7</kbd> DAV</span></button>
+    <button type="button" data-pdv-modal-open="boxes"><i class="fa-solid fa-vault"></i><span><kbd>F8</kbd> Caixas</span></button>
+    <button type="button" id="pdv-finish-shortcut" {% if not items %}disabled{% endif %}><i class="fa-solid fa-credit-card"></i><span><kbd>F9</kbd> Pagamento</span></button>
+  </footer>
+
+  {% if ultima_venda %}
+    <div class="pdv-post-sale-modal is-open" id="pdv-post-sale-modal" aria-hidden="false" data-print-url="{% url 'pdv:recibo_venda' ultima_venda.id %}">
+      <div class="pdv-post-sale-dialog">
+        <span class="pdv-post-sale-icon"><i class="fa-solid fa-circle-check"></i></span>
+        <h2>Venda #{{ ultima_venda.id }} finalizada</h2>
+        <strong>R$ {{ ultima_venda.total_liquido|floatformat:2 }}</strong>
+        <p>Carrinho liberado para a proxima compra.</p>
+        <div class="pdv-post-sale-actions">
+          <button type="button" class="primary-button" id="pdv-print-last-sale"><i class="fa-solid fa-print"></i> Imprimir cupom <kbd>F10</kbd></button>
+          <button type="button" class="secondary-button" id="pdv-close-post-sale">Nova venda <kbd>Enter</kbd></button>
+        </div>
+      </div>
+    </div>
+  {% endif %}
+
+  <div class="pdv-modal" id="pdv-modal-products" aria-hidden="true">
+    <div class="pdv-modal-dialog">
+      <header class="pdv-modal-header"><strong>Produtos</strong><button type="button" data-pdv-modal-close aria-label="Fechar"><i class="fa-solid fa-xmark"></i></button></header>
+      <input class="pdv-modal-search" type="search" placeholder="Filtrar produtos" data-pdv-modal-filter>
+      <div class="pdv-modal-list">
+        {% for produto in produtos_rapidos %}
+          <button type="button" class="pdv-modal-row" data-pdv-copy-product="{{ produto.codigo_barras|default:produto.nome }}">
+            <span><strong>{{ produto.nome }}</strong><small>{{ produto.codigo_barras|default:"Sem codigo" }}</small></span>
+            <b>R$ {{ produto.preco_venda|floatformat:2 }}</b>
+          </button>
+        {% empty %}
+          <div class="pdv-modal-empty">Nenhum produto cadastrado.</div>
+        {% endfor %}
+      </div>
+    </div>
+  </div>
+
+  <div class="pdv-modal" id="pdv-modal-price" aria-hidden="true">
+    <div class="pdv-modal-dialog">
+      <header class="pdv-modal-header"><strong>Consulta de preco</strong><button type="button" data-pdv-modal-close aria-label="Fechar"><i class="fa-solid fa-xmark"></i></button></header>
+      <input class="pdv-modal-search" type="search" placeholder="Buscar por nome ou codigo" data-pdv-modal-filter>
+      <div class="pdv-modal-list">
+        {% for produto in produtos_rapidos %}
+          <div class="pdv-modal-row">
+            <span><strong>{{ produto.nome }}</strong><small>{{ produto.codigo_barras|default:"Sem codigo" }}</small></span>
+            <b>R$ {{ produto.preco_venda|floatformat:2 }}</b>
+          </div>
+        {% empty %}
+          <div class="pdv-modal-empty">Nenhum produto disponivel.</div>
+        {% endfor %}
+      </div>
+      <div class="pdv-modal-footer"><a class="secondary-button" href="{% url 'pdv:consulta_preco' %}">Consulta completa</a></div>
+    </div>
+  </div>
+
+  <div class="pdv-modal" id="pdv-modal-clients" aria-hidden="true">
+    <div class="pdv-modal-dialog">
+      <header class="pdv-modal-header"><strong>Clientes</strong><button type="button" data-pdv-modal-close aria-label="Fechar"><i class="fa-solid fa-xmark"></i></button></header>
+      <input class="pdv-modal-search" type="search" placeholder="Filtrar clientes" data-pdv-modal-filter>
+      <div class="pdv-modal-list">
+        {% for cliente in clientes_rapidos %}
+          <button type="button" class="pdv-modal-row" data-pdv-select-client="{{ cliente.id }}">
+            <span><strong>{{ cliente.nome }}</strong><small>{{ cliente.cpf_cnpj|default:"Cliente cadastrado" }}</small></span>
+            <i class="fa-solid fa-user-check"></i>
+          </button>
+        {% empty %}
+          <div class="pdv-modal-empty">Nenhum cliente cadastrado.</div>
+        {% endfor %}
+      </div>
+      <div class="pdv-modal-footer"><a class="secondary-button" href="{% url 'clientes:novo' %}">Novo cliente</a><a class="secondary-button" href="{% url 'clientes:lista' %}">Cadastro completo</a></div>
+    </div>
+  </div>
+
+  <div class="pdv-modal" id="pdv-modal-promos" aria-hidden="true">
+    <div class="pdv-modal-dialog">
+      <header class="pdv-modal-header"><strong>Promocoes</strong><button type="button" data-pdv-modal-close aria-label="Fechar"><i class="fa-solid fa-xmark"></i></button></header>
+      <input class="pdv-modal-search" type="search" placeholder="Filtrar promocoes" data-pdv-modal-filter>
+      <div class="pdv-modal-list">
+        {% for promocao in promocoes_rapidas %}
+          <button type="button" class="pdv-modal-row" data-pdv-copy-product="{{ promocao.produto.codigo_barras|default:promocao.produto.nome }}">
+            <span><strong>{{ promocao.produto.nome }}</strong><small>{{ promocao.nome }}</small></span>
+            <b>R$ {{ promocao.preco_promocional|floatformat:2 }}</b>
+          </button>
+        {% empty %}
+          <div class="pdv-modal-empty">Nenhuma promocao ativa agora.</div>
+        {% endfor %}
+      </div>
+    </div>
+  </div>
+
+  <div class="pdv-modal" id="pdv-modal-refunds" aria-hidden="true">
+    <div class="pdv-modal-dialog">
+      <header class="pdv-modal-header"><strong>Estorno de venda</strong><button type="button" data-pdv-modal-close aria-label="Fechar"><i class="fa-solid fa-xmark"></i></button></header>
+      <div class="operation-notice operation-notice-warning">
+        <i class="fa-solid fa-triangle-exclamation"></i>
+        <div>
+          <strong>Estorno cancela a venda inteira e devolve os itens ao estoque.</strong>
+          <span>Use somente com autorizacao de supervisor/admin. Para devolucao parcial, abra a venda e registre devolucao.</span>
+        </div>
+      </div>
+      <input class="pdv-modal-search" type="search" placeholder="Filtrar por venda, operador ou cliente" data-pdv-modal-filter>
+      <div class="pdv-modal-list">
+        {% for venda in vendas_recentes %}
+          <article class="pdv-refund-card pdv-modal-row">
+            <div>
+              <strong>Venda #{{ venda.id }} - R$ {{ venda.total_liquido|floatformat:2 }}</strong>
+              <small>{{ venda.data|date:"d/m/Y H:i" }} - {{ venda.cliente|default:"Cliente avulso" }} - Caixa #{{ venda.caixa_id }}</small>
+            </div>
+            <form method="post" action="{% url 'pdv:cancelar_venda' venda.id %}" class="pdv-refund-form form-confirm" data-msg="Estornar esta venda e devolver todos os itens ao estoque?">
+              {% csrf_token %}
+              <input type="hidden" name="next" value="pdv">
+              <input type="text" name="motivo" placeholder="Motivo do estorno" required>
+              <input type="text" name="supervisor_usuario" placeholder="Supervisor/admin" autocomplete="username" required>
+              <input type="password" name="supervisor_senha" placeholder="Senha" autocomplete="current-password" required>
+              <button class="secondary-button danger-button" type="submit"><i class="fa-solid fa-rotate-left"></i> Estornar</button>
+            </form>
+          </article>
+        {% empty %}
+          <div class="pdv-modal-empty">Nenhuma venda finalizada recente para estorno.</div>
+        {% endfor %}
+      </div>
+    </div>
+  </div>
+
+  <div class="pdv-modal" id="pdv-modal-boxes" aria-hidden="true">
+    <div class="pdv-modal-dialog">
+      <header class="pdv-modal-header"><strong>Caixas</strong><button type="button" data-pdv-modal-close aria-label="Fechar"><i class="fa-solid fa-xmark"></i></button></header>
+      {% if caixa_aberto %}
+        <section class="pdv-cash-panel">
+          <div>
+            <strong>Caixa #{{ caixa_aberto.id }} aberto</strong>
+            <span>{{ caixa_aberto.filial }} - operador {{ caixa_aberto.usuario_abertura }}</span>
+          </div>
+          <form method="post" action="{% url 'pdv:fechar_caixa' caixa_aberto.id %}" class="pdv-cash-close-form form-confirm" data-msg="Fechar o caixa atual?">
+            {% csrf_token %}
+            <input type="hidden" name="next" value="pdv">
+            <div class="money-input"><span>R$</span><input type="number" name="valor_final" step="0.01" min="0" inputmode="decimal" placeholder="Valor declarado" required></div>
+            <button class="primary-button" type="submit"><i class="fa-solid fa-lock"></i> Fechar caixa</button>
+          </form>
+        </section>
+
+        <div class="pdv-modal-subtitle">Movimentos do caixa</div>
+        <div class="pdv-cash-movement-grid">
+          <form method="post" action="{% url 'pdv:registrar_suprimento' caixa_aberto.id %}" class="pdv-cash-movement-form">
+            {% csrf_token %}
+            <input type="hidden" name="next" value="pdv">
+            <strong><i class="fa-solid fa-plus"></i> Suprimento</strong>
+            <div class="money-input"><span>R$</span><input type="number" name="valor" step="0.01" min="0.01" inputmode="decimal" placeholder="Valor" required></div>
+            <input type="text" name="motivo" placeholder="Motivo" required>
+            <input type="text" name="supervisor_usuario" placeholder="Supervisor/admin" autocomplete="username" required>
+            <input type="password" name="supervisor_senha" placeholder="Senha" autocomplete="current-password" required>
+            <button class="secondary-button" type="submit">Registrar</button>
+          </form>
+          <form method="post" action="{% url 'pdv:registrar_sangria' caixa_aberto.id %}" class="pdv-cash-movement-form">
+            {% csrf_token %}
+            <input type="hidden" name="next" value="pdv">
+            <strong><i class="fa-solid fa-minus"></i> Sangria</strong>
+            <div class="money-input"><span>R$</span><input type="number" name="valor" step="0.01" min="0.01" inputmode="decimal" placeholder="Valor" required></div>
+            <input type="text" name="motivo" placeholder="Motivo" required>
+            <input type="text" name="supervisor_usuario" placeholder="Supervisor/admin" autocomplete="username" required>
+            <input type="password" name="supervisor_senha" placeholder="Senha" autocomplete="current-password" required>
+            <button class="secondary-button danger-button" type="submit">Registrar</button>
+          </form>
+        </div>
+      {% else %}
+        <section class="pdv-cash-panel">
+          <div>
+            <strong>Nenhum caixa aberto</strong>
+            <span>Abra um caixa antes de iniciar vendas no PDV.</span>
+          </div>
+          <a class="primary-button" href="{% url 'pdv:abrir_caixa' %}"><i class="fa-solid fa-lock-open"></i> Abrir caixa</a>
+        </section>
+      {% endif %}
+
+      <div class="pdv-modal-subtitle">Aguardando conferencia</div>
+      <div class="pdv-modal-list compact-list">
+        {% for caixa in caixas_aguardando_conferencia %}
+          <a class="pdv-modal-row" href="{% url 'pdv:caixa_detalhe' caixa.id %}">
+            <span><strong>Caixa #{{ caixa.id }} - fechado</strong><small>{{ caixa.filial }} - declarado R$ {{ caixa.valor_final|floatformat:2 }}</small></span>
+            <b>Conferir</b>
+          </a>
+        {% empty %}
+          <div class="pdv-modal-empty">Nenhum caixa aguardando conferencia.</div>
+        {% endfor %}
+      </div>
+
+      <div class="pdv-modal-subtitle">Historico recente</div>
+      <div class="pdv-modal-list compact-list">
+        {% for caixa in caixas_recentes %}
+          <a class="pdv-modal-row" href="{% url 'pdv:caixa_detalhe' caixa.id %}">
+            <span><strong>Caixa #{{ caixa.id }} - {{ caixa.get_status_display }}</strong><small>{{ caixa.filial }} - {{ caixa.data_abertura|date:"d/m/Y H:i" }}</small></span>
+            <b>R$ {{ caixa.valor_inicial|floatformat:2 }}</b>
+          </a>
+        {% empty %}
+          <div class="pdv-modal-empty">Nenhum caixa registrado.</div>
+        {% endfor %}
+      </div>
+      <div class="pdv-modal-footer"><a class="secondary-button" href="{% url 'pdv:caixas' %}">Gerenciar caixas</a></div>
+    </div>
   </div>
 </section>
 {% endblock %}

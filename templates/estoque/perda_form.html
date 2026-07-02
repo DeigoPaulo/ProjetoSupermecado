@@ -12,6 +12,8 @@
 
 <form method="post" class="form-grid panel form-confirm" data-msg="Confirmar baixa de estoque por perda?">
   {% include "includes/form.html" %}
+  <label class="form-field"><span>Supervisor ou admin</span><input type="text" name="supervisor_usuario" autocomplete="username" required></label>
+  <label class="form-field"><span>Senha</span><input type="password" name="supervisor_senha" autocomplete="current-password" required></label>
   <div class="form-actions">
     <a class="secondary-button" href="{% url 'estoque:perdas' %}">Cancelar</a>
     <button class="primary-button" type="submit">Registrar perda</button>

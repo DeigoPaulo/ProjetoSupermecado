@@ -1,0 +1,21 @@
+{% extends "base.html" %}
+
+{% block title %}Novo pedido online{% endblock %}
+
+{% block content %}
+<header class="page-header">
+  <div><h1>Novo pedido online</h1><p>Registre a origem, o cliente e a modalidade de entrega.</p></div>
+  <a class="secondary-button" href="{% url 'marketplace:pedidos' %}">Voltar</a>
+</header>
+
+<section class="panel form-panel">
+  <form method="post" class="form-grid">
+    {% csrf_token %}
+    {% for field in form %}
+      <label class="form-field"><span>{{ field.label }}</span>{{ field }}{{ field.errors }}</label>
+    {% endfor %}
+    <div class="form-actions"><button class="primary-button" type="submit">Criar pedido</button></div>
+  </form>
+</section>
+{% endblock %}
+

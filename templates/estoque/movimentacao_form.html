@@ -4,8 +4,10 @@
 
 {% block content %}
 <header class="page-header"><div><h1>Movimentar estoque</h1><p>Entradas, saidas, ajustes e reservas com trava transacional.</p></div></header>
-<form method="post" class="form-grid panel">
+<form method="post" class="form-grid panel form-confirm" data-msg="Confirmar movimentacao manual de estoque?">
   {% include "includes/form.html" %}
+  <label class="form-field"><span>Supervisor ou admin</span><input type="text" name="supervisor_usuario" autocomplete="username" required></label>
+  <label class="form-field"><span>Senha</span><input type="password" name="supervisor_senha" autocomplete="current-password" required></label>
   <div class="form-actions"><a class="secondary-button" href="{% url 'estoque:lista' %}">Cancelar</a><button class="primary-button" type="submit">Registrar</button></div>
 </form>
 {% endblock %}

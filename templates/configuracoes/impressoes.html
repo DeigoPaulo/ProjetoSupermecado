@@ -1,0 +1,75 @@
+{% extends "base.html" %}
+
+{% block title %}Impressoes{% endblock %}
+
+{% block content %}
+<header class="page-header">
+  <div>
+    <h1>Central de impressao</h1>
+    <p>Configure impressoras, papel, vias e impressao automatica para PDV, fiscal, DAV, etiquetas, relatorios e caixa.</p>
+  </div>
+  <div class="actions">
+    <form method="post" action="{% url 'configuracoes:impressoes_padroes' %}" class="inline-form">
+      {% csrf_token %}
+      <button class="secondary-button" type="submit"><i class="fa-solid fa-wand-magic-sparkles"></i> Criar padroes</button>
+    </form>
+    <a class="primary-button" href="{% url 'configuracoes:impressao_nova' %}"><i class="fa-solid fa-plus"></i> Nova configuracao</a>
+  </div>
+</header>
+
+<section class="metrics-grid">
+  <article class="metric"><span>Total configurado</span><strong>{{ resumo.total }}</strong></article>
+  <article class="metric"><span>Ativas</span><strong>{{ resumo.ativas }}</strong></article>
+  <article class="metric"><span>Automaticas</span><strong>{{ resumo.automaticas }}</strong></article>
+  <article class="metric"><span>Sem impressora</span><strong>{{ resumo.sem_impressora }}</strong></article>
+</section>
+
+<section class="operation-notice">
+  <i class="fa-solid fa-print"></i>
+  <div>
+    <strong>Esta e a configuracao central usada pelo sistema.</strong>
+    <span>O PDV usa cupom fiscal/nao fiscal; pedidos online e DAV usam separacao; relatorios e etiquetas tambem herdam daqui por empresa ou filial.</span>
+  </div>
+</section>
+
+<section class="panel">
+  <div class="table-wrapper">
+    <table>
+      <thead>
+        <tr>
+          <th>Documento</th>
+          <th>Escopo</th>
+          <th>Impressora</th>
+          <th>Papel</th>
+          <th>Fonte</th>
+          <th>Vias</th>
+          <th>Automatico</th>
+          <th>Status</th>
+          <th></th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for config in configuracoes %}
+          <tr>
+            <td>{{ config.get_tipo_documento_display }}</td>
+            <td><strong>{{ config.empresa }}</strong><br><small>{{ config.filial|default:"Todas as filiais" }}</small></td>
+            <td>{{ config.impressora_padrao|default:"Nao definida" }}</td>
+            <td>{{ config.get_modelo_papel_display }}</td>
+            <td>{{ config.tamanho_fonte }}</td>
+            <td>{{ config.numero_vias }}</td>
+            <td>{% if config.impressao_automatica %}<span class="status status-success">Sim</span>{% else %}<span class="status status-muted">Manual</span>{% endif %}</td>
+            <td>
+              <span class="status {% if not config.is_active %}status-muted{% endif %}">
+                {% if config.is_active %}Ativa{% else %}Inativa{% endif %}
+              </span>
+            </td>
+            <td><a class="secondary-button" href="{% url 'configuracoes:impressao_editar' config.pk %}">Editar</a></td>
+          </tr>
+        {% empty %}
+          <tr><td colspan="9" class="empty">Nenhuma configuracao criada. Use Criar padroes para comecar.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</section>
+{% endblock %}

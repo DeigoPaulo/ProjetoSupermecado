@@ -6,9 +6,11 @@ from django.shortcuts import get_object_or_404, redirect, render
 from django.views.generic import ListView
 
 from .forms import UsuarioPerfilForm
+from .permissions import SISTEMA, RoleRequiredMixin, role_required
 
 
-class UsuarioListView(LoginRequiredMixin, ListView):
+class UsuarioListView(LoginRequiredMixin, RoleRequiredMixin, ListView):
+    required_roles = SISTEMA
     model = User
     template_name = "accounts/usuario_list.html"
     context_object_name = "usuarios"
@@ -23,6 +25,7 @@ class UsuarioListView(LoginRequiredMixin, ListView):
 
 
 @login_required
+@role_required(*SISTEMA)
 def usuario_form(request, pk=None):
     usuario = get_object_or_404(User, pk=pk) if pk else None
     if request.method == "POST":

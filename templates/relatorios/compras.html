@@ -9,6 +9,8 @@
     <p>Entradas finalizadas e volume comprado por fornecedor.</p>
   </div>
   <div class="actions">
+    <a class="secondary-button" href="{% url 'relatorios:compras_csv' %}?data_inicio={{ data_inicio|date:'Y-m-d' }}&amp;data_fim={{ data_fim|date:'Y-m-d' }}"><i class="fa-solid fa-file-csv"></i> Excel/CSV</a>
+    <a class="secondary-button" href="{% url 'relatorios:compras_imprimir' %}?data_inicio={{ data_inicio|date:'Y-m-d' }}&amp;data_fim={{ data_fim|date:'Y-m-d' }}" target="_blank"><i class="fa-solid fa-file-pdf"></i> PDF</a>
     <a class="secondary-button" href="{% url 'relatorios:vendas' %}">Vendas</a>
     <a class="secondary-button" href="{% url 'relatorios:caixas' %}">Caixas</a>
     <a class="primary-button" href="{% url 'compras:nova' %}">Nova entrada</a>

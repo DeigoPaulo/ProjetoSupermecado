@@ -11,10 +11,6 @@
   <div class="actions">
     {% if inventario.status == "ABERTO" %}
       <a class="secondary-button" href="{% url 'estoque:inventario_item_novo' inventario.pk %}">Adicionar contagem</a>
-      <form method="post" action="{% url 'estoque:inventario_aplicar' inventario.pk %}" class="inline-form form-confirm" data-msg="Aplicar inventario e ajustar estoque?">
-        {% csrf_token %}
-        <button class="primary-button" type="submit">Aplicar inventario</button>
-      </form>
     {% endif %}
     <a class="secondary-button" href="{% url 'estoque:inventarios' %}">Voltar</a>
   </div>
@@ -26,6 +22,20 @@
   <article class="metric"><span>Criado</span><strong>{{ inventario.criado_em|date:"d/m H:i" }}</strong></article>
   <article class="metric"><span>Aplicado</span><strong>{{ inventario.aplicado_em|date:"d/m H:i"|default:"-" }}</strong></article>
 </section>
+
+{% if inventario.status == "ABERTO" %}
+  <section class="panel mt-panel">
+    <div class="panel-title">Aplicar inventario</div>
+    <form method="post" action="{% url 'estoque:inventario_aplicar' inventario.pk %}" class="form-grid form-confirm" data-msg="Aplicar inventario e ajustar estoque?">
+      {% csrf_token %}
+      <label class="form-field"><span>Supervisor ou admin</span><input type="text" name="supervisor_usuario" autocomplete="username" required></label>
+      <label class="form-field"><span>Senha</span><input type="password" name="supervisor_senha" autocomplete="current-password" required></label>
+      <div class="form-actions">
+        <button class="primary-button" type="submit">Aplicar inventario</button>
+      </div>
+    </form>
+  </section>
+{% endif %}
 
 <div class="panel">
   <div class="panel-title">Itens contados</div>

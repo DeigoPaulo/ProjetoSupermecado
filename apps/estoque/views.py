@@ -6,12 +6,16 @@ from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse_lazy
 from django.views.generic import CreateView, ListView
 
+from apps.accounts.permissions import ESTOQUE, RoleRequiredMixin, role_required, supervisor_from_request
+from apps.auditoria.models import LogAuditoria
+
 from .forms import InventarioEstoqueForm, ItemInventarioEstoqueForm, MovimentacaoEstoqueForm, PerdaEstoqueForm
 from .models import Estoque, InventarioEstoque, PerdaEstoque, StatusInventario, movimentar_estoque
 from .services import aplicar_inventario, registrar_perda_estoque
 
 
-class EstoqueListView(LoginRequiredMixin, ListView):
+class EstoqueListView(LoginRequiredMixin, RoleRequiredMixin, ListView):
+    required_roles = ESTOQUE
     model = Estoque
     template_name = "estoque/estoque_list.html"
     context_object_name = "estoques"
@@ -26,20 +30,40 @@ class EstoqueListView(LoginRequiredMixin, ListView):
 
 
 @login_required
+@role_required(*ESTOQUE)
 def movimentar(request):
     if request.method == "POST":
         form = MovimentacaoEstoqueForm(request.POST)
         if form.is_valid():
-            movimentar_estoque(usuario=request.user, **form.cleaned_data)
-            messages.success(request, "Movimentacao registrada com sucesso.")
-            return redirect("estoque:lista")
+            try:
+                supervisor = supervisor_from_request(request)
+                movimentacao = movimentar_estoque(usuario=request.user, **form.cleaned_data)
+                LogAuditoria.objects.create(
+                    usuario=request.user,
+                    modulo="estoque",
+                    acao="MOVIMENTACAO_MANUAL",
+                    descricao=(
+                        f"Movimentacao {movimentacao.id}: {movimentacao.tipo} {movimentacao.quantidade} "
+                        f"do produto {movimentacao.produto}. Motivo: {movimentacao.motivo or '-'}. "
+                        f"Autorizado por: {supervisor}."
+                    ),
+                    objeto_tipo="MovimentacaoEstoque",
+                    objeto_id=str(movimentacao.id),
+                    ip=request.META.get("REMOTE_ADDR"),
+                )
+            except ValidationError as exc:
+                messages.error(request, " ".join(exc.messages))
+            else:
+                messages.success(request, "Movimentacao registrada com sucesso.")
+                return redirect("estoque:lista")
     else:
         form = MovimentacaoEstoqueForm()
 
     return render(request, "estoque/movimentacao_form.html", {"form": form})
 
 
-class InventarioListView(LoginRequiredMixin, ListView):
+class InventarioListView(LoginRequiredMixin, RoleRequiredMixin, ListView):
+    required_roles = ESTOQUE
     model = InventarioEstoque
     template_name = "estoque/inventario_list.html"
     context_object_name = "inventarios"
@@ -49,7 +73,8 @@ class InventarioListView(LoginRequiredMixin, ListView):
         return InventarioEstoque.objects.select_related("filial", "usuario").order_by("-criado_em")
 
 
-class CriarInventarioView(LoginRequiredMixin, CreateView):
+class CriarInventarioView(LoginRequiredMixin, RoleRequiredMixin, CreateView):
+    required_roles = ESTOQUE
     model = InventarioEstoque
     form_class = InventarioEstoqueForm
     template_name = "estoque/inventario_form.html"
@@ -64,6 +89,7 @@ class CriarInventarioView(LoginRequiredMixin, CreateView):
 
 
 @login_required
+@role_required(*ESTOQUE)
 def inventario_detalhe(request, pk):
     inventario = get_object_or_404(
         InventarioEstoque.objects.select_related("filial", "usuario").prefetch_related("itens__produto"),
@@ -73,6 +99,7 @@ def inventario_detalhe(request, pk):
 
 
 @login_required
+@role_required(*ESTOQUE)
 def adicionar_item_inventario(request, pk):
     inventario = get_object_or_404(InventarioEstoque, pk=pk)
     if inventario.status != StatusInventario.ABERTO:
@@ -97,12 +124,14 @@ def adicionar_item_inventario(request, pk):
 
 
 @login_required
+@role_required(*ESTOQUE)
 def aplicar_inventario_view(request, pk):
     inventario = get_object_or_404(InventarioEstoque, pk=pk)
     if request.method != "POST":
         return redirect("estoque:inventario_detalhe", pk=inventario.pk)
     try:
-        aplicar_inventario(inventario=inventario, usuario=request.user, ip=request.META.get("REMOTE_ADDR"))
+        supervisor = supervisor_from_request(request)
+        aplicar_inventario(inventario=inventario, usuario=request.user, supervisor=supervisor, ip=request.META.get("REMOTE_ADDR"))
     except ValidationError as exc:
         messages.error(request, " ".join(exc.messages))
     else:
@@ -110,7 +139,8 @@ def aplicar_inventario_view(request, pk):
     return redirect("estoque:inventario_detalhe", pk=inventario.pk)
 
 
-class PerdaEstoqueListView(LoginRequiredMixin, ListView):
+class PerdaEstoqueListView(LoginRequiredMixin, RoleRequiredMixin, ListView):
+    required_roles = ESTOQUE
     model = PerdaEstoque
     template_name = "estoque/perda_list.html"
     context_object_name = "perdas"
@@ -121,12 +151,14 @@ class PerdaEstoqueListView(LoginRequiredMixin, ListView):
 
 
 @login_required
+@role_required(*ESTOQUE)
 def registrar_perda(request):
     if request.method == "POST":
         form = PerdaEstoqueForm(request.POST)
         if form.is_valid():
             try:
-                registrar_perda_estoque(usuario=request.user, ip=request.META.get("REMOTE_ADDR"), **form.cleaned_data)
+                supervisor = supervisor_from_request(request)
+                registrar_perda_estoque(usuario=request.user, supervisor=supervisor, ip=request.META.get("REMOTE_ADDR"), **form.cleaned_data)
             except ValidationError as exc:
                 messages.error(request, " ".join(exc.messages))
             else:

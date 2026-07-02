@@ -7,9 +7,10 @@ from .models import EntradaCompra, ItemEntradaCompra
 class EntradaCompraForm(forms.ModelForm):
     class Meta:
         model = EntradaCompra
-        fields = ["fornecedor", "filial", "numero_documento", "data_emissao", "observacoes"]
+        fields = ["fornecedor", "filial", "numero_documento", "data_emissao", "vencimento_financeiro", "gerar_conta_financeira", "observacoes"]
         widgets = {
             "data_emissao": forms.DateInput(attrs={"type": "date"}),
+            "vencimento_financeiro": forms.DateInput(attrs={"type": "date"}),
             "observacoes": forms.Textarea(attrs={"rows": 3}),
         }
 

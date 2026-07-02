@@ -1,0 +1,58 @@
+{% extends "base.html" %}
+{% block title %}Politica de entrega{% endblock %}
+{% block content %}
+<header class="page-header">
+  <div>
+    <h1>{% if politica %}Editar politica{% else %}Nova politica{% endif %}</h1>
+    <p>Configure a area comercial e os valores de entrega da filial.</p>
+  </div>
+  <a class="secondary-button" href="{% url 'marketplace:politicas_entrega' %}"><i class="fa-solid fa-arrow-left"></i> Voltar</a>
+</header>
+
+<form method="post" class="delivery-policy-form">
+  {% csrf_token %}
+  {{ form.non_field_errors }}
+
+  <section class="panel">
+    <div class="panel-title">Alcance comercial</div>
+    <div class="form-grid">
+      <label class="form-field"><span>{{ form.filial.label }}</span>{{ form.filial }}{{ form.filial.errors }}</label>
+      <label class="form-field"><span>{{ form.raio_maximo_km.label }}</span>{{ form.raio_maximo_km }}{{ form.raio_maximo_km.errors }}</label>
+      <label class="form-field"><span>{{ form.valor_minimo_pedido.label }}</span>{{ form.valor_minimo_pedido }}{{ form.valor_minimo_pedido.errors }}</label>
+      <label class="form-field"><span>{{ form.frete_gratis_acima.label }}</span>{{ form.frete_gratis_acima }}{{ form.frete_gratis_acima.errors }}</label>
+    </div>
+  </section>
+
+  <section class="panel">
+    <div class="panel-title">Bairros, horarios e status</div>
+    <div class="form-grid">
+      <label class="form-field form-field-wide"><span>{{ form.bairros_atendidos.label }}</span>{{ form.bairros_atendidos }}{{ form.bairros_atendidos.errors }}<small>{{ form.bairros_atendidos.help_text }}</small></label>
+      <label class="form-field form-field-wide"><span>{{ form.bairros_bloqueados.label }}</span>{{ form.bairros_bloqueados }}{{ form.bairros_bloqueados.errors }}<small>{{ form.bairros_bloqueados.help_text }}</small></label>
+      <label class="form-field form-field-wide"><span>{{ form.horarios_entrega.label }}</span>{{ form.horarios_entrega }}{{ form.horarios_entrega.errors }}</label>
+      <label class="toggle-field">{{ form.permite_retirada }} <span>{{ form.permite_retirada.label }}</span>{{ form.permite_retirada.errors }}</label>
+      <label class="toggle-field">{{ form.is_active }} <span>{{ form.is_active.label }}</span>{{ form.is_active.errors }}</label>
+    </div>
+  </section>
+
+  <section class="panel">
+    <div class="panel-title">Faixas por distancia</div>
+    {{ formset.management_form }}
+    {{ formset.non_form_errors }}
+    <div class="delivery-band-editor">
+      {% for faixa in formset %}
+        <div class="delivery-band-row">
+          {% for hidden in faixa.hidden_fields %}{{ hidden }}{% endfor %}
+          {% for field in faixa.visible_fields %}
+            <label class="form-field"><span>{{ field.label }}</span>{{ field }}{{ field.errors }}</label>
+          {% endfor %}
+        </div>
+      {% endfor %}
+    </div>
+  </section>
+
+  <div class="sticky-form-actions">
+    <a class="secondary-button" href="{% url 'marketplace:politicas_entrega' %}">Cancelar</a>
+    <button class="primary-button" type="submit"><i class="fa-solid fa-floppy-disk"></i> Salvar politica</button>
+  </div>
+</form>
+{% endblock %}

@@ -13,8 +13,11 @@
       <form method="post" action="{% url 'pdv:cancelar_venda' venda.id %}" class="inline-form form-confirm" data-msg="Cancelar esta venda e devolver os itens ao estoque?">
         {% csrf_token %}
         <input type="text" name="motivo" placeholder="Motivo do cancelamento" required>
+        <input type="text" name="supervisor_usuario" placeholder="Supervisor" required>
+        <input type="password" name="supervisor_senha" placeholder="Senha" required>
         <button class="secondary-button danger-button" type="submit">Cancelar venda</button>
       </form>
+      <a class="secondary-button" href="{% url 'pdv:devolver_venda' venda.id %}">Registrar devolucao</a>
     {% endif %}
     <a class="secondary-button" href="{% url 'pdv:recibo_venda' venda.id %}" target="_blank">Recibo</a>
     <a class="primary-button" href="{% url 'pdv:pdv' %}">Nova venda</a>
@@ -25,12 +28,13 @@
   <div class="panel">
     <div class="panel-title">Itens</div>
     <table>
-      <thead><tr><th>Produto</th><th>Qtd</th><th>Unitario</th><th>Total</th></tr></thead>
+      <thead><tr><th>Produto</th><th>Qtd</th><th>Devolvido</th><th>Unitario</th><th>Total</th></tr></thead>
       <tbody>
         {% for item in venda.itens.all %}
           <tr>
             <td>{{ item.produto.nome }}</td>
             <td>{{ item.quantidade }}</td>
+            <td>{{ item.quantidade_devolvida|floatformat:3 }}</td>
             <td>R$ {{ item.preco_unitario_venda|floatformat:2 }}</td>
             <td>R$ {{ item.total|floatformat:2 }}</td>
           </tr>
@@ -43,7 +47,7 @@
     <dl class="summary-list">
       <dt>Status</dt><dd>{{ venda.status }}</dd>
       <dt>Operador</dt><dd>{{ venda.usuario }}</dd>
-      <dt>Cliente</dt><dd>{{ venda.cliente|default:"Venda nao identificada" }}</dd>
+      <dt>Cliente</dt><dd>{{ venda.cliente|default:"Cliente avulso" }}</dd>
       <dt>Caixa</dt><dd>{{ venda.caixa.id }}</dd>
       <dt>Total bruto</dt><dd>R$ {{ venda.total_bruto|floatformat:2 }}</dd>
       <dt>Desconto</dt><dd>R$ {{ venda.desconto|floatformat:2 }}</dd>
@@ -51,12 +55,46 @@
     </dl>
     <div class="panel-title">Pagamento</div>
     <table>
+      <thead><tr><th>Forma</th><th>Valor</th><th>Status</th><th>Referencia</th></tr></thead>
       <tbody>
         {% for pagamento in venda.pagamentos.all %}
-          <tr><td>{{ pagamento.forma_pagamento }}</td><td>R$ {{ pagamento.valor|floatformat:2 }}</td></tr>
+          <tr>
+            <td>{{ pagamento.forma_pagamento }}</td>
+            <td>R$ {{ pagamento.valor|floatformat:2 }}</td>
+            <td><span class="status-badge status-{{ pagamento.status|lower }}">{{ pagamento.get_status_display }}</span></td>
+            <td>
+              {% if pagamento.nsu %}NSU {{ pagamento.nsu }}{% endif %}
+              {% if pagamento.codigo_autorizacao %}<small>Aut. {{ pagamento.codigo_autorizacao }}</small>{% endif %}
+              {% if pagamento.mensagem_processadora %}<small>{{ pagamento.mensagem_processadora }}</small>{% endif %}
+              {% if not pagamento.nsu and not pagamento.codigo_autorizacao and not pagamento.mensagem_processadora %}-{% endif %}
+            </td>
+          </tr>
         {% endfor %}
       </tbody>
     </table>
   </div>
 </section>
+
+{% if venda.devolucoes.all %}
+  <div class="panel mt-panel">
+    <div class="panel-title">Devolucoes registradas</div>
+    <table>
+      <thead><tr><th>Data</th><th>Motivo</th><th>Itens</th><th>Valor</th></tr></thead>
+      <tbody>
+        {% for devolucao in venda.devolucoes.all %}
+          <tr>
+            <td>{{ devolucao.data|date:"d/m/Y H:i" }}</td>
+            <td>{{ devolucao.motivo }}</td>
+            <td>
+              {% for item in devolucao.itens.all %}
+                {{ item.quantidade|floatformat:3 }} x {{ item.produto.nome }}{% if not forloop.last %}<br>{% endif %}
+              {% endfor %}
+            </td>
+            <td><strong>R$ {{ devolucao.valor_total|floatformat:2 }}</strong></td>
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+{% endif %}
 {% endblock %}

@@ -1,0 +1,22 @@
+{% extends "base.html" %}
+
+{% block title %}Categoria financeira{% endblock %}
+
+{% block content %}
+<header class="page-header">
+  <div>
+    <h1>{% if categoria %}Editar categoria{% else %}Nova categoria{% endif %}</h1>
+    <p>Classifique receitas e despesas do supermercado.</p>
+  </div>
+  <a class="secondary-button" href="{% url 'financeiro:categorias' %}">Voltar</a>
+</header>
+
+<form method="post" class="form-grid panel">
+  {% csrf_token %}
+  {% include "includes/form.html" %}
+  <div class="form-actions">
+    <a class="secondary-button" href="{% url 'financeiro:categorias' %}">Cancelar</a>
+    <button class="primary-button" type="submit">Salvar</button>
+  </div>
+</form>
+{% endblock %}

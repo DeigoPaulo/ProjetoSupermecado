@@ -32,15 +32,37 @@
       <dt>Suprimentos</dt><dd>R$ {{ resumo.total_suprimentos|floatformat:2 }}</dd>
       <dt>Sangrias</dt><dd>R$ {{ resumo.total_sangrias|floatformat:2 }}</dd>
       <dt>Valor esperado</dt><dd><strong>R$ {{ resumo.total_esperado|floatformat:2 }}</strong></dd>
-      <dt>Valor informado</dt><dd>R$ {{ caixa.valor_final|floatformat:2|default:"-" }}</dd>
+      <dt>Valor declarado</dt><dd>{% if caixa.valor_final is not None %}R$ {{ caixa.valor_final|floatformat:2 }}{% else %}-{% endif %}</dd>
+      {% if resumo.divergencia_declarada is not None %}
+        <dt>Divergencia declarada</dt><dd>R$ {{ resumo.divergencia_declarada|floatformat:2 }}</dd>
+      {% endif %}
+      <dt>Valor conferido</dt><dd>{% if caixa.valor_conferido is not None %}R$ {{ caixa.valor_conferido|floatformat:2 }}{% else %}-{% endif %}</dd>
+      {% if resumo.divergencia_conferida is not None %}
+        <dt>Divergencia conferida</dt><dd>R$ {{ resumo.divergencia_conferida|floatformat:2 }}</dd>
+      {% endif %}
       <dt>Abertura</dt><dd>{{ caixa.data_abertura|date:"d/m/Y H:i" }}</dd>
       <dt>Fechamento</dt><dd>{{ caixa.data_fechamento|date:"d/m/Y H:i"|default:"-" }}</dd>
+      <dt>Conferencia</dt><dd>{{ caixa.data_conferencia|date:"d/m/Y H:i"|default:"-" }}</dd>
     </dl>
+    <div class="panel-title">Pagamentos por forma</div>
+    <table>
+      <tbody>
+        {% for item in resumo.pagamentos_por_forma %}
+          <tr>
+            <td>{{ item.forma_pagamento__nome }}</td>
+            <td><strong>R$ {{ item.total|floatformat:2 }}</strong></td>
+          </tr>
+        {% empty %}
+          <tr><td colspan="2" class="empty">Nenhum pagamento registrado.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
   </div>
 
   <div class="panel">
     <div class="panel-title">Fechamento</div>
     {% if caixa.status == "ABERTO" %}
+      <p class="muted mb-2">O operador informa o valor encontrado no caixa ao final do turno.</p>
       <form method="post" action="{% url 'pdv:fechar_caixa' caixa.id %}" class="compact-form form-confirm" data-msg="Fechar este caixa?">
         {% csrf_token %}
         {% for field in fechar_form %}
@@ -48,8 +70,22 @@
         {% endfor %}
         <button class="primary-button" type="submit">Fechar caixa</button>
       </form>
+    {% elif caixa.status == "FECHADO" %}
+      <div class="empty p-3">Fechado por {{ caixa.usuario_fechamento|default:"-" }}. Aguardando conferencia do supervisor.</div>
+      <form method="post" action="{% url 'pdv:conferir_caixa' caixa.id %}" class="compact-form form-confirm" data-msg="Conferir este caixa?">
+        {% csrf_token %}
+        {% for field in conferir_form %}
+          <label class="form-field"><span>{{ field.label }}</span>{{ field }}</label>
+        {% endfor %}
+        <label class="form-field"><span>Supervisor ou admin</span><input type="text" name="supervisor_usuario" autocomplete="username" required></label>
+        <label class="form-field"><span>Senha</span><input type="password" name="supervisor_senha" autocomplete="current-password" required></label>
+        <button class="primary-button" type="submit">Conferir caixa</button>
+      </form>
     {% else %}
-      <div class="empty p-3">Caixa fechado por {{ caixa.usuario_fechamento|default:"-" }}.</div>
+      <div class="empty p-3">
+        Caixa conferido por {{ caixa.usuario_conferencia|default:"-" }}.
+        {% if caixa.observacao_conferencia %}<br>{{ caixa.observacao_conferencia }}{% endif %}
+      </div>
     {% endif %}
   </div>
 </section>
@@ -63,6 +99,8 @@
       {% for field in suprimento_form %}
         <label class="form-field"><span>{{ field.label }}</span>{{ field }}</label>
       {% endfor %}
+      <label class="form-field"><span>Supervisor ou admin</span><input type="text" name="supervisor_usuario" autocomplete="username" required></label>
+      <label class="form-field"><span>Senha</span><input type="password" name="supervisor_senha" autocomplete="current-password" required></label>
       <button class="primary-button" type="submit">Registrar suprimento</button>
     </form>
   </div>
@@ -73,6 +111,8 @@
       {% for field in sangria_form %}
         <label class="form-field"><span>{{ field.label }}</span>{{ field }}</label>
       {% endfor %}
+      <label class="form-field"><span>Supervisor ou admin</span><input type="text" name="supervisor_usuario" autocomplete="username" required></label>
+      <label class="form-field"><span>Senha</span><input type="password" name="supervisor_senha" autocomplete="current-password" required></label>
       <button class="primary-button" type="submit">Registrar sangria</button>
     </form>
   </div>
@@ -89,7 +129,7 @@
           <tr>
             <td><a href="{% url 'pdv:venda_detalhe' venda.id %}">{{ venda.id }}</a></td>
             <td>{{ venda.data|date:"d/m/Y H:i" }}</td>
-            <td>{{ venda.cliente|default:"-" }}</td>
+            <td>{{ venda.cliente|default:"Cliente avulso" }}</td>
             <td>R$ {{ venda.total_liquido|floatformat:2 }}</td>
           </tr>
         {% empty %}

@@ -1,3 +1,154 @@
+from decimal import Decimal
+
+from django.contrib.auth import get_user_model
+from django.core.exceptions import ValidationError
 from django.test import TestCase
+
+from apps.empresas.models import Empresa, Filial
+from apps.estoque.models import Estoque, MovimentacaoEstoque, TipoMovimentacaoEstoque
+from apps.financeiro.models import ContaFinanceira, StatusContaFinanceira, TipoContaFinanceira
+from apps.clientes.models import Cliente
+from apps.pdv.models import Caixa
+from apps.produtos.models import Categoria, Produto
+
+from .models import FormaPagamento, PagamentoVenda, StatusPagamento, StatusVenda, Venda
+from .services import cancelar_venda, finalizar_venda
+
+
+class VendaServiceTests(TestCase):
+    def setUp(self):
+        self.usuario = get_user_model().objects.create_user(username="operador", password="123")
+        self.empresa = Empresa.objects.create(
+            razao_social="Mercado Teste Ltda",
+            nome_fantasia="Mercado Teste",
+            cnpj="11.111.111/0001-11",
+        )
+        self.filial = Filial.objects.create(empresa=self.empresa, nome="Loja 1", cnpj=self.empresa.cnpj)
+        self.categoria = Categoria.all_objects.create(nome="Mercearia")
+        self.produto = Produto.objects.create(
+            codigo_barras="7890000000011",
+            nome="Arroz 5kg",
+            categoria=self.categoria,
+            preco_custo=Decimal("15.00"),
+            preco_venda=Decimal("25.00"),
+            estoque_minimo=Decimal("2.000"),
+        )
+        self.estoque = Estoque.objects.create(produto=self.produto, filial=self.filial, quantidade_atual=Decimal("10.000"))
+        self.caixa = Caixa.objects.create(filial=self.filial, usuario_abertura=self.usuario, valor_inicial=Decimal("100.00"))
+        self.dinheiro = FormaPagamento.objects.create(nome="Dinheiro", tipo="DINHEIRO", permite_troco=True)
+        self.pix = FormaPagamento.objects.create(nome="Pix", tipo="PIX")
+        self.crediario = FormaPagamento.objects.create(nome="Crediario", tipo="CREDIARIO")
+        self.cliente = Cliente.objects.create(nome="Cliente Teste", cpf_cnpj="123.456.789-00")
+
+    def test_finalizar_venda_com_pagamento_dividido_baixa_estoque(self):
+        venda = finalizar_venda(
+            caixa=self.caixa,
+            usuario=self.usuario,
+            itens=[{"produto": self.produto, "quantidade": Decimal("2.000")}],
+            pagamentos=[
+                {"forma_pagamento": self.dinheiro, "valor": Decimal("20.00")},
+                {"forma_pagamento": self.pix, "valor": Decimal("30.00")},
+            ],
+        )
+
+        self.assertEqual(venda.status, StatusVenda.FINALIZADA)
+        self.assertEqual(venda.total_bruto, Decimal("50.00"))
+        self.assertIsNone(venda.cliente)
+        self.assertEqual(PagamentoVenda.objects.filter(venda=venda).count(), 2)
+        self.estoque.refresh_from_db()
+        self.assertEqual(self.estoque.quantidade_atual, Decimal("8.000"))
+        self.assertTrue(
+            MovimentacaoEstoque.objects.filter(
+                produto=self.produto,
+                filial=self.filial,
+                tipo=TipoMovimentacaoEstoque.VENDA,
+                referencia=f"venda:{venda.id}",
+            ).exists()
+        )
+
+    def test_finalizar_venda_rejeita_pagamento_incompleto(self):
+        with self.assertRaises(ValidationError):
+            finalizar_venda(
+                caixa=self.caixa,
+                usuario=self.usuario,
+                itens=[{"produto": self.produto, "quantidade": Decimal("1.000")}],
+                pagamentos=[{"forma_pagamento": self.pix, "valor": Decimal("10.00")}],
+            )
+
+        self.assertFalse(Venda.objects.exists())
+        self.estoque.refresh_from_db()
+        self.assertEqual(self.estoque.quantidade_atual, Decimal("10.000"))
+
+    def test_finalizar_venda_rejeita_pagamento_eletronico_pendente(self):
+        with self.assertRaisesMessage(ValidationError, "Todos os pagamentos devem estar confirmados"):
+            finalizar_venda(
+                caixa=self.caixa,
+                usuario=self.usuario,
+                itens=[{"produto": self.produto, "quantidade": Decimal("1.000")}],
+                pagamentos=[
+                    {
+                        "forma_pagamento": self.pix,
+                        "valor": Decimal("25.00"),
+                        "status": StatusPagamento.PENDENTE,
+                        "transacao_externa_id": "pix-pendente-1",
+                    }
+                ],
+            )
+
+        self.assertFalse(Venda.objects.exists())
+        self.estoque.refresh_from_db()
+        self.assertEqual(self.estoque.quantidade_atual, Decimal("10.000"))
+
+    def test_venda_crediario_cria_conta_receber(self):
+        venda = finalizar_venda(
+            caixa=self.caixa,
+            usuario=self.usuario,
+            cliente=self.cliente,
+            itens=[{"produto": self.produto, "quantidade": Decimal("1.000")}],
+            pagamentos=[{"forma_pagamento": self.crediario, "valor": Decimal("25.00")}],
+        )
+
+        conta = ContaFinanceira.objects.get(venda=venda)
+        self.assertEqual(conta.tipo, TipoContaFinanceira.RECEBER)
+        self.assertEqual(conta.status, StatusContaFinanceira.ABERTA)
+        self.assertEqual(conta.valor, Decimal("25.00"))
+        self.assertEqual(conta.cliente, self.cliente)
+
+    def test_venda_crediario_exige_cliente(self):
+        with self.assertRaises(ValidationError):
+            finalizar_venda(
+                caixa=self.caixa,
+                usuario=self.usuario,
+                itens=[{"produto": self.produto, "quantidade": Decimal("1.000")}],
+                pagamentos=[{"forma_pagamento": self.crediario, "valor": Decimal("25.00")}],
+            )
+
+        self.assertFalse(ContaFinanceira.objects.exists())
+
+    def test_cancelamento_de_venda_mista_estorna_local_e_aguarda_operadora(self):
+        venda = finalizar_venda(
+            caixa=self.caixa,
+            usuario=self.usuario,
+            itens=[{"produto": self.produto, "quantidade": Decimal("1.000")}],
+            pagamentos=[
+                {"forma_pagamento": self.dinheiro, "valor": Decimal("10.00")},
+                {
+                    "forma_pagamento": self.pix,
+                    "valor": Decimal("15.00"),
+                    "transacao_externa_id": "pix-e2e-123",
+                    "nsu": "123456",
+                },
+            ],
+        )
+
+        cancelar_venda(venda=venda, usuario=self.usuario, motivo="Venda duplicada")
+
+        dinheiro = venda.pagamentos.get(forma_pagamento=self.dinheiro)
+        pix = venda.pagamentos.get(forma_pagamento=self.pix)
+        self.assertEqual(dinheiro.status, StatusPagamento.ESTORNADO)
+        self.assertIsNotNone(dinheiro.estornado_em)
+        self.assertEqual(pix.status, StatusPagamento.ESTORNO_PENDENTE)
+        self.assertIsNone(pix.estornado_em)
+        self.assertEqual(pix.motivo_estorno, "Venda duplicada")
 
 # Create your tests here.

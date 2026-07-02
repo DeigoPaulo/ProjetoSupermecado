@@ -9,12 +9,15 @@ from django.views.generic import DetailView, ListView
 from django.views.generic.base import TemplateResponseMixin
 from django.views.generic.edit import ModelFormMixin, ProcessFormView
 
+from apps.accounts.permissions import COMPRAS, RoleRequiredMixin, role_required, supervisor_from_request
+
 from .forms import EntradaCompraForm, ItemEntradaCompraFormSet
 from .models import EntradaCompra, StatusEntradaCompra
 from .services import finalizar_entrada_compra
 
 
-class EntradaCompraListView(LoginRequiredMixin, ListView):
+class EntradaCompraListView(LoginRequiredMixin, RoleRequiredMixin, ListView):
+    required_roles = COMPRAS
     model = EntradaCompra
     template_name = "compras/entrada_list.html"
     context_object_name = "entradas"
@@ -28,7 +31,8 @@ class EntradaCompraListView(LoginRequiredMixin, ListView):
         return queryset
 
 
-class EntradaCompraDetailView(LoginRequiredMixin, DetailView):
+class EntradaCompraDetailView(LoginRequiredMixin, RoleRequiredMixin, DetailView):
+    required_roles = COMPRAS
     model = EntradaCompra
     template_name = "compras/entrada_detalhe.html"
     context_object_name = "entrada"
@@ -37,7 +41,8 @@ class EntradaCompraDetailView(LoginRequiredMixin, DetailView):
         return EntradaCompra.objects.select_related("fornecedor", "filial", "usuario").prefetch_related("itens__produto")
 
 
-class EntradaCompraFormMixin(LoginRequiredMixin, TemplateResponseMixin, ModelFormMixin, ProcessFormView):
+class EntradaCompraFormMixin(LoginRequiredMixin, RoleRequiredMixin, TemplateResponseMixin, ModelFormMixin, ProcessFormView):
+    required_roles = COMPRAS
     model = EntradaCompra
     form_class = EntradaCompraForm
     template_name = "compras/entrada_form.html"
@@ -95,13 +100,15 @@ class EntradaCompraUpdateView(EntradaCompraFormMixin):
 
 
 @login_required
+@role_required(*COMPRAS)
 def finalizar_entrada(request, pk):
     entrada = get_object_or_404(EntradaCompra.objects.prefetch_related("itens__produto"), pk=pk)
     if request.method != "POST":
         return redirect("compras:detalhe", pk=entrada.pk)
 
     try:
-        finalizar_entrada_compra(entrada)
+        supervisor = supervisor_from_request(request)
+        finalizar_entrada_compra(entrada, supervisor=supervisor, ip=request.META.get("REMOTE_ADDR"))
     except ValidationError as exc:
         messages.error(request, " ".join(exc.messages))
     else:

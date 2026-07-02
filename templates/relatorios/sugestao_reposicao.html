@@ -1,0 +1,76 @@
+{% extends "base.html" %}
+
+{% block title %}Sugestao de Reposicao{% endblock %}
+
+{% block content %}
+<header class="page-header">
+  <div>
+    <h1>Sugestao de reposicao</h1>
+    <p>Produtos que precisam de compra/reposicao com base em estoque minimo e venda media.</p>
+  </div>
+  <div class="actions">
+    <a class="secondary-button" href="{% url 'relatorios:sugestao_reposicao_csv' %}?data_inicio={{ data_inicio|date:'Y-m-d' }}&amp;data_fim={{ data_fim|date:'Y-m-d' }}&amp;dias_cobertura={{ dias_cobertura }}"><i class="fa-solid fa-file-csv"></i> Excel/CSV</a>
+    <a class="secondary-button" href="{% url 'relatorios:sugestao_reposicao_imprimir' %}?data_inicio={{ data_inicio|date:'Y-m-d' }}&amp;data_fim={{ data_fim|date:'Y-m-d' }}&amp;dias_cobertura={{ dias_cobertura }}" target="_blank"><i class="fa-solid fa-file-pdf"></i> PDF</a>
+    <a class="secondary-button" href="{% url 'relatorios:estoque_baixo' %}">Estoque baixo</a>
+    <a class="secondary-button" href="{% url 'relatorios:curva_abc' %}">Curva ABC</a>
+    <a class="primary-button" href="{% url 'compras:nova' %}">Nova entrada</a>
+  </div>
+</header>
+
+<form method="get" class="toolbar report-filter">
+  <label>
+    <span>Inicio</span>
+    <input type="date" name="data_inicio" value="{{ data_inicio|date:'Y-m-d' }}">
+  </label>
+  <label>
+    <span>Fim</span>
+    <input type="date" name="data_fim" value="{{ data_fim|date:'Y-m-d' }}">
+  </label>
+  <label>
+    <span>Dias cobertura</span>
+    <input type="number" name="dias_cobertura" min="1" max="90" value="{{ dias_cobertura }}">
+  </label>
+  <button type="submit">Calcular</button>
+</form>
+
+<section class="metrics-grid">
+  <article class="metric"><span>Produtos sugeridos</span><strong>{{ total_produtos }}</strong></article>
+  <article class="metric"><span>Quantidade sugerida</span><strong>{{ quantidade_sugerida|floatformat:3 }}</strong></article>
+  <article class="metric"><span>Cobertura</span><strong>{{ dias_cobertura }} dias</strong></article>
+  <article class="metric"><span>Periodo venda</span><strong>{{ data_inicio|date:"d/m" }} - {{ data_fim|date:"d/m" }}</strong></article>
+</section>
+
+<div class="panel">
+  <div class="panel-title">Itens para repor</div>
+  <table>
+    <thead>
+      <tr>
+        <th>Produto</th>
+        <th>Categoria</th>
+        <th>Filial</th>
+        <th>Disponivel</th>
+        <th>Minimo</th>
+        <th>Venda periodo</th>
+        <th>Media/dia</th>
+        <th>Sugerido</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for item in linhas %}
+        <tr>
+          <td>{{ item.produto.nome }}</td>
+          <td>{{ item.produto.categoria }}</td>
+          <td>{{ item.filial }}</td>
+          <td>{{ item.disponivel|floatformat:3 }}</td>
+          <td>{{ item.estoque_minimo|floatformat:3 }}</td>
+          <td>{{ item.venda_liquida|floatformat:3 }}</td>
+          <td>{{ item.media_dia|floatformat:3 }}</td>
+          <td><strong>{{ item.sugestao|floatformat:3 }}</strong></td>
+        </tr>
+      {% empty %}
+        <tr><td colspan="8" class="empty">Nenhum produto precisa de reposicao nos criterios atuais.</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endblock %}

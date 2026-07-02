@@ -4,7 +4,7 @@
 
 {% block content %}
 <section class="login-page">
-  <form method="post" class="login-panel">
+  <form method="post" class="login-panel no-uppercase-fields">
     {% csrf_token %}
     <h1>Entrar</h1>
     {% if form.errors %}

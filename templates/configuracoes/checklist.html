@@ -1,0 +1,91 @@
+{% extends "base.html" %}
+
+{% block title %}Checklist do projeto{% endblock %}
+
+{% block content %}
+<header class="page-header">
+  <div>
+    <h1>Checklist do projeto</h1>
+    <p>Acompanhamento do sistema com base na documentacao funcional e tecnica.</p>
+  </div>
+  <span class="project-percent">{{ resumo.percentual }}% concluido</span>
+</header>
+
+<section class="project-overview" aria-label="Resumo do projeto">
+  <div class="project-summary">
+    <strong>{{ resumo.concluidos }}</strong>
+    <span>Concluidos</span>
+  </div>
+  <div class="project-summary project-summary-partial">
+    <strong>{{ resumo.parciais }}</strong>
+    <span>Em andamento</span>
+  </div>
+  <div class="project-summary project-summary-pending">
+    <strong>{{ resumo.pendentes }}</strong>
+    <span>Pendentes</span>
+  </div>
+  <div class="project-summary">
+    <strong>{{ resumo.total }}</strong>
+    <span>Total mapeado</span>
+  </div>
+</section>
+
+<div class="project-progress" role="progressbar" aria-valuenow="{{ resumo.percentual }}" aria-valuemin="0" aria-valuemax="100">
+  <span style="width: {{ resumo.percentual }}%"></span>
+</div>
+
+<div class="checklist-groups">
+  {% for grupo in grupos %}
+    <section class="checklist-section">
+      <header class="checklist-section-header">
+        <div>
+          <h2>{{ grupo.titulo }}</h2>
+          <p>{{ grupo.descricao }}</p>
+        </div>
+        <strong>{{ grupo.concluidos }}/{{ grupo.total }}</strong>
+      </header>
+      <div class="checklist-progress"><span style="width: {{ grupo.percentual }}%"></span></div>
+      <div class="checklist-items">
+        {% for titulo, status, descricao in grupo.itens %}
+          <article class="checklist-item">
+            <span class="checklist-icon checklist-icon-{{ status }}" aria-hidden="true">
+              {% if status == "done" %}
+                <i class="fa-solid fa-check"></i>
+              {% elif status == "partial" %}
+                <i class="fa-solid fa-clock"></i>
+              {% else %}
+                <i class="fa-solid fa-circle"></i>
+              {% endif %}
+            </span>
+            <div class="checklist-copy">
+              <strong>{{ titulo }}</strong>
+              <p>{{ descricao }}</p>
+            </div>
+            <span class="checklist-status checklist-status-{{ status }}">
+              {% if status == "done" %}Concluido{% elif status == "partial" %}Em andamento{% else %}Pendente{% endif %}
+            </span>
+          </article>
+        {% endfor %}
+      </div>
+    </section>
+  {% endfor %}
+</div>
+
+<section class="checklist-section document-section">
+  <header class="checklist-section-header">
+    <div>
+      <h2>Documentos de referencia</h2>
+      <p>Fontes usadas para conferir o escopo e definir as proximas etapas.</p>
+    </div>
+    <i class="fa-solid fa-folder-open" aria-hidden="true"></i>
+  </header>
+  <div class="document-list">
+    {% for titulo, caminho in documentos %}
+      <div class="document-row">
+        <i class="fa-regular fa-file-lines" aria-hidden="true"></i>
+        <div><strong>{{ titulo }}</strong><small>{{ caminho }}</small></div>
+      </div>
+    {% endfor %}
+  </div>
+</section>
+{% endblock %}

@@ -7,8 +7,12 @@ from apps.auditoria.models import LogAuditoria
 from .models import Estoque, InventarioEstoque, MovimentacaoEstoque, PerdaEstoque, StatusInventario, TipoMovimentacaoEstoque, movimentar_estoque
 
 
+def _autorizacao_texto(supervisor):
+    return f" Autorizado por: {supervisor}." if supervisor else ""
+
+
 @transaction.atomic
-def aplicar_inventario(*, inventario, usuario, ip=None):
+def aplicar_inventario(*, inventario, usuario, supervisor=None, ip=None):
     inventario = InventarioEstoque.objects.select_for_update().get(pk=inventario.pk)
     if inventario.status != StatusInventario.ABERTO:
         raise ValidationError("Apenas inventarios abertos podem ser aplicados.")
@@ -46,7 +50,7 @@ def aplicar_inventario(*, inventario, usuario, ip=None):
         usuario=usuario,
         modulo="estoque",
         acao="APLICACAO_INVENTARIO",
-        descricao=f"Inventario {inventario.id} aplicado com {len(itens)} item(ns).",
+        descricao=f"Inventario {inventario.id} aplicado com {len(itens)} item(ns).{_autorizacao_texto(supervisor)}",
         objeto_tipo="InventarioEstoque",
         objeto_id=str(inventario.id),
         ip=ip,
@@ -55,7 +59,7 @@ def aplicar_inventario(*, inventario, usuario, ip=None):
 
 
 @transaction.atomic
-def registrar_perda_estoque(*, produto, filial, usuario, tipo, quantidade, motivo, ip=None):
+def registrar_perda_estoque(*, produto, filial, usuario, tipo, quantidade, motivo, supervisor=None, ip=None):
     custo_unitario = produto.preco_custo
     preco_venda = produto.preco_venda
     perda = PerdaEstoque.objects.create(
@@ -84,7 +88,7 @@ def registrar_perda_estoque(*, produto, filial, usuario, tipo, quantidade, motiv
         usuario=usuario,
         modulo="estoque",
         acao="REGISTRO_PERDA",
-        descricao=f"Perda {perda.id}: {produto} - {quantidade}. Motivo: {motivo}",
+        descricao=f"Perda {perda.id}: {produto} - {quantidade}. Motivo: {motivo}.{_autorizacao_texto(supervisor)}",
         objeto_tipo="PerdaEstoque",
         objeto_id=str(perda.id),
         ip=ip,

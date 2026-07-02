@@ -1,0 +1,140 @@
+{% extends "base.html" %}
+
+{% block title %}Pedido online {{ pedido.pk }}{% endblock %}
+
+{% block content %}
+<header class="page-header">
+  <div><h1>Pedido online #{{ pedido.pk }}</h1><p>{{ pedido.nome_cliente }} - {{ pedido.get_canal_display }}</p></div>
+  <div class="actions">
+    <a class="secondary-button" href="{% url 'marketplace:imprimir_separacao' pedido.pk %}" target="_blank"><i class="fa-solid fa-print"></i> Separacao</a>
+    <a class="secondary-button" href="{% url 'marketplace:pedidos' %}">Voltar</a>
+  </div>
+</header>
+
+<section class="metrics-grid">
+  <article class="metric"><span>Status</span><strong>{{ pedido.get_status_display }}</strong></article>
+  <article class="metric"><span>Subtotal</span><strong>R$ {{ pedido.subtotal|floatformat:2 }}</strong></article>
+  <article class="metric"><span>Entrega / desconto</span><strong>R$ {{ pedido.taxa_entrega|floatformat:2 }} / R$ {{ pedido.desconto|floatformat:2 }}</strong></article>
+  <article class="metric"><span>Total</span><strong>R$ {{ pedido.total|floatformat:2 }}</strong></article>
+  <article class="metric"><span>Pagamento</span><strong>{{ pedido.get_status_pagamento_display }}</strong></article>
+</section>
+
+{% if entrega_pendente %}
+<section class="operation-notice operation-notice-warning">
+  <i class="fa-solid fa-triangle-exclamation"></i>
+  <div>
+    <strong>Calcule a entrega antes de iniciar a separacao.</strong>
+    <span>Esta filial possui politica ativa. Informe a distancia para validar raio, pedido minimo, frete gratis e faixa de taxa.</span>
+  </div>
+</section>
+{% endif %}
+
+<section class="panel mt-panel">
+  <div class="panel-title">Dados do atendimento</div>
+  <div class="detail-grid">
+    <div><span>Filial</span><strong>{{ pedido.filial }}</strong></div>
+    <div><span>Entrega</span><strong>{{ pedido.get_tipo_entrega_display }}</strong></div>
+    <div><span>Telefone</span><strong>{{ pedido.telefone|default:"-" }}</strong></div>
+    <div><span>Referencia</span><strong>{{ pedido.referencia_externa|default:"-" }}</strong></div>
+    {% if pedido.endereco_entrega %}<div><span>Endereco</span><strong>{{ pedido.endereco_entrega }}</strong></div>{% endif %}
+    {% if pedido.distancia_entrega_km is not None %}<div><span>Distancia</span><strong>{{ pedido.distancia_entrega_km }} km</strong></div><div><span>Regra aplicada</span><strong>{{ pedido.regra_entrega_aplicada }}</strong></div>{% endif %}
+  </div>
+</section>
+
+{% if pedido.tipo_entrega == "ENTREGA" and pedido.status == "RASCUNHO" %}
+<section class="panel mt-panel delivery-calculation-panel">
+  <div>
+    <div class="panel-title">Calcular entrega</div>
+    <p class="panel-hint">Use a distancia estimada ate o cliente para aplicar a regra comercial da filial.</p>
+    {% if pedido.regra_entrega_aplicada %}
+      <div class="delivery-calculation-result">
+        <span><i class="fa-solid fa-circle-check"></i> {{ pedido.regra_entrega_aplicada }}</span>
+        <strong>Frete: R$ {{ pedido.taxa_entrega|floatformat:2 }}</strong>
+      </div>
+    {% elif not tem_politica_entrega %}
+      <div class="delivery-calculation-result muted">
+        <span><i class="fa-solid fa-circle-info"></i> Esta filial ainda nao possui politica ativa.</span>
+      </div>
+    {% endif %}
+  </div>
+  <form method="post" action="{% url 'marketplace:acao' pedido.pk %}" class="delivery-calculation-form">
+    {% csrf_token %}<input type="hidden" name="acao" value="calcular_entrega">
+    {% for field in entrega_form %}<label class="form-field"><span>{{ field.label }}</span>{{ field }}</label>{% endfor %}
+    <button class="secondary-button" type="submit"><i class="fa-solid fa-calculator"></i> Aplicar politica</button>
+  </form>
+</section>
+{% endif %}
+
+{% if pedido.status == "RASCUNHO" %}
+<section class="panel mt-panel">
+  <div class="panel-title">Adicionar produto</div>
+  <form method="post" class="form-grid">
+    {% csrf_token %}<input type="hidden" name="acao" value="item">
+    {% for field in form_item %}<label class="form-field"><span>{{ field.label }}</span>{{ field }}{{ field.errors }}</label>{% endfor %}
+    {{ form_item.non_field_errors }}
+    <div class="form-actions"><button class="primary-button" type="submit"><i class="fa-solid fa-plus"></i> Adicionar</button></div>
+  </form>
+</section>
+{% endif %}
+
+<section class="panel mt-panel">
+  <div class="panel-title">Itens do pedido</div>
+  <table>
+    <thead><tr><th>Produto</th><th>Pedido</th><th>Separado</th><th>Unitario</th><th>Total</th><th></th></tr></thead>
+    <tbody>
+      {% for item in pedido.itens.all %}
+        <tr><td>{{ item.produto }}</td><td>{{ item.quantidade }}</td><td>{{ item.quantidade_separada }}</td><td>R$ {{ item.preco_unitario|floatformat:2 }}</td><td>R$ {{ item.total|floatformat:2 }}</td><td>{% if pedido.status == "RASCUNHO" %}<form method="post" action="{% url 'marketplace:remover_item' pedido.pk item.pk %}">{% csrf_token %}<button class="secondary-button" type="submit" title="Remover"><i class="fa-solid fa-trash"></i></button></form>{% endif %}</td></tr>
+      {% empty %}<tr><td colspan="6" class="empty">Nenhum produto incluido.</td></tr>{% endfor %}
+    </tbody>
+  </table>
+</section>
+
+{% if pedido.status == "EM_SEPARACAO" %}
+<section class="panel mt-panel">
+  <div class="panel-title">Conferencia da separacao</div>
+  <form method="post" action="{% url 'marketplace:acao' pedido.pk %}" class="form-grid">
+    {% csrf_token %}<input type="hidden" name="acao" value="separacao">
+    {% for item in pedido.itens.all %}<label class="form-field"><span>{{ item.produto }} (pedido: {{ item.quantidade }})</span><input type="number" name="item_{{ item.pk }}" value="{{ item.quantidade_separada|stringformat:'s' }}" min="0" max="{{ item.quantidade|stringformat:'s' }}" step="0.001" required></label>{% endfor %}
+    <div class="form-actions"><button class="secondary-button" type="submit">Salvar conferencia</button></div>
+  </form>
+</section>
+{% endif %}
+
+{% if pedido.status_pagamento == "PENDENTE" and pedido.status != "CANCELADO" %}
+<section class="panel mt-panel">
+  <div class="panel-title">Registrar pagamento</div>
+  <form method="post" action="{% url 'marketplace:acao' pedido.pk %}" class="form-grid">
+    {% csrf_token %}<input type="hidden" name="acao" value="pagamento">
+    {% for field in pagamento_form %}<label class="form-field"><span>{{ field.label }}</span>{{ field }}</label>{% endfor %}
+    <div class="form-actions"><button class="secondary-button" type="submit">Confirmar pagamento</button></div>
+  </form>
+</section>
+{% endif %}
+
+{% if pedido.status != "CONCLUIDO" and pedido.status != "CANCELADO" %}
+<section class="panel mt-panel">
+  <div class="panel-title">Fluxo operacional</div>
+  <div class="order-flow-steps">
+    <span class="{% if pedido.status == 'RASCUNHO' %}active{% endif %}">1. Rascunho</span>
+    <span class="{% if pedido.status == 'EM_SEPARACAO' %}active{% endif %}">2. Separacao</span>
+    <span class="{% if pedido.status == 'PRONTO' %}active{% endif %}">3. Pronto</span>
+    <span class="{% if pedido.status == 'SAIU_ENTREGA' %}active{% endif %}">4. Entrega</span>
+    <span class="{% if pedido.status == 'CONCLUIDO' %}active{% endif %}">5. Concluido</span>
+  </div>
+  <div class="actions">
+    {% if pedido.status == "RASCUNHO" %}
+      <form method="post" action="{% url 'marketplace:acao' pedido.pk %}">
+        {% csrf_token %}<input type="hidden" name="acao" value="reservar">
+        <button class="primary-button" type="submit" {% if not pode_iniciar_separacao %}disabled{% endif %}>Reservar e iniciar separacao</button>
+      </form>
+      {% if not pedido.itens.exists %}<span class="action-help">Inclua ao menos um item para iniciar a separacao.</span>{% endif %}
+      {% if entrega_pendente %}<span class="action-help">Entrega pendente de calculo.</span>{% endif %}
+    {% endif %}
+    {% if pedido.status == "EM_SEPARACAO" %}<form method="post" action="{% url 'marketplace:acao' pedido.pk %}">{% csrf_token %}<input type="hidden" name="acao" value="avancar"><input type="hidden" name="destino" value="PRONTO"><button class="primary-button" type="submit">Marcar como pronto</button></form>{% endif %}
+    {% if pedido.status == "PRONTO" %}<form method="post" action="{% url 'marketplace:acao' pedido.pk %}">{% csrf_token %}<input type="hidden" name="acao" value="avancar"><input type="hidden" name="destino" value="{% if pedido.tipo_entrega == 'ENTREGA' %}SAIU_ENTREGA{% else %}CONCLUIDO{% endif %}"><button class="primary-button" type="submit">{% if pedido.tipo_entrega == 'ENTREGA' %}Saiu para entrega{% else %}Concluir retirada{% endif %}</button></form>{% endif %}
+    {% if pedido.status == "SAIU_ENTREGA" %}<form method="post" action="{% url 'marketplace:acao' pedido.pk %}">{% csrf_token %}<input type="hidden" name="acao" value="avancar"><input type="hidden" name="destino" value="CONCLUIDO"><button class="primary-button" type="submit">Confirmar entrega</button></form>{% endif %}
+    <form method="post" action="{% url 'marketplace:acao' pedido.pk %}" class="form-confirm" data-msg="Cancelar o pedido e liberar a reserva de estoque?"><input type="hidden" name="acao" value="cancelar">{% csrf_token %}<button class="secondary-button" type="submit">Cancelar pedido</button></form>
+  </div>
+</section>
+{% endif %}
+{% endblock %}

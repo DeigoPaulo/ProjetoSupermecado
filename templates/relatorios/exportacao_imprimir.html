@@ -1,0 +1,11 @@
+<!doctype html>
+<html lang="pt-br"><head><meta charset="utf-8"><title>{{ titulo }}</title>
+<style>
+@page{size:A4 landscape;margin:10mm}*{box-sizing:border-box}body{margin:0;color:#172033;font:9px Arial,sans-serif}header{display:flex;justify-content:space-between;gap:20px;border-bottom:2px solid #0050e8;padding-bottom:8px}h1{margin:0 0 3px;font-size:20px}p{margin:2px 0;color:#53657d}.actions{margin:9px 0;text-align:right}button{border:0;border-radius:5px;background:#0050e8;color:#fff;padding:8px 13px;font-weight:700}.summary{display:flex;gap:8px;margin:10px 0}.summary div{min-width:170px;border:1px solid #d8e1ef;padding:8px}.summary span{display:block;color:#607089}.summary strong{display:block;margin-top:3px;font-size:14px}table{width:100%;border-collapse:collapse}th,td{border:1px solid #d8e1ef;padding:5px;text-align:left}th{background:#edf3ff;font-size:8px;text-transform:uppercase}tr{break-inside:avoid}footer{margin-top:8px;color:#718096;text-align:right}@media print{.actions{display:none}}
+</style></head><body>
+<header><div><h1>{{ titulo }}</h1><p>{{ subtitulo }} - {{ data_inicio|date:"d/m/Y" }} a {{ data_fim|date:"d/m/Y" }}</p></div><p>Gerado em {{ gerado_em|date:"d/m/Y H:i" }}</p></header>
+<div class="actions"><button type="button" onclick="window.print()">Imprimir / Salvar como PDF</button></div>
+<section class="summary">{% for rotulo, valor in resumos %}<div><span>{{ rotulo }}</span><strong>{{ valor }}</strong></div>{% endfor %}</section>
+<table><thead><tr>{% for cabecalho in cabecalhos %}<th>{{ cabecalho }}</th>{% endfor %}</tr></thead><tbody>
+{% for linha in linhas %}<tr>{% for valor in linha %}<td>{{ valor }}</td>{% endfor %}</tr>{% empty %}<tr><td colspan="{{ cabecalhos|length }}">Nenhum registro no periodo.</td></tr>{% endfor %}
+</tbody></table><footer>Sistema Supermercado</footer></body></html>

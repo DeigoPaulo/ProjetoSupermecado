@@ -1,0 +1,74 @@
+{% extends "base.html" %}
+
+{% block title %}Consulta de preco{% endblock %}
+
+{% block content %}
+<header class="page-header">
+  <div>
+    <h1>Consulta de preco</h1>
+    <p>Busque por codigo de barras, codigo interno ou nome do produto.</p>
+  </div>
+  <div class="actions">
+    <a class="secondary-button" href="{% url 'pdv:pdv' %}">Voltar ao PDV</a>
+  </div>
+</header>
+
+<form method="get" class="toolbar price-check-toolbar">
+  <input type="search" name="q" value="{{ termo }}" placeholder="Codigo ou nome do produto" autofocus>
+  <button class="primary-button" type="submit">Consultar</button>
+</form>
+
+{% if produto %}
+  <section class="price-check-grid mt-panel">
+    <div class="panel price-check-main">
+      <div class="price-check-eyebrow">{{ produto.categoria }}</div>
+      <h2>{{ produto.nome }}</h2>
+      <div class="price-check-code">{{ produto.codigo_barras }}</div>
+      <div class="price-check-price">R$ {{ preco_atual|floatformat:2 }}</div>
+      {% if promocao %}
+        <div class="price-check-promo">Promocao ativa: {{ promocao.nome }} ate {{ promocao.fim|date:"d/m/Y H:i" }}</div>
+      {% elif produto.preco_promocional %}
+        <div class="price-check-promo">Preco promocional cadastrado no produto.</div>
+      {% else %}
+        <div class="muted">Preco normal de venda.</div>
+      {% endif %}
+    </div>
+
+    <div class="panel">
+      <div class="panel-title">Detalhes</div>
+      <dl class="summary-list">
+        <dt>Unidade</dt><dd>{{ produto.get_unidade_display }}</dd>
+        <dt>Marca</dt><dd>{{ produto.marca|default:"-" }}</dd>
+        <dt>Codigo interno</dt><dd>{{ produto.codigo_interno|default:"-" }}</dd>
+        <dt>Pesavel</dt><dd>{{ produto.produto_pesavel|yesno:"Sim,Nao" }}</dd>
+        <dt>PDV</dt><dd>{{ produto.vendido_no_pdv|yesno:"Liberado,Bloqueado" }}</dd>
+      </dl>
+    </div>
+  </section>
+
+  <div class="panel mt-panel">
+    <div class="panel-title">Estoque por filial</div>
+    <table>
+      <thead>
+        <tr><th>Filial</th><th>Fisico</th><th>Reservado</th><th>Disponivel</th></tr>
+      </thead>
+      <tbody>
+        {% for estoque in estoques %}
+          <tr>
+            <td>{{ estoque.filial }}</td>
+            <td>{{ estoque.quantidade_atual|floatformat:3 }}</td>
+            <td>{{ estoque.quantidade_reservada|floatformat:3 }}</td>
+            <td><strong>{{ estoque.quantidade_disponivel|floatformat:3 }}</strong></td>
+          </tr>
+        {% empty %}
+          <tr><td colspan="4" class="empty">Nenhum saldo de estoque cadastrado para este produto.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+{% elif termo %}
+  <div class="panel mt-panel">
+    <div class="empty p-3">Nenhum produto encontrado.</div>
+  </div>
+{% endif %}
+{% endblock %}

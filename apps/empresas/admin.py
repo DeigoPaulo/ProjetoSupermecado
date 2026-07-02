@@ -12,8 +12,8 @@ class EmpresaAdmin(admin.ModelAdmin):
 
 @admin.register(Filial)
 class FilialAdmin(admin.ModelAdmin):
-    list_display = ("nome", "empresa", "cnpj", "is_active")
-    search_fields = ("nome", "empresa__nome_fantasia", "cnpj")
-    list_filter = ("empresa", "is_active")
+    list_display = ("nome", "empresa", "cnpj", "municipio", "uf", "codigo_municipio_ibge", "is_active")
+    search_fields = ("nome", "empresa__nome_fantasia", "cnpj", "municipio", "codigo_municipio_ibge")
+    list_filter = ("empresa", "uf", "is_active")
 
 # Register your models here.

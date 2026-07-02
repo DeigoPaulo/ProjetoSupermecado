@@ -10,9 +10,12 @@
   </div>
   <div class="actions">
     <a class="secondary-button" href="{% url 'relatorios:vendas' %}">Vendas</a>
+    <a class="secondary-button" href="{% url 'relatorios:curva_abc' %}">Curva ABC</a>
     <a class="secondary-button" href="{% url 'relatorios:estoque_baixo' %}">Estoque baixo</a>
+    <a class="secondary-button" href="{% url 'relatorios:sugestao_reposicao' %}">Reposicao</a>
     <a class="secondary-button" href="{% url 'relatorios:movimentacoes_estoque' %}">Movimentações</a>
     <a class="secondary-button" href="{% url 'relatorios:perdas' %}">Perdas</a>
+    <a class="secondary-button" href="{% url 'relatorios:devolucoes' %}">Devolucoes</a>
     <a class="secondary-button" href="{% url 'relatorios:compras' %}">Compras</a>
     <a class="secondary-button" href="{% url 'relatorios:caixas' %}">Caixas</a>
   </div>
@@ -22,7 +25,25 @@
   <article class="metric"><span>Produtos ativos</span><strong>{{ produtos_ativos }}</strong></article>
   <article class="metric"><span>Total de produtos</span><strong>{{ total_produtos }}</strong></article>
   <article class="metric"><span>Caixas abertos</span><strong>{{ caixas_abertos }}</strong></article>
-  <article class="metric"><span>Faturamento</span><strong>R$ {{ faturamento|floatformat:2 }}</strong></article>
+  <article class="metric"><span>Faturamento bruto</span><strong>R$ {{ faturamento|floatformat:2 }}</strong></article>
+  <article class="metric"><span>Faturamento liquido</span><strong>R$ {{ faturamento_liquido|floatformat:2 }}</strong></article>
+  <article class="metric"><span>Devolucoes hoje</span><strong>R$ {{ valor_devolucoes_hoje|floatformat:2 }}</strong></article>
+</section>
+
+{{ dashboard_charts|json_script:"dashboard-chart-data" }}
+<section class="dashboard-chart-grid">
+  <article class="panel dashboard-chart-card">
+    <div class="panel-title">Pagamentos por forma</div>
+    <div class="dashboard-chart-wrap"><canvas id="dashboard-payments-chart" aria-label="Pagamentos por forma"></canvas></div>
+  </article>
+  <article class="panel dashboard-chart-card">
+    <div class="panel-title">Produtos por categoria</div>
+    <div class="dashboard-chart-wrap"><canvas id="dashboard-categories-chart" aria-label="Produtos por categoria"></canvas></div>
+  </article>
+  <article class="panel dashboard-chart-card">
+    <div class="panel-title">Caixas por status</div>
+    <div class="dashboard-chart-wrap"><canvas id="dashboard-boxes-chart" aria-label="Caixas por status"></canvas></div>
+  </article>
 </section>
 
 <section class="two-column">
@@ -58,4 +79,56 @@
     </table>
   </div>
 </section>
+{% endblock %}
+
+{% block extra_js %}
+{% load static %}
+<script src="{% static 'vendor/chartjs/chart.umd-4.4.8.min.js' %}"></script>
+<script>
+  (function () {
+    var dataElement = document.getElementById("dashboard-chart-data");
+    if (!dataElement || !window.Chart) return;
+    var data = JSON.parse(dataElement.textContent || "{}");
+    var colors = ["#0050e8", "#059669", "#f59e0b", "#dc2626", "#7c3aed", "#0891b2"];
+
+    function makeDoughnut(canvasId, source, emptyLabel) {
+      var canvas = document.getElementById(canvasId);
+      if (!canvas) return;
+      var labels = source && source.labels && source.labels.length ? source.labels : [emptyLabel];
+      var values = source && source.values && source.values.length ? source.values : [1];
+      var isEmpty = !source || !source.values || !source.values.length || source.values.every(function (value) { return Number(value) === 0; });
+
+      new Chart(canvas, {
+        type: "doughnut",
+        data: {
+          labels: labels,
+          datasets: [{
+            data: values,
+            backgroundColor: isEmpty ? ["#e5ebf4"] : colors,
+            borderColor: "#ffffff",
+            borderWidth: 3,
+          }],
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          cutout: "64%",
+          plugins: {
+            legend: {
+              position: "bottom",
+              labels: { boxWidth: 10, usePointStyle: true, padding: 14 },
+            },
+            tooltip: {
+              enabled: !isEmpty,
+            },
+          },
+        },
+      });
+    }
+
+    makeDoughnut("dashboard-payments-chart", data.pagamentos, "Sem pagamentos");
+    makeDoughnut("dashboard-categories-chart", data.categorias, "Sem categorias");
+    makeDoughnut("dashboard-boxes-chart", data.caixas, "Sem caixas");
+  })();
+</script>
 {% endblock %}
