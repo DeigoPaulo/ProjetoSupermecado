@@ -1,6 +1,34 @@
 {% extends "base.html" %}
+
 {% block title %}Nova integracao{% endblock %}
+
 {% block content %}
-<header class="page-header"><div><h1>Nova integracao</h1><p>Crie uma credencial exclusiva para uma plataforma e filial.</p></div><a class="secondary-button" href="{% url 'marketplace:integracoes' %}">Voltar</a></header>
-<section class="panel form-panel"><form method="post" class="form-grid">{% csrf_token %}{% for field in form %}<label class="form-field"><span>{{ field.label }}</span>{{ field }}{{ field.errors }}</label>{% endfor %}<div class="form-actions"><button class="primary-button" type="submit">Gerar integracao</button></div></form></section>
+<header class="page-header">
+  <div>
+    <h1>Nova integracao</h1>
+    <p>Crie uma credencial exclusiva para uma plataforma e filial.</p>
+  </div>
+  <a class="secondary-button" href="{% url 'marketplace:integracoes' %}">Voltar</a>
+</header>
+
+<section class="panel">
+  <form method="post" class="form-grid">
+    {% csrf_token %}
+    {% if form.non_field_errors %}<div class="form-note form-note-danger">{{ form.non_field_errors }}</div>{% endif %}
+
+    <section class="form-section form-field-wide">
+      <h2>Plataforma</h2>
+      <div class="form-grid form-grid-inner">
+        <label class="form-field"><span>{{ form.nome.label }}</span>{{ form.nome }}{{ form.nome.errors }}<small>Exemplo: iFood, WhatsApp, site proprio ou parceiro local.</small></label>
+        <label class="form-field"><span>{{ form.filial.label }}</span>{{ form.filial }}{{ form.filial.errors }}</label>
+        <label class="toggle-field">{{ form.is_active }} <span>{{ form.is_active.label }}</span>{{ form.is_active.errors }}</label>
+      </div>
+    </section>
+
+    <div class="form-actions">
+      <a class="secondary-button" href="{% url 'marketplace:integracoes' %}">Cancelar</a>
+      <button class="primary-button" type="submit">Gerar integracao</button>
+    </div>
+  </form>
+</section>
 {% endblock %}

@@ -11,7 +11,28 @@
 </header>
 
 <form method="post" class="form-grid panel">
-  {% include "includes/form.html" %}
+  {% csrf_token %}
+  <section class="form-section">
+    <div class="form-section-header">
+      <h2>Abertura da contagem</h2>
+      <p>Crie o inventario por filial antes de adicionar os produtos contados.</p>
+    </div>
+    <div class="form-grid">
+      <div class="field">
+        {{ form.filial.label_tag }}
+        {{ form.filial }}
+        {{ form.filial.errors }}
+      </div>
+      <div class="field span-2">
+        {{ form.descricao.label_tag }}
+        {{ form.descricao }}
+        <span class="help-text">Exemplo: contagem geral, setor de bebidas ou ajuste de divergencia.</span>
+        {{ form.descricao.errors }}
+      </div>
+    </div>
+  </section>
+
+  {{ form.non_field_errors }}
   <div class="form-actions">
     <a class="secondary-button" href="{% url 'estoque:inventarios' %}">Cancelar</a>
     <button class="primary-button" type="submit">Criar</button>

@@ -16,13 +16,81 @@
 <section class="panel">
   <form method="post" enctype="multipart/form-data" class="form-grid">
     {% csrf_token %}
-    {% if form.instance.pk and form.instance.certificado_configurado %}
-      <div class="form-note">
-        <strong>Certificado atual:</strong> {{ form.instance.certificado_nome }}
-        {% if form.instance.certificado_validade %} - valido ate {{ form.instance.certificado_validade|date:"d/m/Y" }}{% endif %}
+    {% if form.non_field_errors %}<div class="form-note form-note-danger">{{ form.non_field_errors }}</div>{% endif %}
+
+    {% if form.certificado_arquivo %}
+      <div class="form-note fiscal-config-status">
+        <div>
+          <strong>Certificado A1</strong>
+          {% if form.instance.pk and form.instance.certificado_configurado %}
+            <span>{{ form.instance.certificado_nome }}{% if form.instance.certificado_validade %} - valido ate {{ form.instance.certificado_validade|date:"d/m/Y" }}{% endif %}</span>
+          {% else %}
+            <span>Nenhum certificado protegido enviado.</span>
+          {% endif %}
+        </div>
+        {% if form.instance.pk %}
+          <span class="status {% if form.instance.certificado_status == 'valido' %}status-success{% elif form.instance.certificado_status == 'vence_em_breve' %}status-warning{% else %}status-danger{% endif %}">
+            {{ form.instance.certificado_status|capfirst }}
+          </span>
+        {% endif %}
       </div>
+
+      <section class="form-section form-field-wide">
+        <h2>Loja e ambiente</h2>
+        <div class="form-grid form-grid-inner">
+          <label class="form-field"><span>{{ form.filial.label }}</span>{{ form.filial }}{{ form.filial.errors }}</label>
+          <label class="form-field"><span>{{ form.ambiente.label }}</span>{{ form.ambiente }}{{ form.ambiente.errors }}</label>
+          <label class="form-field"><span>{{ form.regime_tributario.label }}</span>{{ form.regime_tributario }}{{ form.regime_tributario.errors }}</label>
+          <label class="toggle-field">{{ form.ativo }} <span>{{ form.ativo.label }}</span>{{ form.ativo.errors }}</label>
+        </div>
+      </section>
+
+      <section class="form-section form-field-wide">
+        <h2>NFC-e</h2>
+        <div class="form-grid form-grid-inner">
+          <label class="form-field"><span>{{ form.inscricao_estadual.label }}</span>{{ form.inscricao_estadual }}{{ form.inscricao_estadual.errors }}</label>
+          <label class="form-field"><span>{{ form.csc_id.label }}</span>{{ form.csc_id }}{{ form.csc_id.errors }}</label>
+          <label class="form-field form-field-wide"><span>{{ form.csc_token.label }}</span>{{ form.csc_token }}{{ form.csc_token.errors }}</label>
+        </div>
+      </section>
+
+      <section class="form-section form-field-wide">
+        <h2>Certificado digital</h2>
+        <div class="form-grid form-grid-inner">
+          <label class="form-field"><span>{{ form.certificado_arquivo.label }}</span>{{ form.certificado_arquivo }}{{ form.certificado_arquivo.errors }}<small>{{ form.certificado_arquivo.help_text }}</small></label>
+          <label class="form-field"><span>{{ form.certificado_senha.label }}</span>{{ form.certificado_senha }}{{ form.certificado_senha.errors }}<small>{{ form.certificado_senha.help_text }}</small></label>
+          <label class="form-field"><span>{{ form.certificado_nome.label }}</span>{{ form.certificado_nome }}{{ form.certificado_nome.errors }}</label>
+          <label class="form-field"><span>{{ form.certificado_validade.label }}</span>{{ form.certificado_validade }}{{ form.certificado_validade.errors }}</label>
+        </div>
+      </section>
+    {% elif form.serie and form.proximo_numero %}
+      <section class="form-section form-field-wide">
+        <h2>Numeracao fiscal</h2>
+        <div class="form-grid form-grid-inner">
+          <label class="form-field"><span>{{ form.filial.label }}</span>{{ form.filial }}{{ form.filial.errors }}</label>
+          <label class="form-field"><span>{{ form.tipo_documento.label }}</span>{{ form.tipo_documento }}{{ form.tipo_documento.errors }}</label>
+          <label class="form-field"><span>{{ form.serie.label }}</span>{{ form.serie }}{{ form.serie.errors }}</label>
+          <label class="form-field"><span>{{ form.proximo_numero.label }}</span>{{ form.proximo_numero }}{{ form.proximo_numero.errors }}<small>O numero e reservado quando a NFC-e e preparada.</small></label>
+          <label class="toggle-field">{{ form.ativo }} <span>{{ form.ativo.label }}</span>{{ form.ativo.errors }}</label>
+        </div>
+      </section>
+    {% elif form.cfop and form.movimenta_estoque %}
+      <section class="form-section form-field-wide">
+        <h2>Operacao fiscal</h2>
+        <div class="form-grid form-grid-inner">
+          <label class="form-field form-field-wide"><span>{{ form.descricao.label }}</span>{{ form.descricao }}{{ form.descricao.errors }}</label>
+          <label class="form-field"><span>{{ form.cfop.label }}</span>{{ form.cfop }}{{ form.cfop.errors }}<small>Use CFOP com 4 digitos, como 5102.</small></label>
+          <label class="form-field"><span>{{ form.tipo_documento.label }}</span>{{ form.tipo_documento }}{{ form.tipo_documento.errors }}</label>
+          <label class="toggle-field">{{ form.movimenta_estoque }} <span>{{ form.movimenta_estoque.label }}</span>{{ form.movimenta_estoque.errors }}</label>
+          <label class="toggle-field">{{ form.ativo }} <span>{{ form.ativo.label }}</span>{{ form.ativo.errors }}</label>
+        </div>
+      </section>
+    {% else %}
+      {% for field in form %}
+        <label class="form-field"><span>{{ field.label }}</span>{{ field }}{{ field.errors }}</label>
+      {% endfor %}
     {% endif %}
-    {{ form.as_p }}
+
     <div class="form-actions">
       <button type="submit" class="primary-button">Salvar</button>
       <a class="secondary-button" href="{% url 'fiscal:documentos' %}">Cancelar</a>

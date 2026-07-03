@@ -1,6 +1,8 @@
 from django import forms
 
-from .models import Categoria, Marca, Produto
+from apps.core_forms import aplicar_select2
+
+from .models import Categoria, Marca, Produto, ProdutoImagem
 
 
 class CategoriaForm(forms.ModelForm):
@@ -43,6 +45,10 @@ class ProdutoForm(forms.ModelForm):
             "is_active",
         ]
 
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        aplicar_select2(self, ["categoria", "marca"])
+
     def clean_ncm(self):
         ncm = "".join(filter(str.isdigit, self.cleaned_data.get("ncm", "")))
         if ncm and len(ncm) != 8:
@@ -54,6 +60,19 @@ class ProdutoForm(forms.ModelForm):
         if cest and len(cest) != 7:
             raise forms.ValidationError("CEST deve possuir 7 digitos.")
         return cest
+
+
+ProdutoImagemFormSet = forms.inlineformset_factory(
+    Produto,
+    ProdutoImagem,
+    fields=["imagem", "legenda", "ordem"],
+    extra=3,
+    can_delete=True,
+    widgets={
+        "imagem": forms.ClearableFileInput(attrs={"accept": "image/*"}),
+        "ordem": forms.NumberInput(attrs={"min": 0}),
+    },
+)
 
 
 class ProdutoImportCSVForm(forms.Form):
@@ -78,6 +97,7 @@ class ReajustePrecoForm(forms.Form):
         super().__init__(*args, **kwargs)
         self.fields["categoria"].queryset = Categoria.objects.all()
         self.fields["marca"].queryset = Marca.objects.all()
+        aplicar_select2(self, ["categoria", "marca"])
 
     def clean(self):
         cleaned = super().clean()
@@ -99,3 +119,4 @@ class EtiquetaProdutoForm(forms.Form):
         super().__init__(*args, **kwargs)
         self.fields["categoria"].queryset = Categoria.objects.all()
         self.fields["marca"].queryset = Marca.objects.all()
+        aplicar_select2(self, ["categoria", "marca"])

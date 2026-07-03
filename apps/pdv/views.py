@@ -6,9 +6,11 @@ from django.contrib.auth.decorators import login_required
 from django.contrib.auth.mixins import LoginRequiredMixin
 from django.core.exceptions import ValidationError
 from django.db.models import Q, Sum
+from django.http import JsonResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse_lazy
 from django.utils import timezone
+from django.views.decorators.http import require_GET
 from django.views.generic import CreateView, ListView
 
 from apps.accounts.permissions import PDV, SUPERVISAO, RoleRequiredMixin, has_role, role_required, supervisor_from_request
@@ -24,12 +26,55 @@ from apps.vendas.models import FormaPagamento, PagamentoVenda, PreVenda, StatusP
 from apps.vendas.services import calcular_item, cancelar_pre_venda, cancelar_venda, converter_pre_venda, criar_pre_venda, finalizar_venda, quantidade_devolvida_item, registrar_devolucao_venda
 
 from .forms import AbrirCaixaForm, AdicionarItemForm, ConferirCaixaForm, FecharCaixaForm, FinalizarVendaForm, PreVendaForm, SangriaForm, SuprimentoForm
-from .models import AcessoPdvNuvem, Caixa, Sangria, StatusAcessoPdvNuvem, StatusCaixa, Suprimento
+from .models import AcessoPdvNuvem, Caixa, Sangria, StatusAcessoPdvNuvem, StatusCaixa, Suprimento, TerminalPdv
 from .services_acesso import acesso_pdv_nuvem_aprovado, decidir_acesso_pdv_nuvem, solicitar_acesso_pdv_nuvem
 
 
 CART_SESSION_KEY = "pdv_cart"
 PRE_VENDA_SESSION_KEY = "pdv_pre_venda_id"
+
+
+@require_GET
+def terminal_bootstrap(request):
+    identificador = request.headers.get("X-Terminal-ID", "").strip()
+    chave = request.headers.get("X-Terminal-Key", "").strip()
+    if not identificador or not chave:
+        return JsonResponse({"status": "nao_autorizado", "mensagem": "Credenciais do terminal ausentes."}, status=401)
+
+    try:
+        terminal = TerminalPdv.objects.select_related("filial", "filial__empresa").get(identificador=identificador)
+    except (TerminalPdv.DoesNotExist, ValueError):
+        return JsonResponse({"status": "nao_autorizado", "mensagem": "Credenciais do terminal invalidas."}, status=401)
+
+    if not terminal.validar_chave_api(chave):
+        return JsonResponse({"status": "nao_autorizado", "mensagem": "Credenciais do terminal invalidas."}, status=401)
+    if not terminal.ativo:
+        return JsonResponse({"status": "terminal_inativo", "mensagem": "Este terminal foi desativado pelo administrador."}, status=403)
+
+    terminal.ultima_conexao = timezone.now()
+    terminal.ultimo_ip = request.META.get("REMOTE_ADDR") or None
+    terminal.save(update_fields=["ultima_conexao", "ultimo_ip", "atualizado_em"])
+    return JsonResponse(
+        {
+            "status": "ok",
+            "terminal": {
+                "identificador": str(terminal.identificador),
+                "nome": terminal.nome,
+                "permite_modo_offline": terminal.permite_modo_offline,
+            },
+            "filial": {
+                "id": terminal.filial_id,
+                "nome": terminal.filial.nome,
+                "empresa": str(terminal.filial.empresa),
+            },
+            "recursos": {
+                "venda_local": True,
+                "impressao_desktop": True,
+                "sincronizacao_assincrona": True,
+            },
+            "servidor_em": timezone.localtime().isoformat(),
+        }
+    )
 
 
 def _filial_do_usuario(user):
@@ -83,6 +128,17 @@ def _decimal_from_text(value):
         return Decimal(str(value or "0").replace(".", "").replace(",", "."))
     except InvalidOperation:
         return Decimal("0.00")
+
+
+def _moeda_json(valor):
+    return f"{Decimal(valor or 0):.2f}"
+
+
+def _quantidade_json(valor):
+    quantidade = Decimal(valor or 0)
+    if quantidade == quantidade.to_integral_value():
+        return f"{quantidade:.0f}"
+    return f"{quantidade:.3f}".replace(".", ",")
 
 
 def _pagamentos_from_request(request, total_liquido):
@@ -493,6 +549,79 @@ def recibo_venda(request, venda_id):
         request,
         "pdv/recibo_venda.html",
         {"venda": venda, "impressao": impressao, "estilos_impressao": estilos_impressao(impressao)},
+    )
+
+
+@login_required
+@role_required(*PDV)
+def venda_impressao_desktop(request, venda_id):
+    venda = get_object_or_404(
+        Venda.objects.select_related("filial", "filial__empresa", "caixa", "usuario", "cliente")
+        .prefetch_related("itens__produto", "pagamentos__forma_pagamento"),
+        id=venda_id,
+    )
+    impressao = configuracao_impressao_para(venda.filial, TipoDocumentoImpressao.CUPOM_NAO_FISCAL)
+    pagamentos = list(venda.pagamentos.all())
+    tem_dinheiro = any((pagamento.forma_pagamento.tipo or "").upper() == "DINHEIRO" for pagamento in pagamentos)
+    abrir_gaveta = bool(impressao and impressao.gaveta_automatica and impressao.abrir_gaveta_em_dinheiro and tem_dinheiro)
+    logo_url = ""
+    if venda.filial.empresa.logo:
+        logo_url = request.build_absolute_uri(venda.filial.empresa.logo.url)
+    return JsonResponse(
+        {
+            "status": "ok",
+            "tipo": "cupom_nao_fiscal",
+            "venda": {
+                "id": venda.id,
+                "status": venda.status,
+                "data": timezone.localtime(venda.data).isoformat(),
+                "filial": str(venda.filial),
+                "empresa": str(venda.filial.empresa),
+                "logo_url": logo_url,
+                "operador": str(venda.usuario),
+                "cliente": str(venda.cliente) if venda.cliente else "Cliente avulso",
+                "caixa": venda.caixa_id,
+                "total_bruto": _moeda_json(venda.total_bruto),
+                "desconto": _moeda_json(venda.desconto),
+                "total_liquido": _moeda_json(venda.total_liquido),
+            },
+            "itens": [
+                {
+                    "sequencia": indice,
+                    "produto": item.produto.nome,
+                    "codigo_barras": item.produto.codigo_barras,
+                    "quantidade": _quantidade_json(item.quantidade),
+                    "preco_unitario": _moeda_json(item.preco_unitario_venda),
+                    "desconto": _moeda_json(item.desconto),
+                    "total": _moeda_json(item.total),
+                }
+                for indice, item in enumerate(venda.itens.all(), start=1)
+            ],
+            "pagamentos": [
+                {
+                    "forma": pagamento.forma_pagamento.nome,
+                    "tipo": pagamento.forma_pagamento.tipo,
+                    "valor": _moeda_json(pagamento.valor),
+                    "status": pagamento.status,
+                    "nsu": pagamento.nsu,
+                    "codigo_autorizacao": pagamento.codigo_autorizacao,
+                }
+                for pagamento in pagamentos
+            ],
+            "impressao": {
+                "configurada": bool(impressao),
+                "impressora_padrao": impressao.impressora_padrao if impressao else "",
+                "modelo_papel": impressao.modelo_papel if impressao else "",
+                "numero_vias": impressao.numero_vias if impressao else 1,
+                "impressao_automatica": impressao.impressao_automatica if impressao else False,
+                "mensagem_rodape": impressao.mensagem_rodape if impressao else "",
+            },
+            "gaveta": {
+                "abrir": abrir_gaveta,
+                "motivo": "pagamento_em_dinheiro" if abrir_gaveta else "nao_aplicavel",
+                "bloqueia_venda_se_indisponivel": False,
+            },
+        }
     )
 
 

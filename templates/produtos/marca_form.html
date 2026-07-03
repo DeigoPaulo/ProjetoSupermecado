@@ -5,7 +5,26 @@
 {% block content %}
 <header class="page-header"><div><h1>Nova marca</h1><p>Cadastre fabricantes e marcas comerciais.</p></div></header>
 <form method="post" class="form-grid panel">
-  {% include "includes/form.html" %}
+  {% csrf_token %}
+  <section class="form-section">
+    <div class="form-section-header">
+      <h2>Marca comercial</h2>
+      <p>Marcas ajudam na busca, analise de vendas, etiquetas e organizacao do mix.</p>
+    </div>
+    <div class="form-grid">
+      <div class="field">
+        {{ form.nome.label_tag }}
+        {{ form.nome }}
+        {{ form.nome.errors }}
+      </div>
+      <div class="field checkbox-field">
+        {{ form.is_active }}
+        {{ form.is_active.label_tag }}
+        {{ form.is_active.errors }}
+      </div>
+    </div>
+  </section>
+  {{ form.non_field_errors }}
   <div class="form-actions"><a class="secondary-button" href="{% url 'produtos:lista' %}">Cancelar</a><button class="primary-button" type="submit">Salvar</button></div>
 </form>
 {% endblock %}

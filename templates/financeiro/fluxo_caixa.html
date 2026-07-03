@@ -21,6 +21,23 @@
   <button type="submit">Filtrar</button>
 </form>
 
+<section class="finance-insight-grid">
+  <article class="finance-insight">
+    <i class="fa-solid fa-calendar-days"></i>
+    <div>
+      <strong>Previsao por vencimento</strong>
+      <span>Contas abertas mostram o dinheiro que ainda deve entrar ou sair no periodo filtrado.</span>
+    </div>
+  </article>
+  <article class="finance-insight">
+    <i class="fa-solid fa-circle-check"></i>
+    <div>
+      <strong>Realizado por baixa</strong>
+      <span>Valores realizados aparecem quando a conta recebe baixa de pagamento ou recebimento.</span>
+    </div>
+  </article>
+</section>
+
 <section class="metrics-grid">
   <article class="metric"><span>Previsto receber</span><strong>R$ {{ total_previsto_receber|floatformat:2 }}</strong></article>
   <article class="metric"><span>Previsto pagar</span><strong>R$ {{ total_previsto_pagar|floatformat:2 }}</strong></article>

@@ -24,6 +24,30 @@ document.addEventListener("DOMContentLoaded", function () {
 
   aplicarMascaras();
 
+  function aplicarSelect2() {
+    if (typeof window.jQuery === "undefined" || !window.jQuery.fn.select2) {
+      window.setTimeout(aplicarSelect2, 100);
+      return;
+    }
+
+    var $ = window.jQuery;
+    $(".select2-field").each(function () {
+      var $field = $(this);
+      if ($field.data("select2")) return;
+      $field.select2({
+        width: "100%",
+        placeholder: $field.data("placeholder") || "Selecione",
+        allowClear: !$field.prop("required"),
+        language: {
+          noResults: function () { return "Nenhum resultado encontrado"; },
+          searching: function () { return "Pesquisando..."; },
+        },
+      });
+    });
+  }
+
+  aplicarSelect2();
+
   function aplicarCamposMonetarios(root) {
     var escopo = root || document;
     var nomesMonetarios = /(^|_)(valor|preco|custo|desconto|taxa|frete|total)(_|$)/i;
@@ -328,9 +352,7 @@ document.addEventListener("DOMContentLoaded", function () {
       focarBuscaProduto();
     }
 
-    function imprimirUltimaVenda() {
-      if (!postSaleModal) return;
-      var url = postSaleModal.getAttribute("data-print-url");
+    function imprimirUltimaVendaFallback(url) {
       if (!url) return;
       var frame = document.getElementById("pdv-print-frame");
       if (!frame) {
@@ -348,6 +370,21 @@ document.addEventListener("DOMContentLoaded", function () {
         document.body.appendChild(frame);
       }
       frame.src = url;
+    }
+
+    function imprimirUltimaVenda() {
+      if (!postSaleModal) return;
+      var url = postSaleModal.getAttribute("data-print-url");
+      var desktopUrl = postSaleModal.getAttribute("data-desktop-print-url");
+      var desktopBridge = window.SupermercadoDesktop && window.SupermercadoDesktop.printSale;
+      if (desktopBridge && desktopUrl && window.fetch) {
+        window.fetch(desktopUrl, { credentials: "same-origin" })
+          .then(function (response) { return response.json(); })
+          .then(function (payload) { return desktopBridge(payload); })
+          .catch(function () { imprimirUltimaVendaFallback(url); });
+        return;
+      }
+      imprimirUltimaVendaFallback(url);
     }
 
     function adicionarLinhaPagamento() {

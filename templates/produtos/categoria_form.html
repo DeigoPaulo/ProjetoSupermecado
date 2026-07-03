@@ -5,7 +5,31 @@
 {% block content %}
 <header class="page-header"><div><h1>Nova categoria</h1><p>Organize o cadastro de produtos.</p></div></header>
 <form method="post" class="form-grid panel">
-  {% include "includes/form.html" %}
+  {% csrf_token %}
+  <section class="form-section">
+    <div class="form-section-header">
+      <h2>Categoria de produto</h2>
+      <p>Use categorias para filtros, relatorios, reposicao, etiquetas e marketplace.</p>
+    </div>
+    <div class="form-grid">
+      <div class="field">
+        {{ form.nome.label_tag }}
+        {{ form.nome }}
+        {{ form.nome.errors }}
+      </div>
+      <div class="field checkbox-field">
+        {{ form.is_active }}
+        {{ form.is_active.label_tag }}
+        {{ form.is_active.errors }}
+      </div>
+      <div class="field span-2">
+        {{ form.descricao.label_tag }}
+        {{ form.descricao }}
+        {{ form.descricao.errors }}
+      </div>
+    </div>
+  </section>
+  {{ form.non_field_errors }}
   <div class="form-actions"><a class="secondary-button" href="{% url 'produtos:lista' %}">Cancelar</a><button class="primary-button" type="submit">Salvar</button></div>
 </form>
 {% endblock %}

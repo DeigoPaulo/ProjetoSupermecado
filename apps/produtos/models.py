@@ -97,4 +97,18 @@ class Produto(models.Model):
     def __str__(self):
         return self.nome
 
+
+class ProdutoImagem(models.Model):
+    produto = models.ForeignKey(Produto, on_delete=models.CASCADE, related_name="galeria")
+    imagem = models.ImageField(upload_to="produtos/galeria/")
+    legenda = models.CharField(max_length=120, blank=True)
+    ordem = models.PositiveSmallIntegerField(default=0)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["ordem", "id"]
+
+    def __str__(self):
+        return self.legenda or f"Imagem de {self.produto}"
+
 # Create your models here.

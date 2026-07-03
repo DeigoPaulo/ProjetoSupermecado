@@ -11,7 +11,72 @@
 </header>
 
 <form method="post" class="form-grid panel">
-  {% include "includes/form.html" %}
+  {% csrf_token %}
+  <section class="form-section">
+    <div class="form-section-header">
+      <h2>Identificacao</h2>
+      <p>Dados fiscais e comerciais para compras, recebimento e contato.</p>
+    </div>
+    <div class="form-grid">
+      <div class="field">
+        {{ form.razao_social.label_tag }}
+        {{ form.razao_social }}
+        {{ form.razao_social.errors }}
+      </div>
+      <div class="field">
+        {{ form.nome_fantasia.label_tag }}
+        {{ form.nome_fantasia }}
+        {{ form.nome_fantasia.errors }}
+      </div>
+      <div class="field">
+        {{ form.cnpj.label_tag }}
+        {{ form.cnpj }}
+        <span class="help-text">Em etapa futura este cadastro podera consultar CNPJ automaticamente.</span>
+        {{ form.cnpj.errors }}
+      </div>
+      <div class="field checkbox-field">
+        {{ form.is_active }}
+        {{ form.is_active.label_tag }}
+        {{ form.is_active.errors }}
+      </div>
+    </div>
+  </section>
+
+  <section class="form-section">
+    <div class="form-section-header">
+      <h2>Contato e entrega</h2>
+      <p>Informacoes usadas para pedidos de compra e previsao de recebimento.</p>
+    </div>
+    <div class="form-grid">
+      <div class="field">
+        {{ form.telefone.label_tag }}
+        {{ form.telefone }}
+        {{ form.telefone.errors }}
+      </div>
+      <div class="field">
+        {{ form.email.label_tag }}
+        {{ form.email }}
+        {{ form.email.errors }}
+      </div>
+      <div class="field">
+        {{ form.condicao_pagamento.label_tag }}
+        {{ form.condicao_pagamento }}
+        {{ form.condicao_pagamento.errors }}
+      </div>
+      <div class="field">
+        {{ form.prazo_entrega_dias.label_tag }}
+        {{ form.prazo_entrega_dias }}
+        {{ form.prazo_entrega_dias.errors }}
+      </div>
+      <div class="field span-2">
+        {{ form.endereco.label_tag }}
+        {{ form.endereco }}
+        {{ form.endereco.errors }}
+      </div>
+    </div>
+  </section>
+
+  {{ form.non_field_errors }}
   <div class="form-actions">
     <a class="secondary-button" href="{% url 'fornecedores:lista' %}">Cancelar</a>
     <button class="primary-button" type="submit">Salvar</button>

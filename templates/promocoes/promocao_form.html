@@ -11,7 +11,57 @@
 </header>
 
 <form method="post" class="form-grid panel">
-  {% include "includes/form.html" %}
+  {% csrf_token %}
+  <section class="form-section">
+    <div class="form-section-header">
+      <h2>Produto e preco</h2>
+      <p>O PDV aplica automaticamente o preco promocional quando a promocao esta ativa e dentro da vigencia.</p>
+    </div>
+    <div class="form-grid">
+      <div class="field span-2">
+        {{ form.produto.label_tag }}
+        {{ form.produto }}
+        {{ form.produto.errors }}
+      </div>
+      <div class="field">
+        {{ form.nome.label_tag }}
+        {{ form.nome }}
+        {{ form.nome.errors }}
+      </div>
+      <div class="field">
+        {{ form.preco_promocional.label_tag }}
+        {{ form.preco_promocional }}
+        <span class="help-text">Valor final que sera usado na venda durante a promocao.</span>
+        {{ form.preco_promocional.errors }}
+      </div>
+    </div>
+  </section>
+
+  <section class="form-section">
+    <div class="form-section-header">
+      <h2>Vigencia</h2>
+      <p>Defina inicio e fim para evitar preco promocional fora do periodo planejado.</p>
+    </div>
+    <div class="form-grid">
+      <div class="field">
+        {{ form.inicio.label_tag }}
+        {{ form.inicio }}
+        {{ form.inicio.errors }}
+      </div>
+      <div class="field">
+        {{ form.fim.label_tag }}
+        {{ form.fim }}
+        {{ form.fim.errors }}
+      </div>
+      <div class="field checkbox-field">
+        {{ form.ativa }}
+        {{ form.ativa.label_tag }}
+        {{ form.ativa.errors }}
+      </div>
+    </div>
+  </section>
+
+  {{ form.non_field_errors }}
   <div class="form-actions">
     <a class="secondary-button" href="{% url 'promocoes:lista' %}">Cancelar</a>
     <button class="primary-button" type="submit">Salvar</button>

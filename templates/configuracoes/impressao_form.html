@@ -28,10 +28,25 @@
   <section class="panel">
     <div class="panel-title">Impressora e comportamento</div>
     <div class="form-grid">
-      <label class="form-field form-field-wide"><span>{{ form.impressora_padrao.label }}</span>{{ form.impressora_padrao }}{{ form.impressora_padrao.errors }}<small>Use o mesmo nome instalado no Windows ou no app desktop futuramente.</small></label>
+      <label class="form-field form-field-wide"><span>{{ form.impressora_padrao.label }}</span>{{ form.impressora_padrao }}{{ form.impressora_padrao.errors }}<small>Use o mesmo nome instalado no Windows. No app desktop, este campo sera preenchido com as impressoras detectadas na maquina.</small></label>
+      <datalist id="printer-suggestions">
+        {% for impressora in impressoras_cadastradas %}
+          <option value="{{ impressora }}"></option>
+        {% endfor %}
+      </datalist>
       <label class="form-field"><span>{{ form.numero_vias.label }}</span>{{ form.numero_vias }}{{ form.numero_vias.errors }}</label>
       <label class="toggle-field">{{ form.impressao_automatica }} <span>{{ form.impressao_automatica.label }}</span>{{ form.impressao_automatica.errors }}</label>
       <label class="toggle-field">{{ form.exibir_logo }} <span>{{ form.exibir_logo.label }}</span>{{ form.exibir_logo.errors }}</label>
+    </div>
+  </section>
+
+  <section class="panel">
+    <div class="panel-title">Gaveta de dinheiro</div>
+    <div class="form-grid">
+      <label class="toggle-field">{{ form.gaveta_automatica }} <span>{{ form.gaveta_automatica.label }}</span>{{ form.gaveta_automatica.errors }}</label>
+      <label class="toggle-field">{{ form.abrir_gaveta_em_dinheiro }} <span>{{ form.abrir_gaveta_em_dinheiro.label }}</span>{{ form.abrir_gaveta_em_dinheiro.errors }}</label>
+      <label class="toggle-field">{{ form.abrir_gaveta_em_movimento_caixa }} <span>{{ form.abrir_gaveta_em_movimento_caixa.label }}</span>{{ form.abrir_gaveta_em_movimento_caixa.errors }}</label>
+      <p class="form-help form-field-wide">Opcional. Quando desativada, o PDV registra a venda normalmente sem tentar acionar gaveta fisica.</p>
     </div>
   </section>
 

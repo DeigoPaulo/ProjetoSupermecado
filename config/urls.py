@@ -31,6 +31,7 @@ urlpatterns = [
     path('financeiro/', include('apps.financeiro.urls')),
     path('fiscal/', include('apps.fiscal.urls')),
     path('pedidos-online/', include('apps.marketplace.urls')),
+    path('empresas/', include('apps.empresas.urls')),
     path('configuracoes/', include('apps.configuracoes.urls')),
     path('auditoria/', include('apps.auditoria.urls')),
     path('login/', auth_views.LoginView.as_view(template_name='registration/login.html'), name='login'),

@@ -5,12 +5,13 @@ from django.core.exceptions import ValidationError
 from django.test import TestCase, override_settings
 
 from apps.accounts.models import PerfilUsuario, TipoPerfil
+from apps.configuracoes.models import ConfiguracaoImpressao, TipoDocumentoImpressao
 from apps.empresas.models import Empresa, Filial
 from apps.estoque.models import Estoque
 from apps.produtos.models import Categoria, Produto
 from apps.vendas.models import FormaPagamento, StatusVenda, Venda
 
-from .models import AcessoPdvNuvem, Caixa, Sangria, StatusAcessoPdvNuvem, StatusCaixa
+from .models import AcessoPdvNuvem, Caixa, Sangria, StatusAcessoPdvNuvem, StatusCaixa, TerminalPdv
 from .services_acesso import acesso_pdv_nuvem_aprovado, decidir_acesso_pdv_nuvem, solicitar_acesso_pdv_nuvem
 
 
@@ -23,6 +24,46 @@ class AcessoPdvNuvemTests(TestCase):
         PerfilUsuario.objects.create(usuario=self.operador, filial=self.filial, tipo=TipoPerfil.OPERADOR_CAIXA)
         self.admin = User.objects.create_user(username="admin", password="senha")
         PerfilUsuario.objects.create(usuario=self.admin, filial=self.filial, tipo=TipoPerfil.ADMINISTRADOR)
+
+    def test_terminal_autenticado_inicializa_e_registra_conexao(self):
+        terminal = TerminalPdv(filial=self.filial, nome="Caixa 01")
+        chave = terminal.gerar_chave_api()
+        terminal.save()
+
+        resposta = self.client.get(
+            "/pdv/api/terminal/bootstrap/",
+            HTTP_X_TERMINAL_ID=str(terminal.identificador),
+            HTTP_X_TERMINAL_KEY=chave,
+            REMOTE_ADDR="192.168.1.25",
+        )
+
+        self.assertEqual(resposta.status_code, 200)
+        self.assertEqual(resposta.json()["terminal"]["nome"], "Caixa 01")
+        self.assertTrue(resposta.json()["recursos"]["venda_local"])
+        terminal.refresh_from_db()
+        self.assertIsNotNone(terminal.ultima_conexao)
+        self.assertEqual(terminal.ultimo_ip, "192.168.1.25")
+
+    def test_terminal_rejeita_chave_invalida_e_terminal_inativo(self):
+        terminal = TerminalPdv(filial=self.filial, nome="Caixa 02")
+        chave = terminal.gerar_chave_api()
+        terminal.save()
+
+        invalida = self.client.get(
+            "/pdv/api/terminal/bootstrap/",
+            HTTP_X_TERMINAL_ID=str(terminal.identificador),
+            HTTP_X_TERMINAL_KEY="chave-errada",
+        )
+        self.assertEqual(invalida.status_code, 401)
+
+        terminal.ativo = False
+        terminal.save(update_fields=["ativo"])
+        inativo = self.client.get(
+            "/pdv/api/terminal/bootstrap/",
+            HTTP_X_TERMINAL_ID=str(terminal.identificador),
+            HTTP_X_TERMINAL_KEY=chave,
+        )
+        self.assertEqual(inativo.status_code, 403)
 
     def test_solicitacao_pendente_nao_duplica(self):
         primeira, criada = solicitar_acesso_pdv_nuvem(usuario=self.operador, filial=self.filial, ip="127.0.0.1")
@@ -129,6 +170,9 @@ class AcessoPdvNuvemTests(TestCase):
         self.assertRedirects(resposta, "/pdv/")
         self.assertContains(resposta, "Carrinho liberado para a proxima compra.")
         self.assertContains(resposta, "Nenhum item no carrinho.")
+        venda = Venda.objects.get()
+        self.assertContains(resposta, f'data-print-url="/pdv/vendas/{venda.id}/recibo/"')
+        self.assertContains(resposta, f'data-desktop-print-url="/pdv/vendas/{venda.id}/impressao-desktop.json"')
         self.assertEqual(self.client.session["pdv_cart"], {})
         self.assertEqual(Venda.objects.count(), 1)
 
@@ -231,3 +275,50 @@ class AcessoPdvNuvemTests(TestCase):
         self.assertRedirects(resposta, "/pdv/")
         venda.refresh_from_db()
         self.assertEqual(venda.status, StatusVenda.CANCELADA)
+
+    def test_payload_de_impressao_desktop_da_venda_inclui_gaveta_opcional(self):
+        categoria = Categoria.objects.create(nome="Mercearia")
+        produto = Produto.objects.create(codigo_barras="789100000003", nome="Cafe", categoria=categoria, preco_custo=Decimal("8"), preco_venda=Decimal("14.50"))
+        Estoque.objects.create(produto=produto, filial=self.filial, quantidade_atual=Decimal("10"))
+        caixa = Caixa.objects.create(filial=self.filial, usuario_abertura=self.operador, valor_inicial=Decimal("100"))
+        forma = FormaPagamento.objects.create(nome="Dinheiro", tipo="DINHEIRO", permite_troco=True)
+        ConfiguracaoImpressao.objects.create(
+            empresa=self.filial.empresa,
+            filial=self.filial,
+            tipo_documento=TipoDocumentoImpressao.CUPOM_NAO_FISCAL,
+            impressora_padrao="EPSON TM-T20",
+            impressao_automatica=True,
+            gaveta_automatica=True,
+            abrir_gaveta_em_dinheiro=True,
+        )
+        session = self.client.session
+        session["pdv_cart"] = {str(produto.id): "2"}
+        session.save()
+        self.client.force_login(self.operador)
+        self.client.post(
+            "/pdv/",
+            {
+                "action": "finish",
+                "caixa": caixa.id,
+                "cliente": "",
+                "desconto": "0",
+                "vencimento_financeiro": "",
+                "pagamento_forma": [forma.id],
+                "pagamento_valor": ["29.00"],
+            },
+        )
+        venda = Venda.objects.get()
+
+        response = self.client.get(f"/pdv/vendas/{venda.id}/impressao-desktop.json")
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertEqual(payload["status"], "ok")
+        self.assertEqual(payload["venda"]["cliente"], "Cliente avulso")
+        self.assertEqual(payload["venda"]["total_liquido"], "29.00")
+        self.assertEqual(payload["itens"][0]["quantidade"], "2")
+        self.assertEqual(payload["pagamentos"][0]["tipo"], "DINHEIRO")
+        self.assertEqual(payload["impressao"]["impressora_padrao"], "EPSON TM-T20")
+        self.assertTrue(payload["impressao"]["impressao_automatica"])
+        self.assertTrue(payload["gaveta"]["abrir"])
+        self.assertFalse(payload["gaveta"]["bloqueia_venda_se_indisponivel"])

@@ -1,6 +1,7 @@
 from django import forms
 from django.forms import inlineformset_factory
 
+from apps.core_forms import aplicar_select2
 from apps.produtos.models import Produto
 
 from .models import FaixaTaxaEntrega, FormaPagamentoPedido, IntegracaoMarketplace, ItemPedidoOnline, PedidoOnline, PoliticaEntrega
@@ -15,6 +16,10 @@ class PedidoOnlineForm(forms.ModelForm):
             "observacoes": forms.Textarea(attrs={"rows": 3}),
         }
 
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        aplicar_select2(self, ["filial", "cliente"])
+
 
 class ItemPedidoOnlineForm(forms.ModelForm):
     class Meta:
@@ -24,6 +29,7 @@ class ItemPedidoOnlineForm(forms.ModelForm):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.fields["produto"].queryset = Produto.objects.filter(vendido_no_marketplace=True).order_by("nome")
+        aplicar_select2(self, ["produto"])
 
 
 class PagamentoPedidoForm(forms.Form):
@@ -36,6 +42,10 @@ class IntegracaoMarketplaceForm(forms.ModelForm):
         model = IntegracaoMarketplace
         fields = ["nome", "filial", "is_active"]
 
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        aplicar_select2(self, ["filial"])
+
 
 class PoliticaEntregaForm(forms.ModelForm):
     class Meta:
@@ -46,6 +56,10 @@ class PoliticaEntregaForm(forms.ModelForm):
             "bairros_bloqueados": forms.Textarea(attrs={"rows": 2}),
             "horarios_entrega": forms.Textarea(attrs={"rows": 2}),
         }
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        aplicar_select2(self, ["filial"])
 
 
 FaixaTaxaEntregaFormSet = inlineformset_factory(

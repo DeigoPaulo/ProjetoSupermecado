@@ -16,6 +16,7 @@ from .services import finalizar_entrada_compra
 class ComprasFinanceiroTests(TestCase):
     def setUp(self):
         self.usuario = get_user_model().objects.create_user(username="compras", password="123")
+        self.admin = get_user_model().objects.create_superuser("admin", "admin@example.com", "123")
         self.empresa = Empresa.objects.create(razao_social="Mercado Compra", nome_fantasia="Mercado Compra", cnpj="55.555.555/0001-55")
         self.filial = Filial.objects.create(empresa=self.empresa, nome="Matriz", cnpj=self.empresa.cnpj)
         self.fornecedor = Fornecedor.objects.create(razao_social="Fornecedor Teste Ltda", nome_fantasia="Fornecedor Teste")
@@ -55,5 +56,16 @@ class ComprasFinanceiroTests(TestCase):
         self.assertEqual(conta.valor, Decimal("15.00"))
         self.assertEqual(conta.vencimento, vencimento)
         self.assertEqual(conta.fornecedor, self.fornecedor)
+
+    def test_form_entrada_exibe_secoes_operacionais(self):
+        self.client.force_login(self.admin)
+
+        response = self.client.get("/compras/nova/")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "Dados da entrada")
+        self.assertContains(response, "Itens recebidos")
+        self.assertContains(response, "Ao finalizar, o sistema atualiza estoque e financeiro.")
+        self.assertContains(response, "select2-field")
 
 # Create your tests here.

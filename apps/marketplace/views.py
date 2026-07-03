@@ -39,7 +39,23 @@ def pedidos(request):
         "pronto": base_queryset.filter(status=StatusPedido.PRONTO).count(),
         "entrega": base_queryset.filter(status=StatusPedido.SAIU_ENTREGA).count(),
     }
-    return render(request, "marketplace/pedidos.html", {"pedidos": queryset[:100], "status_opcoes": StatusPedido.choices, "valor_total": resumo["valor"] or 0, "painel": painel})
+    pedidos_lista = list(queryset.prefetch_related("itens")[:100])
+    for pedido in pedidos_lista:
+        total_pedido = sum((item.quantidade for item in pedido.itens.all()), Decimal("0"))
+        total_separado = sum((item.quantidade_separada for item in pedido.itens.all()), Decimal("0"))
+        pedido.total_itens_pedido = total_pedido
+        pedido.total_itens_separados = total_separado
+        pedido.percentual_separacao = int((total_separado / total_pedido) * 100) if total_pedido else 0
+    return render(
+        request,
+        "marketplace/pedidos.html",
+        {
+            "pedidos": pedidos_lista,
+            "status_opcoes": StatusPedido.choices,
+            "valor_total": resumo["valor"] or 0,
+            "painel": painel,
+        },
+    )
 
 
 @role_required(*CADASTROS)

@@ -26,16 +26,34 @@
 <div class="panel">
   <table>
     <thead>
-      <tr><th>Produto</th><th>Codigo</th><th>Categoria</th><th>Preco</th><th>Unidade</th><th>Status</th><th></th></tr>
+      <tr><th>Imagem</th><th>Produto</th><th>Codigo</th><th>Categoria</th><th>Preco</th><th>Unidade</th><th>Marketplace</th><th>Status</th><th></th></tr>
     </thead>
     <tbody>
       {% for produto in produtos %}
         <tr>
+          <td>
+            <span class="product-thumb">
+              {% if produto.imagem %}
+                <img src="{{ produto.imagem.url }}" alt="{{ produto.nome }}">
+              {% else %}
+                <i class="fa-solid fa-image"></i>
+              {% endif %}
+            </span>
+          </td>
           <td>{{ produto.nome }}</td>
           <td>{{ produto.codigo_barras }}</td>
           <td>{{ produto.categoria }}</td>
           <td>R$ {{ produto.preco_venda|floatformat:2 }}</td>
           <td>{{ produto.unidade }}</td>
+          <td>
+            {% if produto.vendido_no_marketplace and produto.imagem %}
+              <span class="status status-success">Pronto</span>
+            {% elif produto.vendido_no_marketplace %}
+              <span class="status status-warning">Sem imagem</span>
+            {% else %}
+              <span class="status status-muted">Nao vendido</span>
+            {% endif %}
+          </td>
           <td><span class="status">{{ produto.is_active|yesno:"Ativo,Inativo" }}</span></td>
           <td>
             <a href="{% url 'produtos:kardex' produto.pk %}">Kardex</a>
@@ -44,7 +62,7 @@
           </td>
         </tr>
       {% empty %}
-        <tr><td colspan="7" class="empty">Nenhum produto cadastrado.</td></tr>
+        <tr><td colspan="9" class="empty">Nenhum produto cadastrado.</td></tr>
       {% endfor %}
     </tbody>
   </table>

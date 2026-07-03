@@ -1,5 +1,7 @@
 from django import forms
 
+from apps.core_forms import aplicar_select2
+
 from .models import CategoriaFinanceira, ContaFinanceira
 
 
@@ -27,6 +29,10 @@ class ContaFinanceiraForm(forms.ModelForm):
             "vencimento": forms.DateInput(attrs={"type": "date"}),
             "observacoes": forms.Textarea(attrs={"rows": 3}),
         }
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        aplicar_select2(self, ["categoria", "filial", "fornecedor", "cliente"])
 
 
 class BaixaContaForm(forms.Form):

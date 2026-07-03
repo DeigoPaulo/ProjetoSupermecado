@@ -383,6 +383,46 @@ textarea {
   margin-bottom: 18px;
 }
 
+.finance-insight-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+  margin-bottom: 18px;
+}
+
+.finance-insight {
+  display: grid;
+  grid-template-columns: 38px minmax(0, 1fr);
+  gap: 12px;
+  align-items: center;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: #ffffff;
+  padding: 12px 14px;
+}
+
+.finance-insight i {
+  display: grid;
+  place-items: center;
+  width: 38px;
+  height: 38px;
+  border-radius: 8px;
+  background: #eaf1ff;
+  color: #0050e8;
+}
+
+.finance-insight strong,
+.finance-insight span {
+  display: block;
+}
+
+.finance-insight span {
+  margin-top: 2px;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 700;
+}
+
 .metric {
   padding: 16px;
 }
@@ -559,6 +599,80 @@ tr:last-child td {
   color: #92400e;
 }
 
+.product-thumb {
+  display: inline-grid;
+  place-items: center;
+  width: 46px;
+  height: 46px;
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: #f8fbff;
+  color: #8da0bd;
+}
+
+.product-thumb img,
+.product-image-preview img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.product-gallery-editor h3 { margin: 0 0 12px; font-size: 15px; }
+.product-gallery-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; }
+.product-gallery-item { display: grid; gap: 8px; align-content: start; padding: 12px; border: 1px solid var(--border); border-radius: 6px; background: #fff; }
+.product-gallery-item > img, .product-gallery-empty { width: 100%; aspect-ratio: 4 / 3; object-fit: contain; border: 1px solid var(--border); border-radius: 4px; background: #f7f9fc; }
+.product-gallery-empty { display: grid; place-items: center; color: #8aa0bd; font-size: 28px; }
+.product-gallery-item input[type="file"] { max-width: 100%; }
+.gallery-order { max-width: 110px; }
+.gallery-delete { color: #b42318; }
+@media (max-width: 900px) { .product-gallery-grid { grid-template-columns: 1fr; } }
+
+.product-image-preview {
+  display: grid;
+  place-items: center;
+  gap: 8px;
+  min-height: 132px;
+  border: 1px dashed #b8c7dc;
+  border-radius: 8px;
+  background: #f8fbff;
+  color: var(--muted);
+  padding: 12px;
+  text-align: center;
+  font-weight: 700;
+}
+
+.product-image-preview i {
+  color: #9aacbf;
+  font-size: 34px;
+}
+
+.order-progress {
+  min-width: 130px;
+}
+
+.order-progress span {
+  display: block;
+  margin-bottom: 5px;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.order-progress div {
+  height: 7px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: #e8eef7;
+}
+
+.order-progress i {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: #0050e8;
+}
+
 .fiscal-pending-details {
   position: relative;
   min-width: 150px;
@@ -628,6 +742,43 @@ tr:last-child td {
   padding: 12px 14px;
 }
 
+.form-note-danger {
+  border-color: #fecdd3;
+  background: #fff1f2;
+  color: #be123c;
+}
+
+.form-section {
+  display: grid;
+  gap: 12px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: #ffffff;
+  padding: 16px;
+}
+
+.form-section h2 {
+  margin: 0;
+  color: #061b46;
+  font-size: 17px;
+}
+
+.form-grid-inner {
+  padding: 0;
+}
+
+.fiscal-config-status {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.fiscal-config-status strong,
+.fiscal-config-status span {
+  display: block;
+}
+
 .form-field {
   display: grid;
   gap: 6px;
@@ -647,6 +798,40 @@ textarea {
   background: #ffffff;
   color: var(--text);
   padding: 8px 10px;
+}
+
+.select2-container {
+  width: 100% !important;
+}
+
+.select2-container--default .select2-selection--single {
+  min-height: 38px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: #ffffff;
+  display: flex;
+  align-items: center;
+}
+
+.select2-container--default .select2-selection--single .select2-selection__rendered {
+  color: var(--text);
+  line-height: 36px;
+  padding-left: 10px;
+  padding-right: 34px;
+}
+
+.select2-container--default .select2-selection--single .select2-selection__placeholder {
+  color: var(--muted);
+}
+
+.select2-container--default .select2-selection--single .select2-selection__arrow {
+  height: 36px;
+  right: 8px;
+}
+
+.select2-dropdown {
+  border-color: var(--border);
+  box-shadow: var(--shadow);
 }
 
 .money-input {
@@ -1747,17 +1932,25 @@ button:disabled {
 }
 
 .purchase-form {
+  display: grid;
+  gap: 16px;
   overflow: visible;
+  padding: 16px;
+}
+
+.purchase-section {
+  padding: 0;
+  overflow: hidden;
 }
 
 .purchase-head {
-  border-bottom: 1px solid var(--border);
+  padding: 0 16px 16px;
 }
 
 .purchase-items {
   display: grid;
   gap: 10px;
-  padding: 16px;
+  padding: 0 16px 16px;
 }
 
 .purchase-item-row {
@@ -1772,7 +1965,7 @@ button:disabled {
 }
 
 .purchase-actions {
-  padding: 16px;
+  padding: 0;
 }
 
 .muted,
@@ -1961,6 +2154,7 @@ button:disabled {
   }
 
   .metrics-grid,
+  .finance-insight-grid,
   .dashboard-chart-grid,
   .two-column,
   .form-grid,
@@ -2680,6 +2874,71 @@ button:disabled,
   background: linear-gradient(180deg, rgba(244, 247, 251, 0), #f4f7fb 38%);
 }
 
+.system-shortcuts {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 14px;
+  margin-top: 18px;
+}
+
+.system-shortcut {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: center;
+  gap: 12px;
+  min-height: 112px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: #ffffff;
+  color: var(--text);
+  padding: 16px;
+  text-decoration: none;
+  box-shadow: var(--shadow-sm);
+}
+
+.system-shortcut:hover {
+  border-color: #b8c8e5;
+  color: var(--text);
+  transform: translateY(-1px);
+}
+
+.system-shortcut-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 42px;
+  height: 42px;
+  border-radius: 8px;
+  background: #eaf1ff;
+  color: var(--primary);
+  font-size: 18px;
+}
+
+.system-shortcut-copy {
+  display: grid;
+  gap: 5px;
+}
+
+.system-shortcut-copy strong {
+  font-size: 15px;
+}
+
+.system-shortcut-copy small {
+  color: var(--muted);
+  line-height: 1.35;
+}
+
+.system-shortcut-status {
+  grid-column: 1 / -1;
+  justify-self: start;
+  border-radius: 999px;
+  background: #f1f5f9;
+  color: #475569;
+  padding: 4px 9px;
+  font-size: 12px;
+  font-weight: 700;
+}
+
 @media (max-width: 800px) {
   .project-overview { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .project-summary:nth-child(2) { border-right: 0; }
@@ -2706,6 +2965,7 @@ button:disabled,
   .pdv-refund-form { grid-template-columns: 1fr; }
   .cloud-access-card,
   .cloud-access-actions { grid-template-columns: 1fr; }
+  .system-shortcuts { grid-template-columns: 1fr; }
 }
 
 @media (max-width: 560px) {

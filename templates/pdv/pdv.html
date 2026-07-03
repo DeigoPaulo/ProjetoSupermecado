@@ -236,7 +236,7 @@
   </footer>
 
   {% if ultima_venda %}
-    <div class="pdv-post-sale-modal is-open" id="pdv-post-sale-modal" aria-hidden="false" data-print-url="{% url 'pdv:recibo_venda' ultima_venda.id %}">
+    <div class="pdv-post-sale-modal is-open" id="pdv-post-sale-modal" aria-hidden="false" data-print-url="{% url 'pdv:recibo_venda' ultima_venda.id %}" data-desktop-print-url="{% url 'pdv:venda_impressao_desktop' ultima_venda.id %}">
       <div class="pdv-post-sale-dialog">
         <span class="pdv-post-sale-icon"><i class="fa-solid fa-circle-check"></i></span>
         <h2>Venda #{{ ultima_venda.id }} finalizada</h2>

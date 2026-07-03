@@ -13,7 +13,15 @@
 
 <form method="post" class="form-grid panel">
   {% csrf_token %}
-  {% include "includes/form.html" %}
+  {% if form.non_field_errors %}<div class="form-note form-note-danger">{{ form.non_field_errors }}</div>{% endif %}
+  <section class="form-section form-field-wide">
+    <h2>Pagamento / recebimento</h2>
+    <div class="form-grid form-grid-inner">
+      <label class="form-field"><span>{{ form.data_pagamento.label }}</span>{{ form.data_pagamento }}{{ form.data_pagamento.errors }}</label>
+      <label class="form-field"><span>{{ form.valor_pago.label }}</span>{{ form.valor_pago }}{{ form.valor_pago.errors }}</label>
+      <label class="form-field"><span>{{ form.forma_pagamento.label }}</span>{{ form.forma_pagamento }}{{ form.forma_pagamento.errors }}</label>
+    </div>
+  </section>
   <div class="form-actions">
     <a class="secondary-button" href="{% url 'financeiro:contas' %}">Cancelar</a>
     <button class="primary-button" type="submit">Confirmar baixa</button>

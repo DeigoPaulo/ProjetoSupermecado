@@ -12,32 +12,71 @@
 
 <form method="post" class="panel purchase-form">
   {% csrf_token %}
-  <section class="form-grid purchase-head">
-    {% for field in form %}
-      <label class="form-field">
-        <span>{{ field.label }}</span>
-        {{ field }}
-        {% if field.errors %}<small class="field-error">{{ field.errors|striptags }}</small>{% endif %}
-      </label>
-    {% endfor %}
+  <section class="form-section purchase-section">
+    <div class="form-section-header">
+      <h2>Dados da entrada</h2>
+      <p>Identifique fornecedor, filial, documento e vencimento financeiro antes de receber os itens.</p>
+    </div>
+    <div class="form-grid purchase-head">
+      <div class="field">
+        {{ form.fornecedor.label_tag }}
+        {{ form.fornecedor }}
+        {{ form.fornecedor.errors }}
+      </div>
+      <div class="field">
+        {{ form.filial.label_tag }}
+        {{ form.filial }}
+        {{ form.filial.errors }}
+      </div>
+      <div class="field">
+        {{ form.numero_documento.label_tag }}
+        {{ form.numero_documento }}
+        {{ form.numero_documento.errors }}
+      </div>
+      <div class="field">
+        {{ form.data_emissao.label_tag }}
+        {{ form.data_emissao }}
+        {{ form.data_emissao.errors }}
+      </div>
+      <div class="field">
+        {{ form.vencimento_financeiro.label_tag }}
+        {{ form.vencimento_financeiro }}
+        {{ form.vencimento_financeiro.errors }}
+      </div>
+      <div class="field checkbox-field">
+        {{ form.gerar_conta_financeira }}
+        {{ form.gerar_conta_financeira.label_tag }}
+        {{ form.gerar_conta_financeira.errors }}
+      </div>
+      <div class="field span-2">
+        {{ form.observacoes.label_tag }}
+        {{ form.observacoes }}
+        {{ form.observacoes.errors }}
+      </div>
+    </div>
   </section>
 
-  <div class="panel-title">Itens da entrada</div>
-  {{ formset.management_form }}
-  <div class="purchase-items">
-    {% for item_form in formset %}
-      <div class="purchase-item-row">
-        {% for hidden in item_form.hidden_fields %}{{ hidden }}{% endfor %}
-        {% for field in item_form.visible_fields %}
-          <label class="form-field">
-            <span>{{ field.label }}</span>
-            {{ field }}
-            {% if field.errors %}<small class="field-error">{{ field.errors|striptags }}</small>{% endif %}
-          </label>
-        {% endfor %}
-      </div>
-    {% endfor %}
-  </div>
+  <section class="form-section purchase-section">
+    <div class="form-section-header">
+      <h2>Itens recebidos</h2>
+      <p>Informe produto, quantidade e custo. Ao finalizar, o sistema atualiza estoque e financeiro.</p>
+    </div>
+    {{ formset.management_form }}
+    <div class="purchase-items">
+      {% for item_form in formset %}
+        <div class="purchase-item-row">
+          {% for hidden in item_form.hidden_fields %}{{ hidden }}{% endfor %}
+          {% for field in item_form.visible_fields %}
+            <label class="form-field">
+              <span>{{ field.label }}</span>
+              {{ field }}
+              {% if field.errors %}<small class="field-error">{{ field.errors|striptags }}</small>{% endif %}
+            </label>
+          {% endfor %}
+        </div>
+      {% endfor %}
+    </div>
+  </section>
 
   <div class="form-actions purchase-actions">
     <a class="secondary-button" href="{% if object %}{% url 'compras:detalhe' object.pk %}{% else %}{% url 'compras:lista' %}{% endif %}">Cancelar</a>

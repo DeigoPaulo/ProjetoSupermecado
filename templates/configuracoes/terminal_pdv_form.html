@@ -1,0 +1,36 @@
+{% extends "base.html" %}
+
+{% block title %}Terminal PDV{% endblock %}
+
+{% block content %}
+<header class="page-header">
+  <div>
+    <h1>{% if object %}Editar terminal PDV{% else %}Novo terminal PDV{% endif %}</h1>
+    <p>Vincule a maquina do caixa a uma filial e ao fluxo local/offline.</p>
+  </div>
+</header>
+
+<form method="post" class="form-grid panel">
+  {% csrf_token %}
+  {% if form.non_field_errors %}<div class="form-note form-note-danger">{{ form.non_field_errors }}</div>{% endif %}
+  <section class="form-section form-field-wide">
+    <h2>Identificacao do terminal</h2>
+    <div class="form-grid form-grid-inner">
+      <label class="form-field"><span>{{ form.filial.label }}</span>{{ form.filial }}{{ form.filial.errors }}</label>
+      <label class="form-field"><span>{{ form.nome.label }}</span>{{ form.nome }}{{ form.nome.errors }}</label>
+      <label class="form-field form-field-wide"><span>{{ form.descricao.label }}</span>{{ form.descricao }}{{ form.descricao.errors }}</label>
+      <label class="toggle-field">{{ form.permite_modo_offline }} <span>{{ form.permite_modo_offline.label }}</span>{{ form.permite_modo_offline.errors }}</label>
+      <label class="toggle-field">{{ form.ativo }} <span>{{ form.ativo.label }}</span>{{ form.ativo.errors }}</label>
+      {% if object %}
+        <div class="form-note form-field-wide"><strong>Identificador do aplicativo.</strong><span><code>{{ object.identificador }}</code></span></div>
+      {% else %}
+        <div class="form-note form-field-wide"><strong>Identificador automatico.</strong><span>Ao salvar, o sistema gera o codigo que sera usado pelo app PDV instalado nesta maquina.</span></div>
+      {% endif %}
+    </div>
+  </section>
+  <div class="form-actions">
+    <a class="secondary-button" href="{% url 'configuracoes:terminais_pdv' %}">Cancelar</a>
+    <button class="primary-button" type="submit">Salvar</button>
+  </div>
+</form>
+{% endblock %}

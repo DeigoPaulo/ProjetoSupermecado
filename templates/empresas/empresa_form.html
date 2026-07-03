@@ -1,0 +1,64 @@
+{% extends "base.html" %}
+
+{% block title %}{% if empresa %}Editar empresa{% else %}Nova empresa{% endif %}{% endblock %}
+
+{% block content %}
+<header class="page-header">
+  <div>
+    <h1>{% if empresa %}Editar empresa{% else %}Nova empresa{% endif %}</h1>
+    <p>Dados principais da empresa matriz ou grupo.</p>
+  </div>
+  <div class="actions"><a class="secondary-button" href="{% url 'empresas:lista' %}">Voltar</a></div>
+</header>
+
+<section class="panel">
+  <form method="post" enctype="multipart/form-data" class="form-grid">
+    {% csrf_token %}
+    {% if form.non_field_errors %}<div class="form-note form-note-danger">{{ form.non_field_errors }}</div>{% endif %}
+
+    <section class="form-section form-field-wide">
+      <h2>Identificacao</h2>
+      <div class="form-note">
+        <strong>Consulta CNPJ/CEP preparada.</strong>
+        <span>Na etapa de integracao externa, o sistema podera preencher razao social, nome fantasia, contato e endereco a partir do CNPJ ou CEP.</span>
+        <a class="secondary-button" href="{% url 'empresas:consulta_cadastro' %}" target="_blank">Ver ponto de integracao</a>
+      </div>
+      <div class="form-grid form-grid-inner">
+        <label class="form-field"><span>{{ form.nome_fantasia.label }}</span>{{ form.nome_fantasia }}{{ form.nome_fantasia.errors }}</label>
+        <label class="form-field"><span>{{ form.razao_social.label }}</span>{{ form.razao_social }}{{ form.razao_social.errors }}</label>
+        <label class="form-field"><span>{{ form.cnpj.label }}</span>{{ form.cnpj }}{{ form.cnpj.errors }}</label>
+        <label class="form-field"><span>{{ form.regime_tributario.label }}</span>{{ form.regime_tributario }}{{ form.regime_tributario.errors }}</label>
+      </div>
+    </section>
+
+    <section class="form-section form-field-wide">
+      <h2>Implantacao e conectividade</h2>
+      <div class="form-note">
+        <strong>O modo local nao publica o sistema na internet.</strong>
+        <span>Os PDVs acessam apenas o servidor da loja. Internet pode continuar sendo usada de saida para SEFAZ, TEF, PIX e backup, sem permitir acesso externo ao sistema.</span>
+      </div>
+      <div class="form-grid form-grid-inner">
+        <label class="form-field"><span>{{ form.modo_implantacao.label }}</span>{{ form.modo_implantacao }}{{ form.modo_implantacao.errors }}</label>
+        <label class="form-field"><span>{{ form.url_sincronizacao.label }}</span>{{ form.url_sincronizacao }}{{ form.url_sincronizacao.errors }}</label>
+        <label class="toggle-field form-field-wide">{{ form.sincronizacao_automatica }} <span>{{ form.sincronizacao_automatica.label }}</span>{{ form.sincronizacao_automatica.errors }}</label>
+      </div>
+    </section>
+
+    <section class="form-section form-field-wide">
+      <h2>Contato e visual</h2>
+      <div class="form-grid form-grid-inner">
+        <label class="form-field"><span>{{ form.telefone.label }}</span>{{ form.telefone }}{{ form.telefone.errors }}</label>
+        <label class="form-field"><span>{{ form.email.label }}</span>{{ form.email }}{{ form.email.errors }}</label>
+        <label class="form-field form-field-wide"><span>{{ form.endereco.label }}</span>{{ form.endereco }}{{ form.endereco.errors }}</label>
+        <label class="form-field"><span>{{ form.logo.label }}</span>{{ form.logo }}{{ form.logo.errors }}</label>
+        <label class="toggle-field">{{ form.is_active }} <span>{{ form.is_active.label }}</span>{{ form.is_active.errors }}</label>
+      </div>
+    </section>
+
+    <div class="form-actions">
+      <button class="primary-button" type="submit">Salvar</button>
+      <a class="secondary-button" href="{% url 'empresas:lista' %}">Cancelar</a>
+    </div>
+  </form>
+</section>
+{% endblock %}

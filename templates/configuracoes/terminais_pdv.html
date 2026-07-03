@@ -1,0 +1,73 @@
+{% extends "base.html" %}
+
+{% block title %}Terminais PDV{% endblock %}
+
+{% block content %}
+<header class="page-header">
+  <div>
+    <h1>Terminais PDV</h1>
+    <p>Cadastre as maquinas de caixa autorizadas para operar o aplicativo local por filial.</p>
+  </div>
+  <a class="primary-button" href="{% url 'configuracoes:terminal_pdv_novo' %}"><i class="fa-solid fa-plus"></i> Novo terminal</a>
+</header>
+
+{% if chave_nova %}
+<section class="operation-notice">
+  <i class="fa-solid fa-key"></i>
+  <div>
+    <strong>Credencial criada para {{ chave_nova.terminal }}. Ela sera mostrada somente agora.</strong>
+    <span>Identificador: <code>{{ chave_nova.identificador }}</code></span>
+    <span>Chave do aplicativo: <code>{{ chave_nova.chave }}</code></span>
+  </div>
+</section>
+{% endif %}
+
+<section class="operation-notice">
+  <i class="fa-solid fa-network-wired"></i>
+  <div>
+    <strong>O terminal do operador deve usar o servidor local da loja.</strong>
+    <span>A nuvem sincroniza por API e filas; o PDV do caixa nao precisa carregar telas administrativas completas.</span>
+  </div>
+</section>
+
+<section class="panel table-panel">
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr>
+          <th>Terminal</th>
+          <th>Filial</th>
+          <th>Identificador</th>
+          <th>Chave</th>
+          <th>Offline/local</th>
+          <th>Ultima conexao</th>
+          <th>Status</th>
+          <th></th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for terminal in terminais %}
+          <tr>
+            <td><strong>{{ terminal.nome }}</strong><br><small>{{ terminal.descricao|default:"Aplicativo PDV local" }}</small></td>
+            <td>{{ terminal.filial }}</td>
+            <td><code>{{ terminal.identificador }}</code></td>
+            <td>{% if terminal.chave_api_prefixo %}<code>{{ terminal.chave_api_prefixo }}...</code>{% else %}<span class="status status-warning">Nao gerada</span>{% endif %}</td>
+            <td>{% if terminal.permite_modo_offline %}<span class="status status-success">Permitido</span>{% else %}<span class="status status-muted">Somente online local</span>{% endif %}</td>
+            <td>{{ terminal.ultima_conexao|date:"d/m/Y H:i"|default:"Nunca" }}</td>
+            <td><span class="status-badge {% if terminal.ativo %}success{% else %}muted{% endif %}">{% if terminal.ativo %}Ativo{% else %}Inativo{% endif %}</span></td>
+            <td>
+              <a class="icon-button" href="{% url 'configuracoes:terminal_pdv_editar' terminal.pk %}" title="Editar terminal"><i class="fa-solid fa-pen"></i></a>
+              <form method="post" action="{% url 'configuracoes:terminal_pdv_regenerar_chave' terminal.pk %}" class="inline-form" onsubmit="return confirm('Renovar a chave? O aplicativo atual deixara de conectar ate ser reconfigurado.');">
+                {% csrf_token %}
+                <button class="icon-button" type="submit" title="Renovar chave"><i class="fa-solid fa-rotate"></i></button>
+              </form>
+            </td>
+          </tr>
+        {% empty %}
+          <tr><td colspan="8" class="empty">Nenhum terminal PDV cadastrado.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</section>
+{% endblock %}

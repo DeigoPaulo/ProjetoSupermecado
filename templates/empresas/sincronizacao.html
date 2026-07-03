@@ -1,0 +1,110 @@
+{% extends "base.html" %}
+
+{% block title %}Sincronizacao loja-nuvem{% endblock %}
+
+{% block content %}
+<header class="page-header">
+  <div>
+    <h1>Sincronizacao loja-nuvem</h1>
+    <p>Fila local resiliente para troca de dados por API, sem acesso direto ao banco da loja.</p>
+  </div>
+</header>
+
+<section class="metrics-grid">
+  <article class="metric"><span>Pendentes</span><strong>{{ pendentes }}</strong></article>
+  <article class="metric"><span>Processando</span><strong>{{ processando }}</strong></article>
+  <article class="metric"><span>Enviados</span><strong>{{ enviados }}</strong></article>
+  <article class="metric"><span>Com erro</span><strong>{{ erros }}</strong></article>
+</section>
+
+<section class="metrics-grid">
+  <article class="metric"><span>Entrada recebida</span><strong>{{ entrada_recebidos }}</strong></article>
+  <article class="metric"><span>Entrada processada</span><strong>{{ entrada_processados }}</strong></article>
+  <article class="metric"><span>Entrada em conflito</span><strong>{{ entrada_conflitos }}</strong></article>
+  <article class="metric"><span>Entrada com erro</span><strong>{{ entrada_erros }}</strong></article>
+</section>
+
+<section class="metrics-grid">
+  <article class="metric"><span>Vendas sincronizadas</span><strong>{{ total_vendas_sincronizadas }}</strong></article>
+  <article class="metric"><span>Total sincronizado</span><strong>R$ {{ valor_vendas_sincronizadas|floatformat:2 }}</strong></article>
+</section>
+
+<section class="operation-notice">
+  <i class="fa-solid fa-arrows-rotate"></i>
+  <div>
+    <strong>Cada evento possui chave idempotente.</strong>
+    <span>Uma repeticao de rede nao deve duplicar vendas, produtos ou movimentacoes no destino.</span>
+  </div>
+</section>
+
+<section class="panel table-panel">
+  <div class="panel-title">Vendas sincronizadas para retaguarda</div>
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>Venda</th><th>Empresa / filial</th><th>Operador</th><th>Total</th><th>Realizada</th><th>Recebida</th></tr></thead>
+      <tbody>
+        {% for venda in vendas_sincronizadas %}
+          <tr>
+            <td><strong>{{ venda.venda_externa_id }}</strong><br><small>Caixa {{ venda.caixa_externo|default:"-" }}</small></td>
+            <td>{{ venda.empresa }}{% if venda.filial %}<br><small>{{ venda.filial.nome }}</small>{% endif %}</td>
+            <td>{{ venda.operador|default:"-" }}<br><small>{{ venda.cliente|default:"Cliente avulso" }}</small></td>
+            <td><strong>R$ {{ venda.total_liquido|floatformat:2 }}</strong><br><small>{{ venda.pagamentos|length }} pagamento(s)</small></td>
+            <td>{{ venda.realizada_em|date:"d/m/Y H:i:s"|default:"-" }}</td>
+            <td>{{ venda.recebida_em|date:"d/m/Y H:i:s" }}</td>
+          </tr>
+        {% empty %}
+          <tr><td colspan="6" class="empty">Nenhuma venda sincronizada para retaguarda.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</section>
+
+<section class="panel table-panel">
+  <div class="panel-title">Saida local para nuvem</div>
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>Evento</th><th>Empresa / filial</th><th>Objeto</th><th>Status</th><th>Tentativas</th><th>Criado</th><th></th></tr></thead>
+      <tbody>
+        {% for evento in eventos %}
+          <tr>
+            <td><strong>{{ evento.tipo }}</strong><br><small><code>{{ evento.identificador }}</code></small></td>
+            <td>{{ evento.empresa }}{% if evento.filial %}<br><small>{{ evento.filial.nome }}</small>{% endif %}</td>
+            <td>{{ evento.objeto_tipo }} #{{ evento.objeto_id }}{% if evento.ultimo_erro %}<br><small>{{ evento.ultimo_erro|truncatechars:100 }}</small>{% endif %}</td>
+            <td><span class="status {% if evento.status == 'ENVIADO' %}status-success{% elif evento.status == 'ERRO' %}status-danger{% else %}status-warning{% endif %}">{{ evento.get_status_display }}</span></td>
+            <td>{{ evento.tentativas }}</td>
+            <td>{{ evento.criado_em|date:"d/m/Y H:i:s" }}</td>
+            <td>{% if evento.status == 'ERRO' %}<form method="post" action="{% url 'empresas:sincronizacao_reprocessar' evento.pk %}">{% csrf_token %}<button class="icon-button" type="submit" title="Reprocessar"><i class="fa-solid fa-rotate"></i></button></form>{% endif %}</td>
+          </tr>
+        {% empty %}
+          <tr><td colspan="7" class="empty">Nenhum evento aguardando sincronizacao.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</section>
+
+<section class="panel table-panel">
+  <div class="panel-title">Entrada recebida da nuvem/local</div>
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>Evento</th><th>Empresa</th><th>Status</th><th>Recebido</th><th>Processado</th><th>Erro</th><th></th></tr></thead>
+      <tbody>
+        {% for evento in eventos_entrada %}
+          <tr>
+            <td><strong>{{ evento.tipo }}</strong><br><small><code>{{ evento.identificador }}</code></small></td>
+            <td>{{ evento.empresa }}</td>
+            <td><span class="status {% if evento.status == 'PROCESSADO' %}status-success{% elif evento.status == 'ERRO' or evento.status == 'CONFLITO' %}status-danger{% else %}status-warning{% endif %}">{{ evento.get_status_display }}</span></td>
+            <td>{{ evento.recebido_em|date:"d/m/Y H:i:s" }}</td>
+            <td>{{ evento.processado_em|date:"d/m/Y H:i:s"|default:"-" }}</td>
+            <td>{{ evento.ultimo_erro|truncatechars:100|default:"-" }}</td>
+            <td>{% if evento.status == 'ERRO' or evento.status == 'CONFLITO' %}<form method="post" action="{% url 'empresas:sincronizacao_entrada_reprocessar' evento.pk %}">{% csrf_token %}<button class="icon-button" type="submit" title="Reprocessar entrada"><i class="fa-solid fa-rotate"></i></button></form>{% endif %}</td>
+          </tr>
+        {% empty %}
+          <tr><td colspan="7" class="empty">Nenhum evento recebido pela entrada de sincronizacao.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</section>
+{% endblock %}

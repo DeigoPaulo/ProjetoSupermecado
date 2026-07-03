@@ -1,0 +1,76 @@
+{% extends "base.html" %}
+
+{% block title %}Empresas e filiais{% endblock %}
+
+{% block content %}
+<header class="page-header">
+  <div>
+    <h1>Empresas e filiais</h1>
+    <p>Cadastro operacional usado por PDV, fiscal, financeiro e relatorios.</p>
+  </div>
+  <div class="actions">
+    <a class="secondary-button" href="{% url 'empresas:filial_nova' %}"><i class="fa-solid fa-store"></i> Nova filial</a>
+    <a class="primary-button" href="{% url 'empresas:empresa_nova' %}"><i class="fa-solid fa-plus"></i> Nova empresa</a>
+  </div>
+</header>
+
+<section class="metrics-grid">
+  <article class="metric"><span>Empresas</span><strong>{{ total_empresas }}</strong></article>
+  <article class="metric"><span>Filiais</span><strong>{{ total_filiais }}</strong></article>
+  <article class="metric"><span>Filiais ativas</span><strong>{{ filiais_ativas }}</strong></article>
+  <article class="metric"><span>Sem IBGE</span><strong>{{ filiais_sem_ibge }}</strong></article>
+</section>
+
+<section class="panel">
+  <h2>Empresas</h2>
+  <div class="table-wrapper">
+    <table>
+      <thead><tr><th>Empresa</th><th>CNPJ</th><th>Regime</th><th>Implantacao</th><th>Status</th><th></th></tr></thead>
+      <tbody>
+        {% for empresa in empresas %}
+          <tr>
+            <td><strong>{{ empresa.nome_fantasia }}</strong><br><small>{{ empresa.razao_social }}</small></td>
+            <td>{{ empresa.cnpj }}</td>
+            <td>{{ empresa.regime_tributario|default:"-" }}</td>
+            <td><strong>{{ empresa.get_modo_implantacao_display }}</strong><br><small>{% if empresa.sincronizacao_automatica %}Sincronizacao ativa{% else %}Sem sincronizacao automatica{% endif %}</small></td>
+            <td>{% if empresa.is_active %}<span class="status status-success">Ativa</span>{% else %}<span class="status status-muted">Inativa</span>{% endif %}</td>
+            <td class="row-actions"><a class="secondary-button" href="{% url 'empresas:empresa_editar' empresa.pk %}">Editar</a></td>
+          </tr>
+        {% empty %}
+          <tr><td colspan="6" class="empty">Nenhuma empresa cadastrada.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</section>
+
+<section class="panel">
+  <h2>Filiais</h2>
+  <div class="table-wrapper">
+    <table>
+      <thead><tr><th>Filial</th><th>Empresa</th><th>CNPJ</th><th>Municipio</th><th>Fiscal</th><th>Status</th><th></th></tr></thead>
+      <tbody>
+        {% for filial in filiais %}
+          <tr>
+            <td><strong>{{ filial.nome }}</strong></td>
+            <td>{{ filial.empresa.nome_fantasia }}</td>
+            <td>{{ filial.cnpj|default:filial.empresa.cnpj }}</td>
+            <td>{{ filial.municipio|default:"-" }}{% if filial.uf %}/{{ filial.uf }}{% endif %}</td>
+            <td>
+              {% if filial.codigo_municipio_ibge and filial.uf %}
+                <span class="status status-success">IBGE {{ filial.codigo_municipio_ibge }}</span>
+              {% else %}
+                <span class="status status-danger">Fiscal incompleto</span>
+              {% endif %}
+            </td>
+            <td>{% if filial.is_active %}<span class="status status-success">Ativa</span>{% else %}<span class="status status-muted">Inativa</span>{% endif %}</td>
+            <td class="row-actions"><a class="secondary-button" href="{% url 'empresas:filial_editar' filial.pk %}">Editar</a></td>
+          </tr>
+        {% empty %}
+          <tr><td colspan="7" class="empty">Nenhuma filial cadastrada.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</section>
+{% endblock %}

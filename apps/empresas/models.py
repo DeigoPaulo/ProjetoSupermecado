@@ -1,4 +1,26 @@
+import uuid
+
 from django.db import models
+
+
+class ModoImplantacao(models.TextChoices):
+    LOCAL = "LOCAL", "Somente servidor local"
+    HIBRIDO = "HIBRIDO", "Servidor local com sincronizacao em nuvem"
+    NUVEM_AGENTE = "NUVEM_AGENTE", "Nuvem com agente local"
+
+
+class StatusSincronizacao(models.TextChoices):
+    PENDENTE = "PENDENTE", "Pendente"
+    PROCESSANDO = "PROCESSANDO", "Processando"
+    ENVIADO = "ENVIADO", "Enviado"
+    ERRO = "ERRO", "Erro"
+
+
+class StatusEventoEntrada(models.TextChoices):
+    RECEBIDO = "RECEBIDO", "Recebido"
+    PROCESSADO = "PROCESSADO", "Processado"
+    CONFLITO = "CONFLITO", "Conflito"
+    ERRO = "ERRO", "Erro"
 
 
 class Empresa(models.Model):
@@ -10,6 +32,14 @@ class Empresa(models.Model):
     endereco = models.TextField(blank=True)
     regime_tributario = models.CharField(max_length=80, blank=True)
     logo = models.ImageField(upload_to="empresas/logos/", blank=True, null=True)
+    modo_implantacao = models.CharField(
+        "Modo de implantacao",
+        max_length=20,
+        choices=ModoImplantacao.choices,
+        default=ModoImplantacao.LOCAL,
+    )
+    sincronizacao_automatica = models.BooleanField("Sincronizacao automatica", default=False)
+    url_sincronizacao = models.URLField("URL segura da nuvem", blank=True)
     is_active = models.BooleanField(default=True)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
@@ -48,5 +78,80 @@ class Filial(models.Model):
 
     def __str__(self):
         return f"{self.empresa} - {self.nome}"
+
+
+class EventoSincronizacao(models.Model):
+    identificador = models.UUIDField(default=uuid.uuid4, unique=True, editable=False)
+    empresa = models.ForeignKey(Empresa, on_delete=models.PROTECT, related_name="eventos_sincronizacao")
+    filial = models.ForeignKey(Filial, on_delete=models.PROTECT, related_name="eventos_sincronizacao", null=True, blank=True)
+    tipo = models.CharField(max_length=100)
+    objeto_tipo = models.CharField(max_length=100)
+    objeto_id = models.CharField(max_length=80)
+    chave_idempotencia = models.CharField(max_length=180, unique=True)
+    payload = models.JSONField(default=dict)
+    status = models.CharField(max_length=20, choices=StatusSincronizacao.choices, default=StatusSincronizacao.PENDENTE)
+    tentativas = models.PositiveIntegerField(default=0)
+    proxima_tentativa_em = models.DateTimeField(null=True, blank=True)
+    ultimo_erro = models.TextField(blank=True)
+    criado_em = models.DateTimeField(auto_now_add=True)
+    processado_em = models.DateTimeField(null=True, blank=True)
+    atualizado_em = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ["criado_em"]
+        indexes = [
+            models.Index(fields=["status", "proxima_tentativa_em"], name="empresas_ev_status_3e6760_idx"),
+            models.Index(fields=["empresa", "criado_em"], name="empresas_ev_empresa_a7567c_idx"),
+        ]
+
+    def __str__(self):
+        return f"{self.tipo} - {self.objeto_tipo}:{self.objeto_id}"
+
+
+class EventoEntradaSincronizacao(models.Model):
+    identificador = models.UUIDField(unique=True, editable=False)
+    chave_idempotencia = models.CharField(max_length=180, unique=True)
+    empresa = models.ForeignKey(Empresa, on_delete=models.PROTECT, related_name="eventos_entrada_sincronizacao")
+    tipo = models.CharField(max_length=100)
+    payload = models.JSONField(default=dict)
+    status = models.CharField(max_length=20, choices=StatusEventoEntrada.choices, default=StatusEventoEntrada.RECEBIDO)
+    ultimo_erro = models.TextField(blank=True)
+    recebido_em = models.DateTimeField(auto_now_add=True)
+    processado_em = models.DateTimeField(null=True, blank=True)
+    atualizado_em = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ["recebido_em"]
+        indexes = [models.Index(fields=["status", "recebido_em"], name="empresas_in_status_entrada_idx")]
+
+    def __str__(self):
+        return f"Entrada {self.tipo} - {self.identificador}"
+
+
+class VendaSincronizada(models.Model):
+    empresa = models.ForeignKey(Empresa, on_delete=models.PROTECT, related_name="vendas_sincronizadas")
+    filial = models.ForeignKey(Filial, on_delete=models.PROTECT, related_name="vendas_sincronizadas", null=True, blank=True)
+    evento = models.OneToOneField(EventoEntradaSincronizacao, on_delete=models.PROTECT, related_name="venda_sincronizada")
+    venda_externa_id = models.CharField(max_length=120)
+    caixa_externo = models.CharField(max_length=80, blank=True)
+    operador = models.CharField(max_length=120, blank=True)
+    cliente = models.CharField(max_length=180, blank=True)
+    total_bruto = models.DecimalField(max_digits=12, decimal_places=2, default=0)
+    desconto = models.DecimalField(max_digits=12, decimal_places=2, default=0)
+    total_liquido = models.DecimalField(max_digits=12, decimal_places=2, default=0)
+    itens = models.JSONField(default=list)
+    pagamentos = models.JSONField(default=list)
+    realizada_em = models.DateTimeField(null=True, blank=True)
+    recebida_em = models.DateTimeField(auto_now_add=True)
+    atualizada_em = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ["-realizada_em", "-recebida_em"]
+        constraints = [
+            models.UniqueConstraint(fields=["empresa", "venda_externa_id"], name="empresas_venda_sync_unica")
+        ]
+
+    def __str__(self):
+        return f"Venda sincronizada {self.venda_externa_id} - {self.total_liquido}"
 
 # Create your models here.

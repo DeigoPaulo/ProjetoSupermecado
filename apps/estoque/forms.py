@@ -1,5 +1,7 @@
 from django import forms
 
+from apps.core_forms import aplicar_select2
+
 from .models import InventarioEstoque, ItemInventarioEstoque, PerdaEstoque, TipoMovimentacaoEstoque
 
 
@@ -19,12 +21,17 @@ class MovimentacaoEstoqueForm(forms.Form):
 
         self.fields["produto"].queryset = Produto.objects.all()
         self.fields["filial"].queryset = Filial.objects.filter(is_active=True)
+        aplicar_select2(self, ["produto", "filial"])
 
 
 class InventarioEstoqueForm(forms.ModelForm):
     class Meta:
         model = InventarioEstoque
         fields = ["filial", "descricao"]
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        aplicar_select2(self, ["filial"])
 
 
 class ItemInventarioEstoqueForm(forms.ModelForm):
@@ -37,6 +44,7 @@ class ItemInventarioEstoqueForm(forms.ModelForm):
         from apps.produtos.models import Produto
 
         self.fields["produto"].queryset = Produto.objects.all()
+        aplicar_select2(self, ["produto"])
 
 
 class PerdaEstoqueForm(forms.ModelForm):
@@ -51,3 +59,4 @@ class PerdaEstoqueForm(forms.ModelForm):
 
         self.fields["produto"].queryset = Produto.objects.all()
         self.fields["filial"].queryset = Filial.objects.filter(is_active=True)
+        aplicar_select2(self, ["produto", "filial"])

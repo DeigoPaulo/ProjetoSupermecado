@@ -10,7 +10,89 @@
   </div>
 </header>
 <form method="post" enctype="multipart/form-data" class="form-grid panel">
-  {% include "includes/form.html" %}
+  {% csrf_token %}
+  {% if form.non_field_errors %}<div class="form-note form-note-danger">{{ form.non_field_errors }}</div>{% endif %}
+
+  <section class="form-section form-field-wide">
+    <h2>Identificacao</h2>
+    <div class="form-grid form-grid-inner">
+      <label class="form-field"><span>{{ form.nome.label }}</span>{{ form.nome }}{{ form.nome.errors }}</label>
+      <label class="form-field"><span>{{ form.codigo_barras.label }}</span>{{ form.codigo_barras }}{{ form.codigo_barras.errors }}</label>
+      <label class="form-field"><span>{{ form.codigo_interno.label }}</span>{{ form.codigo_interno }}{{ form.codigo_interno.errors }}</label>
+      <label class="form-field"><span>{{ form.categoria.label }}</span>{{ form.categoria }}{{ form.categoria.errors }}</label>
+      <label class="form-field"><span>{{ form.marca.label }}</span>{{ form.marca }}{{ form.marca.errors }}</label>
+      <label class="form-field"><span>{{ form.unidade.label }}</span>{{ form.unidade }}{{ form.unidade.errors }}</label>
+      <label class="form-field form-field-wide"><span>{{ form.descricao.label }}</span>{{ form.descricao }}{{ form.descricao.errors }}</label>
+    </div>
+  </section>
+
+  <section class="form-section form-field-wide">
+    <h2>Precos e estoque</h2>
+    <div class="form-grid form-grid-inner">
+      <label class="form-field"><span>{{ form.preco_custo.label }}</span>{{ form.preco_custo }}{{ form.preco_custo.errors }}</label>
+      <label class="form-field"><span>{{ form.preco_venda.label }}</span>{{ form.preco_venda }}{{ form.preco_venda.errors }}</label>
+      <label class="form-field"><span>{{ form.preco_promocional.label }}</span>{{ form.preco_promocional }}{{ form.preco_promocional.errors }}</label>
+      <label class="form-field"><span>{{ form.estoque_minimo.label }}</span>{{ form.estoque_minimo }}{{ form.estoque_minimo.errors }}</label>
+    </div>
+  </section>
+
+  <section class="form-section form-field-wide">
+    <h2>Venda e imagem</h2>
+    <div class="form-grid form-grid-inner">
+      <label class="toggle-field">{{ form.produto_pesavel }} <span>{{ form.produto_pesavel.label }}</span>{{ form.produto_pesavel.errors }}</label>
+      <label class="toggle-field">{{ form.vendido_no_pdv }} <span>{{ form.vendido_no_pdv.label }}</span>{{ form.vendido_no_pdv.errors }}</label>
+      <label class="toggle-field">{{ form.vendido_no_marketplace }} <span>{{ form.vendido_no_marketplace.label }}</span>{{ form.vendido_no_marketplace.errors }}</label>
+      <label class="toggle-field">{{ form.is_active }} <span>{{ form.is_active.label }}</span>{{ form.is_active.errors }}</label>
+      <div class="product-image-preview">
+        {% if object and object.imagem %}
+          <img src="{{ object.imagem.url }}" alt="{{ object.nome }}">
+          <span>Imagem atual do produto</span>
+        {% else %}
+          <i class="fa-solid fa-image"></i>
+          <span>Sem imagem cadastrada</span>
+        {% endif %}
+      </div>
+      <label class="form-field form-field-wide"><span>{{ form.imagem.label }}</span>{{ form.imagem }}{{ form.imagem.errors }}<small>Imagem usada no marketplace e em telas de consulta visual.</small></label>
+      <div class="form-note">
+        <strong>Imagem para marketplace.</strong>
+        <span>Use a foto principal como capa. As imagens adicionais permitem mostrar outros angulos e detalhes no marketplace.</span>
+      </div>
+      <div class="product-gallery-editor form-field-wide">
+        <h3>Galeria adicional</h3>
+        {{ galeria_formset.management_form }}
+        {% if galeria_formset.non_form_errors %}<div class="form-note form-note-danger">{{ galeria_formset.non_form_errors }}</div>{% endif %}
+        <div class="product-gallery-grid">
+          {% for gallery_form in galeria_formset %}
+            <div class="product-gallery-item">
+              {{ gallery_form.id }}
+              {% if gallery_form.instance.pk and gallery_form.instance.imagem %}
+                <img src="{{ gallery_form.instance.imagem.url }}" alt="{{ gallery_form.instance.legenda|default:object.nome }}">
+              {% else %}
+                <div class="product-gallery-empty"><i class="fa-solid fa-images"></i></div>
+              {% endif %}
+              <label class="form-field"><span>Imagem</span>{{ gallery_form.imagem }}{{ gallery_form.imagem.errors }}</label>
+              <label class="form-field"><span>Legenda</span>{{ gallery_form.legenda }}{{ gallery_form.legenda.errors }}</label>
+              <label class="form-field gallery-order"><span>Ordem</span>{{ gallery_form.ordem }}{{ gallery_form.ordem.errors }}</label>
+              {% if gallery_form.instance.pk %}<label class="toggle-field gallery-delete">{{ gallery_form.DELETE }} <span>Remover imagem</span></label>{% endif %}
+            </div>
+          {% endfor %}
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section class="form-section form-field-wide">
+    <h2>Dados fiscais</h2>
+    <div class="form-grid form-grid-inner">
+      <label class="form-field"><span>{{ form.ncm.label }}</span>{{ form.ncm }}{{ form.ncm.errors }}<small>Obrigatorio para NFC-e, com 8 digitos.</small></label>
+      <label class="form-field"><span>{{ form.cest.label }}</span>{{ form.cest }}{{ form.cest.errors }}<small>Use 7 digitos quando aplicavel.</small></label>
+      <label class="form-field"><span>{{ form.origem_mercadoria.label }}</span>{{ form.origem_mercadoria }}{{ form.origem_mercadoria.errors }}</label>
+      <label class="form-field"><span>{{ form.cst_icms.label }}</span>{{ form.cst_icms }}{{ form.cst_icms.errors }}</label>
+      <label class="form-field"><span>{{ form.csosn.label }}</span>{{ form.csosn }}{{ form.csosn.errors }}</label>
+      <label class="form-field"><span>{{ form.aliquota_icms.label }}</span>{{ form.aliquota_icms }}{{ form.aliquota_icms.errors }}</label>
+    </div>
+  </section>
+
   <div class="form-actions">
     <a class="secondary-button" href="{% url 'produtos:lista' %}">Cancelar</a>
     <button class="primary-button" type="submit">Salvar</button>

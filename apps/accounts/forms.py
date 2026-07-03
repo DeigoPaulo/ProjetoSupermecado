@@ -6,13 +6,18 @@ from .models import PerfilUsuario, TipoPerfil
 
 
 class UsuarioPerfilForm(forms.Form):
-    username = forms.CharField(label="Usuario", max_length=150)
+    username = forms.CharField(label="Usuario", max_length=150, widget=forms.TextInput(attrs={"class": "no-upper"}))
     first_name = forms.CharField(label="Nome", max_length=150, required=False)
     last_name = forms.CharField(label="Sobrenome", max_length=150, required=False)
     email = forms.EmailField(label="Email", required=False)
     password = forms.CharField(label="Senha", required=False, widget=forms.PasswordInput)
     tipo = forms.ChoiceField(label="Perfil", choices=TipoPerfil.choices)
-    filial = forms.ModelChoiceField(label="Filial", queryset=None, required=False)
+    filial = forms.ModelChoiceField(
+        label="Filial",
+        queryset=None,
+        required=False,
+        widget=forms.Select(attrs={"class": "select2-field", "data-placeholder": "Pesquise a filial"}),
+    )
     telefone = forms.CharField(label="Telefone", max_length=30, required=False, widget=forms.TextInput(attrs={"class": "mask-phone"}))
     is_active = forms.BooleanField(label="Ativo", required=False, initial=True)
     is_staff = forms.BooleanField(label="Acesso ao admin Django", required=False)

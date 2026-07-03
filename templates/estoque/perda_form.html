@@ -11,9 +11,53 @@
 </header>
 
 <form method="post" class="form-grid panel form-confirm" data-msg="Confirmar baixa de estoque por perda?">
-  {% include "includes/form.html" %}
-  <label class="form-field"><span>Supervisor ou admin</span><input type="text" name="supervisor_usuario" autocomplete="username" required></label>
-  <label class="form-field"><span>Senha</span><input type="password" name="supervisor_senha" autocomplete="current-password" required></label>
+  {% csrf_token %}
+  <section class="form-section">
+    <div class="form-section-header">
+      <h2>Perda</h2>
+      <p>Registre avaria, vencimento, quebra ou consumo interno com rastreabilidade.</p>
+    </div>
+    <div class="form-grid">
+      <div class="field">
+        {{ form.produto.label_tag }}
+        {{ form.produto }}
+        {{ form.produto.errors }}
+      </div>
+      <div class="field">
+        {{ form.filial.label_tag }}
+        {{ form.filial }}
+        {{ form.filial.errors }}
+      </div>
+      <div class="field">
+        {{ form.tipo.label_tag }}
+        {{ form.tipo }}
+        {{ form.tipo.errors }}
+      </div>
+      <div class="field">
+        {{ form.quantidade.label_tag }}
+        {{ form.quantidade }}
+        {{ form.quantidade.errors }}
+      </div>
+      <div class="field span-2">
+        {{ form.motivo.label_tag }}
+        {{ form.motivo }}
+        {{ form.motivo.errors }}
+      </div>
+    </div>
+  </section>
+
+  <section class="form-section">
+    <div class="form-section-header">
+      <h2>Autorizacao</h2>
+      <p>A baixa reduz estoque e exige senha de supervisor ou administrador.</p>
+    </div>
+    <div class="form-grid">
+      <label class="form-field"><span>Supervisor ou admin</span><input type="text" name="supervisor_usuario" autocomplete="username" required></label>
+      <label class="form-field"><span>Senha</span><input type="password" name="supervisor_senha" autocomplete="current-password" required></label>
+    </div>
+  </section>
+
+  {{ form.non_field_errors }}
   <div class="form-actions">
     <a class="secondary-button" href="{% url 'estoque:perdas' %}">Cancelar</a>
     <button class="primary-button" type="submit">Registrar perda</button>

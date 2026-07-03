@@ -33,7 +33,7 @@
 
 <div class="panel">
   <table>
-    <thead><tr><th>Pedido</th><th>Cliente</th><th>Canal</th><th>Entrega</th><th>Filial</th><th>Total</th><th>Status</th><th></th></tr></thead>
+    <thead><tr><th>Pedido</th><th>Cliente</th><th>Canal</th><th>Entrega</th><th>Filial</th><th>Separacao</th><th>Pagamento</th><th>Total</th><th>Status</th><th></th></tr></thead>
     <tbody>
       {% for pedido in pedidos %}
         <tr>
@@ -42,12 +42,23 @@
           <td>{{ pedido.get_canal_display }}</td>
           <td>{{ pedido.get_tipo_entrega_display }}</td>
           <td>{{ pedido.filial }}</td>
+          <td>
+            <div class="order-progress" aria-label="Separacao {{ pedido.percentual_separacao }}%">
+              <span><strong>{{ pedido.total_itens_separados|floatformat:3 }}</strong> / {{ pedido.total_itens_pedido|floatformat:3 }}</span>
+              <div><i style="width: {{ pedido.percentual_separacao }}%"></i></div>
+            </div>
+          </td>
+          <td>
+            <span class="status {% if pedido.status_pagamento == 'PAGO' %}status-success{% elif pedido.status_pagamento == 'ESTORNADO' %}status-muted{% else %}status-warning{% endif %}">
+              {{ pedido.get_status_pagamento_display }}
+            </span>
+          </td>
           <td>R$ {{ pedido.total|floatformat:2 }}</td>
           <td><span class="status">{{ pedido.get_status_display }}</span></td>
           <td><a href="{% url 'marketplace:detalhe' pedido.pk %}">Abrir</a></td>
         </tr>
       {% empty %}
-        <tr><td colspan="8" class="empty">Nenhum pedido online encontrado.</td></tr>
+        <tr><td colspan="10" class="empty">Nenhum pedido online encontrado.</td></tr>
       {% endfor %}
     </tbody>
   </table>

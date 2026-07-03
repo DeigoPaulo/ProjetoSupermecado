@@ -11,7 +11,37 @@
 </header>
 
 <form method="post" class="form-grid panel">
-  {% include "includes/form.html" %}
+  {% csrf_token %}
+  {% if form.non_field_errors %}<div class="form-note form-note-danger">{{ form.non_field_errors }}</div>{% endif %}
+
+  <section class="form-section form-field-wide">
+    <h2>Acesso</h2>
+    <div class="form-grid form-grid-inner">
+      <label class="form-field"><span>{{ form.username.label }}</span>{{ form.username }}{{ form.username.errors }}</label>
+      <label class="form-field"><span>{{ form.password.label }}</span>{{ form.password }}{{ form.password.errors }}{% if form.password.help_text %}<small>{{ form.password.help_text }}</small>{% endif %}</label>
+      <label class="toggle-field">{{ form.is_active }} <span>{{ form.is_active.label }}</span>{{ form.is_active.errors }}</label>
+      <label class="toggle-field">{{ form.is_staff }} <span>{{ form.is_staff.label }}</span>{{ form.is_staff.errors }}</label>
+    </div>
+  </section>
+
+  <section class="form-section form-field-wide">
+    <h2>Dados pessoais</h2>
+    <div class="form-grid form-grid-inner">
+      <label class="form-field"><span>{{ form.first_name.label }}</span>{{ form.first_name }}{{ form.first_name.errors }}</label>
+      <label class="form-field"><span>{{ form.last_name.label }}</span>{{ form.last_name }}{{ form.last_name.errors }}</label>
+      <label class="form-field"><span>{{ form.email.label }}</span>{{ form.email }}{{ form.email.errors }}</label>
+      <label class="form-field"><span>{{ form.telefone.label }}</span>{{ form.telefone }}{{ form.telefone.errors }}</label>
+    </div>
+  </section>
+
+  <section class="form-section form-field-wide">
+    <h2>Perfil operacional</h2>
+    <div class="form-grid form-grid-inner">
+      <label class="form-field"><span>{{ form.tipo.label }}</span>{{ form.tipo }}{{ form.tipo.errors }}</label>
+      <label class="form-field"><span>{{ form.filial.label }}</span>{{ form.filial }}{{ form.filial.errors }}<small>Use a filial para vincular operadores ao caixa e relatorios da loja.</small></label>
+    </div>
+  </section>
+
   <div class="form-actions">
     <a class="secondary-button" href="{% url 'accounts:usuarios' %}">Voltar</a>
     <button class="primary-button" type="submit">Salvar</button>

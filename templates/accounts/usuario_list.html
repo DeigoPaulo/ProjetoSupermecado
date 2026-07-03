@@ -29,8 +29,8 @@
           <td>{{ usuario.email|default:"-" }}</td>
           <td>{{ usuario.perfil_supermercado.get_tipo_display|default:"-" }}</td>
           <td>{{ usuario.perfil_supermercado.filial|default:"-" }}</td>
-          <td><span class="status">{{ usuario.is_active|yesno:"Ativo,Inativo" }}</span></td>
-          <td><a href="{% url 'accounts:usuario_editar' usuario.pk %}">Editar</a></td>
+          <td>{% if usuario.is_active %}<span class="status status-success">Ativo</span>{% else %}<span class="status status-muted">Inativo</span>{% endif %}</td>
+          <td class="row-actions"><a class="secondary-button" href="{% url 'accounts:usuario_editar' usuario.pk %}">Editar</a></td>
         </tr>
       {% empty %}
         <tr><td colspan="7" class="empty">Nenhum usuario cadastrado.</td></tr>

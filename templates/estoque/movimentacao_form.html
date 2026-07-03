@@ -5,9 +5,64 @@
 {% block content %}
 <header class="page-header"><div><h1>Movimentar estoque</h1><p>Entradas, saidas, ajustes e reservas com trava transacional.</p></div></header>
 <form method="post" class="form-grid panel form-confirm" data-msg="Confirmar movimentacao manual de estoque?">
-  {% include "includes/form.html" %}
-  <label class="form-field"><span>Supervisor ou admin</span><input type="text" name="supervisor_usuario" autocomplete="username" required></label>
-  <label class="form-field"><span>Senha</span><input type="password" name="supervisor_senha" autocomplete="current-password" required></label>
+  {% csrf_token %}
+  <section class="form-section">
+    <div class="form-section-header">
+      <h2>Operacao</h2>
+      <p>Use movimentacao manual apenas para ajuste autorizado fora dos fluxos de compra, venda e inventario.</p>
+    </div>
+    <div class="form-grid">
+      <div class="field">
+        {{ form.produto.label_tag }}
+        {{ form.produto }}
+        {{ form.produto.errors }}
+      </div>
+      <div class="field">
+        {{ form.filial.label_tag }}
+        {{ form.filial }}
+        {{ form.filial.errors }}
+      </div>
+      <div class="field">
+        {{ form.tipo.label_tag }}
+        {{ form.tipo }}
+        {{ form.tipo.errors }}
+      </div>
+      <div class="field">
+        {{ form.quantidade.label_tag }}
+        {{ form.quantidade }}
+        <span class="help-text">Informe unidade ou peso conforme o cadastro do produto.</span>
+        {{ form.quantidade.errors }}
+      </div>
+      <div class="field">
+        {{ form.custo_unitario.label_tag }}
+        {{ form.custo_unitario }}
+        {{ form.custo_unitario.errors }}
+      </div>
+      <div class="field">
+        {{ form.referencia.label_tag }}
+        {{ form.referencia }}
+        {{ form.referencia.errors }}
+      </div>
+      <div class="field span-2">
+        {{ form.motivo.label_tag }}
+        {{ form.motivo }}
+        {{ form.motivo.errors }}
+      </div>
+    </div>
+  </section>
+
+  <section class="form-section">
+    <div class="form-section-header">
+      <h2>Autorizacao</h2>
+      <p>Movimentacoes manuais ficam registradas na auditoria com supervisor ou administrador.</p>
+    </div>
+    <div class="form-grid">
+      <label class="form-field"><span>Supervisor ou admin</span><input type="text" name="supervisor_usuario" autocomplete="username" required></label>
+      <label class="form-field"><span>Senha</span><input type="password" name="supervisor_senha" autocomplete="current-password" required></label>
+    </div>
+  </section>
+
+  {{ form.non_field_errors }}
   <div class="form-actions"><a class="secondary-button" href="{% url 'estoque:lista' %}">Cancelar</a><button class="primary-button" type="submit">Registrar</button></div>
 </form>
 {% endblock %}

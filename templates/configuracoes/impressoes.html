@@ -21,6 +21,7 @@
   <article class="metric"><span>Total configurado</span><strong>{{ resumo.total }}</strong></article>
   <article class="metric"><span>Ativas</span><strong>{{ resumo.ativas }}</strong></article>
   <article class="metric"><span>Automaticas</span><strong>{{ resumo.automaticas }}</strong></article>
+  <article class="metric"><span>Com gaveta</span><strong>{{ resumo.gavetas }}</strong></article>
   <article class="metric"><span>Sem impressora</span><strong>{{ resumo.sem_impressora }}</strong></article>
 </section>
 
@@ -29,6 +30,16 @@
   <div>
     <strong>Esta e a configuracao central usada pelo sistema.</strong>
     <span>O PDV usa cupom fiscal/nao fiscal; pedidos online e DAV usam separacao; relatorios e etiquetas tambem herdam daqui por empresa ou filial.</span>
+  </div>
+</section>
+
+<section class="operation-notice">
+  <i class="fa-solid fa-desktop"></i>
+  <div>
+    <strong>Descoberta local preparada para o app desktop.</strong>
+    <span>O navegador nao consegue listar impressoras instaladas na maquina; o app desktop fara essa leitura e sincronizara com esta central.</span>
+    <a class="secondary-button" href="{% url 'configuracoes:impressoras_locais' %}" target="_blank">Ver ponto de integracao</a>
+    <a class="secondary-button" href="{% url 'configuracoes:impressoes_desktop' %}" target="_blank">Configuracoes do desktop</a>
   </div>
 </section>
 
@@ -44,6 +55,7 @@
           <th>Fonte</th>
           <th>Vias</th>
           <th>Automatico</th>
+          <th>Gaveta</th>
           <th>Status</th>
           <th></th>
         </tr>
@@ -58,6 +70,14 @@
             <td>{{ config.tamanho_fonte }}</td>
             <td>{{ config.numero_vias }}</td>
             <td>{% if config.impressao_automatica %}<span class="status status-success">Sim</span>{% else %}<span class="status status-muted">Manual</span>{% endif %}</td>
+            <td>
+              {% if config.gaveta_automatica %}
+                <span class="status status-success">Ativa</span>
+                <small>Dinheiro{% if config.abrir_gaveta_em_movimento_caixa %} e movimentos{% endif %}</small>
+              {% else %}
+                <span class="status status-muted">Nao usa</span>
+              {% endif %}
+            </td>
             <td>
               <span class="status {% if not config.is_active %}status-muted{% endif %}">
                 {% if config.is_active %}Ativa{% else %}Inativa{% endif %}

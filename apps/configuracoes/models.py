@@ -30,6 +30,9 @@ class ConfiguracaoImpressao(models.Model):
     mensagem_rodape = models.TextField(blank=True)
     impressora_padrao = models.CharField(max_length=255, blank=True)
     impressao_automatica = models.BooleanField(default=False)
+    gaveta_automatica = models.BooleanField(default=False)
+    abrir_gaveta_em_dinheiro = models.BooleanField(default=True)
+    abrir_gaveta_em_movimento_caixa = models.BooleanField(default=True)
     numero_vias = models.PositiveIntegerField(default=1)
     is_active = models.BooleanField(default=True)
 

@@ -11,7 +11,58 @@
 </header>
 
 <form method="post" class="form-grid panel">
-  {% include "includes/form.html" %}
+  {% csrf_token %}
+  <section class="form-section">
+    <div class="form-section-header">
+      <h2>Identificacao</h2>
+      <p>Dados usados para localizar o cliente no PDV, historico e crediario futuro.</p>
+    </div>
+    <div class="form-grid">
+      <div class="field span-2">
+        {{ form.nome.label_tag }}
+        {{ form.nome }}
+        {{ form.nome.errors }}
+      </div>
+      <div class="field">
+        {{ form.cpf_cnpj.label_tag }}
+        {{ form.cpf_cnpj }}
+        <span class="help-text">Opcional para venda presencial avulsa.</span>
+        {{ form.cpf_cnpj.errors }}
+      </div>
+      <div class="field checkbox-field">
+        {{ form.is_active }}
+        {{ form.is_active.label_tag }}
+        {{ form.is_active.errors }}
+      </div>
+    </div>
+  </section>
+
+  <section class="form-section">
+    <div class="form-section-header">
+      <h2>Contato e endereco</h2>
+      <p>Informacoes para entrega, atendimento e relacionamento com o supermercado.</p>
+    </div>
+    <div class="form-grid">
+      <div class="field">
+        {{ form.telefone.label_tag }}
+        {{ form.telefone }}
+        {{ form.telefone.errors }}
+      </div>
+      <div class="field">
+        {{ form.email.label_tag }}
+        {{ form.email }}
+        {{ form.email.errors }}
+      </div>
+      <div class="field span-2">
+        {{ form.endereco.label_tag }}
+        {{ form.endereco }}
+        <span class="help-text">Em etapa futura este campo sera apoiado por busca de CEP.</span>
+        {{ form.endereco.errors }}
+      </div>
+    </div>
+  </section>
+
+  {{ form.non_field_errors }}
   <div class="form-actions">
     <a class="secondary-button" href="{% url 'clientes:lista' %}">Cancelar</a>
     <button class="primary-button" type="submit">Salvar</button>

@@ -13,7 +13,35 @@
 
 <form method="post" class="form-grid panel">
   {% csrf_token %}
-  {% include "includes/form.html" %}
+  {% if form.non_field_errors %}<div class="form-note form-note-danger">{{ form.non_field_errors }}</div>{% endif %}
+
+  <section class="form-section form-field-wide">
+    <h2>Classificacao</h2>
+    <div class="form-grid form-grid-inner">
+      <label class="form-field"><span>{{ form.tipo.label }}</span>{{ form.tipo }}{{ form.tipo.errors }}</label>
+      <label class="form-field"><span>{{ form.categoria.label }}</span>{{ form.categoria }}{{ form.categoria.errors }}</label>
+      <label class="form-field form-field-wide"><span>{{ form.descricao.label }}</span>{{ form.descricao }}{{ form.descricao.errors }}</label>
+    </div>
+  </section>
+
+  <section class="form-section form-field-wide">
+    <h2>Origem e parceiro</h2>
+    <div class="form-grid form-grid-inner">
+      <label class="form-field"><span>{{ form.filial.label }}</span>{{ form.filial }}{{ form.filial.errors }}</label>
+      <label class="form-field"><span>{{ form.fornecedor.label }}</span>{{ form.fornecedor }}{{ form.fornecedor.errors }}</label>
+      <label class="form-field"><span>{{ form.cliente.label }}</span>{{ form.cliente }}{{ form.cliente.errors }}</label>
+    </div>
+  </section>
+
+  <section class="form-section form-field-wide">
+    <h2>Valores e vencimento</h2>
+    <div class="form-grid form-grid-inner">
+      <label class="form-field"><span>{{ form.valor.label }}</span>{{ form.valor }}{{ form.valor.errors }}</label>
+      <label class="form-field"><span>{{ form.vencimento.label }}</span>{{ form.vencimento }}{{ form.vencimento.errors }}</label>
+      <label class="form-field form-field-wide"><span>{{ form.observacoes.label }}</span>{{ form.observacoes }}{{ form.observacoes.errors }}</label>
+    </div>
+  </section>
+
   <div class="form-actions">
     <a class="secondary-button" href="{% url 'financeiro:contas' %}">Cancelar</a>
     <button class="primary-button" type="submit">Salvar</button>

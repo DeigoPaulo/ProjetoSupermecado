@@ -74,6 +74,23 @@ class FluxoPedidoOnlineTests(TestCase):
         resposta = self.client.get("/pedidos-online/")
         self.assertEqual(resposta.status_code, 200)
         self.assertContains(resposta, "Cliente Online")
+        self.assertContains(resposta, "Separacao")
+        self.assertContains(resposta, "Pagamento")
+        self.assertContains(resposta, "order-progress")
+
+    def test_forms_marketplace_exibem_secoes_operacionais(self):
+        self.client.force_login(self.usuario)
+
+        pedido_form = self.client.get("/pedidos-online/novo/")
+        integracao_form = self.client.get("/pedidos-online/integracoes/nova/")
+
+        self.assertEqual(pedido_form.status_code, 200)
+        self.assertContains(pedido_form, "Origem do pedido")
+        self.assertContains(pedido_form, "Cliente")
+        self.assertContains(pedido_form, "Entrega e valores")
+        self.assertEqual(integracao_form.status_code, 200)
+        self.assertContains(integracao_form, "Plataforma")
+        self.assertContains(integracao_form, "site proprio")
 
     def test_detalhe_bloqueia_separacao_quando_entrega_nao_foi_calculada(self):
         PoliticaEntrega.objects.create(filial=self.filial, raio_maximo_km=Decimal("10"), valor_minimo_pedido=Decimal("0"))

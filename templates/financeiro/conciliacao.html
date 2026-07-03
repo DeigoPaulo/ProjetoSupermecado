@@ -1,11 +1,11 @@
 {% extends "base.html" %}
 
-{% block title %}Conciliação financeira{% endblock %}
+{% block title %}Conciliacao financeira{% endblock %}
 
 {% block content %}
 <header class="page-header">
   <div>
-    <h1>Conciliação financeira</h1>
+    <h1>Conciliacao financeira</h1>
     <p>Compare entradas do PDV, recebimentos e saidas financeiras baixadas.</p>
   </div>
   <div class="actions">
@@ -20,6 +20,23 @@
   <label><span>Fim</span><input type="date" name="data_fim" value="{{ data_fim|date:'Y-m-d' }}"></label>
   <button type="submit">Filtrar</button>
 </form>
+
+<section class="finance-insight-grid">
+  <article class="finance-insight">
+    <i class="fa-solid fa-cash-register"></i>
+    <div>
+      <strong>PDV x financeiro</strong>
+      <span>Vendas a vista aparecem em entradas PDV; crediario e fiado entram quando a conta e baixada.</span>
+    </div>
+  </article>
+  <article class="finance-insight">
+    <i class="fa-solid fa-scale-balanced"></i>
+    <div>
+      <strong>Conferencia diaria</strong>
+      <span>Use este painel junto com fechamento de caixa e relatorios de contas pagas.</span>
+    </div>
+  </article>
+</section>
 
 <section class="metrics-grid">
   <article class="metric"><span>Entradas PDV</span><strong>R$ {{ total_entradas_pdv|floatformat:2 }}</strong></article>

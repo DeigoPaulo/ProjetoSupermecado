@@ -1,5 +1,7 @@
 from django import forms
 
+from apps.core_forms import aplicar_select2
+
 from .models import PromocaoProduto
 
 
@@ -11,6 +13,10 @@ class PromocaoProdutoForm(forms.ModelForm):
             "inicio": forms.DateTimeInput(attrs={"type": "datetime-local"}),
             "fim": forms.DateTimeInput(attrs={"type": "datetime-local"}),
         }
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        aplicar_select2(self, ["produto"])
 
     def clean(self):
         cleaned = super().clean()

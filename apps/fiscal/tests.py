@@ -273,6 +273,30 @@ class FiscalTests(TestCase):
         self.assertIsInstance(conteudo, bytes)
         self.assertNotIn(b"segredo", bytes(configuracao.certificado_senha_criptografada))
 
+    def test_form_configuracao_fiscal_exibe_secoes_operacionais(self):
+        response = self.client.get(f"/fiscal/configuracoes/{self.configuracao.pk}/editar/")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "Loja e ambiente")
+        self.assertContains(response, "NFC-e")
+        self.assertContains(response, "Certificado digital")
+        self.assertContains(response, "Certificado A1")
+        self.assertContains(response, "O arquivo sera armazenado criptografado")
+
+    def test_forms_serie_e_natureza_exibem_secoes_operacionais(self):
+        serie = SerieFiscal.objects.get(filial=self.filial)
+        natureza = NaturezaOperacao.objects.get(descricao="Venda ao consumidor")
+
+        response_serie = self.client.get(f"/fiscal/series/{serie.pk}/editar/")
+        response_natureza = self.client.get(f"/fiscal/naturezas/{natureza.pk}/editar/")
+
+        self.assertEqual(response_serie.status_code, 200)
+        self.assertContains(response_serie, "Numeracao fiscal")
+        self.assertContains(response_serie, "O numero e reservado")
+        self.assertEqual(response_natureza.status_code, 200)
+        self.assertContains(response_natureza, "Operacao fiscal")
+        self.assertContains(response_natureza, "Use CFOP com 4 digitos")
+
     def test_bloqueia_nfce_sem_certificado_a1(self):
         self.configuracao.certificado_a1_criptografado = None
         self.configuracao.certificado_senha_criptografada = None

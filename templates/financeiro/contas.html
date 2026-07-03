@@ -39,6 +39,23 @@
   <button type="submit">Filtrar</button>
 </form>
 
+<section class="finance-insight-grid">
+  <article class="finance-insight">
+    <i class="fa-solid fa-triangle-exclamation"></i>
+    <div>
+      <strong>Vencimentos</strong>
+      <span>Contas abertas vencidas ficam destacadas para priorizar pagamento ou cobranca.</span>
+    </div>
+  </article>
+  <article class="finance-insight">
+    <i class="fa-solid fa-file-export"></i>
+    <div>
+      <strong>Conferencia e exportacao</strong>
+      <span>Filtros aplicados tambem seguem para CSV e PDF, evitando retrabalho no fechamento.</span>
+    </div>
+  </article>
+</section>
+
 <section class="metrics-grid">
   <article class="metric"><span>A pagar aberto</span><strong>R$ {{ total_pagar|floatformat:2 }}</strong></article>
   <article class="metric"><span>A receber aberto</span><strong>R$ {{ total_receber|floatformat:2 }}</strong></article>

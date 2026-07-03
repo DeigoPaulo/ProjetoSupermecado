@@ -11,11 +11,41 @@
 <section class="panel form-panel">
   <form method="post" class="form-grid">
     {% csrf_token %}
-    {% for field in form %}
-      <label class="form-field"><span>{{ field.label }}</span>{{ field }}{{ field.errors }}</label>
-    {% endfor %}
-    <div class="form-actions"><button class="primary-button" type="submit">Criar pedido</button></div>
+    {% if form.non_field_errors %}<div class="form-note form-note-danger">{{ form.non_field_errors }}</div>{% endif %}
+
+    <section class="form-section form-field-wide">
+      <h2>Origem do pedido</h2>
+      <div class="form-grid form-grid-inner">
+        <label class="form-field"><span>{{ form.filial.label }}</span>{{ form.filial }}{{ form.filial.errors }}</label>
+        <label class="form-field"><span>{{ form.canal.label }}</span>{{ form.canal }}{{ form.canal.errors }}</label>
+        <label class="form-field"><span>{{ form.referencia_externa.label }}</span>{{ form.referencia_externa }}{{ form.referencia_externa.errors }}</label>
+      </div>
+    </section>
+
+    <section class="form-section form-field-wide">
+      <h2>Cliente</h2>
+      <div class="form-grid form-grid-inner">
+        <label class="form-field"><span>{{ form.cliente.label }}</span>{{ form.cliente }}{{ form.cliente.errors }}</label>
+        <label class="form-field"><span>{{ form.nome_cliente.label }}</span>{{ form.nome_cliente }}{{ form.nome_cliente.errors }}</label>
+        <label class="form-field"><span>{{ form.telefone.label }}</span>{{ form.telefone }}{{ form.telefone.errors }}</label>
+      </div>
+    </section>
+
+    <section class="form-section form-field-wide">
+      <h2>Entrega e valores</h2>
+      <div class="form-grid form-grid-inner">
+        <label class="form-field"><span>{{ form.tipo_entrega.label }}</span>{{ form.tipo_entrega }}{{ form.tipo_entrega.errors }}</label>
+        <label class="form-field"><span>{{ form.taxa_entrega.label }}</span>{{ form.taxa_entrega }}{{ form.taxa_entrega.errors }}</label>
+        <label class="form-field"><span>{{ form.desconto.label }}</span>{{ form.desconto }}{{ form.desconto.errors }}</label>
+        <label class="form-field form-field-wide"><span>{{ form.endereco_entrega.label }}</span>{{ form.endereco_entrega }}{{ form.endereco_entrega.errors }}</label>
+        <label class="form-field form-field-wide"><span>{{ form.observacoes.label }}</span>{{ form.observacoes }}{{ form.observacoes.errors }}</label>
+      </div>
+    </section>
+
+    <div class="form-actions">
+      <a class="secondary-button" href="{% url 'marketplace:pedidos' %}">Cancelar</a>
+      <button class="primary-button" type="submit">Criar pedido</button>
+    </div>
   </form>
 </section>
 {% endblock %}
-

@@ -67,6 +67,23 @@ class FinanceiroTests(TestCase):
         self.assertContains(response, "Financeiro")
         self.assertContains(response, "Compra de mercadorias")
         self.assertContains(response, "Saldo previsto")
+        self.assertContains(response, "Vencimentos")
+        self.assertContains(response, "Conferencia e exportacao")
+
+    def test_formularios_financeiros_exibem_secoes_operacionais(self):
+        conta_form = self.client.get(f"/financeiro/{self.conta.pk}/editar/")
+        categoria_form = self.client.get(f"/financeiro/categorias/{self.categoria.pk}/editar/")
+        baixa_form = self.client.get(f"/financeiro/{self.conta.pk}/baixar/")
+
+        self.assertEqual(conta_form.status_code, 200)
+        self.assertContains(conta_form, "Classificacao")
+        self.assertContains(conta_form, "Origem e parceiro")
+        self.assertContains(conta_form, "Valores e vencimento")
+        self.assertContains(conta_form, "select2-field")
+        self.assertEqual(categoria_form.status_code, 200)
+        self.assertContains(categoria_form, "Categoria")
+        self.assertEqual(baixa_form.status_code, 200)
+        self.assertContains(baixa_form, "Pagamento / recebimento")
 
     def test_exporta_financeiro_csv_e_pdf(self):
         response_csv = self.client.get("/financeiro/exportar.csv")
@@ -87,6 +104,8 @@ class FinanceiroTests(TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertContains(response, "Fluxo de caixa")
         self.assertContains(response, "Saldo previsto")
+        self.assertContains(response, "Previsao por vencimento")
+        self.assertContains(response, "Realizado por baixa")
         self.assertContains(response, "210,00")
         self.assertEqual(response_csv.status_code, 200)
         self.assertEqual(response_csv["Content-Type"], "text/csv; charset=utf-8")
@@ -123,8 +142,10 @@ class FinanceiroTests(TestCase):
         response_csv = self.client.get("/financeiro/conciliacao/exportar.csv")
 
         self.assertEqual(response.status_code, 200)
-        self.assertContains(response, "Conciliação financeira")
+        self.assertContains(response, "Conciliacao financeira")
         self.assertContains(response, "Entradas PDV")
+        self.assertContains(response, "PDV x financeiro")
+        self.assertContains(response, "Conferencia diaria")
         self.assertContains(response, "130,00")
         self.assertEqual(response_csv.status_code, 200)
         self.assertEqual(response_csv["Content-Type"], "text/csv; charset=utf-8")

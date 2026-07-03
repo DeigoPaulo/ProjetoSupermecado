@@ -2,6 +2,7 @@ from django.contrib import messages
 from django.contrib.auth.decorators import login_required
 from django.contrib.auth.mixins import LoginRequiredMixin
 from django.core.exceptions import ValidationError
+from django.db import transaction
 from django.db.models import Q, Sum
 from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse_lazy
@@ -11,7 +12,7 @@ from apps.accounts.permissions import CADASTROS, RoleRequiredMixin, role_require
 from apps.estoque.models import Estoque, MovimentacaoEstoque, TipoMovimentacaoEstoque
 from apps.promocoes.services import preco_atual_produto
 
-from .forms import CategoriaForm, EtiquetaProdutoForm, MarcaForm, ProdutoForm, ProdutoImportCSVForm, ReajustePrecoForm
+from .forms import CategoriaForm, EtiquetaProdutoForm, MarcaForm, ProdutoForm, ProdutoImagemFormSet, ProdutoImportCSVForm, ReajustePrecoForm
 from .models import Categoria, Marca, Produto
 from .services import aplicar_reajuste_precos, importar_produtos_csv, simular_reajuste_precos
 
@@ -31,32 +32,49 @@ class ProdutoListView(LoginRequiredMixin, RoleRequiredMixin, ListView):
         return queryset
 
 
-class ProdutoCreateView(LoginRequiredMixin, RoleRequiredMixin, CreateView):
-    required_roles = CADASTROS
-    model = Produto
-    form_class = ProdutoForm
-    template_name = "produtos/produto_form.html"
-    success_url = reverse_lazy("produtos:lista")
+class ProdutoGaleriaMixin:
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        if self.request.POST:
+            context["galeria_formset"] = ProdutoImagemFormSet(
+                self.request.POST, self.request.FILES, instance=self.object, prefix="galeria"
+            )
+        else:
+            context["galeria_formset"] = ProdutoImagemFormSet(instance=self.object, prefix="galeria")
+        return context
 
     def form_valid(self, form):
-        messages.success(self.request, "Produto cadastrado com sucesso.")
-        return super().form_valid(form)
+        context = self.get_context_data(form=form)
+        galeria_formset = context["galeria_formset"]
+        if not galeria_formset.is_valid():
+            return self.form_invalid(form)
+        with transaction.atomic():
+            self.object = form.save()
+            galeria_formset.instance = self.object
+            galeria_formset.save()
+        messages.success(self.request, self.success_message)
+        return redirect(self.get_success_url())
 
 
-class ProdutoUpdateView(LoginRequiredMixin, RoleRequiredMixin, UpdateView):
+class ProdutoCreateView(ProdutoGaleriaMixin, LoginRequiredMixin, RoleRequiredMixin, CreateView):
     required_roles = CADASTROS
     model = Produto
     form_class = ProdutoForm
     template_name = "produtos/produto_form.html"
     success_url = reverse_lazy("produtos:lista")
+    success_message = "Produto cadastrado com sucesso."
+
+
+class ProdutoUpdateView(ProdutoGaleriaMixin, LoginRequiredMixin, RoleRequiredMixin, UpdateView):
+    required_roles = CADASTROS
+    model = Produto
+    form_class = ProdutoForm
+    template_name = "produtos/produto_form.html"
+    success_url = reverse_lazy("produtos:lista")
+    success_message = "Produto atualizado com sucesso."
 
     def get_queryset(self):
         return Produto.all_objects.all()
-
-    def form_valid(self, form):
-        messages.success(self.request, "Produto atualizado com sucesso.")
-        return super().form_valid(form)
-
 
 class CategoriaCreateView(LoginRequiredMixin, RoleRequiredMixin, CreateView):
     required_roles = CADASTROS

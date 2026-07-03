@@ -1,4 +1,8 @@
+import secrets
+import uuid
+
 from django.conf import settings
+from django.contrib.auth.hashers import check_password, make_password
 from django.db import models
 
 
@@ -14,6 +18,37 @@ class StatusAcessoPdvNuvem(models.TextChoices):
     APROVADO = "APROVADO", "Aprovado"
     RECUSADO = "RECUSADO", "Recusado"
     EXPIRADO = "EXPIRADO", "Expirado"
+
+
+class TerminalPdv(models.Model):
+    identificador = models.UUIDField(default=uuid.uuid4, unique=True, editable=False)
+    filial = models.ForeignKey("empresas.Filial", on_delete=models.PROTECT, related_name="terminais_pdv")
+    nome = models.CharField(max_length=80)
+    descricao = models.CharField(max_length=255, blank=True)
+    chave_api_hash = models.CharField(max_length=128, blank=True, editable=False)
+    chave_api_prefixo = models.CharField(max_length=12, blank=True, editable=False)
+    permite_modo_offline = models.BooleanField(default=True)
+    ativo = models.BooleanField(default=True)
+    ultima_conexao = models.DateTimeField(null=True, blank=True)
+    ultimo_ip = models.GenericIPAddressField(null=True, blank=True)
+    criado_em = models.DateTimeField(auto_now_add=True)
+    atualizado_em = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ["filial__nome", "nome"]
+        unique_together = ["filial", "nome"]
+
+    def __str__(self):
+        return f"{self.nome} - {self.filial}"
+
+    def gerar_chave_api(self):
+        chave = secrets.token_urlsafe(32)
+        self.chave_api_hash = make_password(chave)
+        self.chave_api_prefixo = chave[:8]
+        return chave
+
+    def validar_chave_api(self, chave):
+        return bool(chave and self.chave_api_hash and check_password(chave, self.chave_api_hash))
 
 
 class Caixa(models.Model):
