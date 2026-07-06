@@ -1,0 +1,32 @@
+{% extends "base.html" %}
+
+{% block title %}Conta de movimento{% endblock %}
+
+{% block content %}
+<header class="page-header">
+  <div>
+    <h1>{% if conta %}Editar conta de movimento{% else %}Nova conta de movimento{% endif %}</h1>
+    <p>Cadastre onde o dinheiro realizado fica: caixa fisico, banco, PIX ou outra conta.</p>
+  </div>
+  <a class="secondary-button" href="{% url 'financeiro:contas_movimento' %}">Voltar</a>
+</header>
+
+<form method="post" class="form-grid panel">
+  {% csrf_token %}
+  {% if form.non_field_errors %}<div class="form-note form-note-danger">{{ form.non_field_errors }}</div>{% endif %}
+  <section class="form-section form-field-wide">
+    <h2>Identificacao e saldo</h2>
+    <div class="form-grid form-grid-inner">
+      <label class="form-field"><span>{{ form.filial.label }}</span>{{ form.filial }}{{ form.filial.errors }}</label>
+      <label class="form-field"><span>{{ form.nome.label }}</span>{{ form.nome }}{{ form.nome.errors }}</label>
+      <label class="form-field"><span>{{ form.tipo.label }}</span>{{ form.tipo }}{{ form.tipo.errors }}</label>
+      <label class="form-field"><span>{{ form.saldo_inicial.label }}</span>{{ form.saldo_inicial }}{{ form.saldo_inicial.errors }}</label>
+      <label class="toggle-field">{{ form.ativa }} <span>{{ form.ativa.label }}</span>{{ form.ativa.errors }}</label>
+    </div>
+  </section>
+  <div class="form-actions">
+    <a class="secondary-button" href="{% url 'financeiro:contas_movimento' %}">Cancelar</a>
+    <button class="primary-button" type="submit">Salvar</button>
+  </div>
+</form>
+{% endblock %}

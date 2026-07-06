@@ -2,11 +2,12 @@ from decimal import Decimal
 
 from django.contrib.auth import get_user_model
 from django.core.exceptions import ValidationError
+from django.db.models import Sum
 from django.test import TestCase
 
 from apps.empresas.models import Empresa, Filial
 from apps.estoque.models import Estoque, MovimentacaoEstoque, TipoMovimentacaoEstoque
-from apps.financeiro.models import ContaFinanceira, StatusContaFinanceira, TipoContaFinanceira
+from apps.financeiro.models import ContaFinanceira, ContaMovimentoFinanceiro, LancamentoFinanceiro, StatusContaFinanceira, TipoContaFinanceira, TipoContaMovimento, TipoLancamentoFinanceiro
 from apps.clientes.models import Cliente
 from apps.pdv.models import Caixa
 from apps.produtos.models import Categoria, Produto
@@ -41,6 +42,15 @@ class VendaServiceTests(TestCase):
         self.cliente = Cliente.objects.create(nome="Cliente Teste", cpf_cnpj="123.456.789-00")
 
     def test_finalizar_venda_com_pagamento_dividido_baixa_estoque(self):
+        pix_configurado = ContaMovimentoFinanceiro.objects.create(
+            filial=self.filial,
+            nome="PIX Banco Preferencial",
+            tipo=TipoContaMovimento.PIX,
+            saldo_inicial=Decimal("0.00"),
+        )
+        self.pix.conta_movimento_padrao = pix_configurado
+        self.pix.save(update_fields=["conta_movimento_padrao"])
+
         venda = finalizar_venda(
             caixa=self.caixa,
             usuario=self.usuario,
@@ -64,6 +74,14 @@ class VendaServiceTests(TestCase):
                 tipo=TipoMovimentacaoEstoque.VENDA,
                 referencia=f"venda:{venda.id}",
             ).exists()
+        )
+        self.assertEqual(LancamentoFinanceiro.objects.filter(origem="PDV_VENDA").count(), 2)
+        self.assertTrue(ContaMovimentoFinanceiro.objects.filter(filial=self.filial, nome="Caixa PDV", tipo=TipoContaMovimento.CAIXA).exists())
+        self.assertFalse(ContaMovimentoFinanceiro.objects.filter(filial=self.filial, nome="PIX PDV", tipo=TipoContaMovimento.PIX).exists())
+        self.assertTrue(LancamentoFinanceiro.objects.filter(conta=pix_configurado, pagamento_venda__forma_pagamento=self.pix).exists())
+        self.assertEqual(
+            LancamentoFinanceiro.objects.filter(tipo=TipoLancamentoFinanceiro.ENTRADA).aggregate(total=Sum("valor"))["total"],
+            Decimal("50.00"),
         )
 
     def test_finalizar_venda_rejeita_pagamento_incompleto(self):
@@ -98,6 +116,44 @@ class VendaServiceTests(TestCase):
         self.assertFalse(Venda.objects.exists())
         self.estoque.refresh_from_db()
         self.assertEqual(self.estoque.quantidade_atual, Decimal("10.000"))
+
+    def test_pagamento_eletronico_confirmado_gera_autorizacao_simulada(self):
+        venda = finalizar_venda(
+            caixa=self.caixa,
+            usuario=self.usuario,
+            itens=[{"produto": self.produto, "quantidade": Decimal("1.000")}],
+            pagamentos=[{"forma_pagamento": self.pix, "valor": Decimal("25.00")}],
+        )
+
+        pagamento = venda.pagamentos.get()
+        self.assertEqual(pagamento.status, StatusPagamento.CONFIRMADO)
+        self.assertTrue(pagamento.transacao_externa_id.startswith("TEF-SIM-"))
+        self.assertTrue(pagamento.nsu)
+        self.assertTrue(pagamento.codigo_autorizacao)
+        self.assertIn("Autorizacao eletronica simulada", pagamento.mensagem_processadora)
+
+    def test_pagamento_eletronico_preserva_autorizacao_real(self):
+        venda = finalizar_venda(
+            caixa=self.caixa,
+            usuario=self.usuario,
+            itens=[{"produto": self.produto, "quantidade": Decimal("1.000")}],
+            pagamentos=[
+                {
+                    "forma_pagamento": self.pix,
+                    "valor": Decimal("25.00"),
+                    "transacao_externa_id": "pix-e2e-real",
+                    "nsu": "123456",
+                    "codigo_autorizacao": "ABC123",
+                    "mensagem_processadora": "Aprovado pela operadora.",
+                }
+            ],
+        )
+
+        pagamento = venda.pagamentos.get()
+        self.assertEqual(pagamento.transacao_externa_id, "pix-e2e-real")
+        self.assertEqual(pagamento.nsu, "123456")
+        self.assertEqual(pagamento.codigo_autorizacao, "ABC123")
+        self.assertEqual(pagamento.mensagem_processadora, "Aprovado pela operadora.")
 
     def test_venda_crediario_cria_conta_receber(self):
         venda = finalizar_venda(
@@ -150,5 +206,10 @@ class VendaServiceTests(TestCase):
         self.assertEqual(pix.status, StatusPagamento.ESTORNO_PENDENTE)
         self.assertIsNone(pix.estornado_em)
         self.assertEqual(pix.motivo_estorno, "Venda duplicada")
+        self.assertEqual(LancamentoFinanceiro.objects.filter(origem="PDV_VENDA").count(), 2)
+        self.assertEqual(LancamentoFinanceiro.objects.filter(origem="ESTORNO").count(), 1)
+        self.assertTrue(LancamentoFinanceiro.objects.filter(pagamento_venda=dinheiro, tipo=TipoLancamentoFinanceiro.ENTRADA).exists())
+        self.assertTrue(LancamentoFinanceiro.objects.filter(pagamento_venda=dinheiro, tipo=TipoLancamentoFinanceiro.SAIDA).exists())
+        self.assertFalse(LancamentoFinanceiro.objects.filter(pagamento_venda=pix, origem="ESTORNO").exists())
 
 # Create your tests here.

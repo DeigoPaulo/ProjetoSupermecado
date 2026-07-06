@@ -1,10 +1,24 @@
 from decimal import Decimal
+from io import BytesIO
 
 from django.contrib.auth import get_user_model
 from django.core.files.uploadedfile import SimpleUploadedFile
 from django.test import Client, TestCase
+from PIL import Image
 
 from .models import Categoria, Produto, ProdutoImagem
+
+
+GIF_1X1 = (
+    b"GIF87a\x01\x00\x01\x00\x80\x00\x00\xff\xff\xff\x00\x00\x00!\xf9\x04"
+    b"\x01\x00\x00\x00\x00,\x00\x00\x00\x00\x01\x00\x01\x00\x00\x02\x02D\x01\x00;"
+)
+
+
+def png_1x1():
+    arquivo = BytesIO()
+    Image.new("RGB", (1, 1), color="white").save(arquivo, format="PNG")
+    return arquivo.getvalue()
 
 
 class ProdutoViewsTests(TestCase):
@@ -42,9 +56,9 @@ class ProdutoViewsTests(TestCase):
 
     def test_edicao_salva_dados_da_galeria(self):
         imagem = SimpleUploadedFile(
-            "frente.gif",
-            b"GIF87a\x01\x00\x01\x00\x80\x00\x00\xff\xff\xff\x00\x00\x00!\xf9\x04\x01\x00\x00\x00\x00,\x00\x00\x00\x00\x01\x00\x01\x00\x00\x02\x02D\x01\x00;",
-            content_type="image/gif",
+            "frente.png",
+            png_1x1(),
+            content_type="image/png",
         )
         response = self.client.post(
             f"/produtos/{self.produto.pk}/editar/",
@@ -80,6 +94,83 @@ class ProdutoViewsTests(TestCase):
         foto = ProdutoImagem.objects.get(produto=self.produto)
         self.assertEqual(foto.legenda, "Frente da embalagem")
         self.assertEqual(foto.ordem, 2)
+
+    def test_produto_e_galeria_aceitam_png_e_bloqueiam_gif(self):
+        imagem_png = SimpleUploadedFile("produto.png", png_1x1(), content_type="image/png")
+        resposta_png = self.client.post(
+            "/produtos/novo/",
+            {
+                "codigo_barras": "7890000000100",
+                "nome": "Produto com imagem",
+                "categoria": self.categoria.pk,
+                "unidade": "UN",
+                "preco_custo": "1.00",
+                "preco_venda": "2.00",
+                "estoque_minimo": "0",
+                "vendido_no_pdv": "on",
+                "ncm": "10063021",
+                "origem_mercadoria": "0",
+                "cst_icms": "00",
+                "aliquota_icms": "18.00",
+                "is_active": "on",
+                "galeria-TOTAL_FORMS": "3",
+                "galeria-INITIAL_FORMS": "0",
+                "galeria-MIN_NUM_FORMS": "0",
+                "galeria-MAX_NUM_FORMS": "1000",
+                "galeria-0-legenda": "",
+                "galeria-0-ordem": "0",
+                "galeria-1-legenda": "",
+                "galeria-1-ordem": "0",
+                "galeria-2-legenda": "",
+                "galeria-2-ordem": "0",
+                "imagem": imagem_png,
+            },
+        )
+
+        self.assertRedirects(resposta_png, "/produtos/")
+        self.assertTrue(Produto.objects.filter(codigo_barras="7890000000100", imagem__endswith=".png").exists())
+
+        imagem_gif = SimpleUploadedFile("produto.gif", GIF_1X1, content_type="image/gif")
+        resposta_gif = self.client.post(
+            "/produtos/novo/",
+            {
+                "codigo_barras": "7890000000101",
+                "nome": "Produto gif",
+                "categoria": self.categoria.pk,
+                "unidade": "UN",
+                "preco_custo": "1.00",
+                "preco_venda": "2.00",
+                "estoque_minimo": "0",
+                "vendido_no_pdv": "on",
+                "ncm": "10063021",
+                "origem_mercadoria": "0",
+                "cst_icms": "00",
+                "aliquota_icms": "18.00",
+                "is_active": "on",
+                "galeria-TOTAL_FORMS": "3",
+                "galeria-INITIAL_FORMS": "0",
+                "galeria-MIN_NUM_FORMS": "0",
+                "galeria-MAX_NUM_FORMS": "1000",
+                "galeria-0-legenda": "",
+                "galeria-0-ordem": "0",
+                "galeria-1-legenda": "",
+                "galeria-1-ordem": "0",
+                "galeria-2-legenda": "",
+                "galeria-2-ordem": "0",
+                "imagem": imagem_gif,
+            },
+        )
+
+        self.assertEqual(resposta_gif.status_code, 200)
+        self.assertContains(resposta_gif, "Envie uma imagem PNG, JPG ou JPEG.")
+        self.assertFalse(Produto.objects.filter(codigo_barras="7890000000101").exists())
+
+    def test_lista_produtos_renderiza_imagem_com_url_absoluta_de_media(self):
+        self.produto.imagem.save("produto-lista.png", SimpleUploadedFile("produto-lista.png", png_1x1(), content_type="image/png"))
+
+        response = self.client.get("/produtos/")
+
+        self.assertContains(response, 'src="/media/produtos/')
 
     def test_lista_produtos_exibe_status_visual_de_marketplace(self):
         self.produto.vendido_no_marketplace = True

@@ -212,12 +212,68 @@ def _venda_finalizada(evento):
         VendaSincronizada.objects.create(empresa=evento.empresa, venda_externa_id=venda_externa_id, **valores)
 
 
+def _documento_fiscal_salvar(evento):
+    from .models import DocumentoFiscalSincronizado
+
+    dados = _dados_evento(evento)
+    documento_externo_id = _valor_texto(dados, "documento_id") or _valor_texto(dados, "id")
+    if not documento_externo_id:
+        raise ValueError("documento_id e obrigatorio para sincronizar documento fiscal.")
+
+    valor_total = _valor_decimal(dados, "valor_total")
+    chave_acesso = _valor_texto(dados, "chave_acesso")
+    existente = DocumentoFiscalSincronizado.objects.filter(
+        empresa=evento.empresa,
+        documento_externo_id=documento_externo_id,
+    ).first()
+    if existente:
+        if existente.valor_total != valor_total:
+            raise ConflitoSincronizacao("Documento fiscal externo ja existe com valor diferente.")
+        if existente.chave_acesso and chave_acesso and existente.chave_acesso != chave_acesso:
+            raise ConflitoSincronizacao("Documento fiscal externo ja existe com chave de acesso diferente.")
+
+    filial = _filial_do_evento(evento, dados)
+    if not filial:
+        raise ConflitoSincronizacao("Filial do documento fiscal sincronizado nao encontrada para a empresa.")
+    emitido_em = parse_datetime(_valor_texto(dados, "emitido_em")) if _valor_texto(dados, "emitido_em") else None
+    if emitido_em and timezone.is_naive(emitido_em):
+        emitido_em = timezone.make_aware(emitido_em)
+
+    valores = {
+        "filial": filial,
+        "evento": evento,
+        "venda_externa_id": _valor_texto(dados, "venda_id"),
+        "tipo_documento": _valor_texto(dados, "tipo_documento", "NFCE"),
+        "ambiente": _valor_texto(dados, "ambiente"),
+        "serie": _valor_texto(dados, "serie"),
+        "numero": _valor_texto(dados, "numero"),
+        "chave_acesso": chave_acesso,
+        "protocolo": _valor_texto(dados, "protocolo"),
+        "status": _valor_texto(dados, "status", "EMITIDO"),
+        "valor_total": valor_total,
+        "emitido_em": emitido_em,
+        "payload": dados,
+    }
+    if existente:
+        for campo, valor in valores.items():
+            setattr(existente, campo, valor)
+        existente.save()
+    else:
+        DocumentoFiscalSincronizado.objects.create(
+            empresa=evento.empresa,
+            documento_externo_id=documento_externo_id,
+            **valores,
+        )
+
+
 MANIPULADORES = {
     "sistema.ping": _ping,
     "produto.criado": _produto_salvar,
     "produto.atualizado": _produto_salvar,
     "estoque.saldo_atualizado": _estoque_saldo_atualizar,
     "venda.finalizada": _venda_finalizada,
+    "fiscal.documento_emitido": _documento_fiscal_salvar,
+    "fiscal.documento_cancelado": _documento_fiscal_salvar,
 }
 
 

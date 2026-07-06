@@ -18,6 +18,7 @@
     <div class="form-grid form-grid-inner">
       <label class="form-field"><span>{{ form.nome.label }}</span>{{ form.nome }}{{ form.nome.errors }}</label>
       <label class="form-field"><span>{{ form.tipo.label }}</span>{{ form.tipo }}{{ form.tipo.errors }}</label>
+      <label class="form-field form-field-wide"><span>{{ form.conta_movimento_padrao.label }}</span>{{ form.conta_movimento_padrao }}{{ form.conta_movimento_padrao.errors }}<small>Se ficar vazio, o PDV cria/usa automaticamente Caixa PDV, PIX PDV, Banco/cartao PDV ou Outros recebimentos PDV conforme o tipo.</small></label>
       <label class="toggle-field">{{ form.permite_troco }} <span>{{ form.permite_troco.label }}</span>{{ form.permite_troco.errors }}</label>
       <label class="toggle-field">{{ form.exige_autorizacao }} <span>{{ form.exige_autorizacao.label }}</span>{{ form.exige_autorizacao.errors }}</label>
       <label class="toggle-field">{{ form.ativo }} <span>{{ form.ativo.label }}</span>{{ form.ativo.errors }}</label>

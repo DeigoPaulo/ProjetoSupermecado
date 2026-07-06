@@ -1,0 +1,51 @@
+{% extends "base.html" %}
+
+{% block title %}Documento fiscal sincronizado{% endblock %}
+
+{% block content %}
+<header class="page-header">
+  <div>
+    <h1>Documento fiscal sincronizado {{ documento.documento_externo_id }}</h1>
+    <p>Espelho fiscal recebido por sincronizacao para conferencia de chave, protocolo, status e payload.</p>
+  </div>
+  <a class="secondary-button" href="{% url 'empresas:sincronizacao' %}"><i class="fa-solid fa-arrow-left"></i> Sincronizacao</a>
+</header>
+
+<section class="metrics-grid">
+  <article class="metric"><span>Valor total</span><strong>R$ {{ documento.valor_total|floatformat:2 }}</strong></article>
+  <article class="metric"><span>Status</span><strong>{{ documento.status|default:"-" }}</strong></article>
+  <article class="metric"><span>Tipo</span><strong>{{ documento.tipo_documento|default:"-" }}</strong></article>
+  <article class="metric"><span>Ambiente</span><strong>{{ documento.ambiente|default:"-" }}</strong></article>
+</section>
+
+<section class="detail-grid">
+  <article class="panel">
+    <div class="panel-title">Origem</div>
+    <dl class="definition-list">
+      <dt>Empresa</dt><dd>{{ documento.empresa }}</dd>
+      <dt>Filial</dt><dd>{{ documento.filial|default:"-" }}</dd>
+      <dt>Venda</dt><dd>{{ documento.venda_externa_id|default:"-" }}</dd>
+      <dt>Serie / numero</dt><dd>{{ documento.serie|default:"-" }} / {{ documento.numero|default:"-" }}</dd>
+      <dt>Emitido em</dt><dd>{{ documento.emitido_em|date:"d/m/Y H:i:s"|default:"-" }}</dd>
+      <dt>Recebido em</dt><dd>{{ documento.recebido_em|date:"d/m/Y H:i:s" }}</dd>
+      <dt>Evento</dt><dd><code>{{ documento.evento.identificador }}</code></dd>
+    </dl>
+  </article>
+
+  <article class="panel">
+    <div class="panel-title">SEFAZ</div>
+    <dl class="definition-list">
+      <dt>Chave de acesso</dt><dd><code>{{ documento.chave_acesso|default:"-" }}</code></dd>
+      <dt>Protocolo</dt><dd><code>{{ documento.protocolo|default:"-" }}</code></dd>
+      <dt>Documento externo</dt><dd><code>{{ documento.documento_externo_id }}</code></dd>
+      <dt>Status fiscal</dt><dd>{{ documento.status|default:"-" }}</dd>
+    </dl>
+  </article>
+</section>
+
+<section class="panel code-sample">
+  <div class="panel-title">Payload recebido</div>
+  <span>Dados originais preservados para auditoria e suporte tecnico.</span>
+  <code>{{ payload_formatado }}</code>
+</section>
+{% endblock %}

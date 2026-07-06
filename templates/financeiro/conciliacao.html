@@ -11,6 +11,7 @@
   <div class="actions">
     <a class="secondary-button" href="{% url 'financeiro:conciliacao_csv' %}?data_inicio={{ data_inicio|date:'Y-m-d' }}&amp;data_fim={{ data_fim|date:'Y-m-d' }}"><i class="fa-solid fa-file-csv"></i> Excel/CSV</a>
     <a class="secondary-button" href="{% url 'financeiro:fluxo_caixa' %}">Fluxo</a>
+    <a class="secondary-button" href="{% url 'financeiro:resultado' %}">Resultado</a>
     <a class="secondary-button" href="{% url 'financeiro:contas' %}">Contas</a>
   </div>
 </header>

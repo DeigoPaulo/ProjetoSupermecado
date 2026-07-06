@@ -195,7 +195,19 @@
       <table class="totals">
         <tbody>
           {% for pagamento in venda.pagamentos.all %}
-            <tr><td>{{ pagamento.forma_pagamento }}</td><td class="right">R$ {{ pagamento.valor|floatformat:2 }}</td></tr>
+            <tr>
+              <td>
+                {{ pagamento.forma_pagamento }}
+                {% if pagamento.nsu or pagamento.codigo_autorizacao or pagamento.transacao_externa_id %}
+                  <br><span class="muted">
+                    {% if pagamento.nsu %}NSU {{ pagamento.nsu }}{% endif %}
+                    {% if pagamento.codigo_autorizacao %} Aut. {{ pagamento.codigo_autorizacao }}{% endif %}
+                    {% if pagamento.transacao_externa_id %} Tx {{ pagamento.transacao_externa_id }}{% endif %}
+                  </span>
+                {% endif %}
+              </td>
+              <td class="right">R$ {{ pagamento.valor|floatformat:2 }}</td>
+            </tr>
           {% endfor %}
         </tbody>
       </table>

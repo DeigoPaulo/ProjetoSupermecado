@@ -1,4 +1,5 @@
 from decimal import Decimal
+from uuid import uuid4
 
 from django.core.exceptions import ValidationError
 from django.db import transaction
@@ -21,6 +22,17 @@ def quantidade_devolvida_item(item_venda):
 
 
 FORMAS_PRAZO = {"CREDIARIO", "FIADO", "PRAZO"}
+TIPO_CONTA_POR_FORMA = {
+    "DINHEIRO": "CAIXA",
+    "PIX": "PIX",
+    "CARTAO": "BANCO",
+    "DEBITO": "BANCO",
+    "CREDITO": "BANCO",
+    "VALE": "OUTRA",
+    "CONVENIO": "OUTRA",
+    "OUTRO": "OUTRA",
+}
+FORMAS_ELETRONICAS = {"PIX", "CARTAO", "DEBITO", "CREDITO"}
 
 
 def finalizar_venda(*, caixa, usuario, itens, forma_pagamento=None, desconto=Decimal("0.00"), cliente=None, pagamentos=None, vencimento_financeiro=None):
@@ -93,10 +105,12 @@ def finalizar_venda(*, caixa, usuario, itens, forma_pagamento=None, desconto=Dec
         if total_prazo > 0 and not cliente:
             raise ValidationError("Venda a prazo exige cliente identificado.")
 
+        pagamentos_criados = []
         for pagamento in pagamentos:
             if pagamento["valor"] <= 0:
                 continue
-            PagamentoVenda.objects.create(
+            pagamento = _normalizar_pagamento_eletronico(pagamento)
+            pagamento_venda = PagamentoVenda.objects.create(
                 venda=venda,
                 forma_pagamento=pagamento["forma_pagamento"],
                 valor=pagamento["valor"],
@@ -106,9 +120,81 @@ def finalizar_venda(*, caixa, usuario, itens, forma_pagamento=None, desconto=Dec
                 codigo_autorizacao=pagamento.get("codigo_autorizacao", ""),
                 mensagem_processadora=pagamento.get("mensagem_processadora", ""),
             )
+            pagamentos_criados.append(pagamento_venda)
         _criar_conta_receber_venda(venda, total_prazo, vencimento_financeiro)
+        _registrar_lancamentos_pdv_venda(venda, pagamentos_criados)
 
         return venda
+
+
+def _normalizar_pagamento_eletronico(pagamento):
+    forma = pagamento["forma_pagamento"]
+    tipo_forma = (forma.tipo or "").upper()
+    if tipo_forma not in FORMAS_ELETRONICAS:
+        return pagamento
+    if pagamento.get("status", StatusPagamento.CONFIRMADO) != StatusPagamento.CONFIRMADO:
+        return pagamento
+    if pagamento.get("transacao_externa_id") and pagamento.get("nsu") and pagamento.get("codigo_autorizacao"):
+        return pagamento
+
+    referencia = uuid4().hex.upper()
+    pagamento = pagamento.copy()
+    pagamento.setdefault("transacao_externa_id", f"TEF-SIM-{referencia[:16]}")
+    pagamento.setdefault("nsu", referencia[16:28])
+    pagamento.setdefault("codigo_autorizacao", referencia[28:34])
+    pagamento.setdefault("mensagem_processadora", "Autorizacao eletronica simulada. Substituir pelo adaptador TEF/API no app desktop.")
+    return pagamento
+
+
+def _conta_movimento_para_pagamento(filial, forma_pagamento):
+    from apps.financeiro.models import ContaMovimentoFinanceiro, TipoContaMovimento
+
+    if forma_pagamento.conta_movimento_padrao_id and forma_pagamento.conta_movimento_padrao.filial_id == filial.id:
+        return forma_pagamento.conta_movimento_padrao
+
+    tipo_forma = (forma_pagamento.tipo or "").upper()
+    tipo_conta = TIPO_CONTA_POR_FORMA.get(tipo_forma)
+    if not tipo_conta:
+        return None
+    nome_tipo = {
+        TipoContaMovimento.CAIXA: "Caixa PDV",
+        TipoContaMovimento.PIX: "PIX PDV",
+        TipoContaMovimento.BANCO: "Banco/cartao PDV",
+        TipoContaMovimento.OUTRA: "Outros recebimentos PDV",
+    }[tipo_conta]
+    conta, _ = ContaMovimentoFinanceiro.objects.get_or_create(
+        filial=filial,
+        nome=nome_tipo,
+        defaults={"tipo": tipo_conta, "saldo_inicial": Decimal("0.00"), "ativa": True},
+    )
+    if not conta.ativa:
+        conta.ativa = True
+        conta.save(update_fields=["ativa", "atualizado_em"])
+    return conta
+
+
+def _registrar_lancamentos_pdv_venda(venda, pagamentos):
+    from apps.financeiro.models import LancamentoFinanceiro, TipoLancamentoFinanceiro
+    from apps.financeiro.services import registrar_lancamento
+
+    for pagamento in pagamentos:
+        if pagamento.status != StatusPagamento.CONFIRMADO or pagamento.forma_pagamento.tipo in FORMAS_PRAZO:
+            continue
+        if LancamentoFinanceiro.objects.filter(pagamento_venda=pagamento).exists():
+            continue
+        conta_movimento = _conta_movimento_para_pagamento(venda.filial, pagamento.forma_pagamento)
+        if not conta_movimento:
+            continue
+        registrar_lancamento(
+            conta=conta_movimento,
+            tipo=TipoLancamentoFinanceiro.ENTRADA,
+            descricao=f"Recebimento PDV venda #{venda.id} - {pagamento.forma_pagamento.nome}",
+            valor=pagamento.valor,
+            data=timezone.localdate(),
+            usuario=venda.usuario,
+            origem="PDV_VENDA",
+            pagamento_venda=pagamento,
+        )
 
 
 def _criar_conta_receber_venda(venda, valor, vencimento_financeiro=None):
@@ -339,6 +425,27 @@ def _solicitar_estorno_pagamentos(venda, *, motivo):
             pagamento.estornado_em = agora
             campos = ["status", "motivo_estorno", "estorno_solicitado_em", "estornado_em"]
         pagamento.save(update_fields=campos)
+    _estornar_lancamentos_pagamentos_locais(venda, motivo=motivo)
+
+
+def _estornar_lancamentos_pagamentos_locais(venda, *, motivo):
+    from apps.financeiro.models import LancamentoFinanceiro
+    from apps.financeiro.services import estornar_lancamento
+
+    lancamentos = LancamentoFinanceiro.objects.select_related("pagamento_venda").filter(
+        pagamento_venda__venda=venda,
+        pagamento_venda__status=StatusPagamento.ESTORNADO,
+        estorno_de__isnull=True,
+    )
+    for lancamento in lancamentos:
+        if lancamento.estornos.exists():
+            continue
+        estornar_lancamento(
+            lancamento=lancamento,
+            usuario=venda.usuario,
+            motivo=f"Cancelamento da venda {venda.id}: {motivo}",
+            data=timezone.localdate(),
+        )
 
 
 def _cancelar_contas_receber_venda(venda, *, usuario, motivo, ip=None):

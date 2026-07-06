@@ -4,11 +4,137 @@ from django.utils import timezone
 
 from apps.auditoria.models import LogAuditoria
 
-from .models import ContaFinanceira, StatusContaFinanceira
+from .models import ContaFinanceira, ContaMovimentoFinanceiro, LancamentoFinanceiro, StatusContaFinanceira, TipoContaFinanceira, TipoContaMovimento, TipoLancamentoFinanceiro, TransferenciaFinanceira
+
+
+def registrar_lancamento(*, conta, tipo, descricao, valor, data, usuario, origem, conta_financeira=None, transferencia=None, estorno_de=None, pagamento_venda=None, sangria=None, suprimento=None):
+    return LancamentoFinanceiro.objects.create(
+        conta=conta,
+        tipo=tipo,
+        origem=origem,
+        descricao=descricao,
+        valor=valor,
+        data=data,
+        conta_financeira=conta_financeira,
+        transferencia=transferencia,
+        estorno_de=estorno_de,
+        pagamento_venda=pagamento_venda,
+        sangria=sangria,
+        suprimento=suprimento,
+        usuario=usuario,
+    )
+
+
+def conta_caixa_pdv(filial):
+    conta, _ = ContaMovimentoFinanceiro.objects.get_or_create(
+        filial=filial,
+        nome="Caixa PDV",
+        defaults={"tipo": TipoContaMovimento.CAIXA, "saldo_inicial": 0, "ativa": True},
+    )
+    if not conta.ativa:
+        conta.ativa = True
+        conta.save(update_fields=["ativa", "atualizado_em"])
+    return conta
 
 
 @transaction.atomic
-def baixar_conta(*, conta, usuario, data_pagamento, valor_pago, forma_pagamento="", ip=None):
+def realizar_transferencia(*, conta_origem, conta_destino, valor, data, usuario, descricao="", ip=None):
+    contas = {
+        conta.pk: conta
+        for conta in ContaMovimentoFinanceiro.objects.select_for_update().select_related("filial__empresa").filter(
+            pk__in=[conta_origem.pk, conta_destino.pk]
+        )
+    }
+    origem = contas.get(conta_origem.pk)
+    destino = contas.get(conta_destino.pk)
+    if not origem or not destino:
+        raise ValidationError("Conta de origem ou destino nao encontrada.")
+    if origem.pk == destino.pk:
+        raise ValidationError("As contas de origem e destino devem ser diferentes.")
+    if not origem.ativa or not destino.ativa:
+        raise ValidationError("A transferencia exige contas ativas.")
+    if origem.filial.empresa_id != destino.filial.empresa_id:
+        raise ValidationError("Transferencias entre empresas diferentes nao sao permitidas.")
+    if valor <= 0:
+        raise ValidationError("Valor da transferencia deve ser maior que zero.")
+    if origem.saldo_atual < valor:
+        raise ValidationError("Saldo insuficiente na conta de origem.")
+
+    transferencia = TransferenciaFinanceira.objects.create(
+        conta_origem=origem,
+        conta_destino=destino,
+        valor=valor,
+        data=data or timezone.localdate(),
+        descricao=descricao,
+        usuario=usuario,
+    )
+    texto = descricao or f"Transferencia entre {origem.nome} e {destino.nome}"
+    registrar_lancamento(
+        conta=origem, tipo=TipoLancamentoFinanceiro.SAIDA, descricao=texto, valor=valor,
+        data=transferencia.data, usuario=usuario, origem="TRANSFERENCIA", transferencia=transferencia,
+    )
+    registrar_lancamento(
+        conta=destino, tipo=TipoLancamentoFinanceiro.ENTRADA, descricao=texto, valor=valor,
+        data=transferencia.data, usuario=usuario, origem="TRANSFERENCIA", transferencia=transferencia,
+    )
+    LogAuditoria.objects.create(
+        usuario=usuario,
+        modulo="financeiro",
+        acao="TRANSFERENCIA",
+        descricao=f"Transferencia {transferencia.id}: {origem} para {destino}. Valor: {valor}.",
+        objeto_tipo="TransferenciaFinanceira",
+        objeto_id=str(transferencia.id),
+        ip=ip,
+    )
+    return transferencia
+
+
+@transaction.atomic
+def estornar_lancamento(*, lancamento, usuario, motivo, data=None, ip=None):
+    motivo = (motivo or "").strip()
+    if not motivo:
+        raise ValidationError("Informe o motivo do estorno.")
+
+    lancamento = LancamentoFinanceiro.objects.select_for_update().select_related("conta").get(pk=lancamento.pk)
+    if lancamento.estorno_de_id:
+        raise ValidationError("Lancamento de estorno nao pode ser estornado novamente.")
+    if lancamento.estornos.exists():
+        raise ValidationError("Este lancamento ja possui estorno registrado.")
+
+    tipo_inverso = (
+        TipoLancamentoFinanceiro.SAIDA
+        if lancamento.tipo == TipoLancamentoFinanceiro.ENTRADA
+        else TipoLancamentoFinanceiro.ENTRADA
+    )
+    estorno = registrar_lancamento(
+        conta=lancamento.conta,
+        tipo=tipo_inverso,
+        descricao=f"Estorno do lancamento #{lancamento.id}: {motivo}",
+        valor=lancamento.valor,
+        data=data or timezone.localdate(),
+        usuario=usuario,
+        origem="ESTORNO",
+        conta_financeira=lancamento.conta_financeira,
+        transferencia=lancamento.transferencia,
+        estorno_de=lancamento,
+        pagamento_venda=lancamento.pagamento_venda,
+        sangria=lancamento.sangria,
+        suprimento=lancamento.suprimento,
+    )
+    LogAuditoria.objects.create(
+        usuario=usuario,
+        modulo="financeiro",
+        acao="ESTORNO_LANCAMENTO",
+        descricao=f"Lancamento {lancamento.id} estornado pelo lancamento {estorno.id}. Motivo: {motivo}",
+        objeto_tipo="LancamentoFinanceiro",
+        objeto_id=str(lancamento.id),
+        ip=ip,
+    )
+    return estorno
+
+
+@transaction.atomic
+def baixar_conta(*, conta, usuario, data_pagamento, valor_pago, forma_pagamento="", conta_movimento=None, ip=None):
     conta = ContaFinanceira.objects.select_for_update().get(pk=conta.pk)
     if conta.status != StatusContaFinanceira.ABERTA:
         raise ValidationError("Apenas contas abertas podem receber baixa.")
@@ -18,7 +144,22 @@ def baixar_conta(*, conta, usuario, data_pagamento, valor_pago, forma_pagamento=
     conta.data_pagamento = data_pagamento or timezone.localdate()
     conta.valor_pago = valor_pago
     conta.forma_pagamento = forma_pagamento
-    conta.save(update_fields=["status", "data_pagamento", "valor_pago", "forma_pagamento", "atualizado_em"])
+    conta.conta_movimento = conta_movimento
+    conta.save(update_fields=["status", "data_pagamento", "valor_pago", "forma_pagamento", "conta_movimento", "atualizado_em"])
+    if conta_movimento:
+        if conta_movimento.filial_id != conta.filial_id:
+            raise ValidationError("A conta de movimento deve pertencer a mesma filial da conta financeira.")
+        tipo_lancamento = TipoLancamentoFinanceiro.ENTRADA if conta.tipo == TipoContaFinanceira.RECEBER else TipoLancamentoFinanceiro.SAIDA
+        registrar_lancamento(
+            conta=conta_movimento,
+            tipo=tipo_lancamento,
+            descricao=conta.descricao,
+            valor=valor_pago,
+            data=conta.data_pagamento,
+            usuario=usuario,
+            origem="BAIXA_CONTA",
+            conta_financeira=conta,
+        )
     LogAuditoria.objects.create(
         usuario=usuario,
         modulo="financeiro",

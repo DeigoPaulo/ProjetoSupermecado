@@ -9,7 +9,8 @@
     <div class="pdv-title">
       <span class="pdv-logo">
         {% if filial_visual and filial_visual.empresa.logo %}
-          <img src="{{ filial_visual.empresa.logo.url }}" alt="{{ filial_visual.empresa.nome_fantasia }}">
+          <img src="{{ filial_visual.empresa.logo.url }}" alt="{{ filial_visual.empresa.nome_fantasia }}" onerror="this.hidden=true; this.nextElementSibling.hidden=false">
+          <i class="fa-solid fa-cart-shopping" hidden></i>
         {% else %}
           <i class="fa-solid fa-cart-shopping"></i>
         {% endif %}

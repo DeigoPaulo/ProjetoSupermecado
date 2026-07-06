@@ -1,16 +1,33 @@
 from decimal import Decimal
+from io import BytesIO, StringIO
+from unittest.mock import patch
 
 from django.contrib.auth import get_user_model
+from django.core.files.uploadedfile import SimpleUploadedFile
+from django.core.management import call_command
 from django.test import Client, TestCase, override_settings
+from PIL import Image
 
 from apps.estoque.models import Estoque, MovimentacaoEstoque, TipoMovimentacaoEstoque
 from apps.produtos.models import Categoria, Produto
 
 from .forms import EmpresaForm
-from .models import Empresa, EventoEntradaSincronizacao, EventoSincronizacao, Filial, ModoImplantacao, StatusEventoEntrada, StatusSincronizacao, VendaSincronizada
+from .models import DocumentoFiscalSincronizado, Empresa, EventoEntradaSincronizacao, EventoSincronizacao, Filial, ModoImplantacao, StatusEventoEntrada, StatusSincronizacao, VendaSincronizada
 from . import services_eventos_entrada
 from .services_eventos_entrada import ConflitoSincronizacao, processar_entrada_sincronizacao
 from .services_sincronizacao import enfileirar_evento, processar_fila
+
+
+GIF_1X1 = (
+    b"GIF87a\x01\x00\x01\x00\x80\x00\x00\xff\xff\xff\x00\x00\x00!\xf9\x04"
+    b"\x01\x00\x00\x00\x00,\x00\x00\x00\x00\x01\x00\x01\x00\x00\x02\x02D\x01\x00;"
+)
+
+
+def png_1x1():
+    arquivo = BytesIO()
+    Image.new("RGB", (1, 1), color="white").save(arquivo, format="PNG")
+    return arquivo.getvalue()
 
 
 class EmpresasViewsTests(TestCase):
@@ -76,6 +93,25 @@ class EmpresasViewsTests(TestCase):
         empresa = form.save()
         self.assertFalse(empresa.sincronizacao_automatica)
         self.assertEqual(empresa.url_sincronizacao, "")
+
+    def test_logo_da_empresa_aceita_png_e_bloqueia_gif(self):
+        dados = {
+            "razao_social": "Mercado Imagem Ltda",
+            "nome_fantasia": "Mercado Imagem",
+            "cnpj": "12.345.678/0001-90",
+            "modo_implantacao": ModoImplantacao.LOCAL,
+            "is_active": "on",
+        }
+        png = SimpleUploadedFile("logo.png", png_1x1(), content_type="image/png")
+        gif = SimpleUploadedFile("logo.gif", GIF_1X1, content_type="image/gif")
+
+        valido = EmpresaForm(data=dados, files={"logo": png})
+        self.assertTrue(valido.is_valid(), valido.errors)
+
+        dados["cnpj"] = "12.345.678/0001-91"
+        invalido = EmpresaForm(data=dados, files={"logo": gif})
+        self.assertFalse(invalido.is_valid())
+        self.assertIn("Envie uma imagem PNG, JPG ou JPEG.", invalido.errors["logo"])
 
     def test_modo_hibrido_exige_url_https_para_sincronizacao(self):
         dados = {
@@ -148,8 +184,13 @@ class EmpresasViewsTests(TestCase):
         )
 
         painel = self.client.get("/empresas/sincronizacao/")
+        detalhe = self.client.get(f"/empresas/sincronizacao/eventos/{evento.pk}/")
         self.assertContains(painel, "Servidor indisponivel")
         self.assertContains(painel, "Cada evento possui chave idempotente")
+        self.assertContains(painel, f"/empresas/sincronizacao/eventos/{evento.pk}/")
+        self.assertContains(detalhe, "Evento de saida produto.atualizado")
+        self.assertContains(detalhe, "Servidor indisponivel")
+        self.assertContains(detalhe, "Payload enviado")
 
         resposta = self.client.post(f"/empresas/sincronizacao/{evento.pk}/reprocessar/", follow=True)
         evento.refresh_from_db()
@@ -186,6 +227,34 @@ class EmpresasViewsTests(TestCase):
         self.assertEqual(evento.status, StatusSincronizacao.ENVIADO)
         self.assertEqual(evento.tentativas, 1)
         self.assertIsNotNone(evento.processado_em)
+
+    def test_comando_sincronizacao_completa_processa_saida_e_entrada(self):
+        saida_stdout = StringIO()
+        chamadas = []
+
+        def saida(*, limite):
+            chamadas.append(("saida", limite))
+            return {"enviados": 2, "erros": 1}
+
+        def entrada(*, limite):
+            chamadas.append(("entrada", limite))
+            return {"processados": 3, "erros": 0}
+
+        with patch("apps.empresas.management.commands.processar_sincronizacao_completa.processar_fila", side_effect=saida), patch(
+            "apps.empresas.management.commands.processar_sincronizacao_completa.processar_entrada_sincronizacao",
+            side_effect=entrada,
+        ):
+            call_command(
+                "processar_sincronizacao_completa",
+                "--limite-saida",
+                "10",
+                "--limite-entrada",
+                "5",
+                stdout=saida_stdout,
+            )
+
+        self.assertEqual(chamadas, [("saida", 10), ("entrada", 5)])
+        self.assertIn("2 enviado(s), 1 erro(s) de saida", saida_stdout.getvalue())
 
     @override_settings(
         SINCRONIZACAO_RETRY_BASE_SEGUNDOS=30,
@@ -532,7 +601,7 @@ class EmpresasViewsTests(TestCase):
             payload={"payload": {}},
             status=StatusEventoEntrada.PROCESSADO,
         )
-        VendaSincronizada.objects.create(
+        venda = VendaSincronizada.objects.create(
             empresa=self.empresa,
             filial=self.filial,
             evento=evento,
@@ -542,14 +611,151 @@ class EmpresasViewsTests(TestCase):
             cliente="Cliente avulso",
             total_bruto=Decimal("35.00"),
             total_liquido=Decimal("35.00"),
-            pagamentos=[{"tipo": "DINHEIRO", "valor": "35.00"}],
+            itens=[{"nome": "Arroz Branco", "codigo_barras": "789", "quantidade": "1.000", "preco_unitario": "35.00", "total": "35.00"}],
+            pagamentos=[{"tipo": "DINHEIRO", "valor": "35.00", "status": "Confirmado"}],
         )
 
         response = self.client.get("/empresas/sincronizacao/")
+        detalhe = self.client.get(f"/empresas/sincronizacao/vendas/{venda.pk}/")
 
         self.assertContains(response, "Vendas sincronizadas para retaguarda")
         self.assertContains(response, "pdv-102")
         self.assertContains(response, "R$ 35,00")
+        self.assertContains(response, f"/empresas/sincronizacao/vendas/{venda.pk}/")
+        self.assertContains(detalhe, "Venda sincronizada pdv-102")
+        self.assertContains(detalhe, "Arroz Branco")
+        self.assertContains(detalhe, "DINHEIRO")
+        self.assertContains(detalhe, "Espelho de retaguarda")
+
+    def test_painel_sincronizacao_filtra_vendas_e_eventos_de_entrada(self):
+        evento_processado = EventoEntradaSincronizacao.objects.create(
+            identificador="8d2d443c-d777-4b94-a692-ce04cb5b77f7",
+            chave_idempotencia="venda:pdv-200:finalizada",
+            empresa=self.empresa,
+            tipo="venda.finalizada",
+            payload={"payload": {}},
+            status=StatusEventoEntrada.PROCESSADO,
+        )
+        EventoEntradaSincronizacao.objects.create(
+            identificador="c8c4d969-b7d2-44fd-b803-a1599dd57d0c",
+            chave_idempotencia="produto:erro:filtro",
+            empresa=self.empresa,
+            tipo="produto.atualizado",
+            payload={"payload": {}},
+            status=StatusEventoEntrada.ERRO,
+            ultimo_erro="Produto sem categoria",
+        )
+        VendaSincronizada.objects.create(
+            empresa=self.empresa,
+            filial=self.filial,
+            evento=evento_processado,
+            venda_externa_id="pdv-200",
+            operador="CAIXA FILTRADO",
+            total_bruto=Decimal("20.00"),
+            total_liquido=Decimal("20.00"),
+        )
+        outro_evento = EventoEntradaSincronizacao.objects.create(
+            identificador="75f9e454-8d40-42a4-9309-1d33553a3d27",
+            chave_idempotencia="venda:pdv-201:finalizada",
+            empresa=self.empresa,
+            tipo="venda.finalizada",
+            payload={"payload": {}},
+            status=StatusEventoEntrada.PROCESSADO,
+        )
+        VendaSincronizada.objects.create(
+            empresa=self.empresa,
+            filial=self.filial,
+            evento=outro_evento,
+            venda_externa_id="pdv-201",
+            operador="OUTRO CAIXA",
+            total_bruto=Decimal("40.00"),
+            total_liquido=Decimal("40.00"),
+        )
+        documento_evento = EventoEntradaSincronizacao.objects.create(
+            identificador="7b74bdd2-2293-4627-9651-0a9fa4559438",
+            chave_idempotencia="fiscal:nfce-200:emitido",
+            empresa=self.empresa,
+            tipo="fiscal.documento_emitido",
+            payload={"payload": {}},
+            status=StatusEventoEntrada.PROCESSADO,
+        )
+        documento = DocumentoFiscalSincronizado.objects.create(
+            empresa=self.empresa,
+            filial=self.filial,
+            evento=documento_evento,
+            documento_externo_id="nfce-200",
+            venda_externa_id="pdv-200",
+            tipo_documento="NFCE",
+            serie="1",
+            numero="200",
+            chave_acesso="CHAVE-FISCAL-FILTRADA",
+            protocolo="PROTOCOLO-FILTRADO",
+            status="EMITIDO",
+            valor_total=Decimal("20.00"),
+            payload={"sefaz": {"chave": "CHAVE-FISCAL-FILTRADA", "protocolo": "PROTOCOLO-FILTRADO"}},
+        )
+        EventoSincronizacao.objects.create(
+            empresa=self.empresa,
+            filial=self.filial,
+            tipo="produto.atualizado",
+            objeto_tipo="Produto",
+            objeto_id="321",
+            chave_idempotencia="produto:saida:filtro",
+            payload={"codigo_barras": "789321"},
+            status=StatusSincronizacao.ERRO,
+            tentativas=2,
+            ultimo_erro="Timeout da nuvem",
+        )
+
+        busca = self.client.get("/empresas/sincronizacao/", {"q": "CAIXA FILTRADO"})
+        busca_fiscal = self.client.get("/empresas/sincronizacao/", {"q": "CHAVE-FISCAL-FILTRADA"})
+        detalhe_fiscal = self.client.get(f"/empresas/sincronizacao/documentos-fiscais/{documento.pk}/")
+        erro = self.client.get("/empresas/sincronizacao/", {"status_entrada": StatusEventoEntrada.ERRO})
+        csv_response = self.client.get("/empresas/sincronizacao/vendas.csv", {"q": "CAIXA FILTRADO"})
+        csv_texto = csv_response.content.decode("utf-8-sig")
+        fiscal_csv_response = self.client.get("/empresas/sincronizacao/documentos-fiscais.csv", {"q": "CHAVE-FISCAL-FILTRADA"})
+        fiscal_csv_texto = fiscal_csv_response.content.decode("utf-8-sig")
+        saida_csv_response = self.client.get("/empresas/sincronizacao/eventos.csv", {"q": "produto:saida:filtro"})
+        saida_csv_texto = saida_csv_response.content.decode("utf-8-sig")
+        entrada_csv_response = self.client.get("/empresas/sincronizacao/entrada.csv", {"status_entrada": StatusEventoEntrada.ERRO})
+        entrada_csv_texto = entrada_csv_response.content.decode("utf-8-sig")
+
+        self.assertContains(busca, "CAIXA FILTRADO")
+        self.assertNotContains(busca, "Produto sem categoria")
+        self.assertContains(busca_fiscal, "Documentos fiscais sincronizados")
+        self.assertContains(busca_fiscal, "nfce-200")
+        self.assertContains(busca_fiscal, "CHAVE-FISCAL-FILTRADA")
+        self.assertContains(busca_fiscal, "Fiscal CSV")
+        self.assertContains(busca_fiscal, "Saida CSV")
+        self.assertContains(busca_fiscal, "Entrada CSV")
+        self.assertContains(busca_fiscal, f"/empresas/sincronizacao/documentos-fiscais/{documento.pk}/")
+        self.assertContains(detalhe_fiscal, "Documento fiscal sincronizado nfce-200")
+        self.assertContains(detalhe_fiscal, "CHAVE-FISCAL-FILTRADA")
+        self.assertContains(detalhe_fiscal, "PROTOCOLO-FILTRADO")
+        self.assertContains(detalhe_fiscal, "Payload recebido")
+        self.assertContains(erro, "Produto sem categoria")
+        self.assertContains(erro, "Status entrada")
+        self.assertContains(erro, "Agendamento no servidor local")
+        self.assertContains(erro, "processar_sincronizacao_completa")
+        self.assertContains(erro, "schtasks /Create")
+        self.assertEqual(csv_response["Content-Type"], "text/csv; charset=utf-8")
+        self.assertIn("vendas_sincronizadas.csv", csv_response["Content-Disposition"])
+        self.assertIn("pdv-200", csv_texto)
+        self.assertIn("CAIXA FILTRADO", csv_texto)
+        self.assertNotIn("pdv-201", csv_texto)
+        self.assertEqual(fiscal_csv_response["Content-Type"], "text/csv; charset=utf-8")
+        self.assertIn("documentos_fiscais_sincronizados.csv", fiscal_csv_response["Content-Disposition"])
+        self.assertIn("nfce-200", fiscal_csv_texto)
+        self.assertIn("CHAVE-FISCAL-FILTRADA", fiscal_csv_texto)
+        self.assertEqual(saida_csv_response["Content-Type"], "text/csv; charset=utf-8")
+        self.assertIn("eventos_sincronizacao_saida.csv", saida_csv_response["Content-Disposition"])
+        self.assertIn("produto:saida:filtro", saida_csv_texto)
+        self.assertIn("Timeout da nuvem", saida_csv_texto)
+        self.assertEqual(entrada_csv_response["Content-Type"], "text/csv; charset=utf-8")
+        self.assertIn("eventos_sincronizacao_entrada.csv", entrada_csv_response["Content-Disposition"])
+        self.assertIn("produto:erro:filtro", entrada_csv_texto)
+        self.assertIn("Produto sem categoria", entrada_csv_texto)
+        self.assertNotIn("venda:pdv-200:finalizada", entrada_csv_texto)
 
     def test_processador_de_entrada_marca_conflito_para_venda_com_total_diferente(self):
         existente_evento = EventoEntradaSincronizacao.objects.create(
@@ -593,6 +799,81 @@ class EmpresasViewsTests(TestCase):
         self.assertEqual(evento.status, StatusEventoEntrada.CONFLITO)
         self.assertIn("total diferente", evento.ultimo_erro)
 
+    def test_processador_de_entrada_registra_documento_fiscal_sincronizado(self):
+        evento = EventoEntradaSincronizacao.objects.create(
+            identificador="930918be-2852-48d9-909c-71d8a0840f72",
+            chave_idempotencia="fiscal:nfce-100:emitido",
+            empresa=self.empresa,
+            tipo="fiscal.documento_emitido",
+            payload={
+                "id": "930918be-2852-48d9-909c-71d8a0840f72",
+                "payload": {
+                    "documento_id": "nfce-100",
+                    "venda_id": "pdv-100",
+                    "filial_cnpj": self.filial.cnpj,
+                    "tipo_documento": "NFCE",
+                    "ambiente": "HOMOLOGACAO",
+                    "serie": "1",
+                    "numero": "100",
+                    "chave_acesso": "35260744444444000144650010000001001000001000",
+                    "protocolo": "135260000000001",
+                    "status": "EMITIDO",
+                    "valor_total": "82.70",
+                    "emitido_em": "2026-07-01T14:12:00Z",
+                },
+            },
+        )
+
+        resultado = processar_entrada_sincronizacao()
+
+        evento.refresh_from_db()
+        documento = DocumentoFiscalSincronizado.objects.get(documento_externo_id="nfce-100")
+        self.assertEqual(resultado, {"processados": 1, "erros": 0})
+        self.assertEqual(evento.status, StatusEventoEntrada.PROCESSADO)
+        self.assertEqual(documento.filial, self.filial)
+        self.assertEqual(documento.valor_total, Decimal("82.70"))
+        self.assertEqual(documento.chave_acesso, "35260744444444000144650010000001001000001000")
+
+    def test_processador_de_entrada_marca_conflito_para_documento_fiscal_com_chave_diferente(self):
+        evento_original = EventoEntradaSincronizacao.objects.create(
+            identificador="1487fb65-6303-46d5-8ef0-8cf58f364432",
+            chave_idempotencia="fiscal:nfce-101:original",
+            empresa=self.empresa,
+            tipo="fiscal.documento_emitido",
+            payload={"payload": {}},
+            status=StatusEventoEntrada.PROCESSADO,
+        )
+        DocumentoFiscalSincronizado.objects.create(
+            empresa=self.empresa,
+            filial=self.filial,
+            evento=evento_original,
+            documento_externo_id="nfce-101",
+            tipo_documento="NFCE",
+            chave_acesso="CHAVE-ORIGINAL",
+            valor_total=Decimal("50.00"),
+        )
+        evento = EventoEntradaSincronizacao.objects.create(
+            identificador="8afd1e39-050c-4ab6-a8b1-d2e2de3b1828",
+            chave_idempotencia="fiscal:nfce-101:divergente",
+            empresa=self.empresa,
+            tipo="fiscal.documento_emitido",
+            payload={
+                "id": "8afd1e39-050c-4ab6-a8b1-d2e2de3b1828",
+                "payload": {
+                    "documento_id": "nfce-101",
+                    "filial_cnpj": self.filial.cnpj,
+                    "chave_acesso": "CHAVE-DIFERENTE",
+                    "valor_total": "50.00",
+                },
+            },
+        )
+
+        processar_entrada_sincronizacao()
+
+        evento.refresh_from_db()
+        self.assertEqual(evento.status, StatusEventoEntrada.CONFLITO)
+        self.assertIn("chave de acesso diferente", evento.ultimo_erro)
+
     def test_painel_exibe_eventos_recebidos_da_sincronizacao(self):
         EventoEntradaSincronizacao.objects.create(
             identificador="7e336c07-f8c8-428c-b0d3-5e55ef07c38d",
@@ -603,9 +884,13 @@ class EmpresasViewsTests(TestCase):
         )
 
         response = self.client.get("/empresas/sincronizacao/")
+        detalhe = self.client.get(f"/empresas/sincronizacao/entrada/{EventoEntradaSincronizacao.objects.get(chave_idempotencia='sistema:ping:2').pk}/")
 
         self.assertContains(response, "Entrada recebida da nuvem/local")
         self.assertContains(response, "sistema.ping")
+        self.assertContains(response, "/empresas/sincronizacao/entrada/")
+        self.assertContains(detalhe, "Evento de entrada sistema.ping")
+        self.assertContains(detalhe, "Payload recebido")
 
     def test_painel_reprocessa_evento_de_entrada_com_erro(self):
         evento = EventoEntradaSincronizacao.objects.create(
@@ -618,9 +903,13 @@ class EmpresasViewsTests(TestCase):
             ultimo_erro="Produto sem categoria",
         )
 
+        detalhe = self.client.get(f"/empresas/sincronizacao/entrada/{evento.pk}/")
         response = self.client.post(f"/empresas/sincronizacao/entrada/{evento.pk}/reprocessar/", follow=True)
 
         evento.refresh_from_db()
+        self.assertContains(detalhe, "Evento de entrada produto.atualizado")
+        self.assertContains(detalhe, "Produto sem categoria")
+        self.assertContains(detalhe, "Reprocessar entrada")
         self.assertRedirects(response, "/empresas/sincronizacao/")
         self.assertEqual(evento.status, StatusEventoEntrada.RECEBIDO)
         self.assertEqual(evento.ultimo_erro, "")
@@ -644,6 +933,37 @@ class EmpresasViewsTests(TestCase):
         self.assertRedirects(response, "/empresas/sincronizacao/")
         self.assertEqual(evento.status, StatusEventoEntrada.RECEBIDO)
         self.assertEqual(evento.ultimo_erro, "")
+
+    def test_resolve_conflito_de_entrada_com_decisao_auditavel(self):
+        evento = EventoEntradaSincronizacao.objects.create(
+            identificador="7153780f-0805-4846-8297-b28adfb49688",
+            chave_idempotencia="fiscal:nfce:conflito:manual",
+            empresa=self.empresa,
+            tipo="fiscal.documento_emitido",
+            payload={"id": "7153780f-0805-4846-8297-b28adfb49688", "payload": {"documento_id": "nfce-500"}},
+            status=StatusEventoEntrada.CONFLITO,
+            ultimo_erro="Documento fiscal externo ja existe com chave de acesso diferente.",
+        )
+
+        detalhe = self.client.get(f"/empresas/sincronizacao/entrada/{evento.pk}/")
+        vazio = self.client.post(f"/empresas/sincronizacao/entrada/{evento.pk}/resolver-conflito/", {"resolucao_conflito": ""}, follow=True)
+        resolvido = self.client.post(
+            f"/empresas/sincronizacao/entrada/{evento.pk}/resolver-conflito/",
+            {"resolucao_conflito": "Conferido com a loja; manter documento local e arquivar evento duplicado."},
+            follow=True,
+        )
+
+        evento.refresh_from_db()
+        painel = self.client.get("/empresas/sincronizacao/")
+        self.assertContains(detalhe, "Marcar conflito como resolvido")
+        self.assertContains(vazio, "Informe a decisao tomada")
+        self.assertEqual(evento.status, StatusEventoEntrada.RESOLVIDO)
+        self.assertEqual(evento.resolvido_por, self.user)
+        self.assertIsNotNone(evento.resolvido_em)
+        self.assertIn("manter documento local", evento.resolucao_conflito)
+        self.assertContains(resolvido, "Resolvido manualmente")
+        self.assertContains(resolvido, "manter documento local")
+        self.assertContains(painel, "Conflitos resolvidos")
 
     def test_cria_filial_com_dados_fiscais(self):
         response = self.client.post(

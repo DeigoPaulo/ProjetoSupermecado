@@ -1,0 +1,68 @@
+{% extends "base.html" %}
+
+{% block title %}Evento de entrada{% endblock %}
+
+{% block content %}
+<header class="page-header">
+  <div>
+    <h1>Evento de entrada {{ evento.tipo }}</h1>
+    <p>Auditoria do evento recebido antes de aplicar dados na retaguarda da loja.</p>
+  </div>
+  <a class="secondary-button" href="{% url 'empresas:sincronizacao' %}"><i class="fa-solid fa-arrow-left"></i> Sincronizacao</a>
+</header>
+
+<section class="metrics-grid">
+  <article class="metric"><span>Status</span><strong>{{ evento.get_status_display }}</strong></article>
+  <article class="metric"><span>Empresa</span><strong>{{ evento.empresa }}</strong></article>
+  <article class="metric"><span>Recebido</span><strong>{{ evento.recebido_em|date:"d/m/Y H:i" }}</strong></article>
+  <article class="metric"><span>Processado</span><strong>{{ evento.processado_em|date:"d/m/Y H:i"|default:"-" }}</strong></article>
+</section>
+
+<section class="detail-grid">
+  <article class="panel">
+    <div class="panel-title">Entrada</div>
+    <dl class="definition-list">
+      <dt>Identificador</dt><dd><code>{{ evento.identificador }}</code></dd>
+      <dt>Chave idempotente</dt><dd><code>{{ evento.chave_idempotencia }}</code></dd>
+      <dt>Tipo</dt><dd>{{ evento.tipo }}</dd>
+      <dt>Status tecnico</dt><dd>{{ evento.status }}</dd>
+      <dt>Recebido em</dt><dd>{{ evento.recebido_em|date:"d/m/Y H:i:s" }}</dd>
+      <dt>Processado em</dt><dd>{{ evento.processado_em|date:"d/m/Y H:i:s"|default:"-" }}</dd>
+    </dl>
+  </article>
+
+  <article class="panel">
+    <div class="panel-title">Diagnostico</div>
+    <dl class="definition-list">
+      <dt>Ultimo erro</dt><dd>{{ evento.ultimo_erro|default:"-" }}</dd>
+      {% if evento.resolucao_conflito %}
+        <dt>Resolucao</dt><dd>{{ evento.resolucao_conflito }}</dd>
+        <dt>Resolvido por</dt><dd>{{ evento.resolvido_por|default:"-" }}</dd>
+        <dt>Resolvido em</dt><dd>{{ evento.resolvido_em|date:"d/m/Y H:i:s"|default:"-" }}</dd>
+      {% endif %}
+    </dl>
+    {% if evento.status == "CONFLITO" %}
+      <form method="post" action="{% url 'empresas:sincronizacao_entrada_resolver_conflito' evento.pk %}" class="stacked-form">
+        {% csrf_token %}
+        <label class="form-field">
+          <span>Decisao da resolucao</span>
+          <textarea name="resolucao_conflito" rows="4" required placeholder="Ex.: conferido com a loja, manter venda local e descartar evento duplicado."></textarea>
+        </label>
+        <button class="primary-button" type="submit"><i class="fa-solid fa-check"></i> Marcar conflito como resolvido</button>
+      </form>
+    {% endif %}
+    {% if evento.status == "ERRO" or evento.status == "CONFLITO" %}
+      <form method="post" action="{% url 'empresas:sincronizacao_entrada_reprocessar' evento.pk %}">
+        {% csrf_token %}
+        <button class="primary-button" type="submit"><i class="fa-solid fa-rotate"></i> Reprocessar entrada</button>
+      </form>
+    {% endif %}
+  </article>
+</section>
+
+<section class="panel code-sample">
+  <div class="panel-title">Payload recebido</div>
+  <span>Conteudo original recebido pela API, mantido para auditoria e resolucao de conflitos.</span>
+  <code>{{ payload_formatado }}</code>
+</section>
+{% endblock %}

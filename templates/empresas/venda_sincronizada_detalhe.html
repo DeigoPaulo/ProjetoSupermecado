@@ -1,0 +1,78 @@
+{% extends "base.html" %}
+
+{% block title %}Venda sincronizada{% endblock %}
+
+{% block content %}
+<header class="page-header">
+  <div>
+    <h1>Venda sincronizada {{ venda.venda_externa_id }}</h1>
+    <p>Espelho de retaguarda recebido por sincronizacao, sem baixa duplicada de estoque, fiscal ou financeiro.</p>
+  </div>
+  <a class="secondary-button" href="{% url 'empresas:sincronizacao' %}"><i class="fa-solid fa-arrow-left"></i> Sincronizacao</a>
+</header>
+
+<section class="metrics-grid">
+  <article class="metric"><span>Total bruto</span><strong>R$ {{ venda.total_bruto|floatformat:2 }}</strong></article>
+  <article class="metric"><span>Desconto</span><strong>R$ {{ venda.desconto|floatformat:2 }}</strong></article>
+  <article class="metric"><span>Total liquido</span><strong>R$ {{ venda.total_liquido|floatformat:2 }}</strong></article>
+  <article class="metric"><span>Pagamentos</span><strong>{{ venda.pagamentos|length }}</strong></article>
+</section>
+
+<section class="detail-grid">
+  <article class="panel">
+    <div class="panel-title">Origem</div>
+    <dl class="definition-list">
+      <dt>Empresa</dt><dd>{{ venda.empresa }}</dd>
+      <dt>Filial</dt><dd>{{ venda.filial|default:"-" }}</dd>
+      <dt>Caixa</dt><dd>{{ venda.caixa_externo|default:"-" }}</dd>
+      <dt>Operador</dt><dd>{{ venda.operador|default:"-" }}</dd>
+      <dt>Cliente</dt><dd>{{ venda.cliente|default:"Cliente avulso" }}</dd>
+      <dt>Realizada</dt><dd>{{ venda.realizada_em|date:"d/m/Y H:i:s"|default:"-" }}</dd>
+      <dt>Recebida</dt><dd>{{ venda.recebida_em|date:"d/m/Y H:i:s" }}</dd>
+      <dt>Evento</dt><dd><code>{{ venda.evento.identificador }}</code></dd>
+    </dl>
+  </article>
+
+  <article class="panel">
+    <div class="panel-title">Pagamentos</div>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>Tipo</th><th>Valor</th><th>Status</th></tr></thead>
+        <tbody>
+          {% for pagamento in pagamentos %}
+            <tr>
+              <td>{{ pagamento.tipo|default:"-" }}</td>
+              <td>R$ {{ pagamento.valor|default:"0,00" }}</td>
+              <td>{{ pagamento.status|default:"Confirmado" }}</td>
+            </tr>
+          {% empty %}
+            <tr><td colspan="3" class="empty">Nenhum pagamento informado no evento.</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </article>
+</section>
+
+<section class="panel table-panel">
+  <div class="panel-title">Itens da venda</div>
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>Produto</th><th>Codigo</th><th>Qtd</th><th>Unitario</th><th>Total</th></tr></thead>
+      <tbody>
+        {% for item in itens %}
+          <tr>
+            <td>{{ item.produto }}</td>
+            <td>{{ item.codigo_barras|default:"-" }}</td>
+            <td>{{ item.quantidade|default:"-" }}</td>
+            <td>R$ {{ item.preco_unitario|default:"0,00" }}</td>
+            <td>R$ {{ item.total|default:"0,00" }}</td>
+          </tr>
+        {% empty %}
+          <tr><td colspan="5" class="empty">Nenhum item informado no evento.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</section>
+{% endblock %}

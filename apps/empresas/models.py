@@ -1,6 +1,14 @@
 import uuid
 
+from django.conf import settings
+from django.core.validators import FileExtensionValidator
 from django.db import models
+
+
+VALIDAR_IMAGEM_PNG_JPEG = FileExtensionValidator(
+    allowed_extensions=["png", "jpg", "jpeg"],
+    message="Envie uma imagem PNG, JPG ou JPEG.",
+)
 
 
 class ModoImplantacao(models.TextChoices):
@@ -21,6 +29,7 @@ class StatusEventoEntrada(models.TextChoices):
     PROCESSADO = "PROCESSADO", "Processado"
     CONFLITO = "CONFLITO", "Conflito"
     ERRO = "ERRO", "Erro"
+    RESOLVIDO = "RESOLVIDO", "Resolvido manualmente"
 
 
 class Empresa(models.Model):
@@ -31,7 +40,7 @@ class Empresa(models.Model):
     email = models.EmailField(blank=True)
     endereco = models.TextField(blank=True)
     regime_tributario = models.CharField(max_length=80, blank=True)
-    logo = models.ImageField(upload_to="empresas/logos/", blank=True, null=True)
+    logo = models.ImageField(upload_to="empresas/logos/", blank=True, null=True, validators=[VALIDAR_IMAGEM_PNG_JPEG])
     modo_implantacao = models.CharField(
         "Modo de implantacao",
         max_length=20,
@@ -116,6 +125,9 @@ class EventoEntradaSincronizacao(models.Model):
     payload = models.JSONField(default=dict)
     status = models.CharField(max_length=20, choices=StatusEventoEntrada.choices, default=StatusEventoEntrada.RECEBIDO)
     ultimo_erro = models.TextField(blank=True)
+    resolucao_conflito = models.TextField(blank=True)
+    resolvido_por = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True, related_name="eventos_entrada_resolvidos")
+    resolvido_em = models.DateTimeField(null=True, blank=True)
     recebido_em = models.DateTimeField(auto_now_add=True)
     processado_em = models.DateTimeField(null=True, blank=True)
     atualizado_em = models.DateTimeField(auto_now=True)
@@ -153,5 +165,34 @@ class VendaSincronizada(models.Model):
 
     def __str__(self):
         return f"Venda sincronizada {self.venda_externa_id} - {self.total_liquido}"
+
+
+class DocumentoFiscalSincronizado(models.Model):
+    empresa = models.ForeignKey(Empresa, on_delete=models.PROTECT, related_name="documentos_fiscais_sincronizados")
+    filial = models.ForeignKey(Filial, on_delete=models.PROTECT, related_name="documentos_fiscais_sincronizados", null=True, blank=True)
+    evento = models.OneToOneField(EventoEntradaSincronizacao, on_delete=models.PROTECT, related_name="documento_fiscal_sincronizado")
+    documento_externo_id = models.CharField(max_length=120)
+    venda_externa_id = models.CharField(max_length=120, blank=True)
+    tipo_documento = models.CharField(max_length=20, default="NFCE")
+    ambiente = models.CharField(max_length=20, blank=True)
+    serie = models.CharField(max_length=20, blank=True)
+    numero = models.CharField(max_length=30, blank=True)
+    chave_acesso = models.CharField(max_length=80, blank=True)
+    protocolo = models.CharField(max_length=80, blank=True)
+    status = models.CharField(max_length=30, blank=True)
+    valor_total = models.DecimalField(max_digits=12, decimal_places=2, default=0)
+    emitido_em = models.DateTimeField(null=True, blank=True)
+    payload = models.JSONField(default=dict)
+    recebido_em = models.DateTimeField(auto_now_add=True)
+    atualizado_em = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ["-emitido_em", "-recebido_em"]
+        constraints = [
+            models.UniqueConstraint(fields=["empresa", "documento_externo_id"], name="empresas_doc_fiscal_sync_unico")
+        ]
+
+    def __str__(self):
+        return f"Documento fiscal sincronizado {self.documento_externo_id}"
 
 # Create your models here.

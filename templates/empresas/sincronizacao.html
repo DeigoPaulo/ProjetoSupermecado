@@ -22,11 +22,13 @@
   <article class="metric"><span>Entrada processada</span><strong>{{ entrada_processados }}</strong></article>
   <article class="metric"><span>Entrada em conflito</span><strong>{{ entrada_conflitos }}</strong></article>
   <article class="metric"><span>Entrada com erro</span><strong>{{ entrada_erros }}</strong></article>
+  <article class="metric"><span>Conflitos resolvidos</span><strong>{{ entrada_resolvidos }}</strong></article>
 </section>
 
 <section class="metrics-grid">
   <article class="metric"><span>Vendas sincronizadas</span><strong>{{ total_vendas_sincronizadas }}</strong></article>
   <article class="metric"><span>Total sincronizado</span><strong>R$ {{ valor_vendas_sincronizadas|floatformat:2 }}</strong></article>
+  <article class="metric"><span>Documentos fiscais</span><strong>{{ total_documentos_fiscais_sincronizados }}</strong></article>
 </section>
 
 <section class="operation-notice">
@@ -37,6 +39,53 @@
   </div>
 </section>
 
+<section class="panel code-sample">
+  <div class="panel-title">Agendamento no servidor local</div>
+  <span>Execute o processamento completo pelo Agendador de Tarefas do Windows no servidor da loja.</span>
+  <code>{{ comando_sincronizacao }}</code>
+  <code>{{ comando_agendador }}</code>
+</section>
+
+<form method="get" class="toolbar report-filter">
+  <label>
+    <span>Busca</span>
+    <input type="search" name="q" value="{{ filtros.q }}" placeholder="Venda, evento, operador, cliente ou erro">
+  </label>
+  <label>
+    <span>Empresa</span>
+    <select name="empresa">
+      <option value="">Todas</option>
+      {% for empresa in empresas_opcoes %}
+        <option value="{{ empresa.id }}" {% if filtros.empresa == empresa.id|stringformat:"s" %}selected{% endif %}>{{ empresa.nome_fantasia }}</option>
+      {% endfor %}
+    </select>
+  </label>
+  <label>
+    <span>Filial</span>
+    <select name="filial">
+      <option value="">Todas</option>
+      {% for filial in filiais_opcoes %}
+        <option value="{{ filial.id }}" {% if filtros.filial == filial.id|stringformat:"s" %}selected{% endif %}>{{ filial.empresa.nome_fantasia }} - {{ filial.nome }}</option>
+      {% endfor %}
+    </select>
+  </label>
+  <label>
+    <span>Status entrada</span>
+    <select name="status_entrada">
+      <option value="">Todos</option>
+      {% for valor, rotulo in status_entrada_opcoes %}
+        <option value="{{ valor }}" {% if filtros.status_entrada == valor %}selected{% endif %}>{{ rotulo }}</option>
+      {% endfor %}
+    </select>
+  </label>
+  <button type="submit" class="primary-button"><i class="fa-solid fa-filter"></i> Filtrar</button>
+  <a class="secondary-button" href="{% url 'empresas:vendas_sincronizadas_csv' %}?{{ request.GET.urlencode }}"><i class="fa-solid fa-file-csv"></i> Vendas CSV</a>
+  <a class="secondary-button" href="{% url 'empresas:documentos_fiscais_sincronizados_csv' %}?{{ request.GET.urlencode }}"><i class="fa-solid fa-file-csv"></i> Fiscal CSV</a>
+  <a class="secondary-button" href="{% url 'empresas:eventos_sincronizacao_csv' %}?{{ request.GET.urlencode }}"><i class="fa-solid fa-file-csv"></i> Saida CSV</a>
+  <a class="secondary-button" href="{% url 'empresas:eventos_entrada_sincronizacao_csv' %}?{{ request.GET.urlencode }}"><i class="fa-solid fa-file-csv"></i> Entrada CSV</a>
+  <a class="secondary-button" href="{% url 'empresas:sincronizacao' %}">Limpar</a>
+</form>
+
 <section class="panel table-panel">
   <div class="panel-title">Vendas sincronizadas para retaguarda</div>
   <div class="table-wrap">
@@ -45,7 +94,7 @@
       <tbody>
         {% for venda in vendas_sincronizadas %}
           <tr>
-            <td><strong>{{ venda.venda_externa_id }}</strong><br><small>Caixa {{ venda.caixa_externo|default:"-" }}</small></td>
+            <td><a href="{% url 'empresas:venda_sincronizada_detalhe' venda.pk %}"><strong>{{ venda.venda_externa_id }}</strong></a><br><small>Caixa {{ venda.caixa_externo|default:"-" }}</small></td>
             <td>{{ venda.empresa }}{% if venda.filial %}<br><small>{{ venda.filial.nome }}</small>{% endif %}</td>
             <td>{{ venda.operador|default:"-" }}<br><small>{{ venda.cliente|default:"Cliente avulso" }}</small></td>
             <td><strong>R$ {{ venda.total_liquido|floatformat:2 }}</strong><br><small>{{ venda.pagamentos|length }} pagamento(s)</small></td>
@@ -61,6 +110,30 @@
 </section>
 
 <section class="panel table-panel">
+  <div class="panel-title">Documentos fiscais sincronizados</div>
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>Documento</th><th>Empresa / filial</th><th>Venda</th><th>Status</th><th>Total</th><th>Emissao</th><th>Chave</th></tr></thead>
+      <tbody>
+        {% for documento in documentos_fiscais_sincronizados %}
+          <tr>
+            <td><a href="{% url 'empresas:documento_fiscal_sincronizado_detalhe' documento.pk %}"><strong>{{ documento.documento_externo_id }}</strong></a><br><small>{{ documento.tipo_documento }} {{ documento.serie }}/{{ documento.numero }}</small></td>
+            <td>{{ documento.empresa }}{% if documento.filial %}<br><small>{{ documento.filial.nome }}</small>{% endif %}</td>
+            <td>{{ documento.venda_externa_id|default:"-" }}</td>
+            <td><span class="status {% if documento.status == 'EMITIDO' %}status-success{% elif documento.status == 'CANCELADO' %}status-danger{% else %}status-warning{% endif %}">{{ documento.status|default:"-" }}</span></td>
+            <td><strong>R$ {{ documento.valor_total|floatformat:2 }}</strong></td>
+            <td>{{ documento.emitido_em|date:"d/m/Y H:i:s"|default:"-" }}</td>
+            <td><small>{{ documento.chave_acesso|default:"-"|truncatechars:36 }}</small></td>
+          </tr>
+        {% empty %}
+          <tr><td colspan="7" class="empty">Nenhum documento fiscal sincronizado para retaguarda.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</section>
+
+<section class="panel table-panel">
   <div class="panel-title">Saida local para nuvem</div>
   <div class="table-wrap">
     <table>
@@ -68,7 +141,7 @@
       <tbody>
         {% for evento in eventos %}
           <tr>
-            <td><strong>{{ evento.tipo }}</strong><br><small><code>{{ evento.identificador }}</code></small></td>
+            <td><a href="{% url 'empresas:evento_sincronizacao_detalhe' evento.pk %}"><strong>{{ evento.tipo }}</strong></a><br><small><code>{{ evento.identificador }}</code></small></td>
             <td>{{ evento.empresa }}{% if evento.filial %}<br><small>{{ evento.filial.nome }}</small>{% endif %}</td>
             <td>{{ evento.objeto_tipo }} #{{ evento.objeto_id }}{% if evento.ultimo_erro %}<br><small>{{ evento.ultimo_erro|truncatechars:100 }}</small>{% endif %}</td>
             <td><span class="status {% if evento.status == 'ENVIADO' %}status-success{% elif evento.status == 'ERRO' %}status-danger{% else %}status-warning{% endif %}">{{ evento.get_status_display }}</span></td>
@@ -92,9 +165,9 @@
       <tbody>
         {% for evento in eventos_entrada %}
           <tr>
-            <td><strong>{{ evento.tipo }}</strong><br><small><code>{{ evento.identificador }}</code></small></td>
+            <td><a href="{% url 'empresas:evento_entrada_sincronizacao_detalhe' evento.pk %}"><strong>{{ evento.tipo }}</strong></a><br><small><code>{{ evento.identificador }}</code></small></td>
             <td>{{ evento.empresa }}</td>
-            <td><span class="status {% if evento.status == 'PROCESSADO' %}status-success{% elif evento.status == 'ERRO' or evento.status == 'CONFLITO' %}status-danger{% else %}status-warning{% endif %}">{{ evento.get_status_display }}</span></td>
+            <td><span class="status {% if evento.status == 'PROCESSADO' or evento.status == 'RESOLVIDO' %}status-success{% elif evento.status == 'ERRO' or evento.status == 'CONFLITO' %}status-danger{% else %}status-warning{% endif %}">{{ evento.get_status_display }}</span></td>
             <td>{{ evento.recebido_em|date:"d/m/Y H:i:s" }}</td>
             <td>{{ evento.processado_em|date:"d/m/Y H:i:s"|default:"-" }}</td>
             <td>{{ evento.ultimo_erro|truncatechars:100|default:"-" }}</td>

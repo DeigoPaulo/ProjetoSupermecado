@@ -44,6 +44,9 @@ class ProdutoForm(forms.ModelForm):
             "aliquota_icms",
             "is_active",
         ]
+        widgets = {
+            "imagem": forms.ClearableFileInput(attrs={"accept": ".png,.jpg,.jpeg,image/png,image/jpeg"}),
+        }
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
@@ -69,7 +72,7 @@ ProdutoImagemFormSet = forms.inlineformset_factory(
     extra=3,
     can_delete=True,
     widgets={
-        "imagem": forms.ClearableFileInput(attrs={"accept": "image/*"}),
+        "imagem": forms.ClearableFileInput(attrs={"accept": ".png,.jpg,.jpeg,image/png,image/jpeg"}),
         "ordem": forms.NumberInput(attrs={"min": 0}),
     },
 )

@@ -1,0 +1,96 @@
+{% extends "base.html" %}
+
+{% block title %}Livro financeiro{% endblock %}
+
+{% block content %}
+<header class="page-header">
+  <div>
+    <h1>Livro financeiro</h1>
+    <p>Registro imutavel das entradas e saidas efetivamente realizadas por conta e filial.</p>
+  </div>
+  <div class="actions">
+    <a class="primary-button" href="{% url 'financeiro:transferencia_nova' %}"><i class="fa-solid fa-right-left"></i> Transferir</a>
+    <a class="secondary-button" href="{% url 'financeiro:livro_csv' %}?{{ request.GET.urlencode }}"><i class="fa-solid fa-file-csv"></i> Excel/CSV</a>
+    <a class="secondary-button" href="{% url 'financeiro:resultado' %}">Resultado</a>
+    <a class="secondary-button" href="{% url 'financeiro:contas_movimento' %}">Contas de movimento</a>
+    <a class="secondary-button" href="{% url 'financeiro:contas' %}">Contas a pagar/receber</a>
+  </div>
+</header>
+
+<form method="get" class="toolbar report-filter">
+  <label><span>Inicio</span><input type="date" name="data_inicio" value="{{ data_inicio|date:'Y-m-d' }}"></label>
+  <label><span>Fim</span><input type="date" name="data_fim" value="{{ data_fim|date:'Y-m-d' }}"></label>
+  <label>
+    <span>Filial</span>
+    <select name="filial">
+      <option value="">Todas</option>
+      {% for filial in filiais_opcoes %}<option value="{{ filial.pk }}" {% if filial_id == filial.pk|stringformat:"s" %}selected{% endif %}>{{ filial }}</option>{% endfor %}
+    </select>
+  </label>
+  <label>
+    <span>Conta</span>
+    <select name="conta">
+      <option value="">Todas</option>
+      {% for conta in contas_opcoes %}<option value="{{ conta.pk }}" {% if conta_id == conta.pk|stringformat:"s" %}selected{% endif %}>{{ conta }}</option>{% endfor %}
+    </select>
+  </label>
+  <label>
+    <span>Tipo</span>
+    <select name="tipo">
+      <option value="">Todos</option>
+      {% for valor, rotulo in tipos_lancamento %}<option value="{{ valor }}" {% if tipo == valor %}selected{% endif %}>{{ rotulo }}</option>{% endfor %}
+    </select>
+  </label>
+  <button type="submit">Filtrar</button>
+</form>
+
+<section class="metrics-grid">
+  <article class="metric"><span>Entradas</span><strong>R$ {{ total_entradas|floatformat:2 }}</strong></article>
+  <article class="metric"><span>Saidas</span><strong>R$ {{ total_saidas|floatformat:2 }}</strong></article>
+  <article class="metric"><span>Resultado do periodo</span><strong>R$ {{ saldo_periodo|floatformat:2 }}</strong></article>
+</section>
+
+<section class="panel table-panel">
+  <div class="panel-title">Lancamentos realizados</div>
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>Data</th><th>Conta / filial</th><th>Tipo</th><th>Descricao</th><th>Origem</th><th>Valor</th><th>Usuario</th><th>Acao</th></tr></thead>
+      <tbody>
+        {% for lancamento in lancamentos %}
+          <tr>
+            <td>{{ lancamento.data|date:"d/m/Y" }}<br><small>{{ lancamento.criado_em|date:"H:i:s" }}</small></td>
+            <td><strong>{{ lancamento.conta.nome }}</strong><br><small>{{ lancamento.conta.filial }}</small></td>
+            <td><span class="status {% if lancamento.tipo == 'ENTRADA' %}status-success{% else %}status-danger{% endif %}">{{ lancamento.get_tipo_display }}</span></td>
+            <td>
+              {{ lancamento.descricao }}
+              {% if lancamento.conta_financeira %}<br><small>Conta financeira #{{ lancamento.conta_financeira_id }}</small>{% endif %}
+              {% if lancamento.transferencia %}<br><small>Transferencia #{{ lancamento.transferencia_id }}</small>{% endif %}
+              {% if lancamento.pagamento_venda %}<br><small>Pagamento da venda #{{ lancamento.pagamento_venda.venda_id }}</small>{% endif %}
+              {% if lancamento.sangria %}<br><small>Sangria #{{ lancamento.sangria_id }}</small>{% endif %}
+              {% if lancamento.suprimento %}<br><small>Suprimento #{{ lancamento.suprimento_id }}</small>{% endif %}
+              {% if lancamento.estorno_de %}<br><small>Estorno do lancamento #{{ lancamento.estorno_de_id }}</small>{% endif %}
+              {% if lancamento.estornos.exists %}<br><small>Estornado pelo lancamento #{{ lancamento.estornos.first.id }}</small>{% endif %}
+            </td>
+            <td>{{ lancamento.origem }}</td>
+            <td><strong>R$ {{ lancamento.valor|floatformat:2 }}</strong></td>
+            <td>{{ lancamento.usuario }}</td>
+            <td>
+              {% if not lancamento.estorno_de and not lancamento.estornos.exists %}
+                <form method="post" action="{% url 'financeiro:estornar_livro' lancamento.pk %}" class="inline-form form-confirm" data-msg="Registrar estorno inverso deste lancamento?">
+                  {% csrf_token %}
+                  <input type="text" name="motivo" placeholder="Motivo" required>
+                  <button class="secondary-button danger-button" type="submit">Estornar</button>
+                </form>
+              {% else %}
+                <span class="status status-muted">Fechado</span>
+              {% endif %}
+            </td>
+          </tr>
+        {% empty %}
+          <tr><td colspan="8" class="empty">Nenhum lancamento realizado no periodo.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</section>
+{% endblock %}

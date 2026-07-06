@@ -2,6 +2,7 @@ from django.contrib.auth import get_user_model
 from django.test import Client, TestCase
 
 from apps.empresas.models import Empresa, Filial
+from apps.financeiro.models import ContaMovimentoFinanceiro, TipoContaMovimento
 from apps.pdv.models import TerminalPdv
 from apps.vendas.models import FormaPagamento
 
@@ -55,15 +56,23 @@ class ConfiguracoesOperacionaisTests(TestCase):
         self.assertContains(checklist, "Padrao R$ em todos os formularios")
         self.assertContains(checklist, "Campos numericos de preco")
         self.assertContains(checklist, "Entradas, saidas e livro contabil")
+        self.assertContains(checklist, "livro financeiro imutavel")
+        self.assertContains(checklist, "Contas de movimento por filial")
+        self.assertContains(checklist, "vendas a vista do PDV geram entradas automaticas")
+        self.assertContains(checklist, "sangria e suprimento geram saida/entrada automatica")
         self.assertContains(checklist, "transferencias entre contas")
+        self.assertContains(checklist, "estornos por lancamento inverso")
+        self.assertContains(checklist, "relatorio de receitas, despesas e resultado")
         self.assertContains(checklist, "Gaveta de dinheiro opcional")
         self.assertContains(checklist, "Central de impressao permite")
         self.assertContains(checklist, "PIX dinamico")
         self.assertContains(checklist, "somente apos pagamento confirmado")
+        self.assertContains(checklist, "autorizacao simulada rastreavel")
         self.assertContains(checklist, "Arquitetura PDV desktop local")
         self.assertContains(checklist, "sem telas administrativas completas")
         self.assertContains(checklist, "Sincronizacao loja-nuvem")
         self.assertContains(checklist, "Empresa escolhe entre servidor local")
+        self.assertContains(checklist, "dados de pagamento eletronico")
         self.assertContains(checklist, "Eventos recebidos ficam armazenados")
         self.assertContains(checklist, "Caixa de saida, processador HTTP")
         self.assertContains(checklist, "retentativa exponencial")
@@ -72,7 +81,12 @@ class ConfiguracoesOperacionaisTests(TestCase):
         self.assertContains(checklist, "handler inicial de produtos")
         self.assertContains(checklist, "handler de saldo de estoque por filial")
         self.assertContains(checklist, "espelho de venda finalizada com painel")
-        self.assertContains(checklist, "status explicito de conflito")
+        self.assertContains(checklist, "espelho fiscal sincronizado")
+        self.assertContains(checklist, "detalhe auditavel de eventos")
+        self.assertContains(checklist, "resolucao manual de conflitos")
+        self.assertContains(checklist, "exportacao CSV das filas")
+        self.assertContains(checklist, "comando unico agendavel")
+        self.assertContains(checklist, "roteiro do Agendador de Tarefas")
 
     def test_painel_sistema_centraliza_admin_proprio(self):
         response = self.client.get("/configuracoes/")
@@ -88,16 +102,26 @@ class ConfiguracoesOperacionaisTests(TestCase):
         self.assertContains(response, "Checklist")
 
     def test_cadastra_e_edita_forma_pagamento_no_painel_proprio(self):
+        conta_pix = ContaMovimentoFinanceiro.objects.create(
+            filial=self.filial,
+            nome="PIX Caixa 01",
+            tipo=TipoContaMovimento.PIX,
+        )
+        form_response = self.client.get("/configuracoes/formas-pagamento/nova/")
         response = self.client.post(
             "/configuracoes/formas-pagamento/nova/",
-            {"nome": "PIX integrado", "tipo": "PIX", "exige_autorizacao": "on", "ativo": "on"},
+            {"nome": "PIX integrado", "tipo": "PIX", "conta_movimento_padrao": conta_pix.pk, "exige_autorizacao": "on", "ativo": "on"},
         )
 
+        self.assertContains(form_response, "Conta movimento padrao")
+        self.assertContains(form_response, "select2-field")
         self.assertRedirects(response, "/configuracoes/formas-pagamento/")
         forma = FormaPagamento.objects.get(nome="PIX integrado")
         self.assertTrue(forma.exige_autorizacao)
+        self.assertEqual(forma.conta_movimento_padrao, conta_pix)
         lista = self.client.get("/configuracoes/formas-pagamento/")
         self.assertContains(lista, "PIX integrado")
+        self.assertContains(lista, "PIX Caixa 01")
 
         invalida = self.client.post(
             f"/configuracoes/formas-pagamento/{forma.pk}/editar/",

@@ -14,19 +14,20 @@
 <section class="panel table-panel">
   <div class="table-wrap">
     <table>
-      <thead><tr><th>Nome</th><th>Tipo</th><th>Troco</th><th>Autorizacao</th><th>Status</th><th></th></tr></thead>
+      <thead><tr><th>Nome</th><th>Tipo</th><th>Conta padrao</th><th>Troco</th><th>Autorizacao</th><th>Status</th><th></th></tr></thead>
       <tbody>
         {% for forma in formas %}
           <tr>
             <td><strong>{{ forma.nome }}</strong></td>
             <td>{{ forma.tipo }}</td>
+            <td>{{ forma.conta_movimento_padrao|default:"Automatica por tipo" }}</td>
             <td>{% if forma.permite_troco %}Sim{% else %}Nao{% endif %}</td>
             <td>{% if forma.exige_autorizacao %}Eletronica / supervisor{% else %}Direta{% endif %}</td>
             <td><span class="status-badge {% if forma.ativo %}success{% else %}muted{% endif %}">{% if forma.ativo %}Ativa{% else %}Inativa{% endif %}</span></td>
             <td><a class="icon-button" href="{% url 'configuracoes:forma_pagamento_editar' forma.pk %}" title="Editar forma de pagamento"><i class="fa-solid fa-pen"></i></a></td>
           </tr>
         {% empty %}
-          <tr><td colspan="6" class="empty">Nenhuma forma de pagamento cadastrada.</td></tr>
+          <tr><td colspan="7" class="empty">Nenhuma forma de pagamento cadastrada.</td></tr>
         {% endfor %}
       </tbody>
     </table>

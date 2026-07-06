@@ -1,5 +1,7 @@
 from django.conf import settings
+from django.core.exceptions import ValidationError
 from django.db import models
+from django.db.models import Sum
 from django.utils import timezone
 
 
@@ -14,6 +16,18 @@ class StatusContaFinanceira(models.TextChoices):
     CANCELADA = "CANCELADA", "Cancelada"
 
 
+class TipoContaMovimento(models.TextChoices):
+    CAIXA = "CAIXA", "Caixa fisico"
+    BANCO = "BANCO", "Conta bancaria"
+    PIX = "PIX", "Conta PIX"
+    OUTRA = "OUTRA", "Outra"
+
+
+class TipoLancamentoFinanceiro(models.TextChoices):
+    ENTRADA = "ENTRADA", "Entrada"
+    SAIDA = "SAIDA", "Saida"
+
+
 class CategoriaFinanceira(models.Model):
     nome = models.CharField(max_length=120, unique=True)
     tipo = models.CharField(max_length=20, choices=TipoContaFinanceira.choices)
@@ -24,6 +38,31 @@ class CategoriaFinanceira(models.Model):
 
     def __str__(self):
         return self.nome
+
+
+class ContaMovimentoFinanceiro(models.Model):
+    filial = models.ForeignKey("empresas.Filial", on_delete=models.PROTECT, related_name="contas_movimento")
+    nome = models.CharField(max_length=120)
+    tipo = models.CharField(max_length=20, choices=TipoContaMovimento.choices)
+    saldo_inicial = models.DecimalField(max_digits=14, decimal_places=2, default=0)
+    ativa = models.BooleanField(default=True)
+    criado_em = models.DateTimeField(auto_now_add=True)
+    atualizado_em = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ["filial__nome", "nome"]
+        constraints = [
+            models.UniqueConstraint(fields=["filial", "nome"], name="financeiro_conta_movimento_unica")
+        ]
+
+    @property
+    def saldo_atual(self):
+        totais = self.lancamentos.values("tipo").annotate(total=Sum("valor"))
+        por_tipo = {item["tipo"]: item["total"] for item in totais}
+        return self.saldo_inicial + por_tipo.get(TipoLancamentoFinanceiro.ENTRADA, 0) - por_tipo.get(TipoLancamentoFinanceiro.SAIDA, 0)
+
+    def __str__(self):
+        return f"{self.filial} - {self.nome}"
 
 
 class ContaFinanceira(models.Model):
@@ -41,6 +80,7 @@ class ContaFinanceira(models.Model):
     data_pagamento = models.DateField(null=True, blank=True)
     valor_pago = models.DecimalField(max_digits=12, decimal_places=2, null=True, blank=True)
     forma_pagamento = models.CharField(max_length=80, blank=True)
+    conta_movimento = models.ForeignKey(ContaMovimentoFinanceiro, on_delete=models.PROTECT, null=True, blank=True, related_name="baixas")
     observacoes = models.TextField(blank=True)
     usuario = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.PROTECT, related_name="contas_financeiras")
     criado_em = models.DateTimeField(auto_now_add=True)
@@ -56,6 +96,79 @@ class ContaFinanceira(models.Model):
     @property
     def saldo(self):
         return self.valor - (self.valor_pago or 0)
+
+    def __str__(self):
+        return f"{self.get_tipo_display()} - {self.descricao}"
+
+
+class TransferenciaFinanceira(models.Model):
+    conta_origem = models.ForeignKey(
+        ContaMovimentoFinanceiro,
+        on_delete=models.PROTECT,
+        related_name="transferencias_saida",
+    )
+    conta_destino = models.ForeignKey(
+        ContaMovimentoFinanceiro,
+        on_delete=models.PROTECT,
+        related_name="transferencias_entrada",
+    )
+    valor = models.DecimalField(max_digits=14, decimal_places=2)
+    data = models.DateField(default=timezone.localdate)
+    descricao = models.CharField(max_length=255, blank=True)
+    usuario = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.PROTECT, related_name="transferencias_financeiras")
+    criado_em = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["-data", "-criado_em"]
+
+    def save(self, *args, **kwargs):
+        if self.pk:
+            raise ValidationError("Transferencias financeiras nao podem ser alteradas.")
+        if self.conta_origem_id == self.conta_destino_id:
+            raise ValidationError("As contas de origem e destino devem ser diferentes.")
+        if self.valor <= 0:
+            raise ValidationError("Valor da transferencia deve ser maior que zero.")
+        super().save(*args, **kwargs)
+
+    def delete(self, *args, **kwargs):
+        raise ValidationError("Transferencias financeiras nao podem ser excluidas.")
+
+    def __str__(self):
+        return f"Transferencia #{self.pk} - {self.conta_origem} para {self.conta_destino}"
+
+
+class LancamentoFinanceiro(models.Model):
+    conta = models.ForeignKey(ContaMovimentoFinanceiro, on_delete=models.PROTECT, related_name="lancamentos")
+    tipo = models.CharField(max_length=20, choices=TipoLancamentoFinanceiro.choices)
+    origem = models.CharField(max_length=40)
+    descricao = models.CharField(max_length=255)
+    valor = models.DecimalField(max_digits=14, decimal_places=2)
+    data = models.DateField(default=timezone.localdate)
+    conta_financeira = models.ForeignKey(ContaFinanceira, on_delete=models.PROTECT, null=True, blank=True, related_name="lancamentos")
+    transferencia = models.ForeignKey(TransferenciaFinanceira, on_delete=models.PROTECT, null=True, blank=True, related_name="lancamentos")
+    estorno_de = models.ForeignKey("self", on_delete=models.PROTECT, null=True, blank=True, related_name="estornos")
+    pagamento_venda = models.ForeignKey("vendas.PagamentoVenda", on_delete=models.PROTECT, null=True, blank=True, related_name="lancamentos_financeiros")
+    sangria = models.ForeignKey("pdv.Sangria", on_delete=models.PROTECT, null=True, blank=True, related_name="lancamentos_financeiros")
+    suprimento = models.ForeignKey("pdv.Suprimento", on_delete=models.PROTECT, null=True, blank=True, related_name="lancamentos_financeiros")
+    usuario = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.PROTECT, related_name="lancamentos_financeiros")
+    criado_em = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["-data", "-criado_em"]
+        indexes = [
+            models.Index(fields=["conta", "data"], name="financeiro_lanc_conta_data_idx"),
+            models.Index(fields=["tipo", "data"], name="financeiro_lanc_tipo_data_idx"),
+        ]
+
+    def save(self, *args, **kwargs):
+        if self.pk:
+            raise ValidationError("Lancamentos do livro financeiro nao podem ser alterados.")
+        if self.valor <= 0:
+            raise ValidationError("Valor do lancamento deve ser maior que zero.")
+        super().save(*args, **kwargs)
+
+    def delete(self, *args, **kwargs):
+        raise ValidationError("Lancamentos do livro financeiro nao podem ser excluidos.")
 
     def __str__(self):
         return f"{self.get_tipo_display()} - {self.descricao}"

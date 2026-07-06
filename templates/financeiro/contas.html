@@ -13,6 +13,9 @@
     <a class="secondary-button" href="{% url 'financeiro:contas_imprimir' %}?data_inicio={{ data_inicio|date:'Y-m-d' }}&amp;data_fim={{ data_fim|date:'Y-m-d' }}&amp;tipo={{ tipo }}&amp;status={{ status }}&amp;q={{ q }}" target="_blank"><i class="fa-solid fa-file-pdf"></i> PDF</a>
     <a class="secondary-button" href="{% url 'financeiro:fluxo_caixa' %}"><i class="fa-solid fa-money-bill-trend-up"></i> Fluxo</a>
     <a class="secondary-button" href="{% url 'financeiro:conciliacao' %}"><i class="fa-solid fa-scale-balanced"></i> Conciliacao</a>
+    <a class="secondary-button" href="{% url 'financeiro:resultado' %}"><i class="fa-solid fa-chart-line"></i> Resultado</a>
+    <a class="secondary-button" href="{% url 'financeiro:livro' %}"><i class="fa-solid fa-book"></i> Livro</a>
+    <a class="secondary-button" href="{% url 'financeiro:contas_movimento' %}"><i class="fa-solid fa-building-columns"></i> Contas de movimento</a>
     <a class="secondary-button" href="{% url 'financeiro:categorias' %}"><i class="fa-solid fa-folder-tree"></i> Categorias</a>
     <a class="primary-button" href="{% url 'financeiro:conta_nova' %}"><i class="fa-solid fa-plus"></i> Nova conta</a>
   </div>

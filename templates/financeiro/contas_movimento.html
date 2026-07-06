@@ -1,0 +1,47 @@
+{% extends "base.html" %}
+
+{% block title %}Contas de movimento{% endblock %}
+
+{% block content %}
+<header class="page-header">
+  <div>
+    <h1>Contas de movimento</h1>
+    <p>Caixas fisicos, contas bancarias e PIX usados para registrar entradas e saidas realizadas.</p>
+  </div>
+  <div class="actions">
+    <a class="primary-button" href="{% url 'financeiro:transferencia_nova' %}"><i class="fa-solid fa-right-left"></i> Transferir</a>
+    <a class="secondary-button" href="{% url 'financeiro:livro' %}"><i class="fa-solid fa-book"></i> Livro financeiro</a>
+    <a class="secondary-button" href="{% url 'financeiro:contas' %}">Contas a pagar/receber</a>
+    <a class="secondary-button" href="{% url 'financeiro:conta_movimento_nova' %}"><i class="fa-solid fa-plus"></i> Nova conta</a>
+  </div>
+</header>
+
+<section class="metrics-grid">
+  <article class="metric"><span>Contas cadastradas</span><strong>{{ total_contas_movimento }}</strong></article>
+  <article class="metric"><span>Saldo consolidado</span><strong>R$ {{ saldo_total|floatformat:2 }}</strong></article>
+</section>
+
+<section class="panel table-panel">
+  <div class="panel-title">Saldos por conta</div>
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>Conta</th><th>Filial</th><th>Tipo</th><th>Saldo inicial</th><th>Saldo atual</th><th>Status</th><th></th></tr></thead>
+      <tbody>
+        {% for conta in contas_movimento %}
+          <tr>
+            <td><strong>{{ conta.nome }}</strong></td>
+            <td>{{ conta.filial }}</td>
+            <td>{{ conta.get_tipo_display }}</td>
+            <td>R$ {{ conta.saldo_inicial|floatformat:2 }}</td>
+            <td><strong>R$ {{ conta.saldo_atual|floatformat:2 }}</strong></td>
+            <td><span class="status {% if conta.ativa %}status-success{% else %}status-muted{% endif %}">{% if conta.ativa %}Ativa{% else %}Inativa{% endif %}</span></td>
+            <td><a class="secondary-button" href="{% url 'financeiro:conta_movimento_editar' conta.pk %}">Editar</a></td>
+          </tr>
+        {% empty %}
+          <tr><td colspan="7" class="empty">Nenhuma conta de movimento cadastrada.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</section>
+{% endblock %}

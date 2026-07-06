@@ -25,6 +25,13 @@ class StatusPagamento(models.TextChoices):
 class FormaPagamento(models.Model):
     nome = models.CharField(max_length=100)
     tipo = models.CharField(max_length=50)
+    conta_movimento_padrao = models.ForeignKey(
+        "financeiro.ContaMovimentoFinanceiro",
+        on_delete=models.PROTECT,
+        null=True,
+        blank=True,
+        related_name="formas_pagamento_padrao",
+    )
     ativo = models.BooleanField(default=True)
     permite_troco = models.BooleanField(default=False)
     exige_autorizacao = models.BooleanField(default=False)

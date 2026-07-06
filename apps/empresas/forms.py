@@ -26,6 +26,7 @@ class EmpresaForm(forms.ModelForm):
             "cnpj": forms.TextInput(attrs={"class": "mask-cpf-cnpj", "data-lookup-target": "cnpj"}),
             "telefone": forms.TextInput(attrs={"class": "mask-phone"}),
             "endereco": forms.Textarea(attrs={"rows": 3, "data-lookup-target": "endereco"}),
+            "logo": forms.ClearableFileInput(attrs={"accept": ".png,.jpg,.jpeg,image/png,image/jpeg"}),
         }
 
     def clean(self):

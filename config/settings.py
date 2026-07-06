@@ -172,7 +172,7 @@ STATIC_URL = 'static/'
 STATICFILES_DIRS = [BASE_DIR / 'static']
 STATIC_ROOT = env_path("STATIC_ROOT", BASE_DIR / 'staticfiles')
 
-MEDIA_URL = 'media/'
+MEDIA_URL = '/media/'
 MEDIA_ROOT = env_path("MEDIA_ROOT", BASE_DIR / 'media')
 
 SESSION_COOKIE_SECURE = env_bool("SESSION_COOKIE_SECURE", not DEBUG)

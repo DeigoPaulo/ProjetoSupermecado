@@ -86,7 +86,11 @@ class FormaPagamentoForm(forms.ModelForm):
 
     class Meta:
         model = FormaPagamento
-        fields = ["nome", "tipo", "permite_troco", "exige_autorizacao", "ativo"]
+        fields = ["nome", "tipo", "conta_movimento_padrao", "permite_troco", "exige_autorizacao", "ativo"]
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        aplicar_select2(self, ["conta_movimento_padrao"])
 
     def clean(self):
         cleaned = super().clean()

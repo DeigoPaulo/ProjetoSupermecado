@@ -19,6 +19,8 @@ from apps.configuracoes.models import TipoDocumentoImpressao
 from apps.configuracoes.services import configuracao_impressao_para, estilos_impressao
 from apps.empresas.models import Filial
 from apps.estoque.models import Estoque
+from apps.financeiro.models import LancamentoFinanceiro, TipoLancamentoFinanceiro
+from apps.financeiro.services import conta_caixa_pdv, registrar_lancamento
 from apps.produtos.models import Produto
 from apps.promocoes.models import PromocaoProduto
 from apps.promocoes.services import preco_atual_produto, promocao_ativa_para_produto
@@ -603,8 +605,10 @@ def venda_impressao_desktop(request, venda_id):
                     "tipo": pagamento.forma_pagamento.tipo,
                     "valor": _moeda_json(pagamento.valor),
                     "status": pagamento.status,
+                    "transacao_externa_id": pagamento.transacao_externa_id,
                     "nsu": pagamento.nsu,
                     "codigo_autorizacao": pagamento.codigo_autorizacao,
+                    "mensagem_processadora": pagamento.mensagem_processadora,
                 }
                 for pagamento in pagamentos
             ],
@@ -717,6 +721,17 @@ def registrar_sangria(request, caixa_id):
                 sangria.caixa = caixa
                 sangria.usuario = request.user
                 sangria.save()
+                if not LancamentoFinanceiro.objects.filter(sangria=sangria).exists():
+                    registrar_lancamento(
+                        conta=conta_caixa_pdv(caixa.filial),
+                        tipo=TipoLancamentoFinanceiro.SAIDA,
+                        descricao=f"Sangria caixa #{caixa.id}: {sangria.motivo}",
+                        valor=sangria.valor,
+                        data=timezone.localdate(),
+                        usuario=request.user,
+                        origem="PDV_SANGRIA",
+                        sangria=sangria,
+                    )
                 messages.success(request, "Sangria registrada com sucesso.")
     return _redirect_after_caixa_action(request, caixa)
 
@@ -739,6 +754,17 @@ def registrar_suprimento(request, caixa_id):
                 suprimento.caixa = caixa
                 suprimento.usuario = request.user
                 suprimento.save()
+                if not LancamentoFinanceiro.objects.filter(suprimento=suprimento).exists():
+                    registrar_lancamento(
+                        conta=conta_caixa_pdv(caixa.filial),
+                        tipo=TipoLancamentoFinanceiro.ENTRADA,
+                        descricao=f"Suprimento caixa #{caixa.id}: {suprimento.motivo}",
+                        valor=suprimento.valor,
+                        data=timezone.localdate(),
+                        usuario=request.user,
+                        origem="PDV_SUPRIMENTO",
+                        suprimento=suprimento,
+                    )
                 messages.success(request, "Suprimento registrado com sucesso.")
     return _redirect_after_caixa_action(request, caixa)
 

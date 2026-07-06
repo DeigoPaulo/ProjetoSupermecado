@@ -34,7 +34,8 @@
           <td>
             <span class="product-thumb">
               {% if produto.imagem %}
-                <img src="{{ produto.imagem.url }}" alt="{{ produto.nome }}">
+                <img src="{{ produto.imagem.url }}" alt="{{ produto.nome }}" onerror="this.hidden=true; this.nextElementSibling.hidden=false">
+                <i class="fa-solid fa-image" hidden></i>
               {% else %}
                 <i class="fa-solid fa-image"></i>
               {% endif %}

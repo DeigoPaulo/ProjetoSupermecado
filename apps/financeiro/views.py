@@ -13,11 +13,12 @@ from django.utils import timezone
 from django.utils.dateparse import parse_date
 
 from apps.accounts.permissions import RELATORIOS, SISTEMA, role_required
+from apps.empresas.models import Filial
 from apps.vendas.models import PagamentoVenda, StatusVenda
 
-from .forms import BaixaContaForm, CategoriaFinanceiraForm, ContaFinanceiraForm
-from .models import CategoriaFinanceira, ContaFinanceira, StatusContaFinanceira, TipoContaFinanceira
-from .services import baixar_conta, cancelar_conta
+from .forms import BaixaContaForm, CategoriaFinanceiraForm, ContaFinanceiraForm, ContaMovimentoFinanceiroForm, TransferenciaFinanceiraForm
+from .models import CategoriaFinanceira, ContaFinanceira, ContaMovimentoFinanceiro, LancamentoFinanceiro, StatusContaFinanceira, TipoContaFinanceira, TipoLancamentoFinanceiro, TransferenciaFinanceira
+from .services import baixar_conta, cancelar_conta, estornar_lancamento, realizar_transferencia
 
 
 def _periodo_from_request(request):
@@ -145,6 +146,53 @@ def _conciliacao_periodo(data_inicio, data_fim):
         linha["saldo_operacional"] = linha["entradas_pdv"] + linha["recebimentos_financeiros"] - linha["saidas_financeiras"]
 
     return list(linhas.values())
+
+
+def _resultado_financeiro_periodo(data_inicio, data_fim):
+    lancamentos = (
+        LancamentoFinanceiro.objects.select_related("conta", "conta__filial", "conta_financeira")
+        .filter(data__gte=data_inicio, data__lte=data_fim)
+        .exclude(origem="TRANSFERENCIA")
+    )
+    receitas = lancamentos.filter(tipo=TipoLancamentoFinanceiro.ENTRADA).aggregate(total=Sum("valor"))["total"] or Decimal("0.00")
+    despesas = lancamentos.filter(tipo=TipoLancamentoFinanceiro.SAIDA).aggregate(total=Sum("valor"))["total"] or Decimal("0.00")
+    por_origem = []
+    origens = lancamentos.values("origem", "tipo").annotate(total=Sum("valor")).order_by("origem", "tipo")
+    acumulado_origem = OrderedDict()
+    for item in origens:
+        linha = acumulado_origem.setdefault(item["origem"], {"origem": item["origem"], "receitas": Decimal("0.00"), "despesas": Decimal("0.00")})
+        if item["tipo"] == TipoLancamentoFinanceiro.ENTRADA:
+            linha["receitas"] += item["total"]
+        else:
+            linha["despesas"] += item["total"]
+    for linha in acumulado_origem.values():
+        linha["resultado"] = linha["receitas"] - linha["despesas"]
+        por_origem.append(linha)
+
+    por_conta = []
+    contas = lancamentos.values("conta__nome", "conta__filial__nome", "tipo").annotate(total=Sum("valor")).order_by("conta__filial__nome", "conta__nome")
+    acumulado_conta = OrderedDict()
+    for item in contas:
+        chave = (item["conta__filial__nome"], item["conta__nome"])
+        linha = acumulado_conta.setdefault(
+            chave,
+            {"filial": item["conta__filial__nome"], "conta": item["conta__nome"], "receitas": Decimal("0.00"), "despesas": Decimal("0.00")},
+        )
+        if item["tipo"] == TipoLancamentoFinanceiro.ENTRADA:
+            linha["receitas"] += item["total"]
+        else:
+            linha["despesas"] += item["total"]
+    for linha in acumulado_conta.values():
+        linha["resultado"] = linha["receitas"] - linha["despesas"]
+        por_conta.append(linha)
+
+    return {
+        "receitas": receitas,
+        "despesas": despesas,
+        "resultado": receitas - despesas,
+        "por_origem": por_origem,
+        "por_conta": por_conta,
+    }
 
 
 @login_required
@@ -281,6 +329,184 @@ def conciliacao_csv(request):
 
 
 @login_required
+@role_required(*RELATORIOS)
+def resultado_financeiro(request):
+    data_inicio, data_fim = _periodo_from_request(request)
+    resultado = _resultado_financeiro_periodo(data_inicio, data_fim)
+    return render(request, "financeiro/resultado.html", {
+        "data_inicio": data_inicio,
+        "data_fim": data_fim,
+        **resultado,
+    })
+
+
+@login_required
+@role_required(*RELATORIOS)
+def resultado_financeiro_csv(request):
+    data_inicio, data_fim = _periodo_from_request(request)
+    resultado = _resultado_financeiro_periodo(data_inicio, data_fim)
+    response = HttpResponse(content_type="text/csv; charset=utf-8")
+    response["Content-Disposition"] = f'attachment; filename="resultado_financeiro_{data_inicio}_{data_fim}.csv"'
+    response.write("\ufeff")
+    writer = csv.writer(response, delimiter=";")
+    writer.writerow(["Resumo", "Receitas", "Despesas", "Resultado"])
+    writer.writerow([
+        "Periodo",
+        f"{resultado['receitas']:.2f}".replace(".", ","),
+        f"{resultado['despesas']:.2f}".replace(".", ","),
+        f"{resultado['resultado']:.2f}".replace(".", ","),
+    ])
+    writer.writerow([])
+    writer.writerow(["Origem", "Receitas", "Despesas", "Resultado"])
+    for linha in resultado["por_origem"]:
+        writer.writerow([linha["origem"], str(linha["receitas"]).replace(".", ","), str(linha["despesas"]).replace(".", ","), str(linha["resultado"]).replace(".", ",")])
+    writer.writerow([])
+    writer.writerow(["Filial", "Conta", "Receitas", "Despesas", "Resultado"])
+    for linha in resultado["por_conta"]:
+        writer.writerow([linha["filial"], linha["conta"], str(linha["receitas"]).replace(".", ","), str(linha["despesas"]).replace(".", ","), str(linha["resultado"]).replace(".", ",")])
+    return response
+
+
+def _lancamentos_filtrados(request):
+    data_inicio, data_fim = _periodo_from_request(request)
+    conta_id = request.GET.get("conta", "").strip()
+    tipo = request.GET.get("tipo", "").strip()
+    filial_id = request.GET.get("filial", "").strip()
+    lancamentos = LancamentoFinanceiro.objects.select_related("conta", "conta__filial", "conta_financeira", "usuario", "estorno_de", "pagamento_venda", "sangria", "suprimento").filter(
+        data__gte=data_inicio,
+        data__lte=data_fim,
+    )
+    if conta_id.isdigit():
+        lancamentos = lancamentos.filter(conta_id=conta_id)
+    if filial_id.isdigit():
+        lancamentos = lancamentos.filter(conta__filial_id=filial_id)
+    if tipo:
+        lancamentos = lancamentos.filter(tipo=tipo)
+    return lancamentos, {
+        "data_inicio": data_inicio,
+        "data_fim": data_fim,
+        "conta_id": conta_id,
+        "filial_id": filial_id,
+        "tipo": tipo,
+    }
+
+
+@login_required
+@role_required(*RELATORIOS)
+def contas_movimento(request):
+    contas_qs = ContaMovimentoFinanceiro.objects.select_related("filial", "filial__empresa")
+    contas_lista = list(contas_qs)
+    return render(request, "financeiro/contas_movimento.html", {
+        "contas_movimento": contas_lista,
+        "total_contas_movimento": len(contas_lista),
+        "saldo_total": sum((conta.saldo_atual for conta in contas_lista), Decimal("0.00")),
+    })
+
+
+@login_required
+@role_required(*SISTEMA)
+def conta_movimento_form(request, pk=None):
+    conta = get_object_or_404(ContaMovimentoFinanceiro, pk=pk) if pk else None
+    form = ContaMovimentoFinanceiroForm(request.POST or None, instance=conta)
+    if request.method == "POST" and form.is_valid():
+        form.save()
+        messages.success(request, "Conta de movimento salva.")
+        return redirect("financeiro:contas_movimento")
+    return render(request, "financeiro/conta_movimento_form.html", {"form": form, "conta": conta})
+
+
+@login_required
+@role_required(*SISTEMA)
+def transferencia_form(request):
+    form = TransferenciaFinanceiraForm(request.POST or None, initial={"data": timezone.localdate()})
+    if request.method == "POST" and form.is_valid():
+        try:
+            realizar_transferencia(
+                usuario=request.user,
+                ip=request.META.get("REMOTE_ADDR"),
+                **form.cleaned_data,
+            )
+        except ValidationError as exc:
+            form.add_error(None, exc)
+        else:
+            messages.success(request, "Transferencia registrada com os dois lancamentos financeiros.")
+            return redirect("financeiro:livro")
+    return render(request, "financeiro/transferencia_form.html", {
+        "form": form,
+        "transferencias_recentes": TransferenciaFinanceira.objects.select_related(
+            "conta_origem", "conta_destino", "conta_origem__filial", "conta_destino__filial", "usuario"
+        )[:20],
+    })
+
+
+@login_required
+@role_required(*RELATORIOS)
+def livro_financeiro(request):
+    lancamentos, filtros = _lancamentos_filtrados(request)
+    total_entradas = lancamentos.filter(tipo=TipoLancamentoFinanceiro.ENTRADA).aggregate(total=Sum("valor"))["total"] or 0
+    total_saidas = lancamentos.filter(tipo=TipoLancamentoFinanceiro.SAIDA).aggregate(total=Sum("valor"))["total"] or 0
+    return render(request, "financeiro/livro.html", {
+        **filtros,
+        "lancamentos": lancamentos[:300],
+        "contas_opcoes": ContaMovimentoFinanceiro.objects.filter(ativa=True).select_related("filial"),
+        "filiais_opcoes": Filial.objects.filter(is_active=True).select_related("empresa"),
+        "tipos_lancamento": TipoLancamentoFinanceiro.choices,
+        "total_entradas": total_entradas,
+        "total_saidas": total_saidas,
+        "saldo_periodo": total_entradas - total_saidas,
+    })
+
+
+@login_required
+@role_required(*RELATORIOS)
+def livro_financeiro_csv(request):
+    lancamentos, filtros = _lancamentos_filtrados(request)
+    response = HttpResponse(content_type="text/csv; charset=utf-8")
+    response["Content-Disposition"] = f'attachment; filename="livro_financeiro_{filtros["data_inicio"]}_{filtros["data_fim"]}.csv"'
+    response.write("\ufeff")
+    writer = csv.writer(response, delimiter=";")
+    writer.writerow(["Data", "Filial", "Conta", "Tipo", "Origem", "Descricao", "Valor", "Conta financeira", "Transferencia", "Pagamento venda", "Sangria", "Suprimento", "Estorno de", "Usuario", "Criado em"])
+    for lancamento in lancamentos:
+        writer.writerow([
+            lancamento.data.strftime("%d/%m/%Y"),
+            lancamento.conta.filial,
+            lancamento.conta.nome,
+            lancamento.get_tipo_display(),
+            lancamento.origem,
+            lancamento.descricao,
+            str(lancamento.valor).replace(".", ","),
+            lancamento.conta_financeira_id or "",
+            lancamento.transferencia_id or "",
+            lancamento.pagamento_venda_id or "",
+            lancamento.sangria_id or "",
+            lancamento.suprimento_id or "",
+            lancamento.estorno_de_id or "",
+            lancamento.usuario.get_username(),
+            timezone.localtime(lancamento.criado_em).strftime("%d/%m/%Y %H:%M:%S"),
+        ])
+    return response
+
+
+@login_required
+@role_required(*SISTEMA)
+def estornar_livro(request, pk):
+    lancamento = get_object_or_404(LancamentoFinanceiro, pk=pk)
+    if request.method == "POST":
+        try:
+            estornar_lancamento(
+                lancamento=lancamento,
+                usuario=request.user,
+                motivo=request.POST.get("motivo", ""),
+                ip=request.META.get("REMOTE_ADDR"),
+            )
+        except ValidationError as exc:
+            messages.error(request, " ".join(exc.messages))
+        else:
+            messages.success(request, "Estorno registrado com lancamento inverso.")
+    return redirect("financeiro:livro")
+
+
+@login_required
 @role_required(*SISTEMA)
 def conta_form(request, pk=None):
     conta = get_object_or_404(ContaFinanceira, pk=pk) if pk else None
@@ -304,7 +530,7 @@ def baixar(request, pk):
     conta = get_object_or_404(ContaFinanceira, pk=pk)
     initial = {"data_pagamento": timezone.localdate(), "valor_pago": conta.valor}
     if request.method == "POST":
-        form = BaixaContaForm(request.POST)
+        form = BaixaContaForm(request.POST, filial=conta.filial)
         if form.is_valid():
             try:
                 baixar_conta(conta=conta, usuario=request.user, ip=request.META.get("REMOTE_ADDR"), **form.cleaned_data)
@@ -314,7 +540,7 @@ def baixar(request, pk):
                 messages.success(request, "Conta baixada com sucesso.")
                 return redirect("financeiro:contas")
     else:
-        form = BaixaContaForm(initial=initial)
+        form = BaixaContaForm(initial=initial, filial=conta.filial)
     return render(request, "financeiro/baixa_form.html", {"form": form, "conta": conta})
 
 

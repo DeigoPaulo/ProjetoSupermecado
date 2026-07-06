@@ -1,0 +1,55 @@
+{% extends "base.html" %}
+
+{% block title %}Transferencia financeira{% endblock %}
+
+{% block content %}
+<header class="page-header">
+  <div>
+    <h1>Transferencia entre contas</h1>
+    <p>Movimente valores entre caixa, banco e PIX com registros de saida e entrada no livro financeiro.</p>
+  </div>
+  <a class="secondary-button" href="{% url 'financeiro:livro' %}">Voltar ao livro</a>
+</header>
+
+<form method="post" class="form-grid panel">
+  {% csrf_token %}
+  {% if form.non_field_errors %}<div class="form-note form-note-danger">{{ form.non_field_errors }}</div>{% endif %}
+  <section class="form-section form-field-wide">
+    <h2>Origem e destino</h2>
+    <div class="form-grid form-grid-inner">
+      <label class="form-field"><span>{{ form.conta_origem.label }}</span>{{ form.conta_origem }}{{ form.conta_origem.errors }}</label>
+      <label class="form-field"><span>{{ form.conta_destino.label }}</span>{{ form.conta_destino }}{{ form.conta_destino.errors }}</label>
+      <label class="form-field"><span>{{ form.valor.label }}</span><div class="input-prefix"><span>R$</span>{{ form.valor }}</div>{{ form.valor.errors }}</label>
+      <label class="form-field"><span>{{ form.data.label }}</span>{{ form.data }}{{ form.data.errors }}</label>
+      <label class="form-field form-field-wide"><span>{{ form.descricao.label }}</span>{{ form.descricao }}{{ form.descricao.errors }}</label>
+    </div>
+  </section>
+  <div class="form-actions">
+    <a class="secondary-button" href="{% url 'financeiro:contas_movimento' %}">Cancelar</a>
+    <button class="primary-button" type="submit"><i class="fa-solid fa-right-left"></i> Confirmar transferencia</button>
+  </div>
+</form>
+
+<section class="panel table-panel">
+  <div class="panel-title">Transferencias recentes</div>
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>Data</th><th>Origem</th><th>Destino</th><th>Descricao</th><th>Valor</th><th>Usuario</th></tr></thead>
+      <tbody>
+        {% for transferencia in transferencias_recentes %}
+          <tr>
+            <td>{{ transferencia.data|date:"d/m/Y" }}</td>
+            <td><strong>{{ transferencia.conta_origem.nome }}</strong><br><small>{{ transferencia.conta_origem.filial }}</small></td>
+            <td><strong>{{ transferencia.conta_destino.nome }}</strong><br><small>{{ transferencia.conta_destino.filial }}</small></td>
+            <td>{{ transferencia.descricao|default:"Transferencia entre contas" }}</td>
+            <td><strong>R$ {{ transferencia.valor|floatformat:2 }}</strong></td>
+            <td>{{ transferencia.usuario }}</td>
+          </tr>
+        {% empty %}
+          <tr><td colspan="6" class="empty">Nenhuma transferencia registrada.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</section>
+{% endblock %}

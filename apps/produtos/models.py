@@ -1,4 +1,11 @@
+from django.core.validators import FileExtensionValidator
 from django.db import models
+
+
+VALIDAR_IMAGEM_PNG_JPEG = FileExtensionValidator(
+    allowed_extensions=["png", "jpg", "jpeg"],
+    message="Envie uma imagem PNG, JPG ou JPEG.",
+)
 
 
 class ActiveManager(models.Manager):
@@ -76,7 +83,7 @@ class Produto(models.Model):
     estoque_minimo = models.DecimalField(max_digits=12, decimal_places=3, default=0)
     vendido_no_pdv = models.BooleanField(default=True)
     vendido_no_marketplace = models.BooleanField(default=False)
-    imagem = models.ImageField(upload_to="produtos/", blank=True, null=True)
+    imagem = models.ImageField(upload_to="produtos/", blank=True, null=True, validators=[VALIDAR_IMAGEM_PNG_JPEG])
     ncm = models.CharField("NCM", max_length=8, blank=True)
     cest = models.CharField("CEST", max_length=7, blank=True)
     origem_mercadoria = models.CharField(max_length=1, choices=OrigemMercadoria.choices, blank=True)
@@ -100,7 +107,7 @@ class Produto(models.Model):
 
 class ProdutoImagem(models.Model):
     produto = models.ForeignKey(Produto, on_delete=models.CASCADE, related_name="galeria")
-    imagem = models.ImageField(upload_to="produtos/galeria/")
+    imagem = models.ImageField(upload_to="produtos/galeria/", validators=[VALIDAR_IMAGEM_PNG_JPEG])
     legenda = models.CharField(max_length=120, blank=True)
     ordem = models.PositiveSmallIntegerField(default=0)
     created_at = models.DateTimeField(auto_now_add=True)
