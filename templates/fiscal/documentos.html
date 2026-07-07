@@ -21,6 +21,7 @@
   <article class="metric"><span>Prontos</span><strong>{{ pendentes }}</strong></article>
   <article class="metric"><span>Emitidos</span><strong>{{ emitidos }}</strong></article>
   <article class="metric"><span>Rejeitados</span><strong>{{ rejeitados }}</strong></article>
+  <article class="metric"><span>Pendencias automaticas</span><strong>{{ pendencias_automaticas }}</strong></article>
 </section>
 
 <form method="get" class="toolbar report-filter">
@@ -66,6 +67,9 @@
                   <summary><span class="status status-danger"><i class="fa-solid fa-triangle-exclamation"></i> {{ venda.pendencias_fiscais|length }} pendencia{{ venda.pendencias_fiscais|length|pluralize }}</span></summary>
                   <ul>{% for pendencia in venda.pendencias_fiscais %}<li>{{ pendencia }}</li>{% endfor %}</ul>
                 </details>
+                {% if venda.ultima_tentativa_fiscal %}
+                  <small class="muted">Tentativa automatica em {{ venda.ultima_tentativa_fiscal.criado_em|date:"d/m/Y H:i" }}.</small>
+                {% endif %}
               {% endif %}
             </td>
             <td class="row-actions">
@@ -111,6 +115,12 @@
               <a class="secondary-button" href="{% url 'fiscal:detalhe' documento.pk %}">Ver</a>
               <a class="secondary-button" href="{% url 'fiscal:imprimir' documento.pk %}" target="_blank">Imprimir</a>
               <a class="secondary-button" href="{% url 'fiscal:baixar_xml' documento.pk %}">XML</a>
+              {% if documento.status == "PRONTO" and documento.ambiente == "HOMOLOGACAO" %}
+                <form method="post" action="{% url 'fiscal:transmitir_simulado' documento.pk %}" class="inline-form form-confirm" data-msg="Transmitir em homologacao simulada?">
+                  {% csrf_token %}
+                  <button class="primary-button" type="submit">Transmitir homologacao</button>
+                </form>
+              {% endif %}
               {% if documento.status == "PRONTO" or documento.status == "REJEITADO" %}
                 <form method="post" action="{% url 'fiscal:cancelar' documento.pk %}" class="inline-form form-confirm" data-msg="Cancelar este documento fiscal?">
                   {% csrf_token %}

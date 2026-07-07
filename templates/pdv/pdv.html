@@ -24,6 +24,16 @@
       <div><i class="fa-regular fa-user"></i><span>Operador</span><strong>{{ request.user.username }}</strong></div>
       <div><i class="fa-regular fa-calendar-days"></i><span>Data / Hora</span><strong>{% now "d/m/Y H:i" %}</strong></div>
       <div><i class="fa-solid fa-vault"></i><span>Caixa</span><strong>{% if caixa_aberto %}#{{ caixa_aberto.id }}{% else %}Fechado{% endif %}</strong></div>
+      <div>
+        <i class="fa-solid fa-receipt"></i><span>Fiscal</span>
+        <strong>
+          {% if terminal_requisicao %}
+            {% if terminal_requisicao.emite_documento_fiscal %}Auto{% else %}Desligado{% endif %}
+          {% else %}
+            Navegador
+          {% endif %}
+        </strong>
+      </div>
     </div>
     <div class="pdv-stats">
       <div><span>Itens</span><strong>{{ quantidade_itens|floatformat:-3 }}</strong></div>

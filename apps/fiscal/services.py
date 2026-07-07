@@ -330,6 +330,61 @@ def preparar_documento_venda(venda, usuario, natureza_operacao=None, ip=None):
     return documento
 
 
+def tentar_preparar_documento_pos_venda(venda, usuario, ip=None):
+    documento_existente = venda.documentos_fiscais.exclude(status=StatusDocumentoFiscal.CANCELADO).first()
+    if documento_existente:
+        return documento_existente
+    try:
+        return preparar_documento_venda(venda, usuario, ip=ip)
+    except ValidationError as exc:
+        LogAuditoria.objects.create(
+            usuario=usuario,
+            modulo="fiscal",
+            acao="PREPARA_DOCUMENTO_PENDENTE",
+            descricao=f"Venda {venda.id} finalizada sem NFC-e preparada automaticamente: {'; '.join(exc.messages)}",
+            objeto_tipo="Venda",
+            objeto_id=str(venda.id),
+            ip=ip,
+        )
+        return None
+
+
+@transaction.atomic
+def transmitir_documento_simulado(documento, usuario, ip=None):
+    documento = DocumentoFiscal.objects.select_for_update().get(pk=documento.pk)
+    if documento.status != StatusDocumentoFiscal.PRONTO:
+        raise ValidationError("Somente documentos prontos podem ser transmitidos.")
+    if documento.ambiente != "HOMOLOGACAO":
+        raise ValidationError("Transmissao simulada permitida somente em homologacao. Em producao, configure o adaptador SEFAZ oficial.")
+    if not documento.xml_conteudo:
+        salvar_xml_documento(documento)
+
+    uf = CODIGOS_UF_IBGE.get(documento.filial.uf, "00")
+    data = timezone.localdate().strftime("%y%m")
+    cnpj = _somente_digitos(documento.filial.cnpj or documento.filial.empresa.cnpj).zfill(14)[-14:]
+    modelo = "65"
+    serie = f"{documento.serie:03d}"[-3:]
+    numero = f"{documento.numero or documento.pk:09d}"[-9:]
+    forma = "1"
+    codigo = f"{documento.pk:08d}"[-8:]
+    chave_base = f"{uf}{data}{cnpj}{modelo}{serie}{numero}{forma}{codigo}"
+    documento.chave_acesso = f"{chave_base}0"
+    documento.protocolo = f"HOM{timezone.now():%Y%m%d%H%M%S}{documento.pk:06d}"
+    documento.status = StatusDocumentoFiscal.EMITIDO
+    documento.mensagem_retorno = "Transmissao simulada em homologacao. Substituir pelo adaptador oficial da SEFAZ em producao."
+    documento.save(update_fields=["chave_acesso", "protocolo", "status", "mensagem_retorno", "atualizado_em"])
+    LogAuditoria.objects.create(
+        usuario=usuario,
+        modulo="fiscal",
+        acao="TRANSMISSAO_SIMULADA",
+        descricao=f"Documento fiscal {documento.id} transmitido em homologacao simulada. Protocolo: {documento.protocolo}.",
+        objeto_tipo="DocumentoFiscal",
+        objeto_id=str(documento.id),
+        ip=ip,
+    )
+    return documento
+
+
 def cancelar_documento(documento, usuario, motivo, ip=None):
     if documento.status not in {StatusDocumentoFiscal.PRONTO, StatusDocumentoFiscal.REJEITADO}:
         raise ValidationError("Somente documentos prontos ou rejeitados podem ser cancelados nesta etapa.")

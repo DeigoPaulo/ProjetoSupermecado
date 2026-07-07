@@ -102,11 +102,39 @@ class FormaPagamentoForm(forms.ModelForm):
 class TerminalPdvForm(forms.ModelForm):
     class Meta:
         model = TerminalPdv
-        fields = ["filial", "nome", "descricao", "permite_modo_offline", "ativo"]
+        fields = [
+            "filial",
+            "nome",
+            "descricao",
+            "provedor_tef",
+            "modo_integracao_tef",
+            "usa_balanca",
+            "protocolo_balanca",
+            "porta_balanca",
+            "modelo_balanca",
+            "status_licenca",
+            "observacao_licenca",
+            "permite_modo_offline",
+            "emite_documento_fiscal",
+            "ativo",
+        ]
         widgets = {
             "descricao": forms.TextInput(attrs={"placeholder": "Ex.: Balcao principal, frente de loja, caixa rapido"}),
+            "porta_balanca": forms.TextInput(attrs={"placeholder": "Ex.: COM3, /dev/ttyUSB0, 192.168.1.50:9000"}),
+            "modelo_balanca": forms.TextInput(attrs={"placeholder": "Ex.: Toledo, Filizola, Urano, outro"}),
+            "observacao_licenca": forms.TextInput(attrs={"placeholder": "Ex.: Caixa contratado no plano da loja, aguardando instalacao"}),
         }
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         aplicar_select2(self, ["filial"])
+        self.fields["protocolo_balanca"].required = False
+
+    def clean(self):
+        cleaned = super().clean()
+        if cleaned.get("usa_balanca"):
+            if cleaned.get("protocolo_balanca") == "NAO_CONFIGURADO":
+                self.add_error("protocolo_balanca", "Informe o protocolo da balanca.")
+            if not cleaned.get("porta_balanca"):
+                self.add_error("porta_balanca", "Informe a porta, caminho ou endereco da balanca.")
+        return cleaned

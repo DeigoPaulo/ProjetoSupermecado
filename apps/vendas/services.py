@@ -35,7 +35,7 @@ TIPO_CONTA_POR_FORMA = {
 FORMAS_ELETRONICAS = {"PIX", "CARTAO", "DEBITO", "CREDITO"}
 
 
-def finalizar_venda(*, caixa, usuario, itens, forma_pagamento=None, desconto=Decimal("0.00"), cliente=None, pagamentos=None, vencimento_financeiro=None):
+def finalizar_venda(*, caixa, usuario, itens, forma_pagamento=None, desconto=Decimal("0.00"), cliente=None, pagamentos=None, vencimento_financeiro=None, preparar_fiscal=True):
     if not itens:
         raise ValidationError("Inclua ao menos um item na venda.")
 
@@ -123,6 +123,8 @@ def finalizar_venda(*, caixa, usuario, itens, forma_pagamento=None, desconto=Dec
             pagamentos_criados.append(pagamento_venda)
         _criar_conta_receber_venda(venda, total_prazo, vencimento_financeiro)
         _registrar_lancamentos_pdv_venda(venda, pagamentos_criados)
+        if preparar_fiscal:
+            _preparar_documento_fiscal_pos_venda(venda)
 
         return venda
 
@@ -195,6 +197,12 @@ def _registrar_lancamentos_pdv_venda(venda, pagamentos):
             origem="PDV_VENDA",
             pagamento_venda=pagamento,
         )
+
+
+def _preparar_documento_fiscal_pos_venda(venda):
+    from apps.fiscal.services import tentar_preparar_documento_pos_venda
+
+    tentar_preparar_documento_pos_venda(venda, venda.usuario)
 
 
 def _criar_conta_receber_venda(venda, valor, vencimento_financeiro=None):

@@ -5,6 +5,7 @@ from django.http import HttpResponse
 from django.shortcuts import get_object_or_404, redirect, render
 
 from apps.accounts.permissions import RELATORIOS, SISTEMA, role_required
+from apps.auditoria.models import LogAuditoria
 from apps.produtos.models import Produto
 from apps.vendas.models import StatusVenda, Venda
 
@@ -17,6 +18,7 @@ from .services import (
     pendencias_produto_fiscal,
     preparar_documento_venda,
     salvar_xml_documento,
+    transmitir_documento_simulado,
 )
 
 
@@ -53,6 +55,16 @@ def documentos(request):
             pendencias.append("Cadastre uma serie NFC-e ativa para a filial.")
         venda.pendencias_fiscais = pendencias
         venda.pronta_fiscal = not pendencias
+    logs_pendencia = {}
+    for log in LogAuditoria.objects.filter(
+        modulo="fiscal",
+        acao="PREPARA_DOCUMENTO_PENDENTE",
+        objeto_tipo="Venda",
+        objeto_id__in=[str(venda.id) for venda in vendas_pendentes],
+    ).order_by("-criado_em"):
+        logs_pendencia.setdefault(log.objeto_id, log)
+    for venda in vendas_pendentes:
+        venda.ultima_tentativa_fiscal = logs_pendencia.get(str(venda.id))
     context = {
         "documentos": documentos_qs[:200],
         "status": status,
@@ -66,6 +78,7 @@ def documentos(request):
         "pendentes": documentos_qs.filter(status="PRONTO").count(),
         "emitidos": documentos_qs.filter(status="EMITIDO").count(),
         "rejeitados": documentos_qs.filter(status="REJEITADO").count(),
+        "pendencias_automaticas": len(logs_pendencia),
     }
     return render(request, "fiscal/documentos.html", context)
 
@@ -211,3 +224,17 @@ def cancelar(request, pk):
         else:
             messages.success(request, "Documento fiscal cancelado.")
     return redirect("fiscal:documentos")
+
+
+@login_required
+@role_required(*SISTEMA)
+def transmitir_simulado(request, pk):
+    documento = get_object_or_404(DocumentoFiscal, pk=pk)
+    if request.method == "POST":
+        try:
+            transmitir_documento_simulado(documento, request.user, ip=request.META.get("REMOTE_ADDR"))
+        except ValidationError as exc:
+            messages.error(request, " ".join(exc.messages))
+        else:
+            messages.success(request, "Documento fiscal transmitido em homologacao simulada.")
+    return redirect("fiscal:detalhe", pk=pk)

@@ -1,9 +1,10 @@
 from django.contrib.auth import get_user_model
 from django.test import Client, TestCase
 
+from apps.accounts.models import PerfilUsuario, TipoPerfil
 from apps.empresas.models import Empresa, Filial
 from apps.financeiro.models import ContaMovimentoFinanceiro, TipoContaMovimento
-from apps.pdv.models import TerminalPdv
+from apps.pdv.models import ModoIntegracaoTef, ProtocoloBalanca, ProvedorTef, StatusLicencaTerminal, TerminalPdv
 from apps.vendas.models import FormaPagamento
 
 from .models import ConfiguracaoImpressao, ModeloPapel, TipoDocumentoImpressao
@@ -64,11 +65,26 @@ class ConfiguracoesOperacionaisTests(TestCase):
         self.assertContains(checklist, "estornos por lancamento inverso")
         self.assertContains(checklist, "relatorio de receitas, despesas e resultado")
         self.assertContains(checklist, "Gaveta de dinheiro opcional")
+        self.assertContains(checklist, "Balanca integrada no PDV")
+        self.assertContains(checklist, "produto pesavel")
+        self.assertContains(checklist, "configurar balanca por caixa")
+        self.assertContains(checklist, "ler peso automaticamente no PDV")
         self.assertContains(checklist, "Central de impressao permite")
         self.assertContains(checklist, "PIX dinamico")
         self.assertContains(checklist, "somente apos pagamento confirmado")
+        self.assertContains(checklist, "tenta preparar a NFC-e automaticamente")
+        self.assertContains(checklist, "desativar essa tentativa por terminal PDV")
+        self.assertContains(checklist, "PDV exibe no topo")
+        self.assertContains(checklist, "ultima tentativa automatica auditada")
+        self.assertContains(checklist, "pendencia fica auditada")
+        self.assertContains(checklist, "Transmissao simulada em homologacao")
+        self.assertContains(checklist, "transmissao SEFAZ real")
         self.assertContains(checklist, "autorizacao simulada rastreavel")
+        self.assertContains(checklist, "provedor TEF e modo de integracao por adaptador")
+        self.assertContains(checklist, "pdv_tef_v1")
         self.assertContains(checklist, "Arquitetura PDV desktop local")
+        self.assertContains(checklist, "autorizacao do admin master")
+        self.assertContains(checklist, "licenca comercial cobrada por terminal")
         self.assertContains(checklist, "sem telas administrativas completas")
         self.assertContains(checklist, "Sincronizacao loja-nuvem")
         self.assertContains(checklist, "Empresa escolhe entre servidor local")
@@ -100,6 +116,7 @@ class ConfiguracoesOperacionaisTests(TestCase):
         self.assertContains(response, "Terminais PDV")
         self.assertNotContains(response, "Admin Django")
         self.assertContains(response, "Checklist")
+        self.assertContains(response, "App PDV desktop")
 
     def test_cadastra_e_edita_forma_pagamento_no_painel_proprio(self):
         conta_pix = ContaMovimentoFinanceiro.objects.create(
@@ -136,7 +153,12 @@ class ConfiguracoesOperacionaisTests(TestCase):
                 "filial": self.filial.id,
                 "nome": "Caixa 01",
                 "descricao": "Frente de loja",
+                "provedor_tef": ProvedorTef.PAGBANK,
+                "modo_integracao_tef": ModoIntegracaoTef.DESKTOP_BRIDGE,
+                "status_licenca": StatusLicencaTerminal.LIBERADA,
+                "observacao_licenca": "Caixa contratado",
                 "permite_modo_offline": "on",
+                "emite_documento_fiscal": "on",
                 "ativo": "on",
             },
             follow=True,
@@ -146,6 +168,12 @@ class ConfiguracoesOperacionaisTests(TestCase):
         terminal = TerminalPdv.objects.get(nome="Caixa 01")
         self.assertEqual(terminal.filial, self.filial)
         self.assertTrue(terminal.permite_modo_offline)
+        self.assertTrue(terminal.emite_documento_fiscal)
+        self.assertEqual(terminal.provedor_tef, ProvedorTef.PAGBANK)
+        self.assertEqual(terminal.modo_integracao_tef, ModoIntegracaoTef.DESKTOP_BRIDGE)
+        self.assertEqual(terminal.status_licenca, StatusLicencaTerminal.LIBERADA)
+        self.assertEqual(terminal.licenca_liberada_por, self.user)
+        self.assertIsNotNone(terminal.licenca_liberada_em)
         self.assertTrue(terminal.chave_api_hash)
         self.assertTrue(terminal.chave_api_prefixo)
         self.assertContains(response, "Caixa 01")
@@ -153,6 +181,9 @@ class ConfiguracoesOperacionaisTests(TestCase):
         self.assertContains(response, str(terminal.identificador))
         self.assertContains(response, "sera mostrada somente agora")
         self.assertContains(response, terminal.chave_api_prefixo)
+        self.assertContains(response, "Emite NFC-e")
+        self.assertContains(response, "PagBank")
+        self.assertContains(response, "Liberada")
 
         segunda_visualizacao = self.client.get("/configuracoes/terminais-pdv/")
         self.assertNotContains(segunda_visualizacao, "sera mostrada somente agora")
@@ -160,6 +191,144 @@ class ConfiguracoesOperacionaisTests(TestCase):
         form_response = self.client.get(f"/configuracoes/terminais-pdv/{terminal.pk}/editar/")
         self.assertContains(form_response, "select2-field")
         self.assertContains(form_response, str(terminal.identificador))
+        self.assertContains(form_response, "Fiscal por terminal")
+        self.assertContains(form_response, "TEF por adaptador")
+        self.assertContains(form_response, "Balanca local")
+        self.assertContains(form_response, "Licenciamento do app desktop")
+
+    def test_central_app_pdv_desktop_mostra_arquitetura_e_terminais(self):
+        terminal = TerminalPdv.objects.create(
+            filial=self.filial,
+            nome="Caixa 02",
+            provedor_tef=ProvedorTef.STONE,
+            modo_integracao_tef=ModoIntegracaoTef.POS_INTEGRADO,
+            usa_balanca=True,
+            protocolo_balanca=ProtocoloBalanca.SERIAL,
+            porta_balanca="COM3",
+            modelo_balanca="Toledo Prix",
+            status_licenca=StatusLicencaTerminal.LIBERADA,
+            licenca_liberada_por=self.user,
+            emite_documento_fiscal=False,
+        )
+
+        response = self.client.get("/configuracoes/pdv-desktop/")
+        checklist = self.client.get("/configuracoes/checklist/")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "App PDV desktop")
+        self.assertContains(response, "artefato separado")
+        self.assertContains(response, "admin master")
+        self.assertContains(response, "Por terminal")
+        self.assertContains(response, "pdv_tef_v1")
+        self.assertContains(response, "Manifesto JSON")
+        self.assertContains(response, "Caixa 02")
+        self.assertContains(response, "Stone")
+        self.assertContains(response, "Configurada")
+        self.assertContains(response, "Serial RS-232/USB")
+        self.assertContains(response, "Sem fiscal automatico")
+        self.assertContains(response, "Pacote JSON")
+        self.assertContains(checklist, "Central do App PDV desktop")
+        self.assertContains(checklist, "manifesto JSON do app desktop")
+        self.assertContains(checklist, "Pacote JSON por terminal")
+        self.assertContains(checklist, "licenca por maquina")
+        self.assertContains(checklist, "licenca liberada")
+        self.assertContains(checklist, "nao recebem pacote de ativacao")
+        self.assertContains(checklist, "projeto/artefato separado")
+        self.assertContains(checklist, "baixado por dentro do sistema somente com autorizacao do admin master")
+
+        manifest = self.client.get("/configuracoes/pdv-desktop/manifest.json")
+        self.assertEqual(manifest.status_code, 200)
+        payload = manifest.json()
+        self.assertEqual(payload["status"], "ok")
+        self.assertEqual(payload["licenciamento"]["modelo"], "por_terminal")
+        self.assertTrue(payload["licenciamento"]["download_requer_admin_master"])
+        self.assertEqual(payload["contratos"]["tef"], "pdv_tef_v1")
+        self.assertTrue(payload["recursos"]["fiscal_por_terminal"])
+        self.assertEqual(payload["terminais"][0]["nome"], "Caixa 02")
+        self.assertEqual(payload["terminais"][0]["provedor_tef"], ProvedorTef.STONE)
+        self.assertTrue(payload["terminais"][0]["balanca"]["habilitada"])
+        self.assertEqual(payload["terminais"][0]["balanca"]["porta"], "COM3")
+        self.assertEqual(payload["terminais"][0]["licenca"]["status"], StatusLicencaTerminal.LIBERADA)
+        self.assertTrue(payload["terminais"][0]["licenca"]["liberada"])
+        self.assertIn("/pdv/api/terminal/bootstrap/", payload["terminais"][0]["bootstrap_url"])
+
+        pacote = self.client.get(f"/configuracoes/pdv-desktop/terminais/{terminal.pk}/pacote.json")
+        self.assertEqual(pacote.status_code, 200)
+        pacote_payload = pacote.json()
+        self.assertEqual(pacote_payload["terminal"]["nome"], "Caixa 02")
+        self.assertEqual(pacote_payload["licenciamento"]["modelo"], "por_terminal")
+        self.assertTrue(pacote_payload["licenciamento"]["download_requer_admin_master"])
+        self.assertTrue(pacote_payload["licenciamento"]["terminal_autorizado"])
+        self.assertEqual(pacote_payload["licenciamento"]["status"], StatusLicencaTerminal.LIBERADA)
+        self.assertEqual(pacote_payload["tef"]["provedor"], ProvedorTef.STONE)
+        self.assertFalse(pacote_payload["fiscal"]["emissao_automatica"])
+        self.assertTrue(pacote_payload["sincronizacao"]["modo_offline_permitido"])
+        self.assertTrue(pacote_payload["dispositivos"]["balanca"]["habilitada"])
+        self.assertEqual(pacote_payload["dispositivos"]["balanca"]["protocolo"], ProtocoloBalanca.SERIAL)
+        self.assertEqual(pacote_payload["dispositivos"]["balanca"]["modelo"], "Toledo Prix")
+        self.assertIn("/configuracoes/impressoes/desktop.json", pacote_payload["dispositivos"]["impressora"]["config_url"])
+
+    def test_pacote_do_app_desktop_so_sai_com_licenca_liberada(self):
+        terminal = TerminalPdv.objects.create(
+            filial=self.filial,
+            nome="Caixa Pendente",
+            status_licenca=StatusLicencaTerminal.PENDENTE,
+        )
+
+        response = self.client.get("/configuracoes/pdv-desktop/")
+        manifest = self.client.get("/configuracoes/pdv-desktop/manifest.json")
+        pacote = self.client.get(f"/configuracoes/pdv-desktop/terminais/{terminal.pk}/pacote.json")
+
+        self.assertContains(response, "Caixa Pendente")
+        self.assertContains(response, "Libere licenca")
+        self.assertEqual(manifest.status_code, 200)
+        payload = manifest.json()
+        self.assertEqual(payload["terminais"][0]["licenca"]["status"], StatusLicencaTerminal.PENDENTE)
+        self.assertFalse(payload["terminais"][0]["licenca"]["liberada"])
+        self.assertEqual(pacote.status_code, 403)
+
+    def test_app_pdv_desktop_exige_admin_master_para_distribuicao(self):
+        gerente = get_user_model().objects.create_user("gerente", "gerente@example.com", "123")
+        PerfilUsuario.objects.create(usuario=gerente, filial=self.filial, tipo=TipoPerfil.GERENTE)
+        terminal = TerminalPdv.objects.create(filial=self.filial, nome="Caixa Licenca")
+
+        self.client.force_login(gerente)
+
+        response = self.client.get("/configuracoes/pdv-desktop/")
+        manifest = self.client.get("/configuracoes/pdv-desktop/manifest.json")
+        pacote = self.client.get(f"/configuracoes/pdv-desktop/terminais/{terminal.pk}/pacote.json")
+
+        self.assertEqual(response.status_code, 403)
+        self.assertEqual(manifest.status_code, 403)
+        self.assertEqual(pacote.status_code, 403)
+
+    def test_gerente_nao_libera_licenca_do_terminal_pdv(self):
+        gerente = get_user_model().objects.create_user("gerente2", "gerente2@example.com", "123")
+        PerfilUsuario.objects.create(usuario=gerente, filial=self.filial, tipo=TipoPerfil.GERENTE)
+        self.client.force_login(gerente)
+
+        response = self.client.post(
+            "/configuracoes/terminais-pdv/novo/",
+            {
+                "filial": self.filial.id,
+                "nome": "Caixa sem licenca",
+                "descricao": "Criado pelo gerente",
+                "provedor_tef": ProvedorTef.NAO_CONFIGURADO,
+                "modo_integracao_tef": ModoIntegracaoTef.DESKTOP_BRIDGE,
+                "status_licenca": StatusLicencaTerminal.LIBERADA,
+                "observacao_licenca": "Tentativa de liberar",
+                "permite_modo_offline": "on",
+                "emite_documento_fiscal": "on",
+                "ativo": "on",
+            },
+            follow=True,
+        )
+
+        self.assertRedirects(response, "/configuracoes/terminais-pdv/")
+        terminal = TerminalPdv.objects.get(nome="Caixa sem licenca")
+        self.assertEqual(terminal.status_licenca, StatusLicencaTerminal.PENDENTE)
+        self.assertIsNone(terminal.licenca_liberada_por)
+        self.assertEqual(terminal.observacao_licenca, "Aguardando liberacao do admin master.")
 
     def test_renova_chave_do_terminal_e_invalida_a_anterior(self):
         terminal = TerminalPdv(filial=self.filial, nome="Caixa 03")

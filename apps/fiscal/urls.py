@@ -17,5 +17,6 @@ urlpatterns = [
     path("documentos/<int:pk>/", views.detalhe, name="detalhe"),
     path("documentos/<int:pk>/imprimir/", views.imprimir, name="imprimir"),
     path("documentos/<int:pk>/xml/", views.baixar_xml, name="baixar_xml"),
+    path("documentos/<int:pk>/transmitir-simulado/", views.transmitir_simulado, name="transmitir_simulado"),
     path("documentos/<int:pk>/cancelar/", views.cancelar, name="cancelar"),
 ]

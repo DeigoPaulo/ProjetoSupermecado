@@ -13,6 +13,12 @@
     {% if not imprimir %}
       <a class="primary-button" href="{% url 'fiscal:imprimir' documento.pk %}" target="_blank"><i class="fa-solid fa-print"></i> Imprimir</a>
       <a class="secondary-button" href="{% url 'fiscal:baixar_xml' documento.pk %}"><i class="fa-solid fa-code"></i> Baixar XML</a>
+      {% if documento.status == "PRONTO" and documento.ambiente == "HOMOLOGACAO" %}
+        <form method="post" action="{% url 'fiscal:transmitir_simulado' documento.pk %}" class="inline-form form-confirm" data-msg="Transmitir em homologacao simulada?">
+          {% csrf_token %}
+          <button class="primary-button" type="submit"><i class="fa-solid fa-paper-plane"></i> Transmitir homologacao</button>
+        </form>
+      {% endif %}
     {% else %}
       <button class="primary-button" type="button" onclick="window.print()"><i class="fa-solid fa-print"></i> Imprimir</button>
     {% endif %}

@@ -9,10 +9,11 @@ from apps.configuracoes.models import ConfiguracaoImpressao, TipoDocumentoImpres
 from apps.empresas.models import Empresa, Filial
 from apps.estoque.models import Estoque
 from apps.financeiro.models import ContaMovimentoFinanceiro, LancamentoFinanceiro, TipoContaMovimento, TipoLancamentoFinanceiro
+from apps.fiscal.models import AmbienteFiscal, ConfiguracaoFiscal, DocumentoFiscal, NaturezaOperacao, SerieFiscal, TipoDocumentoFiscal
 from apps.produtos.models import Categoria, Produto
 from apps.vendas.models import FormaPagamento, StatusVenda, Venda
 
-from .models import AcessoPdvNuvem, Caixa, Sangria, StatusAcessoPdvNuvem, StatusCaixa, Suprimento, TerminalPdv
+from .models import AcessoPdvNuvem, Caixa, ModoIntegracaoTef, ProvedorTef, Sangria, StatusAcessoPdvNuvem, StatusCaixa, Suprimento, TerminalPdv
 from .services_acesso import acesso_pdv_nuvem_aprovado, decidir_acesso_pdv_nuvem, solicitar_acesso_pdv_nuvem
 
 
@@ -27,7 +28,13 @@ class AcessoPdvNuvemTests(TestCase):
         PerfilUsuario.objects.create(usuario=self.admin, filial=self.filial, tipo=TipoPerfil.ADMINISTRADOR)
 
     def test_terminal_autenticado_inicializa_e_registra_conexao(self):
-        terminal = TerminalPdv(filial=self.filial, nome="Caixa 01")
+        terminal = TerminalPdv(
+            filial=self.filial,
+            nome="Caixa 01",
+            emite_documento_fiscal=False,
+            provedor_tef=ProvedorTef.PAGBANK,
+            modo_integracao_tef=ModoIntegracaoTef.DESKTOP_BRIDGE,
+        )
         chave = terminal.gerar_chave_api()
         terminal.save()
 
@@ -41,6 +48,12 @@ class AcessoPdvNuvemTests(TestCase):
         self.assertEqual(resposta.status_code, 200)
         self.assertEqual(resposta.json()["terminal"]["nome"], "Caixa 01")
         self.assertTrue(resposta.json()["recursos"]["venda_local"])
+        self.assertFalse(resposta.json()["terminal"]["emite_documento_fiscal"])
+        self.assertFalse(resposta.json()["recursos"]["emissao_fiscal_automatica"])
+        self.assertTrue(resposta.json()["recursos"]["tef_integrado"])
+        self.assertEqual(resposta.json()["terminal"]["provedor_tef"], ProvedorTef.PAGBANK)
+        self.assertEqual(resposta.json()["tef"]["contrato"], "pdv_tef_v1")
+        self.assertIn("PIX", resposta.json()["tef"]["tipos_pagamento"])
         terminal.refresh_from_db()
         self.assertIsNotNone(terminal.ultima_conexao)
         self.assertEqual(terminal.ultimo_ip, "192.168.1.25")
@@ -177,6 +190,59 @@ class AcessoPdvNuvemTests(TestCase):
         self.assertEqual(self.client.session["pdv_cart"], {})
         self.assertEqual(Venda.objects.count(), 1)
 
+    def test_terminal_sem_fiscal_automatico_finaliza_venda_sem_preparar_nfce(self):
+        categoria = Categoria.objects.create(nome="Mercearia")
+        produto = Produto.objects.create(
+            codigo_barras="789100000006",
+            nome="Macarrao",
+            categoria=categoria,
+            preco_custo=Decimal("4"),
+            preco_venda=Decimal("9"),
+            ncm="19021900",
+            origem_mercadoria="0",
+            cst_icms="00",
+            aliquota_icms=Decimal("18.00"),
+        )
+        Estoque.objects.create(produto=produto, filial=self.filial, quantidade_atual=Decimal("10"))
+        caixa = Caixa.objects.create(filial=self.filial, usuario_abertura=self.operador, valor_inicial=Decimal("100"))
+        forma = FormaPagamento.objects.create(nome="Dinheiro", tipo="DINHEIRO", permite_troco=True)
+        ConfiguracaoFiscal.objects.create(
+            filial=self.filial,
+            ambiente=AmbienteFiscal.HOMOLOGACAO,
+            regime_tributario="Regime normal",
+            inscricao_estadual="123456789",
+            csc_id="1",
+            csc_token="token",
+            certificado_a1_criptografado=b"certificado",
+            certificado_senha_criptografada=b"senha",
+        )
+        SerieFiscal.objects.create(filial=self.filial, tipo_documento=TipoDocumentoFiscal.NFCE, serie=1, proximo_numero=1)
+        NaturezaOperacao.objects.create(descricao="Venda ao consumidor", cfop="5102", tipo_documento=TipoDocumentoFiscal.NFCE)
+        terminal = TerminalPdv.objects.create(filial=self.filial, nome="Caixa sem fiscal", emite_documento_fiscal=False)
+        session = self.client.session
+        session["pdv_cart"] = {str(produto.id): "1"}
+        session.save()
+        self.client.force_login(self.operador)
+
+        resposta = self.client.post(
+            "/pdv/",
+            {
+                "action": "finish",
+                "caixa": caixa.id,
+                "cliente": "",
+                "desconto": "0",
+                "vencimento_financeiro": "",
+                "pagamento_forma": [forma.id],
+                "pagamento_valor": ["9.00"],
+            },
+            HTTP_X_TERMINAL_ID=str(terminal.identificador),
+            follow=True,
+        )
+
+        self.assertRedirects(resposta, "/pdv/")
+        self.assertEqual(Venda.objects.count(), 1)
+        self.assertFalse(DocumentoFiscal.objects.exists())
+
     def test_pdv_exibe_fechamento_e_conferencia_no_modal_de_caixas(self):
         Caixa.objects.create(filial=self.filial, usuario_abertura=self.operador, valor_inicial=Decimal("100"))
         Caixa.objects.create(
@@ -214,6 +280,16 @@ class AcessoPdvNuvemTests(TestCase):
         self.assertContains(resposta, "Ctrl+Del")
         self.assertContains(resposta, "data-remove-url")
         self.assertContains(resposta, "<kbd>Shift+M</kbd> Menu", count=1, html=True)
+        self.assertContains(resposta, "Navegador")
+
+    def test_pdv_exibe_status_fiscal_do_terminal_identificado(self):
+        terminal = TerminalPdv.objects.create(filial=self.filial, nome="Caixa sem fiscal", emite_documento_fiscal=False)
+        self.client.force_login(self.operador)
+
+        resposta = self.client.get("/pdv/", HTTP_X_TERMINAL_ID=str(terminal.identificador))
+
+        self.assertContains(resposta, "Fiscal")
+        self.assertContains(resposta, "Desligado")
 
     def test_sangria_registrada_pelo_pdv_retorna_ao_pdv(self):
         caixa = Caixa.objects.create(filial=self.filial, usuario_abertura=self.operador, valor_inicial=Decimal("100"))

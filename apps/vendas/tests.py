@@ -8,6 +8,7 @@ from django.test import TestCase
 from apps.empresas.models import Empresa, Filial
 from apps.estoque.models import Estoque, MovimentacaoEstoque, TipoMovimentacaoEstoque
 from apps.financeiro.models import ContaFinanceira, ContaMovimentoFinanceiro, LancamentoFinanceiro, StatusContaFinanceira, TipoContaFinanceira, TipoContaMovimento, TipoLancamentoFinanceiro
+from apps.fiscal.models import AmbienteFiscal, ConfiguracaoFiscal, DocumentoFiscal, NaturezaOperacao, SerieFiscal, StatusDocumentoFiscal, TipoDocumentoFiscal
 from apps.clientes.models import Cliente
 from apps.pdv.models import Caixa
 from apps.produtos.models import Categoria, Produto
@@ -154,6 +155,41 @@ class VendaServiceTests(TestCase):
         self.assertEqual(pagamento.nsu, "123456")
         self.assertEqual(pagamento.codigo_autorizacao, "ABC123")
         self.assertEqual(pagamento.mensagem_processadora, "Aprovado pela operadora.")
+
+    def test_finalizar_venda_prepara_nfce_automaticamente_quando_fiscal_esta_pronto(self):
+        self.filial.uf = "SP"
+        self.filial.codigo_municipio_ibge = "3550308"
+        self.filial.save(update_fields=["uf", "codigo_municipio_ibge"])
+        self.produto.ncm = "10063021"
+        self.produto.origem_mercadoria = "0"
+        self.produto.cst_icms = "00"
+        self.produto.aliquota_icms = Decimal("18.00")
+        self.produto.save(update_fields=["ncm", "origem_mercadoria", "cst_icms", "aliquota_icms"])
+        ConfiguracaoFiscal.objects.create(
+            filial=self.filial,
+            ambiente=AmbienteFiscal.HOMOLOGACAO,
+            regime_tributario="Regime normal",
+            inscricao_estadual="123456789",
+            csc_id="1",
+            csc_token="token",
+            certificado_a1_criptografado=b"certificado",
+            certificado_senha_criptografada=b"senha",
+        )
+        SerieFiscal.objects.create(filial=self.filial, tipo_documento=TipoDocumentoFiscal.NFCE, serie=1, proximo_numero=10)
+        NaturezaOperacao.objects.create(descricao="Venda ao consumidor", cfop="5102", tipo_documento=TipoDocumentoFiscal.NFCE)
+
+        venda = finalizar_venda(
+            caixa=self.caixa,
+            usuario=self.usuario,
+            itens=[{"produto": self.produto, "quantidade": Decimal("1.000")}],
+            pagamentos=[{"forma_pagamento": self.dinheiro, "valor": Decimal("25.00")}],
+        )
+
+        documento = DocumentoFiscal.objects.get(venda=venda)
+        self.assertEqual(documento.status, StatusDocumentoFiscal.PRONTO)
+        self.assertEqual(documento.numero, 10)
+        self.assertIn("<NFe", documento.xml_conteudo)
+        self.assertEqual(SerieFiscal.objects.get(filial=self.filial).proximo_numero, 11)
 
     def test_venda_crediario_cria_conta_receber(self):
         venda = finalizar_venda(

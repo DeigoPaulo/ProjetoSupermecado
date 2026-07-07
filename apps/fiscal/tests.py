@@ -28,7 +28,7 @@ from .models import (
     TipoDocumentoFiscal,
 )
 from .certificados import abrir_certificado_a1, salvar_certificado_a1
-from .services import cancelar_documento, preparar_documento_venda
+from .services import cancelar_documento, preparar_documento_venda, transmitir_documento_simulado
 
 
 def _certificado_teste(nome="certificado-teste.pfx", senha="123456", dias_validade=365):
@@ -131,6 +131,7 @@ class FiscalTests(TestCase):
         self.assertContains(response, "Pronta")
         self.assertContains(response, "Valido ate")
         self.assertContains(response, "Produtos fiscais")
+        self.assertContains(response, "Pendencias automaticas")
 
     def test_tela_produtos_fiscais_mostra_pendencias_e_prontos(self):
         Produto.objects.create(
@@ -198,6 +199,24 @@ class FiscalTests(TestCase):
         self.assertContains(response, "4 pendencias")
         self.assertContains(response, "Corrija as pendencias fiscais antes de preparar")
 
+    def test_tela_fiscal_exibe_tentativa_automatica_auditada(self):
+        self.produto.ncm = ""
+        self.produto.save(update_fields=["ncm"])
+        LogAuditoria.objects.create(
+            usuario=self.user,
+            modulo="fiscal",
+            acao="PREPARA_DOCUMENTO_PENDENTE",
+            descricao=f"Venda {self.venda.id} finalizada sem NFC-e preparada automaticamente: Produto sem NCM.",
+            objeto_tipo="Venda",
+            objeto_id=str(self.venda.id),
+        )
+
+        response = self.client.get("/fiscal/")
+
+        self.assertContains(response, "Pendencias automaticas")
+        self.assertContains(response, "Tentativa automatica em")
+        self.assertContains(response, "1 pendencia")
+
     def test_cancelar_documento_pronto(self):
         documento = preparar_documento_venda(self.venda, self.user)
 
@@ -213,6 +232,40 @@ class FiscalTests(TestCase):
 
         self.assertEqual(response.status_code, 302)
         self.assertTrue(DocumentoFiscal.objects.filter(venda=self.venda, status=StatusDocumentoFiscal.PRONTO).exists())
+
+    def test_transmissao_simulada_em_homologacao_emite_com_protocolo(self):
+        documento = preparar_documento_venda(self.venda, self.user)
+
+        transmitido = transmitir_documento_simulado(documento, self.user)
+
+        self.assertEqual(transmitido.status, StatusDocumentoFiscal.EMITIDO)
+        self.assertTrue(transmitido.chave_acesso)
+        self.assertTrue(transmitido.protocolo.startswith("HOM"))
+        self.assertIn("Transmissao simulada em homologacao", transmitido.mensagem_retorno)
+        self.assertTrue(LogAuditoria.objects.filter(modulo="fiscal", acao="TRANSMISSAO_SIMULADA").exists())
+
+    def test_rota_transmissao_simulada_aparece_e_emite_documento(self):
+        documento = preparar_documento_venda(self.venda, self.user)
+
+        detalhe = self.client.get(f"/fiscal/documentos/{documento.pk}/")
+        response = self.client.post(f"/fiscal/documentos/{documento.pk}/transmitir-simulado/", follow=True)
+
+        self.assertContains(detalhe, "Transmitir homologacao")
+        self.assertRedirects(response, f"/fiscal/documentos/{documento.pk}/")
+        documento.refresh_from_db()
+        self.assertEqual(documento.status, StatusDocumentoFiscal.EMITIDO)
+        self.assertContains(response, "Emitido", status_code=200)
+
+    def test_transmissao_simulada_bloqueia_producao(self):
+        documento = preparar_documento_venda(self.venda, self.user)
+        documento.ambiente = AmbienteFiscal.PRODUCAO
+        documento.save(update_fields=["ambiente"])
+
+        with self.assertRaisesMessage(ValidationError, "somente em homologacao"):
+            transmitir_documento_simulado(documento, self.user)
+
+        documento.refresh_from_db()
+        self.assertEqual(documento.status, StatusDocumentoFiscal.PRONTO)
 
     def test_detalhe_e_impressao_mostram_espelho_do_documento(self):
         documento = preparar_documento_venda(self.venda, self.user)

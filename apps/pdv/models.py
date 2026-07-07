@@ -20,6 +20,39 @@ class StatusAcessoPdvNuvem(models.TextChoices):
     EXPIRADO = "EXPIRADO", "Expirado"
 
 
+class ProvedorTef(models.TextChoices):
+    NAO_CONFIGURADO = "NAO_CONFIGURADO", "Nao configurado"
+    SITEF = "SITEF", "SiTef / Software Express"
+    CIELO = "CIELO", "Cielo"
+    STONE = "STONE", "Stone"
+    GETNET = "GETNET", "Getnet"
+    PAGBANK = "PAGBANK", "PagBank / PagSeguro"
+    REDE = "REDE", "Rede"
+    OUTRO = "OUTRO", "Outro adaptador"
+
+
+class ModoIntegracaoTef(models.TextChoices):
+    DESKTOP_BRIDGE = "DESKTOP_BRIDGE", "App desktop / bridge local"
+    API = "API", "API direta da operadora"
+    POS_INTEGRADO = "POS_INTEGRADO", "POS/SmartPOS integrado"
+    MANUAL = "MANUAL", "Manual sem retorno automatico"
+
+
+class ProtocoloBalanca(models.TextChoices):
+    NAO_CONFIGURADO = "NAO_CONFIGURADO", "Nao configurado"
+    SERIAL = "SERIAL", "Serial RS-232/USB"
+    TCP_IP = "TCP_IP", "TCP/IP"
+    ARQUIVO_TXT = "ARQUIVO_TXT", "Arquivo texto local"
+    OUTRO = "OUTRO", "Outro protocolo"
+
+
+class StatusLicencaTerminal(models.TextChoices):
+    PENDENTE = "PENDENTE", "Pendente"
+    LIBERADA = "LIBERADA", "Liberada"
+    BLOQUEADA = "BLOQUEADA", "Bloqueada"
+    CANCELADA = "CANCELADA", "Cancelada"
+
+
 class TerminalPdv(models.Model):
     identificador = models.UUIDField(default=uuid.uuid4, unique=True, editable=False)
     filial = models.ForeignKey("empresas.Filial", on_delete=models.PROTECT, related_name="terminais_pdv")
@@ -28,6 +61,17 @@ class TerminalPdv(models.Model):
     chave_api_hash = models.CharField(max_length=128, blank=True, editable=False)
     chave_api_prefixo = models.CharField(max_length=12, blank=True, editable=False)
     permite_modo_offline = models.BooleanField(default=True)
+    emite_documento_fiscal = models.BooleanField(default=True)
+    provedor_tef = models.CharField(max_length=30, choices=ProvedorTef.choices, default=ProvedorTef.NAO_CONFIGURADO)
+    modo_integracao_tef = models.CharField(max_length=30, choices=ModoIntegracaoTef.choices, default=ModoIntegracaoTef.DESKTOP_BRIDGE)
+    usa_balanca = models.BooleanField(default=False)
+    protocolo_balanca = models.CharField(max_length=30, choices=ProtocoloBalanca.choices, default=ProtocoloBalanca.NAO_CONFIGURADO)
+    porta_balanca = models.CharField(max_length=80, blank=True)
+    modelo_balanca = models.CharField(max_length=120, blank=True)
+    status_licenca = models.CharField(max_length=20, choices=StatusLicencaTerminal.choices, default=StatusLicencaTerminal.PENDENTE)
+    licenca_liberada_em = models.DateTimeField(null=True, blank=True)
+    licenca_liberada_por = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.PROTECT, null=True, blank=True, related_name="terminais_pdv_liberados")
+    observacao_licenca = models.CharField(max_length=255, blank=True)
     ativo = models.BooleanField(default=True)
     ultima_conexao = models.DateTimeField(null=True, blank=True)
     ultimo_ip = models.GenericIPAddressField(null=True, blank=True)
@@ -49,6 +93,10 @@ class TerminalPdv(models.Model):
 
     def validar_chave_api(self, chave):
         return bool(chave and self.chave_api_hash and check_password(chave, self.chave_api_hash))
+
+    @property
+    def licenca_liberada(self):
+        return self.ativo and self.status_licenca == StatusLicencaTerminal.LIBERADA
 
 
 class Caixa(models.Model):

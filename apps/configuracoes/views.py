@@ -5,15 +5,17 @@ from django.contrib import messages
 from django.contrib.auth.decorators import login_required
 from django.contrib.auth.models import User
 from django.core.management import call_command
+from django.core.exceptions import PermissionDenied
 from django.db.models import Q
 from django.http import HttpResponse, JsonResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.utils import timezone
 
+from apps.accounts.models import TipoPerfil
 from apps.accounts.permissions import SISTEMA, role_required
 from apps.empresas.models import Empresa, EventoSincronizacao, Filial, StatusSincronizacao
 from apps.fiscal.models import ConfiguracaoFiscal
-from apps.pdv.models import AcessoPdvNuvem, StatusAcessoPdvNuvem, TerminalPdv
+from apps.pdv.models import AcessoPdvNuvem, StatusAcessoPdvNuvem, StatusLicencaTerminal, TerminalPdv
 from apps.vendas.models import FormaPagamento
 
 from .forms import ConfiguracaoImpressaoForm, FormaPagamentoForm, TerminalPdvForm
@@ -53,8 +55,9 @@ CHECKLIST_GRUPOS = [
             ("Bip e retorno automatico de foco", "done", "Leitor envia Enter, inclui o produto, soma repeticoes e devolve o foco ao campo apos o recarregamento."),
             ("Alertas rapidos no PDV", "done", "Mensagens simples viram toasts temporarios; operacoes criticas continuam exigindo confirmacao ou supervisor."),
             ("Autorizacao do PDV em nuvem", "done", "Operador comum fica bloqueado em ambiente de nuvem, tentativa gera solicitacao, admin/gerente recebe alerta visual no topo/menu e decide pelo painel de aprovacao."),
-            ("Arquitetura PDV desktop local", "partial", "PDV dos caixas deve ser um aplicativo instalado na maquina do operador, com tela enxuta de venda, pagamento, caixa, consulta e estorno autorizado, sem telas administrativas completas. O app se comunica com o servidor local da loja pela rede interna; esse servidor local conversa com impressora, balanca, gaveta, TEF e banco operacional da filial. Cadastro por filial, chave individual protegida por hash e bootstrap com registro de conexao implementados. A nuvem/sede sincroniza por API segura, filas e eventos, sem acessar diretamente o banco local do supermercado."),
-            ("TEF/API de maquininha", "partial", "Pagamentos possuem estados controlados, ID externo, NSU e autorizacao; venda rejeita transacao pendente, recusada ou estornada. Pagamentos eletronicos confirmados sem retorno real recebem autorizacao simulada rastreavel, deixando o ponto de troca pronto para o app desktop conectar credito, debito e PIX dinamico ao TEF/API, enviar o valor para a maquininha/provedor e aguardar aprovado, recusado, cancelado ou expirado antes de liberar a venda."),
+            ("Arquitetura PDV desktop local", "partial", "PDV dos caixas deve ser um aplicativo instalado na maquina do operador, com tela enxuta de venda, pagamento, caixa, consulta e estorno autorizado, sem telas administrativas completas. O app se comunica com o servidor local da loja pela rede interna; esse servidor local conversa com impressora, balanca, gaveta, TEF e banco operacional da filial. Cadastro por filial, chave individual protegida por hash e bootstrap com registro de conexao implementados. A nuvem/sede sincroniza por API segura, filas e eventos, sem acessar diretamente o banco local do supermercado. Download/ativacao do app desktop deve exigir autorizacao do admin master, pois cada maquina instalada pode representar uma licenca comercial cobrada por terminal; pacote de ativacao so e entregue para terminal com licenca liberada."),
+            ("Balanca integrada no PDV", "partial", "Produtos ja possuem marcacao de produto pesavel. Terminal PDV agora permite configurar balanca por caixa com protocolo, porta/endereco e modelo; manifesto e pacote JSON do app desktop entregam essa configuracao por maquina. Falta o app desktop ler peso automaticamente no PDV, devolver quantidade em KG, preencher a venda e registrar falhas sem bloquear vendas manuais."),
+            ("TEF/API de maquininha", "partial", "Pagamentos possuem estados controlados, ID externo, NSU e autorizacao; venda rejeita transacao pendente, recusada ou estornada. Terminais PDV agora configuram provedor TEF e modo de integracao por adaptador, permitindo PagBank, Cielo, Stone, Getnet, Rede, SiTef ou outro fornecedor sem prender o sistema a uma operadora. O bootstrap do app desktop expõe o contrato pdv_tef_v1 com tipos credito, debito e PIX dinamico e retorno esperado. Pagamentos eletronicos confirmados sem retorno real recebem autorizacao simulada rastreavel, deixando o ponto de troca pronto para o app desktop enviar o valor para a maquininha/provedor e aguardar aprovado, recusado, cancelado ou expirado antes de liberar a venda."),
             ("Reversao de pagamento misto", "partial", "Cancelamento total estorna parcelas locais e marca PIX/TEF com transacao externa como estorno pendente, preservando motivo e rastreabilidade. Falta automatizar a chamada ao fornecedor e ratear devolucoes parciais."),
             ("Padrao R$ em todos os formularios", "done", "Campos numericos de preco, valor, custo, desconto, taxa, frete e total recebem automaticamente o prefixo R$ no PDV e nas telas administrativas."),
         ],
@@ -104,7 +107,7 @@ CHECKLIST_GRUPOS = [
         "titulo": "Proximas fases",
         "descricao": "Itens previstos na documentacao, ainda fora do MVP atual.",
         "itens": [
-            ("Fiscal/NFC-e", "partial", "Fila fiscal mostra vendas prontas e pendencias antes da acao; tela de produtos fiscais antecipa correcoes de NCM, CEST, origem, CST/CSOSN e aliquota. XML local usa UF e codigo IBGE da filial. A NFC-e deve ser emitida somente apos pagamento confirmado, com contingencia quando a SEFAZ estiver indisponivel; ainda faltam assinatura, schema oficial e transmissao SEFAZ."),
+            ("Fiscal/NFC-e", "partial", "Fila fiscal mostra vendas prontas, pendencias antes da acao e ultima tentativa automatica auditada; tela de produtos fiscais antecipa correcoes de NCM, CEST, origem, CST/CSOSN e aliquota. XML local usa UF e codigo IBGE da filial. A NFC-e segue a regra de ocorrer somente apos pagamento confirmado: por padrao a venda tenta preparar a NFC-e automaticamente, mas o admin pode desativar essa tentativa por terminal PDV quando a empresa decidir operar aquele caixa sem comunicacao fiscal automatica. O PDV exibe no topo se o terminal identificado esta com fiscal automatico ligado ou desligado. Se faltar cadastro fiscal, a venda nao trava e a pendencia fica auditada para correcao. Transmissao simulada em homologacao gera chave, protocolo e auditoria, mas ainda faltam assinatura, schema oficial, transmissao SEFAZ real e contingencia quando a SEFAZ estiver indisponivel."),
             ("Financeiro completo", "partial", "Contas a pagar/receber, baixas, cancelamentos, categorias, fluxo de caixa, conciliacao PDV x financeiro, contas de movimento, vendas a vista do PDV no livro, transferencias entre contas, livro financeiro imutavel, estornos por lancamento inverso, resultado por receitas/despesas, cards gerenciais e exportacoes criadas. A proxima evolucao inclui integracao final com fiscal/contabilidade e relatorios contabeis oficiais."),
             ("Entradas, saidas e livro contabil", "partial", "Contas de movimento por filial para caixa fisico, banco, PIX e outras foram criadas com saldo inicial e saldo atual. Baixas geram entrada ou saida no livro imutavel, vendas a vista do PDV geram entradas automaticas por forma de pagamento, sangria e suprimento geram saida/entrada automatica no Caixa PDV, transferencias geram lancamentos espelhados, atomicos e auditados entre contas da mesma empresa, e estornos rastreaveis criam lancamento inverso sem alterar o original. O livro possui origem, usuario, data, filtros, exportacao CSV, validacao de saldo e relatorio de receitas, despesas e resultado que ignora transferencias internas. Ainda faltam integracao automatica de origens fiscais/contabeis avancadas e relatorios contabeis oficiais. Referencia funcional identificada no ProjetoLimpoGitHub para migracao adaptada, sem alterar o projeto original."),
             ("Marketplace / pedido online", "partial", "Fluxo operacional completo, API segura com chave por plataforma, validacao de itens, idempotencia e acompanhamento visual de separacao/pagamento na listagem implementados; adaptadores especificos de cada parceiro seguem pendentes."),
@@ -112,7 +115,7 @@ CHECKLIST_GRUPOS = [
             ("Descoberta de impressoras locais", "partial", "Central de impressao ja possui campo com sugestoes, aviso operacional e endpoint JSON preparado para o app desktop listar impressoras instaladas na maquina."),
             ("Gaveta de dinheiro opcional", "partial", "Central de impressao permite habilitar ou desabilitar gaveta automatica por empresa/filial e documento de caixa. Falta o app desktop acionar a impressora ESC-POS por pulso fisico em dinheiro, troco, sangria, suprimento, abertura e fechamento autorizados. Quando desabilitada ou indisponivel, a venda nao deve ser bloqueada; apenas registrar aviso/log operacional."),
             ("Backup/restauracao operacional", "done", "Tela de backup JSON e roteiro de restauracao segura disponiveis em Sistema."),
-            ("Aplicativo desktop/PDF", "partial", "Endpoints de configuracao e payload de impressao da venda preparados para o app desktop, incluindo dados de pagamento eletronico, NSU, autorizacao e transacao externa para cupom e comprovante. Falta empacotar o aplicativo dos caixas, conectar dispositivos locais e implementar sincronizacao resiliente com servidor local/nuvem."),
+            ("Aplicativo desktop/PDF", "partial", "Endpoints de configuracao e payload de impressao da venda preparados para o app desktop, incluindo dados de pagamento eletronico, NSU, autorizacao e transacao externa para cupom e comprovante. Central do App PDV desktop criada no ERP para futuramente disponibilizar o instalador versionado; manifesto JSON do app desktop expõe versao planejada, contratos TEF/impressao/sincronizacao, recursos locais e terminais autorizados. Pacote JSON por terminal entrega bootstrap, TEF, fiscal, impressao, gaveta, balanca configurada, licenca por maquina e sincronizacao para configurar cada terminal autorizado; terminais pendentes, bloqueados ou cancelados nao recebem pacote de ativacao. O aplicativo deve ser um projeto/artefato separado, baixado por dentro do sistema somente com autorizacao do admin master e configurado com o terminal autorizado. Falta empacotar o aplicativo dos caixas, conectar dispositivos locais e implementar sincronizacao resiliente com servidor local/nuvem."),
             ("Sincronizacao loja-nuvem", "partial", "Empresa escolhe entre servidor local, hibrido e nuvem com agente. Caixa de saida, processador HTTP e caixa de entrada autenticada usam UUID, idempotencia, token fora do banco, timeout, lotes e retentativa exponencial. Eventos recebidos ficam armazenados antes de alterar dados e ja passam por processador interno com handlers por tipo, erro controlado para dominios ainda nao implementados, handler inicial de produtos, handler de saldo de estoque por filial, espelho de venda finalizada com painel de retaguarda, espelho fiscal sincronizado, detalhe auditavel de eventos com payload e diagnostico, resolucao manual de conflitos com responsavel e decisao registrada, exportacao CSV das filas de saida e entrada, comando unico agendavel e roteiro do Agendador de Tarefas do Windows no painel. Ainda faltam instalar o agendador Windows no servidor, transmissao SEFAZ real e politicas automaticas finais de resolucao de conflitos."),
             ("Super admin personalizado", "partial", "Painel proprio centraliza empresas, usuarios, fiscal, formas de pagamento, impressoes, backup, auditoria e checklist, sem atalho visual para o admin Django; ainda faltam telas internas para alguns modelos avancados."),
         ],
@@ -130,6 +133,22 @@ DOCUMENTOS_PROJETO = [
     ("Mapa de telas e fluxos", "docs/protótipos/06_mapa_telas_fluxos_sistema_supermercado.docx"),
     ("Backup e restauracao", "docs/PLANO_BACKUP_RESTAURACAO_SUPERMERCADO.md"),
 ]
+PDV_DESKTOP_VERSAO_PLANEJADA = "0.1.0"
+
+
+def _usuario_admin_master(user):
+    if user.is_superuser:
+        return True
+    perfil = getattr(user, "perfil_supermercado", None)
+    if perfil and perfil.is_active and perfil.tipo == TipoPerfil.ADMINISTRADOR:
+        return True
+    return False
+
+
+def _exigir_admin_master(user):
+    if _usuario_admin_master(user):
+        return
+    raise PermissionDenied
 
 
 def _resumo_checklist(grupos):
@@ -235,6 +254,13 @@ def painel_sistema(request):
             "status": f"{TerminalPdv.objects.filter(ativo=True).count()} ativo(s)",
         },
         {
+            "titulo": "App PDV desktop",
+            "descricao": "Instalador, requisitos e contrato local do caixa.",
+            "icone": "fa-desktop",
+            "url": "configuracoes:pdv_desktop",
+            "status": "Bridge local",
+        },
+        {
             "titulo": "Sincronizacao",
             "descricao": "Fila segura entre servidores locais e nuvem, com idempotencia e tentativas.",
             "icone": "fa-arrows-rotate",
@@ -294,6 +320,166 @@ def checklist_projeto(request):
 
 @login_required
 @role_required(*SISTEMA)
+def pdv_desktop(request):
+    _exigir_admin_master(request.user)
+    terminais = TerminalPdv.objects.select_related("filial", "filial__empresa").order_by("filial__nome", "nome")
+    context = {
+        "terminais": terminais,
+        "versao_planejada": PDV_DESKTOP_VERSAO_PLANEJADA,
+        "artefatos": [
+            {
+                "nome": "Windows x64",
+                "status": "Planejado",
+                "descricao": "Instalador .msi/.exe assinado para maquinas de caixa.",
+            },
+            {
+                "nome": "Bridge local",
+                "status": "Contrato pronto",
+                "descricao": "Conecta impressora, gaveta, TEF, balanca e servidor local da loja.",
+            },
+        ],
+    }
+    return render(request, "configuracoes/pdv_desktop.html", context)
+
+
+def _pdv_desktop_manifest_payload(request):
+    terminais = TerminalPdv.objects.select_related("filial", "filial__empresa").order_by("filial__nome", "nome")
+    return {
+        "status": "ok",
+        "versao_planejada": PDV_DESKTOP_VERSAO_PLANEJADA,
+        "distribuicao": "erp",
+        "licenciamento": {
+            "modelo": "por_terminal",
+            "download_requer_admin_master": True,
+            "ativacao_requer_terminal_autorizado": True,
+            "observacao": "Cada maquina de caixa deve ser liberada pelo admin master antes de baixar/ativar o app desktop.",
+        },
+        "contratos": {
+            "tef": "pdv_tef_v1",
+            "impressao": "pdv_print_v1",
+            "sincronizacao": "pdv_sync_v1",
+        },
+        "recursos": {
+            "tef_integrado": True,
+            "impressao_desktop": True,
+            "gaveta_opcional": True,
+            "balanca_local": True,
+            "fiscal_por_terminal": True,
+            "modo_offline": True,
+        },
+        "artefatos": {
+            "windows_x64": {
+                "status": "planejado",
+                "nome": "Instalador Windows x64",
+                "url": "",
+            }
+        },
+        "terminais": [
+            {
+                "identificador": str(terminal.identificador),
+                "nome": terminal.nome,
+                "filial": terminal.filial.nome,
+                "empresa": str(terminal.filial.empresa),
+                "ativo": terminal.ativo,
+                "licenca": {
+                    "status": terminal.status_licenca,
+                    "liberada": terminal.licenca_liberada,
+                    "liberada_em": terminal.licenca_liberada_em.isoformat() if terminal.licenca_liberada_em else None,
+                },
+                "emite_documento_fiscal": terminal.emite_documento_fiscal,
+                "permite_modo_offline": terminal.permite_modo_offline,
+                "provedor_tef": terminal.provedor_tef,
+                "modo_integracao_tef": terminal.modo_integracao_tef,
+                "balanca": {
+                    "habilitada": terminal.usa_balanca,
+                    "protocolo": terminal.protocolo_balanca,
+                    "porta": terminal.porta_balanca,
+                    "modelo": terminal.modelo_balanca,
+                },
+                "chave_api_prefixo": terminal.chave_api_prefixo,
+                "bootstrap_url": request.build_absolute_uri("/pdv/api/terminal/bootstrap/"),
+            }
+            for terminal in terminais
+        ],
+    }
+
+
+@login_required
+@role_required(*SISTEMA)
+def pdv_desktop_manifest(request):
+    _exigir_admin_master(request.user)
+    return JsonResponse(_pdv_desktop_manifest_payload(request))
+
+
+def _pdv_desktop_terminal_payload(request, terminal):
+    return {
+        "status": "ok",
+        "versao_planejada": PDV_DESKTOP_VERSAO_PLANEJADA,
+        "terminal": {
+            "identificador": str(terminal.identificador),
+            "nome": terminal.nome,
+            "descricao": terminal.descricao,
+            "ativo": terminal.ativo,
+            "chave_api_prefixo": terminal.chave_api_prefixo,
+        },
+        "licenciamento": {
+            "modelo": "por_terminal",
+            "download_requer_admin_master": True,
+            "terminal_autorizado": terminal.licenca_liberada,
+            "status": terminal.status_licenca,
+            "observacao": "Pacote destinado apenas a maquina licenciada e autorizada pelo admin master.",
+        },
+        "filial": {
+            "id": terminal.filial_id,
+            "nome": terminal.filial.nome,
+            "empresa": str(terminal.filial.empresa),
+        },
+        "servidor": {
+            "base_url": request.build_absolute_uri("/").rstrip("/"),
+            "bootstrap_url": request.build_absolute_uri("/pdv/api/terminal/bootstrap/"),
+            "manifest_url": request.build_absolute_uri("/configuracoes/pdv-desktop/manifest.json"),
+        },
+        "fiscal": {
+            "emissao_automatica": terminal.emite_documento_fiscal,
+            "observacao": "Quando falso, este terminal nao tenta preparar NFC-e automaticamente.",
+        },
+        "tef": {
+            "contrato": "pdv_tef_v1",
+            "provedor": terminal.provedor_tef,
+            "modo_integracao": terminal.modo_integracao_tef,
+            "tipos_pagamento": ["CREDITO", "DEBITO", "PIX"],
+            "retorno_esperado": ["status", "transacao_externa_id", "nsu", "codigo_autorizacao", "mensagem_processadora"],
+        },
+        "dispositivos": {
+            "impressora": {"contrato": "pdv_print_v1", "config_url": request.build_absolute_uri("/configuracoes/impressoes/desktop.json")},
+            "gaveta": {"opcional": True},
+            "balanca": {
+                "opcional": True,
+                "habilitada": terminal.usa_balanca,
+                "protocolo": terminal.protocolo_balanca,
+                "porta": terminal.porta_balanca,
+                "modelo": terminal.modelo_balanca,
+            },
+        },
+        "sincronizacao": {
+            "contrato": "pdv_sync_v1",
+            "modo_offline_permitido": terminal.permite_modo_offline,
+        },
+    }
+
+
+@login_required
+@role_required(*SISTEMA)
+def pdv_desktop_terminal_pacote(request, pk):
+    _exigir_admin_master(request.user)
+    terminal = get_object_or_404(TerminalPdv.objects.select_related("filial", "filial__empresa"), pk=pk)
+    if not terminal.licenca_liberada:
+        raise PermissionDenied
+    return JsonResponse(_pdv_desktop_terminal_payload(request, terminal))
+
+
+@login_required
+@role_required(*SISTEMA)
 def formas_pagamento(request):
     formas = FormaPagamento.objects.order_by("-ativo", "nome")
     return render(request, "configuracoes/formas_pagamento.html", {"formas": formas})
@@ -325,7 +511,20 @@ def terminal_pdv_form(request, pk=None):
     terminal = get_object_or_404(TerminalPdv, pk=pk) if pk else None
     form = TerminalPdvForm(request.POST or None, instance=terminal)
     if request.method == "POST" and form.is_valid():
+        terminal_anterior = terminal
         terminal = form.save(commit=False)
+        if not _usuario_admin_master(request.user):
+            if terminal_anterior:
+                terminal.status_licenca = terminal_anterior.status_licenca
+                terminal.licenca_liberada_em = terminal_anterior.licenca_liberada_em
+                terminal.licenca_liberada_por = terminal_anterior.licenca_liberada_por
+                terminal.observacao_licenca = terminal_anterior.observacao_licenca
+            else:
+                terminal.status_licenca = StatusLicencaTerminal.PENDENTE
+                terminal.observacao_licenca = "Aguardando liberacao do admin master."
+        elif terminal.status_licenca == StatusLicencaTerminal.LIBERADA and not terminal.licenca_liberada_em:
+            terminal.licenca_liberada_em = timezone.now()
+            terminal.licenca_liberada_por = request.user
         chave_nova = None
         if not terminal.chave_api_hash:
             chave_nova = terminal.gerar_chave_api()

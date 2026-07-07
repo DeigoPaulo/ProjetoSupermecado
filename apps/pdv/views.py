@@ -63,6 +63,9 @@ def terminal_bootstrap(request):
                 "identificador": str(terminal.identificador),
                 "nome": terminal.nome,
                 "permite_modo_offline": terminal.permite_modo_offline,
+                "emite_documento_fiscal": terminal.emite_documento_fiscal,
+                "provedor_tef": terminal.provedor_tef,
+                "modo_integracao_tef": terminal.modo_integracao_tef,
             },
             "filial": {
                 "id": terminal.filial_id,
@@ -73,6 +76,15 @@ def terminal_bootstrap(request):
                 "venda_local": True,
                 "impressao_desktop": True,
                 "sincronizacao_assincrona": True,
+                "emissao_fiscal_automatica": terminal.emite_documento_fiscal,
+                "tef_integrado": terminal.provedor_tef != "NAO_CONFIGURADO",
+            },
+            "tef": {
+                "provedor": terminal.provedor_tef,
+                "modo_integracao": terminal.modo_integracao_tef,
+                "contrato": "pdv_tef_v1",
+                "tipos_pagamento": ["CREDITO", "DEBITO", "PIX"],
+                "retorno_esperado": ["status", "transacao_externa_id", "nsu", "codigo_autorizacao", "mensagem_processadora"],
             },
             "servidor_em": timezone.localtime().isoformat(),
         }
@@ -82,6 +94,13 @@ def terminal_bootstrap(request):
 def _filial_do_usuario(user):
     perfil = getattr(user, "perfil_supermercado", None)
     return perfil.filial if perfil else None
+
+
+def _terminal_da_requisicao(request):
+    identificador = request.headers.get("X-Terminal-ID", "").strip()
+    if not identificador:
+        return None
+    return TerminalPdv.objects.filter(identificador=identificador, ativo=True).first()
 
 
 def _bloqueio_pdv_nuvem(request):
@@ -222,7 +241,14 @@ def pdv(request):
                 messages.error(request, "Valor pago pelo cliente nao pode ser menor que o total final.")
                 return redirect("pdv:pdv")
             try:
-                venda = finalizar_venda(usuario=request.user, itens=items, pagamentos=pagamentos, **dados_venda)
+                terminal = _terminal_da_requisicao(request)
+                venda = finalizar_venda(
+                    usuario=request.user,
+                    itens=items,
+                    pagamentos=pagamentos,
+                    preparar_fiscal=terminal.emite_documento_fiscal if terminal else True,
+                    **dados_venda,
+                )
                 pre_venda_id = request.session.get(PRE_VENDA_SESSION_KEY)
                 if pre_venda_id:
                     pre_venda = PreVenda.objects.filter(id=pre_venda_id, status=StatusPreVenda.ABERTA).first()
@@ -260,6 +286,7 @@ def pdv(request):
 
     items, total = _cart_items(cart)
     quantidade_itens = sum((item["quantidade"] for item in items), Decimal("0.000"))
+    terminal_requisicao = _terminal_da_requisicao(request)
     caixa_aberto = Caixa.objects.filter(status=StatusCaixa.ABERTO).select_related("filial", "filial__empresa", "usuario_abertura").first()
     filial_visual = caixa_aberto.filial if caixa_aberto else Filial.objects.select_related("empresa").filter(is_active=True).first()
     caixas_recentes = Caixa.objects.select_related("filial", "usuario_abertura", "usuario_fechamento").order_by("-data_abertura")[:8]
@@ -285,6 +312,7 @@ def pdv(request):
             "items": items,
             "quantidade_itens": quantidade_itens,
             "total": total,
+            "terminal_requisicao": terminal_requisicao,
             "caixa_aberto": caixa_aberto,
             "filial_visual": filial_visual,
             "formas_pagamento": FormaPagamento.objects.filter(ativo=True),

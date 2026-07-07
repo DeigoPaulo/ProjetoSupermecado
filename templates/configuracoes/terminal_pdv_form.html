@@ -19,7 +19,32 @@
       <label class="form-field"><span>{{ form.filial.label }}</span>{{ form.filial }}{{ form.filial.errors }}</label>
       <label class="form-field"><span>{{ form.nome.label }}</span>{{ form.nome }}{{ form.nome.errors }}</label>
       <label class="form-field form-field-wide"><span>{{ form.descricao.label }}</span>{{ form.descricao }}{{ form.descricao.errors }}</label>
+      <label class="form-field"><span>{{ form.provedor_tef.label }}</span>{{ form.provedor_tef }}{{ form.provedor_tef.errors }}</label>
+      <label class="form-field"><span>{{ form.modo_integracao_tef.label }}</span>{{ form.modo_integracao_tef }}{{ form.modo_integracao_tef.errors }}</label>
+      <div class="form-note form-field-wide">
+        <strong>TEF por adaptador.</strong>
+        <span>O PDV envia valor, tipo de pagamento e identificador da venda para o app desktop. O adaptador configurado conversa com a operadora escolhida e devolve aprovado, recusado, NSU e autorizacao.</span>
+      </div>
+      <label class="toggle-field">{{ form.usa_balanca }} <span>{{ form.usa_balanca.label }}</span>{{ form.usa_balanca.errors }}</label>
+      <label class="form-field"><span>{{ form.protocolo_balanca.label }}</span>{{ form.protocolo_balanca }}{{ form.protocolo_balanca.errors }}</label>
+      <label class="form-field"><span>{{ form.porta_balanca.label }}</span>{{ form.porta_balanca }}{{ form.porta_balanca.errors }}</label>
+      <label class="form-field"><span>{{ form.modelo_balanca.label }}</span>{{ form.modelo_balanca }}{{ form.modelo_balanca.errors }}</label>
+      <div class="form-note form-field-wide">
+        <strong>Balanca local.</strong>
+        <span>Quando habilitada, o app desktop lê o peso na maquina do caixa e devolve a quantidade em KG para produtos pesaveis. Se indisponivel, o operador ainda pode informar a quantidade manualmente.</span>
+      </div>
+      <label class="form-field"><span>{{ form.status_licenca.label }}</span>{{ form.status_licenca }}{{ form.status_licenca.errors }}</label>
+      <label class="form-field"><span>{{ form.observacao_licenca.label }}</span>{{ form.observacao_licenca }}{{ form.observacao_licenca.errors }}</label>
+      <div class="form-note form-field-wide">
+        <strong>Licenciamento do app desktop.</strong>
+        <span>O instalador e o pacote de ativacao devem ser liberados pelo admin master por terminal/maquina contratada. Terminal bloqueado ou pendente nao deve ativar o app no caixa.</span>
+      </div>
       <label class="toggle-field">{{ form.permite_modo_offline }} <span>{{ form.permite_modo_offline.label }}</span>{{ form.permite_modo_offline.errors }}</label>
+      <label class="toggle-field">{{ form.emite_documento_fiscal }} <span>{{ form.emite_documento_fiscal.label }}</span>{{ form.emite_documento_fiscal.errors }}</label>
+      <div class="form-note form-field-wide">
+        <strong>Fiscal por terminal.</strong>
+        <span>Quando desativado, este PDV nao tenta preparar/transmitir NFC-e automaticamente. Use somente por decisao administrativa da empresa; obrigacoes fiscais continuam dependendo da legislacao e do contador.</span>
+      </div>
       <label class="toggle-field">{{ form.ativo }} <span>{{ form.ativo.label }}</span>{{ form.ativo.errors }}</label>
       {% if object %}
         <div class="form-note form-field-wide"><strong>Identificador do aplicativo.</strong><span><code>{{ object.identificador }}</code></span></div>
