@@ -14,6 +14,7 @@
       <button class="secondary-button" type="submit"><i class="fa-solid fa-wand-magic-sparkles"></i> Criar padroes</button>
     </form>
     <a class="primary-button" href="{% url 'configuracoes:impressao_nova' %}"><i class="fa-solid fa-plus"></i> Nova configuracao</a>
+    <a class="secondary-button" href="{% url 'configuracoes:modelo_etiqueta_novo' %}"><i class="fa-solid fa-tag"></i> Novo modelo de etiqueta</a>
   </div>
 </header>
 
@@ -23,6 +24,31 @@
   <article class="metric"><span>Automaticas</span><strong>{{ resumo.automaticas }}</strong></article>
   <article class="metric"><span>Com gaveta</span><strong>{{ resumo.gavetas }}</strong></article>
   <article class="metric"><span>Sem impressora</span><strong>{{ resumo.sem_impressora }}</strong></article>
+</section>
+
+<section class="panel">
+  <div class="panel-title">Modelos de etiqueta</div>
+  <div class="table-wrapper">
+    <table>
+      <thead><tr><th>Modelo</th><th>Escopo</th><th>Terminal</th><th>Medidas</th><th>Colunas</th><th>Orientacao</th><th>Status</th><th></th></tr></thead>
+      <tbody>
+        {% for modelo in modelos_etiqueta %}
+          <tr>
+            <td><strong>{{ modelo.nome }}</strong>{% if modelo.padrao %}<br><span class="status status-success">Padrao</span>{% endif %}</td>
+            <td>{{ modelo.configuracao.empresa }}<br><small>{{ modelo.configuracao.filial|default:"Todas as filiais" }}</small></td>
+            <td>{{ modelo.terminal|default:"Todos" }}</td>
+            <td>{{ modelo.largura_mm }} x {{ modelo.altura_mm }} mm</td>
+            <td>{{ modelo.colunas }}</td>
+            <td>{{ modelo.get_orientacao_display }}</td>
+            <td>{% if modelo.is_active %}<span class="status status-success">Ativo</span>{% else %}<span class="status status-muted">Inativo</span>{% endif %}</td>
+            <td><a class="secondary-button" href="{% url 'configuracoes:modelo_etiqueta_editar' modelo.pk %}">Editar</a></td>
+          </tr>
+        {% empty %}
+          <tr><td colspan="8" class="empty">Nenhum modelo profissional cadastrado.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
 </section>
 
 <section class="operation-notice">

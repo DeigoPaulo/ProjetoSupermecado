@@ -7,7 +7,7 @@
   <header class="page-header labels-header">
     <div>
       <h1>Etiquetas</h1>
-      <p>Gere etiquetas de gondola com nome, codigo e preco.</p>
+      <p>Gere etiquetas de gondola com busca por codigo de barras, SKU ou nome.</p>
     </div>
     <a class="secondary-button" href="{% url 'produtos:lista' %}">Voltar</a>
   </header>
@@ -17,27 +17,42 @@
     <div class="form-actions">
       <button class="primary-button" type="submit">Gerar etiquetas</button>
       {% if etiquetas %}
-        <button class="secondary-button" type="button" onclick="window.print()">Imprimir</button>
+        <button class="secondary-button" type="button" onclick="window.print()"><i class="fa-solid fa-print"></i> Imprimir pelo navegador</button>
+        {% if impressao_nativa_disponivel %}
+          <button class="primary-button" id="labels-native-print" type="button"><i class="fa-solid fa-tag"></i> Imprimir direto</button>
+        {% endif %}
       {% endif %}
     </div>
+    <p class="form-help form-field-wide" id="labels-print-feedback" role="status" aria-live="polite"></p>
   </form>
 
   {% if etiquetas %}
-    <section class="label-sheet mt-panel">
+    <section class="label-sheet label-sheet-{{ modelo_etiqueta }} mt-panel"{% if modelo_etiqueta == "configurado" and modelo_salvo %} style="--label-width: {{ modelo_salvo.largura_mm|stringformat:'s' }}mm; --label-height: {{ modelo_salvo.altura_mm|stringformat:'s' }}mm; --label-gap-x: {{ modelo_salvo.gap_horizontal_mm|stringformat:'s' }}mm; --label-gap-y: {{ modelo_salvo.gap_vertical_mm|stringformat:'s' }}mm; --label-columns: {{ modelo_salvo.colunas }};" data-orientacao="{{ modelo_salvo.orientacao }}"{% elif modelo_etiqueta == "configurado" and configuracao_etiqueta %} style="--label-width: {{ configuracao_etiqueta.largura_etiqueta_mm|stringformat:'s' }}mm; --label-height: {{ configuracao_etiqueta.altura_etiqueta_mm|stringformat:'s' }}mm; --label-gap-x: {{ configuracao_etiqueta.gap_horizontal_mm|stringformat:'s' }}mm; --label-gap-y: {{ configuracao_etiqueta.gap_vertical_mm|stringformat:'s' }}mm; --label-columns: {{ configuracao_etiqueta.colunas_etiqueta }};"{% endif %}>
       {% for produto in etiquetas %}
-        <article class="price-label">
+        <article class="price-label price-label-{{ modelo_etiqueta }}">
           <div class="label-store">SUPERMERCADO</div>
           <div class="label-name">{{ produto.nome }}</div>
           <div class="label-code">{{ produto.codigo_barras }}</div>
           <div class="label-price">R$ {{ produto.preco_etiqueta|floatformat:2 }}</div>
-          <div class="label-meta">{{ produto.unidade }}{% if produto.marca %} - {{ produto.marca }}{% endif %}</div>
+          <div class="label-meta">
+            {{ produto.unidade }}{% if produto.marca %} - {{ produto.marca }}{% endif %}
+            {% if produto.codigo_interno %}<span>SKU {{ produto.codigo_interno }}</span>{% endif %}
+          </div>
         </article>
       {% endfor %}
     </section>
+    {% if modelo_etiqueta == "configurado" %}
+      {% if configuracao_etiqueta %}
+        <p class="labels-print-summary">{% if modelo_salvo %}{{ modelo_salvo.nome }} | {{ modelo_salvo.get_orientacao_display }} | {% endif %}{{ configuracao_etiqueta.impressora_padrao|default:"Impressora nao definida" }} | {{ configuracao_etiqueta.dpi_impressora }} DPI | {{ configuracao_etiqueta.get_tipo_midia_etiqueta_display }} | {{ configuracao_etiqueta.get_linguagem_impressora_display }}</p>
+      {% else %}
+        <div class="notice notice-warning">Cadastre uma configuracao de impressao do tipo Etiqueta antes de usar o modelo profissional.</div>
+      {% endif %}
+    {% endif %}
   {% elif request.GET %}
     <div class="panel mt-panel">
       <div class="empty p-3">Nenhum produto encontrado para os filtros informados.</div>
     </div>
   {% endif %}
+  {% if payload_etiquetas %}{{ payload_etiquetas|json_script:"labels-native-payload" }}{% endif %}
   </div>
 {% endblock %}

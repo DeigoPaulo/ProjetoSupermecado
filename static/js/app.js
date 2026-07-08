@@ -48,6 +48,37 @@ document.addEventListener("DOMContentLoaded", function () {
 
   aplicarSelect2();
 
+  var labelsNativePrint = document.getElementById("labels-native-print");
+  if (labelsNativePrint) {
+    labelsNativePrint.addEventListener("click", function () {
+      var feedback = document.getElementById("labels-print-feedback");
+      var payloadElement = document.getElementById("labels-native-payload");
+      var bridge = window.SupermercadoDesktop && window.SupermercadoDesktop.printLabels;
+      if (!bridge) {
+        if (feedback) feedback.textContent = "Impressao direta disponivel somente no aplicativo desktop. Use a impressao pelo navegador neste computador.";
+        return;
+      }
+      try {
+        var payload = JSON.parse(payloadElement.textContent);
+        labelsNativePrint.disabled = true;
+        if (feedback) feedback.textContent = "Enviando etiquetas para a impressora...";
+        Promise.resolve(bridge(payload)).then(function (resultado) {
+          if (!resultado || resultado.status !== "ok") {
+            throw new Error((resultado && resultado.mensagem) || "A impressora nao confirmou o lote.");
+          }
+          if (feedback) feedback.textContent = "Etiquetas enviadas para " + resultado.impressora + ".";
+        }).catch(function (erro) {
+          if (feedback) feedback.textContent = "Falha na impressao direta: " + erro.message;
+        }).finally(function () {
+          labelsNativePrint.disabled = false;
+        });
+      } catch (erro) {
+        labelsNativePrint.disabled = false;
+        if (feedback) feedback.textContent = "Nao foi possivel preparar o lote: " + erro.message;
+      }
+    });
+  }
+
   function aplicarCamposMonetarios(root) {
     var escopo = root || document;
     var nomesMonetarios = /(^|_)(valor|preco|custo|desconto|taxa|frete|total)(_|$)/i;

@@ -2038,6 +2038,26 @@ button:disabled {
   align-items: start;
 }
 
+.label-sheet-compacto {
+  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+}
+
+.label-sheet-completo {
+  grid-template-columns: repeat(auto-fill, minmax(230px, 1fr));
+}
+
+.label-sheet-configurado {
+  grid-template-columns: repeat(var(--label-columns, 1), minmax(180px, 1fr));
+  column-gap: var(--label-gap-x, 2mm);
+  row-gap: var(--label-gap-y, 2mm);
+}
+
+.labels-print-summary {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 700;
+}
+
 .price-label {
   display: grid;
   align-content: space-between;
@@ -2048,6 +2068,30 @@ button:disabled {
   border-radius: 8px;
   background: #ffffff;
   color: #111827;
+}
+
+.price-label-compacto {
+  grid-template-columns: minmax(0, 1fr) auto;
+  min-height: 86px;
+  gap: 4px 10px;
+}
+
+.price-label-compacto .label-store,
+.price-label-compacto .label-code,
+.price-label-compacto .label-meta {
+  grid-column: 1;
+}
+
+.price-label-compacto .label-name {
+  grid-column: 1;
+  min-height: 28px;
+}
+
+.price-label-compacto .label-price {
+  grid-column: 2;
+  grid-row: 1 / span 4;
+  align-self: center;
+  font-size: 30px;
 }
 
 .label-store {
@@ -2086,6 +2130,11 @@ button:disabled {
   font-weight: 700;
 }
 
+.label-meta span {
+  display: inline-block;
+  margin-left: 6px;
+}
+
 @media print {
   body {
     background: #ffffff;
@@ -2094,6 +2143,7 @@ button:disabled {
   body:has(.labels-page) .sidebar,
   body:has(.labels-page) .labels-header,
   body:has(.labels-page) .labels-filter,
+  body:has(.labels-page) .labels-print-summary,
   body:has(.labels-page) .messages {
     display: none !important;
   }
@@ -2107,20 +2157,75 @@ button:disabled {
   }
 
   body:has(.labels-page) .label-sheet {
-    grid-template-columns: repeat(3, 60mm);
-    gap: 4mm;
+    gap: 0;
     margin: 0;
   }
 
   body:has(.labels-page) .price-label {
-    width: 60mm;
-    min-height: 35mm;
-    border: 1px solid #111827;
+    border: 0;
     border-radius: 0;
+    box-shadow: none;
+    color: #000000;
     page-break-inside: avoid;
   }
 
-  body:has(.labels-page) .label-price {
+  body:has(.labels-page) .label-sheet-compacto {
+    grid-template-columns: repeat(1, 110mm);
+  }
+
+  body:has(.labels-page) .price-label-compacto {
+    width: 110mm;
+    height: 30mm;
+    min-height: 30mm;
+    padding: 3mm 4mm;
+  }
+
+  body:has(.labels-page) .price-label-compacto .label-name {
+    min-height: 11mm;
+    font-size: 13px;
+  }
+
+  body:has(.labels-page) .price-label-compacto .label-price {
+    font-size: 32px;
+  }
+
+  body:has(.labels-page) .label-sheet-completo {
+    grid-template-columns: repeat(1, 100mm);
+  }
+
+  body:has(.labels-page) .price-label-completo {
+    width: 100mm;
+    height: 50mm;
+    min-height: 50mm;
+    padding: 5mm;
+  }
+
+  body:has(.labels-page) .label-sheet-configurado {
+    grid-template-columns: repeat(var(--label-columns, 1), var(--label-width, 110mm));
+    column-gap: var(--label-gap-x, 2mm);
+    row-gap: var(--label-gap-y, 2mm);
+  }
+
+  body:has(.labels-page) .price-label-configurado {
+    width: var(--label-width, 110mm);
+    height: var(--label-height, 30mm);
+    min-height: var(--label-height, 30mm);
+    padding: 3mm 4mm;
+  }
+
+  body:has(.labels-page) .label-sheet-a4 {
+    grid-template-columns: repeat(3, 60mm);
+    gap: 4mm;
+  }
+
+  body:has(.labels-page) .price-label-a4 {
+    width: 60mm;
+    min-height: 35mm;
+    padding: 4mm;
+    border: 1px solid #000000;
+  }
+
+  body:has(.labels-page) .price-label-a4 .label-price {
     font-size: 24px;
   }
 }

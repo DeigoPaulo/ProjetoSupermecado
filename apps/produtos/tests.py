@@ -6,6 +6,9 @@ from django.core.files.uploadedfile import SimpleUploadedFile
 from django.test import Client, TestCase
 from PIL import Image
 
+from apps.configuracoes.models import ConfiguracaoImpressao, ModeloEtiqueta, TipoDocumentoImpressao
+from apps.empresas.models import Empresa
+
 from .models import Categoria, Produto, ProdutoImagem
 
 
@@ -171,6 +174,118 @@ class ProdutoViewsTests(TestCase):
         response = self.client.get("/produtos/")
 
         self.assertContains(response, 'src="/media/produtos/')
+
+    def test_etiquetas_tem_modelos_e_busca_por_codigo_interno(self):
+        self.produto.codigo_interno = "SKU-ARROZ-01"
+        self.produto.save(update_fields=["codigo_interno"])
+
+        response = self.client.get(
+            "/produtos/etiquetas/",
+            {"busca": "SKU-ARROZ-01", "modelo": "compacto", "quantidade_copias": "2"},
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "Compacto gondola 110 x 30 mm")
+        self.assertContains(response, "label-sheet-compacto")
+        self.assertContains(response, "SKU SKU-ARROZ-01", count=2)
+        self.assertContains(response, "Arroz", count=2)
+        self.assertContains(response, "Bipe o codigo de barras")
+
+    def test_etiqueta_profissional_aplica_configuracao_da_empresa(self):
+        empresa = Empresa.objects.create(
+            razao_social="Mercado Modelo Ltda",
+            nome_fantasia="Mercado Modelo",
+            cnpj="12345678000199",
+        )
+        ConfiguracaoImpressao.objects.create(
+            empresa=empresa,
+            tipo_documento=TipoDocumentoImpressao.ETIQUETA,
+            largura_etiqueta_mm=Decimal("80.00"),
+            altura_etiqueta_mm=Decimal("40.00"),
+            gap_horizontal_mm=Decimal("3.00"),
+            gap_vertical_mm=Decimal("4.00"),
+            colunas_etiqueta=2,
+            dpi_impressora=300,
+            impressora_padrao="Zebra ZD421",
+            linguagem_impressora="ZPL",
+        )
+
+        response = self.client.get(
+            "/produtos/etiquetas/",
+            {"busca": self.produto.codigo_barras, "modelo": "configurado", "quantidade_copias": "1"},
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "Modelo profissional configurado")
+        self.assertContains(response, "--label-width: 80.00mm")
+        self.assertContains(response, "--label-height: 40.00mm")
+        self.assertContains(response, "--label-columns: 2")
+        self.assertContains(response, "Zebra ZD421")
+        self.assertContains(response, "300 DPI")
+        self.assertContains(response, "Imprimir direto")
+        self.assertEqual(response.context["payload_etiquetas"]["linguagem"], "ZPL")
+        self.assertEqual(response.context["payload_etiquetas"]["modelo"]["largura_mm"], 80.0)
+        self.assertEqual(response.context["payload_etiquetas"]["itens"][0]["copias"], 1)
+
+    def test_etiqueta_profissional_usa_modelo_nomeado(self):
+        empresa = Empresa.objects.create(
+            razao_social="Mercado Etiquetas Ltda",
+            nome_fantasia="Mercado Etiquetas",
+            cnpj="98765432000188",
+        )
+        config = ConfiguracaoImpressao.objects.create(
+            empresa=empresa,
+            tipo_documento=TipoDocumentoImpressao.ETIQUETA,
+            impressora_padrao="Argox OS-214",
+        )
+        modelo = ModeloEtiqueta.objects.create(
+            configuracao=config,
+            nome="Gondola promocional",
+            largura_mm=Decimal("90.00"),
+            altura_mm=Decimal("45.00"),
+            colunas=2,
+            orientacao="PAISAGEM",
+            padrao=True,
+        )
+
+        response = self.client.get(
+            "/produtos/etiquetas/",
+            {
+                "busca": self.produto.codigo_barras,
+                "modelo": "configurado",
+                "modelo_salvo": modelo.id,
+                "quantidade_copias": "1",
+            },
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "--label-width: 90.00mm")
+        self.assertContains(response, "--label-height: 45.00mm")
+        self.assertContains(response, "Gondola promocional")
+        self.assertContains(response, "Argox OS-214")
+
+    def test_impressao_direta_nao_e_oferecida_sem_linguagem_nativa(self):
+        empresa = Empresa.objects.create(
+            razao_social="Mercado Driver Ltda",
+            nome_fantasia="Mercado Driver",
+            cnpj="55443322000100",
+        )
+        ConfiguracaoImpressao.objects.create(
+            empresa=empresa,
+            tipo_documento=TipoDocumentoImpressao.ETIQUETA,
+            impressora_padrao="Impressora do Windows",
+            linguagem_impressora="WINDOWS",
+        )
+
+        response = self.client.get(
+            "/produtos/etiquetas/",
+            {"busca": self.produto.codigo_barras, "modelo": "compacto", "quantidade_copias": "2"},
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertNotContains(response, "Imprimir direto")
+        self.assertContains(response, "Imprimir pelo navegador")
+        self.assertIsNone(response.context["payload_etiquetas"])
 
     def test_lista_produtos_exibe_status_visual_de_marketplace(self):
         self.produto.vendido_no_marketplace = True

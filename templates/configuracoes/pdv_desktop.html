@@ -9,6 +9,11 @@
     <p>Distribuicao do aplicativo instalado nas maquinas de caixa e contrato com o servidor local.</p>
   </div>
   <div class="actions">
+    {% if instalador.disponivel %}
+      <a class="primary-button" href="{% url 'configuracoes:pdv_desktop_download_windows' %}"><i class="fa-solid fa-download"></i> Baixar Windows</a>
+    {% else %}
+      <span class="status status-warning"><i class="fa-solid fa-clock"></i> Aguardando build assinado</span>
+    {% endif %}
     <a class="secondary-button" href="{% url 'configuracoes:pdv_desktop_manifest' %}"><i class="fa-solid fa-code"></i> Manifesto JSON</a>
     <a class="secondary-button" href="{% url 'configuracoes:terminais_pdv' %}"><i class="fa-solid fa-cash-register"></i> Terminais PDV</a>
   </div>
@@ -18,15 +23,26 @@
   <i class="fa-solid fa-circle-info"></i>
   <div>
     <strong>O aplicativo desktop deve ser um artefato separado, baixado somente com autorizacao do admin master.</strong>
-    <span>O ERP guarda empresas, filiais, terminais, permissao fiscal, impressoras, TEF, sincronizacao e licenca por maquina. Cada caixa instalado deve ficar vinculado a um terminal autorizado.</span>
+    <span>O shell desktop abre a mesma tela do PDV web em uma WebView, preservando layout, atalhos e fluxo. O ERP guarda empresas, filiais, terminais, permissao fiscal, impressoras, TEF, sincronizacao e licenca por maquina.</span>
   </div>
 </section>
 
+{% if instalador.disponivel %}
+<section class="operation-notice">
+  <i class="fa-solid fa-shield-halved"></i>
+  <div>
+    <strong>{{ instalador.nome }} pronto para distribuicao</strong>
+    <span>{{ instalador.tamanho|filesizeformat }} · SHA-256 <code>{{ instalador.sha256 }}</code></span>
+  </div>
+</section>
+{% endif %}
+
 <section class="metrics-grid">
-  <article class="metric"><span>Versao planejada</span><strong>{{ versao_planejada }}</strong></article>
-  <article class="metric"><span>Terminais ativos</span><strong>{{ terminais|length }}</strong></article>
+  <article class="metric"><span>Terminais cadastrados</span><strong>{{ total_terminais }}</strong></article>
+  <article class="metric"><span>Licencas liberadas</span><strong>{{ licencas_liberadas }}</strong></article>
+  <article class="metric"><span>Pendentes</span><strong>{{ licencas_pendentes }}</strong></article>
+  <article class="metric"><span>Bloqueadas/canceladas</span><strong>{{ licencas_bloqueadas }}</strong></article>
   <article class="metric"><span>Contrato TEF</span><strong>pdv_tef_v1</strong></article>
-  <article class="metric"><span>Licenca</span><strong>Por terminal</strong></article>
 </section>
 
 <section class="split-grid">
@@ -54,7 +70,7 @@
       <dt>ERP web/local</dt>
       <dd>Cadastros, venda, fiscal, financeiro, terminais, TEF, impressao e sincronizacao.</dd>
       <dt>App desktop</dt>
-      <dd>Conectar dispositivos locais: maquininha/TEF, impressora, gaveta, balanca e contingencia local.</dd>
+      <dd>Reutilizar a tela /pdv/, ativar a maquina com credencial licenciada e conectar TEF, impressora, gaveta, balanca e contingencia local.</dd>
       <dt>Instalador</dt>
       <dd>Gerado em projeto/artefato separado e disponibilizado nesta tela apenas para admin master, com ativacao vinculada ao terminal licenciado.</dd>
       <dt>Licenciamento</dt>

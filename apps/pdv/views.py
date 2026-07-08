@@ -14,6 +14,7 @@ from django.views.decorators.http import require_GET
 from django.views.generic import CreateView, ListView
 
 from apps.accounts.permissions import PDV, SUPERVISAO, RoleRequiredMixin, has_role, role_required, supervisor_from_request
+from apps.auditoria.models import LogAuditoria
 from apps.clientes.models import Cliente
 from apps.configuracoes.models import TipoDocumentoImpressao
 from apps.configuracoes.services import configuracao_impressao_para, estilos_impressao
@@ -36,10 +37,18 @@ CART_SESSION_KEY = "pdv_cart"
 PRE_VENDA_SESSION_KEY = "pdv_pre_venda_id"
 
 
+def _versao_em_partes(valor):
+    try:
+        return tuple(int(parte) for parte in str(valor).split("."))
+    except (TypeError, ValueError):
+        return ()
+
+
 @require_GET
 def terminal_bootstrap(request):
     identificador = request.headers.get("X-Terminal-ID", "").strip()
     chave = request.headers.get("X-Terminal-Key", "").strip()
+    versao_cliente = request.headers.get("X-PDV-Version", "").strip()
     if not identificador or not chave:
         return JsonResponse({"status": "nao_autorizado", "mensagem": "Credenciais do terminal ausentes."}, status=401)
 
@@ -52,10 +61,36 @@ def terminal_bootstrap(request):
         return JsonResponse({"status": "nao_autorizado", "mensagem": "Credenciais do terminal invalidas."}, status=401)
     if not terminal.ativo:
         return JsonResponse({"status": "terminal_inativo", "mensagem": "Este terminal foi desativado pelo administrador."}, status=403)
+    if not terminal.licenca_liberada:
+        LogAuditoria.objects.create(
+            usuario=None,
+            modulo="pdv",
+            acao="BOOTSTRAP_TERMINAL_SEM_LICENCA",
+            descricao=(
+                f"Bootstrap recusado para terminal {terminal.nome} ({terminal.identificador}) "
+                f"com licenca {terminal.get_status_licenca_display()}."
+            ),
+            objeto_tipo="TerminalPdv",
+            objeto_id=str(terminal.id),
+            ip=request.META.get("REMOTE_ADDR"),
+        )
+        return JsonResponse(
+            {
+                "status": "licenca_terminal_bloqueada",
+                "mensagem": "Licenca do terminal pendente, bloqueada ou cancelada.",
+                "licenca": {"status": terminal.status_licenca, "liberada": False},
+            },
+            status=403,
+        )
 
     terminal.ultima_conexao = timezone.now()
     terminal.ultimo_ip = request.META.get("REMOTE_ADDR") or None
     terminal.save(update_fields=["ultima_conexao", "ultimo_ip", "atualizado_em"])
+    versao_vigente = settings.PDV_DESKTOP_VERSION
+    versao_minima = settings.PDV_DESKTOP_MIN_VERSION
+    partes_cliente = _versao_em_partes(versao_cliente)
+    atualizacao_disponivel = bool(partes_cliente and partes_cliente < _versao_em_partes(versao_vigente))
+    atualizacao_obrigatoria = bool(partes_cliente and partes_cliente < _versao_em_partes(versao_minima))
     return JsonResponse(
         {
             "status": "ok",
@@ -66,6 +101,20 @@ def terminal_bootstrap(request):
                 "emite_documento_fiscal": terminal.emite_documento_fiscal,
                 "provedor_tef": terminal.provedor_tef,
                 "modo_integracao_tef": terminal.modo_integracao_tef,
+                "licenca": {"status": terminal.status_licenca, "liberada": True},
+            },
+            "licenciamento": {
+                "modelo": "por_terminal",
+                "status": terminal.status_licenca,
+                "terminal_autorizado": terminal.licenca_liberada,
+            },
+            "aplicativo": {
+                "versao_cliente": versao_cliente or None,
+                "versao_vigente": versao_vigente,
+                "versao_minima": versao_minima,
+                "atualizacao_disponivel": atualizacao_disponivel,
+                "atualizacao_obrigatoria": atualizacao_obrigatoria,
+                "atualizacao_requer_admin_master": True,
             },
             "filial": {
                 "id": terminal.filial_id,
@@ -78,6 +127,16 @@ def terminal_bootstrap(request):
                 "sincronizacao_assincrona": True,
                 "emissao_fiscal_automatica": terminal.emite_documento_fiscal,
                 "tef_integrado": terminal.provedor_tef != "NAO_CONFIGURADO",
+                "balanca_local": terminal.usa_balanca,
+            },
+            "dispositivos": {
+                "balanca": {
+                    "opcional": True,
+                    "habilitada": terminal.usa_balanca,
+                    "protocolo": terminal.protocolo_balanca,
+                    "porta": terminal.porta_balanca,
+                    "modelo": terminal.modelo_balanca,
+                },
             },
             "tef": {
                 "provedor": terminal.provedor_tef,

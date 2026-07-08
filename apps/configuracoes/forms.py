@@ -4,7 +4,7 @@ from apps.core_forms import aplicar_select2
 from apps.pdv.models import TerminalPdv
 from apps.vendas.models import FormaPagamento
 
-from .models import ConfiguracaoImpressao, TipoDocumentoImpressao
+from .models import ConfiguracaoImpressao, ModeloEtiqueta, TipoDocumentoImpressao
 
 
 class ConfiguracaoImpressaoForm(forms.ModelForm):
@@ -28,6 +28,16 @@ class ConfiguracaoImpressaoForm(forms.ModelForm):
             "abrir_gaveta_em_dinheiro",
             "abrir_gaveta_em_movimento_caixa",
             "numero_vias",
+            "largura_etiqueta_mm",
+            "altura_etiqueta_mm",
+            "gap_horizontal_mm",
+            "gap_vertical_mm",
+            "colunas_etiqueta",
+            "dpi_impressora",
+            "densidade_impressao",
+            "velocidade_impressao",
+            "tipo_midia_etiqueta",
+            "linguagem_impressora",
             "is_active",
         ]
         widgets = {
@@ -70,6 +80,68 @@ class ConfiguracaoImpressaoForm(forms.ModelForm):
         if not usa_gaveta:
             cleaned["abrir_gaveta_em_dinheiro"] = False
             cleaned["abrir_gaveta_em_movimento_caixa"] = False
+        if tipo_documento == TipoDocumentoImpressao.ETIQUETA:
+            limites = {
+                "largura_etiqueta_mm": (20, 300, "largura"),
+                "altura_etiqueta_mm": (10, 300, "altura"),
+                "gap_horizontal_mm": (0, 30, "gap horizontal"),
+                "gap_vertical_mm": (0, 30, "gap vertical"),
+                "colunas_etiqueta": (1, 8, "colunas"),
+                "dpi_impressora": (100, 1200, "DPI"),
+                "densidade_impressao": (0, 30, "densidade"),
+                "velocidade_impressao": (1, 14, "velocidade"),
+            }
+            for campo, (minimo, maximo, nome) in limites.items():
+                valor = cleaned.get(campo)
+                if valor is not None and not minimo <= valor <= maximo:
+                    self.add_error(campo, f"Informe {nome} entre {minimo} e {maximo}.")
+        return cleaned
+
+
+class ModeloEtiquetaForm(forms.ModelForm):
+    class Meta:
+        model = ModeloEtiqueta
+        fields = [
+            "configuracao",
+            "terminal",
+            "nome",
+            "largura_mm",
+            "altura_mm",
+            "gap_horizontal_mm",
+            "gap_vertical_mm",
+            "colunas",
+            "orientacao",
+            "padrao",
+            "is_active",
+        ]
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.fields["configuracao"].queryset = ConfiguracaoImpressao.objects.filter(
+            tipo_documento=TipoDocumentoImpressao.ETIQUETA
+        ).select_related("empresa", "filial")
+        aplicar_select2(self, ["configuracao", "terminal"])
+
+    def clean(self):
+        cleaned = super().clean()
+        limites = {
+            "largura_mm": (20, 300, "largura"),
+            "altura_mm": (10, 300, "altura"),
+            "gap_horizontal_mm": (0, 30, "gap horizontal"),
+            "gap_vertical_mm": (0, 30, "gap vertical"),
+            "colunas": (1, 8, "colunas"),
+        }
+        for campo, (minimo, maximo, nome) in limites.items():
+            valor = cleaned.get(campo)
+            if valor is not None and not minimo <= valor <= maximo:
+                self.add_error(campo, f"Informe {nome} entre {minimo} e {maximo}.")
+        configuracao = cleaned.get("configuracao")
+        terminal = cleaned.get("terminal")
+        if terminal and configuracao:
+            filial_incompativel = configuracao.filial_id and terminal.filial_id != configuracao.filial_id
+            empresa_incompativel = not configuracao.filial_id and terminal.filial.empresa_id != configuracao.empresa_id
+            if filial_incompativel or empresa_incompativel:
+                self.add_error("terminal", "O terminal deve pertencer ao escopo da configuracao selecionada.")
         return cleaned
 
 

@@ -63,6 +63,23 @@
   </section>
 
   <section class="panel">
+    <div class="panel-title">Etiqueta profissional</div>
+    <p class="form-help">Aplicado quando o tipo do documento for Etiqueta. As medidas sao enviadas ao app desktop e usadas na impressao em tamanho real.</p>
+    <div class="form-grid">
+      <label class="form-field"><span>{{ form.largura_etiqueta_mm.label }}</span>{{ form.largura_etiqueta_mm }}{{ form.largura_etiqueta_mm.errors }}</label>
+      <label class="form-field"><span>{{ form.altura_etiqueta_mm.label }}</span>{{ form.altura_etiqueta_mm }}{{ form.altura_etiqueta_mm.errors }}</label>
+      <label class="form-field"><span>{{ form.gap_horizontal_mm.label }}</span>{{ form.gap_horizontal_mm }}{{ form.gap_horizontal_mm.errors }}</label>
+      <label class="form-field"><span>{{ form.gap_vertical_mm.label }}</span>{{ form.gap_vertical_mm }}{{ form.gap_vertical_mm.errors }}</label>
+      <label class="form-field"><span>{{ form.colunas_etiqueta.label }}</span>{{ form.colunas_etiqueta }}{{ form.colunas_etiqueta.errors }}</label>
+      <label class="form-field"><span>{{ form.dpi_impressora.label }}</span>{{ form.dpi_impressora }}{{ form.dpi_impressora.errors }}</label>
+      <label class="form-field"><span>{{ form.densidade_impressao.label }}</span>{{ form.densidade_impressao }}{{ form.densidade_impressao.errors }}</label>
+      <label class="form-field"><span>{{ form.velocidade_impressao.label }}</span>{{ form.velocidade_impressao }}{{ form.velocidade_impressao.errors }}</label>
+      <label class="form-field"><span>{{ form.tipo_midia_etiqueta.label }}</span>{{ form.tipo_midia_etiqueta }}{{ form.tipo_midia_etiqueta.errors }}</label>
+      <label class="form-field"><span>{{ form.linguagem_impressora.label }}</span>{{ form.linguagem_impressora }}{{ form.linguagem_impressora.errors }}</label>
+    </div>
+  </section>
+
+  <section class="panel">
     <div class="panel-title">Rodape</div>
     <label class="form-field"><span>{{ form.mensagem_rodape.label }}</span>{{ form.mensagem_rodape }}{{ form.mensagem_rodape.errors }}</label>
   </section>

@@ -1,5 +1,7 @@
 from django import forms
+from django.db.models import Q
 
+from apps.configuracoes.models import ModeloEtiqueta
 from apps.core_forms import aplicar_select2
 
 from .models import Categoria, Marca, Produto, ProdutoImagem
@@ -92,15 +94,24 @@ class ProdutoImportCSVForm(forms.Form):
 class ReajustePrecoForm(forms.Form):
     categoria = forms.ModelChoiceField(label="Categoria", queryset=Categoria.objects.none(), required=False)
     marca = forms.ModelChoiceField(label="Marca", queryset=Marca.objects.none(), required=False)
+    modelo_salvo = forms.ModelChoiceField(label="Modelo profissional", queryset=Produto.objects.none(), required=False)
     percentual = forms.DecimalField(label="Percentual de reajuste", max_digits=6, decimal_places=2)
     motivo = forms.CharField(label="Motivo", max_length=255)
     aplicar_em_promocional = forms.BooleanField(label="Aplicar tambem no preco promocional", required=False)
 
-    def __init__(self, *args, **kwargs):
+    def __init__(self, *args, filial=None, **kwargs):
         super().__init__(*args, **kwargs)
+        from apps.configuracoes.models import ModeloEtiqueta
+
         self.fields["categoria"].queryset = Categoria.objects.all()
         self.fields["marca"].queryset = Marca.objects.all()
-        aplicar_select2(self, ["categoria", "marca"])
+        modelos = ModeloEtiqueta.objects.filter(is_active=True, configuracao__is_active=True).select_related("configuracao")
+        if filial:
+            modelos = modelos.filter(
+                Q(configuracao__filial=filial) | Q(configuracao__filial__isnull=True, configuracao__empresa=filial.empresa)
+            )
+        self.fields["modelo_salvo"].queryset = modelos
+        aplicar_select2(self, ["categoria", "marca", "modelo_salvo"])
 
     def clean(self):
         cleaned = super().clean()
@@ -112,14 +123,40 @@ class ReajustePrecoForm(forms.Form):
 
 
 class EtiquetaProdutoForm(forms.Form):
+    MODELO_COMPACTO = "compacto"
+    MODELO_COMPLETO = "completo"
+    MODELO_A4 = "a4"
+    MODELO_CONFIGURADO = "configurado"
+    MODELOS = [
+        (MODELO_COMPACTO, "Compacto gondola 110 x 30 mm"),
+        (MODELO_COMPLETO, "Completo gondola 100 x 50 mm"),
+        (MODELO_A4, "A4 multiplas etiquetas"),
+        (MODELO_CONFIGURADO, "Modelo profissional configurado"),
+    ]
+
     busca = forms.CharField(label="Busca", max_length=255, required=False)
+    modelo = forms.ChoiceField(label="Modelo", choices=MODELOS, initial=MODELO_COMPACTO)
     categoria = forms.ModelChoiceField(label="Categoria", queryset=Categoria.objects.none(), required=False)
     marca = forms.ModelChoiceField(label="Marca", queryset=Marca.objects.none(), required=False)
+    modelo_salvo = forms.ModelChoiceField(label="Modelo profissional", queryset=ModeloEtiqueta.objects.none(), required=False)
     quantidade_copias = forms.IntegerField(label="Copias por produto", min_value=1, max_value=20, initial=1)
     incluir_inativos = forms.BooleanField(label="Incluir produtos inativos", required=False)
 
-    def __init__(self, *args, **kwargs):
+    def __init__(self, *args, filial=None, **kwargs):
         super().__init__(*args, **kwargs)
+        self.fields["busca"].widget.attrs.update(
+            {
+                "autofocus": "autofocus",
+                "autocomplete": "off",
+                "placeholder": "Bipe o codigo de barras, SKU ou digite o nome",
+            }
+        )
         self.fields["categoria"].queryset = Categoria.objects.all()
         self.fields["marca"].queryset = Marca.objects.all()
-        aplicar_select2(self, ["categoria", "marca"])
+        modelos = ModeloEtiqueta.objects.filter(is_active=True, configuracao__is_active=True).select_related("configuracao")
+        if filial:
+            modelos = modelos.filter(
+                Q(configuracao__filial=filial) | Q(configuracao__filial__isnull=True, configuracao__empresa=filial.empresa)
+            )
+        self.fields["modelo_salvo"].queryset = modelos
+        aplicar_select2(self, ["categoria", "marca", "modelo_salvo"])

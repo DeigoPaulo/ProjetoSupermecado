@@ -30,6 +30,34 @@
   </div>
 </section>
 
+<form method="get" class="filter-bar panel">
+  <label class="form-field">
+    <span>Buscar</span>
+    <input type="search" name="q" value="{{ busca }}" placeholder="Terminal, filial, empresa ou identificador">
+  </label>
+  <label class="form-field">
+    <span>Licenca</span>
+    <select name="licenca">
+      <option value="">Todas</option>
+      {% for value,label in status_licenca_choices %}
+        <option value="{{ value }}" {% if filtro_licenca == value %}selected{% endif %}>{{ label }}</option>
+      {% endfor %}
+    </select>
+  </label>
+  <label class="form-field">
+    <span>Status</span>
+    <select name="status">
+      <option value="">Todos</option>
+      <option value="ativo" {% if filtro_status == "ativo" %}selected{% endif %}>Ativos</option>
+      <option value="inativo" {% if filtro_status == "inativo" %}selected{% endif %}>Inativos</option>
+    </select>
+  </label>
+  <div class="form-actions">
+    <button class="secondary-button" type="submit"><i class="fa-solid fa-filter"></i> Filtrar</button>
+    <a class="secondary-button" href="{% url 'configuracoes:terminais_pdv' %}">Limpar</a>
+  </div>
+</form>
+
 <section class="panel table-panel">
   <div class="table-wrap">
     <table>
@@ -65,6 +93,23 @@
             <td><span class="status-badge {% if terminal.ativo %}success{% else %}muted{% endif %}">{% if terminal.ativo %}Ativo{% else %}Inativo{% endif %}</span></td>
             <td>
               <a class="icon-button" href="{% url 'configuracoes:terminal_pdv_editar' terminal.pk %}" title="Editar terminal"><i class="fa-solid fa-pen"></i></a>
+              {% if terminal.licenca_liberada %}
+                <form method="post" action="{% url 'configuracoes:terminal_pdv_alterar_licenca' terminal.pk 'bloquear' %}" class="inline-form" onsubmit="return confirm('Bloquear a licenca deste terminal? O pacote de ativacao deixara de ser liberado.');">
+                  {% csrf_token %}
+                  <button class="icon-button" type="submit" title="Bloquear licenca"><i class="fa-solid fa-ban"></i></button>
+                </form>
+              {% else %}
+                <form method="post" action="{% url 'configuracoes:terminal_pdv_alterar_licenca' terminal.pk 'liberar' %}" class="inline-form" onsubmit="return confirm('Liberar licenca para esta maquina?');">
+                  {% csrf_token %}
+                  <button class="icon-button" type="submit" title="Liberar licenca"><i class="fa-solid fa-unlock-keyhole"></i></button>
+                </form>
+              {% endif %}
+              {% if terminal.status_licenca != "CANCELADA" %}
+                <form method="post" action="{% url 'configuracoes:terminal_pdv_alterar_licenca' terminal.pk 'cancelar' %}" class="inline-form" onsubmit="return confirm('Cancelar a licenca deste terminal?');">
+                  {% csrf_token %}
+                  <button class="icon-button" type="submit" title="Cancelar licenca"><i class="fa-solid fa-circle-xmark"></i></button>
+                </form>
+              {% endif %}
               <form method="post" action="{% url 'configuracoes:terminal_pdv_regenerar_chave' terminal.pk %}" class="inline-form" onsubmit="return confirm('Renovar a chave? O aplicativo atual deixara de conectar ate ser reconfigurado.');">
                 {% csrf_token %}
                 <button class="icon-button" type="submit" title="Renovar chave"><i class="fa-solid fa-rotate"></i></button>

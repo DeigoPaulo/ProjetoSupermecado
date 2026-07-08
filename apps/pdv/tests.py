@@ -5,6 +5,7 @@ from django.core.exceptions import ValidationError
 from django.test import TestCase, override_settings
 
 from apps.accounts.models import PerfilUsuario, TipoPerfil
+from apps.auditoria.models import LogAuditoria
 from apps.configuracoes.models import ConfiguracaoImpressao, TipoDocumentoImpressao
 from apps.empresas.models import Empresa, Filial
 from apps.estoque.models import Estoque
@@ -13,7 +14,7 @@ from apps.fiscal.models import AmbienteFiscal, ConfiguracaoFiscal, DocumentoFisc
 from apps.produtos.models import Categoria, Produto
 from apps.vendas.models import FormaPagamento, StatusVenda, Venda
 
-from .models import AcessoPdvNuvem, Caixa, ModoIntegracaoTef, ProvedorTef, Sangria, StatusAcessoPdvNuvem, StatusCaixa, Suprimento, TerminalPdv
+from .models import AcessoPdvNuvem, Caixa, ModoIntegracaoTef, ProtocoloBalanca, ProvedorTef, Sangria, StatusAcessoPdvNuvem, StatusCaixa, StatusLicencaTerminal, Suprimento, TerminalPdv
 from .services_acesso import acesso_pdv_nuvem_aprovado, decidir_acesso_pdv_nuvem, solicitar_acesso_pdv_nuvem
 
 
@@ -34,6 +35,11 @@ class AcessoPdvNuvemTests(TestCase):
             emite_documento_fiscal=False,
             provedor_tef=ProvedorTef.PAGBANK,
             modo_integracao_tef=ModoIntegracaoTef.DESKTOP_BRIDGE,
+            status_licenca=StatusLicencaTerminal.LIBERADA,
+            usa_balanca=True,
+            protocolo_balanca=ProtocoloBalanca.SERIAL,
+            porta_balanca="COM3",
+            modelo_balanca="Toledo Prix",
         )
         chave = terminal.gerar_chave_api()
         terminal.save()
@@ -52,14 +58,52 @@ class AcessoPdvNuvemTests(TestCase):
         self.assertFalse(resposta.json()["recursos"]["emissao_fiscal_automatica"])
         self.assertTrue(resposta.json()["recursos"]["tef_integrado"])
         self.assertEqual(resposta.json()["terminal"]["provedor_tef"], ProvedorTef.PAGBANK)
+        self.assertEqual(resposta.json()["terminal"]["licenca"]["status"], StatusLicencaTerminal.LIBERADA)
+        self.assertTrue(resposta.json()["terminal"]["licenca"]["liberada"])
+        self.assertEqual(resposta.json()["licenciamento"]["modelo"], "por_terminal")
+        self.assertTrue(resposta.json()["licenciamento"]["terminal_autorizado"])
+        self.assertTrue(resposta.json()["recursos"]["balanca_local"])
+        self.assertTrue(resposta.json()["dispositivos"]["balanca"]["habilitada"])
+        self.assertEqual(resposta.json()["dispositivos"]["balanca"]["protocolo"], ProtocoloBalanca.SERIAL)
+        self.assertEqual(resposta.json()["dispositivos"]["balanca"]["porta"], "COM3")
+        self.assertEqual(resposta.json()["dispositivos"]["balanca"]["modelo"], "Toledo Prix")
         self.assertEqual(resposta.json()["tef"]["contrato"], "pdv_tef_v1")
         self.assertIn("PIX", resposta.json()["tef"]["tipos_pagamento"])
+        self.assertIsNone(resposta.json()["aplicativo"]["versao_cliente"])
+        self.assertFalse(resposta.json()["aplicativo"]["atualizacao_disponivel"])
+        self.assertTrue(resposta.json()["aplicativo"]["atualizacao_requer_admin_master"])
         terminal.refresh_from_db()
         self.assertIsNotNone(terminal.ultima_conexao)
         self.assertEqual(terminal.ultimo_ip, "192.168.1.25")
 
+    @override_settings(PDV_DESKTOP_VERSION="0.3.0", PDV_DESKTOP_MIN_VERSION="0.2.0")
+    def test_bootstrap_controla_versao_instalada_sem_atualizacao_automatica(self):
+        terminal = TerminalPdv(filial=self.filial, nome="Caixa versao", status_licenca=StatusLicencaTerminal.LIBERADA)
+        chave = terminal.gerar_chave_api()
+        terminal.save()
+
+        opcional = self.client.get(
+            "/pdv/api/terminal/bootstrap/",
+            HTTP_X_TERMINAL_ID=str(terminal.identificador),
+            HTTP_X_TERMINAL_KEY=chave,
+            HTTP_X_PDV_VERSION="0.2.5",
+        )
+        obrigatoria = self.client.get(
+            "/pdv/api/terminal/bootstrap/",
+            HTTP_X_TERMINAL_ID=str(terminal.identificador),
+            HTTP_X_TERMINAL_KEY=chave,
+            HTTP_X_PDV_VERSION="0.1.9",
+        )
+
+        self.assertEqual(opcional.status_code, 200)
+        self.assertTrue(opcional.json()["aplicativo"]["atualizacao_disponivel"])
+        self.assertFalse(opcional.json()["aplicativo"]["atualizacao_obrigatoria"])
+        self.assertEqual(opcional.json()["aplicativo"]["versao_vigente"], "0.3.0")
+        self.assertTrue(obrigatoria.json()["aplicativo"]["atualizacao_obrigatoria"])
+        self.assertTrue(obrigatoria.json()["aplicativo"]["atualizacao_requer_admin_master"])
+
     def test_terminal_rejeita_chave_invalida_e_terminal_inativo(self):
-        terminal = TerminalPdv(filial=self.filial, nome="Caixa 02")
+        terminal = TerminalPdv(filial=self.filial, nome="Caixa 02", status_licenca=StatusLicencaTerminal.LIBERADA)
         chave = terminal.gerar_chave_api()
         terminal.save()
 
@@ -78,6 +122,28 @@ class AcessoPdvNuvemTests(TestCase):
             HTTP_X_TERMINAL_KEY=chave,
         )
         self.assertEqual(inativo.status_code, 403)
+
+    def test_terminal_com_licenca_pendente_nao_inicializa(self):
+        terminal = TerminalPdv(filial=self.filial, nome="Caixa pendente", status_licenca=StatusLicencaTerminal.PENDENTE)
+        chave = terminal.gerar_chave_api()
+        terminal.save()
+
+        resposta = self.client.get(
+            "/pdv/api/terminal/bootstrap/",
+            HTTP_X_TERMINAL_ID=str(terminal.identificador),
+            HTTP_X_TERMINAL_KEY=chave,
+            REMOTE_ADDR="10.0.0.55",
+        )
+
+        self.assertEqual(resposta.status_code, 403)
+        self.assertEqual(resposta.json()["status"], "licenca_terminal_bloqueada")
+        self.assertEqual(resposta.json()["licenca"]["status"], StatusLicencaTerminal.PENDENTE)
+        terminal.refresh_from_db()
+        self.assertIsNone(terminal.ultima_conexao)
+        log = LogAuditoria.objects.get(acao="BOOTSTRAP_TERMINAL_SEM_LICENCA", objeto_id=str(terminal.id))
+        self.assertEqual(log.modulo, "pdv")
+        self.assertEqual(log.ip, "10.0.0.55")
+        self.assertIn("Pendente", log.descricao)
 
     def test_solicitacao_pendente_nao_duplica(self):
         primeira, criada = solicitar_acesso_pdv_nuvem(usuario=self.operador, filial=self.filial, ip="127.0.0.1")

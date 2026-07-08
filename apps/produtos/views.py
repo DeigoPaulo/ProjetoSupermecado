@@ -9,6 +9,8 @@ from django.urls import reverse_lazy
 from django.views.generic import CreateView, ListView, UpdateView
 
 from apps.accounts.permissions import CADASTROS, RoleRequiredMixin, role_required, supervisor_from_request
+from apps.configuracoes.models import ConfiguracaoImpressao, TipoDocumentoImpressao
+from apps.configuracoes.services import configuracao_impressao_para
 from apps.estoque.models import Estoque, MovimentacaoEstoque, TipoMovimentacaoEstoque
 from apps.promocoes.services import preco_atual_produto
 
@@ -176,16 +178,34 @@ def reajustar_precos(request):
 @login_required
 @role_required(*CADASTROS)
 def etiquetas(request):
-    form = EtiquetaProdutoForm(request.GET or None)
+    perfil = getattr(request.user, "perfil_supermercado", None)
+    filial = perfil.filial if perfil else None
+    form = EtiquetaProdutoForm(request.GET or None, filial=filial)
     produtos = []
     etiquetas_lista = []
+    quantidade_copias = 1
+    configuracao_etiqueta = configuracao_impressao_para(filial, TipoDocumentoImpressao.ETIQUETA)
+    if not configuracao_etiqueta:
+        configuracao_etiqueta = ConfiguracaoImpressao.objects.filter(
+            filial__isnull=True,
+            tipo_documento=TipoDocumentoImpressao.ETIQUETA,
+            is_active=True,
+        ).order_by("empresa_id").first()
     if form.is_valid() and request.GET:
         dados = form.cleaned_data
+        quantidade_copias = dados["quantidade_copias"]
         queryset = Produto.all_objects.select_related("categoria", "marca").order_by("nome")
         if not dados["incluir_inativos"]:
             queryset = queryset.filter(is_active=True)
         if dados["busca"]:
-            queryset = queryset.filter(Q(nome__icontains=dados["busca"]) | Q(codigo_barras__icontains=dados["busca"]))
+            busca = dados["busca"].strip()
+            queryset = queryset.filter(
+                Q(codigo_barras__iexact=busca)
+                | Q(codigo_interno__iexact=busca)
+                | Q(codigo_barras__icontains=busca)
+                | Q(codigo_interno__icontains=busca)
+                | Q(nome__icontains=busca)
+            )
         if dados["categoria"]:
             queryset = queryset.filter(categoria=dados["categoria"])
         if dados["marca"]:
@@ -196,6 +216,67 @@ def etiquetas(request):
             for _ in range(dados["quantidade_copias"]):
                 etiquetas_lista.append(produto)
 
+    modelo_salvo = form.cleaned_data.get("modelo_salvo") if form.is_valid() else None
+    if form.is_valid() and form.cleaned_data.get("modelo") == EtiquetaProdutoForm.MODELO_CONFIGURADO and not modelo_salvo:
+        modelo_salvo = form.fields["modelo_salvo"].queryset.filter(padrao=True).first()
+    if modelo_salvo:
+        configuracao_etiqueta = modelo_salvo.configuracao
+
+    modelo_etiqueta = form.cleaned_data.get("modelo", EtiquetaProdutoForm.MODELO_COMPACTO) if form.is_valid() else EtiquetaProdutoForm.MODELO_COMPACTO
+    dimensoes_modelo = {
+        EtiquetaProdutoForm.MODELO_COMPACTO: {"largura_mm": 110, "altura_mm": 30, "gap_horizontal_mm": 2, "gap_vertical_mm": 2, "colunas": 1},
+        EtiquetaProdutoForm.MODELO_COMPLETO: {"largura_mm": 100, "altura_mm": 50, "gap_horizontal_mm": 2, "gap_vertical_mm": 2, "colunas": 1},
+    }.get(modelo_etiqueta)
+    if modelo_etiqueta == EtiquetaProdutoForm.MODELO_CONFIGURADO and modelo_salvo:
+        dimensoes_modelo = {
+            "id": modelo_salvo.id,
+            "nome": modelo_salvo.nome,
+            "largura_mm": float(modelo_salvo.largura_mm),
+            "altura_mm": float(modelo_salvo.altura_mm),
+            "gap_horizontal_mm": float(modelo_salvo.gap_horizontal_mm),
+            "gap_vertical_mm": float(modelo_salvo.gap_vertical_mm),
+            "colunas": modelo_salvo.colunas,
+            "orientacao": modelo_salvo.orientacao,
+        }
+    elif modelo_etiqueta == EtiquetaProdutoForm.MODELO_CONFIGURADO and configuracao_etiqueta:
+        dimensoes_modelo = {
+            "largura_mm": float(configuracao_etiqueta.largura_etiqueta_mm),
+            "altura_mm": float(configuracao_etiqueta.altura_etiqueta_mm),
+            "gap_horizontal_mm": float(configuracao_etiqueta.gap_horizontal_mm),
+            "gap_vertical_mm": float(configuracao_etiqueta.gap_vertical_mm),
+            "colunas": configuracao_etiqueta.colunas_etiqueta,
+        }
+    linguagens_nativas = {"ZPL", "EPL", "PPLB"}
+    impressao_nativa_disponivel = bool(
+        produtos
+        and dimensoes_modelo
+        and configuracao_etiqueta
+        and configuracao_etiqueta.impressora_padrao
+        and configuracao_etiqueta.linguagem_impressora in linguagens_nativas
+    )
+    payload_etiquetas = None
+    if impressao_nativa_disponivel:
+        payload_etiquetas = {
+            "impressora_padrao": configuracao_etiqueta.impressora_padrao,
+            "linguagem": configuracao_etiqueta.linguagem_impressora,
+            "dpi": configuracao_etiqueta.dpi_impressora,
+            "densidade": configuracao_etiqueta.densidade_impressao,
+            "velocidade": configuracao_etiqueta.velocidade_impressao,
+            "tipo_midia": configuracao_etiqueta.tipo_midia_etiqueta,
+            "modelo": dimensoes_modelo,
+            "itens": [
+                {
+                    "produto_id": produto.id,
+                    "nome": produto.nome,
+                    "codigo": produto.codigo_barras or produto.codigo_interno,
+                    "preco": str(produto.preco_etiqueta),
+                    "unidade": produto.unidade,
+                    "copias": quantidade_copias,
+                }
+                for produto in produtos
+            ],
+        }
+
     return render(
         request,
         "produtos/etiquetas.html",
@@ -203,6 +284,11 @@ def etiquetas(request):
             "form": form,
             "produtos": produtos,
             "etiquetas": etiquetas_lista,
+            "modelo_etiqueta": modelo_etiqueta,
+            "configuracao_etiqueta": configuracao_etiqueta,
+            "modelo_salvo": modelo_salvo,
+            "impressao_nativa_disponivel": impressao_nativa_disponivel,
+            "payload_etiquetas": payload_etiquetas,
         },
     )
 

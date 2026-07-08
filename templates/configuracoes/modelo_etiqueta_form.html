@@ -1,0 +1,22 @@
+{% extends "base.html" %}
+
+{% block title %}Modelo de etiqueta{% endblock %}
+
+{% block content %}
+<header class="page-header">
+  <div>
+    <h1>{% if modelo %}Editar modelo{% else %}Novo modelo de etiqueta{% endif %}</h1>
+    <p>Defina o tamanho fisico e o terminal que utilizara este rolo de etiquetas.</p>
+  </div>
+  <a class="secondary-button" href="{% url 'configuracoes:impressoes' %}">Voltar</a>
+</header>
+
+<form method="post" class="panel form-grid">
+  {% csrf_token %}
+  {% include "includes/form.html" %}
+  <div class="form-actions form-field-wide">
+    <a class="secondary-button" href="{% url 'configuracoes:impressoes' %}">Cancelar</a>
+    <button class="primary-button" type="submit">Salvar modelo</button>
+  </div>
+</form>
+{% endblock %}

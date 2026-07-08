@@ -1,25 +1,29 @@
+import hashlib
 from io import StringIO
 
 from django.apps import apps
+from django.conf import settings
 from django.contrib import messages
 from django.contrib.auth.decorators import login_required
 from django.contrib.auth.models import User
 from django.core.management import call_command
 from django.core.exceptions import PermissionDenied
+from django.db import transaction
 from django.db.models import Q
-from django.http import HttpResponse, JsonResponse
+from django.http import FileResponse, Http404, HttpResponse, JsonResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.utils import timezone
 
 from apps.accounts.models import TipoPerfil
 from apps.accounts.permissions import SISTEMA, role_required
+from apps.auditoria.models import LogAuditoria
 from apps.empresas.models import Empresa, EventoSincronizacao, Filial, StatusSincronizacao
 from apps.fiscal.models import ConfiguracaoFiscal
 from apps.pdv.models import AcessoPdvNuvem, StatusAcessoPdvNuvem, StatusLicencaTerminal, TerminalPdv
 from apps.vendas.models import FormaPagamento
 
-from .forms import ConfiguracaoImpressaoForm, FormaPagamentoForm, TerminalPdvForm
-from .models import ConfiguracaoImpressao
+from .forms import ConfiguracaoImpressaoForm, FormaPagamentoForm, ModeloEtiquetaForm, TerminalPdvForm
+from .models import ConfiguracaoImpressao, ModeloEtiqueta
 from .services import criar_configuracoes_padrao
 
 
@@ -55,8 +59,8 @@ CHECKLIST_GRUPOS = [
             ("Bip e retorno automatico de foco", "done", "Leitor envia Enter, inclui o produto, soma repeticoes e devolve o foco ao campo apos o recarregamento."),
             ("Alertas rapidos no PDV", "done", "Mensagens simples viram toasts temporarios; operacoes criticas continuam exigindo confirmacao ou supervisor."),
             ("Autorizacao do PDV em nuvem", "done", "Operador comum fica bloqueado em ambiente de nuvem, tentativa gera solicitacao, admin/gerente recebe alerta visual no topo/menu e decide pelo painel de aprovacao."),
-            ("Arquitetura PDV desktop local", "partial", "PDV dos caixas deve ser um aplicativo instalado na maquina do operador, com tela enxuta de venda, pagamento, caixa, consulta e estorno autorizado, sem telas administrativas completas. O app se comunica com o servidor local da loja pela rede interna; esse servidor local conversa com impressora, balanca, gaveta, TEF e banco operacional da filial. Cadastro por filial, chave individual protegida por hash e bootstrap com registro de conexao implementados. A nuvem/sede sincroniza por API segura, filas e eventos, sem acessar diretamente o banco local do supermercado. Download/ativacao do app desktop deve exigir autorizacao do admin master, pois cada maquina instalada pode representar uma licenca comercial cobrada por terminal; pacote de ativacao so e entregue para terminal com licenca liberada."),
-            ("Balanca integrada no PDV", "partial", "Produtos ja possuem marcacao de produto pesavel. Terminal PDV agora permite configurar balanca por caixa com protocolo, porta/endereco e modelo; manifesto e pacote JSON do app desktop entregam essa configuracao por maquina. Falta o app desktop ler peso automaticamente no PDV, devolver quantidade em KG, preencher a venda e registrar falhas sem bloquear vendas manuais."),
+            ("Arquitetura PDV desktop local", "partial", "PDV dos caixas deve ser um aplicativo instalado na maquina do operador, fiel ao layout, atalhos e fluxo de venda do PDV web ja validado, para que o operador use a mesma experiencia nos dois ambientes. O desktop acrescenta integracoes locais com impressora, balanca, gaveta e TEF, operacao resiliente e acesso somente ao necessario para venda, pagamento, caixa, consulta e estorno autorizado, sem telas administrativas completas. O app se comunica com o servidor local da loja pela rede interna; esse servidor local conversa com os dispositivos e o banco operacional da filial. Cadastro por filial, chave individual protegida por hash e bootstrap com registro de conexao implementados. O bootstrap diario devolve a configuracao vigente de licenca, TEF, fiscal e balanca para o app instalado se atualizar sem novo pacote. A nuvem/sede sincroniza por API segura, filas e eventos, sem acessar diretamente o banco local do supermercado. Download/ativacao do app desktop deve exigir autorizacao do admin master, pois cada maquina instalada pode representar uma licenca comercial cobrada por terminal; pacote de ativacao so e entregue para terminal com licenca liberada."),
+            ("Balanca integrada no PDV", "partial", "Produtos ja possuem marcacao de produto pesavel. Terminal PDV agora permite configurar balanca por caixa com protocolo, porta/endereco e modelo; manifesto, pacote JSON e bootstrap do app desktop entregam essa configuracao por maquina. Falta o app desktop ler peso automaticamente no PDV, devolver quantidade em KG, preencher a venda e registrar falhas sem bloquear vendas manuais."),
             ("TEF/API de maquininha", "partial", "Pagamentos possuem estados controlados, ID externo, NSU e autorizacao; venda rejeita transacao pendente, recusada ou estornada. Terminais PDV agora configuram provedor TEF e modo de integracao por adaptador, permitindo PagBank, Cielo, Stone, Getnet, Rede, SiTef ou outro fornecedor sem prender o sistema a uma operadora. O bootstrap do app desktop expõe o contrato pdv_tef_v1 com tipos credito, debito e PIX dinamico e retorno esperado. Pagamentos eletronicos confirmados sem retorno real recebem autorizacao simulada rastreavel, deixando o ponto de troca pronto para o app desktop enviar o valor para a maquininha/provedor e aguardar aprovado, recusado, cancelado ou expirado antes de liberar a venda."),
             ("Reversao de pagamento misto", "partial", "Cancelamento total estorna parcelas locais e marca PIX/TEF com transacao externa como estorno pendente, preservando motivo e rastreabilidade. Falta automatizar a chamada ao fornecedor e ratear devolucoes parciais."),
             ("Padrao R$ em todos os formularios", "done", "Campos numericos de preco, valor, custo, desconto, taxa, frete e total recebem automaticamente o prefixo R$ no PDV e nas telas administrativas."),
@@ -74,6 +78,7 @@ CHECKLIST_GRUPOS = [
             ("Perdas", "done", "Baixa de perdas com supervisor/admin e log."),
             ("Movimentacao manual", "done", "Entrada/saida/ajuste/reserva com supervisor/admin, auditoria e formulario separado entre operacao e autorizacao."),
             ("Compras", "done", "Entrada de compra com dados da nota, itens recebidos, finalizacao protegida, estoque e financeiro integrados."),
+            ("Etiquetas de gondola profissionais", "partial", "O documento complementar de etiquetas foi incorporado ao checklist. A tela busca por nome, codigo de barras e SKU, aceita leitor que envia Enter, copias por produto e modelos compacto 110x30 mm, completo 100x50 mm, A4 e modelos profissionais salvos por empresa, filial e terminal, sempre sem fundo colorido forcado. Configuracao inclui medidas, gaps, colunas, orientacao, DPI, midia, impressora e linguagem; a tela envia o lote ao agente desktop, que gera ZPL ou EPL/PPLB e imprime em RAW sem pre-visualizacao. Ainda faltam homologacao PPLA e testes com equipamentos fisicos."),
         ],
     },
     {
@@ -104,6 +109,18 @@ CHECKLIST_GRUPOS = [
         ],
     },
     {
+        "titulo": "Etiquetas e impressoras profissionais",
+        "descricao": "Requisitos do documento complementar de etiquetas de gondola e impressoras profissionais.",
+        "itens": [
+            ("Modelo compacto 110x30", "done", "Modelo recomendado para gondola horizontal criado no MVP, priorizando nome do produto, codigo de barras ou codigo interno, unidade e preco grande, sem foto, icones decorativos ou excesso de informacao."),
+            ("Modelo completo 100x50", "done", "Modelo maior disponivel para etiquetas com mais espaco, mantendo preco como informacao principal e deixando logo, tributos e preco de referencia como evolucao configuravel."),
+            ("Busca por codigo de barras nas etiquetas", "done", "Campo de busca aceita digitacao manual e leitor como teclado, mantendo foco automatico; a consulta prioriza codigo de barras/EAN/GTIN e codigo interno/SKU antes do nome."),
+            ("Impressao em medidas reais", "done", "CSS de impressao usa medidas em mm, @media print e oculta menu, filtros e botoes; a cor da etiqueta fica a cargo do papel fisico, com impressao limpa em preto."),
+            ("Configuracao profissional de etiquetas", "partial", "Configuracao por empresa/filial persiste impressora, DPI, densidade, velocidade, midia e linguagem. Modelos nomeados guardam largura, altura, gaps, colunas, orientacao, modelo padrao e vinculo opcional ao terminal; a tela de etiquetas aplica o modelo escolhido e o endpoint desktop sincroniza todos os parametros. Ainda falta o agente local gerar e enviar comandos nativos ao equipamento."),
+            ("Linguagens nativas de impressoras", "partial", "Arquitetura contempla ZPL, EPL, PPLA e PPLB. A tela web monta um payload confiavel com modelo, produtos e copias e aciona printLabels somente no app desktop; o agente gera ZPL ou EPL/PPLB, converte medidas por DPI e envia ao spooler Windows em RAW com limite e retorno visivel. No navegador permanece a impressao convencional. PPLA segue bloqueado ate homologacao por modelo e ainda faltam testes fisicos."),
+        ],
+    },
+    {
         "titulo": "Proximas fases",
         "descricao": "Itens previstos na documentacao, ainda fora do MVP atual.",
         "itens": [
@@ -111,16 +128,40 @@ CHECKLIST_GRUPOS = [
             ("Financeiro completo", "partial", "Contas a pagar/receber, baixas, cancelamentos, categorias, fluxo de caixa, conciliacao PDV x financeiro, contas de movimento, vendas a vista do PDV no livro, transferencias entre contas, livro financeiro imutavel, estornos por lancamento inverso, resultado por receitas/despesas, cards gerenciais e exportacoes criadas. A proxima evolucao inclui integracao final com fiscal/contabilidade e relatorios contabeis oficiais."),
             ("Entradas, saidas e livro contabil", "partial", "Contas de movimento por filial para caixa fisico, banco, PIX e outras foram criadas com saldo inicial e saldo atual. Baixas geram entrada ou saida no livro imutavel, vendas a vista do PDV geram entradas automaticas por forma de pagamento, sangria e suprimento geram saida/entrada automatica no Caixa PDV, transferencias geram lancamentos espelhados, atomicos e auditados entre contas da mesma empresa, e estornos rastreaveis criam lancamento inverso sem alterar o original. O livro possui origem, usuario, data, filtros, exportacao CSV, validacao de saldo e relatorio de receitas, despesas e resultado que ignora transferencias internas. Ainda faltam integracao automatica de origens fiscais/contabeis avancadas e relatorios contabeis oficiais. Referencia funcional identificada no ProjetoLimpoGitHub para migracao adaptada, sem alterar o projeto original."),
             ("Marketplace / pedido online", "partial", "Fluxo operacional completo, API segura com chave por plataforma, validacao de itens, idempotencia e acompanhamento visual de separacao/pagamento na listagem implementados; adaptadores especificos de cada parceiro seguem pendentes."),
-            ("Impressao personalizada", "done", "Configuracoes de papel, margens, fonte, rodape, vias e impressao automatica aplicadas aos recibos."),
-            ("Descoberta de impressoras locais", "partial", "Central de impressao ja possui campo com sugestoes, aviso operacional e endpoint JSON preparado para o app desktop listar impressoras instaladas na maquina."),
+            ("Impressao personalizada", "done", "Configuracoes de papel, margens, fonte, rodape, vias e impressao automatica aplicadas aos recibos. No app desktop, o botao pos-venda usa o payload autenticado existente, monta cupom operacional sem imagens e envia diretamente ao spooler Windows em RAW/ESC-POS, com ate tres vias, corte de papel e pulso opcional da gaveta, sem abrir pre-visualizacao."),
+            ("Descoberta de impressoras locais", "done", "Central de impressao possui campo com sugestoes e endpoint de configuracao. A ponte do app desktop consulta as impressoras instaladas no Windows sem shell interativo e devolve nome, porta, driver, estado e impressora padrao para a mesma interface do PDV, tratando timeout ou falha sem bloquear a venda."),
             ("Gaveta de dinheiro opcional", "partial", "Central de impressao permite habilitar ou desabilitar gaveta automatica por empresa/filial e documento de caixa. Falta o app desktop acionar a impressora ESC-POS por pulso fisico em dinheiro, troco, sangria, suprimento, abertura e fechamento autorizados. Quando desabilitada ou indisponivel, a venda nao deve ser bloqueada; apenas registrar aviso/log operacional."),
             ("Backup/restauracao operacional", "done", "Tela de backup JSON e roteiro de restauracao segura disponiveis em Sistema."),
-            ("Aplicativo desktop/PDF", "partial", "Endpoints de configuracao e payload de impressao da venda preparados para o app desktop, incluindo dados de pagamento eletronico, NSU, autorizacao e transacao externa para cupom e comprovante. Central do App PDV desktop criada no ERP para futuramente disponibilizar o instalador versionado; manifesto JSON do app desktop expõe versao planejada, contratos TEF/impressao/sincronizacao, recursos locais e terminais autorizados. Pacote JSON por terminal entrega bootstrap, TEF, fiscal, impressao, gaveta, balanca configurada, licenca por maquina e sincronizacao para configurar cada terminal autorizado; terminais pendentes, bloqueados ou cancelados nao recebem pacote de ativacao. O aplicativo deve ser um projeto/artefato separado, baixado por dentro do sistema somente com autorizacao do admin master e configurado com o terminal autorizado. Falta empacotar o aplicativo dos caixas, conectar dispositivos locais e implementar sincronizacao resiliente com servidor local/nuvem."),
+            ("Aplicativo desktop/PDF", "partial", "Endpoints de configuracao e payload de impressao da venda preparados para o app desktop, incluindo dados de pagamento eletronico, NSU, autorizacao e transacao externa para cupom e comprovante. A interface desktop reutiliza o mesmo design, componentes, atalhos e regras do PDV web em um shell WebView separado, adaptando apenas a camada de integracao com hardware e servicos locais. O esqueleto desktop_pdv possui ativacao guiada na primeira execucao, valida o bootstrap licenciado antes de salvar a credencial em LOCALAPPDATA e abrir /pdv/, permite reconfiguracao e protege a chave de versionamento. O build reproduzivel do executavel Windows com PyInstaller tambem foi preparado. A Central do App PDV desktop publica o instalador somente quando o artefato configurado existe, apresenta tamanho e SHA-256, restringe o download ao admin master e registra a entrega na auditoria. Um script de publicacao atomica confere integridade, impede arquivo parcial na central e grava metadados de versao; versao e caminho do artefato sao configuraveis por ambiente. O app informa sua versao no bootstrap, recebe versao vigente e minima, avisa atualizacao opcional e bloqueia versao insegura; a instalacao continua exigindo o admin master, sem atualizacao automatica fora do licenciamento. O manifesto JSON do app desktop expõe disponibilidade, integridade, contratos e terminais autorizados. Pacote JSON por terminal entrega bootstrap, URL da interface compartilhada, TEF, fiscal, impressao, gaveta, balanca configurada, licenca por maquina e sincronizacao; o bootstrap operacional tambem devolve a configuracao atual a cada inicializacao. Terminais pendentes, bloqueados ou cancelados nao recebem pacote de ativacao nem conseguem inicializar o bootstrap. O aplicativo continua sendo um projeto/artefato separado, baixado por dentro do sistema somente com autorizacao do admin master e configurado com o terminal autorizado. Falta assinar o executavel, gerar o instalador MSI, conectar dispositivos locais e implementar sincronizacao resiliente com servidor local/nuvem."),
             ("Sincronizacao loja-nuvem", "partial", "Empresa escolhe entre servidor local, hibrido e nuvem com agente. Caixa de saida, processador HTTP e caixa de entrada autenticada usam UUID, idempotencia, token fora do banco, timeout, lotes e retentativa exponencial. Eventos recebidos ficam armazenados antes de alterar dados e ja passam por processador interno com handlers por tipo, erro controlado para dominios ainda nao implementados, handler inicial de produtos, handler de saldo de estoque por filial, espelho de venda finalizada com painel de retaguarda, espelho fiscal sincronizado, detalhe auditavel de eventos com payload e diagnostico, resolucao manual de conflitos com responsavel e decisao registrada, exportacao CSV das filas de saida e entrada, comando unico agendavel e roteiro do Agendador de Tarefas do Windows no painel. Ainda faltam instalar o agendador Windows no servidor, transmissao SEFAZ real e politicas automaticas finais de resolucao de conflitos."),
             ("Super admin personalizado", "partial", "Painel proprio centraliza empresas, usuarios, fiscal, formas de pagamento, impressoes, backup, auditoria e checklist, sem atalho visual para o admin Django; ainda faltam telas internas para alguns modelos avancados."),
         ],
     },
 ]
+
+
+def _instalador_pdv_desktop():
+    caminho = settings.PDV_DESKTOP_INSTALLER_PATH
+    if not caminho.is_file():
+        return {
+            "disponivel": False,
+            "nome": caminho.name,
+            "tamanho": 0,
+            "sha256": "",
+            "atualizado_em": None,
+        }
+    digest = hashlib.sha256()
+    with caminho.open("rb") as arquivo:
+        for bloco in iter(lambda: arquivo.read(1024 * 1024), b""):
+            digest.update(bloco)
+    stat = caminho.stat()
+    return {
+        "disponivel": True,
+        "nome": caminho.name,
+        "tamanho": stat.st_size,
+        "sha256": digest.hexdigest(),
+        "atualizado_em": timezone.datetime.fromtimestamp(stat.st_mtime, tz=timezone.get_current_timezone()),
+    }
 
 DOCUMENTOS_PROJETO = [
     ("Complementar PDV, usabilidade, cadastros e entrega v2", "docs/protótipos/documento_complementar_pdv_usabilidade_cadastros_entrega_v2.docx"),
@@ -133,7 +174,7 @@ DOCUMENTOS_PROJETO = [
     ("Mapa de telas e fluxos", "docs/protótipos/06_mapa_telas_fluxos_sistema_supermercado.docx"),
     ("Backup e restauracao", "docs/PLANO_BACKUP_RESTAURACAO_SUPERMERCADO.md"),
 ]
-PDV_DESKTOP_VERSAO_PLANEJADA = "0.1.0"
+PDV_DESKTOP_VERSAO_PLANEJADA = settings.PDV_DESKTOP_VERSION
 
 
 def _usuario_admin_master(user):
@@ -322,15 +363,25 @@ def checklist_projeto(request):
 @role_required(*SISTEMA)
 def pdv_desktop(request):
     _exigir_admin_master(request.user)
+    instalador = _instalador_pdv_desktop()
     terminais = TerminalPdv.objects.select_related("filial", "filial__empresa").order_by("filial__nome", "nome")
+    total_terminais = terminais.count()
+    licencas_liberadas = terminais.filter(status_licenca=StatusLicencaTerminal.LIBERADA, ativo=True).count()
+    licencas_pendentes = terminais.filter(status_licenca=StatusLicencaTerminal.PENDENTE).count()
+    licencas_bloqueadas = terminais.filter(status_licenca__in=[StatusLicencaTerminal.BLOQUEADA, StatusLicencaTerminal.CANCELADA]).count()
     context = {
         "terminais": terminais,
+        "total_terminais": total_terminais,
+        "licencas_liberadas": licencas_liberadas,
+        "licencas_pendentes": licencas_pendentes,
+        "licencas_bloqueadas": licencas_bloqueadas,
         "versao_planejada": PDV_DESKTOP_VERSAO_PLANEJADA,
+        "instalador": instalador,
         "artefatos": [
             {
                 "nome": "Windows x64",
-                "status": "Planejado",
-                "descricao": "Instalador .msi/.exe assinado para maquinas de caixa.",
+                "status": "Fonte iniciado",
+                "descricao": "Shell WebView com ativacao guiada reutiliza /pdv/; build do .exe preparado, faltando assinatura e instalador MSI.",
             },
             {
                 "nome": "Bridge local",
@@ -344,6 +395,7 @@ def pdv_desktop(request):
 
 def _pdv_desktop_manifest_payload(request):
     terminais = TerminalPdv.objects.select_related("filial", "filial__empresa").order_by("filial__nome", "nome")
+    instalador = _instalador_pdv_desktop()
     return {
         "status": "ok",
         "versao_planejada": PDV_DESKTOP_VERSAO_PLANEJADA,
@@ -369,9 +421,11 @@ def _pdv_desktop_manifest_payload(request):
         },
         "artefatos": {
             "windows_x64": {
-                "status": "planejado",
-                "nome": "Instalador Windows x64",
-                "url": "",
+                "status": "disponivel" if instalador["disponivel"] else "aguardando_build",
+                "nome": instalador["nome"],
+                "url": request.build_absolute_uri("/configuracoes/pdv-desktop/download/windows/") if instalador["disponivel"] else "",
+                "tamanho_bytes": instalador["tamanho"],
+                "sha256": instalador["sha256"],
             }
         },
         "terminais": [
@@ -411,6 +465,25 @@ def pdv_desktop_manifest(request):
     return JsonResponse(_pdv_desktop_manifest_payload(request))
 
 
+@login_required
+@role_required(*SISTEMA)
+def pdv_desktop_download_windows(request):
+    _exigir_admin_master(request.user)
+    caminho = settings.PDV_DESKTOP_INSTALLER_PATH
+    if not caminho.is_file():
+        raise Http404("Instalador do PDV desktop ainda nao publicado.")
+    LogAuditoria.objects.create(
+        usuario=request.user,
+        modulo="configuracoes",
+        acao="DOWNLOAD_PDV_DESKTOP",
+        descricao=f"Download do instalador PDV desktop {caminho.name}.",
+        objeto_tipo="PdvDesktopInstaller",
+        objeto_id=PDV_DESKTOP_VERSAO_PLANEJADA,
+        ip=request.META.get("REMOTE_ADDR"),
+    )
+    return FileResponse(caminho.open("rb"), as_attachment=True, filename=caminho.name)
+
+
 def _pdv_desktop_terminal_payload(request, terminal):
     return {
         "status": "ok",
@@ -438,6 +511,12 @@ def _pdv_desktop_terminal_payload(request, terminal):
             "base_url": request.build_absolute_uri("/").rstrip("/"),
             "bootstrap_url": request.build_absolute_uri("/pdv/api/terminal/bootstrap/"),
             "manifest_url": request.build_absolute_uri("/configuracoes/pdv-desktop/manifest.json"),
+        },
+        "interface": {
+            "modo": "webview_compartilhada",
+            "pdv_url": request.build_absolute_uri("/pdv/"),
+            "mesmo_layout_do_pdv_web": True,
+            "atalhos_compartilhados": True,
         },
         "fiscal": {
             "emissao_automatica": terminal.emite_documento_fiscal,
@@ -501,8 +580,38 @@ def forma_pagamento_form(request, pk=None):
 @role_required(*SISTEMA)
 def terminais_pdv(request):
     terminais = TerminalPdv.objects.select_related("filial", "filial__empresa").order_by("filial__nome", "nome")
+    busca = request.GET.get("q", "").strip()
+    filtro_licenca = request.GET.get("licenca", "").strip()
+    filtro_status = request.GET.get("status", "").strip()
+    if busca:
+        terminais = terminais.filter(
+            Q(nome__icontains=busca)
+            | Q(descricao__icontains=busca)
+            | Q(filial__nome__icontains=busca)
+            | Q(filial__empresa__nome_fantasia__icontains=busca)
+            | Q(filial__empresa__razao_social__icontains=busca)
+            | Q(identificador__icontains=busca)
+            | Q(chave_api_prefixo__icontains=busca)
+        )
+    if filtro_licenca in StatusLicencaTerminal.values:
+        terminais = terminais.filter(status_licenca=filtro_licenca)
+    if filtro_status == "ativo":
+        terminais = terminais.filter(ativo=True)
+    elif filtro_status == "inativo":
+        terminais = terminais.filter(ativo=False)
     chave_nova = request.session.pop("terminal_pdv_chave_nova", None)
-    return render(request, "configuracoes/terminais_pdv.html", {"terminais": terminais, "chave_nova": chave_nova})
+    return render(
+        request,
+        "configuracoes/terminais_pdv.html",
+        {
+            "terminais": terminais,
+            "chave_nova": chave_nova,
+            "busca": busca,
+            "filtro_licenca": filtro_licenca,
+            "filtro_status": filtro_status,
+            "status_licenca_choices": StatusLicencaTerminal.choices,
+        },
+    )
 
 
 @login_required
@@ -538,6 +647,48 @@ def terminal_pdv_form(request, pk=None):
         messages.success(request, "Terminal PDV salvo com sucesso.")
         return redirect("configuracoes:terminais_pdv")
     return render(request, "configuracoes/terminal_pdv_form.html", {"form": form, "object": terminal})
+
+
+@login_required
+@role_required(*SISTEMA)
+def terminal_pdv_alterar_licenca(request, pk, acao):
+    _exigir_admin_master(request.user)
+    if request.method != "POST":
+        return redirect("configuracoes:terminais_pdv")
+    terminal = get_object_or_404(TerminalPdv, pk=pk)
+    acoes = {
+        "liberar": StatusLicencaTerminal.LIBERADA,
+        "bloquear": StatusLicencaTerminal.BLOQUEADA,
+        "cancelar": StatusLicencaTerminal.CANCELADA,
+        "pendenciar": StatusLicencaTerminal.PENDENTE,
+    }
+    novo_status = acoes.get(acao)
+    if not novo_status:
+        messages.error(request, "Acao de licenca invalida.")
+        return redirect("configuracoes:terminais_pdv")
+
+    terminal.status_licenca = novo_status
+    if novo_status == StatusLicencaTerminal.LIBERADA:
+        terminal.licenca_liberada_em = timezone.now()
+        terminal.licenca_liberada_por = request.user
+        terminal.observacao_licenca = request.POST.get("observacao_licenca", "").strip() or "Licenca liberada pelo admin master."
+    else:
+        terminal.observacao_licenca = request.POST.get("observacao_licenca", "").strip() or f"Licenca marcada como {terminal.get_status_licenca_display()} pelo admin master."
+    terminal.save(update_fields=["status_licenca", "licenca_liberada_em", "licenca_liberada_por", "observacao_licenca", "atualizado_em"])
+    LogAuditoria.objects.create(
+        usuario=request.user,
+        modulo="configuracoes",
+        acao="LICENCA_TERMINAL_PDV",
+        descricao=(
+            f"Licenca do terminal {terminal.nome} ({terminal.identificador}) alterada para "
+            f"{terminal.get_status_licenca_display()}. Observacao: {terminal.observacao_licenca or '-'}"
+        ),
+        objeto_tipo="TerminalPdv",
+        objeto_id=str(terminal.id),
+        ip=request.META.get("REMOTE_ADDR"),
+    )
+    messages.success(request, f"Licenca do terminal {terminal.nome} atualizada para {terminal.get_status_licenca_display()}.")
+    return redirect("configuracoes:terminais_pdv")
 
 
 @login_required
@@ -621,8 +772,29 @@ def impressoes(request):
             "configuracoes": configuracoes,
             "resumo": resumo,
             "impressoras_cadastradas": impressoras_cadastradas,
+            "modelos_etiqueta": ModeloEtiqueta.objects.select_related(
+                "configuracao", "configuracao__empresa", "configuracao__filial", "terminal"
+            ),
         },
     )
+
+
+@login_required
+@role_required(*SISTEMA)
+def modelo_etiqueta_form(request, pk=None):
+    modelo = get_object_or_404(ModeloEtiqueta, pk=pk) if pk else None
+    if request.method == "POST":
+        form = ModeloEtiquetaForm(request.POST, instance=modelo)
+        if form.is_valid():
+            with transaction.atomic():
+                salvo = form.save()
+                if salvo.padrao:
+                    ModeloEtiqueta.objects.filter(configuracao=salvo.configuracao).exclude(pk=salvo.pk).update(padrao=False)
+            messages.success(request, "Modelo de etiqueta salvo.")
+            return redirect("configuracoes:impressoes")
+    else:
+        form = ModeloEtiquetaForm(instance=modelo)
+    return render(request, "configuracoes/modelo_etiqueta_form.html", {"form": form, "modelo": modelo})
 
 
 @login_required
@@ -645,7 +817,9 @@ def impressoras_locais(request):
 @login_required
 @role_required(*SISTEMA)
 def impressoes_desktop(request):
-    configuracoes = ConfiguracaoImpressao.objects.select_related("empresa", "filial").filter(is_active=True).order_by(
+    configuracoes = ConfiguracaoImpressao.objects.select_related("empresa", "filial").prefetch_related(
+        "modelos_etiqueta", "modelos_etiqueta__terminal"
+    ).filter(is_active=True).order_by(
         "empresa_id",
         "filial_id",
         "tipo_documento",
@@ -666,6 +840,34 @@ def impressoes_desktop(request):
                 "modelo_papel_label": config.get_modelo_papel_display(),
                 "numero_vias": config.numero_vias,
                 "impressao_automatica": config.impressao_automatica,
+                "etiqueta": {
+                    "largura_mm": float(config.largura_etiqueta_mm),
+                    "altura_mm": float(config.altura_etiqueta_mm),
+                    "gap_horizontal_mm": float(config.gap_horizontal_mm),
+                    "gap_vertical_mm": float(config.gap_vertical_mm),
+                    "colunas": config.colunas_etiqueta,
+                    "dpi": config.dpi_impressora,
+                    "densidade": config.densidade_impressao,
+                    "velocidade": config.velocidade_impressao,
+                    "tipo_midia": config.tipo_midia_etiqueta,
+                    "linguagem": config.linguagem_impressora,
+                    "modelos": [
+                        {
+                            "id": modelo.id,
+                            "nome": modelo.nome,
+                            "terminal_id": modelo.terminal_id,
+                            "largura_mm": float(modelo.largura_mm),
+                            "altura_mm": float(modelo.altura_mm),
+                            "gap_horizontal_mm": float(modelo.gap_horizontal_mm),
+                            "gap_vertical_mm": float(modelo.gap_vertical_mm),
+                            "colunas": modelo.colunas,
+                            "orientacao": modelo.orientacao,
+                            "padrao": modelo.padrao,
+                        }
+                        for modelo in config.modelos_etiqueta.all()
+                        if modelo.is_active
+                    ],
+                },
                 "gaveta": {
                     "automatica": config.gaveta_automatica,
                     "abrir_em_dinheiro": config.gaveta_automatica and config.abrir_gaveta_em_dinheiro,
