@@ -1,0 +1,60 @@
+{% extends "base.html" %}
+
+{% block title %}Desmembramentos{% endblock %}
+
+{% block content %}
+<header class="page-header">
+  <div>
+    <h1>Desmembramentos</h1>
+    <p>Transforme produtos fechados em unidades avulsas, fardos em itens e prepare a evolucao para acougue e producao.</p>
+  </div>
+  <div class="actions">
+    <a class="secondary-button" href="{% url 'estoque:lista' %}">Estoque</a>
+    <a class="secondary-button" href="{% url 'estoque:desmembramento_relatorio' %}">Relatorio de rendimento</a>
+    <a class="secondary-button" href="{% url 'estoque:desmembramentos_csv' %}?{{ request.GET.urlencode }}">Excel/CSV</a>
+    <a class="secondary-button" href="{% url 'estoque:receitas_desmembramento' %}">Receitas</a>
+    <a class="primary-button" href="{% url 'estoque:desmembramento_novo' %}">Novo desmembramento</a>
+  </div>
+</header>
+
+<form method="get" class="toolbar">
+  <input type="search" name="q" value="{{ request.GET.q }}" placeholder="Buscar origem por produto ou codigo">
+  <button type="submit">Buscar</button>
+</form>
+
+<div class="panel">
+  <table>
+    <thead>
+      <tr>
+        <th>Data</th>
+        <th>Filial</th>
+        <th>Origem</th>
+        <th>Destino</th>
+        <th>Custo origem</th>
+        <th>Responsavel</th>
+        <th>Status</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for item in desmembramentos %}
+        <tr>
+          <td>{{ item.criado_em|date:"d/m/Y H:i" }}</td>
+          <td>{{ item.filial }}</td>
+          <td><a href="{% url 'estoque:desmembramento_detalhe' item.pk %}"><strong>{{ item.produto_origem }}</strong></a><br><small>Saida: {{ item.quantidade_origem }}</small></td>
+          <td>
+            {% for destino in item.itens.all %}
+              <strong>{{ destino.produto_destino }}</strong><br>
+              <small>Entrada: {{ destino.quantidade_gerada }} {{ destino.unidade }} | Custo unit.: R$ {{ destino.custo_unitario_calculado }}</small>
+            {% endfor %}
+          </td>
+          <td>R$ {{ item.custo_total_origem }}</td>
+          <td>{{ item.usuario }}</td>
+          <td><span class="status status-success">{{ item.get_status_display }}</span></td>
+        </tr>
+      {% empty %}
+        <tr><td colspan="7" class="empty">Nenhum desmembramento registrado.</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endblock %}

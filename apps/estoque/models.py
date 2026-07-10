@@ -12,6 +12,7 @@ class TipoMovimentacaoEstoque(models.TextChoices):
     PERDA = "PERDA", "Perda"
     RESERVA = "RESERVA", "Reserva"
     LIBERACAO_RESERVA = "LIBERACAO_RESERVA", "Liberacao de reserva"
+    DESMEMBRAMENTO = "DESMEMBRAMENTO", "Desmembramento"
 
 
 class Estoque(models.Model):
@@ -111,6 +112,13 @@ class PerdaEstoque(models.Model):
     produto = models.ForeignKey("produtos.Produto", on_delete=models.PROTECT, related_name="perdas")
     filial = models.ForeignKey("empresas.Filial", on_delete=models.PROTECT, related_name="perdas_estoque")
     usuario = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.PROTECT, related_name="perdas_estoque")
+    desmembramento_item = models.ForeignKey(
+        "estoque.ItemDesmembramentoProduto",
+        on_delete=models.CASCADE,
+        related_name="perdas_geradas",
+        null=True,
+        blank=True,
+    )
     tipo = models.CharField(max_length=40, choices=TipoPerdaEstoque.choices)
     quantidade = models.DecimalField(max_digits=12, decimal_places=3)
     motivo = models.CharField(max_length=255)
@@ -125,6 +133,194 @@ class PerdaEstoque(models.Model):
 
     def __str__(self):
         return f"{self.tipo} - {self.produto} ({self.quantidade})"
+
+
+class TipoDesmembramentoProduto(models.TextChoices):
+    SIMPLES = "SIMPLES", "Simples / unitizacao"
+    CAIXA_FARDO = "CAIXA_FARDO", "Caixa / fardo"
+    HORTIFRUTI = "HORTIFRUTI", "Hortifruti reembalado"
+    ACOUGUE = "ACOUGUE", "Acougue por rendimento"
+    PRODUCAO = "PRODUCAO", "Producao interna"
+    KIT = "KIT", "Kit / composicao"
+
+
+class StatusDesmembramentoProduto(models.TextChoices):
+    CONFIRMADO = "CONFIRMADO", "Confirmado"
+    CANCELADO = "CANCELADO", "Cancelado"
+
+
+class StatusProducaoComposicao(models.TextChoices):
+    CONFIRMADO = "CONFIRMADO", "Confirmado"
+    CANCELADO = "CANCELADO", "Cancelado"
+
+
+class MetodoCustoDesmembramento(models.TextChoices):
+    QUANTIDADE = "QUANTIDADE", "Proporcional por quantidade"
+    PESO = "PESO", "Proporcional por peso"
+    MANUAL = "MANUAL", "Custo manual autorizado"
+
+
+class TipoSaidaDesmembramento(models.TextChoices):
+    VENDAVEL = "VENDAVEL", "Produto vendavel"
+    PERDA = "PERDA", "Perda / descarte"
+    SUBPRODUTO = "SUBPRODUTO", "Subproduto"
+
+
+class ReceitaDesmembramento(models.Model):
+    empresa = models.ForeignKey("empresas.Empresa", on_delete=models.PROTECT, related_name="receitas_desmembramento")
+    filial = models.ForeignKey("empresas.Filial", on_delete=models.PROTECT, related_name="receitas_desmembramento", null=True, blank=True)
+    produto_origem = models.ForeignKey("produtos.Produto", on_delete=models.PROTECT, related_name="receitas_desmembramento_origem")
+    produto_destino = models.ForeignKey("produtos.Produto", on_delete=models.PROTECT, related_name="receitas_desmembramento_destino")
+    quantidade_origem = models.DecimalField(max_digits=12, decimal_places=3, default=1)
+    quantidade_destino = models.DecimalField(max_digits=12, decimal_places=3)
+    tipo = models.CharField(max_length=30, choices=TipoDesmembramentoProduto.choices, default=TipoDesmembramentoProduto.SIMPLES)
+    tipo_saida = models.CharField(max_length=20, choices=TipoSaidaDesmembramento.choices, default=TipoSaidaDesmembramento.VENDAVEL)
+    observacao = models.CharField(max_length=255, blank=True)
+    is_active = models.BooleanField(default=True)
+    criado_em = models.DateTimeField(auto_now_add=True)
+    atualizado_em = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ["produto_origem__nome", "produto_destino__nome"]
+
+    def clean(self):
+        if self.produto_origem_id and self.produto_destino_id and self.produto_origem_id == self.produto_destino_id:
+            raise ValidationError("Produto origem e produto destino devem ser diferentes.")
+        if self.quantidade_origem <= 0 or self.quantidade_destino <= 0:
+            raise ValidationError("Quantidades da receita devem ser maiores que zero.")
+
+    def __str__(self):
+        return f"{self.quantidade_origem} {self.produto_origem} -> {self.quantidade_destino} {self.produto_destino}"
+
+
+class ComposicaoProduto(models.Model):
+    empresa = models.ForeignKey("empresas.Empresa", on_delete=models.PROTECT, related_name="composicoes_produto")
+    filial = models.ForeignKey("empresas.Filial", on_delete=models.PROTECT, related_name="composicoes_produto", null=True, blank=True)
+    produto_final = models.ForeignKey("produtos.Produto", on_delete=models.PROTECT, related_name="composicoes_final")
+    quantidade_final = models.DecimalField(max_digits=12, decimal_places=3, default=1)
+    tipo = models.CharField(max_length=30, choices=TipoDesmembramentoProduto.choices, default=TipoDesmembramentoProduto.KIT)
+    observacao = models.CharField(max_length=255, blank=True)
+    is_active = models.BooleanField(default=True)
+    criado_em = models.DateTimeField(auto_now_add=True)
+    atualizado_em = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ["produto_final__nome"]
+
+    def clean(self):
+        if self.quantidade_final <= 0:
+            raise ValidationError("Quantidade final da composicao deve ser maior que zero.")
+
+    def __str__(self):
+        return f"{self.produto_final} ({self.quantidade_final})"
+
+
+class ItemComposicaoProduto(models.Model):
+    composicao = models.ForeignKey(ComposicaoProduto, on_delete=models.CASCADE, related_name="itens")
+    produto_componente = models.ForeignKey("produtos.Produto", on_delete=models.PROTECT, related_name="composicoes_componente")
+    quantidade = models.DecimalField(max_digits=12, decimal_places=3)
+
+    class Meta:
+        unique_together = ["composicao", "produto_componente"]
+        ordering = ["produto_componente__nome"]
+
+    def clean(self):
+        if self.quantidade <= 0:
+            raise ValidationError("Quantidade do componente deve ser maior que zero.")
+        if self.composicao_id and self.produto_componente_id == self.composicao.produto_final_id:
+            raise ValidationError("Produto final nao pode ser componente da propria composicao.")
+
+    def __str__(self):
+        return f"{self.produto_componente}: {self.quantidade}"
+
+
+class ProducaoComposicaoProduto(models.Model):
+    composicao = models.ForeignKey(ComposicaoProduto, on_delete=models.PROTECT, related_name="producoes")
+    empresa = models.ForeignKey("empresas.Empresa", on_delete=models.PROTECT, related_name="producoes_composicao")
+    filial = models.ForeignKey("empresas.Filial", on_delete=models.PROTECT, related_name="producoes_composicao")
+    produto_final = models.ForeignKey("produtos.Produto", on_delete=models.PROTECT, related_name="producoes_composicao")
+    quantidade_final = models.DecimalField(max_digits=12, decimal_places=3)
+    custo_total = models.DecimalField(max_digits=12, decimal_places=2)
+    status = models.CharField(max_length=20, choices=StatusProducaoComposicao.choices, default=StatusProducaoComposicao.CONFIRMADO)
+    usuario = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.PROTECT, related_name="producoes_composicao")
+    motivo = models.CharField(max_length=255)
+    observacao = models.TextField(blank=True)
+    criado_em = models.DateTimeField(auto_now_add=True)
+    cancelado_em = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        ordering = ["-criado_em"]
+
+    def __str__(self):
+        return f"Producao {self.id} - {self.produto_final}"
+
+
+class ItemProducaoComposicaoProduto(models.Model):
+    producao = models.ForeignKey(ProducaoComposicaoProduto, on_delete=models.CASCADE, related_name="itens")
+    produto_componente = models.ForeignKey("produtos.Produto", on_delete=models.PROTECT, related_name="itens_producao_composicao")
+    quantidade_consumida = models.DecimalField(max_digits=12, decimal_places=3)
+    custo_unitario = models.DecimalField(max_digits=10, decimal_places=2)
+    custo_total = models.DecimalField(max_digits=12, decimal_places=2)
+
+    class Meta:
+        ordering = ["produto_componente__nome"]
+
+    def __str__(self):
+        return f"{self.produto_componente}: {self.quantidade_consumida}"
+
+
+class DesmembramentoProduto(models.Model):
+    empresa = models.ForeignKey("empresas.Empresa", on_delete=models.PROTECT, related_name="desmembramentos_produto")
+    filial = models.ForeignKey("empresas.Filial", on_delete=models.PROTECT, related_name="desmembramentos_produto")
+    produto_origem = models.ForeignKey("produtos.Produto", on_delete=models.PROTECT, related_name="desmembramentos_origem")
+    quantidade_origem = models.DecimalField(max_digits=12, decimal_places=3)
+    custo_total_origem = models.DecimalField(max_digits=12, decimal_places=2)
+    tipo = models.CharField(max_length=30, choices=TipoDesmembramentoProduto.choices, default=TipoDesmembramentoProduto.SIMPLES)
+    metodo_custo = models.CharField(max_length=20, choices=MetodoCustoDesmembramento.choices, default=MetodoCustoDesmembramento.QUANTIDADE)
+    status = models.CharField(max_length=20, choices=StatusDesmembramentoProduto.choices, default=StatusDesmembramentoProduto.CONFIRMADO)
+    usuario = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.PROTECT, related_name="desmembramentos_produto")
+    motivo = models.CharField(max_length=255)
+    observacao = models.TextField(blank=True)
+    criado_em = models.DateTimeField(auto_now_add=True)
+    cancelado_em = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        ordering = ["-criado_em"]
+
+    def __str__(self):
+        return f"Desmembramento {self.id} - {self.produto_origem}"
+
+
+class ItemDesmembramentoProduto(models.Model):
+    desmembramento = models.ForeignKey(DesmembramentoProduto, on_delete=models.CASCADE, related_name="itens")
+    produto_destino = models.ForeignKey("produtos.Produto", on_delete=models.PROTECT, related_name="desmembramentos_destino")
+    quantidade_gerada = models.DecimalField(max_digits=12, decimal_places=3)
+    unidade = models.CharField(max_length=3)
+    custo_unitario_calculado = models.DecimalField(max_digits=10, decimal_places=2)
+    custo_total = models.DecimalField(max_digits=12, decimal_places=2)
+    percentual_rendimento = models.DecimalField(max_digits=7, decimal_places=2, default=0)
+    percentual_rendimento_esperado = models.DecimalField(max_digits=7, decimal_places=2, null=True, blank=True)
+    lote = models.CharField(max_length=60, blank=True)
+    validade = models.DateField(null=True, blank=True)
+    tipo_saida = models.CharField(max_length=20, choices=TipoSaidaDesmembramento.choices, default=TipoSaidaDesmembramento.VENDAVEL)
+
+    class Meta:
+        ordering = ["id"]
+
+    def __str__(self):
+        return f"{self.produto_destino} ({self.quantidade_gerada})"
+
+    @property
+    def rendimento_abaixo_esperado(self):
+        if self.percentual_rendimento_esperado is None:
+            return False
+        return self.percentual_rendimento < self.percentual_rendimento_esperado
+
+    @property
+    def diferenca_rendimento(self):
+        if self.percentual_rendimento_esperado is None:
+            return None
+        return self.percentual_rendimento - self.percentual_rendimento_esperado
 
 
 def movimentar_estoque(*, produto, filial, tipo, quantidade, usuario=None, motivo="", referencia="", custo_unitario=None):

@@ -1,0 +1,215 @@
+{% extends "base.html" %}
+
+{% block title %}Novo desmembramento{% endblock %}
+
+{% block content %}
+<header class="page-header">
+  <div>
+    <h1>Novo desmembramento</h1>
+    <p>Baixe o produto origem e gere entrada do produto destino com custo proporcional e auditoria.</p>
+  </div>
+</header>
+
+<form method="post" class="form-grid panel form-confirm" data-msg="Confirmar desmembramento e atualizar o estoque?">
+  {% csrf_token %}
+  <section class="form-section">
+    <div class="form-section-header">
+      <h2>Transformacao</h2>
+      <p>Use para pacote fechado vendido avulso, caixa/fardo em unidades ou fracionamento simples.</p>
+    </div>
+    <div class="form-grid">
+      <div class="field span-2">
+        {{ form.receita.label_tag }}
+        {{ form.receita }}
+        <span class="help-text">Opcional: escolha uma conversao cadastrada para preencher origem, destino, quantidades e tipo.</span>
+        {{ form.receita.errors }}
+      </div>
+      <div class="field">
+        {{ form.filial.label_tag }}
+        {{ form.filial }}
+        {{ form.filial.errors }}
+      </div>
+      <div class="field">
+        {{ form.tipo.label_tag }}
+        {{ form.tipo }}
+        {{ form.tipo.errors }}
+      </div>
+      <div class="field">
+        {{ form.produto_origem.label_tag }}
+        {{ form.produto_origem }}
+        <span class="help-text">Produto que sera baixado do estoque.</span>
+        {{ form.produto_origem.errors }}
+      </div>
+      <div class="field">
+        {{ form.quantidade_origem.label_tag }}
+        {{ form.quantidade_origem }}
+        {{ form.quantidade_origem.errors }}
+      </div>
+      <div class="field span-2">
+        {{ form.motivo.label_tag }}
+        {{ form.motivo }}
+        {{ form.motivo.errors }}
+      </div>
+      <div class="field span-2">
+        {{ form.observacao.label_tag }}
+        {{ form.observacao }}
+        {{ form.observacao.errors }}
+      </div>
+    </div>
+  </section>
+
+  <section class="form-section" data-destinos-formset>
+    <div class="form-section-header">
+      <h2>Destinos gerados</h2>
+      <p>Inclua um ou mais produtos destino: produto vendavel, perda/descarte ou subproduto.</p>
+    </div>
+    {{ destino_formset.management_form }}
+    {{ destino_formset.non_form_errors }}
+    <div class="formset-rows" data-destinos-rows>
+      {% for destino_form in destino_formset %}
+        <div class="formset-row panel-subtle" data-destino-row>
+          <div class="form-grid">
+            <div class="field span-2">
+              {{ destino_form.produto_destino.label_tag }}
+              {{ destino_form.produto_destino }}
+              <span class="help-text">Produto avulso, corte, subproduto ou item separado que entrara no estoque.</span>
+              {{ destino_form.produto_destino.errors }}
+            </div>
+            <div class="field">
+              {{ destino_form.quantidade_destino.label_tag }}
+              {{ destino_form.quantidade_destino }}
+              {{ destino_form.quantidade_destino.errors }}
+            </div>
+            <div class="field">
+              {{ destino_form.tipo_saida_destino.label_tag }}
+              {{ destino_form.tipo_saida_destino }}
+              {{ destino_form.tipo_saida_destino.errors }}
+            </div>
+            <div class="field">
+              {{ destino_form.percentual_rendimento_esperado.label_tag }}
+              {{ destino_form.percentual_rendimento_esperado }}
+              {{ destino_form.percentual_rendimento_esperado.errors }}
+            </div>
+            <div class="field">
+              {{ destino_form.lote.label_tag }}
+              {{ destino_form.lote }}
+              {{ destino_form.lote.errors }}
+            </div>
+            <div class="field">
+              {{ destino_form.validade.label_tag }}
+              {{ destino_form.validade }}
+              {{ destino_form.validade.errors }}
+            </div>
+            {% if destino_form.DELETE %}
+              <div class="field">
+                <label>Remover</label>
+                {{ destino_form.DELETE }}
+              </div>
+            {% endif %}
+          </div>
+          <button class="secondary-button" type="button" data-remove-destino>Remover destino</button>
+        </div>
+      {% endfor %}
+    </div>
+    <template data-destino-empty-form>
+      <div class="formset-row panel-subtle" data-destino-row>
+        <div class="form-grid">
+          <div class="field span-2">
+            {{ destino_formset.empty_form.produto_destino.label_tag }}
+            {{ destino_formset.empty_form.produto_destino }}
+            <span class="help-text">Produto avulso, corte, subproduto ou item separado que entrara no estoque.</span>
+          </div>
+          <div class="field">
+            {{ destino_formset.empty_form.quantidade_destino.label_tag }}
+            {{ destino_formset.empty_form.quantidade_destino }}
+          </div>
+          <div class="field">
+            {{ destino_formset.empty_form.tipo_saida_destino.label_tag }}
+            {{ destino_formset.empty_form.tipo_saida_destino }}
+          </div>
+          <div class="field">
+            {{ destino_formset.empty_form.percentual_rendimento_esperado.label_tag }}
+            {{ destino_formset.empty_form.percentual_rendimento_esperado }}
+          </div>
+          <div class="field">
+            {{ destino_formset.empty_form.lote.label_tag }}
+            {{ destino_formset.empty_form.lote }}
+          </div>
+          <div class="field">
+            {{ destino_formset.empty_form.validade.label_tag }}
+            {{ destino_formset.empty_form.validade }}
+          </div>
+          <div class="field">
+            <label>Remover</label>
+            {{ destino_formset.empty_form.DELETE }}
+          </div>
+        </div>
+        <button class="secondary-button" type="button" data-remove-destino>Remover destino</button>
+      </div>
+    </template>
+    <button class="secondary-button" type="button" data-add-destino>Adicionar destino</button>
+  </section>
+
+  <section class="form-section">
+    <div class="form-section-header">
+      <h2>Autorizacao</h2>
+      <p>A simulacao nao grava estoque. A confirmacao movimenta estoque e grava auditoria com supervisor ou administrador.</p>
+    </div>
+    <div class="form-grid">
+      <label class="form-field"><span>Supervisor ou admin</span><input type="text" name="supervisor_usuario" autocomplete="username" required></label>
+      <label class="form-field"><span>Senha</span><input type="password" name="supervisor_senha" autocomplete="current-password" required></label>
+    </div>
+  </section>
+
+  {% if previa %}
+    <section class="form-section">
+      <div class="form-section-header">
+        <h2>Previa da operacao</h2>
+        <p>Confira a baixa, a entrada e o custo antes de confirmar.</p>
+      </div>
+      <div class="metrics-grid">
+        <article class="metric"><span>Saldo origem</span><strong>{{ previa.saldo_origem }}</strong></article>
+        <article class="metric"><span>Saida origem</span><strong>{{ previa.quantidade_origem }}</strong></article>
+        <article class="metric"><span>Entrada destino</span><strong>{{ previa.quantidade_destino }}</strong></article>
+        <article class="metric"><span>Custo unitario destino</span><strong>R$ {{ previa.custo_unitario_destino|floatformat:2 }}</strong></article>
+      </div>
+      <div class="operation-notice {% if not previa.estoque_suficiente %}notice-warning{% endif %}">
+        <i class="fa-solid fa-scale-balanced"></i>
+        <div>
+          <strong>{% if previa.estoque_suficiente %}Estoque suficiente para confirmar{% else %}Estoque insuficiente para confirmar{% endif %}</strong>
+          <span>{{ previa.produto_origem }} ficara com {{ previa.saldo_origem_apos }}. Os destinos receberao {{ previa.quantidade_destino }} unidade(s) no total, com custo total de R$ {{ previa.custo_total_origem|floatformat:2 }}.</span>
+        </div>
+      </div>
+      <div class="panel">
+        <table>
+          <thead>
+            <tr><th>Destino</th><th>Qtd</th><th>Classificacao</th><th>Lote</th><th>Validade</th><th>Rend. esperado</th><th>Rend. real</th><th>Alerta</th><th>Custo total</th></tr>
+          </thead>
+          <tbody>
+            {% for destino in previa.destinos %}
+              <tr>
+                <td>{{ destino.produto }}</td>
+                <td>{{ destino.quantidade }}</td>
+                <td>{{ destino.tipo_saida }}</td>
+                <td>{{ destino.lote|default:"-" }}</td>
+                <td>{{ destino.validade|date:"d/m/Y"|default:"-" }}</td>
+                <td>{% if destino.percentual_rendimento_esperado %}{{ destino.percentual_rendimento_esperado }}%{% else %}-{% endif %}</td>
+                <td>{{ destino.percentual_rendimento }}%</td>
+                <td>{% if destino.rendimento_abaixo_esperado %}<span class="status status-warning">Abaixo do esperado</span>{% else %}-{% endif %}</td>
+                <td>R$ {{ destino.custo_total|floatformat:2 }}</td>
+              </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </section>
+  {% endif %}
+
+  {{ form.non_field_errors }}
+  <div class="form-actions">
+    <a class="secondary-button" href="{% url 'estoque:desmembramentos' %}">Cancelar</a>
+    <button class="secondary-button" type="submit" name="acao" value="simular" formnovalidate>Simular</button>
+    <button class="primary-button" type="submit" name="acao" value="confirmar">Confirmar desmembramento</button>
+  </div>
+</form>
+{% endblock %}

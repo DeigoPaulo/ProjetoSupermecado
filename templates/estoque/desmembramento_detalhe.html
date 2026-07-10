@@ -1,0 +1,89 @@
+{% extends "base.html" %}
+
+{% block title %}Desmembramento {{ desmembramento.id }}{% endblock %}
+
+{% block content %}
+<header class="page-header">
+  <div>
+    <h1>Desmembramento {{ desmembramento.id }}</h1>
+    <p>{{ desmembramento.filial }} - {{ desmembramento.get_tipo_display }}</p>
+  </div>
+  <div class="actions">
+    <a class="secondary-button" href="{% url 'estoque:desmembramentos' %}">Voltar</a>
+  </div>
+</header>
+
+<section class="metrics-grid">
+  <article class="metric"><span>Status</span><strong>{{ desmembramento.get_status_display }}</strong></article>
+  <article class="metric"><span>Origem</span><strong>{{ desmembramento.quantidade_origem }}</strong></article>
+  <article class="metric"><span>Custo origem</span><strong>R$ {{ desmembramento.custo_total_origem }}</strong></article>
+  <article class="metric"><span>Criado</span><strong>{{ desmembramento.criado_em|date:"d/m H:i" }}</strong></article>
+</section>
+
+<section class="panel mt-panel">
+  <div class="panel-title">Produto origem</div>
+  <table>
+    <thead><tr><th>Produto</th><th>Quantidade baixada</th><th>Custo total</th><th>Motivo</th></tr></thead>
+    <tbody>
+      <tr>
+        <td>{{ desmembramento.produto_origem }}</td>
+        <td>{{ desmembramento.quantidade_origem }}</td>
+        <td>R$ {{ desmembramento.custo_total_origem }}</td>
+        <td>{{ desmembramento.motivo }}</td>
+      </tr>
+    </tbody>
+  </table>
+</section>
+
+<section class="panel mt-panel">
+  <div class="panel-title">Produtos gerados</div>
+  <table>
+    <thead><tr><th>Produto destino</th><th>Quantidade</th><th>Unidade</th><th>Tipo</th><th>Lote</th><th>Validade</th><th>Rend. esperado</th><th>Rend. real</th><th>Alerta</th><th>Custo unitario</th><th>Custo total</th></tr></thead>
+    <tbody>
+      {% for item in desmembramento.itens.all %}
+        <tr>
+          <td>{{ item.produto_destino }}</td>
+          <td>{{ item.quantidade_gerada }}</td>
+          <td>{{ item.unidade }}</td>
+          <td>{{ item.get_tipo_saida_display }}</td>
+          <td>{{ item.lote|default:"-" }}</td>
+          <td>{{ item.validade|date:"d/m/Y"|default:"-" }}</td>
+          <td>{% if item.percentual_rendimento_esperado %}{{ item.percentual_rendimento_esperado }}%{% else %}-{% endif %}</td>
+          <td>{{ item.percentual_rendimento }}%</td>
+          <td>{% if item.rendimento_abaixo_esperado %}<span class="status status-warning">Abaixo do esperado</span>{% else %}-{% endif %}</td>
+          <td>R$ {{ item.custo_unitario_calculado }}</td>
+          <td>R$ {{ item.custo_total }}</td>
+        </tr>
+      {% empty %}
+        <tr><td colspan="11" class="empty">Nenhum destino registrado.</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</section>
+
+{% if desmembramento.observacao %}
+  <section class="operation-notice mt-panel">
+    <i class="fa-solid fa-clipboard"></i>
+    <div>
+      <strong>Observacao</strong>
+      <span>{{ desmembramento.observacao|linebreaksbr }}</span>
+    </div>
+  </section>
+{% endif %}
+
+{% if desmembramento.status == "CONFIRMADO" %}
+  <section class="panel mt-panel">
+    <div class="panel-title">Cancelar desmembramento</div>
+    <p class="help-text">O sistema so cancela se os produtos gerados ainda tiverem saldo suficiente para voltar ao produto origem.</p>
+    <form method="post" action="{% url 'estoque:desmembramento_cancelar' desmembramento.pk %}" class="form-grid form-confirm" data-msg="Cancelar este desmembramento e reverter o estoque?">
+      {% csrf_token %}
+      <label class="form-field span-2"><span>Motivo</span><input type="text" name="motivo" required></label>
+      <label class="form-field"><span>Supervisor ou admin</span><input type="text" name="supervisor_usuario" autocomplete="username" required></label>
+      <label class="form-field"><span>Senha</span><input type="password" name="supervisor_senha" autocomplete="current-password" required></label>
+      <div class="form-actions">
+        <button class="secondary-button danger-button" type="submit">Cancelar e reverter estoque</button>
+      </div>
+    </form>
+  </section>
+{% endif %}
+{% endblock %}

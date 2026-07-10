@@ -1,0 +1,67 @@
+{% extends "base.html" %}
+
+{% block title %}Composicao{% endblock %}
+
+{% block content %}
+<header class="page-header">
+  <div>
+    <h1>{% if object %}Editar composicao{% else %}Nova composicao{% endif %}</h1>
+    <p>Monte a receita do produto final com todos os componentes que serao consumidos.</p>
+  </div>
+</header>
+
+<form method="post" class="form-grid panel">
+  {% csrf_token %}
+  <section class="form-section">
+    <div class="form-section-header">
+      <h2>Produto final</h2>
+      <p>Use para kits, cestas, bandejas, producao interna e composicoes vendaveis.</p>
+    </div>
+    <div class="form-grid">
+      {% for field in form %}
+        <label class="form-field {% if field.name == 'observacao' %}span-2{% endif %}">
+          <span>{{ field.label }}</span>
+          {{ field }}
+          {{ field.errors }}
+        </label>
+      {% endfor %}
+    </div>
+  </section>
+
+  <section class="form-section">
+    <div class="form-section-header">
+      <h2>Componentes</h2>
+      <p>Informe cada produto consumido para gerar a quantidade final definida.</p>
+    </div>
+    {{ formset.management_form }}
+    {{ formset.non_form_errors }}
+    <div class="panel">
+      <table>
+        <thead><tr><th>Componente</th><th>Quantidade</th><th>Remover</th></tr></thead>
+        <tbody>
+          {% for item_form in formset %}
+            <tr>
+              <td>
+                {{ item_form.id }}
+                {{ item_form.produto_componente }}
+                {{ item_form.produto_componente.errors }}
+              </td>
+              <td>
+                {{ item_form.quantidade }}
+                {{ item_form.quantidade.errors }}
+              </td>
+              <td>{% if item_form.DELETE %}{{ item_form.DELETE }}{% else %}-{% endif %}</td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  {{ form.non_field_errors }}
+  <div class="form-actions">
+    <a class="secondary-button" href="{% url 'estoque:composicoes' %}">Cancelar</a>
+    <button class="primary-button" type="submit">Salvar composicao</button>
+  </div>
+</form>
+{% endblock %}

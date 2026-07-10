@@ -6,22 +6,68 @@
 <header class="page-header">
   <div>
     <h1>Compras</h1>
-    <p>Entradas de mercadoria por fornecedor, com atualizacao de estoque.</p>
+    <p>Entradas de mercadoria por fornecedor. Rascunhos nao alteram estoque; entradas finalizadas aumentam o saldo.</p>
   </div>
-  <a class="primary-button" href="{% url 'compras:nova' %}">
-    <i class="fa-solid fa-circle-plus"></i> Nova entrada
-  </a>
+  <div class="actions">
+    <a class="secondary-button" href="{% url 'compras:csv' %}?{{ request.GET.urlencode }}"><i class="fa-solid fa-file-csv"></i> Excel/CSV</a>
+    <a class="secondary-button" href="{% url 'compras:imprimir' %}?{{ request.GET.urlencode }}" target="_blank"><i class="fa-solid fa-file-pdf"></i> PDF</a>
+    <a class="primary-button" href="{% url 'compras:nova' %}">
+      <i class="fa-solid fa-circle-plus"></i> Nova entrada
+    </a>
+  </div>
 </header>
+
+<section class="metrics-grid">
+  <article class="metric"><span>Total de entradas</span><strong>{{ resumo_compras.total }}</strong></article>
+  <article class="metric"><span>Rascunhos</span><strong>{{ resumo_compras.rascunhos }}</strong></article>
+  <article class="metric"><span>Finalizadas</span><strong>{{ resumo_compras.finalizadas }}</strong></article>
+  <article class="metric"><span>Total finalizado</span><strong>R$ {{ resumo_compras.total_finalizado|floatformat:2 }}</strong></article>
+</section>
+
+<section class="metrics-grid">
+  <a class="metric metric-link" href="{{ resumo_financeiro_compras.url_abertas }}"><span>Contas abertas</span><strong>{{ resumo_financeiro_compras.abertas }}</strong><small>R$ {{ resumo_financeiro_compras.total_aberto|floatformat:2 }}</small></a>
+  <a class="metric metric-link" href="{{ resumo_financeiro_compras.url_vencidas }}"><span>Vencidas</span><strong>{{ resumo_financeiro_compras.vencidas }}</strong><small>R$ {{ resumo_financeiro_compras.total_vencido|floatformat:2 }}</small></a>
+  <a class="metric metric-link" href="{{ resumo_financeiro_compras.url_pagas }}"><span>Pagas</span><strong>{{ resumo_financeiro_compras.pagas }}</strong><small>R$ {{ resumo_financeiro_compras.total_pago|floatformat:2 }}</small></a>
+</section>
+
+{% if resumo_compras.rascunhos %}
+  <section class="operation-notice">
+    Existem {{ resumo_compras.rascunhos }} entrada(s) em rascunho. Abra e finalize para atualizar o estoque dos produtos.
+  </section>
+{% endif %}
 
 <form method="get" class="toolbar">
   <input type="search" name="q" value="{{ request.GET.q }}" placeholder="Buscar por fornecedor ou documento">
+  <select name="status">
+    <option value="">Todos os status</option>
+    {% for valor, rotulo in status_choices %}
+      <option value="{{ valor }}" {% if request.GET.status == valor %}selected{% endif %}>{{ rotulo }}</option>
+    {% endfor %}
+  </select>
+  <select name="financeiro">
+    <option value="">Todos financeiros</option>
+    {% for valor, rotulo in financeiro_choices %}
+      <option value="{{ valor }}" {% if request.GET.financeiro == valor %}selected{% endif %}>{{ rotulo }}</option>
+    {% endfor %}
+  </select>
   <button type="submit">Buscar</button>
+  {% if filtros_ativos %}
+    <a class="secondary-button" href="{% url 'compras:lista' %}">Limpar filtros</a>
+  {% endif %}
 </form>
+
+{% if filtros_aplicados %}
+  <div class="active-filters">
+    {% for rotulo, valor in filtros_aplicados %}
+      <span class="filter-chip"><strong>{{ rotulo }}:</strong> {{ valor }}</span>
+    {% endfor %}
+  </div>
+{% endif %}
 
 <div class="panel">
   <table>
     <thead>
-      <tr><th>ID</th><th>Fornecedor</th><th>Filial</th><th>Documento</th><th>Total</th><th>Status</th><th>Recebimento</th><th></th></tr>
+      <tr><th>ID</th><th>Fornecedor</th><th>Filial</th><th>Documento</th><th>Total</th><th>Status</th><th>Financeiro</th><th>Recebimento</th><th></th></tr>
     </thead>
     <tbody>
       {% for entrada in entradas %}
@@ -31,12 +77,20 @@
           <td>{{ entrada.filial }}</td>
           <td>{{ entrada.numero_documento|default:"-" }}</td>
           <td>R$ {{ entrada.total_produtos|floatformat:2 }}</td>
-          <td><span class="status">{{ entrada.status }}</span></td>
+          <td><span class="status {% if entrada.status == 'FINALIZADA' %}status-success{% endif %}">{{ entrada.get_status_display }}</span></td>
+          <td>
+            {% for conta in entrada.contas_financeiras.all %}
+              <span class="status {% if conta.status == 'PAGA' %}status-success{% elif conta.status == 'CANCELADA' %}status-muted{% elif conta.esta_vencida %}status-danger{% endif %}">{{ conta.get_status_display }}</span>
+              <br><small>R$ {{ conta.valor|floatformat:2 }}{% if conta.data_pagamento %} pago em {{ conta.data_pagamento|date:"d/m/Y" }}{% endif %}</small>
+            {% empty %}
+              <span class="status status-muted">Sem conta</span>
+            {% endfor %}
+          </td>
           <td>{{ entrada.data_recebimento|date:"d/m/Y H:i" }}</td>
-          <td><a href="{% url 'compras:detalhe' entrada.pk %}">Abrir</a></td>
+          <td><a href="{% url 'compras:detalhe' entrada.pk %}?next={{ request.get_full_path|urlencode }}">Abrir</a></td>
         </tr>
       {% empty %}
-        <tr><td colspan="8" class="empty">Nenhuma entrada de compra registrada.</td></tr>
+        <tr><td colspan="9" class="empty">Nenhuma entrada de compra registrada.</td></tr>
       {% endfor %}
     </tbody>
   </table>

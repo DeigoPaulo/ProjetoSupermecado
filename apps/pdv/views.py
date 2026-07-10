@@ -130,13 +130,7 @@ def terminal_bootstrap(request):
                 "balanca_local": terminal.usa_balanca,
             },
             "dispositivos": {
-                "balanca": {
-                    "opcional": True,
-                    "habilitada": terminal.usa_balanca,
-                    "protocolo": terminal.protocolo_balanca,
-                    "porta": terminal.porta_balanca,
-                    "modelo": terminal.modelo_balanca,
-                },
+                "balanca": terminal.balanca_configuracao(),
             },
             "tef": {
                 "provedor": terminal.provedor_tef,

@@ -1,0 +1,99 @@
+<!doctype html>
+<html lang="pt-br">
+<head>
+  <meta charset="utf-8">
+  <title>Entrada {{ entrada.id }}</title>
+  <style>
+    @page { size: A4 landscape; margin: 10mm; }
+    * { box-sizing: border-box; }
+    body { margin: 0; color: #172033; font: 9px Arial, sans-serif; }
+    header { display: flex; justify-content: space-between; gap: 20px; border-bottom: 2px solid #0050e8; padding-bottom: 8px; }
+    h1 { margin: 0 0 3px; font-size: 20px; }
+    h2 { margin: 14px 0 6px; font-size: 13px; }
+    p { margin: 2px 0; color: #53657d; }
+    .actions { margin: 9px 0; text-align: right; }
+    button { border: 0; border-radius: 5px; background: #0050e8; color: #fff; padding: 8px 13px; font-weight: 700; }
+    .summary { display: flex; gap: 8px; margin: 10px 0; }
+    .summary div { min-width: 145px; border: 1px solid #d8e1ef; padding: 8px; }
+    .summary span { display: block; color: #607089; }
+    .summary strong { display: block; margin-top: 3px; font-size: 13px; }
+    table { width: 100%; border-collapse: collapse; margin-bottom: 10px; }
+    th, td { border: 1px solid #d8e1ef; padding: 5px; text-align: left; vertical-align: top; }
+    th { background: #edf3ff; font-size: 8px; text-transform: uppercase; }
+    tr { break-inside: avoid; }
+    .money { text-align: right; white-space: nowrap; }
+    footer { margin-top: 8px; color: #718096; text-align: right; }
+    @media print { .actions { display: none; } }
+  </style>
+</head>
+<body>
+  <header>
+    <div>
+      <h1>Entrada {{ entrada.id }}</h1>
+      <p>{{ entrada.fornecedor }} - {{ entrada.filial }}</p>
+      <p>Documento {{ entrada.numero_documento|default:"-" }} - Status {{ entrada.get_status_display }}</p>
+    </div>
+    <p>Gerado em {{ gerado_em|date:"d/m/Y H:i" }}</p>
+  </header>
+  <div class="actions"><button type="button" onclick="window.print()">Imprimir / Salvar como PDF</button></div>
+  <section class="summary">
+    <div><span>Total</span><strong>R$ {{ entrada.total_produtos|floatformat:2 }}</strong></div>
+    <div><span>Recebimento</span><strong>{{ entrada.data_recebimento|date:"d/m/Y H:i" }}</strong></div>
+    <div><span>Vencimento</span><strong>{{ entrada.vencimento_financeiro|date:"d/m/Y"|default:"Ao finalizar" }}</strong></div>
+    <div><span>Responsavel</span><strong>{{ entrada.usuario }}</strong></div>
+  </section>
+
+  <h2>Itens recebidos</h2>
+  <table>
+    <thead><tr><th>Produto</th><th>Quantidade</th><th>Custo unitario</th><th>Total</th><th>Atualiza custo</th></tr></thead>
+    <tbody>
+      {% for item in entrada.itens.all %}
+        <tr><td>{{ item.produto }}</td><td>{{ item.quantidade }}</td><td class="money">R$ {{ item.custo_unitario|floatformat:2 }}</td><td class="money">R$ {{ item.total|floatformat:2 }}</td><td>{{ item.atualizar_preco_custo|yesno:"Sim,Nao" }}</td></tr>
+      {% empty %}
+        <tr><td colspan="5">Nenhum item informado.</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+
+  <h2>Financeiro vinculado</h2>
+  <table>
+    <thead><tr><th>Conta</th><th>Status</th><th>Vencimento</th><th>Pagamento</th><th>Valor</th><th>Pago</th></tr></thead>
+    <tbody>
+      {% for conta in entrada.contas_financeiras.all %}
+        <tr><td>{{ conta.descricao }}</td><td>{{ conta.get_status_display }}</td><td>{{ conta.vencimento|date:"d/m/Y" }}</td><td>{{ conta.data_pagamento|date:"d/m/Y"|default:"-" }}</td><td class="money">R$ {{ conta.valor|floatformat:2 }}</td><td class="money">{% if conta.valor_pago is not None %}R$ {{ conta.valor_pago|floatformat:2 }}{% else %}-{% endif %}</td></tr>
+      {% empty %}
+        <tr><td colspan="6">Nenhuma conta financeira vinculada.</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+
+  <h2>Rastreio financeiro</h2>
+  <table>
+    <thead><tr><th>Data</th><th>Conta movimento</th><th>Tipo</th><th>Origem</th><th>Valor</th><th>Usuario</th></tr></thead>
+    <tbody>
+      {% for conta in entrada.contas_financeiras.all %}
+        {% for lancamento in conta.lancamentos.all %}
+          <tr><td>{{ lancamento.data|date:"d/m/Y" }}</td><td>{{ lancamento.conta.nome }} - {{ lancamento.conta.filial }}</td><td>{{ lancamento.get_tipo_display }}</td><td>{{ lancamento.origem }}</td><td class="money">R$ {{ lancamento.valor|floatformat:2 }}</td><td>{{ lancamento.usuario|default:"-" }}</td></tr>
+        {% empty %}
+          <tr><td colspan="6">Conta {{ conta.id }} ainda nao gerou lancamento no livro financeiro.</td></tr>
+        {% endfor %}
+      {% empty %}
+        <tr><td colspan="6">Nenhuma conta financeira vinculada.</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+
+  <h2>Rastreio no estoque</h2>
+  <table>
+    <thead><tr><th>Data</th><th>Tipo</th><th>Produto</th><th>Quantidade</th><th>Custo total</th><th>Usuario</th></tr></thead>
+    <tbody>
+      {% for mov in movimentacoes_estoque %}
+        <tr><td>{{ mov.data|date:"d/m/Y H:i" }}</td><td>{{ mov.get_tipo_display }}</td><td>{{ mov.produto }}</td><td>{{ mov.quantidade }}</td><td class="money">R$ {{ mov.custo_total|default:0|floatformat:2 }}</td><td>{{ mov.usuario|default:"-" }}</td></tr>
+      {% empty %}
+        <tr><td colspan="6">Nenhuma movimentacao de estoque vinculada.</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  <footer>Sistema Supermercado</footer>
+</body>
+</html>

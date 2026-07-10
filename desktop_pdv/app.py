@@ -5,6 +5,7 @@ import json
 import os
 import sys
 from pathlib import Path
+from datetime import datetime, timezone
 from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
 
@@ -12,6 +13,7 @@ from version import APP_VERSION
 from devices.printers import ErroDescobertaImpressoras, listar_impressoras_windows
 from devices.labels import montar_etiquetas_nativas
 from devices.printing import ErroImpressao, imprimir_raw_windows, montar_cupom_escpos
+from devices.scales import ler_peso_balanca, normalizar_configuracao_balanca
 
 APP_DIR = Path(__file__).resolve().parent
 
@@ -48,6 +50,43 @@ def salvar_configuracao(config: dict) -> None:
     with temporario.open("w", encoding="utf-8") as arquivo:
         json.dump(config, arquivo, ensure_ascii=True, indent=2)
     temporario.replace(config_path)
+
+
+def caminho_log_dispositivos() -> Path:
+    return caminho_configuracao().parent / "devices.log.jsonl"
+
+
+def registrar_evento_dispositivo(tipo: str, payload: dict) -> None:
+    caminho = caminho_log_dispositivos()
+    try:
+        caminho.parent.mkdir(parents=True, exist_ok=True)
+        evento = {
+            "em": datetime.now(timezone.utc).isoformat(),
+            "tipo": tipo,
+            "payload": payload,
+        }
+        with caminho.open("a", encoding="utf-8") as arquivo:
+            arquivo.write(json.dumps(evento, ensure_ascii=True, sort_keys=True) + "\n")
+    except OSError:
+        return
+
+
+def listar_eventos_dispositivo(limite: int = 50) -> dict:
+    caminho = caminho_log_dispositivos()
+    try:
+        linhas = caminho.read_text(encoding="utf-8").splitlines()
+    except FileNotFoundError:
+        return {"status": "ok", "eventos": [], "total": 0}
+    except OSError as erro:
+        return {"status": "erro", "mensagem": str(erro), "eventos": [], "total": 0}
+
+    eventos = []
+    for linha in linhas[-max(1, min(int(limite or 50), 200)):]:
+        try:
+            eventos.append(json.loads(linha))
+        except json.JSONDecodeError:
+            eventos.append({"tipo": "log_corrompido", "payload": {"linha": linha[:200]}})
+    return {"status": "ok", "eventos": eventos, "total": len(linhas)}
 
 
 def validar_terminal(config: dict) -> dict:
@@ -186,6 +225,31 @@ class PonteLocal:
             "padrao": next((item["nome"] for item in impressoras if item["padrao"]), None),
         }
 
+    def listar_eventos_dispositivos(self, limite: int = 50) -> dict:
+        return listar_eventos_dispositivo(limite)
+
+    def deviceLogs(self, limite: int = 50) -> dict:
+        return self.listar_eventos_dispositivos(limite)
+
+    def configuracao_balanca(self) -> dict:
+        dispositivos = self.bootstrap.get("dispositivos", {})
+        return normalizar_configuracao_balanca(dispositivos.get("balanca"))
+
+    def ler_peso_balanca(self) -> dict:
+        resultado = ler_peso_balanca(self.configuracao_balanca())
+        if resultado.get("status") != "ok":
+            registrar_evento_dispositivo(
+                "balanca",
+                {
+                    "status": resultado.get("status"),
+                    "mensagem": resultado.get("mensagem", ""),
+                    "protocolo": resultado.get("protocolo", self.configuracao_balanca().get("protocolo")),
+                    "porta": resultado.get("porta", self.configuracao_balanca().get("porta")),
+                    "fallback_manual": resultado.get("fallback_manual"),
+                },
+            )
+        return resultado
+
     def imprimir_venda(self, payload: dict) -> dict:
         impressao = payload.get("impressao", {}) if isinstance(payload, dict) else {}
         impressora = str(impressao.get("impressora_padrao", "")).strip()
@@ -203,6 +267,9 @@ class PonteLocal:
             return {"status": "erro", "mensagem": str(erro), "impresso": False}
         return {"status": "ok", "impresso": True, "impressora": impressora, "vias": vias, "bytes": total_bytes}
 
+    def printSale(self, payload: dict) -> dict:
+        return self.imprimir_venda(payload)
+
     def imprimir_etiquetas(self, payload: dict) -> dict:
         impressora = str(payload.get("impressora_padrao", "")).strip() if isinstance(payload, dict) else ""
         try:
@@ -219,6 +286,15 @@ class PonteLocal:
             "linguagem": str(payload.get("linguagem", "")).upper(),
             "bytes": total_bytes,
         }
+
+    def printLabels(self, payload: dict) -> dict:
+        return self.imprimir_etiquetas(payload)
+
+    def readScale(self) -> dict:
+        return self.ler_peso_balanca()
+
+    def scaleConfig(self) -> dict:
+        return self.configuracao_balanca()
 
 
 def executar(reconfigurar: bool = False) -> None:

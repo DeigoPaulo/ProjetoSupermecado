@@ -13,6 +13,7 @@
 
 <form method="post" class="form-grid panel">
   {% csrf_token %}
+  <input type="hidden" name="next" value="{{ next_url }}">
   {% if form.non_field_errors %}<div class="form-note form-note-danger">{{ form.non_field_errors }}</div>{% endif %}
   <section class="form-section form-field-wide">
     <h2>Pagamento / recebimento</h2>
@@ -24,7 +25,7 @@
     </div>
   </section>
   <div class="form-actions">
-    <a class="secondary-button" href="{% url 'financeiro:contas' %}">Cancelar</a>
+    <a class="secondary-button" href="{{ next_url }}">Cancelar</a>
     <button class="primary-button" type="submit">Confirmar baixa</button>
   </div>
 </form>

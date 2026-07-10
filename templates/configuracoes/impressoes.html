@@ -41,7 +41,12 @@
             <td>{{ modelo.colunas }}</td>
             <td>{{ modelo.get_orientacao_display }}</td>
             <td>{% if modelo.is_active %}<span class="status status-success">Ativo</span>{% else %}<span class="status status-muted">Inativo</span>{% endif %}</td>
-            <td><a class="secondary-button" href="{% url 'configuracoes:modelo_etiqueta_editar' modelo.pk %}">Editar</a></td>
+            <td class="table-actions">
+              <button class="secondary-button label-test-print" type="button" data-url="{% url 'configuracoes:modelo_etiqueta_teste' modelo.pk %}">
+                <i class="fa-solid fa-print"></i> Teste
+              </button>
+              <a class="secondary-button" href="{% url 'configuracoes:modelo_etiqueta_editar' modelo.pk %}">Editar</a>
+            </td>
           </tr>
         {% empty %}
           <tr><td colspan="8" class="empty">Nenhum modelo profissional cadastrado.</td></tr>
@@ -49,6 +54,7 @@
       </tbody>
     </table>
   </div>
+  <p id="label-test-feedback" class="labels-print-feedback" aria-live="polite"></p>
 </section>
 
 <section class="operation-notice">

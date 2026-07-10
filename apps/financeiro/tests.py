@@ -86,6 +86,23 @@ class FinanceiroTests(TestCase):
         self.assertEqual(baixa_form.status_code, 200)
         self.assertContains(baixa_form, "Pagamento / recebimento")
 
+    def test_baixa_conta_respeita_retorno_seguro_para_origem(self):
+        response = self.client.post(
+            f"/financeiro/{self.conta.pk}/baixar/",
+            {
+                "data_pagamento": timezone.localdate().isoformat(),
+                "valor_pago": "150.00",
+                "forma_pagamento": "Pix",
+                "conta_movimento": "",
+                "next": "/compras/10/",
+            },
+        )
+
+        self.conta.refresh_from_db()
+        self.assertEqual(response.status_code, 302)
+        self.assertEqual(response["Location"], "/compras/10/")
+        self.assertEqual(self.conta.status, StatusContaFinanceira.PAGA)
+
     def test_exporta_financeiro_csv_e_pdf(self):
         response_csv = self.client.get("/financeiro/exportar.csv")
         response_pdf = self.client.get("/financeiro/imprimir/")

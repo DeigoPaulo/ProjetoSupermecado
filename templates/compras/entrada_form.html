@@ -12,6 +12,7 @@
 
 <form method="post" class="panel purchase-form">
   {% csrf_token %}
+  {% if retorno_lista_url %}<input type="hidden" name="next" value="{{ retorno_lista_url }}">{% endif %}
   <section class="form-section purchase-section">
     <div class="form-section-header">
       <h2>Dados da entrada</h2>
@@ -78,9 +79,27 @@
     </div>
   </section>
 
+  <section class="form-section purchase-section">
+    <div class="form-section-header">
+      <h2>Recebimento</h2>
+      <p>Salvar rascunho nao altera estoque. Para aumentar o saldo dos produtos agora, finalize a entrada com autorizacao.</p>
+    </div>
+    <div class="form-grid">
+      <label class="form-field">
+        <span>Supervisor ou admin</span>
+        <input class="no-upper" type="text" name="supervisor_usuario" autocomplete="username">
+      </label>
+      <label class="form-field">
+        <span>Senha</span>
+        <input class="no-upper" type="password" name="supervisor_senha" autocomplete="current-password">
+      </label>
+    </div>
+  </section>
+
   <div class="form-actions purchase-actions">
-    <a class="secondary-button" href="{% if object %}{% url 'compras:detalhe' object.pk %}{% else %}{% url 'compras:lista' %}{% endif %}">Cancelar</a>
-    <button class="primary-button" type="submit">Salvar rascunho</button>
+    <a class="secondary-button" href="{% if object %}{% url 'compras:detalhe' object.pk %}{% if retorno_lista_url %}?next={{ retorno_lista_url|urlencode }}{% endif %}{% else %}{% url 'compras:lista' %}{% endif %}">Cancelar</a>
+    <button class="secondary-button" type="submit" name="acao" value="rascunho">Salvar rascunho</button>
+    <button class="primary-button" type="submit" name="acao" value="finalizar">Finalizar e atualizar estoque</button>
   </div>
 </form>
 {% endblock %}

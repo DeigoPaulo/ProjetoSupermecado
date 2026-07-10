@@ -1,0 +1,48 @@
+{% extends "base.html" %}
+
+{% block title %}Receitas de desmembramento{% endblock %}
+
+{% block content %}
+<header class="page-header">
+  <div>
+    <h1>Receitas de desmembramento</h1>
+    <p>Conversoes padrao para pacote, caixa, fardo, avulso e preparacao futura de acougue/producao.</p>
+  </div>
+  <div class="actions">
+    <a class="secondary-button" href="{% url 'estoque:desmembramentos' %}">Desmembramentos</a>
+    <a class="primary-button" href="{% url 'estoque:receita_desmembramento_nova' %}">Nova receita</a>
+  </div>
+</header>
+
+<form method="get" class="toolbar">
+  <input type="search" name="q" value="{{ request.GET.q }}" placeholder="Buscar origem, destino, codigo ou SKU">
+  <button type="submit">Buscar</button>
+</form>
+
+<div class="panel">
+  <table>
+    <thead>
+      <tr><th>Origem</th><th>Destino</th><th>Conversao</th><th>Tipo</th><th>Classificacao</th><th>Escopo</th><th>Status</th><th></th></tr>
+    </thead>
+    <tbody>
+      {% for receita in receitas %}
+        <tr>
+          <td><strong>{{ receita.produto_origem }}</strong><br><small>{{ receita.produto_origem.codigo_barras }}</small></td>
+          <td><strong>{{ receita.produto_destino }}</strong><br><small>{{ receita.produto_destino.codigo_barras }}</small></td>
+          <td>{{ receita.quantidade_origem }} -> {{ receita.quantidade_destino }}</td>
+          <td>{{ receita.get_tipo_display }}</td>
+          <td>{{ receita.get_tipo_saida_display }}</td>
+          <td>{{ receita.empresa }}<br><small>{{ receita.filial|default:"Todas as filiais" }}</small></td>
+          <td>{% if receita.is_active %}<span class="status status-success">Ativa</span>{% else %}<span class="status status-muted">Inativa</span>{% endif %}</td>
+          <td class="table-actions">
+            <a class="secondary-button" href="{% url 'estoque:desmembramento_novo' %}?receita={{ receita.pk }}">Usar</a>
+            <a class="secondary-button" href="{% url 'estoque:receita_desmembramento_editar' receita.pk %}">Editar</a>
+          </td>
+        </tr>
+      {% empty %}
+        <tr><td colspan="8" class="empty">Nenhuma receita cadastrada.</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endblock %}

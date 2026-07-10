@@ -1,0 +1,123 @@
+{% extends "base.html" %}
+
+{% block title %}Composicao {{ composicao.id }}{% endblock %}
+
+{% block content %}
+<header class="page-header">
+  <div>
+    <h1>{{ composicao.produto_final }}</h1>
+    <p>{{ composicao.get_tipo_display }} - {{ composicao.filial|default:"Todas as filiais" }}</p>
+  </div>
+  <div class="actions">
+    <a class="secondary-button" href="{% url 'estoque:composicoes' %}">Voltar</a>
+    <a class="secondary-button" href="{% url 'estoque:composicao_editar' composicao.pk %}">Editar</a>
+  </div>
+</header>
+
+<section class="metrics-grid">
+  <article class="metric"><span>Produto final</span><strong>{{ composicao.quantidade_final }}</strong></article>
+  <article class="metric"><span>Componentes</span><strong>{{ composicao.itens.count }}</strong></article>
+  <article class="metric"><span>Custo previsto</span><strong>R$ {{ resumo_visual.custo_previsto|floatformat:2 }}</strong></article>
+  <article class="metric"><span>Capacidade atual</span><strong>{{ resumo_visual.capacidade_maxima|floatformat:3 }}</strong></article>
+</section>
+
+<section class="composition-overview panel">
+  <div>
+    <span class="composition-kicker">Visao operacional</span>
+    <h2>{{ composicao.produto_final }}</h2>
+    <p>Composicao {% if composicao.is_active %}ativa{% else %}inativa{% endif %}, com estoque atual do produto final em {{ resumo_visual.estoque_final|floatformat:3 }} e {{ composicao.producoes.count }} producao(oes) registrada(s).</p>
+  </div>
+  <div class="composition-stock-pill">
+    <span>Estoque final</span>
+    <strong>{{ resumo_visual.estoque_final|floatformat:3 }}</strong>
+  </div>
+</section>
+
+<section class="two-column">
+  <div class="panel">
+    <div class="panel-title">Componentes da receita</div>
+    <div class="composition-component-grid">
+      {% for componente in resumo_visual.componentes %}
+        <article class="composition-component-card {% if not componente.suficiente %}is-low{% endif %}">
+          <div>
+            <strong>{{ componente.item.produto_componente }}</strong>
+            <span>{{ componente.item.quantidade|floatformat:3 }} por receita</span>
+          </div>
+          <dl>
+            <div><dt>Saldo</dt><dd>{{ componente.saldo|floatformat:3 }}</dd></div>
+            <div><dt>Custo</dt><dd>R$ {{ componente.custo_total|floatformat:2 }}</dd></div>
+            <div><dt>Produz</dt><dd>{{ componente.capacidade|floatformat:3 }}</dd></div>
+          </dl>
+        </article>
+      {% empty %}
+        <div class="empty">Nenhum componente cadastrado.</div>
+      {% endfor %}
+    </div>
+    <table>
+      <thead><tr><th>Produto</th><th>Quantidade</th><th>Custo atual</th></tr></thead>
+      <tbody>
+        {% for item in composicao.itens.all %}
+          <tr>
+            <td>{{ item.produto_componente }}</td>
+            <td>{{ item.quantidade }}</td>
+            <td>R$ {{ item.produto_componente.preco_custo|floatformat:2 }}</td>
+          </tr>
+        {% empty %}
+          <tr><td colspan="3" class="empty">Nenhum componente cadastrado.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+
+  <div class="panel">
+    <div class="panel-title">Produzir composicao</div>
+    <form method="post" action="{% url 'estoque:composicao_produzir' composicao.pk %}" class="form-grid form-confirm" data-msg="Confirmar producao e atualizar o estoque?">
+      {% csrf_token %}
+      {% for field in producao_form %}
+        <label class="form-field {% if field.name == 'observacao' %}span-2{% endif %}">
+          <span>{{ field.label }}</span>
+          {{ field }}
+          {{ field.errors }}
+        </label>
+      {% endfor %}
+      <label class="form-field"><span>Supervisor ou admin</span><input type="text" name="supervisor_usuario" autocomplete="username" required></label>
+      <label class="form-field"><span>Senha</span><input type="password" name="supervisor_senha" autocomplete="current-password" required></label>
+      <button class="primary-button span-2" type="submit">Produzir e atualizar estoque</button>
+    </form>
+  </div>
+</section>
+
+<div class="panel">
+  <div class="panel-title">Ultimas producoes</div>
+  <table>
+    <thead><tr><th>Data</th><th>Filial</th><th>Qtd</th><th>Custo</th><th>Status</th><th>Usuario</th><th>Cancelar</th></tr></thead>
+    <tbody>
+      {% for producao in producoes %}
+        <tr>
+          <td>{{ producao.criado_em|date:"d/m/Y H:i" }}</td>
+          <td>{{ producao.filial }}</td>
+          <td>{{ producao.quantidade_final }}</td>
+          <td>R$ {{ producao.custo_total|floatformat:2 }}</td>
+          <td><span class="status">{{ producao.get_status_display }}</span></td>
+          <td>{{ producao.usuario }}</td>
+          <td>
+            {% if producao.status == "CONFIRMADO" %}
+              <form method="post" action="{% url 'estoque:composicao_cancelar_producao' producao.pk %}" class="form-confirm compact-form" data-msg="Cancelar esta producao e reverter o estoque?">
+                {% csrf_token %}
+                <input type="text" name="motivo" placeholder="Motivo" required>
+                <input type="text" name="supervisor_usuario" placeholder="Supervisor" required>
+                <input type="password" name="supervisor_senha" placeholder="Senha" required>
+                <button class="secondary-button" type="submit">Cancelar</button>
+              </form>
+            {% else %}
+              -
+            {% endif %}
+          </td>
+        </tr>
+      {% empty %}
+        <tr><td colspan="7" class="empty">Nenhuma producao registrada.</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endblock %}

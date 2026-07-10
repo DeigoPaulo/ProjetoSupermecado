@@ -1,0 +1,167 @@
+{% extends "base.html" %}
+{% load static %}
+
+{% block title %}Relatorio de rendimento{% endblock %}
+
+{% block content %}
+<header class="page-header">
+  <div>
+    <h1>Relatorio de rendimento</h1>
+    <p>Acompanhe desmembramentos, perdas, subprodutos e alertas de rendimento por filial, periodo e produto.</p>
+  </div>
+  <div class="actions">
+    <a class="secondary-button" href="{% url 'estoque:desmembramentos' %}">Desmembramentos</a>
+    <a class="secondary-button" href="{% url 'estoque:desmembramento_relatorio_csv' %}?{{ request.GET.urlencode }}">Excel/CSV</a>
+  </div>
+</header>
+
+<section class="metrics-grid">
+  <article class="metric"><span>Operacoes</span><strong>{{ total_operacoes }}</strong></article>
+  <article class="metric"><span>Qtd gerada</span><strong>{{ total_quantidade|floatformat:3 }}</strong></article>
+  <article class="metric"><span>Custo gerado</span><strong>R$ {{ total_custo|floatformat:2 }}</strong></article>
+  <article class="metric"><span>Alertas</span><strong>{{ total_alertas }}</strong></article>
+</section>
+
+{{ graficos_rendimento|json_script:"rendimento-chart-data" }}
+<section class="dashboard-chart-grid">
+  <article class="panel dashboard-chart-card">
+    <div class="panel-title">Destinos gerados</div>
+    <div class="dashboard-chart-wrap"><canvas id="rendimento-destinos-chart" aria-label="Destinos gerados"></canvas></div>
+  </article>
+  <article class="panel dashboard-chart-card">
+    <div class="panel-title">Custo por destino</div>
+    <div class="dashboard-chart-wrap"><canvas id="rendimento-custos-chart" aria-label="Custo por destino"></canvas></div>
+  </article>
+  <article class="panel dashboard-chart-card">
+    <div class="panel-title">Alertas de rendimento</div>
+    <div class="dashboard-chart-wrap"><canvas id="rendimento-alertas-chart" aria-label="Alertas de rendimento"></canvas></div>
+  </article>
+</section>
+
+<form method="get" class="toolbar toolbar-wrap">
+  <input type="search" name="q" value="{{ request.GET.q }}" placeholder="Produto, codigo, SKU ou lote">
+  <input type="date" name="inicio" value="{{ request.GET.inicio }}">
+  <input type="date" name="fim" value="{{ request.GET.fim }}">
+  <select name="filial">
+    <option value="">Todas as filiais</option>
+    {% for filial in filiais %}
+      <option value="{{ filial.id }}" {% if request.GET.filial == filial.id|stringformat:"s" %}selected{% endif %}>{{ filial.nome }}</option>
+    {% endfor %}
+  </select>
+  <select name="tipo">
+    <option value="">Todos os tipos</option>
+    {% for valor, rotulo in tipos %}
+      <option value="{{ valor }}" {% if request.GET.tipo == valor %}selected{% endif %}>{{ rotulo }}</option>
+    {% endfor %}
+  </select>
+  <select name="tipo_saida">
+    <option value="">Todos os destinos</option>
+    {% for valor, rotulo in tipos_saida %}
+      <option value="{{ valor }}" {% if request.GET.tipo_saida == valor %}selected{% endif %}>{{ rotulo }}</option>
+    {% endfor %}
+  </select>
+  <select name="alerta">
+    <option value="">Todos os rendimentos</option>
+    <option value="abaixo" {% if request.GET.alerta == "abaixo" %}selected{% endif %}>Somente abaixo do esperado</option>
+  </select>
+  <button type="submit">Filtrar</button>
+</form>
+
+<div class="panel">
+  <table>
+    <thead>
+      <tr>
+        <th>Data</th>
+        <th>Filial</th>
+        <th>Origem</th>
+        <th>Destino</th>
+        <th>Qtd</th>
+        <th>Rend. esperado</th>
+        <th>Rend. real</th>
+        <th>Diferenca</th>
+        <th>Custo</th>
+        <th>Alerta</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for item in itens %}
+        <tr>
+          <td>{{ item.desmembramento.criado_em|date:"d/m/Y H:i" }}</td>
+          <td>{{ item.desmembramento.filial }}</td>
+          <td>
+            <a href="{% url 'estoque:desmembramento_detalhe' item.desmembramento_id %}"><strong>{{ item.desmembramento.produto_origem }}</strong></a>
+            <br><small>{{ item.desmembramento.get_tipo_display }} | Saida: {{ item.desmembramento.quantidade_origem }}</small>
+          </td>
+          <td>
+            <strong>{{ item.produto_destino }}</strong><br>
+            <small>{{ item.get_tipo_saida_display }}{% if item.lote %} | Lote {{ item.lote }}{% endif %}{% if item.validade %} | Val. {{ item.validade|date:"d/m/Y" }}{% endif %}</small>
+          </td>
+          <td>{{ item.quantidade_gerada }} {{ item.unidade }}</td>
+          <td>{% if item.percentual_rendimento_esperado %}{{ item.percentual_rendimento_esperado }}%{% else %}-{% endif %}</td>
+          <td>{{ item.percentual_rendimento }}%</td>
+          <td>{% if item.diferenca_rendimento != None %}{{ item.diferenca_rendimento }}%{% else %}-{% endif %}</td>
+          <td>R$ {{ item.custo_total|floatformat:2 }}</td>
+          <td>{% if item.rendimento_abaixo_esperado %}<span class="status status-warning">Abaixo do esperado</span>{% else %}<span class="status status-success">Dentro do esperado</span>{% endif %}</td>
+        </tr>
+      {% empty %}
+        <tr><td colspan="10" class="empty">Nenhum rendimento encontrado para os filtros.</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+
+{% if itens|length >= 200 %}
+  <p class="help-text">Mostrando os 200 registros mais recentes. Use os filtros ou exporte o CSV para analise completa.</p>
+{% endif %}
+{% endblock %}
+
+{% block extra_js %}
+<script src="{% static 'vendor/chartjs/chart.umd-4.4.8.min.js' %}"></script>
+<script>
+  (function () {
+    var dataElement = document.getElementById("rendimento-chart-data");
+    if (!dataElement || !window.Chart) return;
+    var data = JSON.parse(dataElement.textContent || "{}");
+    var colors = ["#0050e8", "#059669", "#f59e0b", "#dc2626", "#7c3aed", "#0891b2"];
+
+    function chartData(source, emptyLabel) {
+      var labels = source && source.labels && source.labels.length ? source.labels : [emptyLabel];
+      var values = source && source.values && source.values.length ? source.values : [1];
+      var isEmpty = !source || !source.values || !source.values.length || source.values.every(function (value) { return Number(value) === 0; });
+      return { labels: labels, values: values, isEmpty: isEmpty };
+    }
+
+    function makeChart(canvasId, source, emptyLabel, type) {
+      var canvas = document.getElementById(canvasId);
+      if (!canvas) return;
+      var prepared = chartData(source, emptyLabel);
+      new Chart(canvas, {
+        type: type || "doughnut",
+        data: {
+          labels: prepared.labels,
+          datasets: [{
+            data: prepared.values,
+            backgroundColor: prepared.isEmpty ? ["#e5ebf4"] : colors,
+            borderColor: type === "bar" ? colors : "#ffffff",
+            borderWidth: type === "bar" ? 1 : 3,
+          }],
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          cutout: type === "doughnut" ? "64%" : undefined,
+          plugins: {
+            legend: { display: type !== "bar", position: "bottom", labels: { boxWidth: 10, usePointStyle: true, padding: 14 } },
+            tooltip: { enabled: !prepared.isEmpty },
+          },
+          scales: type === "bar" ? { y: { beginAtZero: true } } : {},
+        },
+      });
+    }
+
+    makeChart("rendimento-destinos-chart", data.destinos, "Sem destinos", "doughnut");
+    makeChart("rendimento-custos-chart", data.custos, "Sem custos", "bar");
+    makeChart("rendimento-alertas-chart", data.alertas, "Sem alertas", "doughnut");
+  })();
+</script>
+{% endblock %}

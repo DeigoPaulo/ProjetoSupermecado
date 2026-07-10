@@ -1,0 +1,43 @@
+{% extends "base.html" %}
+
+{% block title %}Composicoes{% endblock %}
+
+{% block content %}
+<header class="page-header">
+  <div>
+    <h1>Composicoes</h1>
+    <p>Receitas para kits, cestas e producao interna com consumo de componentes.</p>
+  </div>
+  <div class="actions">
+    <a class="secondary-button" href="{% url 'estoque:desmembramentos' %}">Desmembramentos</a>
+    <a class="primary-button" href="{% url 'estoque:composicao_nova' %}">Nova composicao</a>
+  </div>
+</header>
+
+<form method="get" class="toolbar">
+  <input type="search" name="q" value="{{ request.GET.q }}" placeholder="Buscar produto final ou componente">
+  <button type="submit">Buscar</button>
+</form>
+
+<div class="panel">
+  <table>
+    <thead>
+      <tr><th>Produto final</th><th>Qtd final</th><th>Tipo</th><th>Componentes</th><th>Status</th><th></th></tr>
+    </thead>
+    <tbody>
+      {% for composicao in composicoes %}
+        <tr>
+          <td><a href="{% url 'estoque:composicao_detalhe' composicao.pk %}"><strong>{{ composicao.produto_final }}</strong></a><br><small>{{ composicao.filial|default:"Todas as filiais" }}</small></td>
+          <td>{{ composicao.quantidade_final }}</td>
+          <td>{{ composicao.get_tipo_display }}</td>
+          <td>{{ composicao.itens.count }}</td>
+          <td><span class="status {% if composicao.is_active %}status-success{% endif %}">{% if composicao.is_active %}Ativa{% else %}Inativa{% endif %}</span></td>
+          <td><a class="secondary-button" href="{% url 'estoque:composicao_editar' composicao.pk %}">Editar</a></td>
+        </tr>
+      {% empty %}
+        <tr><td colspan="6" class="empty">Nenhuma composicao cadastrada.</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endblock %}

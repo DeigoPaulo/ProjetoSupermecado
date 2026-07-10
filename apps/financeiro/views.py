@@ -11,6 +11,7 @@ from django.http import HttpResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.utils import timezone
 from django.utils.dateparse import parse_date
+from django.utils.http import url_has_allowed_host_and_scheme
 
 from apps.accounts.permissions import RELATORIOS, SISTEMA, role_required
 from apps.empresas.models import Filial
@@ -26,6 +27,13 @@ def _periodo_from_request(request):
     data_inicio = parse_date(request.GET.get("data_inicio") or "") or hoje.replace(day=1)
     data_fim = parse_date(request.GET.get("data_fim") or "") or hoje
     return data_inicio, data_fim
+
+
+def _next_seguro(request, default="financeiro:contas"):
+    destino = request.POST.get("next") or request.GET.get("next") or ""
+    if destino and url_has_allowed_host_and_scheme(destino, allowed_hosts={request.get_host()}):
+        return destino
+    return default
 
 
 def _contas_filtradas(request):
@@ -528,6 +536,7 @@ def conta_form(request, pk=None):
 @role_required(*SISTEMA)
 def baixar(request, pk):
     conta = get_object_or_404(ContaFinanceira, pk=pk)
+    next_url = _next_seguro(request)
     initial = {"data_pagamento": timezone.localdate(), "valor_pago": conta.valor}
     if request.method == "POST":
         form = BaixaContaForm(request.POST, filial=conta.filial)
@@ -538,16 +547,17 @@ def baixar(request, pk):
                 messages.error(request, " ".join(exc.messages))
             else:
                 messages.success(request, "Conta baixada com sucesso.")
-                return redirect("financeiro:contas")
+                return redirect(next_url)
     else:
         form = BaixaContaForm(initial=initial, filial=conta.filial)
-    return render(request, "financeiro/baixa_form.html", {"form": form, "conta": conta})
+    return render(request, "financeiro/baixa_form.html", {"form": form, "conta": conta, "next_url": next_url})
 
 
 @login_required
 @role_required(*SISTEMA)
 def cancelar(request, pk):
     conta = get_object_or_404(ContaFinanceira, pk=pk)
+    next_url = _next_seguro(request)
     if request.method == "POST":
         try:
             cancelar_conta(conta=conta, usuario=request.user, motivo=request.POST.get("motivo", ""), ip=request.META.get("REMOTE_ADDR"))
@@ -555,7 +565,7 @@ def cancelar(request, pk):
             messages.error(request, " ".join(exc.messages))
         else:
             messages.success(request, "Conta cancelada.")
-    return redirect("financeiro:contas")
+    return redirect(next_url)
 
 
 @login_required

@@ -1,0 +1,36 @@
+{% extends "base.html" %}
+
+{% block title %}Receita de desmembramento{% endblock %}
+
+{% block content %}
+<header class="page-header">
+  <div>
+    <h1>{% if object %}Editar receita{% else %}Nova receita{% endif %}</h1>
+    <p>Cadastre conversoes como pacote fechado para unidades avulsas, caixa/fardo para itens ou producao padrao.</p>
+  </div>
+</header>
+
+<form method="post" class="form-grid panel">
+  {% csrf_token %}
+  <section class="form-section">
+    <div class="form-section-header">
+      <h2>Conversao padrao</h2>
+      <p>Essa receita servira como base para agilizar desmembramentos futuros.</p>
+    </div>
+    <div class="form-grid">
+      {% for field in form %}
+        <label class="form-field {% if field.name == 'observacao' %}span-2{% endif %}">
+          <span>{{ field.label }}</span>
+          {{ field }}
+          {{ field.errors }}
+        </label>
+      {% endfor %}
+    </div>
+  </section>
+  {{ form.non_field_errors }}
+  <div class="form-actions">
+    <a class="secondary-button" href="{% url 'estoque:receitas_desmembramento' %}">Cancelar</a>
+    <button class="primary-button" type="submit">Salvar receita</button>
+  </div>
+</form>
+{% endblock %}

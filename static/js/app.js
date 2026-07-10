@@ -34,7 +34,7 @@ document.addEventListener("DOMContentLoaded", function () {
     $(".select2-field").each(function () {
       var $field = $(this);
       if ($field.data("select2")) return;
-      $field.select2({
+      var options = {
         width: "100%",
         placeholder: $field.data("placeholder") || "Selecione",
         allowClear: !$field.prop("required"),
@@ -42,11 +42,128 @@ document.addEventListener("DOMContentLoaded", function () {
           noResults: function () { return "Nenhum resultado encontrado"; },
           searching: function () { return "Pesquisando..."; },
         },
-      });
+      };
+      if ($field.data("ajax-url")) {
+        options.minimumInputLength = 2;
+        options.ajax = {
+          url: $field.data("ajax-url"),
+          dataType: "json",
+          delay: 180,
+          data: function (params) {
+            return { q: params.term || "" };
+          },
+          processResults: function (data) {
+            return { results: data.results || [] };
+          },
+        };
+      }
+      $field.select2(options);
     });
   }
 
   aplicarSelect2();
+  window.SupermercadoInitSelect2 = aplicarSelect2;
+
+  function setSelect2Value(select, id, text) {
+    if (!select || !id) return;
+    var option = new Option(text || id, id, true, true);
+    select.appendChild(option);
+    if (typeof window.jQuery !== "undefined") {
+      window.jQuery(select).trigger("change");
+    } else {
+      select.dispatchEvent(new Event("change", { bubbles: true }));
+    }
+  }
+
+  document.querySelectorAll("[data-recipe-select]").forEach(function (select) {
+    select.addEventListener("change", function () {
+      if (!select.value) return;
+      fetch("/estoque/receitas-desmembramento/" + select.value + ".json", { headers: { "Accept": "application/json" } })
+        .then(function (response) {
+          if (!response.ok) throw new Error("Receita indisponivel.");
+          return response.json();
+        })
+        .then(function (payload) {
+          var receita = payload.receita;
+          if (!receita) return;
+          var filial = document.getElementById("id_filial");
+          var tipo = document.getElementById("id_tipo");
+          var tipoSaida = document.getElementById("id_destinos-0-tipo_saida_destino") || document.getElementById("id_tipo_saida_destino");
+          var origem = document.getElementById("id_produto_origem");
+          var destino = document.getElementById("id_destinos-0-produto_destino") || document.getElementById("id_produto_destino");
+          var qtdOrigem = document.getElementById("id_quantidade_origem");
+          var qtdDestino = document.getElementById("id_destinos-0-quantidade_destino") || document.getElementById("id_quantidade_destino");
+          var observacao = document.getElementById("id_observacao");
+          if (receita.filial_id && filial) setSelect2Value(filial, receita.filial_id, receita.filial_id);
+          if (tipo) tipo.value = receita.tipo;
+          if (tipoSaida) tipoSaida.value = receita.tipo_saida;
+          setSelect2Value(origem, receita.produto_origem_id, receita.produto_origem_text);
+          setSelect2Value(destino, receita.produto_destino_id, receita.produto_destino_text);
+          if (qtdOrigem) qtdOrigem.value = receita.quantidade_origem;
+          if (qtdDestino) qtdDestino.value = receita.quantidade_destino;
+          if (observacao && receita.observacao) observacao.value = receita.observacao;
+        })
+        .catch(function (error) {
+          window.alert("Nao foi possivel aplicar a receita: " + error.message);
+        });
+    });
+  });
+
+  document.querySelectorAll("[data-destinos-formset]").forEach(function (formset) {
+    var rows = formset.querySelector("[data-destinos-rows]");
+    var template = formset.querySelector("[data-destino-empty-form]");
+    var totalInput = formset.querySelector("input[name$='-TOTAL_FORMS']");
+    var addButton = formset.querySelector("[data-add-destino]");
+    if (!rows || !template || !totalInput || !addButton) return;
+
+    function refreshRemoveButtons() {
+      var visibleRows = Array.prototype.filter.call(rows.querySelectorAll("[data-destino-row]"), function (row) {
+        var deleteInput = row.querySelector("input[type='checkbox'][name$='-DELETE']");
+        return !deleteInput || !deleteInput.checked;
+      });
+      rows.querySelectorAll("[data-remove-destino]").forEach(function (button) {
+        button.disabled = visibleRows.length <= 1;
+      });
+    }
+
+    function prepareDynamicSelect2(row) {
+      row.querySelectorAll(".select2-container").forEach(function (container) { container.remove(); });
+      row.querySelectorAll(".select2-hidden-accessible").forEach(function (select) {
+        select.classList.remove("select2-hidden-accessible");
+        select.removeAttribute("data-select2-id");
+        select.removeAttribute("aria-hidden");
+        select.removeAttribute("tabindex");
+      });
+      if (typeof window.SupermercadoInitSelect2 === "function") window.SupermercadoInitSelect2();
+    }
+
+    addButton.addEventListener("click", function () {
+      var index = parseInt(totalInput.value || "0", 10);
+      var html = template.innerHTML.replace(/__prefix__/g, index);
+      var wrapper = document.createElement("div");
+      wrapper.innerHTML = html.trim();
+      var row = wrapper.firstElementChild;
+      rows.appendChild(row);
+      totalInput.value = index + 1;
+      prepareDynamicSelect2(row);
+      refreshRemoveButtons();
+      var firstField = row.querySelector("select, input");
+      if (firstField) firstField.focus();
+    });
+
+    rows.addEventListener("click", function (event) {
+      var button = event.target.closest("[data-remove-destino]");
+      if (!button) return;
+      var row = button.closest("[data-destino-row]");
+      var deleteInput = row && row.querySelector("input[type='checkbox'][name$='-DELETE']");
+      if (!row || !deleteInput) return;
+      deleteInput.checked = true;
+      row.style.display = "none";
+      refreshRemoveButtons();
+    });
+
+    refreshRemoveButtons();
+  });
 
   var labelsNativePrint = document.getElementById("labels-native-print");
   if (labelsNativePrint) {
@@ -79,6 +196,102 @@ document.addEventListener("DOMContentLoaded", function () {
     });
   }
 
+  document.querySelectorAll(".label-test-print").forEach(function (button) {
+    button.addEventListener("click", function () {
+      var feedback = document.getElementById("label-test-feedback");
+      var bridge = window.SupermercadoDesktop && window.SupermercadoDesktop.printLabels;
+      if (!bridge) {
+        if (feedback) feedback.textContent = "Teste direto disponivel somente no app desktop desta maquina.";
+        return;
+      }
+      button.disabled = true;
+      if (feedback) feedback.textContent = "Preparando etiqueta de teste...";
+      fetch(button.getAttribute("data-url"), { headers: { "Accept": "application/json" } })
+        .then(function (response) {
+          if (!response.ok) throw new Error("Nao foi possivel carregar a etiqueta de teste.");
+          return response.json();
+        })
+        .then(function (payload) {
+          if (payload.status && payload.status !== "ok") throw new Error(payload.mensagem || "Payload recusado.");
+          if (feedback) feedback.textContent = "Enviando etiqueta de teste para a impressora...";
+          return Promise.resolve(bridge(payload));
+        })
+        .then(function (resultado) {
+          if (!resultado || resultado.status !== "ok") {
+            throw new Error((resultado && resultado.mensagem) || "A impressora nao confirmou o teste.");
+          }
+          if (feedback) feedback.textContent = "Etiqueta de teste enviada para " + resultado.impressora + ".";
+        })
+        .catch(function (erro) {
+          if (feedback) feedback.textContent = "Falha no teste de etiqueta: " + erro.message;
+        })
+        .finally(function () {
+          button.disabled = false;
+        });
+    });
+  });
+
+  var desktopDeviceLogsButton = document.getElementById("desktop-device-logs");
+  if (desktopDeviceLogsButton) {
+    desktopDeviceLogsButton.addEventListener("click", function () {
+      var feedback = document.getElementById("desktop-device-logs-feedback");
+      var tbody = document.getElementById("desktop-device-logs-body");
+      var bridge = window.SupermercadoDesktop && window.SupermercadoDesktop.deviceLogs;
+      function setFeedback(texto) {
+        if (feedback) feedback.textContent = texto || "";
+      }
+      function renderEmpty(texto) {
+        if (!tbody) return;
+        tbody.innerHTML = "";
+        var row = document.createElement("tr");
+        var cell = document.createElement("td");
+        cell.colSpan = 4;
+        cell.className = "empty";
+        cell.textContent = texto;
+        row.appendChild(cell);
+        tbody.appendChild(row);
+      }
+      function renderLogs(payload) {
+        if (!tbody) return;
+        var eventos = (payload && payload.eventos) || [];
+        tbody.innerHTML = "";
+        if (!eventos.length) {
+          renderEmpty("Nenhum evento local registrado neste terminal.");
+          return;
+        }
+        eventos.slice().reverse().forEach(function (evento) {
+          var dados = evento.payload || {};
+          var row = document.createElement("tr");
+          [evento.em || "-", evento.tipo || "-", dados.status || "-", dados.mensagem || dados.porta || "-"].forEach(function (valor) {
+            var cell = document.createElement("td");
+            cell.textContent = valor;
+            row.appendChild(cell);
+          });
+          tbody.appendChild(row);
+        });
+      }
+      if (!bridge) {
+        setFeedback("Diagnostico local disponivel somente dentro do aplicativo desktop deste terminal.");
+        renderEmpty("Abra esta tela no app desktop para ler o log local.");
+        return;
+      }
+      desktopDeviceLogsButton.disabled = true;
+      setFeedback("Lendo diagnostico local...");
+      Promise.resolve(bridge.call(window.SupermercadoDesktop, 50))
+        .then(function (payload) {
+          if (!payload || payload.status !== "ok") throw new Error((payload && payload.mensagem) || "Diagnostico indisponivel.");
+          renderLogs(payload);
+          setFeedback("Eventos carregados: " + String((payload.eventos || []).length) + " de " + String(payload.total || 0) + ".");
+        })
+        .catch(function (erro) {
+          setFeedback("Falha ao ler diagnostico local: " + erro.message);
+        })
+        .finally(function () {
+          desktopDeviceLogsButton.disabled = false;
+        });
+    });
+  }
+
   function aplicarCamposMonetarios(root) {
     var escopo = root || document;
     var nomesMonetarios = /(^|_)(valor|preco|custo|desconto|taxa|frete|total)(_|$)/i;
@@ -101,7 +314,17 @@ document.addEventListener("DOMContentLoaded", function () {
   aplicarCamposMonetarios(document);
 
   document.querySelectorAll("input[type='text']").forEach(function (input) {
-    if (input.classList.contains("no-upper") || input.name.includes("email") || input.closest(".no-uppercase-fields")) return;
+    var nome = (input.name || "").toLowerCase();
+    var autocomplete = (input.getAttribute("autocomplete") || "").toLowerCase();
+    var preservarDigitacao =
+      input.classList.contains("no-upper") ||
+      input.closest(".no-uppercase-fields") ||
+      nome.includes("email") ||
+      nome.includes("usuario") ||
+      nome.includes("username") ||
+      nome.includes("login") ||
+      autocomplete === "username";
+    if (preservarDigitacao) return;
     input.addEventListener("input", function () {
       var start = this.selectionStart;
       var end = this.selectionEnd;
@@ -119,6 +342,9 @@ document.addEventListener("DOMContentLoaded", function () {
 
   if (document.body.classList.contains("pdv-mode")) {
     var buscaProduto = document.getElementById("id_busca");
+    var quantidadeInput = document.getElementById("id_quantidade");
+    var scaleButton = document.querySelector("[data-pdv-read-scale]");
+    var scaleFeedback = document.getElementById("pdv-scale-feedback");
     var descontoInput = document.getElementById("id_desconto");
     var recebidoInput = document.getElementById("id_valor_recebido");
     var finishForm = document.getElementById("pdv-finish-form");
@@ -214,6 +440,56 @@ document.addEventListener("DOMContentLoaded", function () {
       if (paymentFeedback) paymentFeedback.textContent = texto || "";
     }
 
+    function informarBalanca(texto, tipo) {
+      if (!scaleFeedback) return;
+      scaleFeedback.textContent = texto || "";
+      scaleFeedback.classList.remove("is-ok", "is-error");
+      if (tipo) scaleFeedback.classList.add(tipo);
+    }
+
+    function ponteBalanca() {
+      if (!window.SupermercadoDesktop) return null;
+      return window.SupermercadoDesktop.readScale || window.SupermercadoDesktop.ler_peso_balanca || null;
+    }
+
+    function aplicarPesoLido(resultado) {
+      if (!quantidadeInput || !resultado) return;
+      if (resultado.status === "ok" && resultado.peso) {
+        quantidadeInput.value = String(resultado.peso).replace(",", ".");
+        quantidadeInput.focus();
+        quantidadeInput.select();
+        informarBalanca("Peso lido: " + String(resultado.peso).replace(".", ",") + " " + (resultado.unidade || "KG") + ".", "is-ok");
+        return;
+      }
+      var mensagem = resultado.mensagem || "Nao foi possivel ler a balanca. Digite a quantidade manualmente.";
+      informarBalanca(mensagem, resultado.status === "manual" ? "" : "is-error");
+      quantidadeInput.focus();
+      quantidadeInput.select();
+    }
+
+    function lerPesoBalancaPdv() {
+      var bridge = ponteBalanca();
+      if (!bridge) {
+        informarBalanca("Balanca automatica disponivel somente no app desktop. Digite a quantidade manualmente.", "is-error");
+        if (quantidadeInput) {
+          quantidadeInput.focus();
+          quantidadeInput.select();
+        }
+        return;
+      }
+      if (scaleButton) scaleButton.disabled = true;
+      informarBalanca("Lendo balanca...", "");
+      Promise.resolve(bridge.call(window.SupermercadoDesktop))
+        .then(aplicarPesoLido)
+        .catch(function (erro) {
+          informarBalanca("Falha ao ler balanca: " + erro.message, "is-error");
+          if (quantidadeInput) quantidadeInput.focus();
+        })
+        .finally(function () {
+          if (scaleButton) scaleButton.disabled = false;
+        });
+    }
+
     function pagamentoCompleto() {
       return totalPagamentosLancados() + 0.005 >= totalFinalAtual();
     }
@@ -242,11 +518,6 @@ document.addEventListener("DOMContentLoaded", function () {
         F3: ["credito", "crédito", "debito", "débito", "cartao", "cartão", "pos"],
         F4: ["troca", "outro", "vale"],
       }[atalho] || [];
-      if (atalho === "F2") termos = ["pix"];
-      if (atalho === "F4") termos = ["convenio", "convenio"];
-      if (atalho === "F5") termos = ["troca", "outro", "vale"];
-      if (atalho === "F2") termos = ["convenio", "convenio"];
-      if (atalho === "F4") termos = ["troca", "outro", "vale"];
       var linhas = paymentRows.querySelectorAll(".pdv-payment-row");
       var linha = linhas[linhas.length - 1];
       if (linha && linha.querySelector("select").value) {
@@ -454,6 +725,7 @@ document.addEventListener("DOMContentLoaded", function () {
     if (finalizeButton) finalizeButton.addEventListener("click", abrirPagamentos);
     if (finishShortcut) finishShortcut.addEventListener("click", abrirPagamentos);
     if (addPaymentButton) addPaymentButton.addEventListener("click", adicionarLinhaPagamento);
+    if (scaleButton) scaleButton.addEventListener("click", lerPesoBalancaPdv);
     if (postSalePrintButton) postSalePrintButton.addEventListener("click", imprimirUltimaVenda);
     if (postSaleCloseButton) postSaleCloseButton.addEventListener("click", fecharPosVenda);
     if (electronicChoice) {
@@ -574,6 +846,11 @@ document.addEventListener("DOMContentLoaded", function () {
         event.preventDefault();
         var menuLink = document.getElementById("pdv-menu-link");
         if (menuLink) window.location.href = menuLink.href;
+        return;
+      }
+      if (key === "F12" && !(paymentModal && paymentModal.classList.contains("is-open"))) {
+        event.preventDefault();
+        lerPesoBalancaPdv();
         return;
       }
       if (paymentModal && paymentModal.classList.contains("is-open")) {

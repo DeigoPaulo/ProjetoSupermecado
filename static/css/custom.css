@@ -292,6 +292,22 @@ textarea {
   gap: 8px;
 }
 
+.actions-inline {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.panel-subtitle {
+  margin: 18px 0 10px;
+  color: var(--muted);
+  font-size: 0.82rem;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
 .primary-button,
 .secondary-button,
 .toolbar button {
@@ -356,6 +372,31 @@ textarea {
 .toolbar button {
   background: var(--primary);
   color: #ffffff;
+}
+
+.active-filters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: -6px 0 16px;
+}
+
+.filter-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  min-height: 30px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: #ffffff;
+  color: #26364f;
+  padding: 5px 10px;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.filter-chip strong {
+  color: var(--muted);
 }
 
 .panel,
@@ -427,6 +468,18 @@ textarea {
   padding: 16px;
 }
 
+.metric-link {
+  color: inherit;
+  text-decoration: none;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease, transform 0.15s ease;
+}
+
+.metric-link:hover {
+  border-color: #9db7e8;
+  box-shadow: 0 8px 20px rgba(15, 35, 76, 0.08);
+  transform: translateY(-1px);
+}
+
 .metric span {
   display: block;
   color: var(--muted);
@@ -435,6 +488,106 @@ textarea {
 
 .metric strong {
   font-size: 24px;
+}
+
+.composition-overview {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 180px;
+  align-items: center;
+  gap: 18px;
+  padding: 16px;
+  margin-bottom: 18px;
+}
+
+.composition-overview h2 {
+  margin: 4px 0 6px;
+  font-size: 20px;
+}
+
+.composition-overview p {
+  margin: 0;
+  color: var(--muted);
+}
+
+.composition-kicker {
+  color: #0050e8;
+  font-size: 12px;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.composition-stock-pill {
+  border: 1px solid #cfe0ff;
+  border-radius: 8px;
+  background: #f5f8ff;
+  padding: 12px;
+  text-align: right;
+}
+
+.composition-stock-pill span,
+.composition-stock-pill strong {
+  display: block;
+}
+
+.composition-stock-pill span {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.composition-stock-pill strong {
+  margin-top: 4px;
+  color: #0050e8;
+  font-size: 26px;
+}
+
+.composition-component-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+  padding: 12px;
+  border-bottom: 1px solid var(--border);
+}
+
+.composition-component-card {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: #ffffff;
+  padding: 12px;
+}
+
+.composition-component-card.is-low {
+  border-color: #f4b6b6;
+  background: #fff7f7;
+}
+
+.composition-component-card strong,
+.composition-component-card span {
+  display: block;
+}
+
+.composition-component-card span {
+  margin-top: 3px;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.composition-component-card dl {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+  margin: 12px 0 0;
+}
+
+.composition-component-card dt {
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.composition-component-card dd {
+  margin: 2px 0 0;
+  font-weight: 800;
 }
 
 .dashboard-chart-grid {
@@ -1306,6 +1459,34 @@ input[type="checkbox"] {
   padding-right: 38px;
   font-size: 16px;
   font-weight: 800;
+}
+
+.pdv-quantity-field {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(92px, auto);
+  gap: 8px;
+  align-items: stretch;
+}
+
+.pdv-quantity-field .secondary-button {
+  min-height: 36px;
+  padding-inline: 10px;
+  white-space: nowrap;
+}
+
+.pdv-mode #pdv-scale-feedback {
+  min-height: 16px;
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.pdv-mode #pdv-scale-feedback.is-error {
+  color: #b42318;
+}
+
+.pdv-mode #pdv-scale-feedback.is-ok {
+  color: #027a48;
 }
 
 .pdv-main-action {
@@ -2375,6 +2556,21 @@ button:disabled {
 .project-progress span,
 .checklist-progress span { display: block; height: 100%; background: #0b57d0; }
 
+.checklist-filter { margin-bottom: 14px; }
+.checklist-filter-summary {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 18px;
+  padding: 12px 14px;
+  border: 1px solid #dfe6f1;
+  border-left: 4px solid #0b57d0;
+  background: #f8fbff;
+  color: #53657d;
+  font-size: .82rem;
+}
+.checklist-filter-summary strong { color: #0b57d0; font-size: 1.15rem; }
+
 .checklist-groups { display: grid; gap: 22px; }
 .checklist-section { border-top: 1px solid #d8e1ef; background: #fff; }
 .checklist-section-header { display: flex; align-items: center; justify-content: space-between; gap: 18px; padding: 16px 18px 12px; }
@@ -2383,6 +2579,12 @@ button:disabled {
 .checklist-section-header > strong { color: #0b57d0; }
 .checklist-progress { height: 4px; }
 .checklist-items { border: 1px solid #dfe6f1; border-top: 0; }
+.checklist-next-section { margin: 22px 0; border: 1px solid #dfe6f1; }
+.checklist-next-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; padding: 0 18px 18px; }
+.checklist-next-card { border: 1px solid #dfe6f1; background: #f8fbff; padding: 14px; border-radius: 6px; }
+.checklist-next-card span { display: block; color: #607089; font-size: .72rem; font-weight: 700; text-transform: uppercase; margin-bottom: 6px; }
+.checklist-next-card strong { display: block; color: #0b2454; font-size: .9rem; margin-bottom: 5px; }
+.checklist-next-card p { margin: 0; color: #66758b; font-size: .78rem; line-height: 1.45; }
 
 .checklist-item {
   display: grid;
@@ -3071,6 +3273,10 @@ button:disabled,
   .cloud-access-card,
   .cloud-access-actions { grid-template-columns: 1fr; }
   .system-shortcuts { grid-template-columns: 1fr; }
+  .checklist-next-grid { grid-template-columns: 1fr; }
+  .composition-overview,
+  .composition-component-grid { grid-template-columns: 1fr; }
+  .composition-stock-pill { text-align: left; }
 }
 
 @media (max-width: 560px) {

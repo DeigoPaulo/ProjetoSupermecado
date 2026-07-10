@@ -34,6 +34,58 @@
   <span style="width: {{ resumo.percentual }}%"></span>
 </div>
 
+<form method="get" class="toolbar checklist-filter">
+  <input type="search" name="q" value="{{ filtros.q }}" placeholder="Buscar no checklist">
+  <select name="status">
+    {% for valor, rotulo in status_opcoes %}
+      <option value="{{ valor }}" {% if filtros.status == valor %}selected{% endif %}>{{ rotulo }}</option>
+    {% endfor %}
+  </select>
+  <select name="grupo">
+    <option value="">Todos os grupos</option>
+    {% for grupo in grupos_opcoes %}
+      <option value="{{ grupo }}" {% if filtros.grupo == grupo %}selected{% endif %}>{{ grupo }}</option>
+    {% endfor %}
+  </select>
+  <button type="submit">Filtrar</button>
+  <a class="secondary-button" href="{% url 'configuracoes:checklist_csv' %}?{{ request.GET.urlencode }}">Excel/CSV</a>
+  {% if filtros.q or filtros.status or filtros.grupo %}
+    <a class="secondary-button" href="{% url 'configuracoes:checklist' %}">Limpar</a>
+  {% endif %}
+</form>
+
+{% if filtros.q or filtros.status or filtros.grupo %}
+  <section class="checklist-filter-summary">
+    <strong>{{ resumo_filtrado.total }}</strong>
+    <span>item(ns) encontrado(s): {{ resumo_filtrado.concluidos }} concluidos, {{ resumo_filtrado.parciais }} em andamento e {{ resumo_filtrado.pendentes }} pendentes.</span>
+  </section>
+{% endif %}
+
+<section class="checklist-section checklist-next-section">
+  <header class="checklist-section-header">
+    <div>
+      <h2>Proximas etapas</h2>
+      <p>Recorte automatico dos itens em andamento para orientar a sequencia de desenvolvimento.</p>
+    </div>
+    <i class="fa-solid fa-route" aria-hidden="true"></i>
+  </header>
+  <div class="checklist-next-grid">
+    {% for item in proximas_etapas %}
+      <article class="checklist-next-card">
+        <span>{{ item.grupo }}</span>
+        <strong>{{ item.titulo }}</strong>
+        <p>{{ item.descricao|truncatechars:220 }}</p>
+      </article>
+    {% empty %}
+      <article class="checklist-next-card">
+        <span>Projeto</span>
+        <strong>Nenhuma etapa em andamento</strong>
+        <p>Todos os itens mapeados estao concluidos ou pendentes para planejamento futuro.</p>
+      </article>
+    {% endfor %}
+  </div>
+</section>
+
 <div class="checklist-groups">
   {% for grupo in grupos %}
     <section class="checklist-section">
@@ -67,6 +119,16 @@
           </article>
         {% endfor %}
       </div>
+    </section>
+  {% empty %}
+    <section class="checklist-section">
+      <header class="checklist-section-header">
+        <div>
+          <h2>Nenhum item encontrado</h2>
+          <p>Ajuste os filtros para localizar outro requisito do projeto.</p>
+        </div>
+        <strong>0/0</strong>
+      </header>
     </section>
   {% endfor %}
 </div>

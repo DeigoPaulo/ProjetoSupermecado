@@ -9,6 +9,7 @@ import app
 from devices.printers import ErroDescobertaImpressoras, listar_impressoras_windows
 from devices.labels import montar_etiquetas_epl, montar_etiquetas_nativas, montar_etiquetas_zpl
 from devices.printing import ErroImpressao, montar_cupom_escpos, montar_texto_cupom
+from devices.scales import ler_peso_balanca, normalizar_configuracao_balanca
 
 
 class RespostaJson:
@@ -120,6 +121,96 @@ class AppDesktopTests(unittest.TestCase):
         self.assertEqual(falha["status"], "erro")
         self.assertIn("indisponivel", falha["mensagem"])
 
+    def test_ponte_local_expoe_balanca_com_fallback_manual(self):
+        ponte = app.PonteLocal(
+            {
+                "dispositivos": {
+                    "balanca": {
+                        "contrato": "pdv_scale_v1",
+                        "habilitada": True,
+                        "protocolo": "SERIAL",
+                        "porta": "COM3",
+                        "modelo": "Toledo Prix",
+                        "leitura_automatica": True,
+                        "fallback_manual": True,
+                    }
+                }
+            }
+        )
+
+        config = ponte.configuracao_balanca()
+        leitura = ponte.ler_peso_balanca()
+
+        self.assertEqual(config["contrato"], "pdv_scale_v1")
+        self.assertEqual(config["porta"], "COM3")
+        self.assertTrue(config["leitura_automatica"])
+        self.assertEqual(config["unidade_padrao"], "KG")
+        self.assertEqual(leitura["status"], "erro")
+        self.assertTrue(leitura["fallback_manual"])
+        self.assertIn("Driver fisico", leitura["mensagem"])
+        self.assertEqual(ponte.scaleConfig()["contrato"], "pdv_scale_v1")
+        self.assertEqual(ponte.readScale()["status"], "erro")
+
+    def test_falha_de_balanca_grava_log_local_de_dispositivo(self):
+        with tempfile.TemporaryDirectory() as pasta:
+            config_path = Path(pasta) / "terminal" / "config.json"
+            with patch.dict(os.environ, {"SUPERMERCADO_PDV_CONFIG": str(config_path)}):
+                ponte = app.PonteLocal(
+                    {
+                        "dispositivos": {
+                            "balanca": {
+                                "habilitada": True,
+                                "protocolo": "SERIAL",
+                                "porta": "COM3",
+                                "leitura_automatica": True,
+                                "fallback_manual": True,
+                            }
+                        }
+                    }
+                )
+
+                leitura = ponte.readScale()
+                diagnostico = ponte.deviceLogs()
+                linhas = app.caminho_log_dispositivos().read_text(encoding="utf-8").splitlines()
+
+        evento = json.loads(linhas[-1])
+        self.assertEqual(leitura["status"], "erro")
+        self.assertEqual(diagnostico["status"], "ok")
+        self.assertEqual(diagnostico["total"], 1)
+        self.assertEqual(diagnostico["eventos"][0]["tipo"], "balanca")
+        self.assertEqual(evento["tipo"], "balanca")
+        self.assertEqual(evento["payload"]["status"], "erro")
+        self.assertEqual(evento["payload"]["porta"], "COM3")
+        self.assertTrue(evento["payload"]["fallback_manual"])
+
+    def test_diagnostico_local_limita_eventos_de_dispositivo(self):
+        with tempfile.TemporaryDirectory() as pasta:
+            config_path = Path(pasta) / "terminal" / "config.json"
+            with patch.dict(os.environ, {"SUPERMERCADO_PDV_CONFIG": str(config_path)}):
+                for indice in range(3):
+                    app.registrar_evento_dispositivo("balanca", {"status": "erro", "indice": indice})
+
+                eventos = app.listar_eventos_dispositivo(limite=2)
+
+        self.assertEqual(eventos["status"], "ok")
+        self.assertEqual(eventos["total"], 3)
+        self.assertEqual(len(eventos["eventos"]), 2)
+        self.assertEqual(eventos["eventos"][0]["payload"]["indice"], 1)
+        self.assertEqual(eventos["eventos"][1]["payload"]["indice"], 2)
+
+    def test_leitura_de_balanca_aceita_peso_simulado_para_homologacao(self):
+        config = normalizar_configuracao_balanca(
+            {"habilitada": True, "protocolo": "SERIAL", "porta": "COM3", "leitura_automatica": True}
+        )
+
+        with patch.dict(os.environ, {"SUPERMERCADO_PDV_PESO_SIMULADO": "1,250"}):
+            leitura = ler_peso_balanca(config)
+
+        self.assertEqual(leitura["status"], "ok")
+        self.assertEqual(leitura["peso"], "1.250")
+        self.assertEqual(leitura["unidade"], "KG")
+        self.assertTrue(leitura["simulado"])
+
     def test_monta_cupom_operacional_sem_imagens_com_corte_e_gaveta(self):
         payload = {
             "venda": {
@@ -158,10 +249,13 @@ class AppDesktopTests(unittest.TestCase):
         }
         with patch("app.imprimir_raw_windows", return_value=120) as imprimir_mock:
             sucesso = ponte.imprimir_venda(payload)
+        with patch("app.imprimir_raw_windows", return_value=80):
+            sucesso_alias = ponte.printSale(payload)
         with patch("app.imprimir_raw_windows", side_effect=ErroImpressao("impressora offline")):
             falha = ponte.imprimir_venda(payload)
 
         self.assertTrue(sucesso["impresso"])
+        self.assertTrue(sucesso_alias["impresso"])
         self.assertEqual(sucesso["vias"], 3)
         self.assertEqual(sucesso["bytes"], 360)
         self.assertEqual(imprimir_mock.call_count, 3)

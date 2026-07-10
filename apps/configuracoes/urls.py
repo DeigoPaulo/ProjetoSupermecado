@@ -7,6 +7,7 @@ app_name = "configuracoes"
 urlpatterns = [
     path("", views.painel_sistema, name="painel"),
     path("checklist/", views.checklist_projeto, name="checklist"),
+    path("checklist/exportar.csv", views.checklist_projeto_csv, name="checklist_csv"),
     path("backup/", views.backup_operacional, name="backup"),
     path("backup/download/", views.backup_download, name="backup_download"),
     path("pdv-desktop/", views.pdv_desktop, name="pdv_desktop"),
@@ -28,5 +29,6 @@ urlpatterns = [
     path("impressoes/nova/", views.impressao_form, name="impressao_nova"),
     path("impressoes/<int:pk>/editar/", views.impressao_form, name="impressao_editar"),
     path("impressoes/modelos-etiqueta/novo/", views.modelo_etiqueta_form, name="modelo_etiqueta_novo"),
+    path("impressoes/modelos-etiqueta/<int:pk>/teste.json", views.modelo_etiqueta_teste, name="modelo_etiqueta_teste"),
     path("impressoes/modelos-etiqueta/<int:pk>/editar/", views.modelo_etiqueta_form, name="modelo_etiqueta_editar"),
 ]

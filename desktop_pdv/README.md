@@ -4,9 +4,17 @@ Shell Windows do PDV operacional. Ele abre a mesma interface Django usada em
 `/pdv/` dentro de uma WebView e reserva uma ponte local para impressora, gaveta,
 balanca e TEF.
 
-A ponte `window.SupermercadoDesktop.printLabels(payload)` gera etiquetas ZPL ou
-EPL/PPLB e envia o lote diretamente ao spooler Windows em modo RAW. PPLA permanece
+A ponte `window.SupermercadoDesktop.printSale(payload)` imprime venda,
+`window.SupermercadoDesktop.printLabels(payload)` gera etiquetas ZPL ou EPL/PPLB
+e envia o lote diretamente ao spooler Windows em modo RAW. PPLA permanece
 bloqueado ate a homologacao do adaptador para o modelo fisico da impressora.
+
+A balanca usa o contrato `pdv_scale_v1` recebido no bootstrap do terminal. A ponte
+local expoe `scaleConfig()` e `readScale()` com fallback manual; enquanto o driver
+fisico serial/TCP ainda nao estiver conectado, e possivel homologar a tela com
+`SUPERMERCADO_PDV_PESO_SIMULADO=1,250`. Falhas e retornos manuais da balanca
+sao gravados em `devices.log.jsonl` na pasta local do terminal e podem ser
+consultados pela ponte `window.SupermercadoDesktop.deviceLogs()`.
 
 ## Desenvolvimento
 

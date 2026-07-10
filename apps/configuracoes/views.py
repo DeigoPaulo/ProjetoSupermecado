@@ -1,3 +1,4 @@
+import csv
 import hashlib
 from io import StringIO
 
@@ -60,7 +61,7 @@ CHECKLIST_GRUPOS = [
             ("Alertas rapidos no PDV", "done", "Mensagens simples viram toasts temporarios; operacoes criticas continuam exigindo confirmacao ou supervisor."),
             ("Autorizacao do PDV em nuvem", "done", "Operador comum fica bloqueado em ambiente de nuvem, tentativa gera solicitacao, admin/gerente recebe alerta visual no topo/menu e decide pelo painel de aprovacao."),
             ("Arquitetura PDV desktop local", "partial", "PDV dos caixas deve ser um aplicativo instalado na maquina do operador, fiel ao layout, atalhos e fluxo de venda do PDV web ja validado, para que o operador use a mesma experiencia nos dois ambientes. O desktop acrescenta integracoes locais com impressora, balanca, gaveta e TEF, operacao resiliente e acesso somente ao necessario para venda, pagamento, caixa, consulta e estorno autorizado, sem telas administrativas completas. O app se comunica com o servidor local da loja pela rede interna; esse servidor local conversa com os dispositivos e o banco operacional da filial. Cadastro por filial, chave individual protegida por hash e bootstrap com registro de conexao implementados. O bootstrap diario devolve a configuracao vigente de licenca, TEF, fiscal e balanca para o app instalado se atualizar sem novo pacote. A nuvem/sede sincroniza por API segura, filas e eventos, sem acessar diretamente o banco local do supermercado. Download/ativacao do app desktop deve exigir autorizacao do admin master, pois cada maquina instalada pode representar uma licenca comercial cobrada por terminal; pacote de ativacao so e entregue para terminal com licenca liberada."),
-            ("Balanca integrada no PDV", "partial", "Produtos ja possuem marcacao de produto pesavel. Terminal PDV agora permite configurar balanca por caixa com protocolo, porta/endereco e modelo; manifesto, pacote JSON e bootstrap do app desktop entregam essa configuracao por maquina. Falta o app desktop ler peso automaticamente no PDV, devolver quantidade em KG, preencher a venda e registrar falhas sem bloquear vendas manuais."),
+            ("Balanca integrada no PDV", "partial", "Produtos ja possuem marcacao de produto pesavel. Terminal PDV agora permite configurar balanca por caixa com protocolo, porta/endereco e modelo; manifesto, pacote JSON e bootstrap do app desktop entregam essa configuracao por maquina usando o contrato pdv_scale_v1, com leitura automatica, unidade KG, precisao de 3 casas, timeout e fallback manual quando a balanca estiver ausente ou falhar. O app desktop ja possui ponte local para expor a configuracao da balanca e retornar leitura estruturada com peso simulado para homologacao. A tela do PDV ja chama a ponte local pelo botao Peso e atalho F12, preenchendo a quantidade quando recebe o peso ou orientando digitacao manual no navegador comum. Falhas e retornos manuais da balanca ficam registrados no log local devices.log.jsonl da maquina do caixa e podem ser consultados pela ponte deviceLogs; a Central do App PDV desktop ja possui leitura visual desse diagnostico quando aberta dentro do aplicativo instalado. Falta conectar o driver fisico serial/TCP, ler peso automaticamente no PDV real e sincronizar os diagnosticos locais para o painel administrativo central."),
             ("TEF/API de maquininha", "partial", "Pagamentos possuem estados controlados, ID externo, NSU e autorizacao; venda rejeita transacao pendente, recusada ou estornada. Terminais PDV agora configuram provedor TEF e modo de integracao por adaptador, permitindo PagBank, Cielo, Stone, Getnet, Rede, SiTef ou outro fornecedor sem prender o sistema a uma operadora. O bootstrap do app desktop expõe o contrato pdv_tef_v1 com tipos credito, debito e PIX dinamico e retorno esperado. Pagamentos eletronicos confirmados sem retorno real recebem autorizacao simulada rastreavel, deixando o ponto de troca pronto para o app desktop enviar o valor para a maquininha/provedor e aguardar aprovado, recusado, cancelado ou expirado antes de liberar a venda."),
             ("Reversao de pagamento misto", "partial", "Cancelamento total estorna parcelas locais e marca PIX/TEF com transacao externa como estorno pendente, preservando motivo e rastreabilidade. Falta automatizar a chamada ao fornecedor e ratear devolucoes parciais."),
             ("Padrao R$ em todos os formularios", "done", "Campos numericos de preco, valor, custo, desconto, taxa, frete e total recebem automaticamente o prefixo R$ no PDV e nas telas administrativas."),
@@ -77,8 +78,9 @@ CHECKLIST_GRUPOS = [
             ("Inventario", "done", "Contagem e aplicacao com autorizacao de supervisor/admin."),
             ("Perdas", "done", "Baixa de perdas com supervisor/admin e log."),
             ("Movimentacao manual", "done", "Entrada/saida/ajuste/reserva com supervisor/admin, auditoria e formulario separado entre operacao e autorizacao."),
-            ("Compras", "done", "Entrada de compra com dados da nota, itens recebidos, finalizacao protegida, estoque e financeiro integrados."),
+            ("Compras", "done", "Entrada de compra com dados da nota, itens recebidos, rascunho sem movimentar estoque, finalizacao direta com supervisor/admin, atualizacao automatica de estoque, custo do produto, movimentacao de entrada e conta a pagar, baixa direta da conta vinculada com retorno para a entrada, rastreio financeiro da baixa no detalhe da compra, impressao/PDF individual auditavel da entrada com itens, financeiro, rastreio financeiro do livro e rastreio de estoque, lista operacional separada do relatorio com situacao financeira da entrada, retorno seguro do detalhe e da edicao de rascunho para a lista filtrada, filtros por status da entrada e situacao financeira aberta, paga, cancelada, vencida ou sem conta, exportacao Excel/CSV e impressao/PDF da visao operacional filtrada, limpeza rapida de filtros ativos, chips visuais dos filtros aplicados, cards de resumo financeiro de contas abertas, vencidas e pagas com atalho para filtro preservando busca e status atuais, alerta de rascunhos pendentes, rastreio no estoque da entrada com movimentacoes de entrada e cancelamento vinculadas, e cancelamento protegido de compra finalizada com reversao de estoque, cancelamento da conta aberta, bloqueio quando a conta ja foi paga, bloqueio quando o produto ja foi consumido a ponto de nao existir saldo para reverter e aviso antecipado desses bloqueios na tela da entrada."),
             ("Etiquetas de gondola profissionais", "partial", "O documento complementar de etiquetas foi incorporado ao checklist. A tela busca por nome, codigo de barras e SKU, aceita leitor que envia Enter, copias por produto e modelos compacto 110x30 mm, completo 100x50 mm, A4 e modelos profissionais salvos por empresa, filial e terminal, sempre sem fundo colorido forcado. Configuracao inclui medidas, gaps, colunas, orientacao, DPI, midia, impressora e linguagem; a tela envia o lote ao agente desktop, que gera ZPL ou EPL/PPLB e imprime em RAW sem pre-visualizacao. Ainda faltam homologacao PPLA e testes com equipamentos fisicos."),
+            ("Desmembramento e fracionamento de produtos", "partial", "Novo documento complementar incorporado ao checklist para estoque avancado. O MVP simples foi iniciado com models DesmembramentoProduto, ItemDesmembramentoProduto e ReceitaDesmembramento, listagem, detalhe, formulario, receitas/conversoes padrao por empresa/filial, aplicacao automatica de receita no formulario com origem, primeira linha de destino, quantidades, tipo, classificacao do destino e observacao, permissao de supervisor/admin, previa/simulacao antes de confirmar, busca remota por codigo de barras, codigo interno/SKU e nome para produto origem e destino, multiplos destinos para a tela dinamica com adicao ou remocao de linhas na mesma operacao, lote/validade por item gerado, rendimento esperado por destino, rendimento real calculado contra a quantidade de origem, alerta visual quando o rendimento real fica abaixo do esperado, suporte inicial ao fluxo de acougue por peso e hortifruti reembalado, operacao atomica com trava, validacao de estoque suficiente, saida do produto origem, entrada de um ou varios produtos destino no servico transacional, classificacao de cada destino como produto vendavel, perda/descarte ou subproduto, perda/descarte vinculada ao item do desmembramento sem aumentar saldo vendavel, custo proporcional por quantidade total gerada, movimentacoes de estoque por item, auditoria, cancelamento seguro com movimentos inversos para todos os destinos vendaveis/subprodutos e retirada da perda vinculada quando o descarte foi gerado pelo desmembramento, relatorio gerencial de rendimento por periodo, filial, produto, tipo, destino e alerta, indicadores graficos por destino, custo e alertas, exportacao CSV por filtro com origem, destino, classificacao, lote, validade, rendimento, alerta, quantidades, custo e responsavel, e testes automatizados. Kits/composicoes e producao interna tambem foram iniciados com composicao de produto final, multiplos componentes, tela de cadastro/edicao, detalhe operacional, visao gerencial com custo previsto, estoque final, capacidade maxima pelos componentes e cards de saldo/custo por componente, producao com autorizacao, consumo proporcional, custo formado pelos componentes, entrada unica do produto final, auditoria e cancelamento reversivel pela tela. relatorios gerenciais completos de rendimento e perdas foram iniciados; a proxima evolucao deve aprofundar alertas automaticos de insumo baixo e planejamento de producao por demanda."),
         ],
     },
     {
@@ -116,8 +118,8 @@ CHECKLIST_GRUPOS = [
             ("Modelo completo 100x50", "done", "Modelo maior disponivel para etiquetas com mais espaco, mantendo preco como informacao principal e deixando logo, tributos e preco de referencia como evolucao configuravel."),
             ("Busca por codigo de barras nas etiquetas", "done", "Campo de busca aceita digitacao manual e leitor como teclado, mantendo foco automatico; a consulta prioriza codigo de barras/EAN/GTIN e codigo interno/SKU antes do nome."),
             ("Impressao em medidas reais", "done", "CSS de impressao usa medidas em mm, @media print e oculta menu, filtros e botoes; a cor da etiqueta fica a cargo do papel fisico, com impressao limpa em preto."),
-            ("Configuracao profissional de etiquetas", "partial", "Configuracao por empresa/filial persiste impressora, DPI, densidade, velocidade, midia e linguagem. Modelos nomeados guardam largura, altura, gaps, colunas, orientacao, modelo padrao e vinculo opcional ao terminal; a tela de etiquetas aplica o modelo escolhido e o endpoint desktop sincroniza todos os parametros. Ainda falta o agente local gerar e enviar comandos nativos ao equipamento."),
-            ("Linguagens nativas de impressoras", "partial", "Arquitetura contempla ZPL, EPL, PPLA e PPLB. A tela web monta um payload confiavel com modelo, produtos e copias e aciona printLabels somente no app desktop; o agente gera ZPL ou EPL/PPLB, converte medidas por DPI e envia ao spooler Windows em RAW com limite e retorno visivel. No navegador permanece a impressao convencional. PPLA segue bloqueado ate homologacao por modelo e ainda faltam testes fisicos."),
+            ("Configuracao profissional de etiquetas", "partial", "Configuracao por empresa/filial persiste impressora, DPI, densidade, velocidade, midia e linguagem. Modelos nomeados guardam largura, altura, gaps, colunas, orientacao, modelo padrao e vinculo opcional ao terminal; a tela de etiquetas aplica o modelo escolhido e o endpoint desktop sincroniza todos os parametros. A central de impressao tambem prepara etiqueta de teste por modelo para envio direto pelo app desktop. Ainda faltam testes fisicos com equipamentos reais."),
+            ("Linguagens nativas de impressoras", "partial", "Arquitetura contempla ZPL, EPL, PPLA e PPLB. A tela web monta um payload confiavel com modelo, produtos e copias e aciona printLabels somente no app desktop; o agente gera ZPL ou EPL/PPLB, converte medidas por DPI e envia ao spooler Windows em RAW com limite e retorno visivel. No navegador permanece a impressao convencional. O teste de modelo usa a mesma ponte local. PPLA segue bloqueado ate homologacao por modelo e ainda faltam testes fisicos."),
         ],
     },
     {
@@ -165,6 +167,8 @@ def _instalador_pdv_desktop():
 
 DOCUMENTOS_PROJETO = [
     ("Complementar PDV, usabilidade, cadastros e entrega v2", "docs/protótipos/documento_complementar_pdv_usabilidade_cadastros_entrega_v2.docx"),
+    ("Complementar desmembramento e fracionamento de produtos", "docs/protótipos/documento_complementar_desmembramento_fracionamento_produtos.docx"),
+    ("Complementar etiquetas de gondola e impressoras profissionais v2", "docs/protótipos/documento_complementar_etiquetas_gondola_impressoras_profissionais_v2.docx"),
     ("Indice dos documentos finais", "docs/protótipos/00_indice_documentos_finais_supermercado.docx"),
     ("Arquitetura tecnica", "docs/protótipos/01_arquitetura_tecnica_sistema_supermercado.docx"),
     ("Modelagem banco de dados", "docs/protótipos/02_modelagem_banco_dados_sistema_supermercado.docx"),
@@ -210,6 +214,42 @@ def _resumo_checklist(grupos):
         "pendentes": totais["todo"],
         "percentual": round((totais["done"] / total_itens) * 100) if total_itens else 0,
     }
+
+
+def _proximas_etapas_checklist(grupos, limite=6):
+    proximas = []
+    for grupo in grupos:
+        for titulo, status, descricao in grupo["itens"]:
+            if status == "partial":
+                proximas.append(
+                    {
+                        "grupo": grupo["titulo"],
+                        "titulo": titulo,
+                        "descricao": descricao,
+                    }
+                )
+    return proximas[:limite]
+
+
+def _filtrar_checklist(grupos, *, termo="", status="", grupo_titulo=""):
+    termo = (termo or "").strip().lower()
+    status = (status or "").strip()
+    grupo_titulo = (grupo_titulo or "").strip()
+    filtrados = []
+    for grupo in grupos:
+        if grupo_titulo and grupo["titulo"] != grupo_titulo:
+            continue
+        itens = []
+        for titulo, item_status, descricao in grupo["itens"]:
+            if status and item_status != status:
+                continue
+            texto = f"{grupo['titulo']} {titulo} {descricao}".lower()
+            if termo and termo not in texto:
+                continue
+            itens.append((titulo, item_status, descricao))
+        if itens:
+            filtrados.append({**grupo, "itens": itens})
+    return filtrados
 
 
 def _modelos_backup():
@@ -351,12 +391,62 @@ def checklist_projeto(request):
         {**grupo, "itens": list(grupo["itens"])}
         for grupo in CHECKLIST_GRUPOS
     ]
+    filtros = {
+        "q": (request.GET.get("q") or "").strip(),
+        "status": (request.GET.get("status") or "").strip(),
+        "grupo": (request.GET.get("grupo") or "").strip(),
+    }
+    grupos_filtrados = _filtrar_checklist(
+        grupos,
+        termo=filtros["q"],
+        status=filtros["status"],
+        grupo_titulo=filtros["grupo"],
+    ) if any(filtros.values()) else [
+        {**grupo, "itens": list(grupo["itens"])}
+        for grupo in grupos
+    ]
+    resumo_filtrado = _resumo_checklist(grupos_filtrados)
     context = {
-        "grupos": grupos,
+        "grupos": grupos_filtrados,
         "resumo": _resumo_checklist(grupos),
+        "resumo_filtrado": resumo_filtrado,
+        "proximas_etapas": _proximas_etapas_checklist(grupos),
+        "filtros": filtros,
+        "grupos_opcoes": [grupo["titulo"] for grupo in grupos],
+        "status_opcoes": [
+            ("", "Todos os status"),
+            ("done", "Concluido"),
+            ("partial", "Em andamento"),
+            ("todo", "Pendente"),
+        ],
         "documentos": DOCUMENTOS_PROJETO,
     }
     return render(request, "configuracoes/checklist.html", context)
+
+
+@login_required
+@role_required(*SISTEMA)
+def checklist_projeto_csv(request):
+    grupos = [
+        {**grupo, "itens": list(grupo["itens"])}
+        for grupo in CHECKLIST_GRUPOS
+    ]
+    grupos = _filtrar_checklist(
+        grupos,
+        termo=request.GET.get("q"),
+        status=request.GET.get("status"),
+        grupo_titulo=request.GET.get("grupo"),
+    )
+    response = HttpResponse(content_type="text/csv; charset=utf-8")
+    response["Content-Disposition"] = 'attachment; filename="checklist_projeto.csv"'
+    response.write("\ufeff")
+    writer = csv.writer(response, delimiter=";")
+    writer.writerow(["Grupo", "Item", "Status", "Descricao"])
+    status_labels = {"done": "Concluido", "partial": "Em andamento", "todo": "Pendente"}
+    for grupo in grupos:
+        for titulo, status, descricao in grupo["itens"]:
+            writer.writerow([grupo["titulo"], titulo, status_labels.get(status, status), descricao])
+    return response
 
 
 @login_required
@@ -444,12 +534,7 @@ def _pdv_desktop_manifest_payload(request):
                 "permite_modo_offline": terminal.permite_modo_offline,
                 "provedor_tef": terminal.provedor_tef,
                 "modo_integracao_tef": terminal.modo_integracao_tef,
-                "balanca": {
-                    "habilitada": terminal.usa_balanca,
-                    "protocolo": terminal.protocolo_balanca,
-                    "porta": terminal.porta_balanca,
-                    "modelo": terminal.modelo_balanca,
-                },
+                "balanca": terminal.balanca_configuracao(),
                 "chave_api_prefixo": terminal.chave_api_prefixo,
                 "bootstrap_url": request.build_absolute_uri("/pdv/api/terminal/bootstrap/"),
             }
@@ -532,13 +617,7 @@ def _pdv_desktop_terminal_payload(request, terminal):
         "dispositivos": {
             "impressora": {"contrato": "pdv_print_v1", "config_url": request.build_absolute_uri("/configuracoes/impressoes/desktop.json")},
             "gaveta": {"opcional": True},
-            "balanca": {
-                "opcional": True,
-                "habilitada": terminal.usa_balanca,
-                "protocolo": terminal.protocolo_balanca,
-                "porta": terminal.porta_balanca,
-                "modelo": terminal.modelo_balanca,
-            },
+            "balanca": terminal.balanca_configuracao(),
         },
         "sincronizacao": {
             "contrato": "pdv_sync_v1",
@@ -795,6 +874,49 @@ def modelo_etiqueta_form(request, pk=None):
     else:
         form = ModeloEtiquetaForm(instance=modelo)
     return render(request, "configuracoes/modelo_etiqueta_form.html", {"form": form, "modelo": modelo})
+
+
+@login_required
+@role_required(*SISTEMA)
+def modelo_etiqueta_teste(request, pk):
+    modelo = get_object_or_404(
+        ModeloEtiqueta.objects.select_related("configuracao", "terminal"),
+        pk=pk,
+        is_active=True,
+        configuracao__is_active=True,
+    )
+    config = modelo.configuracao
+    return JsonResponse(
+        {
+            "status": "ok",
+            "mensagem": "Etiqueta de teste preparada para impressao direta no app desktop.",
+            "impressora_padrao": config.impressora_padrao,
+            "linguagem": config.linguagem_impressora,
+            "dpi": config.dpi_impressora,
+            "densidade": config.densidade_impressao,
+            "velocidade": config.velocidade_impressao,
+            "tipo_midia": config.tipo_midia_etiqueta,
+            "modelo": {
+                "id": modelo.id,
+                "nome": modelo.nome,
+                "largura_mm": float(modelo.largura_mm),
+                "altura_mm": float(modelo.altura_mm),
+                "gap_horizontal_mm": float(modelo.gap_horizontal_mm),
+                "gap_vertical_mm": float(modelo.gap_vertical_mm),
+                "colunas": modelo.colunas,
+                "orientacao": modelo.orientacao,
+            },
+            "itens": [
+                {
+                    "nome": "ETIQUETA TESTE",
+                    "codigo": "789000000001",
+                    "unidade": "UN",
+                    "preco": "9.99",
+                    "copias": 1,
+                }
+            ],
+        }
+    )
 
 
 @login_required

@@ -94,6 +94,23 @@ class TerminalPdv(models.Model):
     def validar_chave_api(self, chave):
         return bool(chave and self.chave_api_hash and check_password(chave, self.chave_api_hash))
 
+    def balanca_configuracao(self):
+        leitura_automatica = self.usa_balanca and self.protocolo_balanca != ProtocoloBalanca.NAO_CONFIGURADO
+        return {
+            "contrato": "pdv_scale_v1",
+            "opcional": True,
+            "habilitada": self.usa_balanca,
+            "protocolo": self.protocolo_balanca,
+            "porta": self.porta_balanca,
+            "modelo": self.modelo_balanca,
+            "leitura_automatica": leitura_automatica,
+            "unidade_padrao": "KG",
+            "precisao_decimal": 3,
+            "timeout_ms": 3000,
+            "fallback_manual": True,
+            "status_operacional": "habilitada" if leitura_automatica else "manual",
+        }
+
     @property
     def licenca_liberada(self):
         return self.ativo and self.status_licenca == StatusLicencaTerminal.LIBERADA

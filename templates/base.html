@@ -48,6 +48,10 @@
                 <a href="{% url 'estoque:lista' %}"><i class="fa-solid fa-warehouse"></i> Estoque</a>
                 <a href="{% url 'estoque:inventarios' %}"><i class="fa-solid fa-clipboard-check"></i> Inventarios</a>
                 <a href="{% url 'estoque:perdas' %}"><i class="fa-solid fa-triangle-exclamation"></i> Perdas</a>
+                <a href="{% url 'estoque:desmembramentos' %}"><i class="fa-solid fa-code-branch"></i> Desmembramentos</a>
+                <a href="{% url 'estoque:desmembramento_relatorio' %}"><i class="fa-solid fa-chart-column"></i> Rendimento</a>
+                <a href="{% url 'estoque:receitas_desmembramento' %}"><i class="fa-solid fa-diagram-project"></i> Receitas de desmembramento</a>
+                <a href="{% url 'estoque:composicoes' %}"><i class="fa-solid fa-boxes-packing"></i> Composicoes</a>
               {% endif %}
               {% if access.compras %}
                 <a href="{% url 'compras:lista' %}"><i class="fa-solid fa-cart-flatbed"></i> Compras</a>

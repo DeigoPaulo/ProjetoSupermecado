@@ -10,9 +10,10 @@
   </div>
   <div class="actions">
     {% if entrada.status == "RASCUNHO" %}
-      <a class="secondary-button" href="{% url 'compras:editar' entrada.pk %}">Editar</a>
+      <a class="secondary-button" href="{% url 'compras:editar' entrada.pk %}?next={{ retorno_lista_url|urlencode }}">Editar</a>
     {% endif %}
-    <a class="secondary-button" href="{% url 'compras:lista' %}">Voltar</a>
+    <a class="secondary-button" href="{% url 'compras:detalhe_imprimir' entrada.pk %}" target="_blank"><i class="fa-solid fa-file-pdf"></i> PDF</a>
+    <a class="secondary-button" href="{{ retorno_lista_url }}">Voltar</a>
   </div>
 </header>
 
@@ -35,8 +36,33 @@
             <td><span class="status {% if conta.status == 'PAGA' %}status-success{% elif conta.status == 'CANCELADA' %}status-muted{% endif %}">{{ conta.get_status_display }}</span></td>
             <td>{{ conta.vencimento|date:"d/m/Y" }}</td>
             <td>R$ {{ conta.valor|floatformat:2 }}</td>
-            <td><a class="secondary-button" href="{% url 'financeiro:contas' %}?q={{ conta.descricao }}">Abrir financeiro</a></td>
+            <td class="actions-inline">
+              {% if conta.status == "ABERTA" %}
+                <a class="primary-button" href="{% url 'financeiro:baixar' conta.pk %}?next={{ request.get_full_path|urlencode }}">Baixar</a>
+              {% endif %}
+              <a class="secondary-button" href="{% url 'financeiro:contas' %}?q={{ conta.descricao|urlencode }}">Abrir financeiro</a>
+            </td>
           </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    <div class="panel-subtitle">Rastreio financeiro</div>
+    <table>
+      <thead><tr><th>Data</th><th>Conta movimento</th><th>Tipo</th><th>Origem</th><th>Valor</th><th>Usuario</th></tr></thead>
+      <tbody>
+        {% for conta in entrada.contas_financeiras.all %}
+          {% for lancamento in conta.lancamentos.all %}
+            <tr>
+              <td>{{ lancamento.data|date:"d/m/Y" }}</td>
+              <td>{{ lancamento.conta.nome }}<br><small>{{ lancamento.conta.filial }}</small></td>
+              <td><span class="status {% if lancamento.tipo == 'ENTRADA' %}status-success{% else %}status-danger{% endif %}">{{ lancamento.get_tipo_display }}</span></td>
+              <td>{{ lancamento.origem }}</td>
+              <td>R$ {{ lancamento.valor|floatformat:2 }}</td>
+              <td>{{ lancamento.usuario|default:"-" }}</td>
+            </tr>
+          {% empty %}
+            <tr><td colspan="6" class="empty">Conta {{ conta.id }} ainda nao gerou lancamento no livro financeiro.</td></tr>
+          {% endfor %}
         {% endfor %}
       </tbody>
     </table>
@@ -48,14 +74,59 @@
     <div class="panel-title">Finalizar entrada</div>
     <form method="post" action="{% url 'compras:finalizar' entrada.pk %}" class="form-grid form-confirm" data-msg="Finalizar esta entrada e atualizar o estoque?">
       {% csrf_token %}
-      <label class="form-field"><span>Supervisor ou admin</span><input type="text" name="supervisor_usuario" autocomplete="username" required></label>
-      <label class="form-field"><span>Senha</span><input type="password" name="supervisor_senha" autocomplete="current-password" required></label>
+      <label class="form-field"><span>Supervisor ou admin</span><input class="no-upper" type="text" name="supervisor_usuario" autocomplete="username" required></label>
+      <label class="form-field"><span>Senha</span><input class="no-upper" type="password" name="supervisor_senha" autocomplete="current-password" required></label>
       <div class="form-actions">
         <button class="primary-button" type="submit">Finalizar entrada</button>
       </div>
     </form>
   </section>
 {% endif %}
+
+{% if entrada.status == "FINALIZADA" %}
+  <section class="panel mt-panel">
+    <div class="panel-title">Cancelar entrada</div>
+    {% if pode_cancelar_entrada %}
+      <form method="post" action="{% url 'compras:cancelar' entrada.pk %}" class="form-grid form-confirm" data-msg="Cancelar esta entrada e reverter o estoque?">
+        {% csrf_token %}
+        <label class="form-field span-2"><span>Motivo</span><input type="text" name="motivo" required></label>
+        <label class="form-field"><span>Supervisor ou admin</span><input class="no-upper" type="text" name="supervisor_usuario" autocomplete="username" required></label>
+        <label class="form-field"><span>Senha</span><input class="no-upper" type="password" name="supervisor_senha" autocomplete="current-password" required></label>
+        <div class="form-actions">
+          <button class="secondary-button" type="submit">Cancelar e reverter estoque</button>
+        </div>
+      </form>
+    {% else %}
+      <div class="operation-notice">
+        Esta entrada nao pode ser cancelada automaticamente.
+        {% for bloqueio in bloqueios_cancelamento %}
+          <br>{{ bloqueio }}
+        {% endfor %}
+      </div>
+    {% endif %}
+  </section>
+{% endif %}
+
+<section class="panel mt-panel">
+  <div class="panel-title">Rastreio no estoque</div>
+  <table>
+    <thead><tr><th>Data</th><th>Tipo</th><th>Produto</th><th>Quantidade</th><th>Custo total</th><th>Usuario</th></tr></thead>
+    <tbody>
+      {% for mov in movimentacoes_estoque %}
+        <tr>
+          <td>{{ mov.data|date:"d/m/Y H:i" }}</td>
+          <td><span class="status {% if mov.tipo == 'ENTRADA' %}status-success{% endif %}">{{ mov.get_tipo_display }}</span></td>
+          <td>{{ mov.produto }}</td>
+          <td>{{ mov.quantidade }}</td>
+          <td>R$ {{ mov.custo_total|default:0|floatformat:2 }}</td>
+          <td>{{ mov.usuario|default:"-" }}</td>
+        </tr>
+      {% empty %}
+        <tr><td colspan="6" class="empty">Nenhuma movimentacao de estoque vinculada a esta entrada.</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</section>
 
 <div class="panel">
   <div class="panel-title">Itens recebidos</div>

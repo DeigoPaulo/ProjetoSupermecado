@@ -1,0 +1,76 @@
+<!doctype html>
+<html lang="pt-br">
+<head>
+  <meta charset="utf-8">
+  <title>Compras operacionais</title>
+  <style>
+    @page { size: A4 landscape; margin: 10mm; }
+    * { box-sizing: border-box; }
+    body { margin: 0; color: #172033; font: 9px Arial, sans-serif; }
+    header { display: flex; justify-content: space-between; gap: 20px; border-bottom: 2px solid #0050e8; padding-bottom: 8px; }
+    h1 { margin: 0 0 3px; font-size: 20px; }
+    p { margin: 2px 0; color: #53657d; }
+    .actions { margin: 9px 0; text-align: right; }
+    button { border: 0; border-radius: 5px; background: #0050e8; color: #fff; padding: 8px 13px; font-weight: 700; }
+    .summary { display: flex; gap: 8px; margin: 10px 0; }
+    .summary div { min-width: 145px; border: 1px solid #d8e1ef; padding: 8px; }
+    .summary span { display: block; color: #607089; }
+    .summary strong { display: block; margin-top: 3px; font-size: 13px; }
+    table { width: 100%; border-collapse: collapse; }
+    th, td { border: 1px solid #d8e1ef; padding: 5px; text-align: left; vertical-align: top; }
+    th { background: #edf3ff; font-size: 8px; text-transform: uppercase; }
+    tr { break-inside: avoid; }
+    .money { text-align: right; white-space: nowrap; }
+    footer { margin-top: 8px; color: #718096; text-align: right; }
+    @media print { .actions { display: none; } }
+  </style>
+</head>
+<body>
+  <header>
+    <div>
+      <h1>Compras operacionais</h1>
+      <p>Entradas de mercadoria com situacao financeira vinculada.</p>
+      {% if filtros.q or filtros.status or filtros.financeiro %}
+        <p>Filtros: busca "{{ filtros.q|default:"-" }}", status "{{ filtros.status|default:"todos" }}", financeiro "{{ filtros.financeiro|default:"todos" }}".</p>
+      {% endif %}
+    </div>
+    <p>Gerado em {{ gerado_em|date:"d/m/Y H:i" }}</p>
+  </header>
+  <div class="actions"><button type="button" onclick="window.print()">Imprimir / Salvar como PDF</button></div>
+  <section class="summary">
+    <div><span>Entradas</span><strong>{{ total_entradas }}</strong></div>
+    <div><span>Total compras</span><strong>R$ {{ total_compras|floatformat:2 }}</strong></div>
+    <div><span>Total financeiro</span><strong>R$ {{ total_financeiro|floatformat:2 }}</strong></div>
+    <div><span>Total pago</span><strong>R$ {{ total_pago|floatformat:2 }}</strong></div>
+  </section>
+  <table>
+    <thead>
+      <tr><th>ID</th><th>Documento</th><th>Recebimento</th><th>Fornecedor</th><th>Filial</th><th>Status</th><th>Financeiro</th><th>Total</th></tr>
+    </thead>
+    <tbody>
+      {% for entrada in entradas %}
+        <tr>
+          <td>{{ entrada.id }}</td>
+          <td>{{ entrada.numero_documento|default:"-" }}</td>
+          <td>{{ entrada.data_recebimento|date:"d/m/Y H:i" }}</td>
+          <td>{{ entrada.fornecedor }}</td>
+          <td>{{ entrada.filial }}</td>
+          <td>{{ entrada.get_status_display }}</td>
+          <td>
+            {% for conta in entrada.contas_financeiras.all %}
+              {{ conta.get_status_display }} - R$ {{ conta.valor|floatformat:2 }}
+              {% if conta.data_pagamento %} pago em {{ conta.data_pagamento|date:"d/m/Y" }}{% endif %}<br>
+            {% empty %}
+              Sem conta
+            {% endfor %}
+          </td>
+          <td class="money">R$ {{ entrada.total_produtos|floatformat:2 }}</td>
+        </tr>
+      {% empty %}
+        <tr><td colspan="8">Nenhuma entrada encontrada.</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  <footer>Sistema Supermercado</footer>
+</body>
+</html>

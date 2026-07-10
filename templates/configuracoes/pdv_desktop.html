@@ -45,6 +45,34 @@
   <article class="metric"><span>Contrato TEF</span><strong>pdv_tef_v1</strong></article>
 </section>
 
+<section class="panel desktop-diagnostics">
+  <div class="panel-heading">
+    <div>
+      <h2>Diagnostico local deste terminal</h2>
+      <p>Consulta os ultimos eventos de impressora, gaveta, TEF e balanca gravados na maquina do caixa.</p>
+    </div>
+    <button type="button" class="secondary-button" id="desktop-device-logs">
+      <i class="fa-solid fa-stethoscope"></i> Ler diagnostico local
+    </button>
+  </div>
+  <div class="operation-notice">
+    <i class="fa-solid fa-desktop"></i>
+    <div>
+      <strong>Disponivel dentro do aplicativo desktop</strong>
+      <span>No navegador comum, use esta area apenas como referencia; o log fisico fica salvo no terminal instalado.</span>
+    </div>
+  </div>
+  <div id="desktop-device-logs-feedback" class="form-help">Aguardando leitura do app desktop.</div>
+  <div class="table-wrapper">
+    <table>
+      <thead><tr><th>Quando</th><th>Tipo</th><th>Status</th><th>Mensagem</th></tr></thead>
+      <tbody id="desktop-device-logs-body">
+        <tr><td colspan="4" class="empty">Nenhum diagnostico carregado.</td></tr>
+      </tbody>
+    </table>
+  </div>
+</section>
+
 <section class="split-grid">
   <article class="panel">
     <h2>Artefatos</h2>
