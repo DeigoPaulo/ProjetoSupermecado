@@ -6,15 +6,15 @@
 <header class="page-header">
   <div>
     <h1>Checklist do projeto</h1>
-    <p>Acompanhamento do sistema com base na documentacao funcional e tecnica.</p>
+    <p>Acompanhamento do sistema com base na documentação funcional e técnica.</p>
   </div>
-  <span class="project-percent">{{ resumo.percentual }}% concluido</span>
+  <span class="project-percent">{{ resumo.percentual }}% concluído</span>
 </header>
 
 <section class="project-overview" aria-label="Resumo do projeto">
   <div class="project-summary">
     <strong>{{ resumo.concluidos }}</strong>
-    <span>Concluidos</span>
+    <span>Concluídos</span>
   </div>
   <div class="project-summary project-summary-partial">
     <strong>{{ resumo.parciais }}</strong>
@@ -47,40 +47,84 @@
       <option value="{{ grupo }}" {% if filtros.grupo == grupo %}selected{% endif %}>{{ grupo }}</option>
     {% endfor %}
   </select>
+  <select name="trilha">
+    <option value="">Todas as trilhas</option>
+    {% for trilha in trilhas_opcoes %}
+      <option value="{{ trilha }}" {% if filtros.trilha == trilha %}selected{% endif %}>{{ trilha }}</option>
+    {% endfor %}
+  </select>
+  <select name="prioridade">
+    <option value="">Todas as prioridades</option>
+    {% for prioridade in prioridades_opcoes %}
+      <option value="{{ prioridade }}" {% if filtros.prioridade == prioridade %}selected{% endif %}>{{ prioridade }}</option>
+    {% endfor %}
+  </select>
   <button type="submit">Filtrar</button>
   <a class="secondary-button" href="{% url 'configuracoes:checklist_csv' %}?{{ request.GET.urlencode }}">Excel/CSV</a>
-  {% if filtros.q or filtros.status or filtros.grupo %}
+  {% if filtros.q or filtros.status or filtros.grupo or filtros.trilha or filtros.prioridade %}
     <a class="secondary-button" href="{% url 'configuracoes:checklist' %}">Limpar</a>
   {% endif %}
 </form>
 
-{% if filtros.q or filtros.status or filtros.grupo %}
+{% if filtros.q or filtros.status or filtros.grupo or filtros.trilha or filtros.prioridade %}
   <section class="checklist-filter-summary">
     <strong>{{ resumo_filtrado.total }}</strong>
-    <span>item(ns) encontrado(s): {{ resumo_filtrado.concluidos }} concluidos, {{ resumo_filtrado.parciais }} em andamento e {{ resumo_filtrado.pendentes }} pendentes.</span>
+    <span>item(ns) encontrado(s): {{ resumo_filtrado.concluidos }} concluídos, {{ resumo_filtrado.parciais }} em andamento e {{ resumo_filtrado.pendentes }} pendentes.</span>
   </section>
 {% endif %}
+
+<section class="roadmap-map" aria-label="Mapa do roadmap">
+  <header>
+    <div>
+      <h2>Mapa do roadmap</h2>
+      <p>Concentração dos itens em andamento por trilha de trabalho.</p>
+    </div>
+    <i class="fa-solid fa-layer-group" aria-hidden="true"></i>
+  </header>
+  <div class="roadmap-map-grid">
+    {% for item in mapa_trilhas %}
+      <article class="roadmap-map-card">
+        <span>{{ item.trilha }}</span>
+        <strong>{{ item.total }}</strong>
+        <small>{{ item.alta }} alta prioridade · {{ item.media }} média</small>
+        <p>{{ item.grupos }}</p>
+      </article>
+    {% empty %}
+      <article class="roadmap-map-card">
+        <span>Roadmap</span>
+        <strong>0</strong>
+        <small>Nenhum item em andamento</small>
+        <p>Todos os blocos estão concluídos ou aguardando planejamento.</p>
+      </article>
+    {% endfor %}
+  </div>
+</section>
 
 <section class="checklist-section checklist-next-section">
   <header class="checklist-section-header">
     <div>
-      <h2>Proximas etapas</h2>
-      <p>Recorte automatico dos itens em andamento para orientar a sequencia de desenvolvimento.</p>
+      <h2>Próximas etapas</h2>
+      <p>Recorte automático dos itens em andamento para orientar a sequência de desenvolvimento.</p>
     </div>
     <i class="fa-solid fa-route" aria-hidden="true"></i>
   </header>
   <div class="checklist-next-grid">
     {% for item in proximas_etapas %}
       <article class="checklist-next-card">
-        <span>{{ item.grupo }}</span>
+        <div class="roadmap-card-meta">
+          <span>{{ item.grupo }}</span>
+          <b>{{ item.trilha }}</b>
+          <em>{{ item.prioridade }}</em>
+        </div>
         <strong>{{ item.titulo }}</strong>
         <p>{{ item.descricao|truncatechars:220 }}</p>
+        <small>{{ item.acao }}</small>
       </article>
     {% empty %}
       <article class="checklist-next-card">
         <span>Projeto</span>
         <strong>Nenhuma etapa em andamento</strong>
-        <p>Todos os itens mapeados estao concluidos ou pendentes para planejamento futuro.</p>
+        <p>Todos os itens mapeados estão concluídos ou pendentes para planejamento futuro.</p>
       </article>
     {% endfor %}
   </div>
@@ -114,7 +158,7 @@
               <p>{{ descricao }}</p>
             </div>
             <span class="checklist-status checklist-status-{{ status }}">
-              {% if status == "done" %}Concluido{% elif status == "partial" %}Em andamento{% else %}Pendente{% endif %}
+              {% if status == "done" %}Concluído{% elif status == "partial" %}Em andamento{% else %}Pendente{% endif %}
             </span>
           </article>
         {% endfor %}
@@ -136,7 +180,7 @@
 <section class="checklist-section document-section">
   <header class="checklist-section-header">
     <div>
-      <h2>Documentos de referencia</h2>
+      <h2>Documentos de referência</h2>
       <p>Fontes usadas para conferir o escopo e definir as proximas etapas.</p>
     </div>
     <i class="fa-solid fa-folder-open" aria-hidden="true"></i>

@@ -36,6 +36,13 @@
       <span>Movimentacoes entre contas nao entram como receita ou despesa para evitar duplicidade.</span>
     </div>
   </article>
+  <article class="finance-insight">
+    <i class="fa-solid fa-layer-group"></i>
+    <div>
+      <strong>Categoria e saldos</strong>
+      <span>A visao por categoria e por conta ajuda a conferir despesas, receitas e dinheiro disponivel por filial.</span>
+    </div>
+  </article>
 </section>
 
 <section class="metrics-grid">
@@ -66,6 +73,28 @@
 </section>
 
 <section class="panel table-panel">
+  <div class="panel-title">Resultado por categoria</div>
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>Categoria</th><th>Tipo</th><th>Receitas</th><th>Despesas</th><th>Resultado</th></tr></thead>
+      <tbody>
+        {% for linha in por_categoria %}
+          <tr>
+            <td>{{ linha.categoria }}</td>
+            <td>{{ linha.tipo }}</td>
+            <td>R$ {{ linha.receitas|floatformat:2 }}</td>
+            <td>R$ {{ linha.despesas|floatformat:2 }}</td>
+            <td><strong>R$ {{ linha.resultado|floatformat:2 }}</strong></td>
+          </tr>
+        {% empty %}
+          <tr><td colspan="5" class="empty">Nenhum lancamento categorizado no periodo.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</section>
+
+<section class="panel table-panel">
   <div class="panel-title">Resultado por conta</div>
   <div class="table-wrap">
     <table>
@@ -81,6 +110,55 @@
           </tr>
         {% empty %}
           <tr><td colspan="5" class="empty">Nenhum lancamento realizado no periodo.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</section>
+
+<section class="panel table-panel">
+  <div class="panel-title">Saldos por conta de movimento</div>
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>Filial</th><th>Conta</th><th>Tipo</th><th>Saldo inicial</th><th>Entradas</th><th>Saidas</th><th>Saldo atual</th></tr></thead>
+      <tbody>
+        {% for linha in saldos_contas %}
+          <tr>
+            <td>{{ linha.filial }}</td>
+            <td>{{ linha.conta }}</td>
+            <td>{{ linha.tipo }}</td>
+            <td>R$ {{ linha.saldo_inicial|floatformat:2 }}</td>
+            <td>R$ {{ linha.entradas_periodo|floatformat:2 }}</td>
+            <td>R$ {{ linha.saidas_periodo|floatformat:2 }}</td>
+            <td><strong>R$ {{ linha.saldo_atual|floatformat:2 }}</strong></td>
+          </tr>
+        {% empty %}
+          <tr><td colspan="7" class="empty">Nenhuma conta de movimento ativa cadastrada.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</section>
+
+<section class="panel table-panel">
+  <div class="panel-title">Balancete gerencial</div>
+  <p class="muted">Conferencia do saldo anterior, entradas, saidas e saldo final de cada conta no periodo. Transferencias internas entram aqui porque alteram o saldo real de caixa, banco ou PIX.</p>
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>Filial</th><th>Conta</th><th>Tipo</th><th>Saldo anterior</th><th>Entradas</th><th>Saidas</th><th>Saldo final</th></tr></thead>
+      <tbody>
+        {% for linha in balancete_contas %}
+          <tr>
+            <td>{{ linha.filial }}</td>
+            <td>{{ linha.conta }}</td>
+            <td>{{ linha.tipo }}</td>
+            <td>R$ {{ linha.saldo_anterior|floatformat:2 }}</td>
+            <td>R$ {{ linha.entradas|floatformat:2 }}</td>
+            <td>R$ {{ linha.saidas|floatformat:2 }}</td>
+            <td><strong>R$ {{ linha.saldo_final|floatformat:2 }}</strong></td>
+          </tr>
+        {% empty %}
+          <tr><td colspan="7" class="empty">Nenhuma conta de movimento ativa cadastrada.</td></tr>
         {% endfor %}
       </tbody>
     </table>

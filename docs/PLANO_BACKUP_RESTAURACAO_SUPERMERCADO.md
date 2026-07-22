@@ -24,6 +24,33 @@ Em desenvolvimento, um backup JSON pode ser gerado com:
 
 Antes de usar esse comando, crie a pasta `backups/`.
 
+Para servidor local da loja, use o script operacional:
+
+```powershell
+.\scripts\backup_local.ps1
+```
+
+Ele gera um pacote `.zip` com `dados.json`, banco SQLite quando existir, pasta `media/`, manifesto e checksum SHA-256. Para incluir logs:
+
+```powershell
+.\scripts\backup_local.ps1 -IncluirLogs
+```
+
+Para automatizar no Windows, registre a tarefa diaria:
+
+```powershell
+.\scripts\register_backup_task.ps1 -Horario 02:30 -RetencaoDias 15
+```
+
+Para gerar tambem um pacote criptografado em producao, configure a senha fora do repositorio e execute:
+
+```powershell
+$env:BACKUP_ENCRYPTION_PASSPHRASE = "senha-forte-fora-do-git"
+.\scripts\backup_local.ps1 -IncluirLogs
+```
+
+O script cria um `.zip.aes` com AES-256 e checksum proprio. Quando a politica da empresa exigir somente o arquivo criptografado, use `-RemoverOriginalCriptografado` para apagar o `.zip` aberto ao final da geracao.
+
 ## 3. Banco e arquivos
 
 O backup completo de producao deve contemplar:
@@ -31,6 +58,7 @@ O backup completo de producao deve contemplar:
 - dump do PostgreSQL;
 - copia da pasta `media/`;
 - checksum SHA-256;
+- criptografia AES-256 para pacotes armazenados fora do servidor;
 - retencao automatica de backups antigos;
 - copia externa em local protegido.
 
@@ -54,3 +82,7 @@ Para carregar um backup JSON em ambiente limpo:
 ## 5. Itens sensiveis
 
 Backups com dados fiscais, financeiros ou certificados digitais devem ser criptografados e armazenados fora do computador comum de trabalho.
+
+## 6. Servidor local administrativo
+
+O roteiro de instalacao local fica em `docs/IMPLANTACAO_SERVIDOR_LOCAL.md`. A regra do projeto e manter o ERP administrativo como servidor web local acessado por navegador, enquanto o PDV desktop segue separado e restrito ao operador.

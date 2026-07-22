@@ -6,6 +6,7 @@ app_name = "fiscal"
 
 urlpatterns = [
     path("", views.documentos, name="documentos"),
+    path("diagnostico.json", views.diagnostico_json, name="diagnostico_json"),
     path("produtos/", views.produtos_fiscais, name="produtos_fiscais"),
     path("configuracoes/nova/", views.configuracao_form, name="configuracao_nova"),
     path("configuracoes/<int:pk>/editar/", views.configuracao_form, name="configuracao_editar"),

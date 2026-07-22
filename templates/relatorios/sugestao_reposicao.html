@@ -35,7 +35,7 @@
 
 <section class="metrics-grid">
   <article class="metric"><span>Produtos sugeridos</span><strong>{{ total_produtos }}</strong></article>
-  <article class="metric"><span>Quantidade sugerida</span><strong>{{ quantidade_sugerida|floatformat:3 }}</strong></article>
+  <article class="metric"><span>Quantidade sugerida</span><strong>{{ quantidade_sugerida|quantidade_br }}</strong></article>
   <article class="metric"><span>Cobertura</span><strong>{{ dias_cobertura }} dias</strong></article>
   <article class="metric"><span>Periodo venda</span><strong>{{ data_inicio|date:"d/m" }} - {{ data_fim|date:"d/m" }}</strong></article>
 </section>
@@ -61,11 +61,11 @@
           <td>{{ item.produto.nome }}</td>
           <td>{{ item.produto.categoria }}</td>
           <td>{{ item.filial }}</td>
-          <td>{{ item.disponivel|floatformat:3 }}</td>
-          <td>{{ item.estoque_minimo|floatformat:3 }}</td>
-          <td>{{ item.venda_liquida|floatformat:3 }}</td>
-          <td>{{ item.media_dia|floatformat:3 }}</td>
-          <td><strong>{{ item.sugestao|floatformat:3 }}</strong></td>
+          <td>{{ item.disponivel|quantidade_br }}</td>
+          <td>{{ item.estoque_minimo|quantidade_br }}</td>
+          <td>{{ item.venda_liquida|quantidade_br }}</td>
+          <td>{{ item.media_dia|quantidade_br }}</td>
+          <td><strong>{{ item.sugestao|quantidade_br }}</strong></td>
         </tr>
       {% empty %}
         <tr><td colspan="8" class="empty">Nenhum produto precisa de reposicao nos criterios atuais.</td></tr>

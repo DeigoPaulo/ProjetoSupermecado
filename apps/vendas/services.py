@@ -1,4 +1,4 @@
-from decimal import Decimal
+from decimal import Decimal, ROUND_HALF_UP
 from uuid import uuid4
 
 from django.core.exceptions import ValidationError
@@ -9,7 +9,7 @@ from apps.auditoria.models import LogAuditoria
 from apps.estoque.models import TipoMovimentacaoEstoque, movimentar_estoque
 from apps.promocoes.services import preco_atual_produto
 
-from .models import DevolucaoVenda, ItemDevolucaoVenda, ItemPreVenda, ItemVenda, PagamentoVenda, PreVenda, StatusPagamento, StatusPreVenda, StatusVenda, Venda
+from .models import DevolucaoVenda, ItemDevolucaoVenda, ItemPreVenda, ItemVenda, PagamentoVenda, PreVenda, StatusPagamento, StatusPreVenda, StatusVenda, TipoDocumentoConsumidor, Venda
 
 
 def calcular_item(produto, quantidade):
@@ -35,15 +35,23 @@ TIPO_CONTA_POR_FORMA = {
 FORMAS_ELETRONICAS = {"PIX", "CARTAO", "DEBITO", "CREDITO"}
 
 
-def finalizar_venda(*, caixa, usuario, itens, forma_pagamento=None, desconto=Decimal("0.00"), cliente=None, pagamentos=None, vencimento_financeiro=None, preparar_fiscal=True):
+def finalizar_venda(*, caixa, usuario, itens, forma_pagamento=None, desconto=Decimal("0.00"), cliente=None, pagamentos=None, vencimento_financeiro=None, preparar_fiscal=True, documento_consumidor_tipo=TipoDocumentoConsumidor.NAO_IDENTIFICADO, documento_consumidor=""):
     if not itens:
         raise ValidationError("Inclua ao menos um item na venda.")
+    documento_consumidor_tipo, documento_consumidor, observacao_fiscal_consumidor = _normalizar_documento_consumidor(
+        documento_consumidor_tipo,
+        documento_consumidor,
+        preparar_fiscal=preparar_fiscal,
+    )
 
     with transaction.atomic():
         venda = Venda.objects.create(
             filial=caixa.filial,
             caixa=caixa,
             cliente=cliente,
+            documento_consumidor_tipo=documento_consumidor_tipo,
+            documento_consumidor=documento_consumidor,
+            observacao_fiscal_consumidor=observacao_fiscal_consumidor,
             usuario=usuario,
             desconto=desconto,
             status=StatusVenda.ABERTA,
@@ -146,6 +154,33 @@ def _normalizar_pagamento_eletronico(pagamento):
     pagamento.setdefault("codigo_autorizacao", referencia[28:34])
     pagamento.setdefault("mensagem_processadora", "Autorizacao eletronica simulada. Substituir pelo adaptador TEF/API no app desktop.")
     return pagamento
+
+
+def _somente_digitos(valor):
+    return "".join(caractere for caractere in str(valor or "") if caractere.isdigit())
+
+
+def _normalizar_documento_consumidor(tipo, documento, *, preparar_fiscal):
+    tipo = (tipo or TipoDocumentoConsumidor.NAO_IDENTIFICADO).upper()
+    documento = str(documento or "").strip()
+    if not documento:
+        return TipoDocumentoConsumidor.NAO_IDENTIFICADO, "", ""
+    if tipo not in {TipoDocumentoConsumidor.CPF, TipoDocumentoConsumidor.CNPJ, TipoDocumentoConsumidor.ESTRANGEIRO}:
+        tipo = TipoDocumentoConsumidor.CPF if len(_somente_digitos(documento)) <= 11 else TipoDocumentoConsumidor.CNPJ
+    if tipo in {TipoDocumentoConsumidor.CPF, TipoDocumentoConsumidor.CNPJ}:
+        documento = _somente_digitos(documento)
+    if tipo == TipoDocumentoConsumidor.CPF and len(documento) != 11:
+        raise ValidationError("CPF na nota deve conter 11 digitos.")
+    if tipo == TipoDocumentoConsumidor.CNPJ and len(documento) != 14:
+        raise ValidationError("CNPJ na nota deve conter 14 digitos.")
+    if tipo == TipoDocumentoConsumidor.CNPJ and preparar_fiscal:
+        raise ValidationError("Para consumidor identificado por CNPJ, use o fluxo de NF-e modelo 55 em vez de NFC-e automatica.")
+    if tipo == TipoDocumentoConsumidor.ESTRANGEIRO and len(documento) > 20:
+        raise ValidationError("Documento estrangeiro deve ter no maximo 20 caracteres.")
+    observacao = ""
+    if tipo == TipoDocumentoConsumidor.CNPJ:
+        observacao = "Consumidor solicitou CNPJ na nota; emissao fiscal deve seguir NF-e modelo 55."
+    return tipo, documento, observacao
 
 
 def _conta_movimento_para_pagamento(filial, forma_pagamento):
@@ -333,6 +368,7 @@ def registrar_devolucao_venda(*, venda, usuario, itens, motivo, supervisor=None,
 
     devolucao.valor_total = valor_total
     devolucao.save(update_fields=["valor_total"])
+    _ratear_estorno_financeiro_devolucao(devolucao, usuario=usuario, motivo=motivo)
 
     LogAuditoria.objects.create(
         usuario=usuario,
@@ -344,6 +380,57 @@ def registrar_devolucao_venda(*, venda, usuario, itens, motivo, supervisor=None,
         ip=ip,
     )
     return devolucao
+
+
+def _quantizar_moeda(valor):
+    return Decimal(valor).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+
+
+def _ratear_estorno_financeiro_devolucao(devolucao, *, usuario, motivo):
+    from apps.financeiro.models import LancamentoFinanceiro, TipoLancamentoFinanceiro
+
+    valor_devolver = _quantizar_moeda(devolucao.valor_total)
+    if valor_devolver <= 0:
+        return
+    pagamentos = list(
+        PagamentoVenda.objects.select_related("forma_pagamento")
+        .filter(venda=devolucao.venda, status=StatusPagamento.CONFIRMADO)
+        .order_by("id")
+    )
+    total_pagamentos = _quantizar_moeda(sum((pagamento.valor for pagamento in pagamentos), Decimal("0.00")))
+    if total_pagamentos <= 0:
+        return
+    restante_rateio = valor_devolver
+    for indice, pagamento in enumerate(pagamentos):
+        lancamento = (
+            LancamentoFinanceiro.objects.filter(
+                pagamento_venda=pagamento,
+                origem="PDV_VENDA",
+                tipo=TipoLancamentoFinanceiro.ENTRADA,
+                estorno_de__isnull=True,
+            )
+            .order_by("id")
+            .first()
+        )
+        if not lancamento:
+            continue
+        valor_proporcional = restante_rateio if indice == len(pagamentos) - 1 else _quantizar_moeda(valor_devolver * pagamento.valor / total_pagamentos)
+        if valor_proporcional <= 0:
+            continue
+        valor_estornado = _total_estornado_lancamento(lancamento)
+        saldo_lancamento = _quantizar_moeda(lancamento.valor - valor_estornado)
+        valor_estornar = min(valor_proporcional, saldo_lancamento, restante_rateio)
+        if valor_estornar <= 0:
+            continue
+        _registrar_estorno_lancamento_parcial(
+            lancamento=lancamento,
+            valor=valor_estornar,
+            usuario=usuario,
+            motivo=f"Devolucao {devolucao.id}: {motivo}",
+        )
+        restante_rateio = _quantizar_moeda(restante_rateio - valor_estornar)
+        if restante_rateio <= 0:
+            break
 
 
 @transaction.atomic
@@ -436,9 +523,60 @@ def _solicitar_estorno_pagamentos(venda, *, motivo):
     _estornar_lancamentos_pagamentos_locais(venda, motivo=motivo)
 
 
+@transaction.atomic
+def confirmar_estorno_pagamento_eletronico(*, pagamento, usuario, motivo="", autorizacao="", mensagem_processadora="", ip=None):
+    pagamento = PagamentoVenda.objects.select_for_update().select_related("venda", "forma_pagamento").get(pk=pagamento.pk)
+    if pagamento.status != StatusPagamento.ESTORNO_PENDENTE:
+        raise ValidationError("Apenas pagamentos com estorno pendente podem ser confirmados.")
+    if not pagamento.transacao_externa_id:
+        raise ValidationError("Pagamento sem transacao externa deve ser estornado pelo fluxo local.")
+    agora = timezone.now()
+    mensagem = mensagem_processadora.strip() if mensagem_processadora else "Estorno confirmado pela operadora."
+    if autorizacao:
+        mensagem = f"{mensagem} Autorizacao: {autorizacao}."
+    pagamento.status = StatusPagamento.ESTORNADO
+    pagamento.estornado_em = agora
+    if motivo:
+        pagamento.motivo_estorno = motivo
+    pagamento.mensagem_processadora = mensagem
+    pagamento.save(update_fields=["status", "estornado_em", "motivo_estorno", "mensagem_processadora"])
+    _estornar_lancamento_pagamento(pagamento, usuario=usuario, motivo=motivo or pagamento.motivo_estorno or "Estorno eletrônico confirmado")
+    LogAuditoria.objects.create(
+        usuario=usuario,
+        modulo="vendas",
+        acao="CONFIRMACAO_ESTORNO_TEF",
+        descricao=(
+            f"Estorno do pagamento {pagamento.id} confirmado para venda {pagamento.venda_id}. "
+            f"Transacao: {pagamento.transacao_externa_id}. {mensagem}"
+        ),
+        objeto_tipo="PagamentoVenda",
+        objeto_id=str(pagamento.id),
+        ip=ip,
+    )
+    return pagamento
+
+
+def _estornar_lancamento_pagamento(pagamento, *, usuario, motivo):
+    from apps.financeiro.models import LancamentoFinanceiro
+
+    lancamentos = LancamentoFinanceiro.objects.filter(
+        pagamento_venda=pagamento,
+        estorno_de__isnull=True,
+    )
+    for lancamento in lancamentos:
+        saldo_lancamento = _quantizar_moeda(lancamento.valor - _total_estornado_lancamento(lancamento))
+        if saldo_lancamento <= 0:
+            continue
+        _registrar_estorno_lancamento_parcial(
+            lancamento=lancamento,
+            valor=saldo_lancamento,
+            usuario=usuario,
+            motivo=f"Estorno do pagamento {pagamento.id}: {motivo}",
+        )
+
+
 def _estornar_lancamentos_pagamentos_locais(venda, *, motivo):
     from apps.financeiro.models import LancamentoFinanceiro
-    from apps.financeiro.services import estornar_lancamento
 
     lancamentos = LancamentoFinanceiro.objects.select_related("pagamento_venda").filter(
         pagamento_venda__venda=venda,
@@ -446,14 +584,51 @@ def _estornar_lancamentos_pagamentos_locais(venda, *, motivo):
         estorno_de__isnull=True,
     )
     for lancamento in lancamentos:
-        if lancamento.estornos.exists():
+        saldo_lancamento = _quantizar_moeda(lancamento.valor - _total_estornado_lancamento(lancamento))
+        if saldo_lancamento <= 0:
             continue
-        estornar_lancamento(
+        _registrar_estorno_lancamento_parcial(
             lancamento=lancamento,
+            valor=saldo_lancamento,
             usuario=venda.usuario,
             motivo=f"Cancelamento da venda {venda.id}: {motivo}",
-            data=timezone.localdate(),
         )
+
+
+def _total_estornado_lancamento(lancamento):
+    from django.db.models import Sum
+
+    total = lancamento.estornos.aggregate(total=Sum("valor"))["total"] or Decimal("0.00")
+    return _quantizar_moeda(total)
+
+
+def _registrar_estorno_lancamento_parcial(*, lancamento, valor, usuario, motivo):
+    from apps.financeiro.models import TipoLancamentoFinanceiro
+    from apps.financeiro.services import registrar_lancamento
+
+    valor = _quantizar_moeda(valor)
+    if valor <= 0:
+        return None
+    tipo_inverso = (
+        TipoLancamentoFinanceiro.SAIDA
+        if lancamento.tipo == TipoLancamentoFinanceiro.ENTRADA
+        else TipoLancamentoFinanceiro.ENTRADA
+    )
+    return registrar_lancamento(
+        conta=lancamento.conta,
+        tipo=tipo_inverso,
+        descricao=f"Estorno do lancamento #{lancamento.id}: {motivo}",
+        valor=valor,
+        data=timezone.localdate(),
+        usuario=usuario,
+        origem="ESTORNO",
+        conta_financeira=lancamento.conta_financeira,
+        transferencia=lancamento.transferencia,
+        estorno_de=lancamento,
+        pagamento_venda=lancamento.pagamento_venda,
+        sangria=lancamento.sangria,
+        suprimento=lancamento.suprimento,
+    )
 
 
 def _cancelar_contas_receber_venda(venda, *, usuario, motivo, ip=None):

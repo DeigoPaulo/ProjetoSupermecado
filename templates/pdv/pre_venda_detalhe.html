@@ -36,7 +36,7 @@
         {% for item in pre_venda.itens.all %}
           <tr>
             <td>{{ item.produto.nome }}</td>
-            <td>{{ item.quantidade }}</td>
+            <td>{{ item.quantidade|quantidade_br }}</td>
             <td>R$ {{ item.preco_unitario|floatformat:2 }}</td>
             <td>R$ {{ item.total|floatformat:2 }}</td>
           </tr>

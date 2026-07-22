@@ -46,7 +46,7 @@ class ConfiguracaoImpressaoForm(forms.ModelForm):
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        aplicar_select2(self, ["empresa", "filial"])
+        aplicar_select2(self, ["empresa", "filial"], ajax_urls={"filial": "/empresas/filiais/busca.json"})
         self.fields["impressora_padrao"].widget.attrs.update(
             {
                 "list": "printer-suggestions",
@@ -199,7 +199,7 @@ class TerminalPdvForm(forms.ModelForm):
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        aplicar_select2(self, ["filial"])
+        aplicar_select2(self, ["filial"], ajax_urls={"filial": "/empresas/filiais/busca.json"})
         self.fields["protocolo_balanca"].required = False
 
     def clean(self):

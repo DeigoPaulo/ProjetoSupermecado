@@ -1,3 +1,4 @@
+import json
 from decimal import Decimal, InvalidOperation
 
 from django.conf import settings
@@ -10,7 +11,9 @@ from django.http import JsonResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse_lazy
 from django.utils import timezone
-from django.views.decorators.http import require_GET
+from django.utils.dateparse import parse_datetime
+from django.views.decorators.csrf import csrf_exempt
+from django.views.decorators.http import require_GET, require_POST
 from django.views.generic import CreateView, ListView
 
 from apps.accounts.permissions import PDV, SUPERVISAO, RoleRequiredMixin, has_role, role_required, supervisor_from_request
@@ -25,16 +28,17 @@ from apps.financeiro.services import conta_caixa_pdv, registrar_lancamento
 from apps.produtos.models import Produto
 from apps.promocoes.models import PromocaoProduto
 from apps.promocoes.services import preco_atual_produto, promocao_ativa_para_produto
-from apps.vendas.models import FormaPagamento, PagamentoVenda, PreVenda, StatusPreVenda, Venda
-from apps.vendas.services import calcular_item, cancelar_pre_venda, cancelar_venda, converter_pre_venda, criar_pre_venda, finalizar_venda, quantidade_devolvida_item, registrar_devolucao_venda
+from apps.vendas.models import FormaPagamento, PagamentoVenda, PreVenda, StatusPagamento, StatusPreVenda, Venda
+from apps.vendas.services import calcular_item, cancelar_pre_venda, cancelar_venda, confirmar_estorno_pagamento_eletronico, converter_pre_venda, criar_pre_venda, finalizar_venda, quantidade_devolvida_item, registrar_devolucao_venda
 
 from .forms import AbrirCaixaForm, AdicionarItemForm, ConferirCaixaForm, FecharCaixaForm, FinalizarVendaForm, PreVendaForm, SangriaForm, SuprimentoForm
-from .models import AcessoPdvNuvem, Caixa, Sangria, StatusAcessoPdvNuvem, StatusCaixa, Suprimento, TerminalPdv
+from .models import AcessoPdvNuvem, Caixa, EventoDispositivoTerminal, Sangria, StatusAcessoPdvNuvem, StatusCaixa, Suprimento, TerminalPdv
 from .services_acesso import acesso_pdv_nuvem_aprovado, decidir_acesso_pdv_nuvem, solicitar_acesso_pdv_nuvem
 
 
 CART_SESSION_KEY = "pdv_cart"
 PRE_VENDA_SESSION_KEY = "pdv_pre_venda_id"
+CASH_DRAWER_SESSION_KEY = "pdv_cash_drawer_action"
 
 
 def _versao_em_partes(valor):
@@ -42,6 +46,74 @@ def _versao_em_partes(valor):
         return tuple(int(parte) for parte in str(valor).split("."))
     except (TypeError, ValueError):
         return ()
+
+
+def _autenticar_terminal_api(request, acao_sem_licenca):
+    identificador = request.headers.get("X-Terminal-ID", "").strip()
+    chave = request.headers.get("X-Terminal-Key", "").strip()
+    if not identificador or not chave:
+        return None, JsonResponse({"status": "nao_autorizado", "mensagem": "Credenciais do terminal ausentes."}, status=401)
+
+    try:
+        terminal = TerminalPdv.objects.select_related("filial", "filial__empresa").get(identificador=identificador)
+    except (TerminalPdv.DoesNotExist, ValueError):
+        return None, JsonResponse({"status": "nao_autorizado", "mensagem": "Credenciais do terminal invalidas."}, status=401)
+
+    if not terminal.validar_chave_api(chave):
+        return None, JsonResponse({"status": "nao_autorizado", "mensagem": "Credenciais do terminal invalidas."}, status=401)
+    if not terminal.ativo:
+        return None, JsonResponse({"status": "terminal_inativo", "mensagem": "Este terminal foi desativado pelo administrador."}, status=403)
+    if not terminal.licenca_liberada:
+        LogAuditoria.objects.create(
+            usuario=None,
+            modulo="pdv",
+            acao=acao_sem_licenca,
+            descricao=(
+                f"Requisicao recusada para terminal {terminal.nome} ({terminal.identificador}) "
+                f"com licenca {terminal.get_status_licenca_display()}."
+            ),
+            objeto_tipo="TerminalPdv",
+            objeto_id=str(terminal.id),
+            ip=request.META.get("REMOTE_ADDR"),
+        )
+        return None, JsonResponse(
+            {
+                "status": "licenca_terminal_bloqueada",
+                "mensagem": "Licenca do terminal pendente, bloqueada ou cancelada.",
+                "licenca": {"status": terminal.status_licenca, "liberada": False},
+            },
+            status=403,
+        )
+    return terminal, None
+
+
+def _configuracao_gaveta_terminal(filial):
+    impressao = configuracao_impressao_para(filial, TipoDocumentoImpressao.CUPOM_NAO_FISCAL)
+    return {
+        "contrato": "pdv_cash_drawer_v1",
+        "opcional": True,
+        "habilitada": bool(impressao and impressao.gaveta_automatica),
+        "impressora_padrao": impressao.impressora_padrao if impressao else "",
+        "abrir_em_dinheiro": bool(impressao and impressao.abrir_gaveta_em_dinheiro),
+        "abrir_em_movimento_caixa": bool(impressao and impressao.abrir_gaveta_em_movimento_caixa),
+        "bloqueia_venda_se_indisponivel": False,
+    }
+
+
+def _agendar_abertura_gaveta(request, caixa, motivo, origem):
+    impressao = configuracao_impressao_para(caixa.filial, TipoDocumentoImpressao.CUPOM_NAO_FISCAL)
+    if not impressao or not impressao.gaveta_automatica:
+        return
+    if origem == "pagamento_em_dinheiro" and not impressao.abrir_gaveta_em_dinheiro:
+        return
+    if origem != "pagamento_em_dinheiro" and not impressao.abrir_gaveta_em_movimento_caixa:
+        return
+    request.session[CASH_DRAWER_SESSION_KEY] = {
+        "motivo": motivo,
+        "origem": origem,
+        "caixa_id": caixa.id,
+    }
+    request.session.modified = True
 
 
 @require_GET
@@ -125,12 +197,14 @@ def terminal_bootstrap(request):
                 "venda_local": True,
                 "impressao_desktop": True,
                 "sincronizacao_assincrona": True,
+                "modo_offline_permitido": terminal.permite_modo_offline,
                 "emissao_fiscal_automatica": terminal.emite_documento_fiscal,
                 "tef_integrado": terminal.provedor_tef != "NAO_CONFIGURADO",
                 "balanca_local": terminal.usa_balanca,
             },
             "dispositivos": {
                 "balanca": terminal.balanca_configuracao(),
+                "gaveta": _configuracao_gaveta_terminal(terminal.filial),
             },
             "tef": {
                 "provedor": terminal.provedor_tef,
@@ -142,6 +216,48 @@ def terminal_bootstrap(request):
             "servidor_em": timezone.localtime().isoformat(),
         }
     )
+
+
+@csrf_exempt
+@require_POST
+def terminal_device_events(request):
+    terminal, erro = _autenticar_terminal_api(request, "EVENTOS_DISPOSITIVO_TERMINAL_SEM_LICENCA")
+    if erro:
+        return erro
+    try:
+        payload = json.loads(request.body.decode("utf-8") or "{}")
+    except (UnicodeDecodeError, json.JSONDecodeError):
+        return JsonResponse({"status": "erro", "mensagem": "JSON invalido."}, status=400)
+
+    eventos = payload.get("eventos", [])
+    if not isinstance(eventos, list):
+        return JsonResponse({"status": "erro", "mensagem": "Campo eventos deve ser uma lista."}, status=400)
+
+    objetos = []
+    for evento in eventos[-100:]:
+        if not isinstance(evento, dict):
+            continue
+        evento_payload = evento.get("payload") if isinstance(evento.get("payload"), dict) else {}
+        tipo = str(evento.get("tipo") or evento_payload.get("tipo") or "desconhecido")[:40]
+        status = str(evento.get("status") or evento_payload.get("status") or "")[:40]
+        mensagem = str(evento.get("mensagem") or evento_payload.get("mensagem") or "")[:255]
+        ocorrido_em = parse_datetime(str(evento.get("em"))) if evento.get("em") else None
+        if ocorrido_em and timezone.is_naive(ocorrido_em):
+            ocorrido_em = timezone.make_aware(ocorrido_em)
+        objetos.append(
+            EventoDispositivoTerminal(
+                terminal=terminal,
+                tipo=tipo,
+                status=status,
+                mensagem=mensagem,
+                payload=evento_payload or evento,
+                ocorrido_em=ocorrido_em,
+            )
+        )
+
+    if objetos:
+        EventoDispositivoTerminal.objects.bulk_create(objetos)
+    return JsonResponse({"status": "ok", "recebidos": len(objetos), "ignorados": max(len(eventos[-100:]) - len(objetos), 0)})
 
 
 def _filial_do_usuario(user):
@@ -218,8 +334,14 @@ def _quantidade_json(valor):
 def _pagamentos_from_request(request, total_liquido):
     formas = request.POST.getlist("pagamento_forma")
     valores = request.POST.getlist("pagamento_valor")
+    status_list = request.POST.getlist("pagamento_status")
+    transacoes = request.POST.getlist("pagamento_transacao_externa_id")
+    nsus = request.POST.getlist("pagamento_nsu")
+    autorizacoes = request.POST.getlist("pagamento_codigo_autorizacao")
+    mensagens = request.POST.getlist("pagamento_mensagem_processadora")
     pagamentos_lancados = []
-    for forma_id, valor_texto in zip(formas, valores):
+    formas_eletronicas = {"PIX", "CARTAO", "DEBITO", "CREDITO"}
+    for indice, (forma_id, valor_texto) in enumerate(zip(formas, valores)):
         valor = _decimal_from_text(valor_texto)
         if not forma_id and valor <= 0:
             continue
@@ -230,7 +352,26 @@ def _pagamentos_from_request(request, total_liquido):
         forma = FormaPagamento.objects.filter(id=forma_id, ativo=True).first()
         if not forma:
             raise ValidationError("Forma de pagamento invalida.")
-        pagamentos_lancados.append({"forma_pagamento": forma, "valor": valor})
+        tipo = (forma.tipo or "").upper()
+        status = (status_list[indice] if indice < len(status_list) else "").strip()
+        transacao = (transacoes[indice] if indice < len(transacoes) else "").strip()
+        nsu = (nsus[indice] if indice < len(nsus) else "").strip()
+        autorizacao = (autorizacoes[indice] if indice < len(autorizacoes) else "").strip()
+        mensagem = (mensagens[indice] if indice < len(mensagens) else "").strip()
+        if tipo in formas_eletronicas:
+            if status != StatusPagamento.CONFIRMADO or not (transacao and nsu and autorizacao):
+                raise ValidationError("Pagamento eletronico deve ser aprovado pela maquininha antes de finalizar.")
+        pagamentos_lancados.append(
+            {
+                "forma_pagamento": forma,
+                "valor": valor,
+                "status": status or StatusPagamento.CONFIRMADO,
+                "transacao_externa_id": transacao,
+                "nsu": nsu,
+                "codigo_autorizacao": autorizacao,
+                "mensagem_processadora": mensagem,
+            }
+        )
 
     if not pagamentos_lancados:
         raise ValidationError("Informe ao menos uma forma de pagamento.")
@@ -245,7 +386,9 @@ def _pagamentos_from_request(request, total_liquido):
         if restante <= 0:
             break
         valor_registrado = min(item["valor"], restante)
-        pagamentos.append({"forma_pagamento": item["forma_pagamento"], "valor": valor_registrado})
+        pagamento = item.copy()
+        pagamento["valor"] = valor_registrado
+        pagamentos.append(pagamento)
         restante -= valor_registrado
     return pagamentos, total_pago
 
@@ -313,6 +456,8 @@ def pdv(request):
                 _save_cart(request, {})
                 request.session.pop(PRE_VENDA_SESSION_KEY, None)
                 request.session["pdv_ultima_venda_id"] = venda.id
+                if any(pagamento["forma_pagamento"].tipo == "DINHEIRO" for pagamento in pagamentos):
+                    _agendar_abertura_gaveta(request, venda.caixa, f"venda_{venda.id}_dinheiro", "pagamento_em_dinheiro")
                 request.session.modified = True
                 messages.success(request, f"Venda {venda.id} finalizada com sucesso.")
                 return redirect("pdv:pdv")
@@ -385,9 +530,19 @@ def pdv(request):
 @role_required(*PDV)
 def remover_item(request, produto_id):
     cart = _get_cart(request)
-    cart.pop(str(produto_id), None)
+    chave = str(produto_id)
+    try:
+        quantidade_atual = Decimal(str(cart.get(chave, "0")))
+    except InvalidOperation:
+        quantidade_atual = Decimal("0.000")
+    if quantidade_atual > Decimal("1.000"):
+        cart[chave] = str(quantidade_atual - Decimal("1.000"))
+        mensagem = "Quantidade do item reduzida."
+    else:
+        cart.pop(chave, None)
+        mensagem = "Item removido."
     _save_cart(request, cart)
-    messages.success(request, "Item removido.")
+    messages.success(request, mensagem)
     return redirect("pdv:pdv")
 
 
@@ -627,6 +782,8 @@ def recibo_venda(request, venda_id):
         Venda.objects.select_related("filial", "filial__empresa", "caixa", "usuario", "cliente").prefetch_related("itens__produto", "pagamentos__forma_pagamento"),
         id=venda_id,
     )
+    if request.GET.get("reimpressao") == "1":
+        _registrar_reimpressao_cupom(request, venda, origem="navegador")
     impressao = configuracao_impressao_para(venda.filial, TipoDocumentoImpressao.CUPOM_NAO_FISCAL)
     return render(
         request,
@@ -643,10 +800,13 @@ def venda_impressao_desktop(request, venda_id):
         .prefetch_related("itens__produto", "pagamentos__forma_pagamento"),
         id=venda_id,
     )
+    reimpressao = request.GET.get("reimpressao") == "1"
+    if reimpressao:
+        _registrar_reimpressao_cupom(request, venda, origem="app_desktop")
     impressao = configuracao_impressao_para(venda.filial, TipoDocumentoImpressao.CUPOM_NAO_FISCAL)
     pagamentos = list(venda.pagamentos.all())
     tem_dinheiro = any((pagamento.forma_pagamento.tipo or "").upper() == "DINHEIRO" for pagamento in pagamentos)
-    abrir_gaveta = bool(impressao and impressao.gaveta_automatica and impressao.abrir_gaveta_em_dinheiro and tem_dinheiro)
+    abrir_gaveta = bool(not reimpressao and impressao and impressao.gaveta_automatica and impressao.abrir_gaveta_em_dinheiro and tem_dinheiro)
     logo_url = ""
     if venda.filial.empresa.logo:
         logo_url = request.build_absolute_uri(venda.filial.empresa.logo.url)
@@ -654,6 +814,8 @@ def venda_impressao_desktop(request, venda_id):
         {
             "status": "ok",
             "tipo": "cupom_nao_fiscal",
+            "operacao": "reimpressao_cupom" if reimpressao else "impressao_cupom",
+            "reimpressao": reimpressao,
             "venda": {
                 "id": venda.id,
                 "status": venda.status,
@@ -710,6 +872,18 @@ def venda_impressao_desktop(request, venda_id):
     )
 
 
+def _registrar_reimpressao_cupom(request, venda, *, origem):
+    LogAuditoria.objects.create(
+        usuario=request.user,
+        modulo="pdv",
+        acao="REIMPRESSAO_CUPOM",
+        descricao=f"Reimpressao do cupom da venda {venda.id} pela origem {origem}.",
+        objeto_tipo="Venda",
+        objeto_id=str(venda.id),
+        ip=request.META.get("REMOTE_ADDR"),
+    )
+
+
 @login_required
 @role_required(*PDV)
 def cancelar_venda_view(request, venda_id):
@@ -727,6 +901,32 @@ def cancelar_venda_view(request, venda_id):
     if request.POST.get("next") == "pdv":
         return redirect("pdv:pdv")
     return redirect("pdv:venda_detalhe", venda_id=venda.id)
+
+
+@login_required
+@role_required(*SUPERVISAO)
+def confirmar_estorno_pagamento_view(request, pagamento_id):
+    pagamento = get_object_or_404(PagamentoVenda.objects.select_related("venda"), id=pagamento_id)
+    if request.method != "POST":
+        return redirect("pdv:venda_detalhe", venda_id=pagamento.venda_id)
+    motivo = request.POST.get("motivo", "").strip()
+    autorizacao = request.POST.get("autorizacao", "").strip()
+    mensagem_processadora = request.POST.get("mensagem_processadora", "").strip()
+    try:
+        supervisor_from_request(request)
+        confirmar_estorno_pagamento_eletronico(
+            pagamento=pagamento,
+            usuario=request.user,
+            motivo=motivo,
+            autorizacao=autorizacao,
+            mensagem_processadora=mensagem_processadora,
+            ip=request.META.get("REMOTE_ADDR"),
+        )
+    except ValidationError as exc:
+        messages.error(request, " ".join(exc.messages))
+    else:
+        messages.success(request, "Estorno eletrônico confirmado e financeiro revertido.")
+    return redirect("pdv:venda_detalhe", venda_id=pagamento.venda_id)
 
 
 def _resumo_caixa(caixa):
@@ -813,6 +1013,7 @@ def registrar_sangria(request, caixa_id):
                         origem="PDV_SANGRIA",
                         sangria=sangria,
                     )
+                _agendar_abertura_gaveta(request, caixa, f"sangria_{sangria.id}", "sangria")
                 messages.success(request, "Sangria registrada com sucesso.")
     return _redirect_after_caixa_action(request, caixa)
 
@@ -846,6 +1047,7 @@ def registrar_suprimento(request, caixa_id):
                         origem="PDV_SUPRIMENTO",
                         suprimento=suprimento,
                     )
+                _agendar_abertura_gaveta(request, caixa, f"suprimento_{suprimento.id}", "suprimento")
                 messages.success(request, "Suprimento registrado com sucesso.")
     return _redirect_after_caixa_action(request, caixa)
 
@@ -864,6 +1066,7 @@ def fechar_caixa(request, caixa_id):
             caixa.data_fechamento = timezone.now()
             caixa.status = StatusCaixa.FECHADO
             caixa.save()
+            _agendar_abertura_gaveta(request, caixa, f"fechamento_caixa_{caixa.id}", "fechamento")
             messages.success(request, "Caixa fechado com sucesso.")
     return _redirect_after_caixa_action(request, caixa)
 
@@ -925,6 +1128,8 @@ class AbrirCaixaView(LoginRequiredMixin, RoleRequiredMixin, CreateView):
     def form_valid(self, form):
         form.instance.usuario_abertura = self.request.user
         messages.success(self.request, "Caixa aberto com sucesso.")
-        return super().form_valid(form)
+        response = super().form_valid(form)
+        _agendar_abertura_gaveta(self.request, self.object, f"abertura_caixa_{self.object.id}", "abertura")
+        return response
 
 # Create your views here.

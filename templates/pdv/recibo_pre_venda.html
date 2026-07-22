@@ -177,7 +177,7 @@
               {{ item.produto.nome }}<br>
               <span class="muted">{{ item.produto.codigo_barras }}</span>
             </td>
-            <td class="right">{{ item.quantidade }}</td>
+            <td class="right">{{ item.quantidade|quantidade_br }}</td>
             <td class="right">{{ item.preco_unitario|floatformat:2 }}</td>
             <td class="right">{{ item.total|floatformat:2 }}</td>
           </tr>

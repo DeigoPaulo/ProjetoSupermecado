@@ -58,9 +58,17 @@ def montar_cupom_escpos(payload: dict, cortar: bool = True) -> bytes:
     texto = montar_texto_cupom(payload).encode("cp850", errors="replace")
     comandos = [b"\x1b@", texto, b"\n\n"]
     if payload.get("gaveta", {}).get("abrir"):
-        comandos.append(b"\x1bp\x00\x19\xfa")
+        comandos.append(montar_pulso_gaveta_escpos(inicializar=False))
     if cortar:
         comandos.append(b"\x1dV\x42\x00")
+    return b"".join(comandos)
+
+
+def montar_pulso_gaveta_escpos(inicializar: bool = True) -> bytes:
+    comandos = []
+    if inicializar:
+        comandos.append(b"\x1b@")
+    comandos.append(b"\x1bp\x00\x19\xfa")
     return b"".join(comandos)
 
 

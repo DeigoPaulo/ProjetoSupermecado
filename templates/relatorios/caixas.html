@@ -9,14 +9,33 @@
     <p>Aberturas, fechamentos e totais do periodo.</p>
   </div>
   <div class="actions">
-    <a class="secondary-button" href="{% url 'relatorios:caixas_csv' %}?data_inicio={{ data_inicio|date:'Y-m-d' }}&amp;data_fim={{ data_fim|date:'Y-m-d' }}"><i class="fa-solid fa-file-csv"></i> Excel/CSV</a>
-    <a class="secondary-button" href="{% url 'relatorios:caixas_imprimir' %}?data_inicio={{ data_inicio|date:'Y-m-d' }}&amp;data_fim={{ data_fim|date:'Y-m-d' }}" target="_blank"><i class="fa-solid fa-file-pdf"></i> PDF</a>
+    <a class="secondary-button" href="{% url 'relatorios:caixas_csv' %}?{{ caixas_query }}"><i class="fa-solid fa-file-csv"></i> Excel/CSV</a>
+    <a class="secondary-button" href="{% url 'relatorios:caixas_imprimir' %}?{{ caixas_query }}" target="_blank"><i class="fa-solid fa-file-pdf"></i> PDF</a>
     <a class="secondary-button" href="{% url 'relatorios:vendas' %}">Vendas</a>
     <a class="secondary-button" href="{% url 'pdv:caixas' %}">Gerenciar caixas</a>
   </div>
 </header>
 
-{% include "relatorios/includes/periodo_form.html" %}
+<form method="get" class="toolbar report-filter">
+  <label>
+    <span>Inicio</span>
+    <input type="date" name="data_inicio" value="{{ data_inicio|date:'Y-m-d' }}">
+  </label>
+  <label>
+    <span>Fim</span>
+    <input type="date" name="data_fim" value="{{ data_fim|date:'Y-m-d' }}">
+  </label>
+  <label>
+    <span>Operador</span>
+    <select name="operador">
+      <option value="">Todos</option>
+      {% for operador in operadores %}
+        <option value="{{ operador.pk }}" {% if operador_id == operador.pk|stringformat:"s" %}selected{% endif %}>{{ operador.username }}</option>
+      {% endfor %}
+    </select>
+  </label>
+  <button type="submit">Filtrar</button>
+</form>
 
 <section class="metrics-grid">
   <article class="metric"><span>Abertos</span><strong>{{ caixas_abertos }}</strong></article>
@@ -25,11 +44,35 @@
   <article class="metric"><span>Valor inicial</span><strong>R$ {{ valor_inicial_total|floatformat:2 }}</strong></article>
   <article class="metric"><span>Declarado</span><strong>R$ {{ valor_final_total|floatformat:2 }}</strong></article>
   <article class="metric"><span>Conferido</span><strong>R$ {{ valor_conferido_total|floatformat:2 }}</strong></article>
+  <article class="metric"><span>Diferença conferida</span><strong>R$ {{ diferenca_total|floatformat:2 }}</strong></article>
 </section>
 
 <div class="panel">
+  <div class="panel-title">Resumo por operador/funcionario</div>
   <table>
-    <thead><tr><th>ID</th><th>Filial</th><th>Operador</th><th>Conferente</th><th>Abertura</th><th>Fechamento</th><th>Inicial</th><th>Declarado</th><th>Conferido</th><th>Status</th></tr></thead>
+    <thead><tr><th>Operador</th><th>Caixas</th><th>Vendas</th><th>Total vendido</th><th>Inicial</th><th>Declarado</th><th>Conferido</th><th>Diferença</th></tr></thead>
+    <tbody>
+      {% for item in resumo_por_operador %}
+        <tr>
+          <td>{{ item.operador }}</td>
+          <td>{{ item.caixas }}</td>
+          <td>{{ item.vendas }}</td>
+          <td><strong>R$ {{ item.total_vendas|floatformat:2 }}</strong></td>
+          <td>R$ {{ item.valor_inicial|floatformat:2 }}</td>
+          <td>R$ {{ item.valor_declarado|floatformat:2 }}</td>
+          <td>R$ {{ item.valor_conferido|floatformat:2 }}</td>
+          <td><strong>R$ {{ item.diferenca|floatformat:2 }}</strong></td>
+        </tr>
+      {% empty %}
+        <tr><td colspan="8" class="empty">Nenhum operador no periodo.</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+
+<div class="panel">
+  <table>
+    <thead><tr><th>ID</th><th>Filial</th><th>Operador</th><th>Conferente</th><th>Abertura</th><th>Fechamento</th><th>Inicial</th><th>Declarado</th><th>Conferido</th><th>Diferença</th><th>Status</th></tr></thead>
     <tbody>
       {% for caixa in caixas %}
         <tr>
@@ -42,10 +85,11 @@
           <td>R$ {{ caixa.valor_inicial|floatformat:2 }}</td>
           <td>{% if caixa.valor_final is not None %}R$ {{ caixa.valor_final|floatformat:2 }}{% else %}-{% endif %}</td>
           <td>{% if caixa.valor_conferido is not None %}R$ {{ caixa.valor_conferido|floatformat:2 }}{% else %}-{% endif %}</td>
+          <td>{% if caixa.diferenca_conferencia is not None %}<strong>R$ {{ caixa.diferenca_conferencia|floatformat:2 }}</strong>{% else %}-{% endif %}</td>
           <td><span class="status">{{ caixa.status }}</span></td>
         </tr>
       {% empty %}
-        <tr><td colspan="10" class="empty">Nenhum caixa no periodo.</td></tr>
+        <tr><td colspan="11" class="empty">Nenhum caixa no periodo.</td></tr>
       {% endfor %}
     </tbody>
   </table>

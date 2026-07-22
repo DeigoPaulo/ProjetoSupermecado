@@ -48,7 +48,7 @@
     <thead><tr><th>Produto</th><th>Quantidade</th><th>Custo unitario</th><th>Total</th><th>Atualiza custo</th></tr></thead>
     <tbody>
       {% for item in entrada.itens.all %}
-        <tr><td>{{ item.produto }}</td><td>{{ item.quantidade }}</td><td class="money">R$ {{ item.custo_unitario|floatformat:2 }}</td><td class="money">R$ {{ item.total|floatformat:2 }}</td><td>{{ item.atualizar_preco_custo|yesno:"Sim,Nao" }}</td></tr>
+        <tr><td>{{ item.produto }}</td><td>{{ item.quantidade|quantidade_br }}</td><td class="money">R$ {{ item.custo_unitario|floatformat:2 }}</td><td class="money">R$ {{ item.total|floatformat:2 }}</td><td>{{ item.atualizar_preco_custo|yesno:"Sim,Nao" }}</td></tr>
       {% empty %}
         <tr><td colspan="5">Nenhum item informado.</td></tr>
       {% endfor %}
@@ -88,7 +88,7 @@
     <thead><tr><th>Data</th><th>Tipo</th><th>Produto</th><th>Quantidade</th><th>Custo total</th><th>Usuario</th></tr></thead>
     <tbody>
       {% for mov in movimentacoes_estoque %}
-        <tr><td>{{ mov.data|date:"d/m/Y H:i" }}</td><td>{{ mov.get_tipo_display }}</td><td>{{ mov.produto }}</td><td>{{ mov.quantidade }}</td><td class="money">R$ {{ mov.custo_total|default:0|floatformat:2 }}</td><td>{{ mov.usuario|default:"-" }}</td></tr>
+          <tr><td>{{ mov.data|date:"d/m/Y H:i" }}</td><td>{{ mov.get_tipo_display }}</td><td>{{ mov.produto }}</td><td>{{ mov.quantidade|quantidade_br }}</td><td class="money">R$ {{ mov.custo_total|default:0|floatformat:2 }}</td><td>{{ mov.usuario|default:"-" }}</td></tr>
       {% empty %}
         <tr><td colspan="6">Nenhuma movimentacao de estoque vinculada.</td></tr>
       {% endfor %}

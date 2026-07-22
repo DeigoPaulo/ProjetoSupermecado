@@ -4,8 +4,10 @@ from django.contrib.auth.mixins import LoginRequiredMixin
 from django.core.exceptions import ValidationError
 from django.db import transaction
 from django.db.models import Q, Sum
+from django.http import JsonResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse_lazy
+from django.views.decorators.http import require_GET
 from django.views.generic import CreateView, ListView, UpdateView
 
 from apps.accounts.permissions import CADASTROS, RoleRequiredMixin, role_required, supervisor_from_request
@@ -17,6 +19,10 @@ from apps.promocoes.services import preco_atual_produto
 from .forms import CategoriaForm, EtiquetaProdutoForm, MarcaForm, ProdutoForm, ProdutoImagemFormSet, ProdutoImportCSVForm, ReajustePrecoForm
 from .models import Categoria, Marca, Produto
 from .services import aplicar_reajuste_precos, importar_produtos_csv, simular_reajuste_precos
+
+
+def _select2_payload(objeto, texto, **extra):
+    return {"id": objeto.pk, "text": texto, **extra}
 
 
 class ProdutoListView(LoginRequiredMixin, RoleRequiredMixin, ListView):
@@ -100,6 +106,42 @@ class MarcaCreateView(LoginRequiredMixin, RoleRequiredMixin, CreateView):
     def form_valid(self, form):
         messages.success(self.request, "Marca cadastrada com sucesso.")
         return super().form_valid(form)
+
+
+@login_required
+@role_required(*CADASTROS)
+@require_GET
+def categorias_busca(request):
+    termo = (request.GET.get("q") or request.GET.get("term") or "").strip()
+    if not termo:
+        return JsonResponse({"results": []})
+    categorias = Categoria.objects.filter(Q(nome__icontains=termo) | Q(descricao__icontains=termo)).order_by("nome")[:20]
+    return JsonResponse(
+        {
+            "results": [
+                _select2_payload(categoria, categoria.nome, descricao=categoria.descricao, ativa=categoria.is_active)
+                for categoria in categorias
+            ]
+        }
+    )
+
+
+@login_required
+@role_required(*CADASTROS)
+@require_GET
+def marcas_busca(request):
+    termo = (request.GET.get("q") or request.GET.get("term") or "").strip()
+    if not termo:
+        return JsonResponse({"results": []})
+    marcas = Marca.objects.filter(nome__icontains=termo).order_by("nome")[:20]
+    return JsonResponse(
+        {
+            "results": [
+                _select2_payload(marca, marca.nome, ativa=marca.is_active)
+                for marca in marcas
+            ]
+        }
+    )
 
 
 @login_required
@@ -246,7 +288,7 @@ def etiquetas(request):
             "gap_vertical_mm": float(configuracao_etiqueta.gap_vertical_mm),
             "colunas": configuracao_etiqueta.colunas_etiqueta,
         }
-    linguagens_nativas = {"ZPL", "EPL", "PPLB"}
+    linguagens_nativas = {"ZPL", "EPL", "PPLA", "PPLB"}
     impressao_nativa_disponivel = bool(
         produtos
         and dimensoes_modelo

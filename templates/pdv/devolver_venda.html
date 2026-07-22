@@ -39,11 +39,11 @@
         </div>
         <div>
           <span class="form-help">Vendido</span>
-          <strong>{{ item.quantidade|floatformat:3 }}</strong>
+          <strong>{{ item.quantidade|quantidade_br }}</strong>
         </div>
         <div>
           <span class="form-help">Ja devolvido</span>
-          <strong>{{ item.quantidade_devolvida|floatformat:3 }}</strong>
+          <strong>{{ item.quantidade_devolvida|quantidade_br }}</strong>
         </div>
         <label class="form-field">
           <span>Devolver</span>
@@ -55,7 +55,7 @@
             value="0"
             {% if item.quantidade_disponivel_devolucao <= 0 %}disabled{% endif %}
           >
-          <small class="form-help">Disponivel: {{ item.quantidade_disponivel_devolucao|floatformat:3 }}</small>
+          <small class="form-help">Disponivel: {{ item.quantidade_disponivel_devolucao|quantidade_br }}</small>
         </label>
       </div>
     {% endfor %}

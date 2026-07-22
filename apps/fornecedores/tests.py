@@ -24,3 +24,11 @@ class FornecedorViewsTests(TestCase):
         self.assertContains(response, "Contato e entrega")
         self.assertContains(response, "consultar CNPJ automaticamente")
         self.assertContains(response, "previsao de recebimento")
+
+    def test_busca_json_retorna_fornecedor_para_select2(self):
+        response = self.client.get("/fornecedores/busca.json", {"q": "Teste"})
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertEqual(payload["results"][0]["id"], self.fornecedor.id)
+        self.assertIn("Fornecedor Teste", payload["results"][0]["text"])

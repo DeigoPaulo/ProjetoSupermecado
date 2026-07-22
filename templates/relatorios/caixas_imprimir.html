@@ -12,7 +12,7 @@
     p { margin: 2px 0; color: #53657d; }
     .actions { margin: 10px 0; text-align: right; }
     button { border: 0; border-radius: 5px; background: #0050e8; color: #fff; padding: 9px 14px; font-weight: 700; cursor: pointer; }
-    .summary { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; margin: 12px 0; }
+    .summary { display: grid; grid-template-columns: repeat(5, 1fr); gap: 8px; margin: 12px 0; }
     .summary div { border: 1px solid #d8e1ef; padding: 9px; }
     .summary span { display: block; color: #607089; }
     .summary strong { display: block; margin-top: 3px; font-size: 15px; }
@@ -27,7 +27,11 @@
 </head>
 <body>
   <header>
-    <div><h1>Relatorio de caixas</h1><p>Supermercado - periodo de {{ data_inicio|date:"d/m/Y" }} a {{ data_fim|date:"d/m/Y" }}</p></div>
+    <div>
+      <h1>Relatorio de caixas</h1>
+      <p>Supermercado - periodo de {{ data_inicio|date:"d/m/Y" }} a {{ data_fim|date:"d/m/Y" }}</p>
+      {% if operador_selecionado %}<p>Operador: {{ operador_selecionado.username }}</p>{% endif %}
+    </div>
     <p>Gerado em {{ gerado_em|date:"d/m/Y H:i" }}</p>
   </header>
   <div class="actions"><button type="button" onclick="window.print()">Imprimir / Salvar como PDF</button></div>
@@ -36,9 +40,25 @@
     <div><span>Valor inicial</span><strong>R$ {{ valor_inicial_total|floatformat:2 }}</strong></div>
     <div><span>Valor declarado</span><strong>R$ {{ valor_final_total|floatformat:2 }}</strong></div>
     <div><span>Valor conferido</span><strong>R$ {{ valor_conferido_total|floatformat:2 }}</strong></div>
+    <div><span>Diferença</span><strong>R$ {{ diferenca_total|floatformat:2 }}</strong></div>
   </section>
+  <table style="margin-bottom: 12px;">
+    <thead><tr><th>Operador</th><th>Caixas</th><th>Vendas</th><th>Total vendido</th><th>Inicial</th><th>Declarado</th><th>Conferido</th><th>Diferença</th></tr></thead>
+    <tbody>
+      {% for item in resumo_por_operador %}
+        <tr>
+          <td>{{ item.operador }}</td><td>{{ item.caixas }}</td><td>{{ item.vendas }}</td>
+          <td class="money">R$ {{ item.total_vendas|floatformat:2 }}</td>
+          <td class="money">R$ {{ item.valor_inicial|floatformat:2 }}</td>
+          <td class="money">R$ {{ item.valor_declarado|floatformat:2 }}</td>
+          <td class="money">R$ {{ item.valor_conferido|floatformat:2 }}</td>
+          <td class="money">R$ {{ item.diferenca|floatformat:2 }}</td>
+        </tr>
+      {% empty %}<tr><td colspan="8">Nenhum operador no periodo.</td></tr>{% endfor %}
+    </tbody>
+  </table>
   <table>
-    <thead><tr><th>ID</th><th>Filial</th><th>Operador</th><th>Conferente</th><th>Abertura</th><th>Fechamento</th><th>Inicial</th><th>Declarado</th><th>Conferido</th><th>Status</th></tr></thead>
+    <thead><tr><th>ID</th><th>Filial</th><th>Operador</th><th>Conferente</th><th>Abertura</th><th>Fechamento</th><th>Inicial</th><th>Declarado</th><th>Conferido</th><th>Diferença</th><th>Status</th></tr></thead>
     <tbody>
       {% for caixa in caixas %}
         <tr>
@@ -47,9 +67,18 @@
           <td class="money">R$ {{ caixa.valor_inicial|floatformat:2 }}</td>
           <td class="money">{% if caixa.valor_final is not None %}R$ {{ caixa.valor_final|floatformat:2 }}{% else %}-{% endif %}</td>
           <td class="money">{% if caixa.valor_conferido is not None %}R$ {{ caixa.valor_conferido|floatformat:2 }}{% else %}-{% endif %}</td>
+          <td class="money">{% if caixa.diferenca_conferencia is not None %}R$ {{ caixa.diferenca_conferencia|floatformat:2 }}{% else %}-{% endif %}</td>
           <td>{{ caixa.get_status_display }}</td>
         </tr>
-      {% empty %}<tr><td colspan="10">Nenhum caixa no periodo.</td></tr>{% endfor %}
+      {% empty %}<tr><td colspan="11">Nenhum caixa no periodo.</td></tr>{% endfor %}
+    </tbody>
+  </table>
+  <table style="margin-top: 12px;">
+    <thead><tr><th>Forma de pagamento</th><th>Total</th></tr></thead>
+    <tbody>
+      {% for item in pagamentos_por_forma %}
+        <tr><td>{{ item.forma_pagamento__nome|default:"Sem forma" }}</td><td class="money">R$ {{ item.total|floatformat:2 }}</td></tr>
+      {% empty %}<tr><td colspan="2">Nenhum pagamento no periodo.</td></tr>{% endfor %}
     </tbody>
   </table>
   <footer>Sistema Supermercado</footer>

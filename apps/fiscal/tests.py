@@ -16,7 +16,7 @@ from apps.auditoria.models import LogAuditoria
 from apps.empresas.models import Empresa, Filial
 from apps.pdv.models import Caixa
 from apps.produtos.models import Categoria, Produto
-from apps.vendas.models import FormaPagamento, ItemVenda, PagamentoVenda, StatusVenda, Venda
+from apps.vendas.models import FormaPagamento, ItemVenda, PagamentoVenda, StatusVenda, TipoDocumentoConsumidor, Venda
 
 from .models import (
     AmbienteFiscal,
@@ -132,6 +132,20 @@ class FiscalTests(TestCase):
         self.assertContains(response, "Valido ate")
         self.assertContains(response, "Produtos fiscais")
         self.assertContains(response, "Pendencias automaticas")
+        self.assertContains(response, "Prontidao fiscal")
+        self.assertContains(response, "Prontidao por filial")
+        self.assertContains(response, "Diagnostico JSON")
+
+    def test_diagnostico_json_fiscal_resume_prontidao_por_filial(self):
+        response = self.client.get("/fiscal/diagnostico.json")
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertEqual(payload["resumo"]["filiais"], 1)
+        self.assertEqual(payload["resumo"]["filiais_prontas"], 0)
+        self.assertEqual(payload["resumo"]["vendas_pendentes"], 1)
+        self.assertEqual(payload["filiais"][0]["serie_nfce"], 1)
+        self.assertIn("venda(s) aguardando NFC-e", " ".join(payload["filiais"][0]["pendencias"]))
 
     def test_tela_produtos_fiscais_mostra_pendencias_e_prontos(self):
         Produto.objects.create(
@@ -168,6 +182,28 @@ class FiscalTests(TestCase):
         self.assertIsNotNone(documento.xml_gerado_em)
         self.assertTrue(LogAuditoria.objects.filter(modulo="fiscal", acao="PREPARA_DOCUMENTO").exists())
         self.assertEqual(SerieFiscal.objects.get(filial=self.filial).proximo_numero, 101)
+
+    def test_preparar_nfce_inclui_cpf_do_consumidor_quando_solicitado(self):
+        self.venda.documento_consumidor_tipo = TipoDocumentoConsumidor.CPF
+        self.venda.documento_consumidor = "12345678909"
+        self.venda.save(update_fields=["documento_consumidor_tipo", "documento_consumidor"])
+
+        documento = preparar_documento_venda(self.venda, self.user)
+
+        self.assertIn("<dest>", documento.xml_conteudo)
+        self.assertIn("<CPF>12345678909</CPF>", documento.xml_conteudo)
+        self.assertIn("<indIEDest>9</indIEDest>", documento.xml_conteudo)
+
+    def test_preparar_nfce_recusa_cnpj_e_preserva_numero_da_serie(self):
+        self.venda.documento_consumidor_tipo = TipoDocumentoConsumidor.CNPJ
+        self.venda.documento_consumidor = "12345678000190"
+        self.venda.save(update_fields=["documento_consumidor_tipo", "documento_consumidor"])
+
+        with self.assertRaisesMessage(ValidationError, "NF-e modelo 55"):
+            preparar_documento_venda(self.venda, self.user)
+
+        self.assertFalse(DocumentoFiscal.objects.exists())
+        self.assertEqual(SerieFiscal.objects.get(filial=self.filial).proximo_numero, 100)
 
     def test_nao_prepara_documento_duplicado_para_mesma_venda(self):
         preparar_documento_venda(self.venda, self.user)

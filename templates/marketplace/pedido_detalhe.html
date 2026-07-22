@@ -35,10 +35,32 @@
     <div><span>Filial</span><strong>{{ pedido.filial }}</strong></div>
     <div><span>Entrega</span><strong>{{ pedido.get_tipo_entrega_display }}</strong></div>
     <div><span>Telefone</span><strong>{{ pedido.telefone|default:"-" }}</strong></div>
+    <div><span>Documento fiscal</span><strong>{% if pedido.documento_cliente %}{{ pedido.get_documento_cliente_tipo_display }} {{ pedido.documento_cliente }}{% else %}Pendente{% endif %}</strong></div>
     <div><span>Referencia</span><strong>{{ pedido.referencia_externa|default:"-" }}</strong></div>
     {% if pedido.endereco_entrega %}<div><span>Endereco</span><strong>{{ pedido.endereco_entrega }}</strong></div>{% endif %}
     {% if pedido.distancia_entrega_km is not None %}<div><span>Distancia</span><strong>{{ pedido.distancia_entrega_km }} km</strong></div><div><span>Regra aplicada</span><strong>{{ pedido.regra_entrega_aplicada }}</strong></div>{% endif %}
   </div>
+</section>
+
+<section class="panel mt-panel">
+  <div class="panel-title">Nota fiscal do pedido online</div>
+  <div class="detail-grid">
+    {% for documento in pedido.documentos_fiscais.all %}
+      <div>
+        <span>{{ documento.get_tipo_documento_display }} {{ documento.serie }}/{{ documento.numero }}</span>
+        <strong>{{ documento.get_status_display }}</strong>
+        <small><a href="{% url 'fiscal:detalhe' documento.pk %}">Ver documento</a></small>
+      </div>
+    {% empty %}
+      <div><span>Situacao</span><strong>NF-e ainda nao preparada</strong></div>
+    {% endfor %}
+  </div>
+  {% if not pedido.documentos_fiscais.exists and pedido.status != "CANCELADO" %}
+    <form method="post" action="{% url 'marketplace:acao' pedido.pk %}" class="form-actions form-confirm" data-msg="Preparar NF-e modelo 55 para este pedido online?">
+      {% csrf_token %}<input type="hidden" name="acao" value="preparar_nfe">
+      <button class="secondary-button" type="submit"><i class="fa-solid fa-file-invoice"></i> Preparar NF-e</button>
+    </form>
+  {% endif %}
 </section>
 
 {% if pedido.tipo_entrega == "ENTREGA" and pedido.status == "RASCUNHO" %}
@@ -83,7 +105,7 @@
     <thead><tr><th>Produto</th><th>Pedido</th><th>Separado</th><th>Unitario</th><th>Total</th><th></th></tr></thead>
     <tbody>
       {% for item in pedido.itens.all %}
-        <tr><td>{{ item.produto }}</td><td>{{ item.quantidade }}</td><td>{{ item.quantidade_separada }}</td><td>R$ {{ item.preco_unitario|floatformat:2 }}</td><td>R$ {{ item.total|floatformat:2 }}</td><td>{% if pedido.status == "RASCUNHO" %}<form method="post" action="{% url 'marketplace:remover_item' pedido.pk item.pk %}">{% csrf_token %}<button class="secondary-button" type="submit" title="Remover"><i class="fa-solid fa-trash"></i></button></form>{% endif %}</td></tr>
+        <tr><td>{{ item.produto }}</td><td>{{ item.quantidade|quantidade_br }}</td><td>{{ item.quantidade_separada|quantidade_br }}</td><td>R$ {{ item.preco_unitario|floatformat:2 }}</td><td>R$ {{ item.total|floatformat:2 }}</td><td>{% if pedido.status == "RASCUNHO" %}<form method="post" action="{% url 'marketplace:remover_item' pedido.pk item.pk %}">{% csrf_token %}<button class="secondary-button" type="submit" title="Remover"><i class="fa-solid fa-trash"></i></button></form>{% endif %}</td></tr>
       {% empty %}<tr><td colspan="6" class="empty">Nenhum produto incluido.</td></tr>{% endfor %}
     </tbody>
   </table>
@@ -94,7 +116,7 @@
   <div class="panel-title">Conferencia da separacao</div>
   <form method="post" action="{% url 'marketplace:acao' pedido.pk %}" class="form-grid">
     {% csrf_token %}<input type="hidden" name="acao" value="separacao">
-    {% for item in pedido.itens.all %}<label class="form-field"><span>{{ item.produto }} (pedido: {{ item.quantidade }})</span><input type="number" name="item_{{ item.pk }}" value="{{ item.quantidade_separada|stringformat:'s' }}" min="0" max="{{ item.quantidade|stringformat:'s' }}" step="0.001" required></label>{% endfor %}
+    {% for item in pedido.itens.all %}<label class="form-field"><span>{{ item.produto }} (pedido: {{ item.quantidade|quantidade_br }})</span><input type="number" name="item_{{ item.pk }}" value="{{ item.quantidade_separada|stringformat:'s' }}" min="0" max="{{ item.quantidade|stringformat:'s' }}" step="0.001" required></label>{% endfor %}
     <div class="form-actions"><button class="secondary-button" type="submit">Salvar conferencia</button></div>
   </form>
 </section>

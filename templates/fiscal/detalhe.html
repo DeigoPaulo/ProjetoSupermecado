@@ -29,7 +29,7 @@
   <article class="metric"><span>Status</span><strong>{{ documento.get_status_display }}</strong></article>
   <article class="metric"><span>Ambiente</span><strong>{{ documento.get_ambiente_display }}</strong></article>
   <article class="metric"><span>Total</span><strong>R$ {{ documento.valor_total|floatformat:2 }}</strong></article>
-  <article class="metric"><span>Venda</span><strong>{% if documento.venda %}#{{ documento.venda_id }}{% else %}-{% endif %}</strong></article>
+  <article class="metric"><span>Origem</span><strong>{% if documento.venda %}Venda #{{ documento.venda_id }}{% elif documento.pedido_online %}Pedido #{{ documento.pedido_online_id }}{% else %}-{% endif %}</strong></article>
 </section>
 
 <section class="split-grid">
@@ -69,7 +69,7 @@
           <tr>
             <td><strong>{{ item.produto.nome }}</strong></td>
             <td>{{ item.produto.codigo_barras }}</td>
-            <td>{{ item.quantidade|floatformat:3 }} {{ item.produto.unidade }}</td>
+            <td>{{ item.quantidade|quantidade_br }} {{ item.produto.unidade }}</td>
             <td>R$ {{ item.preco_unitario_venda|floatformat:2 }}</td>
             <td>R$ {{ item.desconto|floatformat:2 }}</td>
             <td><strong>R$ {{ item.total|floatformat:2 }}</strong></td>
@@ -108,6 +108,47 @@
     <p>Subtotal: R$ {{ documento.venda.total_bruto|floatformat:2 }}</p>
     <p>Desconto: R$ {{ documento.venda.desconto|floatformat:2 }}</p>
     <p><strong>Total: R$ {{ documento.venda.total_liquido|floatformat:2 }}</strong></p>
+  </article>
+</section>
+{% endif %}
+
+{% if documento.pedido_online %}
+<section class="panel">
+  <h2>Itens do pedido online</h2>
+  <div class="table-wrapper">
+    <table>
+      <thead><tr><th>Produto</th><th>Codigo</th><th>Qtd</th><th>Unitario</th><th>Total</th></tr></thead>
+      <tbody>
+        {% for item in documento.pedido_online.itens.all %}
+          <tr>
+            <td><strong>{{ item.produto.nome }}</strong></td>
+            <td>{{ item.produto.codigo_barras }}</td>
+            <td>{{ item.quantidade|quantidade_br }} {{ item.produto.unidade }}</td>
+            <td>R$ {{ item.preco_unitario|floatformat:2 }}</td>
+            <td><strong>R$ {{ item.total|floatformat:2 }}</strong></td>
+          </tr>
+        {% empty %}
+          <tr><td colspan="5" class="empty">Pedido sem itens registrados.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</section>
+
+<section class="split-grid">
+  <article class="panel">
+    <h2>Destinatario</h2>
+    <p>Cliente: {{ documento.pedido_online.nome_cliente }}</p>
+    <p>Documento: {% if documento.pedido_online.documento_cliente %}{{ documento.pedido_online.get_documento_cliente_tipo_display }} {{ documento.pedido_online.documento_cliente }}{% else %}Nao informado{% endif %}</p>
+    <p>Entrega: {{ documento.pedido_online.get_tipo_entrega_display }}</p>
+    {% if documento.pedido_online.endereco_entrega %}<p>Endereco: {{ documento.pedido_online.endereco_entrega }}</p>{% endif %}
+  </article>
+  <article class="panel">
+    <h2>Resumo do pedido</h2>
+    <p>Subtotal: R$ {{ documento.pedido_online.subtotal|floatformat:2 }}</p>
+    <p>Entrega: R$ {{ documento.pedido_online.taxa_entrega|floatformat:2 }}</p>
+    <p>Desconto: R$ {{ documento.pedido_online.desconto|floatformat:2 }}</p>
+    <p><strong>Total: R$ {{ documento.pedido_online.total|floatformat:2 }}</strong></p>
   </article>
 </section>
 {% endif %}

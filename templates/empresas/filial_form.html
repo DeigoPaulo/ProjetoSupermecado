@@ -12,7 +12,7 @@
 </header>
 
 <section class="panel">
-  <form method="post" class="form-grid">
+  <form method="post" class="form-grid" data-cadastro-lookup-url="{% url 'empresas:consulta_cadastro' %}">
     {% csrf_token %}
     {% if form.non_field_errors %}<div class="form-note form-note-danger">{{ form.non_field_errors }}</div>{% endif %}
 
@@ -20,9 +20,11 @@
       <h2>Loja</h2>
       <div class="form-note">
         <strong>Consulta CNPJ/CEP preparada.</strong>
-        <span>O preenchimento automatico de endereco, municipio, UF e codigo IBGE ficara conectado aqui quando a API externa for definida.</span>
+        <span>O sistema valida o CNPJ e reaproveita dados locais. Quando o provedor externo for configurado, preencherá endereco, municipio, UF e codigo IBGE.</span>
+        <button class="secondary-button" type="button" data-cadastro-lookup-button><i class="fa-solid fa-magnifying-glass"></i> Consultar CNPJ</button>
         <a class="secondary-button" href="{% url 'empresas:consulta_cadastro' %}" target="_blank">Ver ponto de integracao</a>
       </div>
+      <div class="form-note" data-cadastro-lookup-feedback hidden></div>
       <div class="form-grid form-grid-inner">
         <label class="form-field"><span>{{ form.empresa.label }}</span>{{ form.empresa }}{{ form.empresa.errors }}</label>
         <label class="form-field"><span>{{ form.nome.label }}</span>{{ form.nome }}{{ form.nome.errors }}</label>

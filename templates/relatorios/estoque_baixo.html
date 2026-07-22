@@ -28,10 +28,10 @@
           <td>{{ estoque.produto }}</td>
           <td>{{ estoque.produto.categoria }}</td>
           <td>{{ estoque.filial }}</td>
-          <td>{{ estoque.quantidade_atual }}</td>
-          <td>{{ estoque.quantidade_reservada }}</td>
-          <td><strong>{{ estoque.quantidade_disponivel }}</strong></td>
-          <td>{{ estoque.produto.estoque_minimo }}</td>
+          <td>{{ estoque.quantidade_atual|quantidade_br }}</td>
+          <td>{{ estoque.quantidade_reservada|quantidade_br }}</td>
+          <td><strong>{{ estoque.quantidade_disponivel|quantidade_br }}</strong></td>
+          <td>{{ estoque.produto.estoque_minimo|quantidade_br }}</td>
         </tr>
       {% empty %}
         <tr><td colspan="7" class="empty">Nenhum produto abaixo do minimo.</td></tr>

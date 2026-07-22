@@ -1,4 +1,4 @@
-{% extends "base.html" %}
+﻿{% extends "base.html" %}
 
 {% block title %}App PDV desktop{% endblock %}
 
@@ -6,7 +6,7 @@
 <header class="page-header">
   <div>
     <h1>App PDV desktop</h1>
-    <p>Distribuicao do aplicativo instalado nas maquinas de caixa e contrato com o servidor local.</p>
+    <p>Distribuição do aplicativo instalado nas máquinas de caixa e contrato com o servidor local.</p>
   </div>
   <div class="actions">
     {% if instalador.disponivel %}
@@ -22,8 +22,8 @@
 <section class="operation-notice">
   <i class="fa-solid fa-circle-info"></i>
   <div>
-    <strong>O aplicativo desktop deve ser um artefato separado, baixado somente com autorizacao do admin master.</strong>
-    <span>O shell desktop abre a mesma tela do PDV web em uma WebView, preservando layout, atalhos e fluxo. O ERP guarda empresas, filiais, terminais, permissao fiscal, impressoras, TEF, sincronizacao e licenca por maquina.</span>
+    <strong>O aplicativo desktop deve ser um artefato separado, baixado somente com autorização do admin master.</strong>
+    <span>O shell desktop abre a mesma tela do PDV web em uma WebView, preservando layout, atalhos e fluxo. O ERP guarda empresas, filiais, terminais, permissão fiscal, impressoras, TEF, sincronização e licença por máquina.</span>
   </div>
 </section>
 
@@ -31,15 +31,15 @@
 <section class="operation-notice">
   <i class="fa-solid fa-shield-halved"></i>
   <div>
-    <strong>{{ instalador.nome }} pronto para distribuicao</strong>
-    <span>{{ instalador.tamanho|filesizeformat }} · SHA-256 <code>{{ instalador.sha256 }}</code></span>
+    <strong>{{ instalador.nome }} pronto para distribuição</strong>
+    <span>{{ instalador.tamanho|filesizeformat }} &middot; SHA-256 <code>{{ instalador.sha256 }}</code></span>
   </div>
 </section>
 {% endif %}
 
 <section class="metrics-grid">
   <article class="metric"><span>Terminais cadastrados</span><strong>{{ total_terminais }}</strong></article>
-  <article class="metric"><span>Licencas liberadas</span><strong>{{ licencas_liberadas }}</strong></article>
+  <article class="metric"><span>Licenças liberadas</span><strong>{{ licencas_liberadas }}</strong></article>
   <article class="metric"><span>Pendentes</span><strong>{{ licencas_pendentes }}</strong></article>
   <article class="metric"><span>Bloqueadas/canceladas</span><strong>{{ licencas_bloqueadas }}</strong></article>
   <article class="metric"><span>Contrato TEF</span><strong>pdv_tef_v1</strong></article>
@@ -48,18 +48,18 @@
 <section class="panel desktop-diagnostics">
   <div class="panel-heading">
     <div>
-      <h2>Diagnostico local deste terminal</h2>
-      <p>Consulta os ultimos eventos de impressora, gaveta, TEF e balanca gravados na maquina do caixa.</p>
+      <h2>Diagnóstico local deste terminal</h2>
+      <p>Consulta os últimos eventos de impressora, gaveta, TEF e balança gravados na máquina do caixa.</p>
     </div>
     <button type="button" class="secondary-button" id="desktop-device-logs">
-      <i class="fa-solid fa-stethoscope"></i> Ler diagnostico local
+      <i class="fa-solid fa-stethoscope"></i> Ler diagnóstico local
     </button>
   </div>
   <div class="operation-notice">
     <i class="fa-solid fa-desktop"></i>
     <div>
-      <strong>Disponivel dentro do aplicativo desktop</strong>
-      <span>No navegador comum, use esta area apenas como referencia; o log fisico fica salvo no terminal instalado.</span>
+      <strong>Disponível dentro do aplicativo desktop</strong>
+      <span>No navegador comum, use esta área apenas como referência; o log físico fica salvo no terminal instalado.</span>
     </div>
   </div>
   <div id="desktop-device-logs-feedback" class="form-help">Aguardando leitura do app desktop.</div>
@@ -67,7 +67,46 @@
     <table>
       <thead><tr><th>Quando</th><th>Tipo</th><th>Status</th><th>Mensagem</th></tr></thead>
       <tbody id="desktop-device-logs-body">
-        <tr><td colspan="4" class="empty">Nenhum diagnostico carregado.</td></tr>
+        <tr><td colspan="4" class="empty">Nenhum diagnóstico carregado.</td></tr>
+      </tbody>
+    </table>
+  </div>
+</section>
+
+<section class="panel desktop-diagnostics">
+  <div class="panel-heading">
+    <div>
+      <h2>Diagnóstico consolidado dos terminais</h2>
+      <p>Eventos sincronizados pelo app desktop para suporte central de impressora, gaveta, TEF e balança.</p>
+    </div>
+    <span class="status status-muted">{{ total_eventos_dispositivo }} evento(s) recebidos</span>
+  </div>
+  <div class="summary-grid">
+    {% for item in resumo_eventos_dispositivo %}
+      <article class="metric">
+        <span>{{ item.tipo }}{% if item.status %} / {{ item.status }}{% endif %}</span>
+        <strong>{{ item.total }}</strong>
+      </article>
+    {% empty %}
+      <article class="metric"><span>Sem eventos</span><strong>0</strong></article>
+    {% endfor %}
+  </div>
+  <div class="table-wrapper">
+    <table>
+      <thead><tr><th>Recebido</th><th>Terminal</th><th>Tipo</th><th>Status</th><th>Mensagem</th><th>Ocorrido no caixa</th></tr></thead>
+      <tbody>
+        {% for evento in eventos_dispositivo %}
+          <tr>
+            <td>{{ evento.recebido_em|date:"d/m/Y H:i" }}</td>
+            <td><strong>{{ evento.terminal.nome }}</strong><br><small>{{ evento.terminal.filial }}</small></td>
+            <td>{{ evento.tipo }}</td>
+            <td>{% if evento.status == "ok" or evento.status == "sucesso" %}<span class="status status-success">{{ evento.status }}</span>{% elif evento.status %}<span class="status status-warning">{{ evento.status }}</span>{% else %}<span class="status status-muted">evento</span>{% endif %}</td>
+            <td>{{ evento.mensagem|default:"-" }}</td>
+            <td>{% if evento.ocorrido_em %}{{ evento.ocorrido_em|date:"d/m/Y H:i" }}{% else %}-{% endif %}</td>
+          </tr>
+        {% empty %}
+          <tr><td colspan="6" class="empty">Nenhum evento sincronizado pelos terminais ainda.</td></tr>
+        {% endfor %}
       </tbody>
     </table>
   </div>
@@ -78,7 +117,7 @@
     <h2>Artefatos</h2>
     <div class="table-wrapper">
       <table>
-        <thead><tr><th>Item</th><th>Status</th><th>Descricao</th></tr></thead>
+        <thead><tr><th>Item</th><th>Status</th><th>Descrição</th></tr></thead>
         <tbody>
           {% for artefato in artefatos %}
             <tr>
@@ -96,13 +135,13 @@
     <h2>Responsabilidades</h2>
     <dl class="detail-list">
       <dt>ERP web/local</dt>
-      <dd>Cadastros, venda, fiscal, financeiro, terminais, TEF, impressao e sincronizacao.</dd>
+      <dd>Cadastros, venda, fiscal, financeiro, terminais, TEF, impressão e sincronização.</dd>
       <dt>App desktop</dt>
-      <dd>Reutilizar a tela /pdv/, ativar a maquina com credencial licenciada e conectar TEF, impressora, gaveta, balanca e contingencia local.</dd>
+      <dd>Reutilizar a tela /pdv/, ativar a máquina com credencial licenciada e conectar TEF, impressora, gaveta, balança e contingência local.</dd>
       <dt>Instalador</dt>
-      <dd>Gerado em projeto/artefato separado e disponibilizado nesta tela apenas para admin master, com ativacao vinculada ao terminal licenciado.</dd>
+      <dd>Gerado em projeto/artefato separado e disponibilizado nesta tela apenas para admin master, com ativação vinculada ao terminal licenciado.</dd>
       <dt>Licenciamento</dt>
-      <dd>Controle por maquina instalada, evitando copia do app para caixas nao contratados ou nao autorizados.</dd>
+      <dd>Controle por máquina instalada, evitando cópia do app para caixas não contratados ou não autorizados.</dd>
     </dl>
   </article>
 </section>
@@ -111,12 +150,12 @@
   <div class="panel-heading">
     <div>
       <h2>Terminais preparados</h2>
-      <p>Use estes dados para configurar cada maquina licenciada depois que o instalador existir.</p>
+      <p>Use estes dados para configurar cada máquina licenciada depois que o instalador existir.</p>
     </div>
   </div>
   <div class="table-wrap">
     <table>
-      <thead><tr><th>Terminal</th><th>Filial</th><th>Identificador</th><th>TEF</th><th>Balanca</th><th>Licenca</th><th>Fiscal</th><th>Status</th><th></th></tr></thead>
+      <thead><tr><th>Terminal</th><th>Filial</th><th>Identificador</th><th>TEF</th><th>Balança</th><th>Licença</th><th>Fiscal</th><th>Status</th><th></th></tr></thead>
       <tbody>
         {% for terminal in terminais %}
           <tr>
@@ -124,15 +163,15 @@
             <td>{{ terminal.filial }}</td>
             <td><code>{{ terminal.identificador }}</code></td>
             <td>{{ terminal.get_provedor_tef_display }}<br><small>{{ terminal.get_modo_integracao_tef_display }}</small></td>
-            <td>{% if terminal.usa_balanca %}<span class="status status-success">Configurada</span><br><small>{{ terminal.get_protocolo_balanca_display }}</small>{% else %}<span class="status status-muted">Nao usa</span>{% endif %}</td>
+            <td>{% if terminal.usa_balanca %}<span class="status status-success">Configurada</span><br><small>{{ terminal.get_protocolo_balanca_display }}</small>{% else %}<span class="status status-muted">Não usa</span>{% endif %}</td>
             <td>{% if terminal.licenca_liberada %}<span class="status status-success">Liberada</span>{% elif terminal.status_licenca == "PENDENTE" %}<span class="status status-warning">Pendente</span>{% else %}<span class="status status-muted">{{ terminal.get_status_licenca_display }}</span>{% endif %}</td>
-            <td>{% if terminal.emite_documento_fiscal %}<span class="status status-success">Fiscal automatico</span>{% else %}<span class="status status-warning">Sem fiscal automatico</span>{% endif %}</td>
+            <td>{% if terminal.emite_documento_fiscal %}<span class="status status-success">Fiscal automático</span>{% else %}<span class="status status-warning">Sem fiscal automático</span>{% endif %}</td>
             <td>{% if terminal.ativo %}<span class="status status-success">Ativo</span>{% else %}<span class="status status-muted">Inativo</span>{% endif %}</td>
             <td>
               {% if terminal.licenca_liberada %}
                 <a class="secondary-button" href="{% url 'configuracoes:pdv_desktop_terminal_pacote' terminal.pk %}">Pacote JSON</a>
               {% else %}
-                <span class="status status-warning">Libere licenca</span>
+                <span class="status status-warning">Libere licença</span>
               {% endif %}
             </td>
           </tr>

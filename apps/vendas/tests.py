@@ -13,8 +13,8 @@ from apps.clientes.models import Cliente
 from apps.pdv.models import Caixa
 from apps.produtos.models import Categoria, Produto
 
-from .models import FormaPagamento, PagamentoVenda, StatusPagamento, StatusVenda, Venda
-from .services import cancelar_venda, finalizar_venda
+from .models import FormaPagamento, PagamentoVenda, StatusPagamento, StatusVenda, TipoDocumentoConsumidor, Venda
+from .services import cancelar_venda, confirmar_estorno_pagamento_eletronico, finalizar_venda, registrar_devolucao_venda
 
 
 class VendaServiceTests(TestCase):
@@ -84,6 +84,39 @@ class VendaServiceTests(TestCase):
             LancamentoFinanceiro.objects.filter(tipo=TipoLancamentoFinanceiro.ENTRADA).aggregate(total=Sum("valor"))["total"],
             Decimal("50.00"),
         )
+
+    def test_devolucao_parcial_rateia_estorno_financeiro_por_pagamento(self):
+        venda = finalizar_venda(
+            caixa=self.caixa,
+            usuario=self.usuario,
+            itens=[{"produto": self.produto, "quantidade": Decimal("2.000")}],
+            pagamentos=[
+                {"forma_pagamento": self.dinheiro, "valor": Decimal("20.00")},
+                {
+                    "forma_pagamento": self.pix,
+                    "valor": Decimal("30.00"),
+                    "transacao_externa_id": "PIX-123",
+                    "nsu": "NSU123",
+                    "codigo_autorizacao": "AUT123",
+                },
+            ],
+        )
+        item = venda.itens.get()
+
+        devolucao = registrar_devolucao_venda(
+            venda=venda,
+            usuario=self.usuario,
+            itens=[{"item_venda": item, "quantidade": Decimal("1.000")}],
+            motivo="Devolucao parcial",
+        )
+
+        self.assertEqual(devolucao.valor_total, Decimal("25.00000"))
+        self.assertEqual(PagamentoVenda.objects.filter(venda=venda, status=StatusPagamento.CONFIRMADO).count(), 2)
+        estornos = LancamentoFinanceiro.objects.filter(origem="ESTORNO", pagamento_venda__venda=venda).order_by("pagamento_venda__valor")
+        self.assertEqual(estornos.count(), 2)
+        self.assertEqual(estornos.aggregate(total=Sum("valor"))["total"], Decimal("25.00"))
+        self.assertEqual(estornos[0].valor, Decimal("10.00"))
+        self.assertEqual(estornos[1].valor, Decimal("15.00"))
 
     def test_finalizar_venda_rejeita_pagamento_incompleto(self):
         with self.assertRaises(ValidationError):
@@ -189,7 +222,56 @@ class VendaServiceTests(TestCase):
         self.assertEqual(documento.status, StatusDocumentoFiscal.PRONTO)
         self.assertEqual(documento.numero, 10)
         self.assertIn("<NFe", documento.xml_conteudo)
+        self.assertNotIn("<CPF>", documento.xml_conteudo)
         self.assertEqual(SerieFiscal.objects.get(filial=self.filial).proximo_numero, 11)
+
+    def test_finalizar_venda_com_cpf_na_nota_grava_documento_e_xml_nfce(self):
+        self.filial.uf = "SP"
+        self.filial.codigo_municipio_ibge = "3550308"
+        self.filial.save(update_fields=["uf", "codigo_municipio_ibge"])
+        self.produto.ncm = "10063021"
+        self.produto.origem_mercadoria = "0"
+        self.produto.cst_icms = "00"
+        self.produto.aliquota_icms = Decimal("18.00")
+        self.produto.save(update_fields=["ncm", "origem_mercadoria", "cst_icms", "aliquota_icms"])
+        ConfiguracaoFiscal.objects.create(
+            filial=self.filial,
+            ambiente=AmbienteFiscal.HOMOLOGACAO,
+            regime_tributario="Regime normal",
+            inscricao_estadual="123456789",
+            csc_id="1",
+            csc_token="token",
+            certificado_a1_criptografado=b"certificado",
+            certificado_senha_criptografada=b"senha",
+        )
+        SerieFiscal.objects.create(filial=self.filial, tipo_documento=TipoDocumentoFiscal.NFCE, serie=1, proximo_numero=10)
+        NaturezaOperacao.objects.create(descricao="Venda ao consumidor", cfop="5102", tipo_documento=TipoDocumentoFiscal.NFCE)
+
+        venda = finalizar_venda(
+            caixa=self.caixa,
+            usuario=self.usuario,
+            itens=[{"produto": self.produto, "quantidade": Decimal("1.000")}],
+            pagamentos=[{"forma_pagamento": self.dinheiro, "valor": Decimal("25.00")}],
+            documento_consumidor_tipo=TipoDocumentoConsumidor.CPF,
+            documento_consumidor="123.456.789-09",
+        )
+
+        documento = DocumentoFiscal.objects.get(venda=venda)
+        self.assertEqual(venda.documento_consumidor, "12345678909")
+        self.assertIn("<CPF>12345678909</CPF>", documento.xml_conteudo)
+
+    def test_finalizar_venda_com_cnpj_na_nota_bloqueia_nfce_automatica(self):
+        with self.assertRaisesMessage(ValidationError, "NF-e modelo 55"):
+            finalizar_venda(
+                caixa=self.caixa,
+                usuario=self.usuario,
+                itens=[{"produto": self.produto, "quantidade": Decimal("1.000")}],
+                pagamentos=[{"forma_pagamento": self.dinheiro, "valor": Decimal("25.00")}],
+                documento_consumidor_tipo=TipoDocumentoConsumidor.CNPJ,
+                documento_consumidor="12.345.678/0001-90",
+            )
+
+        self.assertFalse(Venda.objects.exists())
 
     def test_venda_crediario_cria_conta_receber(self):
         venda = finalizar_venda(
@@ -247,5 +329,36 @@ class VendaServiceTests(TestCase):
         self.assertTrue(LancamentoFinanceiro.objects.filter(pagamento_venda=dinheiro, tipo=TipoLancamentoFinanceiro.ENTRADA).exists())
         self.assertTrue(LancamentoFinanceiro.objects.filter(pagamento_venda=dinheiro, tipo=TipoLancamentoFinanceiro.SAIDA).exists())
         self.assertFalse(LancamentoFinanceiro.objects.filter(pagamento_venda=pix, origem="ESTORNO").exists())
+
+    def test_confirmacao_de_estorno_eletronico_reverte_financeiro(self):
+        venda = finalizar_venda(
+            caixa=self.caixa,
+            usuario=self.usuario,
+            itens=[{"produto": self.produto, "quantidade": Decimal("1.000")}],
+            pagamentos=[
+                {
+                    "forma_pagamento": self.pix,
+                    "valor": Decimal("25.00"),
+                    "transacao_externa_id": "pix-e2e-123",
+                    "nsu": "123456",
+                    "codigo_autorizacao": "AUT123",
+                },
+            ],
+        )
+        cancelar_venda(venda=venda, usuario=self.usuario, motivo="Venda duplicada")
+        pagamento = venda.pagamentos.get()
+
+        confirmar_estorno_pagamento_eletronico(
+            pagamento=pagamento,
+            usuario=self.usuario,
+            motivo="Operadora confirmou",
+            autorizacao="EST987",
+        )
+
+        pagamento.refresh_from_db()
+        self.assertEqual(pagamento.status, StatusPagamento.ESTORNADO)
+        self.assertIsNotNone(pagamento.estornado_em)
+        self.assertIn("EST987", pagamento.mensagem_processadora)
+        self.assertTrue(LancamentoFinanceiro.objects.filter(pagamento_venda=pagamento, origem="ESTORNO").exists())
 
 # Create your tests here.

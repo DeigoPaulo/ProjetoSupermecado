@@ -59,7 +59,7 @@
         {% for item in compras_por_fornecedor %}
           <tr>
             <td>{{ item.fornecedor__razao_social }}</td>
-            <td>{{ item.quantidade }}</td>
+            <td>{{ item.quantidade|quantidade_br }}</td>
             <td>R$ {{ item.total|floatformat:2 }}</td>
           </tr>
         {% empty %}

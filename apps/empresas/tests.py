@@ -30,6 +30,21 @@ def png_1x1():
     return arquivo.getvalue()
 
 
+class FakeHTTPResponse:
+    def __init__(self, payload, status=200):
+        self.payload = payload
+        self.status = status
+        self.closed = False
+
+    def read(self):
+        import json
+
+        return json.dumps(self.payload).encode("utf-8")
+
+    def close(self):
+        self.closed = True
+
+
 class EmpresasViewsTests(TestCase):
     def setUp(self):
         self.user = get_user_model().objects.create_superuser("admin", "admin@example.com", "123")
@@ -58,6 +73,14 @@ class EmpresasViewsTests(TestCase):
         self.assertContains(response, "Mercado Teste")
         self.assertContains(response, "IBGE 3550308")
 
+    def test_busca_json_retorna_filial_para_select2(self):
+        response = self.client.get("/empresas/filiais/busca.json", {"q": "Matriz"})
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertEqual(payload["results"][0]["id"], self.filial.id)
+        self.assertIn("Mercado Teste - Matriz", payload["results"][0]["text"])
+
     def test_formularios_exibem_secoes_administrativas(self):
         empresa_response = self.client.get(f"/empresas/{self.empresa.pk}/editar/")
         filial_response = self.client.get(f"/empresas/filiais/{self.filial.pk}/editar/")
@@ -68,12 +91,15 @@ class EmpresasViewsTests(TestCase):
         self.assertContains(empresa_response, "Implantacao e conectividade")
         self.assertContains(empresa_response, "modo local nao publica o sistema na internet")
         self.assertContains(empresa_response, "Consulta CNPJ/CEP preparada")
+        self.assertContains(empresa_response, "Consultar CNPJ")
+        self.assertContains(empresa_response, "data-cadastro-lookup-url")
         self.assertContains(empresa_response, "data-lookup-target")
         self.assertEqual(filial_response.status_code, 200)
         self.assertContains(filial_response, "Loja")
         self.assertContains(filial_response, "Dados fiscais da filial")
         self.assertContains(filial_response, "Necessario para preencher o XML da NFC-e")
         self.assertContains(filial_response, "select2-field")
+        self.assertContains(filial_response, "data-cadastro-lookup-feedback")
         self.assertContains(filial_response, "Ver ponto de integracao")
 
     def test_modo_local_desativa_e_remove_sincronizacao_externa(self):
@@ -719,6 +745,8 @@ class EmpresasViewsTests(TestCase):
         saida_csv_texto = saida_csv_response.content.decode("utf-8-sig")
         entrada_csv_response = self.client.get("/empresas/sincronizacao/entrada.csv", {"status_entrada": StatusEventoEntrada.ERRO})
         entrada_csv_texto = entrada_csv_response.content.decode("utf-8-sig")
+        diagnostico_response = self.client.get("/empresas/sincronizacao/diagnostico.json")
+        diagnostico = diagnostico_response.json()
 
         self.assertContains(busca, "CAIXA FILTRADO")
         self.assertNotContains(busca, "Produto sem categoria")
@@ -728,6 +756,7 @@ class EmpresasViewsTests(TestCase):
         self.assertContains(busca_fiscal, "Fiscal CSV")
         self.assertContains(busca_fiscal, "Saida CSV")
         self.assertContains(busca_fiscal, "Entrada CSV")
+        self.assertContains(busca_fiscal, "Diagnóstico JSON")
         self.assertContains(busca_fiscal, f"/empresas/sincronizacao/documentos-fiscais/{documento.pk}/")
         self.assertContains(detalhe_fiscal, "Documento fiscal sincronizado nfce-200")
         self.assertContains(detalhe_fiscal, "CHAVE-FISCAL-FILTRADA")
@@ -736,6 +765,7 @@ class EmpresasViewsTests(TestCase):
         self.assertContains(erro, "Produto sem categoria")
         self.assertContains(erro, "Status entrada")
         self.assertContains(erro, "Agendamento no servidor local")
+        self.assertContains(erro, "register_sync_task.ps1")
         self.assertContains(erro, "processar_sincronizacao_completa")
         self.assertContains(erro, "schtasks /Create")
         self.assertEqual(csv_response["Content-Type"], "text/csv; charset=utf-8")
@@ -756,6 +786,15 @@ class EmpresasViewsTests(TestCase):
         self.assertIn("produto:erro:filtro", entrada_csv_texto)
         self.assertIn("Produto sem categoria", entrada_csv_texto)
         self.assertNotIn("venda:pdv-200:finalizada", entrada_csv_texto)
+        self.assertEqual(diagnostico_response.status_code, 200)
+        self.assertEqual(diagnostico["status"], "ok")
+        self.assertEqual(diagnostico["filas"]["saida"]["erros"], 1)
+        self.assertEqual(diagnostico["filas"]["entrada"]["erros"], 1)
+        self.assertGreaterEqual(diagnostico["retaguarda"]["vendas"], 2)
+        self.assertGreaterEqual(diagnostico["retaguarda"]["documentos_fiscais"], 1)
+        self.assertIn("processar_sincronizacao_completa", diagnostico["operacao"]["comando"])
+        self.assertFalse(diagnostico["operacao"]["pronto"])
+        self.assertTrue(diagnostico["operacao"]["alertas"])
 
     def test_processador_de_entrada_marca_conflito_para_venda_com_total_diferente(self):
         existente_evento = EventoEntradaSincronizacao.objects.create(
@@ -1010,4 +1049,79 @@ class EmpresasViewsTests(TestCase):
         self.assertEqual(response.status_code, 200)
         payload = response.json()
         self.assertEqual(payload["status"], "integration_pending")
+        self.assertEqual(payload["contrato"], "cadastro_lookup_v1")
         self.assertIn("codigo_municipio_ibge", payload["campos_previstos"])
+
+    def test_endpoint_consulta_cadastro_valida_cnpj_e_reaproveita_dados_locais(self):
+        empresa = Empresa.objects.create(
+            razao_social="Empresa Consulta Ltda",
+            nome_fantasia="Empresa Consulta",
+            cnpj="12.345.678/0001-95",
+            telefone="(11) 99999-0000",
+            email="consulta@example.com",
+            endereco="Rua Local, 100",
+            regime_tributario="Lucro Presumido",
+        )
+        Filial.objects.create(
+            empresa=empresa,
+            nome="Loja Consulta",
+            cnpj="11.222.333/0001-81",
+            telefone="(11) 98888-0000",
+            endereco="Av Filial, 200",
+            municipio="Sao Paulo",
+            uf="SP",
+            codigo_municipio_ibge="3550308",
+        )
+
+        empresa_response = self.client.get("/empresas/consulta-cadastro.json", {"cnpj": "12345678000195"})
+        filial_response = self.client.get("/empresas/consulta-cadastro.json", {"cnpj": "11.222.333/0001-81"})
+        invalido = self.client.get("/empresas/consulta-cadastro.json", {"cnpj": "11.111.111/1111-11"})
+        externo = self.client.get("/empresas/consulta-cadastro.json", {"cep": "01001000"})
+
+        self.assertEqual(empresa_response.status_code, 200)
+        self.assertEqual(empresa_response.json()["status"], "local_match")
+        self.assertEqual(empresa_response.json()["dados"]["nome_fantasia"], "Empresa Consulta")
+        self.assertEqual(filial_response.json()["dados"]["tipo"], "filial")
+        self.assertEqual(filial_response.json()["dados"]["codigo_municipio_ibge"], "3550308")
+        self.assertEqual(invalido.status_code, 400)
+        self.assertEqual(invalido.json()["status"], "invalid")
+        self.assertEqual(externo.json()["status"], "external_provider_required")
+
+    @override_settings(
+        CADASTRO_CNPJ_PROVIDER_URL="https://cadastro.example/cnpj/{cnpj}",
+        CADASTRO_CEP_PROVIDER_URL="https://cep.example/{cep}",
+        CADASTRO_LOOKUP_TIMEOUT_SEGUNDOS=3,
+    )
+    def test_endpoint_consulta_cadastro_usa_provider_externo_configurado(self):
+        cep_payload = {
+            "cep": "01001-000",
+            "logradouro": "Praca da Se",
+            "bairro": "Se",
+            "localidade": "Sao Paulo",
+            "uf": "SP",
+            "ibge": "3550308",
+        }
+        cnpj_payload = {
+            "cnpj": "04.252.011/0001-10",
+            "nome": "Empresa Externa Ltda",
+            "fantasia": "Empresa Externa",
+            "logradouro": "Rua API",
+            "numero": "10",
+            "municipio": "Sao Paulo",
+            "uf": "SP",
+            "ibge": "3550308",
+        }
+
+        with patch("apps.empresas.views.urlopen", side_effect=[FakeHTTPResponse(cep_payload), FakeHTTPResponse(cnpj_payload)]) as urlopen_mock:
+            cep_response = self.client.get("/empresas/consulta-cadastro.json", {"cep": "01001000"})
+            cnpj_response = self.client.get("/empresas/consulta-cadastro.json", {"cnpj": "04.252.011/0001-10"})
+
+        self.assertEqual(cep_response.status_code, 200)
+        self.assertEqual(cep_response.json()["status"], "external_match")
+        self.assertEqual(cep_response.json()["dados"]["municipio"], "Sao Paulo")
+        self.assertEqual(cep_response.json()["dados"]["codigo_municipio_ibge"], "3550308")
+        self.assertEqual(cnpj_response.json()["status"], "external_match")
+        self.assertEqual(cnpj_response.json()["dados"]["razao_social"], "Empresa Externa Ltda")
+        self.assertEqual(cnpj_response.json()["dados"]["nome_fantasia"], "Empresa Externa")
+        self.assertIn("Rua API", cnpj_response.json()["dados"]["endereco"])
+        self.assertEqual(urlopen_mock.call_args_list[0].kwargs["timeout"], 3)

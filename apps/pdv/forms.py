@@ -3,6 +3,8 @@ from datetime import timedelta
 from django import forms
 from django.utils import timezone
 
+from apps.vendas.models import TipoDocumentoConsumidor
+
 from .models import Caixa, Sangria, Suprimento
 
 
@@ -31,6 +33,18 @@ class AbrirCaixaForm(forms.ModelForm):
 class FinalizarVendaForm(forms.Form):
     caixa = forms.ModelChoiceField(label="Caixa", queryset=Caixa.objects.none())
     cliente = forms.ModelChoiceField(label="Cliente", queryset=None, required=False, empty_label="Cliente avulso")
+    documento_consumidor_tipo = forms.ChoiceField(
+        label="Documento na nota",
+        choices=TipoDocumentoConsumidor.choices,
+        required=False,
+        initial=TipoDocumentoConsumidor.NAO_IDENTIFICADO,
+    )
+    documento_consumidor = forms.CharField(
+        label="CPF/CNPJ na nota",
+        required=False,
+        max_length=32,
+        widget=forms.TextInput(attrs={"autocomplete": "off", "inputmode": "numeric", "placeholder": "Opcional"}),
+    )
     desconto = forms.DecimalField(label="Desconto", max_digits=12, decimal_places=2, min_value=0, initial=0)
     vencimento_financeiro = forms.DateField(
         label="Vencimento crediario",

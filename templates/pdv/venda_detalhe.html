@@ -19,7 +19,13 @@
       </form>
       <a class="secondary-button" href="{% url 'pdv:devolver_venda' venda.id %}">Registrar devolucao</a>
     {% endif %}
-    <a class="secondary-button" href="{% url 'pdv:recibo_venda' venda.id %}" target="_blank">Recibo</a>
+    <button
+      class="secondary-button"
+      type="button"
+      data-sale-print-url="{% url 'pdv:recibo_venda' venda.id %}?reimpressao=1"
+      data-sale-desktop-print-url="{% url 'pdv:venda_impressao_desktop' venda.id %}?reimpressao=1"
+    >Reimprimir cupom</button>
+    <a class="secondary-button" href="{% url 'pdv:recibo_venda' venda.id %}" target="_blank">Ver cupom</a>
     <a class="primary-button" href="{% url 'pdv:pdv' %}">Nova venda</a>
   </div>
 </header>
@@ -33,8 +39,8 @@
         {% for item in venda.itens.all %}
           <tr>
             <td>{{ item.produto.nome }}</td>
-            <td>{{ item.quantidade }}</td>
-            <td>{{ item.quantidade_devolvida|floatformat:3 }}</td>
+            <td>{{ item.quantidade|quantidade_br }}</td>
+            <td>{{ item.quantidade_devolvida|quantidade_br }}</td>
             <td>R$ {{ item.preco_unitario_venda|floatformat:2 }}</td>
             <td>R$ {{ item.total|floatformat:2 }}</td>
           </tr>
@@ -48,6 +54,7 @@
       <dt>Status</dt><dd>{{ venda.status }}</dd>
       <dt>Operador</dt><dd>{{ venda.usuario }}</dd>
       <dt>Cliente</dt><dd>{{ venda.cliente|default:"Cliente avulso" }}</dd>
+      <dt>Documento na nota</dt><dd>{% if venda.documento_consumidor %}{{ venda.get_documento_consumidor_tipo_display }} {{ venda.documento_consumidor }}{% else %}Nao identificado{% endif %}</dd>
       <dt>Caixa</dt><dd>{{ venda.caixa.id }}</dd>
       <dt>Total bruto</dt><dd>R$ {{ venda.total_bruto|floatformat:2 }}</dd>
       <dt>Desconto</dt><dd>R$ {{ venda.desconto|floatformat:2 }}</dd>
@@ -55,7 +62,7 @@
     </dl>
     <div class="panel-title">Pagamento</div>
     <table>
-      <thead><tr><th>Forma</th><th>Valor</th><th>Status</th><th>Referencia</th></tr></thead>
+      <thead><tr><th>Forma</th><th>Valor</th><th>Status</th><th>Referencia</th><th>Ação</th></tr></thead>
       <tbody>
         {% for pagamento in venda.pagamentos.all %}
           <tr>
@@ -67,6 +74,21 @@
               {% if pagamento.codigo_autorizacao %}<small>Aut. {{ pagamento.codigo_autorizacao }}</small>{% endif %}
               {% if pagamento.mensagem_processadora %}<small>{{ pagamento.mensagem_processadora }}</small>{% endif %}
               {% if not pagamento.nsu and not pagamento.codigo_autorizacao and not pagamento.mensagem_processadora %}-{% endif %}
+            </td>
+            <td>
+              {% if pagamento.status == "ESTORNO_PENDENTE" %}
+                <form method="post" action="{% url 'pdv:confirmar_estorno_pagamento' pagamento.id %}" class="compact-form form-confirm" data-msg="Confirmar estorno aprovado pela operadora?" data-tef-refund-form data-refund-tipo="{{ pagamento.forma_pagamento.tipo }}" data-refund-valor="{{ pagamento.valor|floatformat:2 }}" data-refund-transacao="{{ pagamento.transacao_externa_id }}">
+                  {% csrf_token %}
+                  <input type="text" name="autorizacao" placeholder="Autorização/NSU do estorno">
+                  <input type="text" name="motivo" placeholder="Observação">
+                  <input type="hidden" name="mensagem_processadora" value="">
+                  <input type="text" name="supervisor_usuario" placeholder="Supervisor" required>
+                  <input type="password" name="supervisor_senha" placeholder="Senha" required>
+                  <button class="secondary-button" type="submit">Confirmar estorno</button>
+                </form>
+              {% else %}
+                -
+              {% endif %}
             </td>
           </tr>
         {% endfor %}
@@ -87,7 +109,7 @@
             <td>{{ devolucao.motivo }}</td>
             <td>
               {% for item in devolucao.itens.all %}
-                {{ item.quantidade|floatformat:3 }} x {{ item.produto.nome }}{% if not forloop.last %}<br>{% endif %}
+                {{ item.quantidade|quantidade_br }} x {{ item.produto.nome }}{% if not forloop.last %}<br>{% endif %}
               {% endfor %}
             </td>
             <td><strong>R$ {{ devolucao.valor_total|floatformat:2 }}</strong></td>

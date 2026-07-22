@@ -2,6 +2,7 @@ from django.core.exceptions import ValidationError
 from django.db import models, transaction
 from django.utils import timezone
 import secrets
+import unicodedata
 
 from apps.auditoria.models import LogAuditoria
 from apps.estoque.models import TipoMovimentacaoEstoque, movimentar_estoque
@@ -28,7 +29,50 @@ def gerar_token_integracao(integracao):
     return token
 
 
-def calcular_entrega_pedido(*, pedido, distancia_km):
+def _normalizar_texto(valor):
+    texto = unicodedata.normalize("NFKD", str(valor or "").strip().lower())
+    return "".join(caractere for caractere in texto if not unicodedata.combining(caractere))
+
+
+def _lista_bairros(valor):
+    return [bairro for bairro in (_normalizar_texto(parte) for parte in str(valor or "").replace("\n", ",").split(",")) if bairro]
+
+
+def validar_bairro_entrega(*, politica, bairro=None):
+    bairro_normalizado = _normalizar_texto(bairro)
+    atendidos = _lista_bairros(politica.bairros_atendidos)
+    bloqueados = _lista_bairros(politica.bairros_bloqueados)
+    if bloqueados and bairro_normalizado in bloqueados:
+        raise ValidationError("Bairro bloqueado para entrega nesta filial.")
+    if atendidos and not bairro_normalizado:
+        raise ValidationError("Informe o bairro para validar a area atendida pela filial.")
+    if atendidos and bairro_normalizado not in atendidos:
+        raise ValidationError("Bairro fora da area atendida pela filial.")
+
+
+def calcular_taxa_entrega(*, politica, subtotal, distancia_km, bairro=None):
+    validar_bairro_entrega(politica=politica, bairro=bairro)
+    if subtotal < politica.valor_minimo_pedido:
+        raise ValidationError(f"Pedido minimo para entrega: R$ {politica.valor_minimo_pedido}.")
+    if distancia_km > politica.raio_maximo_km:
+        raise ValidationError(f"Endereco fora do raio maximo de {politica.raio_maximo_km} km.")
+    if politica.frete_gratis_acima is not None and subtotal >= politica.frete_gratis_acima:
+        return {
+            "taxa": 0,
+            "regra": f"Frete gratis acima de R$ {politica.frete_gratis_acima}",
+            "faixa": None,
+        }
+    faixa = politica.faixas.filter(distancia_inicial_km__lte=distancia_km, distancia_final_km__gte=distancia_km).first()
+    if not faixa:
+        raise ValidationError("Nenhuma faixa de entrega atende a distancia informada.")
+    return {
+        "taxa": faixa.taxa,
+        "regra": f"Faixa de {faixa.distancia_inicial_km} a {faixa.distancia_final_km} km",
+        "faixa": faixa,
+    }
+
+
+def calcular_entrega_pedido(*, pedido, distancia_km, bairro_entrega=""):
     if pedido.tipo_entrega != TipoEntrega.ENTREGA:
         pedido.distancia_entrega_km = None
         pedido.taxa_entrega = 0
@@ -39,22 +83,10 @@ def calcular_entrega_pedido(*, pedido, distancia_km):
     politica = PoliticaEntrega.objects.filter(filial=pedido.filial, is_active=True).prefetch_related("faixas").first()
     if not politica:
         raise ValidationError("A filial nao possui politica de entrega ativa.")
-    if pedido.subtotal < politica.valor_minimo_pedido:
-        raise ValidationError(f"Pedido minimo para entrega: R$ {politica.valor_minimo_pedido}.")
-    if distancia_km > politica.raio_maximo_km:
-        raise ValidationError(f"Endereco fora do raio maximo de {politica.raio_maximo_km} km.")
-    if politica.frete_gratis_acima is not None and pedido.subtotal >= politica.frete_gratis_acima:
-        taxa = 0
-        regra = f"Frete gratis acima de R$ {politica.frete_gratis_acima}"
-    else:
-        faixa = politica.faixas.filter(distancia_inicial_km__lte=distancia_km, distancia_final_km__gte=distancia_km).first()
-        if not faixa:
-            raise ValidationError("Nenhuma faixa de entrega atende a distancia informada.")
-        taxa = faixa.taxa
-        regra = f"Faixa de {faixa.distancia_inicial_km} a {faixa.distancia_final_km} km"
+    resultado = calcular_taxa_entrega(politica=politica, subtotal=pedido.subtotal, distancia_km=distancia_km, bairro=bairro_entrega)
     pedido.distancia_entrega_km = distancia_km
-    pedido.taxa_entrega = taxa
-    pedido.regra_entrega_aplicada = regra
+    pedido.taxa_entrega = resultado["taxa"]
+    pedido.regra_entrega_aplicada = resultado["regra"]
     pedido.recalcular()
     pedido.save(update_fields=["distancia_entrega_km", "taxa_entrega", "regra_entrega_aplicada", "atualizado_em"])
     return pedido

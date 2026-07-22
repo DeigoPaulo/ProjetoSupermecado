@@ -8,6 +8,13 @@ class StatusVenda(models.TextChoices):
     CANCELADA = "CANCELADA", "Cancelada"
 
 
+class TipoDocumentoConsumidor(models.TextChoices):
+    NAO_IDENTIFICADO = "NAO_IDENTIFICADO", "Nao identificado"
+    CPF = "CPF", "CPF"
+    CNPJ = "CNPJ", "CNPJ"
+    ESTRANGEIRO = "ESTRANGEIRO", "Documento estrangeiro"
+
+
 class StatusPreVenda(models.TextChoices):
     ABERTA = "ABERTA", "Aberta"
     CONVERTIDA = "CONVERTIDA", "Convertida"
@@ -47,6 +54,9 @@ class Venda(models.Model):
     filial = models.ForeignKey("empresas.Filial", on_delete=models.PROTECT, related_name="vendas")
     caixa = models.ForeignKey("pdv.Caixa", on_delete=models.PROTECT, related_name="vendas")
     cliente = models.ForeignKey("clientes.Cliente", on_delete=models.PROTECT, related_name="vendas", null=True, blank=True)
+    documento_consumidor_tipo = models.CharField(max_length=20, choices=TipoDocumentoConsumidor.choices, default=TipoDocumentoConsumidor.NAO_IDENTIFICADO)
+    documento_consumidor = models.CharField(max_length=32, blank=True)
+    observacao_fiscal_consumidor = models.CharField(max_length=255, blank=True)
     usuario = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.PROTECT, related_name="vendas")
     total_bruto = models.DecimalField(max_digits=12, decimal_places=2, default=0)
     desconto = models.DecimalField(max_digits=12, decimal_places=2, default=0)

@@ -44,7 +44,7 @@
           <td>{{ pedido.filial }}</td>
           <td>
             <div class="order-progress" aria-label="Separacao {{ pedido.percentual_separacao }}%">
-              <span><strong>{{ pedido.total_itens_separados|floatformat:3 }}</strong> / {{ pedido.total_itens_pedido|floatformat:3 }}</span>
+              <span><strong>{{ pedido.total_itens_separados|quantidade_br }}</strong> / {{ pedido.total_itens_pedido|quantidade_br }}</span>
               <div><i style="width: {{ pedido.percentual_separacao }}%"></i></div>
             </div>
           </td>

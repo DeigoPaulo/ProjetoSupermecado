@@ -32,7 +32,15 @@ class ContaFinanceiraForm(forms.ModelForm):
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        aplicar_select2(self, ["categoria", "filial", "fornecedor", "cliente"])
+        aplicar_select2(
+            self,
+            ["categoria", "filial", "fornecedor", "cliente"],
+            ajax_urls={
+                "filial": "/empresas/filiais/busca.json",
+                "fornecedor": "/fornecedores/busca.json",
+                "cliente": "/clientes/busca.json",
+            },
+        )
 
 
 class BaixaContaForm(forms.Form):
@@ -62,7 +70,7 @@ class ContaMovimentoFinanceiroForm(forms.ModelForm):
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        aplicar_select2(self, ["filial"])
+        aplicar_select2(self, ["filial"], ajax_urls={"filial": "/empresas/filiais/busca.json"})
 
 
 class TransferenciaFinanceiraForm(forms.ModelForm):

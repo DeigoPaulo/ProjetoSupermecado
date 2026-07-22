@@ -158,7 +158,7 @@ def _conciliacao_periodo(data_inicio, data_fim):
 
 def _resultado_financeiro_periodo(data_inicio, data_fim):
     lancamentos = (
-        LancamentoFinanceiro.objects.select_related("conta", "conta__filial", "conta_financeira")
+        LancamentoFinanceiro.objects.select_related("conta", "conta__filial", "conta_financeira", "conta_financeira__categoria")
         .filter(data__gte=data_inicio, data__lte=data_fim)
         .exclude(origem="TRANSFERENCIA")
     )
@@ -194,13 +194,79 @@ def _resultado_financeiro_periodo(data_inicio, data_fim):
         linha["resultado"] = linha["receitas"] - linha["despesas"]
         por_conta.append(linha)
 
+    por_categoria = []
+    acumulado_categoria = OrderedDict()
+    for lancamento in lancamentos:
+        categoria = lancamento.conta_financeira.categoria if lancamento.conta_financeira_id else None
+        nome_categoria = categoria.nome if categoria else "Sem categoria"
+        chave = (nome_categoria, categoria.tipo if categoria else "")
+        linha = acumulado_categoria.setdefault(
+            chave,
+            {"categoria": nome_categoria, "tipo": categoria.get_tipo_display() if categoria else "-", "receitas": Decimal("0.00"), "despesas": Decimal("0.00")},
+        )
+        if lancamento.tipo == TipoLancamentoFinanceiro.ENTRADA:
+            linha["receitas"] += lancamento.valor
+        else:
+            linha["despesas"] += lancamento.valor
+    for linha in acumulado_categoria.values():
+        linha["resultado"] = linha["receitas"] - linha["despesas"]
+        por_categoria.append(linha)
+
+    saldos_contas = []
+    for conta in ContaMovimentoFinanceiro.objects.select_related("filial", "filial__empresa").filter(ativa=True):
+        entradas_periodo = lancamentos.filter(conta=conta, tipo=TipoLancamentoFinanceiro.ENTRADA).aggregate(total=Sum("valor"))["total"] or Decimal("0.00")
+        saidas_periodo = lancamentos.filter(conta=conta, tipo=TipoLancamentoFinanceiro.SAIDA).aggregate(total=Sum("valor"))["total"] or Decimal("0.00")
+        saldos_contas.append(
+            {
+                "filial": conta.filial.nome,
+                "conta": conta.nome,
+                "tipo": conta.get_tipo_display(),
+                "saldo_inicial": conta.saldo_inicial,
+                "entradas_periodo": entradas_periodo,
+                "saidas_periodo": saidas_periodo,
+                "saldo_atual": conta.saldo_atual,
+            }
+        )
+
     return {
         "receitas": receitas,
         "despesas": despesas,
         "resultado": receitas - despesas,
         "por_origem": por_origem,
         "por_conta": por_conta,
+        "por_categoria": por_categoria,
+        "saldos_contas": saldos_contas,
+        "balancete_contas": _balancete_contas_periodo(data_inicio, data_fim),
     }
+
+
+def _balancete_contas_periodo(data_inicio, data_fim):
+    linhas = []
+    contas = ContaMovimentoFinanceiro.objects.select_related("filial", "filial__empresa").filter(ativa=True)
+    for conta in contas:
+        anteriores = conta.lancamentos.filter(data__lt=data_inicio).values("tipo").annotate(total=Sum("valor"))
+        anteriores_por_tipo = {item["tipo"]: item["total"] for item in anteriores}
+        saldo_anterior = (
+            conta.saldo_inicial
+            + anteriores_por_tipo.get(TipoLancamentoFinanceiro.ENTRADA, Decimal("0.00"))
+            - anteriores_por_tipo.get(TipoLancamentoFinanceiro.SAIDA, Decimal("0.00"))
+        )
+        periodo = conta.lancamentos.filter(data__gte=data_inicio, data__lte=data_fim).values("tipo").annotate(total=Sum("valor"))
+        periodo_por_tipo = {item["tipo"]: item["total"] for item in periodo}
+        entradas = periodo_por_tipo.get(TipoLancamentoFinanceiro.ENTRADA, Decimal("0.00"))
+        saidas = periodo_por_tipo.get(TipoLancamentoFinanceiro.SAIDA, Decimal("0.00"))
+        linhas.append(
+            {
+                "filial": conta.filial.nome,
+                "conta": conta.nome,
+                "tipo": conta.get_tipo_display(),
+                "saldo_anterior": saldo_anterior,
+                "entradas": entradas,
+                "saidas": saidas,
+                "saldo_final": saldo_anterior + entradas - saidas,
+            }
+        )
+    return linhas
 
 
 @login_required
@@ -353,6 +419,9 @@ def resultado_financeiro(request):
 def resultado_financeiro_csv(request):
     data_inicio, data_fim = _periodo_from_request(request)
     resultado = _resultado_financeiro_periodo(data_inicio, data_fim)
+    def valor_csv(valor):
+        return f"{valor:.2f}".replace(".", ",")
+
     response = HttpResponse(content_type="text/csv; charset=utf-8")
     response["Content-Disposition"] = f'attachment; filename="resultado_financeiro_{data_inicio}_{data_fim}.csv"'
     response.write("\ufeff")
@@ -369,9 +438,44 @@ def resultado_financeiro_csv(request):
     for linha in resultado["por_origem"]:
         writer.writerow([linha["origem"], str(linha["receitas"]).replace(".", ","), str(linha["despesas"]).replace(".", ","), str(linha["resultado"]).replace(".", ",")])
     writer.writerow([])
+    writer.writerow(["Categoria", "Tipo", "Receitas", "Despesas", "Resultado"])
+    for linha in resultado["por_categoria"]:
+        writer.writerow([
+            linha["categoria"],
+            linha["tipo"],
+            str(linha["receitas"]).replace(".", ","),
+            str(linha["despesas"]).replace(".", ","),
+            str(linha["resultado"]).replace(".", ","),
+        ])
+    writer.writerow([])
     writer.writerow(["Filial", "Conta", "Receitas", "Despesas", "Resultado"])
     for linha in resultado["por_conta"]:
         writer.writerow([linha["filial"], linha["conta"], str(linha["receitas"]).replace(".", ","), str(linha["despesas"]).replace(".", ","), str(linha["resultado"]).replace(".", ",")])
+    writer.writerow([])
+    writer.writerow(["Filial", "Conta movimento", "Tipo", "Saldo inicial", "Entradas periodo", "Saidas periodo", "Saldo atual"])
+    for linha in resultado["saldos_contas"]:
+        writer.writerow([
+            linha["filial"],
+            linha["conta"],
+            linha["tipo"],
+            valor_csv(linha["saldo_inicial"]),
+            valor_csv(linha["entradas_periodo"]),
+            valor_csv(linha["saidas_periodo"]),
+            valor_csv(linha["saldo_atual"]),
+        ])
+    writer.writerow([])
+    writer.writerow(["Balancete gerencial por conta"])
+    writer.writerow(["Filial", "Conta movimento", "Tipo", "Saldo anterior", "Entradas", "Saidas", "Saldo final"])
+    for linha in resultado["balancete_contas"]:
+        writer.writerow([
+            linha["filial"],
+            linha["conta"],
+            linha["tipo"],
+            valor_csv(linha["saldo_anterior"]),
+            valor_csv(linha["entradas"]),
+            valor_csv(linha["saidas"]),
+            valor_csv(linha["saldo_final"]),
+        ])
     return response
 
 

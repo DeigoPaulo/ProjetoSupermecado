@@ -18,7 +18,11 @@ class EntradaCompraForm(forms.ModelForm):
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        aplicar_select2(self, ["fornecedor", "filial"])
+        aplicar_select2(
+            self,
+            ["fornecedor", "filial"],
+            ajax_urls={"fornecedor": "/fornecedores/busca.json", "filial": "/empresas/filiais/busca.json"},
+        )
 
 
 class ItemEntradaCompraForm(forms.ModelForm):
@@ -28,7 +32,7 @@ class ItemEntradaCompraForm(forms.ModelForm):
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        aplicar_select2(self, ["produto"])
+        aplicar_select2(self, ["produto"], ajax_urls={"produto": "/estoque/produtos/busca.json"})
 
 
 ItemEntradaCompraFormSet = inlineformset_factory(

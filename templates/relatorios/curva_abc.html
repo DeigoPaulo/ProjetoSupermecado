@@ -46,7 +46,7 @@
           <td><span class="status abc-class-{{ item.classe|lower }}">{{ item.classe }}</span></td>
           <td>{{ item.produto }}</td>
           <td>{{ item.codigo }}</td>
-          <td>{{ item.quantidade|floatformat:3 }}</td>
+          <td>{{ item.quantidade|quantidade_br }}</td>
           <td>R$ {{ item.devolvido|floatformat:2 }}</td>
           <td><strong>R$ {{ item.valor|floatformat:2 }}</strong></td>
           <td>{{ item.participacao|floatformat:2 }}%</td>

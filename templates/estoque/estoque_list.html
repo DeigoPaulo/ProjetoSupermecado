@@ -27,9 +27,9 @@
         <tr>
           <td>{{ estoque.produto }}</td>
           <td>{{ estoque.filial }}</td>
-          <td>{{ estoque.quantidade_atual }}</td>
-          <td>{{ estoque.quantidade_reservada }}</td>
-          <td><strong>{{ estoque.quantidade_disponivel }}</strong></td>
+          <td>{{ estoque.quantidade_atual|quantidade_br }}</td>
+          <td>{{ estoque.quantidade_reservada|quantidade_br }}</td>
+          <td><strong>{{ estoque.quantidade_disponivel|quantidade_br }}</strong></td>
           <td>{{ estoque.atualizado_em|date:"d/m/Y H:i" }}</td>
         </tr>
       {% empty %}

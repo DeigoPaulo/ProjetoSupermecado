@@ -17,7 +17,7 @@
 
 <section class="metrics-grid">
   <article class="metric"><span>Operacoes</span><strong>{{ total_operacoes }}</strong></article>
-  <article class="metric"><span>Qtd gerada</span><strong>{{ total_quantidade|floatformat:3 }}</strong></article>
+  <article class="metric"><span>Qtd gerada</span><strong>{{ total_quantidade|quantidade_br }}</strong></article>
   <article class="metric"><span>Custo gerado</span><strong>R$ {{ total_custo|floatformat:2 }}</strong></article>
   <article class="metric"><span>Alertas</span><strong>{{ total_alertas }}</strong></article>
 </section>
@@ -90,13 +90,13 @@
           <td>{{ item.desmembramento.filial }}</td>
           <td>
             <a href="{% url 'estoque:desmembramento_detalhe' item.desmembramento_id %}"><strong>{{ item.desmembramento.produto_origem }}</strong></a>
-            <br><small>{{ item.desmembramento.get_tipo_display }} | Saida: {{ item.desmembramento.quantidade_origem }}</small>
+            <br><small>{{ item.desmembramento.get_tipo_display }} | Saida: {{ item.desmembramento.quantidade_origem|quantidade_br }}</small>
           </td>
           <td>
             <strong>{{ item.produto_destino }}</strong><br>
             <small>{{ item.get_tipo_saida_display }}{% if item.lote %} | Lote {{ item.lote }}{% endif %}{% if item.validade %} | Val. {{ item.validade|date:"d/m/Y" }}{% endif %}</small>
           </td>
-          <td>{{ item.quantidade_gerada }} {{ item.unidade }}</td>
+          <td>{{ item.quantidade_gerada|quantidade_br }} {{ item.unidade }}</td>
           <td>{% if item.percentual_rendimento_esperado %}{{ item.percentual_rendimento_esperado }}%{% else %}-{% endif %}</td>
           <td>{{ item.percentual_rendimento }}%</td>
           <td>{% if item.diferenca_rendimento != None %}{{ item.diferenca_rendimento }}%{% else %}-{% endif %}</td>

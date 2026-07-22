@@ -41,8 +41,11 @@
 
 <section class="panel code-sample">
   <div class="panel-title">Agendamento no servidor local</div>
-  <span>Execute o processamento completo pelo Agendador de Tarefas do Windows no servidor da loja.</span>
+  <span>Use o script recomendado para registrar a rotina no Agendador de Tarefas do Windows no servidor da loja.</span>
+  <code>{{ script_agendador_sincronizacao }}</code>
+  <span>Comando executado pela tarefa agendada:</span>
   <code>{{ comando_sincronizacao }}</code>
+  <span>Alternativa manual equivalente:</span>
   <code>{{ comando_agendador }}</code>
 </section>
 
@@ -83,6 +86,7 @@
   <a class="secondary-button" href="{% url 'empresas:documentos_fiscais_sincronizados_csv' %}?{{ request.GET.urlencode }}"><i class="fa-solid fa-file-csv"></i> Fiscal CSV</a>
   <a class="secondary-button" href="{% url 'empresas:eventos_sincronizacao_csv' %}?{{ request.GET.urlencode }}"><i class="fa-solid fa-file-csv"></i> Saida CSV</a>
   <a class="secondary-button" href="{% url 'empresas:eventos_entrada_sincronizacao_csv' %}?{{ request.GET.urlencode }}"><i class="fa-solid fa-file-csv"></i> Entrada CSV</a>
+  <a class="secondary-button" href="{% url 'empresas:sincronizacao_diagnostico' %}?{{ request.GET.urlencode }}"><i class="fa-solid fa-code"></i> Diagnóstico JSON</a>
   <a class="secondary-button" href="{% url 'empresas:sincronizacao' %}">Limpar</a>
 </form>
 

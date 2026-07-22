@@ -7,12 +7,15 @@ from unittest.mock import patch
 
 import app
 from devices.printers import ErroDescobertaImpressoras, listar_impressoras_windows
-from devices.labels import montar_etiquetas_epl, montar_etiquetas_nativas, montar_etiquetas_zpl
-from devices.printing import ErroImpressao, montar_cupom_escpos, montar_texto_cupom
+from devices.labels import montar_etiquetas_epl, montar_etiquetas_nativas, montar_etiquetas_ppla, montar_etiquetas_zpl
+from devices.printing import ErroImpressao, montar_cupom_escpos, montar_pulso_gaveta_escpos, montar_texto_cupom
 from devices.scales import ler_peso_balanca, normalizar_configuracao_balanca
 
 
 class RespostaJson:
+    def __init__(self, payload=None):
+        self.payload = payload or {"status": "ok", "terminal": {"nome": "Caixa 01"}}
+
     def __enter__(self):
         return self
 
@@ -20,7 +23,7 @@ class RespostaJson:
         return False
 
     def read(self):
-        return json.dumps({"status": "ok", "terminal": {"nome": "Caixa 01"}}).encode()
+        return json.dumps(self.payload).encode()
 
 
 class AppDesktopTests(unittest.TestCase):
@@ -55,6 +58,52 @@ class AppDesktopTests(unittest.TestCase):
         self.assertEqual(requisicao.get_header("X-terminal-key"), "segredo")
         self.assertEqual(requisicao.get_header("X-pdv-version"), app.APP_VERSION)
         self.assertTrue(requisicao.full_url.endswith("/pdv/api/terminal/bootstrap/"))
+
+    def test_bootstrap_operacional_salva_cache_e_abre_offline_quando_servidor_cai(self):
+        payload = {
+            "status": "ok",
+            "terminal": {"nome": "Caixa 01", "permite_modo_offline": True},
+            "recursos": {"modo_offline_permitido": True},
+        }
+        config = {
+            "servidor_base_url": "http://servidor.local",
+            "terminal_id": "terminal-1",
+            "terminal_chave": "segredo",
+        }
+        with tempfile.TemporaryDirectory() as pasta:
+            config_path = Path(pasta) / "terminal" / "config.json"
+            with patch.dict(os.environ, {"SUPERMERCADO_PDV_CONFIG": str(config_path)}):
+                with patch("app.validar_terminal", return_value=payload):
+                    online = app.obter_bootstrap_operacional(config)
+                with patch("app.validar_terminal", side_effect=app.ServidorPdvIndisponivel("Servidor PDV indisponivel: sem rede")):
+                    offline = app.obter_bootstrap_operacional(config)
+                diagnostico = app.listar_eventos_dispositivo()
+
+        self.assertEqual(online["status"], "ok")
+        self.assertEqual(offline["status"], "ok")
+        self.assertEqual(offline["status_conexao"], "offline")
+        self.assertIn("sem rede", offline["mensagem_conexao"])
+        self.assertEqual(diagnostico["eventos"][-1]["tipo"], "bootstrap")
+        self.assertEqual(diagnostico["eventos"][-1]["payload"]["status"], "offline")
+
+    def test_bootstrap_offline_nao_esconde_terminal_recusado(self):
+        payload = {
+            "status": "ok",
+            "terminal": {"nome": "Caixa 01", "permite_modo_offline": True},
+            "recursos": {"modo_offline_permitido": True},
+        }
+        config = {
+            "servidor_base_url": "http://servidor.local",
+            "terminal_id": "terminal-1",
+            "terminal_chave": "segredo",
+        }
+        with tempfile.TemporaryDirectory() as pasta:
+            config_path = Path(pasta) / "terminal" / "config.json"
+            with patch.dict(os.environ, {"SUPERMERCADO_PDV_CONFIG": str(config_path)}):
+                app.salvar_bootstrap_cache(payload)
+                with patch("app.validar_terminal", side_effect=app.TerminalRecusado("Terminal recusado pelo servidor")):
+                    with self.assertRaises(app.TerminalRecusado):
+                        app.obter_bootstrap_operacional(config)
 
     def test_identifica_atualizacao_opcional_e_obrigatoria(self):
         opcional = app.verificar_versao(
@@ -198,6 +247,86 @@ class AppDesktopTests(unittest.TestCase):
         self.assertEqual(eventos["eventos"][0]["payload"]["indice"], 1)
         self.assertEqual(eventos["eventos"][1]["payload"]["indice"], 2)
 
+    def test_sincroniza_diagnosticos_locais_com_servidor_do_terminal(self):
+        with tempfile.TemporaryDirectory() as pasta:
+            config_path = Path(pasta) / "terminal" / "config.json"
+            config = {
+                "servidor_base_url": "http://servidor.local",
+                "terminal_id": "terminal-1",
+                "terminal_chave": "segredo",
+            }
+            with patch.dict(os.environ, {"SUPERMERCADO_PDV_CONFIG": str(config_path)}):
+                app.salvar_configuracao(config)
+                app.registrar_evento_dispositivo("balanca", {"status": "erro", "indice": 1})
+                app.registrar_evento_dispositivo("impressora", {"status": "manual", "indice": 2})
+                with patch("app.urlopen", return_value=RespostaJson({"status": "ok", "recebidos": 2})) as urlopen_mock:
+                    retorno = app.sincronizar_eventos_dispositivo(config)
+                carregada = app.carregar_configuracao()
+
+        requisicao = urlopen_mock.call_args.args[0]
+        corpo = json.loads(requisicao.data.decode("utf-8"))
+        self.assertEqual(retorno["status"], "ok")
+        self.assertEqual(retorno["enviados"], 2)
+        self.assertEqual(carregada["diagnostico_eventos_sincronizados"], 2)
+        self.assertTrue(requisicao.full_url.endswith("/pdv/api/terminal/device-events/"))
+        self.assertEqual(requisicao.get_header("X-terminal-id"), "terminal-1")
+        self.assertEqual(len(corpo["eventos"]), 2)
+
+    def test_simulador_tef_aprova_pagamento_quando_terminal_tem_maquininha(self):
+        with tempfile.TemporaryDirectory() as pasta:
+            caminho = Path(pasta) / "terminal" / "config.json"
+            with patch.dict(os.environ, {"SUPERMERCADO_PDV_CONFIG": str(caminho)}):
+                ponte = app.PonteLocal({"tef": {"provedor": "STONE", "modo_integracao": "DESKTOP_BRIDGE"}})
+
+                aprovado = ponte.processPayment({"tipo": "PIX", "valor": "25.50"})
+                sem_tef = app.PonteLocal({"tef": {"provedor": "NAO_CONFIGURADO"}}).processPayment({"tipo": "PIX", "valor": "25.50"})
+                diagnostico = app.listar_eventos_dispositivo()
+
+        self.assertEqual(aprovado["status"], "ok")
+        self.assertTrue(aprovado["aprovado"])
+        self.assertTrue(aprovado["transacao_externa_id"].startswith("TEF-SIM-"))
+        self.assertTrue(aprovado["nsu"])
+        self.assertTrue(aprovado["codigo_autorizacao"])
+        self.assertEqual(sem_tef["status"], "erro")
+        self.assertIn("nao configurado", sem_tef["mensagem"])
+        self.assertEqual(diagnostico["total"], 2)
+        self.assertEqual(diagnostico["eventos"][0]["tipo"], "tef")
+        self.assertEqual(diagnostico["eventos"][0]["payload"]["status"], "ok")
+        self.assertEqual(diagnostico["eventos"][1]["payload"]["status"], "erro")
+
+    def test_simulador_tef_aprova_estorno_e_registra_diagnostico(self):
+        with tempfile.TemporaryDirectory() as pasta:
+            caminho = Path(pasta) / "terminal" / "config.json"
+            with patch.dict(os.environ, {"SUPERMERCADO_PDV_CONFIG": str(caminho)}):
+                ponte = app.PonteLocal({"tef": {"provedor": "STONE", "modo_integracao": "DESKTOP_BRIDGE"}})
+
+                aprovado = ponte.refundPayment(
+                    {
+                        "tipo": "PIX",
+                        "valor": "25.50",
+                        "transacao_externa_id": "TEF-SIM-ORIGINAL",
+                    }
+                )
+                sem_tef = app.PonteLocal({"tef": {"provedor": "NAO_CONFIGURADO"}}).refundPayment(
+                    {
+                        "tipo": "PIX",
+                        "valor": "25.50",
+                        "transacao_externa_id": "TEF-SIM-ORIGINAL",
+                    }
+                )
+                diagnostico = app.listar_eventos_dispositivo()
+
+        self.assertEqual(aprovado["status"], "ok")
+        self.assertTrue(aprovado["estornado"])
+        self.assertTrue(aprovado["estorno_transacao_id"].startswith("TEF-SIM-REF-"))
+        self.assertTrue(aprovado["codigo_autorizacao"])
+        self.assertEqual(sem_tef["status"], "erro")
+        self.assertIn("nao configurado", sem_tef["mensagem"])
+        self.assertEqual(diagnostico["total"], 2)
+        self.assertEqual(diagnostico["eventos"][0]["tipo"], "tef_estorno")
+        self.assertEqual(diagnostico["eventos"][0]["payload"]["status"], "ok")
+        self.assertEqual(diagnostico["eventos"][1]["payload"]["status"], "erro")
+
     def test_leitura_de_balanca_aceita_peso_simulado_para_homologacao(self):
         config = normalizar_configuracao_balanca(
             {"habilitada": True, "protocolo": "SERIAL", "porta": "COM3", "leitura_automatica": True}
@@ -241,6 +370,48 @@ class AppDesktopTests(unittest.TestCase):
         self.assertIn(b"\x1bp\x00\x19\xfa", dados)
         self.assertTrue(dados.endswith(b"\x1dV\x42\x00"))
 
+    def test_ponte_aciona_gaveta_e_registra_diagnostico_local(self):
+        with tempfile.TemporaryDirectory() as pasta:
+            config_path = Path(pasta) / "terminal" / "config.json"
+            ponte = app.PonteLocal(
+                {
+                    "dispositivos": {
+                        "gaveta": {
+                            "contrato": "pdv_cash_drawer_v1",
+                            "habilitada": True,
+                            "impressora_padrao": "EPSON TM-T20",
+                            "abrir_em_movimento_caixa": True,
+                        }
+                    }
+                }
+            )
+            with patch.dict(os.environ, {"SUPERMERCADO_PDV_CONFIG": str(config_path)}):
+                with patch("app.imprimir_raw_windows", return_value=len(montar_pulso_gaveta_escpos())) as imprimir_mock:
+                    resposta = ponte.openCashDrawer({"motivo": "sangria"})
+                eventos = app.listar_eventos_dispositivo()
+
+        self.assertEqual(resposta["status"], "ok")
+        self.assertTrue(resposta["acionada"])
+        self.assertEqual(resposta["impressora"], "EPSON TM-T20")
+        self.assertEqual(imprimir_mock.call_args.args[0], "EPSON TM-T20")
+        self.assertEqual(imprimir_mock.call_args.args[1], montar_pulso_gaveta_escpos())
+        self.assertEqual(eventos["eventos"][-1]["tipo"], "gaveta")
+        self.assertEqual(eventos["eventos"][-1]["payload"]["status"], "ok")
+
+    def test_ponte_gaveta_desabilitada_retorna_aviso_sem_bloquear(self):
+        with tempfile.TemporaryDirectory() as pasta:
+            config_path = Path(pasta) / "terminal" / "config.json"
+            ponte = app.PonteLocal({"dispositivos": {"gaveta": {"habilitada": False}}})
+            with patch.dict(os.environ, {"SUPERMERCADO_PDV_CONFIG": str(config_path)}):
+                resposta = ponte.openCashDrawer({"motivo": "suprimento"})
+                eventos = app.listar_eventos_dispositivo()
+
+        self.assertEqual(resposta["status"], "manual")
+        self.assertFalse(resposta["acionada"])
+        self.assertIn("desabilitada", resposta["mensagem"])
+        self.assertEqual(eventos["eventos"][-1]["tipo"], "gaveta")
+        self.assertEqual(eventos["eventos"][-1]["payload"]["status"], "manual")
+
     def test_ponte_imprime_venda_no_spooler_com_limite_de_tres_vias(self):
         ponte = app.PonteLocal({})
         payload = {
@@ -283,7 +454,7 @@ class AppDesktopTests(unittest.TestCase):
         self.assertIn(b"^PQ3", dados)
         self.assertTrue(dados.rstrip().endswith(b"^XZ"))
 
-    def test_gera_epl_e_pplb_e_recusa_ppla_sem_adaptador(self):
+    def test_gera_epl_ppla_e_pplb_com_comandos_nativos(self):
         payload = {
             "linguagem": "PPLB",
             "dpi": 203,
@@ -300,8 +471,13 @@ class AppDesktopTests(unittest.TestCase):
         self.assertIn(b"P2", dados)
         self.assertEqual(dados_pplb, dados)
         payload["linguagem"] = "PPLA"
-        with self.assertRaisesRegex(ErroImpressao, "adaptador homologado"):
-            montar_etiquetas_nativas(payload)
+        dados_ppla = montar_etiquetas_ppla(payload)
+        dados_ppla_nativo = montar_etiquetas_nativas(payload)
+        self.assertTrue(dados_ppla.startswith(b"\x02L"))
+        self.assertIn(b"7890001", dados_ppla)
+        self.assertIn(b"R$ 4,79", dados_ppla)
+        self.assertIn(b"\nE\n", dados_ppla)
+        self.assertEqual(dados_ppla_nativo, dados_ppla)
 
     def test_ponte_envia_etiqueta_nativa_ao_spooler(self):
         ponte = app.PonteLocal({})

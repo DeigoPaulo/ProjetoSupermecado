@@ -52,7 +52,11 @@ class ProdutoForm(forms.ModelForm):
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        aplicar_select2(self, ["categoria", "marca"])
+        aplicar_select2(
+            self,
+            ["categoria", "marca"],
+            ajax_urls={"categoria": "/produtos/categorias/busca.json", "marca": "/produtos/marcas/busca.json"},
+        )
 
     def clean_ncm(self):
         ncm = "".join(filter(str.isdigit, self.cleaned_data.get("ncm", "")))
@@ -111,7 +115,11 @@ class ReajustePrecoForm(forms.Form):
                 Q(configuracao__filial=filial) | Q(configuracao__filial__isnull=True, configuracao__empresa=filial.empresa)
             )
         self.fields["modelo_salvo"].queryset = modelos
-        aplicar_select2(self, ["categoria", "marca", "modelo_salvo"])
+        aplicar_select2(
+            self,
+            ["categoria", "marca", "modelo_salvo"],
+            ajax_urls={"categoria": "/produtos/categorias/busca.json", "marca": "/produtos/marcas/busca.json"},
+        )
 
     def clean(self):
         cleaned = super().clean()
@@ -159,4 +167,8 @@ class EtiquetaProdutoForm(forms.Form):
                 Q(configuracao__filial=filial) | Q(configuracao__filial__isnull=True, configuracao__empresa=filial.empresa)
             )
         self.fields["modelo_salvo"].queryset = modelos
-        aplicar_select2(self, ["categoria", "marca", "modelo_salvo"])
+        aplicar_select2(
+            self,
+            ["categoria", "marca", "modelo_salvo"],
+            ajax_urls={"categoria": "/produtos/categorias/busca.json", "marca": "/produtos/marcas/busca.json"},
+        )

@@ -1,11 +1,12 @@
 from django.contrib import messages
 from django.contrib.auth.decorators import login_required
 from django.core.exceptions import ValidationError
-from django.http import HttpResponse
+from django.http import HttpResponse, JsonResponse
 from django.shortcuts import get_object_or_404, redirect, render
 
 from apps.accounts.permissions import RELATORIOS, SISTEMA, role_required
 from apps.auditoria.models import LogAuditoria
+from apps.empresas.models import Filial
 from apps.produtos.models import Produto
 from apps.vendas.models import StatusVenda, Venda
 
@@ -22,12 +23,79 @@ from .services import (
 )
 
 
+def _diagnostico_prontidao_fiscal():
+    configuracoes = {config.filial_id: config for config in ConfiguracaoFiscal.objects.select_related("filial")}
+    series_nfce = {
+        serie.filial_id: serie
+        for serie in SerieFiscal.objects.filter(tipo_documento=TipoDocumentoFiscal.NFCE, ativo=True).select_related("filial")
+    }
+    natureza_nfce = NaturezaOperacao.objects.filter(tipo_documento=TipoDocumentoFiscal.NFCE, ativo=True).first()
+    regimes = list(ConfiguracaoFiscal.objects.exclude(regime_tributario="").values_list("regime_tributario", flat=True))
+    produtos_pendentes = 0
+    for produto in Produto.all_objects.select_related("categoria", "marca")[:500]:
+        if pendencias_produto_fiscal(produto, regimes):
+            produtos_pendentes += 1
+    vendas_pendentes_qs = Venda.objects.filter(status=StatusVenda.FINALIZADA, documentos_fiscais__isnull=True)
+    filiais = []
+    alertas = []
+    for filial in Filial.objects.select_related("empresa").order_by("empresa__nome_fantasia", "nome"):
+        config = configuracoes.get(filial.id)
+        serie = series_nfce.get(filial.id)
+        pendencias = []
+        if not config:
+            pendencias.append("Configuração fiscal ausente.")
+        else:
+            if not config.ativo:
+                pendencias.append("Configuração fiscal inativa.")
+            if config.certificado_status != "valido":
+                pendencias.append(f"Certificado {config.certificado_status.replace('_', ' ')}.")
+            if not config.csc_id or not config.csc_token:
+                pendencias.append("CSC/Token NFC-e incompleto.")
+            if not config.inscricao_estadual:
+                pendencias.append("Inscrição estadual ausente.")
+        if not filial.uf or not filial.codigo_municipio_ibge:
+            pendencias.append("UF ou código IBGE da filial ausente.")
+        if not serie:
+            pendencias.append("Série NFC-e ativa ausente.")
+        if not natureza_nfce:
+            pendencias.append("Natureza de operação NFC-e ativa ausente.")
+        vendas_pendentes = vendas_pendentes_qs.filter(filial=filial).count()
+        if vendas_pendentes:
+            pendencias.append(f"{vendas_pendentes} venda(s) aguardando NFC-e.")
+        status = "Pronta" if not pendencias else "Atenção"
+        for pendencia in pendencias:
+            alertas.append({"filial": str(filial), "mensagem": pendencia})
+        filiais.append(
+            {
+                "id": filial.id,
+                "filial": str(filial),
+                "ambiente": config.get_ambiente_display() if config else "-",
+                "certificado": config.certificado_status if config else "nao_configurado",
+                "serie_nfce": serie.serie if serie else None,
+                "proximo_numero": serie.proximo_numero if serie else None,
+                "vendas_pendentes": vendas_pendentes,
+                "pendencias": pendencias,
+                "status": status,
+            }
+        )
+    resumo = {
+        "filiais": len(filiais),
+        "filiais_prontas": sum(1 for filial in filiais if filial["status"] == "Pronta"),
+        "alertas": len(alertas),
+        "produtos_pendentes": produtos_pendentes,
+        "vendas_pendentes": vendas_pendentes_qs.count(),
+        "documentos_prontos": DocumentoFiscal.objects.filter(status=StatusDocumentoFiscal.PRONTO).count(),
+        "documentos_rejeitados": DocumentoFiscal.objects.filter(status=StatusDocumentoFiscal.REJEITADO).count(),
+    }
+    return {"resumo": resumo, "filiais": filiais, "alertas": alertas}
+
+
 @login_required
 @role_required(*RELATORIOS)
 def documentos(request):
     status = request.GET.get("status", "")
     q = request.GET.get("q", "").strip()
-    documentos_qs = DocumentoFiscal.objects.select_related("filial", "venda", "natureza_operacao", "usuario")
+    documentos_qs = DocumentoFiscal.objects.select_related("filial", "venda", "pedido_online", "natureza_operacao", "usuario")
     if status:
         documentos_qs = documentos_qs.filter(status=status)
     if q:
@@ -66,6 +134,7 @@ def documentos(request):
     for venda in vendas_pendentes:
         venda.ultima_tentativa_fiscal = logs_pendencia.get(str(venda.id))
     context = {
+        "diagnostico": _diagnostico_prontidao_fiscal(),
         "documentos": documentos_qs[:200],
         "status": status,
         "q": q,
@@ -81,6 +150,12 @@ def documentos(request):
         "pendencias_automaticas": len(logs_pendencia),
     }
     return render(request, "fiscal/documentos.html", context)
+
+
+@login_required
+@role_required(*RELATORIOS)
+def diagnostico_json(request):
+    return JsonResponse(_diagnostico_prontidao_fiscal())
 
 
 @login_required
@@ -114,7 +189,7 @@ def produtos_fiscais(request):
 
 def _documento_com_dados(pk):
     return get_object_or_404(
-        DocumentoFiscal.objects.select_related("filial__empresa", "venda__cliente", "venda__caixa", "natureza_operacao", "usuario")
+        DocumentoFiscal.objects.select_related("filial__empresa", "venda__cliente", "venda__caixa", "pedido_online", "natureza_operacao", "usuario")
         .prefetch_related("venda__itens__produto", "venda__pagamentos__forma_pagamento"),
         pk=pk,
     )

@@ -153,6 +153,9 @@
       <div>Operador: {{ venda.usuario }}</div>
       <div>Caixa: {{ venda.caixa.id }}</div>
       <div>Cliente: {{ venda.cliente|default:"Cliente avulso" }}</div>
+      {% if venda.documento_consumidor %}
+        <div>{{ venda.get_documento_consumidor_tipo_display }} na nota: {{ venda.documento_consumidor }}</div>
+      {% endif %}
     </section>
 
     <div class="line"></div>
@@ -172,7 +175,7 @@
               {{ item.produto.nome }}<br>
               <span class="muted">{{ item.produto.codigo_barras }}</span>
             </td>
-            <td class="right">{{ item.quantidade }}</td>
+            <td class="right">{{ item.quantidade|quantidade_br }}</td>
             <td class="right">{{ item.preco_unitario_venda|floatformat:2 }}</td>
             <td class="right">{{ item.total|floatformat:2 }}</td>
           </tr>

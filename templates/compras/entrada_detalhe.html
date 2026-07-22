@@ -117,7 +117,7 @@
           <td>{{ mov.data|date:"d/m/Y H:i" }}</td>
           <td><span class="status {% if mov.tipo == 'ENTRADA' %}status-success{% endif %}">{{ mov.get_tipo_display }}</span></td>
           <td>{{ mov.produto }}</td>
-          <td>{{ mov.quantidade }}</td>
+          <td>{{ mov.quantidade|quantidade_br }}</td>
           <td>R$ {{ mov.custo_total|default:0|floatformat:2 }}</td>
           <td>{{ mov.usuario|default:"-" }}</td>
         </tr>
@@ -136,7 +136,7 @@
       {% for item in entrada.itens.all %}
         <tr>
           <td>{{ item.produto }}</td>
-          <td>{{ item.quantidade }}</td>
+          <td>{{ item.quantidade|quantidade_br }}</td>
           <td>R$ {{ item.custo_unitario|floatformat:2 }}</td>
           <td>R$ {{ item.total|floatformat:2 }}</td>
           <td>{{ item.atualizar_preco_custo|yesno:"Sim,Nao" }}</td>

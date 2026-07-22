@@ -1,21 +1,26 @@
 from django.contrib import messages
+from django.conf import settings
 from django.core.exceptions import ValidationError
 from django.db import transaction
-from django.db.models import Q, Sum
+from django.db.models import Count, Max, Q, Sum
 from django.http import JsonResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.utils import timezone
 from django.views.decorators.csrf import csrf_exempt
 from decimal import Decimal, InvalidOperation
 import json
+from urllib.error import HTTPError, URLError
+from urllib.parse import urlencode
+from urllib.request import Request, urlopen
 
 from apps.accounts.permissions import CADASTROS, SISTEMA, role_required
 from apps.configuracoes.models import TipoDocumentoImpressao
 from apps.configuracoes.services import configuracao_impressao_para, estilos_impressao
+from apps.fiscal.services import preparar_documento_pedido_online
 
 from .forms import CalcularEntregaForm, FaixaTaxaEntregaFormSet, IntegracaoMarketplaceForm, ItemPedidoOnlineForm, PagamentoPedidoForm, PedidoOnlineForm, PoliticaEntregaForm
-from .models import CanalPedido, IntegracaoMarketplace, ItemPedidoOnline, PedidoOnline, PoliticaEntrega, StatusPedido, TipoEntrega
-from .services import alterar_status_pedido, calcular_entrega_pedido, cancelar_pedido, gerar_token_integracao, registrar_pagamento, reservar_pedido
+from .models import CanalPedido, IntegracaoMarketplace, ItemPedidoOnline, PedidoOnline, PoliticaEntrega, StatusPagamentoPedido, StatusPedido, TipoEntrega
+from .services import alterar_status_pedido, calcular_entrega_pedido, calcular_taxa_entrega, cancelar_pedido, gerar_token_integracao, registrar_pagamento, reservar_pedido
 from apps.produtos.models import Produto
 
 
@@ -152,6 +157,8 @@ def acao_pedido(request, pk):
             if not form.is_valid():
                 raise ValidationError("Verifique a forma e o valor do pagamento.")
             registrar_pagamento(pedido=pedido, usuario=request.user, ip=request.META.get("REMOTE_ADDR"), **form.cleaned_data)
+        elif acao == "preparar_nfe":
+            preparar_documento_pedido_online(pedido=pedido, usuario=request.user, ip=request.META.get("REMOTE_ADDR"))
         elif acao == "calcular_entrega":
             form = CalcularEntregaForm(request.POST)
             if not form.is_valid():
@@ -168,7 +175,85 @@ def acao_pedido(request, pk):
 
 @role_required(*SISTEMA)
 def integracoes(request):
-    return render(request, "marketplace/integracoes.html", {"integracoes": IntegracaoMarketplace.objects.select_related("filial__empresa", "usuario"), "novo_token": request.session.pop("marketplace_novo_token", None)})
+    diagnostico = _diagnostico_integracoes_marketplace()
+    return render(
+        request,
+        "marketplace/integracoes.html",
+        {
+            "integracoes": diagnostico["integracoes"],
+            "diagnostico": diagnostico,
+            "novo_token": request.session.pop("marketplace_novo_token", None),
+        },
+    )
+
+
+def _diagnostico_integracoes_marketplace():
+    integracoes = list(
+        IntegracaoMarketplace.objects.select_related("filial__empresa", "usuario")
+        .annotate(
+            total_pedidos=Count("pedidos", distinct=True),
+            pedidos_abertos=Count("pedidos", filter=~Q(pedidos__status__in=[StatusPedido.CONCLUIDO, StatusPedido.CANCELADO]), distinct=True),
+            pagamentos_pendentes=Count(
+                "pedidos",
+                filter=Q(pedidos__status_pagamento=StatusPagamentoPedido.PENDENTE) & ~Q(pedidos__status=StatusPedido.CANCELADO),
+                distinct=True,
+            ),
+            ultimo_pedido_em=Max("pedidos__criado_em"),
+        )
+        .order_by("nome")
+    )
+    alertas = []
+    payload_integracoes = []
+    for integracao in integracoes:
+        alerta_integracao = []
+        if not integracao.is_active:
+            alerta_integracao.append("Integracao inativa.")
+        if not integracao.ultimo_uso_em:
+            alerta_integracao.append("Chave nunca usada por parceiro externo.")
+        if integracao.pagamentos_pendentes:
+            alerta_integracao.append(f"{integracao.pagamentos_pendentes} pedido(s) com pagamento pendente.")
+        if integracao.pedidos_abertos:
+            alerta_integracao.append(f"{integracao.pedidos_abertos} pedido(s) em fluxo operacional.")
+        for alerta in alerta_integracao:
+            alertas.append({"integracao": integracao.nome, "mensagem": alerta})
+        integracao.alertas_operacionais = alerta_integracao
+        payload_integracoes.append(
+            {
+                "id": integracao.pk,
+                "nome": integracao.nome,
+                "filial": str(integracao.filial),
+                "ativa": integracao.is_active,
+                "token_prefixo": integracao.token_prefixo,
+                "total_pedidos": integracao.total_pedidos,
+                "pedidos_abertos": integracao.pedidos_abertos,
+                "pagamentos_pendentes": integracao.pagamentos_pendentes,
+                "ultimo_uso_em": integracao.ultimo_uso_em.isoformat() if integracao.ultimo_uso_em else None,
+                "ultimo_pedido_em": integracao.ultimo_pedido_em.isoformat() if integracao.ultimo_pedido_em else None,
+                "alertas": alerta_integracao,
+            }
+        )
+    resumo = {
+        "integracoes": len(integracoes),
+        "ativas": sum(1 for item in integracoes if item.is_active),
+        "pedidos_recebidos": sum(item.total_pedidos for item in integracoes),
+        "pedidos_abertos": sum(item.pedidos_abertos for item in integracoes),
+        "pagamentos_pendentes": sum(item.pagamentos_pendentes for item in integracoes),
+        "alertas": len(alertas),
+    }
+    return {"gerado_em": timezone.now(), "resumo": resumo, "integracoes": integracoes, "payload_integracoes": payload_integracoes, "alertas": alertas}
+
+
+@role_required(*SISTEMA)
+def integracoes_diagnostico(request):
+    diagnostico = _diagnostico_integracoes_marketplace()
+    return JsonResponse(
+        {
+            "gerado_em": diagnostico["gerado_em"].isoformat(),
+            "resumo": diagnostico["resumo"],
+            "integracoes": diagnostico["payload_integracoes"],
+            "alertas": diagnostico["alertas"],
+        }
+    )
 
 
 @role_required(*SISTEMA)
@@ -198,7 +283,180 @@ def renovar_token(request, pk):
 @role_required(*SISTEMA)
 def politicas_entrega(request):
     politicas = PoliticaEntrega.objects.select_related("filial__empresa").prefetch_related("faixas")
-    return render(request, "marketplace/politicas_entrega.html", {"politicas": politicas})
+    simulacao = None
+    if request.GET.get("simular") == "1":
+        simulacao = _simular_politica_entrega(request)
+    return render(
+        request,
+        "marketplace/politicas_entrega.html",
+        {
+            "politicas": politicas,
+            "simulacao": simulacao,
+        },
+    )
+
+
+def _politicas_entrega_diagnostico():
+    politicas = PoliticaEntrega.objects.select_related("filial__empresa").prefetch_related("faixas")
+    itens = []
+    resumo = {"politicas": 0, "ativas": 0, "sem_faixas": 0, "com_alerta": 0}
+    for politica in politicas:
+        faixas = list(politica.faixas.all())
+        alertas = []
+        if not politica.is_active:
+            alertas.append("Politica inativa.")
+        if not faixas:
+            alertas.append("Nenhuma faixa de taxa cadastrada.")
+        if faixas and faixas[-1].distancia_final_km < politica.raio_maximo_km:
+            alertas.append("A ultima faixa nao cobre todo o raio maximo.")
+        if politica.valor_minimo_pedido <= 0:
+            alertas.append("Pedido minimo zerado.")
+        resumo["politicas"] += 1
+        resumo["ativas"] += 1 if politica.is_active else 0
+        resumo["sem_faixas"] += 1 if not faixas else 0
+        resumo["com_alerta"] += 1 if alertas else 0
+        itens.append(
+            {
+                "id": politica.pk,
+                "filial": str(politica.filial),
+                "ativa": politica.is_active,
+                "raio_maximo_km": str(politica.raio_maximo_km),
+                "valor_minimo_pedido": str(politica.valor_minimo_pedido),
+                "frete_gratis_acima": str(politica.frete_gratis_acima) if politica.frete_gratis_acima is not None else None,
+                "permite_retirada": politica.permite_retirada,
+                "faixas": [
+                    {
+                        "distancia_inicial_km": str(faixa.distancia_inicial_km),
+                        "distancia_final_km": str(faixa.distancia_final_km),
+                        "taxa": str(faixa.taxa),
+                    }
+                    for faixa in faixas
+                ],
+                "alertas": alertas,
+            }
+        )
+    return {
+        "resumo": resumo,
+        "politicas": itens,
+        "geocodificacao": {
+            "contrato": "delivery_geocode_v1",
+            "provider_configurado": bool(getattr(settings, "MARKETPLACE_GEOCODING_PROVIDER_URL", "")),
+            "timeout_segundos": getattr(settings, "MARKETPLACE_GEOCODING_TIMEOUT_SEGUNDOS", 5),
+            "fallback_manual_distancia": True,
+        },
+    }
+
+
+def _montar_url_geocoding(base_url, *, politica, endereco):
+    origem = ", ".join(
+        parte
+        for parte in [
+            politica.filial.endereco,
+            politica.filial.municipio,
+            politica.filial.uf,
+        ]
+        if parte
+    )
+    valores = {
+        "origem": origem,
+        "destino": endereco,
+        "endereco": endereco,
+        "filial": str(politica.filial),
+    }
+    if "{" in base_url:
+        return base_url.format(**valores)
+    separador = "&" if "?" in base_url else "?"
+    return f"{base_url}{separador}{urlencode(valores)}"
+
+
+def _decimal_geocoding(valor):
+    if valor in (None, ""):
+        return None
+    try:
+        return Decimal(str(valor).replace(",", "."))
+    except (InvalidOperation, ValueError, TypeError):
+        return None
+
+
+def _consultar_distancia_entrega(*, politica, endereco):
+    provider_url = getattr(settings, "MARKETPLACE_GEOCODING_PROVIDER_URL", "")
+    if not provider_url:
+        return {"status": "manual_required", "mensagem": "Geocodificacao nao configurada. Informe a distancia manualmente."}
+    url = _montar_url_geocoding(provider_url, politica=politica, endereco=endereco)
+    timeout = getattr(settings, "MARKETPLACE_GEOCODING_TIMEOUT_SEGUNDOS", 5)
+    requisicao = Request(url, headers={"Accept": "application/json", "User-Agent": "MercaFlowERP/delivery_geocode_v1"})
+    try:
+        resposta = urlopen(requisicao, timeout=timeout)
+        try:
+            status_code = getattr(resposta, "status", 200)
+            conteudo = resposta.read().decode("utf-8")
+        finally:
+            close = getattr(resposta, "close", None)
+            if close:
+                close()
+    except HTTPError as exc:
+        return {"status": "provider_error", "mensagem": f"Provedor de geocodificacao respondeu HTTP {exc.code}."}
+    except (URLError, TimeoutError, OSError) as exc:
+        return {"status": "provider_error", "mensagem": f"Falha ao consultar geocodificacao: {exc}."}
+    try:
+        dados = json.loads(conteudo)
+    except json.JSONDecodeError:
+        return {"status": "provider_error", "mensagem": "Provedor de geocodificacao retornou resposta que nao e JSON."}
+    if status_code >= 400 or not isinstance(dados, dict):
+        return {"status": "provider_error", "mensagem": "Provedor de geocodificacao retornou formato inesperado."}
+    distancia = (
+        _decimal_geocoding(dados.get("distancia_km"))
+        or _decimal_geocoding(dados.get("distance_km"))
+        or _decimal_geocoding(dados.get("distancia"))
+        or _decimal_geocoding(dados.get("distance"))
+    )
+    if distancia is None:
+        return {"status": "provider_error", "mensagem": "Provedor de geocodificacao nao retornou distancia_km."}
+    return {"status": "ok", "distancia_km": distancia, "provider_payload": dados}
+
+
+def _simular_politica_entrega(request):
+    try:
+        politica_id = int(request.GET.get("politica", "0"))
+        subtotal = Decimal(str(request.GET.get("subtotal", "0")).replace(",", "."))
+        distancia_raw = str(request.GET.get("distancia", "")).strip()
+        distancia = Decimal(distancia_raw.replace(",", ".")) if distancia_raw else None
+        bairro = request.GET.get("bairro", "").strip()
+        endereco = request.GET.get("endereco", "").strip()
+    except (TypeError, ValueError, InvalidOperation):
+        return {"erro": "Informe politica, subtotal e distancia validos."}
+    politica = PoliticaEntrega.objects.filter(pk=politica_id, is_active=True).prefetch_related("faixas").first()
+    if not politica:
+        return {"erro": "Politica ativa nao encontrada."}
+    geocodificacao = None
+    if distancia is None:
+        if not endereco:
+            return {"erro": "Informe a distancia ou o endereco para calcular a entrega."}
+        geocodificacao = _consultar_distancia_entrega(politica=politica, endereco=endereco)
+        if geocodificacao["status"] != "ok":
+            return {"erro": geocodificacao["mensagem"], "politica": politica, "subtotal": subtotal, "bairro": bairro, "endereco": endereco, "geocodificacao": geocodificacao}
+        distancia = geocodificacao["distancia_km"]
+    try:
+        resultado = calcular_taxa_entrega(politica=politica, subtotal=subtotal, distancia_km=distancia, bairro=bairro)
+    except ValidationError as exc:
+        return {"erro": "; ".join(exc.messages), "politica": politica, "subtotal": subtotal, "distancia": distancia, "bairro": bairro, "endereco": endereco, "geocodificacao": geocodificacao}
+    total = subtotal + Decimal(resultado["taxa"])
+    return {
+        "politica": politica,
+        "subtotal": subtotal,
+        "distancia": distancia,
+        "bairro": bairro,
+        "endereco": endereco,
+        "geocodificacao": geocodificacao,
+        "taxa": Decimal(resultado["taxa"]),
+        "regra": resultado["regra"],
+        "total": total,
+    }
+
+
+@role_required(*SISTEMA)
+def politicas_entrega_diagnostico(request):
+    return JsonResponse(_politicas_entrega_diagnostico())
 
 
 @role_required(*SISTEMA)
@@ -261,6 +519,8 @@ def api_receber_pedido(request):
                 integracao=integracao,
                 filial=integracao.filial,
                 nome_cliente=nome_cliente,
+                documento_cliente_tipo=str(dados.get("documento_cliente_tipo", "") or "NAO_IDENTIFICADO"),
+                documento_cliente=str(dados.get("documento_cliente", "")),
                 telefone=str(dados.get("telefone", "")),
                 canal=CanalPedido.MARKETPLACE,
                 tipo_entrega=tipo_entrega,
@@ -282,7 +542,7 @@ def api_receber_pedido(request):
                 item.save()
             pedido.recalcular()
             if dados.get("distancia_entrega_km") is not None:
-                calcular_entrega_pedido(pedido=pedido, distancia_km=Decimal(str(dados["distancia_entrega_km"])))
+                calcular_entrega_pedido(pedido=pedido, distancia_km=Decimal(str(dados["distancia_entrega_km"])), bairro_entrega=dados.get("bairro_entrega", ""))
             integracao.ultimo_uso_em = timezone.now()
             integracao.save(update_fields=["ultimo_uso_em"])
     except Produto.DoesNotExist:

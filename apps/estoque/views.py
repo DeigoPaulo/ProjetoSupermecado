@@ -718,14 +718,17 @@ def produtos_busca(request):
     termo = (request.GET.get("q") or request.GET.get("term") or "").strip()
     if not termo:
         return JsonResponse({"results": []})
+    base_qs = Produto.objects.all()
+    if request.GET.get("marketplace") == "1":
+        base_qs = base_qs.filter(vendido_no_marketplace=True)
 
     exatos = list(
-        Produto.objects.filter(Q(codigo_barras__iexact=termo) | Q(codigo_interno__iexact=termo)).select_related(
+        base_qs.filter(Q(codigo_barras__iexact=termo) | Q(codigo_interno__iexact=termo)).select_related(
             "categoria", "marca"
         )[:10]
     )
     parciais = list(
-        Produto.objects.filter(
+        base_qs.filter(
             Q(codigo_barras__icontains=termo) | Q(codigo_interno__icontains=termo) | Q(nome__icontains=termo)
         )
         .exclude(pk__in=[produto.pk for produto in exatos])

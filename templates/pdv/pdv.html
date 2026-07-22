@@ -36,7 +36,7 @@
       </div>
     </div>
     <div class="pdv-stats">
-      <div><span>Itens</span><strong>{{ quantidade_itens|floatformat:-3 }}</strong></div>
+      <div><span>Itens</span><strong>{{ quantidade_itens|quantidade_br }}</strong></div>
       <div class="pdv-total-stat"><span>Total da venda</span><strong>R$ {{ total|floatformat:2 }}</strong></div>
     </div>
     <div class="actions pdv-actions">
@@ -110,7 +110,7 @@
                   <strong>{{ item.produto.nome }}</strong>
                   <small>{{ item.produto.codigo_barras }}</small>
                 </td>
-                <td>{{ item.quantidade|floatformat:-3 }}</td>
+                <td>{{ item.quantidade|quantidade_br }}</td>
                 <td>R$ {{ item.produto.preco_venda|floatformat:2 }}</td>
                 <td><strong>R$ {{ item.subtotal|floatformat:2 }}</strong></td>
                 <td><a class="icon-action danger-button" href="{% url 'pdv:remover_item' item.produto.id %}" title="Remover item (Del)" aria-label="Remover item (Del)"><i class="fa-regular fa-trash-can"></i></a></td>
@@ -130,7 +130,7 @@
         <div class="pdv-cart-footer-info">
           <span title="Remover item (Del)">Remover item (<kbd>Del</kbd>)</span>
           <span title="Limpar carrinho (Ctrl+Del)">Limpar tudo (<kbd>Ctrl+Del</kbd>)</span>
-          <strong>Itens: {{ quantidade_itens|floatformat:-3 }}</strong>
+          <strong>Itens: {{ quantidade_itens|quantidade_br }}</strong>
         </div>
       </div>
     </main>
@@ -167,9 +167,19 @@
             <div class="pdv-payment-header">
               <div>
                 <strong>Pagamentos</strong>
-                <span>Adicione quantas formas forem necessarias</span>
+                <span>Confirme CPF na nota, informe o valor recebido e adicione outra forma somente se restar saldo</span>
               </div>
               <button type="button" id="pdv-close-payment" aria-label="Fechar"><i class="fa-solid fa-xmark"></i></button>
+            </div>
+            <div class="pdv-payment-adjustments">
+              <label class="form-field">
+                <span>CPF/CNPJ na nota</span>
+                {{ finish_form.documento_consumidor_tipo }}
+              </label>
+              <label class="form-field">
+                <span>Documento</span>
+                {{ finish_form.documento_consumidor }}
+              </label>
             </div>
             <div class="pdv-payment-adjustments">
               <label class="form-field"><span>Desconto da venda</span>{{ finish_form.desconto }}</label>
@@ -192,10 +202,15 @@
                 <select name="pagamento_forma">
                   <option value="">Forma</option>
                   {% for forma in formas_pagamento %}
-                    <option value="{{ forma.id }}">{{ forma.nome }}</option>
+                    <option value="{{ forma.id }}" data-payment-type="{{ forma.tipo|upper }}">{{ forma.nome }}</option>
                   {% endfor %}
                 </select>
                 <div class="money-input money-input-lg"><span>R$</span><input type="number" name="pagamento_valor" step="0.01" inputmode="decimal" placeholder="0,00"></div>
+                <input type="hidden" name="pagamento_status">
+                <input type="hidden" name="pagamento_transacao_externa_id">
+                <input type="hidden" name="pagamento_nsu">
+                <input type="hidden" name="pagamento_codigo_autorizacao">
+                <input type="hidden" name="pagamento_mensagem_processadora">
                 <button type="button" class="pdv-remove-payment" aria-label="Remover forma de pagamento" title="Remover forma de pagamento (Del)"><i class="fa-regular fa-trash-can"></i><kbd>Del</kbd></button>
               </div>
             </div>
@@ -204,10 +219,15 @@
                 <select name="pagamento_forma">
                   <option value="">Forma</option>
                   {% for forma in formas_pagamento %}
-                    <option value="{{ forma.id }}">{{ forma.nome }}</option>
+                    <option value="{{ forma.id }}" data-payment-type="{{ forma.tipo|upper }}">{{ forma.nome }}</option>
                   {% endfor %}
                 </select>
                 <div class="money-input money-input-lg"><span>R$</span><input type="number" name="pagamento_valor" step="0.01" inputmode="decimal" placeholder="0,00"></div>
+                <input type="hidden" name="pagamento_status">
+                <input type="hidden" name="pagamento_transacao_externa_id">
+                <input type="hidden" name="pagamento_nsu">
+                <input type="hidden" name="pagamento_codigo_autorizacao">
+                <input type="hidden" name="pagamento_mensagem_processadora">
                 <button type="button" class="pdv-remove-payment" aria-label="Remover forma de pagamento" title="Remover forma de pagamento (Del)"><i class="fa-regular fa-trash-can"></i><kbd>Del</kbd></button>
               </div>
             </template>
@@ -338,7 +358,7 @@
   </div>
 
   <div class="pdv-modal" id="pdv-modal-refunds" aria-hidden="true">
-    <div class="pdv-modal-dialog">
+    <div class="pdv-modal-dialog pdv-refund-dialog">
       <header class="pdv-modal-header"><strong>Estorno de venda</strong><button type="button" data-pdv-modal-close aria-label="Fechar"><i class="fa-solid fa-xmark"></i></button></header>
       <div class="operation-notice operation-notice-warning">
         <i class="fa-solid fa-triangle-exclamation"></i>
@@ -348,26 +368,53 @@
         </div>
       </div>
       <input class="pdv-modal-search" type="search" placeholder="Filtrar por venda, operador ou cliente" data-pdv-modal-filter>
-      <div class="pdv-modal-list">
+      <div class="pdv-modal-list" data-pdv-modal-paginated data-page-size="4">
         {% for venda in vendas_recentes %}
-          <article class="pdv-refund-card pdv-modal-row">
-            <div>
+          <article
+            class="pdv-refund-card pdv-modal-row"
+            data-detail-url="{% url 'pdv:venda_detalhe' venda.id %}"
+            data-sale-print-url="{% url 'pdv:recibo_venda' venda.id %}?reimpressao=1"
+            data-sale-desktop-print-url="{% url 'pdv:venda_impressao_desktop' venda.id %}?reimpressao=1"
+            data-cancel-url="{% url 'pdv:cancelar_venda' venda.id %}"
+            data-sale-label="Venda #{{ venda.id }} - R$ {{ venda.total_liquido|floatformat:2 }}"
+          >
+            <div class="pdv-refund-summary">
               <strong>Venda #{{ venda.id }} - R$ {{ venda.total_liquido|floatformat:2 }}</strong>
               <small>{{ venda.data|date:"d/m/Y H:i" }} - {{ venda.cliente|default:"Cliente avulso" }} - Caixa #{{ venda.caixa_id }}</small>
             </div>
-            <form method="post" action="{% url 'pdv:cancelar_venda' venda.id %}" class="pdv-refund-form form-confirm" data-msg="Estornar esta venda e devolver todos os itens ao estoque?">
-              {% csrf_token %}
-              <input type="hidden" name="next" value="pdv">
-              <input type="text" name="motivo" placeholder="Motivo do estorno" required>
-              <input type="text" name="supervisor_usuario" placeholder="Supervisor/admin" autocomplete="username" required>
-              <input type="password" name="supervisor_senha" placeholder="Senha" autocomplete="current-password" required>
-              <button class="secondary-button danger-button" type="submit"><i class="fa-solid fa-rotate-left"></i> Estornar</button>
-            </form>
           </article>
         {% empty %}
           <div class="pdv-modal-empty">Nenhuma venda finalizada recente para estorno.</div>
         {% endfor %}
       </div>
+      <div class="pdv-modal-pagination" data-pdv-modal-pagination>
+        <button type="button" data-pdv-page="prev"><i class="fa-solid fa-chevron-left"></i> Anterior</button>
+        <span data-pdv-page-info>Pagina 1 de 1</span>
+        <button type="button" data-pdv-page="next">Proxima <i class="fa-solid fa-chevron-right"></i></button>
+      </div>
+      {% if vendas_recentes %}
+        <div class="pdv-refund-command-panel" data-refund-command-panel>
+          <div class="pdv-refund-selected">
+            <span>Venda selecionada</span>
+            <strong data-refund-selected-label>Selecione uma venda</strong>
+          </div>
+          <div class="pdv-refund-actions">
+            <a class="secondary-button" data-refund-open href="#"><i class="fa-solid fa-up-right-from-square"></i> Abrir <kbd>Enter</kbd></a>
+            <button class="secondary-button" type="button" data-refund-print><i class="fa-solid fa-print"></i> Reimprimir <kbd>F10</kbd></button>
+          </div>
+          <details class="pdv-refund-details" data-refund-details>
+            <summary><i class="fa-solid fa-rotate-left"></i> Estornar venda <kbd>F6</kbd></summary>
+            <form method="post" action="#" class="pdv-refund-form form-confirm" data-refund-cancel-form data-msg="Estornar esta venda e devolver todos os itens ao estoque?">
+              {% csrf_token %}
+              <input type="hidden" name="next" value="pdv">
+              <input type="text" name="motivo" placeholder="Motivo do estorno" required>
+              <input type="text" name="supervisor_usuario" placeholder="Supervisor/admin" autocomplete="username" required>
+              <input type="password" name="supervisor_senha" placeholder="Senha" autocomplete="current-password" required>
+              <button class="secondary-button danger-button" type="submit"><i class="fa-solid fa-check"></i> Confirmar <kbd>Ctrl+Enter</kbd></button>
+            </form>
+          </details>
+        </div>
+      {% endif %}
     </div>
   </div>
 
@@ -380,35 +427,35 @@
             <strong>Caixa #{{ caixa_aberto.id }} aberto</strong>
             <span>{{ caixa_aberto.filial }} - operador {{ caixa_aberto.usuario_abertura }}</span>
           </div>
-          <form method="post" action="{% url 'pdv:fechar_caixa' caixa_aberto.id %}" class="pdv-cash-close-form form-confirm" data-msg="Fechar o caixa atual?">
+          <form method="post" action="{% url 'pdv:fechar_caixa' caixa_aberto.id %}" class="pdv-cash-close-form form-confirm" data-cash-close-form data-msg="Fechar o caixa atual?">
             {% csrf_token %}
             <input type="hidden" name="next" value="pdv">
             <div class="money-input"><span>R$</span><input type="number" name="valor_final" step="0.01" min="0" inputmode="decimal" placeholder="Valor declarado" required></div>
-            <button class="primary-button" type="submit"><i class="fa-solid fa-lock"></i> Fechar caixa</button>
+            <button class="primary-button" type="submit"><i class="fa-solid fa-lock"></i> Fechar caixa <kbd>F5</kbd></button>
           </form>
         </section>
 
         <div class="pdv-modal-subtitle">Movimentos do caixa</div>
         <div class="pdv-cash-movement-grid">
-          <form method="post" action="{% url 'pdv:registrar_suprimento' caixa_aberto.id %}" class="pdv-cash-movement-form">
+          <form method="post" action="{% url 'pdv:registrar_suprimento' caixa_aberto.id %}" class="pdv-cash-movement-form" data-cash-movement-form="suprimento">
             {% csrf_token %}
             <input type="hidden" name="next" value="pdv">
-            <strong><i class="fa-solid fa-plus"></i> Suprimento</strong>
+            <strong><i class="fa-solid fa-plus"></i> Suprimento <kbd>F2</kbd></strong>
             <div class="money-input"><span>R$</span><input type="number" name="valor" step="0.01" min="0.01" inputmode="decimal" placeholder="Valor" required></div>
             <input type="text" name="motivo" placeholder="Motivo" required>
             <input type="text" name="supervisor_usuario" placeholder="Supervisor/admin" autocomplete="username" required>
             <input type="password" name="supervisor_senha" placeholder="Senha" autocomplete="current-password" required>
-            <button class="secondary-button" type="submit">Registrar</button>
+            <button class="secondary-button" type="submit">Registrar <kbd>Ctrl+Enter</kbd></button>
           </form>
-          <form method="post" action="{% url 'pdv:registrar_sangria' caixa_aberto.id %}" class="pdv-cash-movement-form">
+          <form method="post" action="{% url 'pdv:registrar_sangria' caixa_aberto.id %}" class="pdv-cash-movement-form" data-cash-movement-form="sangria">
             {% csrf_token %}
             <input type="hidden" name="next" value="pdv">
-            <strong><i class="fa-solid fa-minus"></i> Sangria</strong>
+            <strong><i class="fa-solid fa-minus"></i> Sangria <kbd>F3</kbd></strong>
             <div class="money-input"><span>R$</span><input type="number" name="valor" step="0.01" min="0.01" inputmode="decimal" placeholder="Valor" required></div>
             <input type="text" name="motivo" placeholder="Motivo" required>
             <input type="text" name="supervisor_usuario" placeholder="Supervisor/admin" autocomplete="username" required>
             <input type="password" name="supervisor_senha" placeholder="Senha" autocomplete="current-password" required>
-            <button class="secondary-button danger-button" type="submit">Registrar</button>
+            <button class="secondary-button danger-button" type="submit">Registrar <kbd>Ctrl+Enter</kbd></button>
           </form>
         </div>
       {% else %}
@@ -417,7 +464,7 @@
             <strong>Nenhum caixa aberto</strong>
             <span>Abra um caixa antes de iniciar vendas no PDV.</span>
           </div>
-          <a class="primary-button" href="{% url 'pdv:abrir_caixa' %}"><i class="fa-solid fa-lock-open"></i> Abrir caixa</a>
+          <a class="primary-button" id="pdv-open-cash-link" href="{% url 'pdv:abrir_caixa' %}"><i class="fa-solid fa-lock-open"></i> Abrir caixa <kbd>F2</kbd></a>
         </section>
       {% endif %}
 
@@ -444,7 +491,7 @@
           <div class="pdv-modal-empty">Nenhum caixa registrado.</div>
         {% endfor %}
       </div>
-      <div class="pdv-modal-footer"><a class="secondary-button" href="{% url 'pdv:caixas' %}">Gerenciar caixas</a></div>
+      <div class="pdv-modal-footer"><a class="secondary-button" id="pdv-manage-cash-link" href="{% url 'pdv:caixas' %}">Gerenciar caixas <kbd>Enter</kbd></a></div>
     </div>
   </div>
 </section>

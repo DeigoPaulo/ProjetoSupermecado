@@ -5,6 +5,8 @@ from django.core.exceptions import ValidationError
 from django.db import models
 from django.contrib.auth.hashers import check_password, make_password
 
+from apps.vendas.models import TipoDocumentoConsumidor
+
 
 class CanalPedido(models.TextChoices):
     LOJA_ONLINE = "LOJA_ONLINE", "Loja online"
@@ -114,6 +116,8 @@ class PedidoOnline(models.Model):
     filial = models.ForeignKey("empresas.Filial", on_delete=models.PROTECT, related_name="pedidos_online")
     cliente = models.ForeignKey("clientes.Cliente", on_delete=models.PROTECT, null=True, blank=True, related_name="pedidos_online")
     nome_cliente = models.CharField(max_length=150)
+    documento_cliente_tipo = models.CharField(max_length=20, choices=TipoDocumentoConsumidor.choices, default=TipoDocumentoConsumidor.NAO_IDENTIFICADO)
+    documento_cliente = models.CharField(max_length=32, blank=True)
     telefone = models.CharField(max_length=30, blank=True)
     canal = models.CharField(max_length=20, choices=CanalPedido.choices, default=CanalPedido.LOJA_ONLINE)
     tipo_entrega = models.CharField(max_length=20, choices=TipoEntrega.choices, default=TipoEntrega.RETIRADA)

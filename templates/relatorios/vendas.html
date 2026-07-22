@@ -59,7 +59,7 @@
         {% for item in produtos_mais_vendidos %}
           <tr>
             <td>{{ item.produto__nome }}</td>
-            <td>{{ item.quantidade }}</td>
+            <td>{{ item.quantidade|quantidade_br }}</td>
             <td>R$ {{ item.total|floatformat:2 }}</td>
           </tr>
         {% empty %}

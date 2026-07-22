@@ -12,7 +12,7 @@
 </header>
 
 <section class="panel">
-  <form method="post" enctype="multipart/form-data" class="form-grid">
+  <form method="post" enctype="multipart/form-data" class="form-grid" data-cadastro-lookup-url="{% url 'empresas:consulta_cadastro' %}">
     {% csrf_token %}
     {% if form.non_field_errors %}<div class="form-note form-note-danger">{{ form.non_field_errors }}</div>{% endif %}
 
@@ -20,9 +20,11 @@
       <h2>Identificacao</h2>
       <div class="form-note">
         <strong>Consulta CNPJ/CEP preparada.</strong>
-        <span>Na etapa de integracao externa, o sistema podera preencher razao social, nome fantasia, contato e endereco a partir do CNPJ ou CEP.</span>
+        <span>O sistema valida o CNPJ e reaproveita dados locais. Quando o provedor externo for configurado, tambem preencherá dados publicos automaticamente.</span>
+        <button class="secondary-button" type="button" data-cadastro-lookup-button><i class="fa-solid fa-magnifying-glass"></i> Consultar CNPJ</button>
         <a class="secondary-button" href="{% url 'empresas:consulta_cadastro' %}" target="_blank">Ver ponto de integracao</a>
       </div>
+      <div class="form-note" data-cadastro-lookup-feedback hidden></div>
       <div class="form-grid form-grid-inner">
         <label class="form-field"><span>{{ form.nome_fantasia.label }}</span>{{ form.nome_fantasia }}{{ form.nome_fantasia.errors }}</label>
         <label class="form-field"><span>{{ form.razao_social.label }}</span>{{ form.razao_social }}{{ form.razao_social.errors }}</label>

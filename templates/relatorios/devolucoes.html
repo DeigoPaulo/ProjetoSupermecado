@@ -22,7 +22,7 @@
 <section class="metrics-grid">
   <article class="metric"><span>Devolucoes</span><strong>{{ total_devolucoes }}</strong></article>
   <article class="metric"><span>Valor devolvido</span><strong>R$ {{ valor_total|floatformat:2 }}</strong></article>
-  <article class="metric"><span>Itens devolvidos</span><strong>{{ quantidade_itens|floatformat:3 }}</strong></article>
+  <article class="metric"><span>Itens devolvidos</span><strong>{{ quantidade_itens|quantidade_br }}</strong></article>
   <article class="metric"><span>Periodo</span><strong>{{ data_inicio|date:"d/m" }} - {{ data_fim|date:"d/m" }}</strong></article>
 </section>
 
@@ -55,7 +55,7 @@
         {% for item in produtos_mais_devolvidos %}
           <tr>
             <td>{{ item.produto__nome }}</td>
-            <td>{{ item.quantidade|floatformat:3 }}</td>
+            <td>{{ item.quantidade|quantidade_br }}</td>
             <td>R$ {{ item.valor|floatformat:2 }}</td>
           </tr>
         {% empty %}

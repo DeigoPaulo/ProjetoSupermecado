@@ -10,7 +10,7 @@ from .models import FaixaTaxaEntrega, FormaPagamentoPedido, IntegracaoMarketplac
 class PedidoOnlineForm(forms.ModelForm):
     class Meta:
         model = PedidoOnline
-        fields = ["filial", "cliente", "nome_cliente", "telefone", "canal", "tipo_entrega", "endereco_entrega", "referencia_externa", "taxa_entrega", "desconto", "observacoes"]
+        fields = ["filial", "cliente", "nome_cliente", "documento_cliente_tipo", "documento_cliente", "telefone", "canal", "tipo_entrega", "endereco_entrega", "referencia_externa", "taxa_entrega", "desconto", "observacoes"]
         widgets = {
             "endereco_entrega": forms.Textarea(attrs={"rows": 2}),
             "observacoes": forms.Textarea(attrs={"rows": 3}),
@@ -18,7 +18,11 @@ class PedidoOnlineForm(forms.ModelForm):
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        aplicar_select2(self, ["filial", "cliente"])
+        aplicar_select2(
+            self,
+            ["filial", "cliente"],
+            ajax_urls={"filial": "/empresas/filiais/busca.json", "cliente": "/clientes/busca.json"},
+        )
 
 
 class ItemPedidoOnlineForm(forms.ModelForm):
@@ -29,7 +33,7 @@ class ItemPedidoOnlineForm(forms.ModelForm):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.fields["produto"].queryset = Produto.objects.filter(vendido_no_marketplace=True).order_by("nome")
-        aplicar_select2(self, ["produto"])
+        aplicar_select2(self, ["produto"], ajax_urls={"produto": "/estoque/produtos/busca.json?marketplace=1"})
 
 
 class PagamentoPedidoForm(forms.Form):
@@ -44,7 +48,7 @@ class IntegracaoMarketplaceForm(forms.ModelForm):
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        aplicar_select2(self, ["filial"])
+        aplicar_select2(self, ["filial"], ajax_urls={"filial": "/empresas/filiais/busca.json"})
 
 
 class PoliticaEntregaForm(forms.ModelForm):
@@ -73,3 +77,4 @@ FaixaTaxaEntregaFormSet = inlineformset_factory(
 
 class CalcularEntregaForm(forms.Form):
     distancia_entrega_km = forms.DecimalField(label="Distancia ate o cliente (km)", max_digits=7, decimal_places=2, min_value=0)
+    bairro_entrega = forms.CharField(label="Bairro", max_length=120, required=False)

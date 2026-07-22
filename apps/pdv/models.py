@@ -116,6 +116,26 @@ class TerminalPdv(models.Model):
         return self.ativo and self.status_licenca == StatusLicencaTerminal.LIBERADA
 
 
+class EventoDispositivoTerminal(models.Model):
+    terminal = models.ForeignKey(TerminalPdv, on_delete=models.CASCADE, related_name="eventos_dispositivo")
+    tipo = models.CharField(max_length=40)
+    status = models.CharField(max_length=40, blank=True)
+    mensagem = models.CharField(max_length=255, blank=True)
+    payload = models.JSONField(default=dict, blank=True)
+    ocorrido_em = models.DateTimeField(null=True, blank=True)
+    recebido_em = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["-recebido_em"]
+        indexes = [
+            models.Index(fields=["terminal", "-recebido_em"]),
+            models.Index(fields=["tipo", "status"]),
+        ]
+
+    def __str__(self):
+        return f"{self.terminal} - {self.tipo} - {self.status or 'evento'}"
+
+
 class Caixa(models.Model):
     filial = models.ForeignKey("empresas.Filial", on_delete=models.PROTECT, related_name="caixas")
     usuario_abertura = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.PROTECT, related_name="caixas_abertos")

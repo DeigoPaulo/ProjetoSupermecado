@@ -1,0 +1,116 @@
+{% extends "base.html" %}
+
+{% block title %}Servidor local administrativo{% endblock %}
+
+{% block content %}
+<header class="page-header">
+  <div>
+    <h1>Servidor local administrativo</h1>
+    <p>Implantação para supermercados que operam sem internet, em rede interna ou com sincronização opcional.</p>
+  </div>
+  <div class="actions">
+    <a class="secondary-button" href="{% url 'configuracoes:servidor_local_manifest' %}"><i class="fa-solid fa-code"></i> Manifesto JSON</a>
+    <a class="secondary-button" href="{% url 'empresas:lista' %}"><i class="fa-solid fa-building"></i> Empresas</a>
+  </div>
+</header>
+
+<section class="operation-notice">
+  <i class="fa-solid fa-server"></i>
+  <div>
+    <strong>O administrativo local usa o mesmo ERP, não um segundo sistema.</strong>
+    <span>O servidor local roda banco, painel, serviços, backup e filas; o gerente acessa pelo navegador, enquanto o PDV desktop segue separado e restrito ao operador.</span>
+  </div>
+</section>
+
+<section class="metrics-grid">
+  <article class="metric"><span>Contrato</span><strong>{{ payload.contrato }}</strong></article>
+  <article class="metric"><span>Local</span><strong>{{ modos.local.empresas }}</strong></article>
+  <article class="metric"><span>Híbrido</span><strong>{{ modos.hibrido.empresas }}</strong></article>
+  <article class="metric"><span>Nuvem/agente</span><strong>{{ modos.nuvem_agente.empresas }}</strong></article>
+  <article class="metric"><span>PDV separado</span><strong>Sim</strong></article>
+</section>
+
+<section class="split-grid">
+  <article class="panel">
+    <h2>Arquitetura recomendada</h2>
+    <dl class="detail-list">
+      <dt>Servidor local</dt>
+      <dd>Django, banco de dados, arquivos de mídia, backup, filas de sincronização e serviços internos da loja.</dd>
+      <dt>Acesso administrativo</dt>
+      <dd>Navegador em localhost ou rede interna; um app shell pode abrir o painel, mas sem duplicar o ERP.</dd>
+      <dt>PDV dos caixas</dt>
+      <dd>Aplicativo desktop separado, licenciado por terminal e limitado a venda, caixa, consulta, pagamento e estorno autorizado.</dd>
+      <dt>Nuvem opcional</dt>
+      <dd>Quando contratada, sincroniza dados por API e filas; se a internet cair, a loja continua operando localmente.</dd>
+    </dl>
+  </article>
+
+  <article class="panel">
+    <h2>Pendências técnicas</h2>
+    <div class="table-wrapper">
+      <table>
+        <thead><tr><th>Item</th><th>Status</th><th>Descrição</th></tr></thead>
+        <tbody>
+          {% for pendencia in pendencias %}
+            <tr>
+              <td><strong>{{ pendencia.titulo }}</strong></td>
+              <td><span class="status {% if pendencia.status == 'iniciado' %}status-warning{% else %}status-muted{% endif %}">{{ pendencia.status|title }}</span></td>
+              <td>{{ pendencia.descricao }}</td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </article>
+</section>
+
+<section class="panel">
+  <div class="panel-heading">
+    <div>
+      <h2>Artefatos locais</h2>
+      <p>Arquivos iniciais para rodar e manter o servidor administrativo dentro da loja.</p>
+    </div>
+  </div>
+  <div class="table-wrapper">
+    <table>
+      <thead><tr><th>Uso</th><th>Arquivo</th></tr></thead>
+      <tbody>
+        <tr><td>Subir servidor</td><td><code>{{ payload.scripts.subir_servidor }}</code></td></tr>
+        <tr><td>Agendar servidor</td><td><code>{{ payload.scripts.registrar_servidor }}</code></td></tr>
+        <tr><td>Backup local</td><td><code>{{ payload.scripts.backup_local }}</code></td></tr>
+        <tr><td>Agendar backup</td><td><code>{{ payload.scripts.registrar_backup }}</code></td></tr>
+        <tr><td>Senha do backup criptografado</td><td><code>{{ payload.scripts.backup_criptografia_env }}</code></td></tr>
+        <tr><td>Manter somente backup criptografado</td><td><code>{{ payload.scripts.backup_criptografia_flag }}</code></td></tr>
+        <tr><td>Agendar sincronização</td><td><code>{{ payload.scripts.registrar_sincronizacao }}</code></td></tr>
+        <tr><td>Guia operacional</td><td><code>{{ payload.scripts.guia }}</code></td></tr>
+      </tbody>
+    </table>
+  </div>
+</section>
+
+<section class="panel table-panel">
+  <div class="panel-heading">
+    <div>
+      <h2>Empresas e modo de implantação</h2>
+      <p>Configure o modo em Empresas e filiais conforme a realidade operacional da loja.</p>
+    </div>
+  </div>
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>Empresa</th><th>Modo</th><th>Filiais</th><th>Sincronização</th></tr></thead>
+      <tbody>
+        {% for empresa in empresas %}
+          <tr>
+            <td><strong>{{ empresa.nome }}</strong></td>
+            <td>{{ empresa.modo_implantacao_label }}</td>
+            <td>{{ empresa.filiais }}</td>
+            <td>{% if empresa.sincronizacao_automatica %}<span class="status status-success">Automática</span>{% else %}<span class="status status-muted">Manual/desativada</span>{% endif %}</td>
+          </tr>
+        {% empty %}
+          <tr><td colspan="4" class="empty">Nenhuma empresa cadastrada.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</section>
+{% endblock %}

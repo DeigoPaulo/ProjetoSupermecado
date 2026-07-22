@@ -418,6 +418,9 @@ class ComprasFinanceiroTests(TestCase):
         self.assertContains(response, 'name="supervisor_usuario" autocomplete="username"')
         self.assertContains(response, 'class="no-upper"')
         self.assertContains(response, "select2-field")
+        self.assertContains(response, 'data-ajax-url="/fornecedores/busca.json"')
+        self.assertContains(response, 'data-ajax-url="/empresas/filiais/busca.json"')
+        self.assertContains(response, 'data-ajax-url="/estoque/produtos/busca.json"')
 
     def test_lista_compras_destaca_rascunhos_e_filtra_status(self):
         self.client.force_login(self.admin)

@@ -56,6 +56,8 @@ class ProdutoViewsTests(TestCase):
         self.assertContains(response, "Sem imagem cadastrada")
         self.assertContains(response, "Galeria adicional")
         self.assertContains(response, 'name="galeria-TOTAL_FORMS"')
+        self.assertContains(response, 'data-ajax-url="/produtos/categorias/busca.json"')
+        self.assertContains(response, 'data-ajax-url="/produtos/marcas/busca.json"')
 
     def test_edicao_salva_dados_da_galeria(self):
         imagem = SimpleUploadedFile(
@@ -227,6 +229,31 @@ class ProdutoViewsTests(TestCase):
         self.assertEqual(response.context["payload_etiquetas"]["modelo"]["largura_mm"], 80.0)
         self.assertEqual(response.context["payload_etiquetas"]["itens"][0]["copias"], 1)
 
+    def test_etiqueta_profissional_oferece_impressao_direta_ppla(self):
+        empresa = Empresa.objects.create(
+            razao_social="Mercado Argox Ltda",
+            nome_fantasia="Mercado Argox",
+            cnpj="12345678000198",
+        )
+        ConfiguracaoImpressao.objects.create(
+            empresa=empresa,
+            tipo_documento=TipoDocumentoImpressao.ETIQUETA,
+            largura_etiqueta_mm=Decimal("80.00"),
+            altura_etiqueta_mm=Decimal("40.00"),
+            impressora_padrao="Argox OS-214",
+            linguagem_impressora="PPLA",
+        )
+
+        response = self.client.get(
+            "/produtos/etiquetas/",
+            {"busca": self.produto.codigo_barras, "modelo": "configurado", "quantidade_copias": "1"},
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "Imprimir direto")
+        self.assertEqual(response.context["payload_etiquetas"]["linguagem"], "PPLA")
+        self.assertEqual(response.context["payload_etiquetas"]["impressora_padrao"], "Argox OS-214")
+
     def test_etiqueta_profissional_usa_modelo_nomeado(self):
         empresa = Empresa.objects.create(
             razao_social="Mercado Etiquetas Ltda",
@@ -334,3 +361,16 @@ class ProdutoViewsTests(TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertContains(response, "Marca comercial")
         self.assertContains(response, "analise de vendas, etiquetas")
+
+    def test_busca_json_retorna_categoria_e_marca_para_select2(self):
+        from .models import Marca
+
+        marca = Marca.objects.create(nome="Marca Teste")
+
+        categoria_response = self.client.get("/produtos/categorias/busca.json", {"q": "Merce"})
+        marca_response = self.client.get("/produtos/marcas/busca.json", {"q": "Teste"})
+
+        self.assertEqual(categoria_response.status_code, 200)
+        self.assertEqual(categoria_response.json()["results"][0]["id"], self.categoria.id)
+        self.assertEqual(marca_response.status_code, 200)
+        self.assertEqual(marca_response.json()["results"][0]["id"], marca.id)

@@ -7,10 +7,47 @@
     <p>Raio, pedido minimo, frete gratis e faixas configuradas por filial.</p>
   </div>
   <div class="actions">
+    <a class="secondary-button" href="{% url 'marketplace:politicas_entrega_diagnostico' %}"><i class="fa-solid fa-stethoscope"></i> Diagnostico JSON</a>
     <a class="secondary-button" href="{% url 'marketplace:pedidos' %}"><i class="fa-solid fa-cart-shopping"></i> Pedidos</a>
     <a class="primary-button" href="{% url 'marketplace:nova_politica_entrega' %}"><i class="fa-solid fa-plus"></i> Nova politica</a>
   </div>
 </header>
+
+<section class="panel">
+  <div class="panel-title">Simular entrega</div>
+  <form class="form-grid" method="get">
+    <input type="hidden" name="simular" value="1">
+    <label class="form-field">
+      <span>Politica</span>
+      <select name="politica" required>
+        <option value="">Selecione</option>
+        {% for politica in politicas %}
+          <option value="{{ politica.pk }}" {% if request.GET.politica == politica.pk|stringformat:"s" %}selected{% endif %}>{{ politica.filial }}</option>
+        {% endfor %}
+      </select>
+    </label>
+    <label class="form-field"><span>Subtotal do pedido</span><input type="number" name="subtotal" min="0" step="0.01" value="{{ request.GET.subtotal }}" placeholder="0,00" required></label>
+    <label class="form-field"><span>Distancia em km</span><input type="number" name="distancia" min="0" step="0.01" value="{{ request.GET.distancia }}" placeholder="0,00"></label>
+    <label class="form-field form-field-wide"><span>Endereço para geocodificação</span><input type="text" name="endereco" value="{{ request.GET.endereco }}" placeholder="Opcional: usado quando a distância não for informada"></label>
+    <label class="form-field"><span>Bairro</span><input type="text" name="bairro" value="{{ request.GET.bairro }}" placeholder="Opcional se a politica nao restringe bairro"></label>
+    <label class="form-field form-field-action"><span>&nbsp;</span><button class="primary-button" type="submit"><i class="fa-solid fa-calculator"></i> Simular</button></label>
+  </form>
+  {% if simulacao %}
+    {% if simulacao.erro %}
+      <div class="notice notice-warning">{{ simulacao.erro }}</div>
+    {% else %}
+      <div class="summary-grid">
+        <article class="metric"><span>Regra aplicada</span><strong>{{ simulacao.regra }}</strong></article>
+        <article class="metric"><span>Distância</span><strong>{{ simulacao.distancia }} km</strong></article>
+        <article class="metric"><span>Taxa</span><strong>R$ {{ simulacao.taxa|floatformat:2 }}</strong></article>
+        <article class="metric"><span>Total simulado</span><strong>R$ {{ simulacao.total|floatformat:2 }}</strong></article>
+      </div>
+      {% if simulacao.geocodificacao %}
+        <div class="notice notice-info">Distância calculada pelo provedor de geocodificação configurado.</div>
+      {% endif %}
+    {% endif %}
+  {% endif %}
+</section>
 
 <section class="delivery-policy-grid">
   {% for politica in politicas %}

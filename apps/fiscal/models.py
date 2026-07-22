@@ -99,6 +99,7 @@ class NaturezaOperacao(models.Model):
 class DocumentoFiscal(models.Model):
     filial = models.ForeignKey("empresas.Filial", on_delete=models.PROTECT, related_name="documentos_fiscais")
     venda = models.ForeignKey("vendas.Venda", on_delete=models.PROTECT, related_name="documentos_fiscais", null=True, blank=True)
+    pedido_online = models.ForeignKey("marketplace.PedidoOnline", on_delete=models.PROTECT, related_name="documentos_fiscais", null=True, blank=True)
     natureza_operacao = models.ForeignKey(NaturezaOperacao, on_delete=models.PROTECT, related_name="documentos_fiscais", null=True, blank=True)
     tipo_documento = models.CharField(max_length=10, choices=TipoDocumentoFiscal.choices, default=TipoDocumentoFiscal.NFCE)
     ambiente = models.CharField(max_length=20, choices=AmbienteFiscal.choices, default=AmbienteFiscal.HOMOLOGACAO)

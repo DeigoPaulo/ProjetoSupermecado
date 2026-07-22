@@ -1,8 +1,12 @@
 import csv
 import hmac
 import json
+import re
 import uuid
 from pathlib import Path
+from urllib.error import HTTPError, URLError
+from urllib.parse import urlencode
+from urllib.request import Request, urlopen
 
 from django.conf import settings
 from django.contrib import messages
@@ -13,12 +17,161 @@ from django.http import HttpResponse, JsonResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.utils import timezone
 from django.views.decorators.csrf import csrf_exempt
-from django.views.decorators.http import require_POST
+from django.views.decorators.http import require_GET, require_POST
 
-from apps.accounts.permissions import SISTEMA, role_required
+from apps.accounts.permissions import CLIENTES, COMPRAS, ESTOQUE, PDV, RELATORIOS, SISTEMA, role_required
 
 from .forms import EmpresaForm, FilialForm
 from .models import DocumentoFiscalSincronizado, Empresa, EventoEntradaSincronizacao, EventoSincronizacao, Filial, StatusEventoEntrada, StatusSincronizacao, VendaSincronizada
+
+
+def _apenas_digitos(valor):
+    return re.sub(r"\D", "", valor or "")
+
+
+def _cnpj_valido(cnpj):
+    digitos = _apenas_digitos(cnpj)
+    if len(digitos) != 14 or digitos == digitos[0] * 14:
+        return False
+    pesos_primeiro = [5, 4, 3, 2, 9, 8, 7, 6, 5, 4, 3, 2]
+    pesos_segundo = [6] + pesos_primeiro
+
+    def calcular(posicoes, pesos):
+        soma = sum(int(digito) * peso for digito, peso in zip(digitos[:posicoes], pesos))
+        resto = soma % 11
+        return "0" if resto < 2 else str(11 - resto)
+
+    return digitos[-2:] == calcular(12, pesos_primeiro) + calcular(13, pesos_segundo)
+
+
+def _dados_empresa(empresa):
+    return {
+        "tipo": "empresa",
+        "id": empresa.pk,
+        "razao_social": empresa.razao_social,
+        "nome_fantasia": empresa.nome_fantasia,
+        "cnpj": empresa.cnpj,
+        "telefone": empresa.telefone,
+        "email": empresa.email,
+        "endereco": empresa.endereco,
+        "regime_tributario": empresa.regime_tributario,
+    }
+
+
+def _dados_filial(filial):
+    return {
+        "tipo": "filial",
+        "id": filial.pk,
+        "empresa_id": filial.empresa_id,
+        "empresa": filial.empresa.nome_fantasia,
+        "nome": filial.nome,
+        "nome_fantasia": filial.nome,
+        "razao_social": filial.empresa.razao_social,
+        "cnpj": filial.cnpj or filial.empresa.cnpj,
+        "telefone": filial.telefone,
+        "email": filial.empresa.email,
+        "endereco": filial.endereco,
+        "municipio": filial.municipio,
+        "uf": filial.uf,
+        "codigo_municipio_ibge": filial.codigo_municipio_ibge,
+    }
+
+
+def _buscar_empresa_por_cnpj(digitos):
+    for empresa in Empresa.objects.all():
+        if _apenas_digitos(empresa.cnpj) == digitos:
+            return empresa
+    return None
+
+
+def _buscar_filial_por_cnpj(digitos):
+    for filial in Filial.objects.select_related("empresa"):
+        if _apenas_digitos(filial.cnpj or filial.empresa.cnpj) == digitos:
+            return filial
+    return None
+
+
+def _montar_url_provider(base_url, tipo, valor):
+    if "{" in base_url:
+        return base_url.format(cnpj=valor, cep=valor, valor=valor)
+    separador = "&" if "?" in base_url else "?"
+    return f"{base_url}{separador}{urlencode({tipo: valor})}"
+
+
+def _normalizar_endereco(dados):
+    partes = [
+        dados.get("logradouro") or dados.get("endereco") or dados.get("street"),
+        dados.get("numero") or dados.get("number"),
+        dados.get("bairro") or dados.get("district"),
+        dados.get("municipio") or dados.get("localidade") or dados.get("city"),
+        dados.get("uf") or dados.get("state"),
+        dados.get("cep") or dados.get("zip_code"),
+    ]
+    return ", ".join(str(parte).strip() for parte in partes if str(parte or "").strip())
+
+
+def _normalizar_payload_provider(tipo, valor, dados):
+    if tipo == "cep":
+        normalizado = {
+            "tipo": "cep",
+            "cep": dados.get("cep") or valor,
+            "endereco": _normalizar_endereco(dados),
+            "municipio": dados.get("municipio") or dados.get("localidade") or dados.get("city") or "",
+            "uf": dados.get("uf") or dados.get("state") or "",
+            "codigo_municipio_ibge": dados.get("codigo_municipio_ibge") or dados.get("ibge") or dados.get("city_ibge") or "",
+        }
+    else:
+        normalizado = {
+            "tipo": "cnpj",
+            "cnpj": dados.get("cnpj") or valor,
+            "razao_social": dados.get("razao_social") or dados.get("nome") or dados.get("name") or "",
+            "nome_fantasia": dados.get("nome_fantasia") or dados.get("fantasia") or dados.get("alias") or "",
+            "telefone": dados.get("telefone") or dados.get("phone") or "",
+            "email": dados.get("email") or "",
+            "endereco": _normalizar_endereco(dados),
+            "municipio": dados.get("municipio") or dados.get("localidade") or dados.get("city") or "",
+            "uf": dados.get("uf") or dados.get("state") or "",
+            "codigo_municipio_ibge": dados.get("codigo_municipio_ibge") or dados.get("ibge") or dados.get("city_ibge") or "",
+        }
+    return {chave: valor for chave, valor in normalizado.items() if valor not in (None, "")}
+
+
+def _consultar_provider_cadastro(provider_url, tipo, valor):
+    url = _montar_url_provider(provider_url, tipo, valor)
+    timeout = getattr(settings, "CADASTRO_LOOKUP_TIMEOUT_SEGUNDOS", 5)
+    requisicao = Request(url, headers={"Accept": "application/json", "User-Agent": "MercaFlowERP/cadastro_lookup_v1"})
+    try:
+        resposta = urlopen(requisicao, timeout=timeout)
+        try:
+            status_code = getattr(resposta, "status", 200)
+            conteudo = resposta.read().decode("utf-8")
+        finally:
+            close = getattr(resposta, "close", None)
+            if close:
+                close()
+    except HTTPError as exc:
+        return {"status": "external_provider_error", "mensagem": f"Provedor externo respondeu HTTP {exc.code}.", "http_status": exc.code}
+    except (URLError, TimeoutError, OSError) as exc:
+        return {"status": "external_provider_error", "mensagem": f"Falha ao consultar provedor externo: {exc}."}
+    try:
+        dados = json.loads(conteudo)
+    except json.JSONDecodeError:
+        return {"status": "external_provider_error", "mensagem": "Provedor externo retornou resposta que nao e JSON."}
+    if status_code >= 400:
+        return {"status": "external_provider_error", "mensagem": f"Provedor externo respondeu HTTP {status_code}.", "http_status": status_code}
+    if isinstance(dados, dict) and (dados.get("erro") is True or str(dados.get("status", "")).lower() in {"erro", "error", "not_found"}):
+        return {"status": "external_not_found", "mensagem": "Provedor externo nao encontrou dados para a consulta.", "provider_payload": dados}
+    if not isinstance(dados, dict):
+        return {"status": "external_provider_error", "mensagem": "Provedor externo retornou formato inesperado."}
+    return {
+        "status": "external_match",
+        "mensagem": "Cadastro preenchido por provedor externo configurado.",
+        "dados": _normalizar_payload_provider(tipo, valor, dados),
+        "provider_payload": dados,
+    }
+
+
+BUSCA_FILIAIS_ROLES = SISTEMA | CLIENTES | ESTOQUE | COMPRAS | RELATORIOS | PDV
 
 
 def _erro_api(mensagem, status):
@@ -85,6 +238,43 @@ def empresas(request):
 
 
 @login_required
+@role_required(*BUSCA_FILIAIS_ROLES)
+@require_GET
+def filiais_busca(request):
+    termo = (request.GET.get("q") or request.GET.get("term") or "").strip()
+    if not termo:
+        return JsonResponse({"results": []})
+    filiais = (
+        Filial.objects.select_related("empresa")
+        .filter(
+            Q(nome__icontains=termo)
+            | Q(empresa__nome_fantasia__icontains=termo)
+            | Q(cnpj__icontains=termo)
+            | Q(municipio__icontains=termo)
+            | Q(codigo_municipio_ibge__icontains=termo)
+        )
+        .order_by("empresa__nome_fantasia", "nome")[:20]
+    )
+    return JsonResponse(
+        {
+            "results": [
+                {
+                    "id": filial.pk,
+                    "text": f"{filial.empresa.nome_fantasia} - {filial.nome} | {filial.municipio or filial.cnpj or 'sem municipio'}",
+                    "empresa": filial.empresa.nome_fantasia,
+                    "nome": filial.nome,
+                    "cnpj": filial.cnpj or filial.empresa.cnpj,
+                    "municipio": filial.municipio,
+                    "uf": filial.uf,
+                    "codigo_municipio_ibge": filial.codigo_municipio_ibge,
+                }
+                for filial in filiais
+            ]
+        }
+    )
+
+
+@login_required
 @role_required(*SISTEMA)
 def empresa_form(request, pk=None):
     empresa = get_object_or_404(Empresa, pk=pk) if pk else None
@@ -111,21 +301,57 @@ def filial_form(request, pk=None):
 @login_required
 @role_required(*SISTEMA)
 def consulta_cadastro_placeholder(request):
+    cnpj = request.GET.get("cnpj", "").strip()
+    cep = request.GET.get("cep", "").strip()
+    provider_cnpj = getattr(settings, "CADASTRO_CNPJ_PROVIDER_URL", "")
+    provider_cep = getattr(settings, "CADASTRO_CEP_PROVIDER_URL", "")
+    payload_base = {
+        "contrato": "cadastro_lookup_v1",
+        "provedores": {
+            "cnpj_configurado": bool(provider_cnpj),
+            "cep_configurado": bool(provider_cep),
+            "timeout_segundos": getattr(settings, "CADASTRO_LOOKUP_TIMEOUT_SEGUNDOS", 5),
+        },
+        "campos_previstos": [
+            "cnpj",
+            "razao_social",
+            "nome_fantasia",
+            "telefone",
+            "email",
+            "endereco",
+            "municipio",
+            "uf",
+            "codigo_municipio_ibge",
+        ],
+    }
+    if cnpj:
+        digitos = _apenas_digitos(cnpj)
+        if not _cnpj_valido(digitos):
+            return JsonResponse({**payload_base, "status": "invalid", "mensagem": "CNPJ invalido.", "consulta": {"tipo": "cnpj", "valor": digitos}}, status=400)
+        filial = _buscar_filial_por_cnpj(digitos)
+        empresa = _buscar_empresa_por_cnpj(digitos)
+        if filial:
+            return JsonResponse({**payload_base, "status": "local_match", "mensagem": "Cadastro encontrado nas filiais locais.", "dados": _dados_filial(filial)})
+        if empresa:
+            return JsonResponse({**payload_base, "status": "local_match", "mensagem": "Cadastro encontrado nas empresas locais.", "dados": _dados_empresa(empresa)})
+        if provider_cnpj:
+            resultado = _consultar_provider_cadastro(provider_cnpj, "cnpj", digitos)
+            status_http = 502 if resultado["status"] == "external_provider_error" else 200
+            return JsonResponse({**payload_base, "consulta": {"tipo": "cnpj", "valor": digitos}, **resultado}, status=status_http)
+        return JsonResponse({**payload_base, "status": "external_provider_required", "mensagem": "CNPJ valido, mas nao encontrado localmente. Configure um provedor externo para preenchimento automatico.", "consulta": {"tipo": "cnpj", "valor": digitos}})
+    if cep:
+        digitos = _apenas_digitos(cep)
+        if len(digitos) != 8:
+            return JsonResponse({**payload_base, "status": "invalid", "mensagem": "CEP deve ter 8 digitos.", "consulta": {"tipo": "cep", "valor": digitos}}, status=400)
+        if provider_cep:
+            resultado = _consultar_provider_cadastro(provider_cep, "cep", digitos)
+            status_http = 502 if resultado["status"] == "external_provider_error" else 200
+            return JsonResponse({**payload_base, "consulta": {"tipo": "cep", "valor": digitos}, **resultado}, status=status_http)
+        return JsonResponse({**payload_base, "status": "external_provider_required", "mensagem": "CEP valido. Configure um provedor externo para preencher endereco, municipio, UF e IBGE.", "consulta": {"tipo": "cep", "valor": digitos}})
     return JsonResponse(
-        {
+        {**payload_base,
             "status": "integration_pending",
-            "mensagem": "Consulta automatica de CNPJ/CEP sera conectada a uma API externa em etapa futura.",
-            "campos_previstos": [
-                "cnpj",
-                "razao_social",
-                "nome_fantasia",
-                "telefone",
-                "email",
-                "endereco",
-                "municipio",
-                "uf",
-                "codigo_municipio_ibge",
-            ],
+            "mensagem": "Informe cnpj ou cep na query string. A consulta local ja valida CNPJ e reaproveita cadastros existentes; provedores externos podem ser conectados por configuracao.",
         }
     )
 
@@ -190,6 +416,75 @@ def _sincronizacao_querysets(request):
     }
 
 
+def _sincronizacao_diagnostico_payload(request):
+    dados = _sincronizacao_querysets(request)
+    eventos_qs = dados["eventos_qs"]
+    eventos_entrada_qs = dados["eventos_entrada_qs"]
+    vendas_qs = dados["vendas_qs"]
+    documentos_fiscais_qs = dados["documentos_fiscais_qs"]
+    saida = dict(eventos_qs.values_list("status").annotate(total=Count("id")))
+    entrada = dict(eventos_entrada_qs.values_list("status").annotate(total=Count("id")))
+    empresas_por_modo = dict(Empresa.objects.filter(is_active=True).values_list("modo_implantacao").annotate(total=Count("id")))
+    pendentes_saida = saida.get(StatusSincronizacao.PENDENTE, 0)
+    erros_saida = saida.get(StatusSincronizacao.ERRO, 0)
+    conflitos_entrada = entrada.get(StatusEventoEntrada.CONFLITO, 0)
+    erros_entrada = entrada.get(StatusEventoEntrada.ERRO, 0)
+    recebidos_entrada = entrada.get(StatusEventoEntrada.RECEBIDO, 0)
+    alertas = []
+    if erros_saida:
+        alertas.append(f"{erros_saida} evento(s) de saida com erro aguardando reprocessamento.")
+    if erros_entrada:
+        alertas.append(f"{erros_entrada} evento(s) de entrada com erro técnico.")
+    if conflitos_entrada:
+        alertas.append(f"{conflitos_entrada} conflito(s) de entrada exigem decisão manual.")
+    if pendentes_saida or recebidos_entrada:
+        alertas.append("Fila possui eventos aguardando o comando processar_sincronizacao_completa.")
+    if Empresa.objects.filter(is_active=True, sincronizacao_automatica=True, url_sincronizacao="").exists():
+        alertas.append("Existe empresa com sincronizacao automatica sem URL configurada.")
+
+    proxima_saida = eventos_qs.filter(status__in=[StatusSincronizacao.PENDENTE, StatusSincronizacao.ERRO]).order_by("proxima_tentativa_em", "criado_em").first()
+    proxima_entrada = eventos_entrada_qs.filter(status__in=[StatusEventoEntrada.RECEBIDO, StatusEventoEntrada.ERRO, StatusEventoEntrada.CONFLITO]).order_by("recebido_em").first()
+    return {
+        "status": "ok",
+        "gerado_em": timezone.localtime().isoformat(),
+        "filtros": dados["filtros"],
+        "filas": {
+            "saida": {
+                "pendentes": pendentes_saida,
+                "processando": saida.get(StatusSincronizacao.PROCESSANDO, 0),
+                "enviados": saida.get(StatusSincronizacao.ENVIADO, 0),
+                "erros": erros_saida,
+                "proxima_tentativa": timezone.localtime(proxima_saida.proxima_tentativa_em).isoformat() if proxima_saida and proxima_saida.proxima_tentativa_em else None,
+                "proximo_evento": str(proxima_saida.identificador) if proxima_saida else None,
+            },
+            "entrada": {
+                "recebidos": recebidos_entrada,
+                "processados": entrada.get(StatusEventoEntrada.PROCESSADO, 0),
+                "conflitos": conflitos_entrada,
+                "erros": erros_entrada,
+                "resolvidos": entrada.get(StatusEventoEntrada.RESOLVIDO, 0),
+                "proximo_evento": str(proxima_entrada.identificador) if proxima_entrada else None,
+            },
+        },
+        "retaguarda": {
+            "vendas": vendas_qs.count(),
+            "valor_vendas": str(vendas_qs.aggregate(total=Sum("total_liquido"))["total"] or 0),
+            "documentos_fiscais": documentos_fiscais_qs.count(),
+        },
+        "empresas": {
+            "total_ativas": Empresa.objects.filter(is_active=True).count(),
+            "por_modo": empresas_por_modo,
+            "sincronizacao_automatica": Empresa.objects.filter(is_active=True, sincronizacao_automatica=True).count(),
+        },
+        "operacao": {
+            "comando": "python manage.py processar_sincronizacao_completa --limite-saida 50 --limite-entrada 50",
+            "agendador_windows": "schtasks /Create /TN \"Supermercado Sincronizacao\" /SC MINUTE /MO 1 ...",
+            "alertas": alertas,
+            "pronto": not alertas,
+        },
+    }
+
+
 @login_required
 @role_required(*SISTEMA)
 def sincronizacao(request):
@@ -212,6 +507,7 @@ def sincronizacao(request):
         'schtasks /Create /TN "Supermercado Sincronizacao" /SC MINUTE /MO 1 '
         f'/TR "cmd /c cd /d {base_dir} && {comando_sincronizacao}" /F'
     )
+    script_agendador_sincronizacao = r".\scripts\register_sync_task.ps1 -IntervaloMinutos 1 -Force"
     context = {
         "eventos": eventos,
         "eventos_entrada": eventos_entrada,
@@ -235,8 +531,15 @@ def sincronizacao(request):
         "total_documentos_fiscais_sincronizados": documentos_fiscais_qs.count(),
         "comando_sincronizacao": comando_sincronizacao,
         "comando_agendador": comando_agendador,
+        "script_agendador_sincronizacao": script_agendador_sincronizacao,
     }
     return render(request, "empresas/sincronizacao.html", context)
+
+
+@login_required
+@role_required(*SISTEMA)
+def sincronizacao_diagnostico(request):
+    return JsonResponse(_sincronizacao_diagnostico_payload(request))
 
 
 @login_required

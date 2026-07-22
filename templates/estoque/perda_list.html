@@ -24,7 +24,7 @@
           <td>{{ perda.filial }}</td>
           <td>{{ perda.usuario }}</td>
           <td><span class="status">{{ perda.get_tipo_display }}</span></td>
-          <td>{{ perda.quantidade }}</td>
+          <td>{{ perda.quantidade|quantidade_br }}</td>
           <td>R$ {{ perda.valor_custo_estimado|floatformat:2 }}</td>
           <td>R$ {{ perda.valor_venda_estimado|floatformat:2 }}</td>
           <td>{{ perda.motivo }}</td>

@@ -15,10 +15,10 @@
 </header>
 
 <section class="metrics-grid">
-  <article class="metric"><span>Saldo fisico</span><strong>{{ saldo_total|floatformat:3 }}</strong></article>
-  <article class="metric"><span>Reservado</span><strong>{{ reservado_total|floatformat:3 }}</strong></article>
-  <article class="metric"><span>Entradas/Ajustes</span><strong>{{ entradas|floatformat:3 }}</strong></article>
-  <article class="metric"><span>Saidas/Perdas</span><strong>{{ saidas|floatformat:3 }}</strong></article>
+  <article class="metric"><span>Saldo fisico</span><strong>{{ saldo_total|quantidade_br }}</strong></article>
+  <article class="metric"><span>Reservado</span><strong>{{ reservado_total|quantidade_br }}</strong></article>
+  <article class="metric"><span>Entradas/Ajustes</span><strong>{{ entradas|quantidade_br }}</strong></article>
+  <article class="metric"><span>Saidas/Perdas</span><strong>{{ saidas|quantidade_br }}</strong></article>
 </section>
 
 <section class="two-column">
@@ -32,7 +32,7 @@
             <td>{{ mov.data|date:"d/m/Y H:i" }}</td>
             <td><span class="status">{{ mov.get_tipo_display }}</span></td>
             <td>{{ mov.filial }}</td>
-            <td>{{ mov.quantidade|floatformat:3 }}</td>
+            <td>{{ mov.quantidade|quantidade_br }}</td>
             <td>{{ mov.referencia|default:"-" }}</td>
             <td>{{ mov.usuario|default:"-" }}</td>
           </tr>
@@ -50,9 +50,9 @@
         {% for estoque in estoques %}
           <tr>
             <td>{{ estoque.filial }}</td>
-            <td>{{ estoque.quantidade_atual|floatformat:3 }}</td>
-            <td>{{ estoque.quantidade_reservada|floatformat:3 }}</td>
-            <td><strong>{{ estoque.quantidade_disponivel|floatformat:3 }}</strong></td>
+            <td>{{ estoque.quantidade_atual|quantidade_br }}</td>
+            <td>{{ estoque.quantidade_reservada|quantidade_br }}</td>
+            <td><strong>{{ estoque.quantidade_disponivel|quantidade_br }}</strong></td>
           </tr>
         {% empty %}
           <tr><td colspan="4" class="empty">Sem saldo cadastrado.</td></tr>

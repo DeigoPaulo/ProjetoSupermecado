@@ -97,6 +97,9 @@ TEMPLATES = [
         'DIRS': [BASE_DIR / 'templates'],
         'APP_DIRS': True,
         'OPTIONS': {
+            'builtins': [
+                'apps.configuracoes.templatetags.formatadores',
+            ],
             'context_processors': [
                 'django.template.context_processors.request',
                 'django.contrib.auth.context_processors.auth',
@@ -200,6 +203,11 @@ SINCRONIZACAO_TIMEOUT_SEGUNDOS = int(os.getenv("SINCRONIZACAO_TIMEOUT_SEGUNDOS",
 SINCRONIZACAO_MAX_TENTATIVAS = int(os.getenv("SINCRONIZACAO_MAX_TENTATIVAS", "8"))
 SINCRONIZACAO_RETRY_BASE_SEGUNDOS = int(os.getenv("SINCRONIZACAO_RETRY_BASE_SEGUNDOS", "30"))
 SINCRONIZACAO_RETRY_MAX_SEGUNDOS = int(os.getenv("SINCRONIZACAO_RETRY_MAX_SEGUNDOS", "3600"))
+CADASTRO_CNPJ_PROVIDER_URL = os.getenv("CADASTRO_CNPJ_PROVIDER_URL", "")
+CADASTRO_CEP_PROVIDER_URL = os.getenv("CADASTRO_CEP_PROVIDER_URL", "")
+CADASTRO_LOOKUP_TIMEOUT_SEGUNDOS = int(os.getenv("CADASTRO_LOOKUP_TIMEOUT_SEGUNDOS", "5"))
+MARKETPLACE_GEOCODING_PROVIDER_URL = os.getenv("MARKETPLACE_GEOCODING_PROVIDER_URL", "")
+MARKETPLACE_GEOCODING_TIMEOUT_SEGUNDOS = int(os.getenv("MARKETPLACE_GEOCODING_TIMEOUT_SEGUNDOS", "5"))
 
 LOG_LEVEL = os.getenv("LOG_LEVEL", "INFO")
 LOG_DIR = env_path("LOG_DIR", BASE_DIR / "logs")

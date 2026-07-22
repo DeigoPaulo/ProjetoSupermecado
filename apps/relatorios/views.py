@@ -1,6 +1,7 @@
 import csv
 from decimal import Decimal
 
+from django.contrib.auth import get_user_model
 from django.contrib.auth.decorators import login_required
 from django.db.models import Count, DecimalField, ExpressionWrapper, F, Sum
 from django.http import HttpResponse
@@ -110,6 +111,61 @@ def _caixas_periodo(data_inicio, data_fim):
         data_abertura__date__gte=data_inicio,
         data_abertura__date__lte=data_fim,
     ).select_related("filial", "usuario_abertura", "usuario_fechamento", "usuario_conferencia")
+
+
+def _caixas_filtrados(request):
+    data_inicio, data_fim = _periodo_from_request(request)
+    operador_id = (request.GET.get("operador") or "").strip()
+    caixas_qs = _caixas_periodo(data_inicio, data_fim)
+    if operador_id.isdigit():
+        caixas_qs = caixas_qs.filter(usuario_abertura_id=int(operador_id))
+    return data_inicio, data_fim, operador_id, caixas_qs
+
+
+def _operadores_caixa():
+    User = get_user_model()
+    return User.objects.filter(caixas_abertos__isnull=False).distinct().order_by("username")
+
+
+def _resumo_caixas_por_operador(caixas_qs):
+    vendas_por_operador = {
+        item["caixa__usuario_abertura_id"]: item
+        for item in Venda.objects.filter(caixa__in=caixas_qs, status=StatusVenda.FINALIZADA)
+        .values("caixa__usuario_abertura_id")
+        .annotate(vendas=Count("id"), total_vendas=Sum("total_liquido"))
+    }
+    resumo = []
+    for item in caixas_qs.values("usuario_abertura_id", "usuario_abertura__username").annotate(
+        caixas=Count("id"),
+        valor_inicial=Sum("valor_inicial"),
+        valor_declarado=Sum("valor_final"),
+        valor_conferido=Sum("valor_conferido"),
+    ).order_by("usuario_abertura__username"):
+        vendas = vendas_por_operador.get(item["usuario_abertura_id"], {})
+        resumo.append({
+            "operador_id": item["usuario_abertura_id"],
+            "operador": item["usuario_abertura__username"] or "Sem operador",
+            "caixas": item["caixas"],
+            "valor_inicial": item["valor_inicial"] or 0,
+            "valor_declarado": item["valor_declarado"] or 0,
+            "valor_conferido": item["valor_conferido"] or 0,
+            "diferenca": (item["valor_conferido"] or 0) - (item["valor_declarado"] or 0),
+            "vendas": vendas.get("vendas") or 0,
+            "total_vendas": vendas.get("total_vendas") or 0,
+        })
+    return resumo
+
+
+def _preparar_caixas_conferencia(caixas_qs):
+    caixas = list(caixas_qs)
+    total_diferenca = Decimal("0.00")
+    for caixa in caixas:
+        if caixa.valor_final is not None and caixa.valor_conferido is not None:
+            caixa.diferenca_conferencia = caixa.valor_conferido - caixa.valor_final
+            total_diferenca += caixa.diferenca_conferencia
+        else:
+            caixa.diferenca_conferencia = None
+    return caixas, total_diferenca
 
 
 def _compras_periodo(data_inicio, data_fim):
@@ -739,19 +795,27 @@ def compras_imprimir(request):
 @login_required
 @role_required(*RELATORIOS)
 def caixas(request):
-    data_inicio, data_fim = _periodo_from_request(request)
-    caixas_qs = _caixas_periodo(data_inicio, data_fim)
+    data_inicio, data_fim, operador_id, caixas_qs = _caixas_filtrados(request)
+    query_params = request.GET.copy()
+    query_params["data_inicio"] = data_inicio.isoformat()
+    query_params["data_fim"] = data_fim.isoformat()
+    caixas_lista, diferenca_total = _preparar_caixas_conferencia(caixas_qs[:100])
 
     context = {
         "data_inicio": data_inicio,
         "data_fim": data_fim,
-        "caixas": caixas_qs[:100],
+        "operador_id": operador_id,
+        "operadores": _operadores_caixa(),
+        "caixas_query": query_params.urlencode(),
+        "caixas": caixas_lista,
         "caixas_abertos": caixas_qs.filter(status=StatusCaixa.ABERTO).count(),
         "caixas_fechados": caixas_qs.filter(status=StatusCaixa.FECHADO).count(),
         "caixas_conferidos": caixas_qs.filter(status=StatusCaixa.CONFERIDO).count(),
         "valor_inicial_total": caixas_qs.aggregate(total=Sum("valor_inicial"))["total"] or 0,
         "valor_final_total": caixas_qs.aggregate(total=Sum("valor_final"))["total"] or 0,
         "valor_conferido_total": caixas_qs.aggregate(total=Sum("valor_conferido"))["total"] or 0,
+        "diferenca_total": diferenca_total,
+        "resumo_por_operador": _resumo_caixas_por_operador(caixas_qs),
         "pagamentos_por_forma": PagamentoVenda.objects.filter(
             venda__caixa__in=caixas_qs,
             venda__status=StatusVenda.FINALIZADA,
@@ -763,16 +827,19 @@ def caixas(request):
 @login_required
 @role_required(*RELATORIOS)
 def caixas_csv(request):
-    data_inicio, data_fim = _periodo_from_request(request)
+    data_inicio, data_fim, operador_id, caixas_qs = _caixas_filtrados(request)
     response = HttpResponse(content_type="text/csv; charset=utf-8")
     response["Content-Disposition"] = f'attachment; filename="caixas_{data_inicio}_{data_fim}.csv"'
     response.write("\ufeff")
     writer = csv.writer(response, delimiter=";")
+    if operador_id:
+        operador = _csv_safe(get_user_model().objects.filter(pk=operador_id).values_list("username", flat=True).first() or operador_id)
+        writer.writerow(["Filtro operador", operador])
     writer.writerow([
         "Caixa", "Filial", "Operador", "Conferente", "Abertura", "Fechamento",
         "Valor inicial", "Valor declarado", "Valor conferido", "Diferenca", "Status",
     ])
-    for caixa in _caixas_periodo(data_inicio, data_fim).iterator():
+    for caixa in caixas_qs.iterator():
         diferenca = ""
         if caixa.valor_final is not None and caixa.valor_conferido is not None:
             diferenca = str(caixa.valor_conferido - caixa.valor_final).replace(".", ",")
@@ -789,22 +856,44 @@ def caixas_csv(request):
             diferenca,
             caixa.get_status_display(),
         ])
+    writer.writerow([])
+    writer.writerow(["Resumo por operador"])
+    writer.writerow(["Operador", "Caixas", "Vendas", "Total vendas", "Valor inicial", "Declarado", "Conferido", "Diferenca"])
+    for item in _resumo_caixas_por_operador(caixas_qs):
+        writer.writerow([
+            _csv_safe(item["operador"]),
+            item["caixas"],
+            item["vendas"],
+            str(item["total_vendas"]).replace(".", ","),
+            str(item["valor_inicial"]).replace(".", ","),
+            str(item["valor_declarado"]).replace(".", ","),
+            str(item["valor_conferido"]).replace(".", ","),
+            str(item["diferenca"]).replace(".", ","),
+        ])
     return response
 
 
 @login_required
 @role_required(*RELATORIOS)
 def caixas_imprimir(request):
-    data_inicio, data_fim = _periodo_from_request(request)
-    caixas_qs = _caixas_periodo(data_inicio, data_fim)
+    data_inicio, data_fim, operador_id, caixas_qs = _caixas_filtrados(request)
+    caixas_lista, diferenca_total = _preparar_caixas_conferencia(caixas_qs)
     context = {
         "data_inicio": data_inicio,
         "data_fim": data_fim,
-        "caixas": caixas_qs,
+        "operador_id": operador_id,
+        "operador_selecionado": get_user_model().objects.filter(pk=operador_id).first() if operador_id.isdigit() else None,
+        "caixas": caixas_lista,
         "total_caixas": caixas_qs.count(),
         "valor_inicial_total": caixas_qs.aggregate(total=Sum("valor_inicial"))["total"] or 0,
         "valor_final_total": caixas_qs.aggregate(total=Sum("valor_final"))["total"] or 0,
         "valor_conferido_total": caixas_qs.aggregate(total=Sum("valor_conferido"))["total"] or 0,
+        "diferenca_total": diferenca_total,
+        "resumo_por_operador": _resumo_caixas_por_operador(caixas_qs),
+        "pagamentos_por_forma": PagamentoVenda.objects.filter(
+            venda__caixa__in=caixas_qs,
+            venda__status=StatusVenda.FINALIZADA,
+        ).values("forma_pagamento__nome").annotate(total=Sum("valor")).order_by("forma_pagamento__nome"),
         "gerado_em": timezone.localtime(),
     }
     return render(request, "relatorios/caixas_imprimir.html", context)

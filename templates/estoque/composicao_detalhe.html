@@ -15,21 +15,21 @@
 </header>
 
 <section class="metrics-grid">
-  <article class="metric"><span>Produto final</span><strong>{{ composicao.quantidade_final }}</strong></article>
+  <article class="metric"><span>Produto final</span><strong>{{ composicao.quantidade_final|quantidade_br }}</strong></article>
   <article class="metric"><span>Componentes</span><strong>{{ composicao.itens.count }}</strong></article>
   <article class="metric"><span>Custo previsto</span><strong>R$ {{ resumo_visual.custo_previsto|floatformat:2 }}</strong></article>
-  <article class="metric"><span>Capacidade atual</span><strong>{{ resumo_visual.capacidade_maxima|floatformat:3 }}</strong></article>
+  <article class="metric"><span>Capacidade atual</span><strong>{{ resumo_visual.capacidade_maxima|quantidade_br }}</strong></article>
 </section>
 
 <section class="composition-overview panel">
   <div>
     <span class="composition-kicker">Visao operacional</span>
     <h2>{{ composicao.produto_final }}</h2>
-    <p>Composicao {% if composicao.is_active %}ativa{% else %}inativa{% endif %}, com estoque atual do produto final em {{ resumo_visual.estoque_final|floatformat:3 }} e {{ composicao.producoes.count }} producao(oes) registrada(s).</p>
+    <p>Composicao {% if composicao.is_active %}ativa{% else %}inativa{% endif %}, com estoque atual do produto final em {{ resumo_visual.estoque_final|quantidade_br }} e {{ composicao.producoes.count }} producao(oes) registrada(s).</p>
   </div>
   <div class="composition-stock-pill">
     <span>Estoque final</span>
-    <strong>{{ resumo_visual.estoque_final|floatformat:3 }}</strong>
+    <strong>{{ resumo_visual.estoque_final|quantidade_br }}</strong>
   </div>
 </section>
 
@@ -41,12 +41,12 @@
         <article class="composition-component-card {% if not componente.suficiente %}is-low{% endif %}">
           <div>
             <strong>{{ componente.item.produto_componente }}</strong>
-            <span>{{ componente.item.quantidade|floatformat:3 }} por receita</span>
+            <span>{{ componente.item.quantidade|quantidade_br }} por receita</span>
           </div>
           <dl>
-            <div><dt>Saldo</dt><dd>{{ componente.saldo|floatformat:3 }}</dd></div>
+            <div><dt>Saldo</dt><dd>{{ componente.saldo|quantidade_br }}</dd></div>
             <div><dt>Custo</dt><dd>R$ {{ componente.custo_total|floatformat:2 }}</dd></div>
-            <div><dt>Produz</dt><dd>{{ componente.capacidade|floatformat:3 }}</dd></div>
+            <div><dt>Produz</dt><dd>{{ componente.capacidade|quantidade_br }}</dd></div>
           </dl>
         </article>
       {% empty %}
@@ -59,7 +59,7 @@
         {% for item in composicao.itens.all %}
           <tr>
             <td>{{ item.produto_componente }}</td>
-            <td>{{ item.quantidade }}</td>
+            <td>{{ item.quantidade|quantidade_br }}</td>
             <td>R$ {{ item.produto_componente.preco_custo|floatformat:2 }}</td>
           </tr>
         {% empty %}
@@ -96,7 +96,7 @@
         <tr>
           <td>{{ producao.criado_em|date:"d/m/Y H:i" }}</td>
           <td>{{ producao.filial }}</td>
-          <td>{{ producao.quantidade_final }}</td>
+          <td>{{ producao.quantidade_final|quantidade_br }}</td>
           <td>R$ {{ producao.custo_total|floatformat:2 }}</td>
           <td><span class="status">{{ producao.get_status_display }}</span></td>
           <td>{{ producao.usuario }}</td>

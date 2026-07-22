@@ -40,7 +40,7 @@
 
 <section class="metrics-grid">
   <article class="metric"><span>Movimentacoes</span><strong>{{ total_movimentacoes }}</strong></article>
-  <article class="metric"><span>Quantidade total</span><strong>{{ quantidade_total }}</strong></article>
+  <article class="metric"><span>Quantidade total</span><strong>{{ quantidade_total|quantidade_br }}</strong></article>
   <article class="metric"><span>Inicio</span><strong>{{ data_inicio|date:"d/m/Y" }}</strong></article>
   <article class="metric"><span>Fim</span><strong>{{ data_fim|date:"d/m/Y" }}</strong></article>
 </section>
@@ -57,7 +57,7 @@
           <td>{{ mov.produto }}</td>
           <td>{{ mov.filial }}</td>
           <td><span class="status">{{ mov.tipo }}</span></td>
-          <td><strong>{{ mov.quantidade }}</strong></td>
+          <td><strong>{{ mov.quantidade|quantidade_br }}</strong></td>
           <td>{{ mov.referencia|default:"-" }}</td>
           <td>{{ mov.usuario|default:"-" }}</td>
           <td>{{ mov.motivo|default:"-" }}</td>

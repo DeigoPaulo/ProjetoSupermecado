@@ -19,3 +19,11 @@ class ClienteViewsTests(TestCase):
         self.assertContains(response, "Contato e endereco")
         self.assertContains(response, "Opcional para venda presencial avulsa.")
         self.assertContains(response, "busca de CEP")
+
+    def test_busca_json_retorna_cliente_para_select2(self):
+        response = self.client.get("/clientes/busca.json", {"q": "Teste"})
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertEqual(payload["results"][0]["id"], self.cliente.id)
+        self.assertIn("Cliente Teste", payload["results"][0]["text"])

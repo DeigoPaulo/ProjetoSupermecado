@@ -24,7 +24,7 @@
         <nav class="nav-menu">
           {% if access.pdv %}
             <details class="nav-section" open>
-              <summary><i class="fa-solid fa-store"></i> Operacao</summary>
+              <summary><i class="fa-solid fa-store"></i> Operação</summary>
               <a href="{% url 'pdv:pdv' %}"><i class="fa-solid fa-cash-register"></i> PDV</a>
               <a href="{% url 'pdv:consulta_preco' %}"><i class="fa-solid fa-magnifying-glass-dollar"></i> Consulta</a>
               <a href="{% url 'pdv:pre_vendas' %}"><i class="fa-solid fa-file-invoice-dollar"></i> DAV</a>
@@ -35,7 +35,7 @@
             <details class="nav-section">
               <summary><i class="fa-solid fa-boxes-stacked"></i> Cadastros</summary>
               <a href="{% url 'produtos:lista' %}"><i class="fa-solid fa-boxes-stacked"></i> Produtos</a>
-              <a href="{% url 'promocoes:lista' %}"><i class="fa-solid fa-tags"></i> Promocoes</a>
+              <a href="{% url 'promocoes:lista' %}"><i class="fa-solid fa-tags"></i> Promoções</a>
               <a href="{% url 'clientes:lista' %}"><i class="fa-solid fa-users"></i> Clientes</a>
               <a href="{% url 'fornecedores:lista' %}"><i class="fa-solid fa-truck-field"></i> Fornecedores</a>
               <a href="{% url 'marketplace:pedidos' %}"><i class="fa-solid fa-basket-shopping"></i> Pedidos online</a>
@@ -46,12 +46,12 @@
               <summary><i class="fa-solid fa-warehouse"></i> Estoque e compras</summary>
               {% if access.estoque %}
                 <a href="{% url 'estoque:lista' %}"><i class="fa-solid fa-warehouse"></i> Estoque</a>
-                <a href="{% url 'estoque:inventarios' %}"><i class="fa-solid fa-clipboard-check"></i> Inventarios</a>
+                <a href="{% url 'estoque:inventarios' %}"><i class="fa-solid fa-clipboard-check"></i> Inventários</a>
                 <a href="{% url 'estoque:perdas' %}"><i class="fa-solid fa-triangle-exclamation"></i> Perdas</a>
                 <a href="{% url 'estoque:desmembramentos' %}"><i class="fa-solid fa-code-branch"></i> Desmembramentos</a>
                 <a href="{% url 'estoque:desmembramento_relatorio' %}"><i class="fa-solid fa-chart-column"></i> Rendimento</a>
                 <a href="{% url 'estoque:receitas_desmembramento' %}"><i class="fa-solid fa-diagram-project"></i> Receitas de desmembramento</a>
-                <a href="{% url 'estoque:composicoes' %}"><i class="fa-solid fa-boxes-packing"></i> Composicoes</a>
+                <a href="{% url 'estoque:composicoes' %}"><i class="fa-solid fa-boxes-packing"></i> Composições</a>
               {% endif %}
               {% if access.compras %}
                 <a href="{% url 'compras:lista' %}"><i class="fa-solid fa-cart-flatbed"></i> Compras</a>
@@ -60,14 +60,14 @@
           {% endif %}
           {% if access.relatorios %}
             <details class="nav-section">
-              <summary><i class="fa-solid fa-chart-simple"></i> Relatorios</summary>
+              <summary><i class="fa-solid fa-chart-simple"></i> Relatórios</summary>
               <a href="{% url 'relatorios:dashboard' %}"><i class="fa-solid fa-chart-line"></i> Dashboard</a>
               <a href="{% url 'relatorios:vendas' %}"><i class="fa-solid fa-chart-simple"></i> Vendas</a>
               <a href="{% url 'financeiro:contas' %}"><i class="fa-solid fa-file-invoice-dollar"></i> Financeiro</a>
               <a href="{% url 'fiscal:documentos' %}"><i class="fa-solid fa-receipt"></i> Fiscal</a>
               <a href="{% url 'relatorios:curva_abc' %}"><i class="fa-solid fa-ranking-star"></i> Curva ABC</a>
-              <a href="{% url 'relatorios:sugestao_reposicao' %}"><i class="fa-solid fa-cart-arrow-down"></i> Reposicao</a>
-              <a href="{% url 'relatorios:devolucoes' %}"><i class="fa-solid fa-rotate-left"></i> Devolucoes</a>
+              <a href="{% url 'relatorios:sugestao_reposicao' %}"><i class="fa-solid fa-cart-arrow-down"></i> Reposição</a>
+              <a href="{% url 'relatorios:devolucoes' %}"><i class="fa-solid fa-rotate-left"></i> Devoluções</a>
             </details>
           {% endif %}
           {% if access.sistema %}
@@ -77,13 +77,13 @@
               <a href="{% url 'configuracoes:checklist' %}"><i class="fa-solid fa-list-check"></i> Checklist do projeto</a>
               <a href="{% url 'configuracoes:backup' %}"><i class="fa-solid fa-database"></i> Backup</a>
               <a href="{% url 'empresas:lista' %}"><i class="fa-solid fa-building"></i> Empresas e filiais</a>
-              <a href="{% url 'configuracoes:impressoes' %}"><i class="fa-solid fa-print"></i> Impressoes</a>
+              <a href="{% url 'configuracoes:impressoes' %}"><i class="fa-solid fa-print"></i> Impressões</a>
               <a href="{% url 'pdv:acessos_pdv_nuvem' %}" class="{% if pdv_nuvem_pendentes %}nav-alert-link{% endif %}">
                 <i class="fa-solid fa-user-lock"></i> Acessos PDV nuvem
                 {% if pdv_nuvem_pendentes %}<span class="nav-badge">{{ pdv_nuvem_pendentes }}</span>{% endif %}
               </a>
               <a href="{% url 'auditoria:logs' %}"><i class="fa-solid fa-shield-halved"></i> Auditoria</a>
-              <a href="{% url 'accounts:usuarios' %}"><i class="fa-solid fa-user-gear"></i> Usuarios</a>
+              <a href="{% url 'accounts:usuarios' %}"><i class="fa-solid fa-user-gear"></i> Usuários</a>
             </details>
           {% endif %}
         </nav>
@@ -98,7 +98,7 @@
         <div class="topbar">
           <form class="global-search" action="{% url 'produtos:lista' %}" method="get">
             <i class="fa-solid fa-magnifying-glass"></i>
-            <input type="search" name="q" placeholder="Buscar produto, codigo ou cadastro">
+            <input type="search" name="q" placeholder="Buscar produto, código ou cadastro">
           </form>
           <div class="topbar-meta">
             {% if pdv_nuvem_pendentes %}
@@ -124,6 +124,7 @@
   <script src="{% static 'js/bootstrap.bundle.min.js' %}"></script>
   <script src="{% static 'vendor/jquery-mask/jquery.mask-1.14.16.min.js' %}"></script>
   <script src="{% static 'vendor/select2/select2-4.1.0-rc.0.min.js' %}"></script>
+  {% if pdv_cash_drawer_action %}{{ pdv_cash_drawer_action|json_script:"pdv-cash-drawer-action" }}{% endif %}
   <script src="{% static 'js/app.js' %}"></script>
   {% block extra_js %}{% endblock %}
 </body>

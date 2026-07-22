@@ -1,19 +1,19 @@
 {% extends "base.html" %}
 
-{% block title %}Impressoes{% endblock %}
+{% block title %}Impressões{% endblock %}
 
 {% block content %}
 <header class="page-header">
   <div>
-    <h1>Central de impressao</h1>
-    <p>Configure impressoras, papel, vias e impressao automatica para PDV, fiscal, DAV, etiquetas, relatorios e caixa.</p>
+    <h1>Central de impressão</h1>
+    <p>Configure impressoras, papel, vias e impressão automática para PDV, fiscal, DAV, etiquetas, relatórios e caixa.</p>
   </div>
   <div class="actions">
     <form method="post" action="{% url 'configuracoes:impressoes_padroes' %}" class="inline-form">
       {% csrf_token %}
-      <button class="secondary-button" type="submit"><i class="fa-solid fa-wand-magic-sparkles"></i> Criar padroes</button>
+      <button class="secondary-button" type="submit"><i class="fa-solid fa-wand-magic-sparkles"></i> Criar padrões</button>
     </form>
-    <a class="primary-button" href="{% url 'configuracoes:impressao_nova' %}"><i class="fa-solid fa-plus"></i> Nova configuracao</a>
+    <a class="primary-button" href="{% url 'configuracoes:impressao_nova' %}"><i class="fa-solid fa-plus"></i> Nova configuração</a>
     <a class="secondary-button" href="{% url 'configuracoes:modelo_etiqueta_novo' %}"><i class="fa-solid fa-tag"></i> Novo modelo de etiqueta</a>
   </div>
 </header>
@@ -21,7 +21,7 @@
 <section class="metrics-grid">
   <article class="metric"><span>Total configurado</span><strong>{{ resumo.total }}</strong></article>
   <article class="metric"><span>Ativas</span><strong>{{ resumo.ativas }}</strong></article>
-  <article class="metric"><span>Automaticas</span><strong>{{ resumo.automaticas }}</strong></article>
+  <article class="metric"><span>Automáticas</span><strong>{{ resumo.automaticas }}</strong></article>
   <article class="metric"><span>Com gaveta</span><strong>{{ resumo.gavetas }}</strong></article>
   <article class="metric"><span>Sem impressora</span><strong>{{ resumo.sem_impressora }}</strong></article>
 </section>
@@ -30,11 +30,11 @@
   <div class="panel-title">Modelos de etiqueta</div>
   <div class="table-wrapper">
     <table>
-      <thead><tr><th>Modelo</th><th>Escopo</th><th>Terminal</th><th>Medidas</th><th>Colunas</th><th>Orientacao</th><th>Status</th><th></th></tr></thead>
+      <thead><tr><th>Modelo</th><th>Escopo</th><th>Terminal</th><th>Medidas</th><th>Colunas</th><th>Orientação</th><th>Status</th><th></th></tr></thead>
       <tbody>
         {% for modelo in modelos_etiqueta %}
           <tr>
-            <td><strong>{{ modelo.nome }}</strong>{% if modelo.padrao %}<br><span class="status status-success">Padrao</span>{% endif %}</td>
+            <td><strong>{{ modelo.nome }}</strong>{% if modelo.padrao %}<br><span class="status status-success">Padrão</span>{% endif %}</td>
             <td>{{ modelo.configuracao.empresa }}<br><small>{{ modelo.configuracao.filial|default:"Todas as filiais" }}</small></td>
             <td>{{ modelo.terminal|default:"Todos" }}</td>
             <td>{{ modelo.largura_mm }} x {{ modelo.altura_mm }} mm</td>
@@ -60,8 +60,8 @@
 <section class="operation-notice">
   <i class="fa-solid fa-print"></i>
   <div>
-    <strong>Esta e a configuracao central usada pelo sistema.</strong>
-    <span>O PDV usa cupom fiscal/nao fiscal; pedidos online e DAV usam separacao; relatorios e etiquetas tambem herdam daqui por empresa ou filial.</span>
+    <strong>Esta é a configuração central usada pelo sistema.</strong>
+    <span>O PDV usa cupom fiscal/não fiscal; pedidos online e DAV usam separação; relatórios e etiquetas também herdam daqui por empresa ou filial.</span>
   </div>
 </section>
 
@@ -69,9 +69,9 @@
   <i class="fa-solid fa-desktop"></i>
   <div>
     <strong>Descoberta local preparada para o app desktop.</strong>
-    <span>O navegador nao consegue listar impressoras instaladas na maquina; o app desktop fara essa leitura e sincronizara com esta central.</span>
-    <a class="secondary-button" href="{% url 'configuracoes:impressoras_locais' %}" target="_blank">Ver ponto de integracao</a>
-    <a class="secondary-button" href="{% url 'configuracoes:impressoes_desktop' %}" target="_blank">Configuracoes do desktop</a>
+    <span>O navegador não consegue listar impressoras instaladas na máquina; o app desktop fará essa leitura e sincronizará com esta central.</span>
+    <a class="secondary-button" href="{% url 'configuracoes:impressoras_locais' %}" target="_blank">Ver ponto de integração</a>
+    <a class="secondary-button" href="{% url 'configuracoes:impressoes_desktop' %}" target="_blank">Configurações do desktop</a>
   </div>
 </section>
 
@@ -86,7 +86,7 @@
           <th>Papel</th>
           <th>Fonte</th>
           <th>Vias</th>
-          <th>Automatico</th>
+          <th>Automático</th>
           <th>Gaveta</th>
           <th>Status</th>
           <th></th>
@@ -97,7 +97,7 @@
           <tr>
             <td>{{ config.get_tipo_documento_display }}</td>
             <td><strong>{{ config.empresa }}</strong><br><small>{{ config.filial|default:"Todas as filiais" }}</small></td>
-            <td>{{ config.impressora_padrao|default:"Nao definida" }}</td>
+            <td>{{ config.impressora_padrao|default:"Não definida" }}</td>
             <td>{{ config.get_modelo_papel_display }}</td>
             <td>{{ config.tamanho_fonte }}</td>
             <td>{{ config.numero_vias }}</td>
@@ -107,7 +107,7 @@
                 <span class="status status-success">Ativa</span>
                 <small>Dinheiro{% if config.abrir_gaveta_em_movimento_caixa %} e movimentos{% endif %}</small>
               {% else %}
-                <span class="status status-muted">Nao usa</span>
+                <span class="status status-muted">Não usa</span>
               {% endif %}
             </td>
             <td>
@@ -118,7 +118,7 @@
             <td><a class="secondary-button" href="{% url 'configuracoes:impressao_editar' config.pk %}">Editar</a></td>
           </tr>
         {% empty %}
-          <tr><td colspan="9" class="empty">Nenhuma configuracao criada. Use Criar padroes para comecar.</td></tr>
+          <tr><td colspan="9" class="empty">Nenhuma configuração criada. Use Criar padrões para começar.</td></tr>
         {% endfor %}
       </tbody>
     </table>

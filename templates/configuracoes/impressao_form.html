@@ -1,12 +1,12 @@
 {% extends "base.html" %}
 
-{% block title %}Configuracao de impressao{% endblock %}
+{% block title %}Configuração de impressão{% endblock %}
 
 {% block content %}
 <header class="page-header">
   <div>
-    <h1>{% if configuracao %}Editar impressao{% else %}Nova impressao{% endif %}</h1>
-    <p>Defina escopo, impressora, papel, fonte, margens, vias e comportamento de impressao.</p>
+    <h1>{% if configuracao %}Editar impressão{% else %}Nova impressão{% endif %}</h1>
+    <p>Defina escopo, impressora, papel, fonte, margens, vias e comportamento de impressão.</p>
   </div>
   <a class="secondary-button" href="{% url 'configuracoes:impressoes' %}">Voltar</a>
 </header>
@@ -28,7 +28,7 @@
   <section class="panel">
     <div class="panel-title">Impressora e comportamento</div>
     <div class="form-grid">
-      <label class="form-field form-field-wide"><span>{{ form.impressora_padrao.label }}</span>{{ form.impressora_padrao }}{{ form.impressora_padrao.errors }}<small>Use o mesmo nome instalado no Windows. No app desktop, este campo sera preenchido com as impressoras detectadas na maquina.</small></label>
+      <label class="form-field form-field-wide"><span>{{ form.impressora_padrao.label }}</span>{{ form.impressora_padrao }}{{ form.impressora_padrao.errors }}<small>Use o mesmo nome instalado no Windows. No app desktop, este campo será preenchido com as impressoras detectadas na máquina.</small></label>
       <datalist id="printer-suggestions">
         {% for impressora in impressoras_cadastradas %}
           <option value="{{ impressora }}"></option>
@@ -46,7 +46,7 @@
       <label class="toggle-field">{{ form.gaveta_automatica }} <span>{{ form.gaveta_automatica.label }}</span>{{ form.gaveta_automatica.errors }}</label>
       <label class="toggle-field">{{ form.abrir_gaveta_em_dinheiro }} <span>{{ form.abrir_gaveta_em_dinheiro.label }}</span>{{ form.abrir_gaveta_em_dinheiro.errors }}</label>
       <label class="toggle-field">{{ form.abrir_gaveta_em_movimento_caixa }} <span>{{ form.abrir_gaveta_em_movimento_caixa.label }}</span>{{ form.abrir_gaveta_em_movimento_caixa.errors }}</label>
-      <p class="form-help form-field-wide">Opcional. Quando desativada, o PDV registra a venda normalmente sem tentar acionar gaveta fisica.</p>
+      <p class="form-help form-field-wide">Opcional. Quando desativada, o PDV registra a venda normalmente sem tentar acionar gaveta física.</p>
     </div>
   </section>
 
@@ -64,7 +64,7 @@
 
   <section class="panel">
     <div class="panel-title">Etiqueta profissional</div>
-    <p class="form-help">Aplicado quando o tipo do documento for Etiqueta. As medidas sao enviadas ao app desktop e usadas na impressao em tamanho real.</p>
+    <p class="form-help">Aplicado quando o tipo do documento for Etiqueta. As medidas são enviadas ao app desktop e usadas na impressão em tamanho real.</p>
     <div class="form-grid">
       <label class="form-field"><span>{{ form.largura_etiqueta_mm.label }}</span>{{ form.largura_etiqueta_mm }}{{ form.largura_etiqueta_mm.errors }}</label>
       <label class="form-field"><span>{{ form.altura_etiqueta_mm.label }}</span>{{ form.altura_etiqueta_mm }}{{ form.altura_etiqueta_mm.errors }}</label>
@@ -80,13 +80,13 @@
   </section>
 
   <section class="panel">
-    <div class="panel-title">Rodape</div>
+    <div class="panel-title">Rodapé</div>
     <label class="form-field"><span>{{ form.mensagem_rodape.label }}</span>{{ form.mensagem_rodape }}{{ form.mensagem_rodape.errors }}</label>
   </section>
 
   <div class="sticky-form-actions">
     <a class="secondary-button" href="{% url 'configuracoes:impressoes' %}">Cancelar</a>
-    <button class="primary-button" type="submit">Salvar configuracao</button>
+    <button class="primary-button" type="submit">Salvar configuração</button>
   </div>
 </form>
 {% endblock %}

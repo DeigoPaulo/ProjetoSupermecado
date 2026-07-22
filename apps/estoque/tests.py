@@ -793,16 +793,27 @@ class EstoqueViewsTests(TestCase):
             preco_custo="0.40",
             preco_venda="0.80",
         )
+        Produto.objects.create(
+            codigo_barras="7897777777777",
+            codigo_interno="REF-MARKET-BLOQ",
+            nome="Bala marketplace bloqueada",
+            categoria=self.categoria,
+            preco_custo="0.40",
+            preco_venda="0.80",
+            vendido_no_marketplace=False,
+        )
 
         por_codigo = self.client.get("/estoque/produtos/busca.json", {"q": sku.codigo_barras})
         por_sku = self.client.get("/estoque/produtos/busca.json", {"q": "SKU-BALA-30"})
         por_nome = self.client.get("/estoque/produtos/busca.json", {"q": "avulsa"})
+        marketplace = self.client.get("/estoque/produtos/busca.json", {"q": "marketplace", "marketplace": "1"})
 
         self.assertEqual(por_codigo.status_code, 200)
         self.assertEqual(por_codigo.json()["results"][0]["id"], sku.id)
         self.assertEqual(por_sku.json()["results"][0]["id"], sku.id)
         self.assertEqual(por_nome.json()["results"][0]["id"], nome.id)
         self.assertEqual(por_nome.json()["results"][0]["unidade"], "UN")
+        self.assertEqual(marketplace.json()["results"], [])
 
     def test_post_simular_desmembramento_mostra_previa_sem_supervisor(self):
         destino = Produto.objects.create(

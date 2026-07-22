@@ -9,6 +9,7 @@
     <p>Preparacao e acompanhamento de documentos fiscais da operacao.</p>
   </div>
   <div class="actions">
+    <a class="secondary-button" href="{% url 'fiscal:diagnostico_json' %}"><i class="fa-solid fa-code"></i> Diagnostico JSON</a>
     <a class="secondary-button" href="{% url 'fiscal:produtos_fiscais' %}"><i class="fa-solid fa-boxes-stacked"></i> Produtos fiscais</a>
     <a class="secondary-button" href="{% url 'fiscal:configuracao_nova' %}"><i class="fa-solid fa-gear"></i> Configuracao</a>
     <a class="secondary-button" href="{% url 'fiscal:serie_nova' %}"><i class="fa-solid fa-hashtag"></i> Serie</a>
@@ -22,6 +23,51 @@
   <article class="metric"><span>Emitidos</span><strong>{{ emitidos }}</strong></article>
   <article class="metric"><span>Rejeitados</span><strong>{{ rejeitados }}</strong></article>
   <article class="metric"><span>Pendencias automaticas</span><strong>{{ pendencias_automaticas }}</strong></article>
+</section>
+
+<section class="operation-notice {% if diagnostico.resumo.alertas %}operation-notice-warning{% endif %}">
+  <i class="fa-solid fa-file-shield"></i>
+  <div>
+    <strong>Prontidao fiscal: {{ diagnostico.resumo.filiais_prontas }} de {{ diagnostico.resumo.filiais }} filial(is) prontas.</strong>
+    <span>{{ diagnostico.resumo.alertas }} alerta(s), {{ diagnostico.resumo.produtos_pendentes }} produto(s) com pendencia fiscal e {{ diagnostico.resumo.vendas_pendentes }} venda(s) aguardando NFC-e.</span>
+  </div>
+</section>
+
+<section class="panel">
+  <div class="panel-heading">
+    <div>
+      <h2>Prontidao por filial</h2>
+      <p>Conferencia rapida antes de liberar emissao fiscal na loja.</p>
+    </div>
+  </div>
+  <div class="table-wrapper">
+    <table>
+      <thead><tr><th>Filial</th><th>Ambiente</th><th>Serie NFC-e</th><th>Certificado</th><th>Status</th><th>Pendencias</th></tr></thead>
+      <tbody>
+        {% for filial in diagnostico.filiais %}
+          <tr>
+            <td><strong>{{ filial.filial }}</strong></td>
+            <td>{{ filial.ambiente }}</td>
+            <td>{% if filial.serie_nfce %}{{ filial.serie_nfce }} / prox. {{ filial.proximo_numero }}{% else %}-{% endif %}</td>
+            <td>{{ filial.certificado }}</td>
+            <td><span class="status {% if filial.status == 'Pronta' %}status-success{% else %}status-warning{% endif %}">{{ filial.status }}</span></td>
+            <td>
+              {% if filial.pendencias %}
+                <details class="fiscal-pending-details">
+                  <summary>{{ filial.pendencias|length }} alerta{{ filial.pendencias|length|pluralize }}</summary>
+                  <ul>{% for pendencia in filial.pendencias %}<li>{{ pendencia }}</li>{% endfor %}</ul>
+                </details>
+              {% else %}
+                <span class="status status-success">Sem pendencias</span>
+              {% endif %}
+            </td>
+          </tr>
+        {% empty %}
+          <tr><td colspan="6" class="empty">Nenhuma filial cadastrada.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
 </section>
 
 <form method="get" class="toolbar report-filter">
@@ -42,7 +88,7 @@
     <table>
       <thead>
         <tr>
-          <th>Venda</th>
+          <th>Origem</th>
           <th>Data</th>
           <th>Filial</th>
           <th>Cliente</th>
@@ -108,7 +154,7 @@
             <td>{{ documento.criado_em|date:"d/m/Y H:i" }}</td>
             <td>{{ documento.get_tipo_documento_display }}<br><small>{{ documento.get_ambiente_display }}</small></td>
             <td><strong>{{ documento.serie }}/{{ documento.numero|default:"-" }}</strong></td>
-            <td>{% if documento.venda %}Venda {{ documento.venda_id }}{% else %}-{% endif %}</td>
+            <td>{% if documento.venda %}Venda {{ documento.venda_id }}{% elif documento.pedido_online %}Pedido online {{ documento.pedido_online_id }}{% else %}-{% endif %}</td>
             <td><span class="status {% if documento.status == 'EMITIDO' %}status-success{% elif documento.status == 'REJEITADO' or documento.status == 'CANCELADO' %}status-danger{% endif %}">{{ documento.get_status_display }}</span></td>
             <td>R$ {{ documento.valor_total|floatformat:2 }}</td>
             <td class="row-actions">

@@ -109,6 +109,37 @@ def montar_etiquetas_epl(payload: dict) -> bytes:
     return ("\n".join(blocos) + "\n").encode("ascii")
 
 
+def montar_etiquetas_ppla(payload: dict) -> bytes:
+    modelo, itens, dpi = _validar_payload(payload)
+    largura = _dots(modelo.get("largura_mm", 110), dpi)
+    altura = _dots(modelo.get("altura_mm", 30), dpi)
+    velocidade = _inteiro(payload.get("velocidade"), 4, 1, 6)
+    densidade = _inteiro(payload.get("densidade"), 8, 0, 15)
+    blocos: list[str] = []
+    for item in itens:
+        copias = _inteiro(item.get("copias"), 1, 1, 100)
+        nome = _ascii(item.get("nome"), 45).replace('"', "")
+        codigo = _ascii(item.get("codigo"), 30).replace('"', "")
+        preco = _preco(item.get("preco"))
+        blocos.append(
+            "\n".join(
+                [
+                    "\x02L",
+                    f"D{densidade}",
+                    f"S{velocidade}",
+                    f"q{largura}",
+                    f"Q{altura},0",
+                    f'121100001000015{nome}',
+                    f'191100002000{max(55, altura // 3):03d}{preco}',
+                    f'1E1100002000{max(105, altura - 90):03d}{codigo}',
+                    f"Q{copias}",
+                    "E",
+                ]
+            )
+        )
+    return ("\n".join(blocos) + "\n").encode("ascii")
+
+
 def montar_etiquetas_nativas(payload: dict) -> bytes:
     linguagem = _ascii(payload.get("linguagem"), 10).upper()
     if linguagem == "ZPL":
@@ -116,5 +147,5 @@ def montar_etiquetas_nativas(payload: dict) -> bytes:
     if linguagem in {"EPL", "PPLB"}:
         return montar_etiquetas_epl(payload)
     if linguagem == "PPLA":
-        raise ErroImpressao("PPLA ainda exige adaptador homologado para o modelo da impressora.")
-    raise ErroImpressao("Selecione ZPL, EPL ou PPLB para impressao nativa de etiquetas.")
+        return montar_etiquetas_ppla(payload)
+    raise ErroImpressao("Selecione ZPL, EPL, PPLA ou PPLB para impressao nativa de etiquetas.")

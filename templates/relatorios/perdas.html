@@ -54,7 +54,7 @@
             <td>{{ perda.data|date:"d/m H:i" }}</td>
             <td>{{ perda.produto }}</td>
             <td>{{ perda.get_tipo_display }}</td>
-            <td>{{ perda.quantidade }}</td>
+            <td>{{ perda.quantidade|quantidade_br }}</td>
             <td>R$ {{ perda.valor_custo_estimado|floatformat:2 }}</td>
           </tr>
         {% empty %}

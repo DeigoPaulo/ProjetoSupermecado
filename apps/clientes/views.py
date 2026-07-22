@@ -1,9 +1,12 @@
 from django.contrib import messages
 from django.contrib.auth.mixins import LoginRequiredMixin
+from django.db.models import Q
+from django.http import JsonResponse
 from django.urls import reverse_lazy
+from django.views.decorators.http import require_GET
 from django.views.generic import CreateView, ListView, UpdateView
 
-from apps.accounts.permissions import CLIENTES, RoleRequiredMixin
+from apps.accounts.permissions import CLIENTES, RoleRequiredMixin, role_required
 
 from .forms import ClienteForm
 from .models import Cliente
@@ -46,5 +49,31 @@ class ClienteUpdateView(LoginRequiredMixin, RoleRequiredMixin, UpdateView):
     def form_valid(self, form):
         messages.success(self.request, "Cliente atualizado com sucesso.")
         return super().form_valid(form)
+
+
+@role_required(*CLIENTES)
+@require_GET
+def clientes_busca(request):
+    termo = (request.GET.get("q") or request.GET.get("term") or "").strip()
+    if not termo:
+        return JsonResponse({"results": []})
+    clientes = (
+        Cliente.objects.filter(Q(nome__icontains=termo) | Q(cpf_cnpj__icontains=termo) | Q(telefone__icontains=termo))
+        .order_by("nome")[:20]
+    )
+    return JsonResponse(
+        {
+            "results": [
+                {
+                    "id": cliente.pk,
+                    "text": f"{cliente.nome} | {cliente.cpf_cnpj or cliente.telefone or 'sem documento'}",
+                    "nome": cliente.nome,
+                    "cpf_cnpj": cliente.cpf_cnpj,
+                    "telefone": cliente.telefone,
+                }
+                for cliente in clientes
+            ]
+        }
+    )
 
 # Create your views here.

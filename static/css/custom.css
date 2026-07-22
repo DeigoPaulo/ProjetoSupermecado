@@ -1774,6 +1774,10 @@ input[type="checkbox"] {
   box-shadow: 0 24px 80px rgba(0, 32, 96, 0.24);
 }
 
+.pdv-refund-dialog {
+  width: min(540px, calc(100vw - 32px));
+}
+
 .pdv-modal-header {
   display: flex;
   align-items: center;
@@ -1840,6 +1844,96 @@ input[type="checkbox"] {
   white-space: nowrap;
   color: #0050e8;
   font-size: 16px;
+}
+
+.pdv-modal-row.is-selected {
+  border-color: #0050e8;
+  box-shadow: 0 0 0 2px rgba(0, 80, 232, 0.12);
+}
+
+.pdv-refund-card {
+  display: grid;
+  align-items: stretch;
+  grid-template-columns: 1fr;
+  min-height: 0;
+  padding: 10px 12px;
+}
+
+.pdv-refund-summary {
+  width: 100%;
+}
+
+.pdv-refund-command-panel {
+  display: grid;
+  gap: 10px;
+  border-top: 1px solid #dbe6f5;
+  background: #f8fbff;
+  padding: 12px 14px 14px;
+}
+
+.pdv-refund-selected {
+  display: grid;
+  gap: 3px;
+}
+
+.pdv-refund-selected span {
+  color: #52627a;
+  font-size: .74rem;
+  font-weight: 900;
+  text-transform: uppercase;
+}
+
+.pdv-refund-selected strong {
+  color: #002060;
+  font-size: .95rem;
+}
+
+.pdv-refund-actions {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.pdv-refund-actions .secondary-button {
+  justify-content: center;
+  min-height: 38px;
+}
+
+.pdv-refund-actions kbd {
+  margin-left: 4px;
+}
+
+.pdv-modal-pagination {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+  align-items: center;
+  gap: 8px;
+  border-top: 1px solid #dbe6f5;
+  padding: 10px 14px;
+}
+
+.pdv-modal-pagination button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  min-height: 34px;
+  border: 1px solid #cbd7ec;
+  border-radius: 7px;
+  background: #f8fbff;
+  color: #002060;
+  font-weight: 900;
+}
+
+.pdv-modal-pagination button:disabled {
+  opacity: .45;
+}
+
+.pdv-modal-pagination span {
+  color: #52627a;
+  font-size: .78rem;
+  font-weight: 900;
+  white-space: nowrap;
 }
 
 .pdv-modal-empty {
@@ -1933,6 +2027,12 @@ input[type="checkbox"] {
   display: grid;
   grid-template-columns: minmax(180px, 1fr) minmax(160px, 0.56fr) 44px;
   gap: 8px;
+}
+
+.pdv-payment-row.is-authorized select,
+.pdv-payment-row.is-authorized input[name="pagamento_valor"] {
+  border-color: #039855;
+  box-shadow: 0 0 0 1px rgba(3, 152, 85, 0.18);
 }
 
 .pdv-payment-totals {
@@ -2579,12 +2679,37 @@ button:disabled {
 .checklist-section-header > strong { color: #0b57d0; }
 .checklist-progress { height: 4px; }
 .checklist-items { border: 1px solid #dfe6f1; border-top: 0; }
+.roadmap-map { margin: 18px 0 22px; border: 1px solid #dfe6f1; background: #fff; }
+.roadmap-map header { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 16px 18px 10px; }
+.roadmap-map h2 { margin: 0 0 3px; color: #061b46; font-size: 1rem; }
+.roadmap-map p { margin: 0; color: #607089; font-size: .82rem; }
+.roadmap-map-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px; padding: 0 18px 18px; }
+.roadmap-map-card { display: grid; gap: 5px; border: 1px solid #dfe6f1; border-radius: 6px; background: #f8fbff; padding: 12px; }
+.roadmap-map-card span { color: #53657d; font-size: .7rem; font-weight: 900; text-transform: uppercase; }
+.roadmap-map-card strong { color: #0b57d0; font-size: 1.35rem; line-height: 1; }
+.roadmap-map-card small { color: #8a5100; font-size: .74rem; font-weight: 800; }
+.roadmap-map-card p { color: #66758b; font-size: .75rem; line-height: 1.35; }
 .checklist-next-section { margin: 22px 0; border: 1px solid #dfe6f1; }
 .checklist-next-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; padding: 0 18px 18px; }
-.checklist-next-card { border: 1px solid #dfe6f1; background: #f8fbff; padding: 14px; border-radius: 6px; }
-.checklist-next-card span { display: block; color: #607089; font-size: .72rem; font-weight: 700; text-transform: uppercase; margin-bottom: 6px; }
+.checklist-next-card { display: grid; gap: 7px; border: 1px solid #dfe6f1; background: #f8fbff; padding: 14px; border-radius: 6px; }
 .checklist-next-card strong { display: block; color: #0b2454; font-size: .9rem; margin-bottom: 5px; }
 .checklist-next-card p { margin: 0; color: #66758b; font-size: .78rem; line-height: 1.45; }
+.checklist-next-card small { display: block; border-top: 1px solid #dfe6f1; color: #42526b; font-size: .76rem; font-weight: 700; line-height: 1.4; padding-top: 8px; }
+.roadmap-card-meta { display: flex; align-items: center; flex-wrap: wrap; gap: 6px; }
+.roadmap-card-meta span,
+.roadmap-card-meta b,
+.roadmap-card-meta em {
+  border-radius: 999px;
+  font-size: .68rem;
+  font-style: normal;
+  font-weight: 800;
+  line-height: 1;
+  padding: 5px 7px;
+  text-transform: uppercase;
+}
+.roadmap-card-meta span { background: #e8eef8; color: #51617a; }
+.roadmap-card-meta b { background: #dceafe; color: #0b57d0; }
+.roadmap-card-meta em { background: #fff0ce; color: #8a5100; }
 
 .checklist-item {
   display: grid;
@@ -3044,11 +3169,30 @@ button:disabled {
   padding: 8px 9px;
 }
 
-.pdv-refund-card {
-  display: grid;
-  grid-template-columns: minmax(0, .75fr) minmax(360px, 1fr);
-  gap: 12px;
+.pdv-refund-details {
+  border-top: 1px solid #e3ebf7;
+  padding-top: 8px;
+}
+
+.pdv-refund-details summary {
+  display: inline-flex;
   align-items: center;
+  justify-content: center;
+  gap: 7px;
+  min-height: 34px;
+  border: 1px solid #fecaca;
+  border-radius: 7px;
+  background: #fff7f7;
+  color: #b91c1c;
+  cursor: pointer;
+  font-size: .84rem;
+  font-weight: 900;
+  list-style: none;
+  padding: 7px 10px;
+}
+
+.pdv-refund-details summary::-webkit-details-marker {
+  display: none;
 }
 
 .pdv-refund-form {
@@ -3056,6 +3200,7 @@ button:disabled {
   grid-template-columns: minmax(0, 1.2fr) minmax(120px, .8fr) minmax(110px, .8fr) auto;
   gap: 8px;
   align-items: center;
+  margin-top: 8px;
 }
 
 .pdv-refund-form input {
@@ -3246,6 +3391,48 @@ button:disabled,
   font-weight: 700;
 }
 
+.quick-actions-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.quick-action-card {
+  display: grid;
+  gap: 5px;
+  min-height: 78px;
+  border: 1px solid #d9e3f2;
+  border-radius: 8px;
+  background: #f9fbff;
+  color: var(--text);
+  padding: 12px;
+  text-decoration: none;
+}
+
+.quick-action-card:hover {
+  border-color: #b8c8e5;
+  background: #ffffff;
+  color: var(--text);
+}
+
+.quick-action-card strong {
+  color: #061b46;
+  font-size: .92rem;
+}
+
+.quick-action-card span {
+  color: var(--muted);
+  font-size: .78rem;
+  line-height: 1.35;
+}
+
+.compact-button {
+  min-height: 0;
+  padding: 6px 9px;
+  font-size: .78rem;
+  white-space: nowrap;
+}
+
 @media (max-width: 800px) {
   .project-overview { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .project-summary:nth-child(2) { border-right: 0; }
@@ -3273,6 +3460,8 @@ button:disabled,
   .cloud-access-card,
   .cloud-access-actions { grid-template-columns: 1fr; }
   .system-shortcuts { grid-template-columns: 1fr; }
+  .quick-actions-grid { grid-template-columns: 1fr; }
+  .roadmap-map-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .checklist-next-grid { grid-template-columns: 1fr; }
   .composition-overview,
   .composition-component-grid { grid-template-columns: 1fr; }
@@ -3282,6 +3471,7 @@ button:disabled,
 @media (max-width: 560px) {
   .checklist-item { grid-template-columns: 28px minmax(0, 1fr); }
   .checklist-status { grid-column: 2; min-width: 0; text-align: left; }
+  .roadmap-map-grid { grid-template-columns: 1fr; }
   .delivery-policy-grid { grid-template-columns: 1fr; }
   .delivery-policy-head,
   .card-actions,

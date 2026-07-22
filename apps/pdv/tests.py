@@ -1,3 +1,4 @@
+import json
 from decimal import Decimal
 
 from django.contrib.auth import get_user_model
@@ -12,9 +13,10 @@ from apps.estoque.models import Estoque
 from apps.financeiro.models import ContaMovimentoFinanceiro, LancamentoFinanceiro, TipoContaMovimento, TipoLancamentoFinanceiro
 from apps.fiscal.models import AmbienteFiscal, ConfiguracaoFiscal, DocumentoFiscal, NaturezaOperacao, SerieFiscal, TipoDocumentoFiscal
 from apps.produtos.models import Categoria, Produto
-from apps.vendas.models import FormaPagamento, StatusVenda, Venda
+from apps.vendas.models import FormaPagamento, StatusPagamento, StatusVenda, Venda
+from apps.vendas.services import cancelar_venda, finalizar_venda
 
-from .models import AcessoPdvNuvem, Caixa, ModoIntegracaoTef, ProtocoloBalanca, ProvedorTef, Sangria, StatusAcessoPdvNuvem, StatusCaixa, StatusLicencaTerminal, Suprimento, TerminalPdv
+from .models import AcessoPdvNuvem, Caixa, EventoDispositivoTerminal, ModoIntegracaoTef, ProtocoloBalanca, ProvedorTef, Sangria, StatusAcessoPdvNuvem, StatusCaixa, StatusLicencaTerminal, Suprimento, TerminalPdv
 from .services_acesso import acesso_pdv_nuvem_aprovado, decidir_acesso_pdv_nuvem, solicitar_acesso_pdv_nuvem
 
 
@@ -43,6 +45,15 @@ class AcessoPdvNuvemTests(TestCase):
         )
         chave = terminal.gerar_chave_api()
         terminal.save()
+        ConfiguracaoImpressao.objects.create(
+            empresa=self.filial.empresa,
+            filial=self.filial,
+            tipo_documento=TipoDocumentoImpressao.CUPOM_NAO_FISCAL,
+            impressora_padrao="EPSON TM-T20",
+            gaveta_automatica=True,
+            abrir_gaveta_em_dinheiro=True,
+            abrir_gaveta_em_movimento_caixa=True,
+        )
 
         resposta = self.client.get(
             "/pdv/api/terminal/bootstrap/",
@@ -57,6 +68,8 @@ class AcessoPdvNuvemTests(TestCase):
         self.assertFalse(resposta.json()["terminal"]["emite_documento_fiscal"])
         self.assertFalse(resposta.json()["recursos"]["emissao_fiscal_automatica"])
         self.assertTrue(resposta.json()["recursos"]["tef_integrado"])
+        self.assertTrue(resposta.json()["recursos"]["modo_offline_permitido"])
+        self.assertTrue(resposta.json()["terminal"]["permite_modo_offline"])
         self.assertEqual(resposta.json()["terminal"]["provedor_tef"], ProvedorTef.PAGBANK)
         self.assertEqual(resposta.json()["terminal"]["licenca"]["status"], StatusLicencaTerminal.LIBERADA)
         self.assertTrue(resposta.json()["terminal"]["licenca"]["liberada"])
@@ -72,6 +85,10 @@ class AcessoPdvNuvemTests(TestCase):
         self.assertTrue(resposta.json()["dispositivos"]["balanca"]["fallback_manual"])
         self.assertEqual(resposta.json()["dispositivos"]["balanca"]["unidade_padrao"], "KG")
         self.assertEqual(resposta.json()["dispositivos"]["balanca"]["precisao_decimal"], 3)
+        self.assertEqual(resposta.json()["dispositivos"]["gaveta"]["contrato"], "pdv_cash_drawer_v1")
+        self.assertTrue(resposta.json()["dispositivos"]["gaveta"]["habilitada"])
+        self.assertEqual(resposta.json()["dispositivos"]["gaveta"]["impressora_padrao"], "EPSON TM-T20")
+        self.assertTrue(resposta.json()["dispositivos"]["gaveta"]["abrir_em_movimento_caixa"])
         self.assertEqual(resposta.json()["tef"]["contrato"], "pdv_tef_v1")
         self.assertIn("PIX", resposta.json()["tef"]["tipos_pagamento"])
         self.assertIsNone(resposta.json()["aplicativo"]["versao_cliente"])
@@ -149,6 +166,64 @@ class AcessoPdvNuvemTests(TestCase):
         self.assertEqual(log.modulo, "pdv")
         self.assertEqual(log.ip, "10.0.0.55")
         self.assertIn("Pendente", log.descricao)
+
+    def test_terminal_licenciado_sincroniza_eventos_de_dispositivo(self):
+        terminal = TerminalPdv(filial=self.filial, nome="Caixa eventos", status_licenca=StatusLicencaTerminal.LIBERADA)
+        chave = terminal.gerar_chave_api()
+        terminal.save()
+
+        resposta = self.client.post(
+            "/pdv/api/terminal/device-events/",
+            data=json.dumps(
+                {
+                    "eventos": [
+                        {
+                            "em": "2026-07-13T08:40:00-03:00",
+                            "tipo": "balanca",
+                            "payload": {
+                                "status": "erro",
+                                "mensagem": "Driver fisico indisponivel",
+                                "porta": "COM3",
+                                "fallback_manual": True,
+                            },
+                        },
+                        "linha quebrada",
+                    ]
+                }
+            ),
+            content_type="application/json",
+            HTTP_X_TERMINAL_ID=str(terminal.identificador),
+            HTTP_X_TERMINAL_KEY=chave,
+        )
+
+        self.assertEqual(resposta.status_code, 200)
+        self.assertEqual(resposta.json()["recebidos"], 1)
+        self.assertEqual(resposta.json()["ignorados"], 1)
+        evento = EventoDispositivoTerminal.objects.get(terminal=terminal)
+        self.assertEqual(evento.tipo, "balanca")
+        self.assertEqual(evento.status, "erro")
+        self.assertEqual(evento.mensagem, "Driver fisico indisponivel")
+        self.assertEqual(evento.payload["porta"], "COM3")
+        self.assertIsNotNone(evento.ocorrido_em)
+
+    def test_terminal_sem_licenca_nao_sincroniza_eventos_de_dispositivo(self):
+        terminal = TerminalPdv(filial=self.filial, nome="Caixa eventos bloqueado", status_licenca=StatusLicencaTerminal.PENDENTE)
+        chave = terminal.gerar_chave_api()
+        terminal.save()
+
+        resposta = self.client.post(
+            "/pdv/api/terminal/device-events/",
+            data=json.dumps({"eventos": [{"tipo": "balanca", "payload": {"status": "erro"}}]}),
+            content_type="application/json",
+            HTTP_X_TERMINAL_ID=str(terminal.identificador),
+            HTTP_X_TERMINAL_KEY=chave,
+            REMOTE_ADDR="10.0.0.60",
+        )
+
+        self.assertEqual(resposta.status_code, 403)
+        self.assertFalse(EventoDispositivoTerminal.objects.exists())
+        log = LogAuditoria.objects.get(acao="EVENTOS_DISPOSITIVO_TERMINAL_SEM_LICENCA", objeto_id=str(terminal.id))
+        self.assertEqual(log.ip, "10.0.0.60")
 
     def test_solicitacao_pendente_nao_duplica(self):
         primeira, criada = solicitar_acesso_pdv_nuvem(usuario=self.operador, filial=self.filial, ip="127.0.0.1")
@@ -232,6 +307,14 @@ class AcessoPdvNuvemTests(TestCase):
         produto = Produto.objects.create(codigo_barras="789100000001", nome="Arroz", categoria=categoria, preco_custo=Decimal("10"), preco_venda=Decimal("15"))
         Estoque.objects.create(produto=produto, filial=self.filial, quantidade_atual=Decimal("10"))
         caixa = Caixa.objects.create(filial=self.filial, usuario_abertura=self.operador, valor_inicial=Decimal("100"))
+        ConfiguracaoImpressao.objects.create(
+            empresa=self.filial.empresa,
+            filial=self.filial,
+            tipo_documento=TipoDocumentoImpressao.CUPOM_NAO_FISCAL,
+            impressora_padrao="EPSON TM-T20",
+            gaveta_automatica=True,
+            abrir_gaveta_em_dinheiro=True,
+        )
         forma = FormaPagamento.objects.create(nome="Dinheiro", tipo="DINHEIRO", permite_troco=True)
         session = self.client.session
         session["pdv_cart"] = {str(produto.id): "2"}
@@ -255,11 +338,141 @@ class AcessoPdvNuvemTests(TestCase):
         self.assertRedirects(resposta, "/pdv/")
         self.assertContains(resposta, "Carrinho liberado para a proxima compra.")
         self.assertContains(resposta, "Nenhum item no carrinho.")
+        self.assertContains(resposta, "pdv-cash-drawer-action")
+        self.assertContains(resposta, "pagamento_em_dinheiro")
         venda = Venda.objects.get()
         self.assertContains(resposta, f'data-print-url="/pdv/vendas/{venda.id}/recibo/"')
         self.assertContains(resposta, f'data-desktop-print-url="/pdv/vendas/{venda.id}/impressao-desktop.json"')
         self.assertEqual(self.client.session["pdv_cart"], {})
         self.assertEqual(Venda.objects.count(), 1)
+
+    def test_remover_item_do_pdv_reduz_uma_unidade_por_vez(self):
+        categoria = Categoria.objects.create(nome="Mercearia")
+        produto = Produto.objects.create(codigo_barras="789100000099", nome="Feijao", categoria=categoria, preco_custo=Decimal("7"), preco_venda=Decimal("12"))
+        session = self.client.session
+        session["pdv_cart"] = {str(produto.id): "3.000"}
+        session.save()
+        self.client.force_login(self.operador)
+
+        primeira = self.client.get(f"/pdv/item/remover/{produto.id}/", follow=True)
+        self.assertRedirects(primeira, "/pdv/")
+        self.assertEqual(Decimal(self.client.session["pdv_cart"][str(produto.id)]), Decimal("2.000"))
+        self.assertContains(primeira, "Quantidade do item reduzida.")
+
+        segunda = self.client.get(f"/pdv/item/remover/{produto.id}/", follow=True)
+        self.assertEqual(Decimal(self.client.session["pdv_cart"][str(produto.id)]), Decimal("1.000"))
+
+        terceira = self.client.get(f"/pdv/item/remover/{produto.id}/", follow=True)
+        self.assertNotIn(str(produto.id), self.client.session["pdv_cart"])
+        self.assertContains(terceira, "Item removido.")
+
+    def test_pdv_bloqueia_pagamento_eletronico_sem_retorno_da_maquininha(self):
+        categoria = Categoria.objects.create(nome="Mercearia")
+        produto = Produto.objects.create(codigo_barras="789100000021", nome="Cafe", categoria=categoria, preco_custo=Decimal("8"), preco_venda=Decimal("20"))
+        Estoque.objects.create(produto=produto, filial=self.filial, quantidade_atual=Decimal("10"))
+        caixa = Caixa.objects.create(filial=self.filial, usuario_abertura=self.operador, valor_inicial=Decimal("100"))
+        forma = FormaPagamento.objects.create(nome="PIX", tipo="PIX")
+        session = self.client.session
+        session["pdv_cart"] = {str(produto.id): "1"}
+        session.save()
+        self.client.force_login(self.operador)
+
+        resposta = self.client.post(
+            "/pdv/",
+            {
+                "action": "finish",
+                "caixa": caixa.id,
+                "cliente": "",
+                "desconto": "0",
+                "vencimento_financeiro": "",
+                "pagamento_forma": [forma.id],
+                "pagamento_valor": ["20.00"],
+            },
+            follow=True,
+        )
+
+        self.assertContains(resposta, "Pagamento eletronico deve ser aprovado pela maquininha")
+        self.assertEqual(Venda.objects.count(), 0)
+
+    def test_pdv_finaliza_pagamento_eletronico_com_retorno_da_maquininha(self):
+        categoria = Categoria.objects.create(nome="Mercearia")
+        produto = Produto.objects.create(codigo_barras="789100000022", nome="Leite", categoria=categoria, preco_custo=Decimal("4"), preco_venda=Decimal("7.50"))
+        Estoque.objects.create(produto=produto, filial=self.filial, quantidade_atual=Decimal("10"))
+        caixa = Caixa.objects.create(filial=self.filial, usuario_abertura=self.operador, valor_inicial=Decimal("100"))
+        forma = FormaPagamento.objects.create(nome="Cartao debito", tipo="DEBITO")
+        session = self.client.session
+        session["pdv_cart"] = {str(produto.id): "2"}
+        session.save()
+        self.client.force_login(self.operador)
+
+        resposta = self.client.post(
+            "/pdv/",
+            {
+                "action": "finish",
+                "caixa": caixa.id,
+                "cliente": "",
+                "desconto": "0",
+                "vencimento_financeiro": "",
+                "pagamento_forma": [forma.id],
+                "pagamento_valor": ["15.00"],
+                "pagamento_status": ["CONFIRMADO"],
+                "pagamento_transacao_externa_id": ["TEF-SIM-123"],
+                "pagamento_nsu": ["123456"],
+                "pagamento_codigo_autorizacao": ["ABC123"],
+                "pagamento_mensagem_processadora": ["Aprovado"],
+            },
+            follow=True,
+        )
+
+        self.assertRedirects(resposta, "/pdv/")
+        venda = Venda.objects.get()
+        pagamento = venda.pagamentos.get()
+        self.assertEqual(pagamento.transacao_externa_id, "TEF-SIM-123")
+        self.assertEqual(pagamento.codigo_autorizacao, "ABC123")
+
+    def test_supervisor_confirma_estorno_eletronico_pendente(self):
+        categoria = Categoria.objects.create(nome="Mercearia")
+        produto = Produto.objects.create(codigo_barras="789100000023", nome="Feijao", categoria=categoria, preco_custo=Decimal("6"), preco_venda=Decimal("12"))
+        Estoque.objects.create(produto=produto, filial=self.filial, quantidade_atual=Decimal("10"))
+        caixa = Caixa.objects.create(filial=self.filial, usuario_abertura=self.operador, valor_inicial=Decimal("100"))
+        forma = FormaPagamento.objects.create(nome="PIX", tipo="PIX")
+        venda = finalizar_venda(
+            caixa=caixa,
+            usuario=self.operador,
+            itens=[{"produto": produto, "quantidade": Decimal("1.000")}],
+            pagamentos=[
+                {
+                    "forma_pagamento": forma,
+                    "valor": Decimal("12.00"),
+                    "transacao_externa_id": "TEF-SIM-ESTORNO",
+                    "nsu": "123456",
+                    "codigo_autorizacao": "AUT123",
+                }
+            ],
+        )
+        cancelar_venda(venda=venda, usuario=self.admin, motivo="Cancelamento teste")
+        pagamento = venda.pagamentos.get()
+        self.client.force_login(self.admin)
+
+        resposta = self.client.post(
+            f"/pdv/pagamentos/{pagamento.id}/confirmar-estorno/",
+            {
+                "autorizacao": "EST987",
+                "motivo": "Confirmado na operadora",
+                "mensagem_processadora": "Estorno aprovado pelo simulador TEF do app desktop.",
+                "supervisor_usuario": self.admin.username,
+                "supervisor_senha": "senha",
+            },
+            follow=True,
+        )
+
+        pagamento.refresh_from_db()
+        self.assertRedirects(resposta, f"/pdv/vendas/{venda.id}/")
+        self.assertEqual(pagamento.status, StatusPagamento.ESTORNADO)
+        self.assertIn("EST987", pagamento.mensagem_processadora)
+        self.assertIn("simulador TEF", pagamento.mensagem_processadora)
+        self.assertTrue(LancamentoFinanceiro.objects.filter(pagamento_venda=pagamento, origem="ESTORNO").exists())
+        self.assertContains(resposta, "Estorno eletrônico confirmado")
 
     def test_terminal_sem_fiscal_automatico_finaliza_venda_sem_preparar_nfce(self):
         categoria = Categoria.objects.create(nome="Mercearia")
@@ -330,8 +543,12 @@ class AcessoPdvNuvemTests(TestCase):
 
         self.assertEqual(resposta.status_code, 200)
         self.assertContains(resposta, "Fechar caixa")
+        self.assertContains(resposta, "<kbd>F5</kbd>", html=True)
         self.assertContains(resposta, "Suprimento")
+        self.assertContains(resposta, "<kbd>F2</kbd>", html=True)
         self.assertContains(resposta, "Sangria")
+        self.assertContains(resposta, "<kbd>F3</kbd>", html=True)
+        self.assertContains(resposta, "Ctrl+Enter")
         self.assertContains(resposta, "Aguardando conferencia")
         self.assertContains(resposta, "Conferir")
 
@@ -350,6 +567,8 @@ class AcessoPdvNuvemTests(TestCase):
         self.assertContains(resposta, "Remover item (Del)")
         self.assertContains(resposta, "Ctrl+Del")
         self.assertContains(resposta, "data-remove-url")
+        self.assertContains(resposta, 'name="pagamento_transacao_externa_id"')
+        self.assertContains(resposta, 'name="pagamento_codigo_autorizacao"')
         self.assertContains(resposta, "data-pdv-read-scale")
         self.assertContains(resposta, "<kbd>F12</kbd>", html=True)
         self.assertContains(resposta, "<kbd>Shift+M</kbd> Menu", count=1, html=True)
@@ -366,6 +585,14 @@ class AcessoPdvNuvemTests(TestCase):
 
     def test_sangria_registrada_pelo_pdv_retorna_ao_pdv(self):
         caixa = Caixa.objects.create(filial=self.filial, usuario_abertura=self.operador, valor_inicial=Decimal("100"))
+        ConfiguracaoImpressao.objects.create(
+            empresa=self.filial.empresa,
+            filial=self.filial,
+            tipo_documento=TipoDocumentoImpressao.CUPOM_NAO_FISCAL,
+            impressora_padrao="EPSON TM-T20",
+            gaveta_automatica=True,
+            abrir_gaveta_em_movimento_caixa=True,
+        )
         self.client.force_login(self.operador)
 
         resposta = self.client.post(
@@ -381,6 +608,8 @@ class AcessoPdvNuvemTests(TestCase):
         )
 
         self.assertRedirects(resposta, "/pdv/")
+        self.assertContains(resposta, "pdv-cash-drawer-action")
+        self.assertContains(resposta, "sangria")
         self.assertEqual(Sangria.objects.filter(caixa=caixa, valor=Decimal("10.00")).count(), 1)
         sangria = Sangria.objects.get(caixa=caixa)
         conta = ContaMovimentoFinanceiro.objects.get(filial=self.filial, nome="Caixa PDV", tipo=TipoContaMovimento.CAIXA)
@@ -391,6 +620,14 @@ class AcessoPdvNuvemTests(TestCase):
 
     def test_suprimento_registrado_pelo_pdv_entra_no_livro_financeiro(self):
         caixa = Caixa.objects.create(filial=self.filial, usuario_abertura=self.operador, valor_inicial=Decimal("100"))
+        ConfiguracaoImpressao.objects.create(
+            empresa=self.filial.empresa,
+            filial=self.filial,
+            tipo_documento=TipoDocumentoImpressao.CUPOM_NAO_FISCAL,
+            impressora_padrao="EPSON TM-T20",
+            gaveta_automatica=True,
+            abrir_gaveta_em_movimento_caixa=True,
+        )
         self.client.force_login(self.operador)
 
         resposta = self.client.post(
@@ -406,6 +643,8 @@ class AcessoPdvNuvemTests(TestCase):
         )
 
         self.assertRedirects(resposta, "/pdv/")
+        self.assertContains(resposta, "pdv-cash-drawer-action")
+        self.assertContains(resposta, "suprimento")
         suprimento = Suprimento.objects.get(caixa=caixa)
         conta = ContaMovimentoFinanceiro.objects.get(filial=self.filial, nome="Caixa PDV", tipo=TipoContaMovimento.CAIXA)
         lancamento = LancamentoFinanceiro.objects.get(suprimento=suprimento)
@@ -440,6 +679,16 @@ class AcessoPdvNuvemTests(TestCase):
         tela = self.client.get("/pdv/")
         self.assertContains(tela, "Estorno")
         self.assertContains(tela, f"Venda #{venda.id}")
+        self.assertContains(tela, "Reimprimir")
+        self.assertContains(tela, 'data-pdv-modal-paginated')
+        self.assertContains(tela, 'data-page-size="4"')
+        self.assertContains(tela, 'data-refund-command-panel')
+        self.assertContains(tela, 'data-refund-open')
+        self.assertContains(tela, 'data-refund-print')
+        self.assertContains(tela, "Estornar venda")
+        self.assertContains(tela, "F6")
+        self.assertContains(tela, "Ctrl+Enter")
+        self.assertContains(tela, f"/pdv/vendas/{venda.id}/impressao-desktop.json?reimpressao=1")
 
         resposta = self.client.post(
             f"/pdv/vendas/{venda.id}/cancelar/",
@@ -503,6 +752,19 @@ class AcessoPdvNuvemTests(TestCase):
         self.assertTrue(payload["gaveta"]["abrir"])
         self.assertFalse(payload["gaveta"]["bloqueia_venda_se_indisponivel"])
 
+        detalhe = self.client.get(f"/pdv/vendas/{venda.id}/")
+        self.assertContains(detalhe, "Reimprimir cupom")
+        self.assertContains(detalhe, f"/pdv/vendas/{venda.id}/impressao-desktop.json?reimpressao=1")
+
+        reimpressao = self.client.get(f"/pdv/vendas/{venda.id}/impressao-desktop.json?reimpressao=1").json()
+        self.assertTrue(reimpressao["reimpressao"])
+        self.assertEqual(reimpressao["operacao"], "reimpressao_cupom")
+        self.assertFalse(reimpressao["gaveta"]["abrir"])
+        self.assertTrue(LogAuditoria.objects.filter(acao="REIMPRESSAO_CUPOM", objeto_tipo="Venda", objeto_id=str(venda.id), usuario=self.operador).exists())
+
+        self.client.get(f"/pdv/vendas/{venda.id}/recibo/?reimpressao=1")
+        self.assertEqual(LogAuditoria.objects.filter(acao="REIMPRESSAO_CUPOM", objeto_id=str(venda.id)).count(), 2)
+
     def test_recibo_e_payload_desktop_exibem_autorizacao_eletronica(self):
         categoria = Categoria.objects.create(nome="Bebidas")
         produto = Produto.objects.create(codigo_barras="789100000004", nome="Suco", categoria=categoria, preco_custo=Decimal("3"), preco_venda=Decimal("8.50"))
@@ -523,6 +785,11 @@ class AcessoPdvNuvemTests(TestCase):
                 "vencimento_financeiro": "",
                 "pagamento_forma": [forma.id],
                 "pagamento_valor": ["8.50"],
+                "pagamento_status": ["CONFIRMADO"],
+                "pagamento_transacao_externa_id": ["TEF-SIM-PIX-001"],
+                "pagamento_nsu": ["998877"],
+                "pagamento_codigo_autorizacao": ["PX1234"],
+                "pagamento_mensagem_processadora": ["Pagamento aprovado pelo simulador TEF do app desktop."],
             },
         )
         venda = Venda.objects.get()
@@ -538,4 +805,4 @@ class AcessoPdvNuvemTests(TestCase):
         self.assertEqual(payload["pagamentos"][0]["transacao_externa_id"], pagamento.transacao_externa_id)
         self.assertEqual(payload["pagamentos"][0]["nsu"], pagamento.nsu)
         self.assertEqual(payload["pagamentos"][0]["codigo_autorizacao"], pagamento.codigo_autorizacao)
-        self.assertIn("Autorizacao eletronica simulada", payload["pagamentos"][0]["mensagem_processadora"])
+        self.assertIn("simulador TEF do app desktop", payload["pagamentos"][0]["mensagem_processadora"])

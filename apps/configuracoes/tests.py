@@ -1,19 +1,27 @@
-import hashlib
+﻿import hashlib
 import tempfile
 from pathlib import Path
 
 from django.contrib.auth import get_user_model
-from django.test import Client, TestCase, override_settings
+from django.test import Client, SimpleTestCase, TestCase, override_settings
 
 from apps.accounts.models import PerfilUsuario, TipoPerfil
 from apps.auditoria.models import LogAuditoria
-from apps.empresas.models import Empresa, Filial
+from apps.empresas.models import Empresa, Filial, ModoImplantacao
 from apps.financeiro.models import ContaMovimentoFinanceiro, TipoContaMovimento
-from apps.pdv.models import ModoIntegracaoTef, ProtocoloBalanca, ProvedorTef, StatusLicencaTerminal, TerminalPdv
+from apps.pdv.models import EventoDispositivoTerminal, ModoIntegracaoTef, ProtocoloBalanca, ProvedorTef, StatusLicencaTerminal, TerminalPdv
 from apps.vendas.models import FormaPagamento
 
 from .models import ConfiguracaoImpressao, ModeloEtiqueta, ModeloPapel, TipoDocumentoImpressao
 from .services import configuracao_impressao_para, criar_configuracoes_padrao, estilos_impressao
+from .templatetags.formatadores import quantidade_br
+
+
+class FormatadoresTemplateTests(SimpleTestCase):
+    def test_quantidade_br_remove_zeros_de_unidade_e_mantem_fracao_brasileira(self):
+        self.assertEqual(quantidade_br("20.000"), "20")
+        self.assertEqual(quantidade_br("1.000"), "1")
+        self.assertEqual(quantidade_br("1.250"), "1,250")
 
 
 class ConfiguracoesOperacionaisTests(TestCase):
@@ -44,38 +52,53 @@ class ConfiguracoesOperacionaisTests(TestCase):
         criar_configuracoes_padrao()
 
         impressoes = self.client.get("/configuracoes/impressoes/")
+        backup_pagina = self.client.get("/configuracoes/backup/")
         backup = self.client.get("/configuracoes/backup/download/")
         checklist = self.client.get("/configuracoes/checklist/")
 
         self.assertEqual(impressoes.status_code, 200)
-        self.assertContains(impressoes, "Central de impressao")
+        self.assertContains(impressoes, "Central de impressão")
         self.assertContains(impressoes, "Cupom fiscal")
         self.assertContains(impressoes, "Com gaveta")
         self.assertContains(impressoes, "Sem impressora")
         self.assertContains(impressoes, "Descoberta local preparada para o app desktop")
-        self.assertContains(impressoes, "Ver ponto de integracao")
-        self.assertContains(impressoes, "Configuracoes do desktop")
+        self.assertContains(impressoes, "Ver ponto de integração")
+        self.assertContains(impressoes, "Configurações do desktop")
+        self.assertContains(backup_pagina, "BACKUP_ENCRYPTION_PASSPHRASE")
+        self.assertContains(backup_pagina, ".zip.aes")
+        self.assertContains(backup_pagina, "-RemoverOriginalCriptografado")
         self.assertEqual(backup.status_code, 200)
         self.assertEqual(backup["Content-Type"], "application/json; charset=utf-8")
         self.assertTrue(backup.content.startswith(b"["))
         self.assertContains(checklist, "Testes automatizados")
-        self.assertContains(checklist, "Proximas etapas")
-        self.assertContains(checklist, "Recorte automatico dos itens em andamento")
+        self.assertContains(checklist, "Próximas etapas")
+        self.assertContains(checklist, "Recorte automático dos itens em andamento")
+        self.assertContains(checklist, "Mapa do roadmap")
+        self.assertContains(checklist, "Concentração dos itens em andamento")
+        self.assertContains(checklist, "Implantacao")
+        self.assertContains(checklist, "Hardware/TEF")
+        self.assertContains(checklist, "Dispositivos")
+        self.assertContains(checklist, "alta prioridade")
+        self.assertContains(checklist, "Alta")
+        self.assertContains(checklist, "Homologar o adaptador TEF")
+        self.assertContains(checklist, "Fechar pacote instalavel")
         self.assertContains(checklist, "Buscar no checklist")
         self.assertContains(checklist, "Todos os status")
         self.assertContains(checklist, "Todos os grupos")
+        self.assertContains(checklist, "Todas as trilhas")
+        self.assertContains(checklist, "Todas as prioridades")
         self.assertContains(checklist, "Excel/CSV")
         self.assertContains(checklist, "Arquitetura PDV desktop local")
-        self.assertContains(checklist, "Padrao R$ em todos os formularios")
-        self.assertContains(checklist, "Campos numericos de preco")
-        self.assertContains(checklist, "Entradas, saidas e livro contabil")
+        self.assertContains(checklist, "Padrão R$ em todos os formulários")
+        self.assertContains(checklist, "Campos numéricos de preço")
+        self.assertContains(checklist, "Entradas, saídas e livro contábil")
         self.assertContains(checklist, "livro financeiro imutavel")
         self.assertContains(checklist, "Contas de movimento por filial")
         self.assertContains(checklist, "vendas a vista do PDV geram entradas automaticas")
-        self.assertContains(checklist, "sangria e suprimento geram saida/entrada automatica")
+        self.assertContains(checklist, "sangria e suprimento geram saída/entrada automatica")
         self.assertContains(checklist, "transferencias entre contas")
         self.assertContains(checklist, "estornos por lancamento inverso")
-        self.assertContains(checklist, "relatorio de receitas, despesas e resultado")
+        self.assertContains(checklist, "relatório de receitas, despesas e resultado")
         self.assertContains(checklist, "Gaveta de dinheiro opcional")
         self.assertContains(checklist, "Balanca integrada no PDV")
         self.assertContains(checklist, "produto pesavel")
@@ -85,28 +108,40 @@ class ConfiguracoesOperacionaisTests(TestCase):
         self.assertContains(checklist, "fallback manual")
         self.assertContains(checklist, "ponte local para expor a configuracao da balanca")
         self.assertContains(checklist, "peso simulado para homologacao")
-        self.assertContains(checklist, "botao Peso e atalho F12")
+        self.assertContains(checklist, "botão Peso e atalho F12")
         self.assertContains(checklist, "devices.log.jsonl")
         self.assertContains(checklist, "ponte deviceLogs")
-        self.assertContains(checklist, "leitura visual desse diagnostico")
+        self.assertContains(checklist, "leitura visual desse diagnóstico")
+        self.assertContains(checklist, "endpoint autenticado por terminal")
+        self.assertContains(checklist, "EventoDispositivoTerminal")
+        self.assertContains(checklist, "eventos ainda não sincronizados")
         self.assertContains(checklist, "ler peso automaticamente no PDV")
-        self.assertContains(checklist, "Central de impressao permite")
+        self.assertContains(checklist, "Central de impressão permite")
         self.assertContains(checklist, "consulta as impressoras instaladas no Windows")
         self.assertContains(checklist, "nome, porta, driver, estado e impressora padrao")
         self.assertContains(checklist, "envia diretamente ao spooler Windows em RAW/ESC-POS")
-        self.assertContains(checklist, "sem abrir pre-visualizacao")
-        self.assertContains(checklist, "PIX dinamico")
-        self.assertContains(checklist, "somente apos pagamento confirmado")
+        self.assertContains(checklist, "sem abrir pré-visualizacao")
+        self.assertContains(checklist, "PIX dinâmico")
+        self.assertContains(checklist, "somente após pagamento confirmado")
         self.assertContains(checklist, "tenta preparar a NFC-e automaticamente")
         self.assertContains(checklist, "desativar essa tentativa por terminal PDV")
         self.assertContains(checklist, "PDV exibe no topo")
         self.assertContains(checklist, "ultima tentativa automatica auditada")
         self.assertContains(checklist, "pendencia fica auditada")
         self.assertContains(checklist, "Transmissao simulada em homologacao")
-        self.assertContains(checklist, "transmissao SEFAZ real")
-        self.assertContains(checklist, "autorizacao simulada rastreavel")
+        self.assertContains(checklist, "transmissão SEFAZ real")
+        self.assertContains(checklist, "simulador TEF rastreável")
         self.assertContains(checklist, "provedor TEF e modo de integracao por adaptador")
         self.assertContains(checklist, "pdv_tef_v1")
+        self.assertContains(checklist, "ponte processPayment")
+        self.assertContains(checklist, "aguarda resposta da maquininha")
+        self.assertContains(checklist, "terminal sem TEF configurado retorna aviso")
+        self.assertContains(checklist, "eventos locais tef em devices.log.jsonl")
+        self.assertContains(checklist, "confirmar o estorno eletrônico aprovado pela operadora")
+        self.assertContains(checklist, "pdv_cash_drawer_v1")
+        self.assertContains(checklist, "ponte openCashDrawer")
+        self.assertContains(checklist, "registra diagnóstico local da gaveta")
+        self.assertContains(checklist, "somente depois da operacao ser aceita pelo servidor")
         self.assertContains(checklist, "Arquitetura PDV desktop local")
         self.assertContains(checklist, "fiel ao layout, atalhos e fluxo de venda do PDV web")
         self.assertContains(checklist, "bootstrap diario devolve a configuracao vigente")
@@ -115,10 +150,16 @@ class ConfiguracoesOperacionaisTests(TestCase):
         self.assertContains(checklist, "sem telas administrativas completas")
         self.assertContains(checklist, "Sincronizacao loja-nuvem")
         self.assertContains(checklist, "Empresa escolhe entre servidor local")
-        self.assertContains(checklist, "dados de pagamento eletronico")
+        self.assertContains(checklist, "Modo local administrativo")
+        self.assertContains(checklist, "instalação local do servidor administrativo")
+        self.assertContains(checklist, "PDV desktop continua separado e restrito ao operador")
+        self.assertContains(checklist, "scripts/register_sync_task.ps1")
+        self.assertContains(checklist, "BACKUP_ENCRYPTION_PASSPHRASE")
+        self.assertContains(checklist, "-RemoverOriginalCriptografado")
+        self.assertContains(checklist, "dados de pagamento eletrônico")
         self.assertContains(checklist, "nem conseguem inicializar o bootstrap")
         self.assertContains(checklist, "Eventos recebidos ficam armazenados")
-        self.assertContains(checklist, "Caixa de saida, processador HTTP")
+        self.assertContains(checklist, "Caixa de saída, processador HTTP")
         self.assertContains(checklist, "retentativa exponencial")
         self.assertContains(checklist, "caixa de entrada autenticada")
         self.assertContains(checklist, "processador interno com handlers por tipo")
@@ -127,84 +168,106 @@ class ConfiguracoesOperacionaisTests(TestCase):
         self.assertContains(checklist, "rascunho sem movimentar estoque")
         self.assertContains(checklist, "baixa direta da conta vinculada")
         self.assertContains(checklist, "rastreio financeiro da baixa")
-        self.assertContains(checklist, "impressao/PDF individual auditavel")
+        self.assertContains(checklist, "impressão/PDF individual auditável")
         self.assertContains(checklist, "rastreio financeiro do livro")
         self.assertContains(checklist, "situacao financeira da entrada")
-        self.assertContains(checklist, "retorno seguro do detalhe e da edicao de rascunho")
+        self.assertContains(checklist, "retorno seguro do detalhe e da edição de rascunho")
         self.assertContains(checklist, "situacao financeira aberta, paga, cancelada, vencida ou sem conta")
-        self.assertContains(checklist, "exportacao Excel/CSV e impressao/PDF da visao operacional filtrada")
+        self.assertContains(checklist, "exportacao Excel/CSV e impressão/PDF da visão operacional filtrada")
         self.assertContains(checklist, "limpeza rapida de filtros ativos")
         self.assertContains(checklist, "chips visuais dos filtros aplicados")
         self.assertContains(checklist, "cards de resumo financeiro")
         self.assertContains(checklist, "atalho para filtro")
         self.assertContains(checklist, "preservando busca e status atuais")
         self.assertContains(checklist, "rastreio no estoque da entrada")
-        self.assertContains(checklist, "movimentacoes de entrada e cancelamento")
+        self.assertContains(checklist, "movimentações de entrada e cancelamento")
         self.assertContains(checklist, "cancelamento protegido de compra finalizada")
-        self.assertContains(checklist, "bloqueio quando a conta ja foi paga")
-        self.assertContains(checklist, "nao existir saldo para reverter")
+        self.assertContains(checklist, "bloqueio quando a conta já foi paga")
+        self.assertContains(checklist, "não existir saldo para reverter")
         self.assertContains(checklist, "aviso antecipado desses bloqueios")
         self.assertContains(checklist, "espelho de venda finalizada com painel")
         self.assertContains(checklist, "espelho fiscal sincronizado")
-        self.assertContains(checklist, "detalhe auditavel de eventos")
-        self.assertContains(checklist, "resolucao manual de conflitos")
+        self.assertContains(checklist, "detalhe auditável de eventos")
+        self.assertContains(checklist, "resolução manual de conflitos")
         self.assertContains(checklist, "exportacao CSV das filas")
-        self.assertContains(checklist, "comando unico agendavel")
+        self.assertContains(checklist, "diagnóstico JSON operacional")
+        self.assertContains(checklist, "próximos eventos")
+        self.assertContains(checklist, "empresas por modo")
+        self.assertContains(checklist, "comando único agendável")
         self.assertContains(checklist, "roteiro do Agendador de Tarefas")
-        self.assertContains(checklist, "Etiquetas de gondola profissionais")
+        self.assertContains(checklist, "scripts/register_sync_task.ps1")
+        self.assertContains(checklist, "Super admin personalizado")
+        self.assertContains(checklist, "saúde da sincronização")
+        self.assertContains(checklist, "Etiquetas de gôndola profissionais")
         self.assertContains(checklist, "documento complementar de etiquetas")
         self.assertContains(checklist, "compacto 110x30 mm")
         self.assertContains(checklist, "completo 100x50 mm")
-        self.assertContains(checklist, "sem fundo colorido forcado")
+        self.assertContains(checklist, "sem fundo colorido forçado")
         self.assertContains(checklist, "Etiquetas e impressoras profissionais")
         self.assertContains(checklist, "Modelo compacto 110x30")
-        self.assertContains(checklist, "Busca por codigo de barras nas etiquetas")
+        self.assertContains(checklist, "Busca por código de barras nas etiquetas")
         self.assertContains(checklist, "Impressao em medidas reais")
         self.assertContains(checklist, "ZPL, EPL, PPLA e PPLB")
+        self.assertContains(checklist, "ZPL, EPL, PPLA ou PPLB")
+        self.assertContains(checklist, "homologacao por modelo")
         self.assertContains(checklist, "etiqueta de teste por modelo")
         self.assertContains(checklist, "teste de modelo usa a mesma ponte local")
         self.assertContains(checklist, "Complementar desmembramento e fracionamento de produtos")
         self.assertContains(checklist, "Desmembramento e fracionamento de produtos")
         self.assertContains(checklist, "models DesmembramentoProduto, ItemDesmembramentoProduto e ReceitaDesmembramento")
-        self.assertContains(checklist, "receitas/conversoes padrao por empresa/filial")
-        self.assertContains(checklist, "aplicacao automatica de receita no formulario")
-        self.assertContains(checklist, "operacao atomica com trava")
+        self.assertContains(checklist, "receitas/conversões padrao por empresa/filial")
+        self.assertContains(checklist, "aplicacao automatica de receita no formulário")
+        self.assertContains(checklist, "operacao atômica com trava")
         self.assertContains(checklist, "validacao de estoque suficiente")
-        self.assertContains(checklist, "entrada de um ou varios produtos destino no servico transacional")
-        self.assertContains(checklist, "previa/simulacao antes de confirmar")
-        self.assertContains(checklist, "busca remota por codigo de barras")
-        self.assertContains(checklist, "codigo interno/SKU")
+        self.assertContains(checklist, "entrada de um ou vários produtos destino no serviço transacional")
+        self.assertContains(checklist, "prévia/simulacao antes de confirmar")
+        self.assertContains(checklist, "busca remota por código de barras")
+        self.assertContains(checklist, "código interno/SKU")
         self.assertContains(checklist, "custo proporcional por quantidade")
         self.assertContains(checklist, "cancelamento seguro com movimentos inversos")
         self.assertContains(checklist, "para todos os destinos")
         self.assertContains(checklist, "exportacao CSV por filtro")
-        self.assertContains(checklist, "multiplos destinos para a tela dinamica")
-        self.assertContains(checklist, "acougue por peso")
-        self.assertContains(checklist, "relatorios gerenciais completos de rendimento e perdas")
+        self.assertContains(checklist, "múltiplos destinos para a tela dinâmica")
+        self.assertContains(checklist, "açougue por peso")
+        self.assertContains(checklist, "Relatórios gerenciais completos de rendimento e perdas")
+        self.assertContains(checklist, "Consulta de CNPJ e CEP")
+        self.assertContains(checklist, "CADASTRO_CNPJ_PROVIDER_URL")
+        self.assertContains(checklist, "CADASTRO_CEP_PROVIDER_URL")
+        self.assertContains(checklist, "fallback local/offline")
+        self.assertContains(checklist, "Políticas de entrega por filial")
+        self.assertContains(checklist, "delivery_geocode_v1")
+        self.assertContains(checklist, "MARKETPLACE_GEOCODING_PROVIDER_URL")
+        self.assertContains(checklist, "fallback manual de distancia")
 
     def test_checklist_filtra_por_status_grupo_e_busca(self):
         response = self.client.get(
             "/configuracoes/checklist/",
-            {"status": "partial", "grupo": "PDV e caixa", "q": "balanca"},
+            {"status": "partial", "grupo": "PDV e caixa", "q": "balanca", "trilha": "Dispositivos", "prioridade": "Média"},
         )
 
         self.assertEqual(response.status_code, 200)
         self.assertContains(response, "item(ns) encontrado(s)")
         self.assertContains(response, "Balanca integrada no PDV")
         self.assertContains(response, "ler peso automaticamente no PDV")
+        self.assertContains(response, "Dispositivos")
+        self.assertContains(response, "Média")
         self.assertNotContains(response, "Tela PDV em layout de operador")
+        self.assertNotContains(response, "TEF/API de maquininha")
 
         csv_response = self.client.get(
             "/configuracoes/checklist/exportar.csv",
-            {"status": "partial", "grupo": "PDV e caixa", "q": "balanca"},
+            {"status": "partial", "grupo": "PDV e caixa", "q": "balanca", "trilha": "Dispositivos", "prioridade": "Média"},
         )
         self.assertEqual(csv_response.status_code, 200)
         self.assertEqual(csv_response["Content-Type"], "text/csv; charset=utf-8")
         conteudo = csv_response.content.decode("utf-8-sig")
-        self.assertIn("Grupo;Item;Status;Descricao", conteudo)
+        self.assertIn("Grupo;Item;Status;Trilha;Prioridade;Proxima acao;Descricao", conteudo)
         self.assertIn("Balanca integrada no PDV", conteudo)
         self.assertIn("Em andamento", conteudo)
+        self.assertIn("Dispositivos", conteudo)
+        self.assertIn("Planejar teste em equipamento real", conteudo)
         self.assertNotIn("Tela PDV em layout de operador", conteudo)
+        self.assertNotIn("TEF/API de maquininha", conteudo)
 
     def test_painel_sistema_centraliza_admin_proprio(self):
         response = self.client.get("/configuracoes/")
@@ -219,8 +282,170 @@ class ConfiguracoesOperacionaisTests(TestCase):
         self.assertNotContains(response, "Admin Django")
         self.assertContains(response, "Checklist")
         self.assertContains(response, "App PDV desktop")
+        self.assertContains(response, "Servidor local/admin")
+        self.assertContains(response, "Super admin")
+        self.assertNotContains(response, "Admin Django")
 
-    def test_cadastra_e_edita_forma_pagamento_no_painel_proprio(self):
+    def test_super_admin_proprio_substitui_admin_django_para_admin_master(self):
+        PerfilUsuario.objects.create(usuario=self.user, filial=self.filial, tipo=TipoPerfil.ADMINISTRADOR)
+        LogAuditoria.objects.create(
+            usuario=self.user,
+            modulo="configuracoes",
+            acao="TESTE_SUPER_ADMIN",
+            descricao="Evento visivel no painel master.",
+        )
+
+        response = self.client.get("/configuracoes/super-admin/")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "Super admin")
+        self.assertContains(response, "Área restrita ao admin master")
+        self.assertContains(response, "Prontidão operacional")
+        self.assertContains(response, "Empresas e filiais")
+        self.assertContains(response, "Terminais PDV")
+        self.assertContains(response, "Servidor local/admin")
+        self.assertContains(response, "Inventário técnico")
+        self.assertContains(response, "Diagnóstico JSON")
+        self.assertContains(response, "Excel/CSV")
+        self.assertContains(response, "Pendências acionáveis")
+        self.assertContains(response, "Usuários sem perfil")
+        self.assertContains(response, "Filiais sem IBGE")
+        self.assertContains(response, "Cobertura de telas próprias")
+        self.assertContains(response, "ConfiguracaoFiscal, SerieFiscal, NaturezaOperacao, DocumentoFiscal")
+        self.assertContains(response, "EventoSincronizacao, EventoEntradaSincronizacao")
+        self.assertContains(response, "Atividade recente")
+        self.assertContains(response, "TESTE_SUPER_ADMIN")
+        self.assertContains(response, "Investigações rápidas")
+        self.assertContains(response, "Auditoria de configurações")
+        self.assertContains(response, "Checklist em andamento")
+        self.assertContains(response, "Alertas de sincronização")
+        self.assertContains(response, "Sincronização com alerta")
+        self.assertContains(response, "Diagnóstico da sincronização")
+        self.assertContains(response, "Ambiente e segurança")
+        self.assertContains(response, "Banco padrão")
+        self.assertContains(response, "Pasta media")
+        self.assertContains(response, "Perfis ativos")
+        self.assertContains(response, "Administrador")
+        self.assertNotContains(response, "Admin Django")
+
+    def test_super_admin_diagnostico_json_para_suporte_restrito(self):
+        PerfilUsuario.objects.create(usuario=self.user, filial=self.filial, tipo=TipoPerfil.ADMINISTRADOR)
+
+        response = self.client.get("/configuracoes/super-admin/diagnostico.json")
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertEqual(payload["usuario"], "admin")
+        self.assertIn("diagnosticos", payload)
+        self.assertIn("modelos", payload)
+        self.assertIn("perfis_por_tipo", payload)
+        self.assertIn("resumo_checklist", payload)
+        self.assertIn("pendencias_acionaveis", payload)
+        self.assertIn("cobertura_telas", payload)
+        self.assertIn("atividade_recente", payload)
+        self.assertIn("investigacoes", payload)
+        self.assertIn("ambiente_operacional", payload)
+        self.assertIn("prontidao_operacional", payload)
+        self.assertIn("links", payload)
+        self.assertEqual(payload["links"]["diagnostico_json"], "http://localhost/configuracoes/super-admin/diagnostico.json")
+        self.assertEqual(payload["links"]["diagnostico_csv"], "http://localhost/configuracoes/super-admin/diagnostico.csv")
+        self.assertEqual(payload["links"]["sincronizacao_diagnostico_json"], "http://localhost/empresas/sincronizacao/diagnostico.json")
+        self.assertIn("Usuários sem perfil", [item["titulo"] for item in payload["pendencias_acionaveis"]])
+        self.assertIn("Sincronização com alerta", [item["titulo"] for item in payload["pendencias_acionaveis"]])
+        self.assertIn("Fiscal", [item["area"] for item in payload["cobertura_telas"]])
+        self.assertIn("Auditoria do PDV", [item["titulo"] for item in payload["investigacoes"]])
+        self.assertIn("Diagnóstico da sincronização", [item["titulo"] for item in payload["investigacoes"]])
+        self.assertIn("DEBUG", [item["item"] for item in payload["ambiente_operacional"]])
+        self.assertIn(payload["prontidao_operacional"]["status"], {"Pronta", "Atenção", "Crítica"})
+        self.assertGreaterEqual(payload["total_modelos"], 1)
+
+    def test_super_admin_diagnostico_csv_para_suporte_restrito(self):
+        PerfilUsuario.objects.create(usuario=self.user, filial=self.filial, tipo=TipoPerfil.ADMINISTRADOR)
+        LogAuditoria.objects.create(
+            usuario=self.user,
+            modulo="configuracoes",
+            acao="EXPORTACAO_TESTE",
+            descricao="Evento para CSV do super admin.",
+        )
+
+        response = self.client.get("/configuracoes/super-admin/diagnostico.csv")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response["Content-Type"], "text/csv; charset=utf-8")
+        conteudo = response.content.decode("utf-8-sig")
+        self.assertIn("Secao;Item;Status/Prioridade;Total/Valor;Descricao/Acao", conteudo)
+        self.assertIn("Diagnostico;Admin masters;Acesso", conteudo)
+        self.assertIn("Pendencia;Usuários sem perfil;Alta", conteudo)
+        self.assertIn("Cobertura;Fiscal;Operacional", conteudo)
+        self.assertIn("Atividade;EXPORTACAO_TESTE;configuracoes", conteudo)
+        self.assertIn("Investigacao;Auditoria de configurações;Link", conteudo)
+        self.assertIn("Ambiente;DEBUG;", conteudo)
+        self.assertIn("Prontidao;", conteudo)
+        self.assertIn("Perfil;Administrador;Ativo", conteudo)
+
+    def test_super_admin_exige_admin_master(self):
+        gerente = get_user_model().objects.create_user("gerente_super_admin", "gerente_super_admin@example.com", "123")
+        PerfilUsuario.objects.create(usuario=gerente, filial=self.filial, tipo=TipoPerfil.GERENTE)
+        self.client.force_login(gerente)
+
+        response = self.client.get("/configuracoes/super-admin/")
+        diagnostico = self.client.get("/configuracoes/super-admin/diagnostico.json")
+        csv_response = self.client.get("/configuracoes/super-admin/diagnostico.csv")
+
+        self.assertEqual(response.status_code, 403)
+        self.assertEqual(diagnostico.status_code, 403)
+        self.assertEqual(csv_response.status_code, 403)
+
+    def test_servidor_local_admin_prepara_manifesto_de_implantacao(self):
+        self.empresa.modo_implantacao = ModoImplantacao.HIBRIDO
+        self.empresa.sincronizacao_automatica = True
+        self.empresa.save(update_fields=["modo_implantacao", "sincronizacao_automatica"])
+
+        response = self.client.get("/configuracoes/servidor-local/")
+        manifest = self.client.get("/configuracoes/servidor-local/manifest.json")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "Servidor local administrativo")
+        self.assertContains(response, "não um segundo sistema")
+        self.assertContains(response, "PDV desktop segue separado e restrito ao operador")
+        self.assertContains(response, "Serviço Windows/Linux")
+        self.assertContains(response, "Backup local automático")
+        self.assertContains(response, "scripts/run_local_server.ps1")
+        self.assertContains(response, "scripts/register_local_server_task.ps1")
+        self.assertContains(response, "scripts/backup_local.ps1")
+        self.assertContains(response, "scripts/register_backup_task.ps1")
+        self.assertContains(response, "BACKUP_ENCRYPTION_PASSPHRASE")
+        self.assertContains(response, "-RemoverOriginalCriptografado")
+        self.assertContains(response, "scripts/register_sync_task.ps1")
+        self.assertContains(response, "docs/IMPLANTACAO_SERVIDOR_LOCAL.md")
+        self.assertContains(response, "Supermercado Modelo")
+        self.assertContains(response, "Servidor local com sincronizacao em nuvem")
+        self.assertEqual(manifest.status_code, 200)
+        payload = manifest.json()
+        self.assertEqual(payload["contrato"], "erp_local_admin_v1")
+        self.assertTrue(payload["acesso"]["usa_navegador"])
+        self.assertTrue(payload["acesso"]["pdv_desktop_separado"])
+        self.assertEqual(payload["scripts"]["subir_servidor"], "scripts/run_local_server.ps1")
+        self.assertEqual(payload["scripts"]["registrar_servidor"], "scripts/register_local_server_task.ps1")
+        self.assertEqual(payload["scripts"]["backup_local"], "scripts/backup_local.ps1")
+        self.assertEqual(payload["scripts"]["registrar_backup"], "scripts/register_backup_task.ps1")
+        self.assertEqual(payload["scripts"]["backup_criptografia_env"], "BACKUP_ENCRYPTION_PASSPHRASE")
+        self.assertEqual(payload["scripts"]["backup_criptografia_flag"], "-RemoverOriginalCriptografado")
+        self.assertEqual(payload["scripts"]["registrar_sincronizacao"], "scripts/register_sync_task.ps1")
+        self.assertEqual(payload["modos_implantacao"]["hibrido"]["empresas"], 1)
+        self.assertEqual(payload["empresas"][0]["modo_implantacao"], ModoImplantacao.HIBRIDO)
+        self.assertTrue(payload["empresas"][0]["sincronizacao_automatica"])
+
+    def test_manifesto_servidor_local_exige_admin_master(self):
+        gerente = get_user_model().objects.create_user("gerente_local", "gerente_local@example.com", "123")
+        PerfilUsuario.objects.create(usuario=gerente, filial=self.filial, tipo=TipoPerfil.GERENTE)
+        self.client.force_login(gerente)
+
+        response = self.client.get("/configuracoes/servidor-local/manifest.json")
+
+        self.assertEqual(response.status_code, 403)
+
+    def test_cadastra_e_edita_forma_pagamento_no_painel_próprio(self):
         conta_pix = ContaMovimentoFinanceiro.objects.create(
             filial=self.filial,
             nome="PIX Caixa 01",
@@ -248,7 +473,7 @@ class ConfiguracoesOperacionaisTests(TestCase):
         )
         self.assertContains(invalida, "Troco deve ser habilitado somente")
 
-    def test_cadastra_terminal_pdv_no_painel_proprio(self):
+    def test_cadastra_terminal_pdv_no_painel_próprio(self):
         response = self.client.post(
             "/configuracoes/terminais-pdv/novo/",
             {
@@ -335,8 +560,24 @@ class ConfiguracoesOperacionaisTests(TestCase):
             licenca_liberada_por=self.user,
             emite_documento_fiscal=False,
         )
+        ConfiguracaoImpressao.objects.create(
+            empresa=self.empresa,
+            filial=self.filial,
+            tipo_documento=TipoDocumentoImpressao.CUPOM_NAO_FISCAL,
+            impressora_padrao="EPSON TM-T20",
+            gaveta_automatica=True,
+            abrir_gaveta_em_dinheiro=True,
+            abrir_gaveta_em_movimento_caixa=True,
+        )
         TerminalPdv.objects.create(filial=self.filial, nome="Caixa Pendente", status_licenca=StatusLicencaTerminal.PENDENTE)
         TerminalPdv.objects.create(filial=self.filial, nome="Caixa Bloqueado", status_licenca=StatusLicencaTerminal.BLOQUEADA)
+        EventoDispositivoTerminal.objects.create(
+            terminal=terminal,
+            tipo="balanca",
+            status="erro",
+            mensagem="Driver fisico indisponivel",
+            payload={"porta": "COM3"},
+        )
 
         response = self.client.get("/configuracoes/pdv-desktop/")
         checklist = self.client.get("/configuracoes/checklist/")
@@ -346,19 +587,22 @@ class ConfiguracoesOperacionaisTests(TestCase):
         self.assertContains(response, "artefato separado")
         self.assertContains(response, "admin master")
         self.assertContains(response, "Terminais cadastrados")
-        self.assertContains(response, "Licencas liberadas")
+        self.assertContains(response, "Licenças liberadas")
         self.assertContains(response, "Pendentes")
         self.assertContains(response, "Bloqueadas/canceladas")
         self.assertContains(response, "pdv_tef_v1")
         self.assertContains(response, "Manifesto JSON")
-        self.assertContains(response, "Diagnostico local deste terminal")
-        self.assertContains(response, "Ler diagnostico local")
+        self.assertContains(response, "Diagnóstico local deste terminal")
+        self.assertContains(response, "Ler diagnóstico local")
         self.assertContains(response, "desktop-device-logs")
+        self.assertContains(response, "Diagnóstico consolidado dos terminais")
+        self.assertContains(response, "1 evento(s) recebidos")
+        self.assertContains(response, "Driver fisico indisponivel")
         self.assertContains(response, "Caixa 02")
         self.assertContains(response, "Stone")
         self.assertContains(response, "Configurada")
         self.assertContains(response, "Serial RS-232/USB")
-        self.assertContains(response, "Sem fiscal automatico")
+        self.assertContains(response, "Sem fiscal automático")
         self.assertContains(response, "Pacote JSON")
         self.assertContains(checklist, "Central do App PDV desktop")
         self.assertContains(checklist, "manifesto JSON do app desktop")
@@ -371,16 +615,19 @@ class ConfiguracoesOperacionaisTests(TestCase):
         self.assertContains(checklist, "build reproduzivel do executavel Windows")
         self.assertContains(checklist, "apresenta tamanho e SHA-256")
         self.assertContains(checklist, "registra a entrega na auditoria")
-        self.assertContains(checklist, "script de publicacao atomica")
+        self.assertContains(checklist, "script de publicacao atômica")
         self.assertContains(checklist, "configuraveis por ambiente")
         self.assertContains(checklist, "informa sua versao no bootstrap")
         self.assertContains(checklist, "bloqueia versao insegura")
         self.assertContains(checklist, "sem atualizacao automatica fora do licenciamento")
-        self.assertContains(checklist, "licenca por maquina")
+        self.assertContains(checklist, "salva cache local do bootstrap autorizado")
+        self.assertContains(checklist, "recusa de licença, chave ou terminal bloqueado nunca usa o cache")
+        self.assertContains(checklist, "licenca por máquina")
         self.assertContains(checklist, "licenca liberada")
-        self.assertContains(checklist, "nao recebem pacote de ativacao")
+        self.assertContains(checklist, "não recebem pacote de ativacao")
         self.assertContains(checklist, "projeto/artefato separado")
         self.assertContains(checklist, "baixado por dentro do sistema somente com autorizacao do admin master")
+        self.assertContains(checklist, "histórico consolidado dos eventos recebidos pelo servidor")
 
         manifest = self.client.get("/configuracoes/pdv-desktop/manifest.json")
         self.assertEqual(manifest.status_code, 200)
@@ -419,6 +666,10 @@ class ConfiguracoesOperacionaisTests(TestCase):
         self.assertEqual(pacote_payload["dispositivos"]["balanca"]["protocolo"], ProtocoloBalanca.SERIAL)
         self.assertEqual(pacote_payload["dispositivos"]["balanca"]["modelo"], "Toledo Prix")
         self.assertTrue(pacote_payload["dispositivos"]["balanca"]["fallback_manual"])
+        self.assertEqual(pacote_payload["dispositivos"]["gaveta"]["contrato"], "pdv_cash_drawer_v1")
+        self.assertTrue(pacote_payload["dispositivos"]["gaveta"]["habilitada"])
+        self.assertEqual(pacote_payload["dispositivos"]["gaveta"]["impressora_padrao"], "EPSON TM-T20")
+        self.assertTrue(pacote_payload["dispositivos"]["gaveta"]["abrir_em_movimento_caixa"])
         self.assertIn("/configuracoes/impressoes/desktop.json", pacote_payload["dispositivos"]["impressora"]["config_url"])
 
     def test_pacote_do_app_desktop_so_sai_com_licenca_liberada(self):
@@ -433,7 +684,7 @@ class ConfiguracoesOperacionaisTests(TestCase):
         pacote = self.client.get(f"/configuracoes/pdv-desktop/terminais/{terminal.pk}/pacote.json")
 
         self.assertContains(response, "Caixa Pendente")
-        self.assertContains(response, "Libere licenca")
+        self.assertContains(response, "Libere licença")
         self.assertEqual(manifest.status_code, 200)
         payload = manifest.json()
         self.assertEqual(payload["terminais"][0]["licenca"]["status"], StatusLicencaTerminal.PENDENTE)
@@ -614,7 +865,7 @@ class ConfiguracoesOperacionaisTests(TestCase):
                 "margem_inferior_mm": 4,
                 "margem_esquerda_mm": 4,
                 "margem_direita_mm": 4,
-                "mensagem_rodape": "Obrigado pela preferencia.",
+                "mensagem_rodape": "Obrigado pela preferência.",
                 "impressora_padrao": "Caixa 01",
                 "gaveta_automatica": "on",
                 "abrir_gaveta_em_dinheiro": "on",
@@ -637,9 +888,9 @@ class ConfiguracoesOperacionaisTests(TestCase):
         form_response = self.client.get(f"/configuracoes/impressoes/{config.id}/editar/")
         self.assertContains(form_response, "printer-suggestions")
         self.assertContains(form_response, "select2-field")
-        self.assertContains(form_response, "impressoras detectadas na maquina")
+        self.assertContains(form_response, "impressoras detectadas na máquina")
         self.assertContains(form_response, "Gaveta de dinheiro")
-        self.assertContains(form_response, "sem tentar acionar gaveta fisica")
+        self.assertContains(form_response, "sem tentar acionar gaveta física")
 
         list_response = self.client.get("/configuracoes/impressoes/")
         self.assertContains(list_response, "Com gaveta")

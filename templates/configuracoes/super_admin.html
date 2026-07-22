@@ -1,0 +1,225 @@
+{% extends "base.html" %}
+
+{% block title %}Super admin{% endblock %}
+
+{% block content %}
+<header class="page-header">
+  <div>
+    <h1>Super admin</h1>
+    <p>Central avançada para o admin master operar o sistema sem depender do admin padrão do Django.</p>
+  </div>
+  <div class="actions">
+    <a class="secondary-button" href="{% url 'configuracoes:super_admin_diagnostico' %}"><i class="fa-solid fa-code"></i> Diagnóstico JSON</a>
+    <a class="secondary-button" href="{% url 'configuracoes:super_admin_diagnostico_csv' %}"><i class="fa-solid fa-file-csv"></i> Excel/CSV</a>
+    <a class="secondary-button" href="{% url 'configuracoes:checklist' %}"><i class="fa-solid fa-list-check"></i> Checklist</a>
+    <a class="secondary-button" href="{% url 'auditoria:logs' %}"><i class="fa-solid fa-shield-halved"></i> Auditoria</a>
+  </div>
+</header>
+
+<section class="operation-notice">
+  <i class="fa-solid fa-user-shield"></i>
+  <div>
+    <strong>Área restrita ao admin master.</strong>
+    <span>Use esta tela para acompanhar cadastros sensíveis, implantação local, terminais, fiscal, impressão, backup e trilhas de auditoria.</span>
+  </div>
+</section>
+
+<section class="metrics-grid">
+  <article class="metric">
+    <span>Prontidão operacional</span>
+    <strong>{{ prontidao_operacional.percentual }}%</strong>
+    <small>{{ prontidao_operacional.status }}</small>
+  </article>
+  {% for item in diagnosticos %}
+    <article class="metric">
+      <span>{{ item.titulo }}</span>
+      <strong>{{ item.valor }}</strong>
+      <small>{{ item.status }}</small>
+    </article>
+  {% endfor %}
+  <article class="metric"><span>Checklist</span><strong>{{ resumo_checklist.percentual }}%</strong><small>{{ resumo_checklist.parciais }} em andamento</small></article>
+  <article class="metric"><span>Modelos monitorados</span><strong>{{ total_modelos }}</strong><small>{{ total_registros }} registros</small></article>
+  <article class="metric"><span>Alertas</span><strong>{{ alertas|length }}</strong><small>para revisar</small></article>
+</section>
+
+<section class="operation-notice {% if prontidao_operacional.status != 'Pronta' %}operation-notice-warning{% endif %}">
+  <i class="fa-solid fa-gauge-high"></i>
+  <div>
+    <strong>{{ prontidao_operacional.status }}: {{ prontidao_operacional.percentual }}% de prontidão.</strong>
+    <span>{{ prontidao_operacional.descricao }}</span>
+  </div>
+</section>
+
+<section class="panel">
+  <div class="panel-heading">
+    <div>
+      <h2>Pendências acionáveis</h2>
+      <p>Itens que o admin master pode corrigir direto nas telas próprias do sistema.</p>
+    </div>
+  </div>
+  <div class="table-wrapper">
+    <table>
+      <thead><tr><th>Prioridade</th><th>Pendência</th><th>Total</th><th>Ação recomendada</th><th></th></tr></thead>
+      <tbody>
+        {% for pendencia in pendencias_acionaveis %}
+          <tr>
+            <td><span class="status {% if pendencia.prioridade == 'Alta' %}status-danger{% else %}status-warning{% endif %}">{{ pendencia.prioridade }}</span></td>
+            <td><strong>{{ pendencia.titulo }}</strong></td>
+            <td>{{ pendencia.total }}</td>
+            <td>{{ pendencia.acao }}</td>
+            <td><a class="secondary-button compact-button" href="{% url pendencia.url_name %}">Abrir</a></td>
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</section>
+
+<section class="panel">
+  <div class="panel-heading">
+    <div>
+      <h2>Cobertura de telas próprias</h2>
+      <p>Mapa das áreas que já substituem o admin padrão por uma experiência operacional.</p>
+    </div>
+  </div>
+  <div class="table-wrapper">
+    <table>
+      <thead><tr><th>Área</th><th>Modelos</th><th>Status</th><th>Observação</th><th></th></tr></thead>
+      <tbody>
+        {% for item in cobertura_telas %}
+          <tr>
+            <td><strong>{{ item.area }}</strong></td>
+            <td>{{ item.modelos }}</td>
+            <td>
+              <span class="status {% if item.status == 'Completa' %}status-success{% elif item.status == 'Operacional' %}status-warning{% else %}status-muted{% endif %}">
+                {{ item.status }}
+              </span>
+            </td>
+            <td>{{ item.observacao }}</td>
+            <td><a class="secondary-button compact-button" href="{% url item.url_name %}">Abrir</a></td>
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</section>
+
+<section class="panel">
+  <div class="panel-heading">
+    <div>
+      <h2>Atividade recente</h2>
+      <p>Últimas ações auditadas no sistema, para leitura rápida antes de investigar em detalhes.</p>
+    </div>
+    <a class="secondary-button compact-button" href="{% url 'auditoria:logs' %}">Ver auditoria</a>
+  </div>
+  <div class="table-wrapper">
+    <table>
+      <thead><tr><th>Data</th><th>Módulo</th><th>Ação</th><th>Usuário</th><th>Descrição</th></tr></thead>
+      <tbody>
+        {% for log in atividade_recente %}
+          <tr>
+            <td>{{ log.data_label }}</td>
+            <td>{{ log.modulo }}</td>
+            <td><strong>{{ log.acao }}</strong></td>
+            <td>{{ log.usuario }}</td>
+            <td>{{ log.descricao|default:"-" }}</td>
+          </tr>
+        {% empty %}
+          <tr><td colspan="5" class="empty">Nenhuma atividade auditada ainda.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</section>
+
+<section class="panel">
+  <div class="panel-heading">
+    <div>
+      <h2>Investigações rápidas</h2>
+      <p>Filtros prontos para o admin master auditar o que importa sem montar a busca manualmente.</p>
+    </div>
+  </div>
+  <div class="quick-actions-grid">
+    {% for item in investigacoes %}
+      <a class="quick-action-card" href="{{ item.url }}">
+        <strong>{{ item.titulo }}</strong>
+        <span>{{ item.descricao }}</span>
+      </a>
+    {% endfor %}
+  </div>
+</section>
+
+<section class="panel">
+  <div class="panel-heading">
+    <div>
+      <h2>Ambiente e segurança</h2>
+      <p>Conferência rápida da instalação atual antes de operar em produção, rede local ou nuvem.</p>
+    </div>
+  </div>
+  <div class="table-wrapper">
+    <table>
+      <thead><tr><th>Item</th><th>Valor</th><th>Status</th><th>Descrição</th></tr></thead>
+      <tbody>
+        {% for item in ambiente_operacional %}
+          <tr>
+            <td><strong>{{ item.item }}</strong></td>
+            <td>{{ item.valor }}</td>
+            <td><span class="status {% if item.status == 'OK' %}status-success{% else %}status-warning{% endif %}">{{ item.status }}</span></td>
+            <td>{{ item.descricao }}</td>
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</section>
+
+<section class="split-grid">
+  {% for secao in secoes %}
+    <article class="panel">
+      <h2>{{ secao.titulo }}</h2>
+      <div class="quick-actions-grid">
+        {% for titulo, url_name, descricao in secao.itens %}
+          <a class="quick-action-card" href="{% url url_name %}">
+            <strong>{{ titulo }}</strong>
+            <span>{{ descricao }}</span>
+          </a>
+        {% endfor %}
+      </div>
+    </article>
+  {% endfor %}
+</section>
+
+<section class="split-grid">
+  <article class="panel">
+    <h2>Perfis ativos</h2>
+    <div class="table-wrapper">
+      <table>
+        <thead><tr><th>Perfil</th><th>Total</th></tr></thead>
+        <tbody>
+          {% for perfil in perfis_por_tipo %}
+            <tr><td>{{ perfil.tipo }}</td><td><strong>{{ perfil.total }}</strong></td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </article>
+
+  <article class="panel">
+    <h2>Inventário técnico</h2>
+    <div class="table-wrapper">
+      <table>
+        <thead><tr><th>App</th><th>Modelo</th><th>Registros</th></tr></thead>
+        <tbody>
+          {% for modelo in modelos %}
+            <tr>
+              <td>{{ modelo.app }}</td>
+              <td>{{ modelo.modelo }}</td>
+              <td><strong>{{ modelo.total|default:"-" }}</strong></td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </article>
+</section>
+{% endblock %}
