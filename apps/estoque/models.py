@@ -154,6 +154,26 @@ class StatusProducaoComposicao(models.TextChoices):
     CANCELADO = "CANCELADO", "Cancelado"
 
 
+class StatusOrdemProducaoComposicao(models.TextChoices):
+    PLANEJADA = "PLANEJADA", "Planejada"
+    PRODUZIDA = "PRODUZIDA", "Produzida"
+    CANCELADA = "CANCELADA", "Cancelada"
+
+
+class PrioridadeOrdemProducaoComposicao(models.TextChoices):
+    BAIXA = "BAIXA", "Baixa"
+    NORMAL = "NORMAL", "Normal"
+    ALTA = "ALTA", "Alta"
+    URGENTE = "URGENTE", "Urgente"
+
+
+class EtapaOrdemProducaoComposicao(models.TextChoices):
+    AGUARDANDO = "AGUARDANDO", "Aguardando"
+    SEPARACAO = "SEPARACAO", "Separação"
+    PRODUCAO = "PRODUCAO", "Produção"
+    CONFERENCIA = "CONFERENCIA", "Conferência"
+
+
 class MetodoCustoDesmembramento(models.TextChoices):
     QUANTIDADE = "QUANTIDADE", "Proporcional por quantidade"
     PESO = "PESO", "Proporcional por peso"
@@ -267,6 +287,125 @@ class ItemProducaoComposicaoProduto(models.Model):
 
     def __str__(self):
         return f"{self.produto_componente}: {self.quantidade_consumida}"
+
+
+class OrdemProducaoComposicao(models.Model):
+    composicao = models.ForeignKey(ComposicaoProduto, on_delete=models.PROTECT, related_name="ordens_producao")
+    empresa = models.ForeignKey("empresas.Empresa", on_delete=models.PROTECT, related_name="ordens_producao_composicao")
+    filial = models.ForeignKey("empresas.Filial", on_delete=models.PROTECT, related_name="ordens_producao_composicao")
+    produto_final = models.ForeignKey("produtos.Produto", on_delete=models.PROTECT, related_name="ordens_producao_composicao")
+    quantidade_planejada = models.DecimalField(max_digits=12, decimal_places=3)
+    data_programada = models.DateField()
+    prioridade = models.CharField(
+        max_length=20,
+        choices=PrioridadeOrdemProducaoComposicao.choices,
+        default=PrioridadeOrdemProducaoComposicao.NORMAL,
+    )
+    setor_responsavel = models.CharField(max_length=80, blank=True)
+    etapa_operacional = models.CharField(
+        max_length=20,
+        choices=EtapaOrdemProducaoComposicao.choices,
+        default=EtapaOrdemProducaoComposicao.AGUARDANDO,
+    )
+    status = models.CharField(max_length=20, choices=StatusOrdemProducaoComposicao.choices, default=StatusOrdemProducaoComposicao.PLANEJADA)
+    usuario = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.PROTECT, related_name="ordens_producao_composicao")
+    responsavel_operacional = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.PROTECT,
+        related_name="ordens_producao_operacionais",
+        null=True,
+        blank=True,
+    )
+    motivo = models.CharField(max_length=255)
+    observacao = models.TextField(blank=True)
+    producao_gerada = models.ForeignKey(
+        ProducaoComposicaoProduto,
+        on_delete=models.PROTECT,
+        related_name="ordens_origem",
+        null=True,
+        blank=True,
+    )
+    criado_em = models.DateTimeField(auto_now_add=True)
+    atualizado_em = models.DateTimeField(auto_now=True)
+    concluido_em = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        ordering = ["data_programada", "produto_final__nome"]
+
+    def clean(self):
+        if self.quantidade_planejada <= 0:
+            raise ValidationError("Quantidade planejada deve ser maior que zero.")
+        if self.composicao_id and self.composicao.filial_id and self.composicao.filial_id != self.filial_id:
+            raise ValidationError("Ordem de produção deve usar a filial da composição.")
+
+    def __str__(self):
+        return f"Ordem {self.id} - {self.produto_final}"
+
+
+class HistoricoEtapaOrdemProducaoComposicao(models.Model):
+    ordem = models.ForeignKey(OrdemProducaoComposicao, on_delete=models.CASCADE, related_name="historico_etapas")
+    etapa_anterior = models.CharField(max_length=20, choices=EtapaOrdemProducaoComposicao.choices, blank=True)
+    etapa_nova = models.CharField(max_length=20, choices=EtapaOrdemProducaoComposicao.choices)
+    usuario = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.PROTECT, related_name="historicos_etapa_ordem_producao")
+    observacao = models.CharField(max_length=255, blank=True)
+    criado_em = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["-criado_em", "-id"]
+
+    def __str__(self):
+        return f"Ordem {self.ordem_id}: {self.etapa_anterior or '-'} -> {self.etapa_nova}"
+
+
+class ConfiguracaoSLASetorProducao(models.Model):
+    empresa = models.ForeignKey("empresas.Empresa", on_delete=models.PROTECT, related_name="slas_setor_producao")
+    filial = models.ForeignKey(
+        "empresas.Filial",
+        on_delete=models.PROTECT,
+        related_name="slas_setor_producao",
+        null=True,
+        blank=True,
+    )
+    setor = models.CharField(max_length=80)
+    meta_minutos = models.PositiveIntegerField(default=240)
+    observacao = models.CharField(max_length=255, blank=True)
+    is_active = models.BooleanField(default=True)
+    criado_em = models.DateTimeField(auto_now_add=True)
+    atualizado_em = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ["empresa__nome_fantasia", "filial__nome", "setor"]
+        unique_together = ["empresa", "filial", "setor"]
+
+    def clean(self):
+        if self.filial_id and self.empresa_id and self.filial.empresa_id != self.empresa_id:
+            raise ValidationError("A filial deve pertencer a empresa informada.")
+        if not self.setor.strip():
+            raise ValidationError("Setor e obrigatorio.")
+
+    def __str__(self):
+        filial = self.filial.nome if self.filial_id else "Todas as filiais"
+        return f"{self.setor} - {filial}: {self.meta_minutos} min"
+
+
+class AlertaSLAOrdemProducao(models.Model):
+    ordem = models.ForeignKey(OrdemProducaoComposicao, on_delete=models.CASCADE, related_name="alertas_sla")
+    usuario = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name="alertas_sla_producao",
+    )
+    papel = models.CharField(max_length=30)
+    mensagem = models.CharField(max_length=255)
+    criado_em = models.DateTimeField(auto_now_add=True)
+    visualizado_em = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        ordering = ["-criado_em"]
+        unique_together = ["ordem", "usuario", "papel"]
+
+    def __str__(self):
+        return f"SLA ordem {self.ordem_id} para {self.usuario}"
 
 
 class DesmembramentoProduto(models.Model):

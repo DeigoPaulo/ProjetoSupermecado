@@ -1,0 +1,198 @@
+{% extends "base.html" %}
+{% load static %}
+
+{% block title %}Relatório de produções{% endblock %}
+
+{% block content %}
+<header class="page-header">
+  <div>
+    <h1>Relatório de produções</h1>
+    <p>Acompanhe kits, cestas e produtos internos produzidos por filial, período, status e responsável.</p>
+  </div>
+  <div class="actions">
+    <a class="secondary-button" href="{% url 'estoque:composicoes' %}">Composições</a>
+    <a class="secondary-button" href="{% url 'estoque:slas_setor_producao' %}">SLAs por setor</a>
+    <a class="secondary-button" href="{% url 'estoque:composicao_producoes_relatorio_csv' %}?{{ request.GET.urlencode }}">Excel/CSV</a>
+  </div>
+</header>
+
+<section class="metrics-grid">
+  <article class="metric"><span>Produções</span><strong>{{ total_operacoes }}</strong></article>
+  <article class="metric"><span>Qtd produzida</span><strong>{{ total_quantidade|quantidade_br }}</strong></article>
+  <article class="metric"><span>Custo total</span><strong>R$ {{ total_custo|floatformat:2 }}</strong></article>
+  <article class="metric"><span>Canceladas</span><strong>{{ total_canceladas }}</strong></article>
+</section>
+
+{{ graficos_producao|json_script:"producao-chart-data" }}
+<section class="dashboard-chart-grid">
+  <article class="panel dashboard-chart-card">
+    <div class="panel-title">Produções por status</div>
+    <div class="dashboard-chart-wrap"><canvas id="producao-status-chart" aria-label="Produções por status"></canvas></div>
+  </article>
+</section>
+
+<section class="panel mt-panel">
+  <div class="panel-title">Duracao por etapa das ordens</div>
+  <table>
+    <thead>
+      <tr>
+        <th>Etapa</th>
+        <th>Apontamentos</th>
+        <th>Tempo total</th>
+        <th>Media</th>
+        <th>Maior tempo</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for etapa in duracao_etapas %}
+        <tr>
+          <td><strong>{{ etapa.etapa }}</strong></td>
+          <td>{{ etapa.apontamentos }}</td>
+          <td>{{ etapa.total_label }}</td>
+          <td>{{ etapa.media_label }}</td>
+          <td>
+            {{ etapa.maior_label }}
+            {% if etapa.ordem_maior %}<br><small>Ordem #{{ etapa.ordem_maior.id }} - {{ etapa.ordem_maior.produto_final }}</small>{% endif %}
+          </td>
+        </tr>
+      {% empty %}
+        <tr><td colspan="5" class="empty">Nenhum apontamento de etapa encontrado para os filtros.</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</section>
+
+<section class="panel mt-panel">
+  <div class="panel-title">SLA por setor</div>
+  <table>
+    <thead>
+      <tr>
+        <th>Setor</th>
+        <th>Meta</th>
+        <th>Ordens</th>
+        <th>Aderencia</th>
+        <th>Media</th>
+        <th>Maior tempo</th>
+        <th>Status</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for item in sla_setores %}
+        <tr>
+          <td><strong>{{ item.setor }}</strong></td>
+          <td>{{ item.meta_label }}</td>
+          <td>{{ item.ordens }}</td>
+          <td>{{ item.aderencia }}%</td>
+          <td>{{ item.media_label }}</td>
+          <td>
+            {{ item.maior_label }}
+            {% if item.ordem_critica %}<br><small>Ordem #{{ item.ordem_critica.id }} - {{ item.ordem_critica.produto_final }}</small>{% endif %}
+          </td>
+          <td><span class="status {% if item.fora %}status-warning{% else %}status-success{% endif %}">{{ item.status }}</span></td>
+        </tr>
+      {% empty %}
+        <tr><td colspan="7" class="empty">Nenhum setor com ordens encontrado para os filtros.</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</section>
+
+<form method="get" class="toolbar toolbar-wrap">
+  <input type="search" name="q" value="{{ request.GET.q }}" placeholder="Produto, código, componente ou motivo">
+  <input type="date" name="inicio" value="{{ request.GET.inicio }}">
+  <input type="date" name="fim" value="{{ request.GET.fim }}">
+  <select name="filial">
+    <option value="">Todas as filiais</option>
+    {% for filial in filiais %}
+      <option value="{{ filial.id }}" {% if request.GET.filial == filial.id|stringformat:"s" %}selected{% endif %}>{{ filial.nome }}</option>
+    {% endfor %}
+  </select>
+  <select name="status">
+    <option value="">Todos os status</option>
+    {% for valor, rotulo in status_opcoes %}
+      <option value="{{ valor }}" {% if request.GET.status == valor %}selected{% endif %}>{{ rotulo }}</option>
+    {% endfor %}
+  </select>
+  <button type="submit">Filtrar</button>
+</form>
+
+<div class="panel">
+  <table>
+    <thead>
+      <tr>
+        <th>Data</th>
+        <th>Filial</th>
+        <th>Produto final</th>
+        <th>Qtd</th>
+        <th>Custo</th>
+        <th>Status</th>
+        <th>Responsável</th>
+        <th>Motivo</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for producao in producoes %}
+        <tr>
+          <td>{{ producao.criado_em|date:"d/m/Y H:i" }}</td>
+          <td>{{ producao.filial }}</td>
+          <td>
+            <a href="{% url 'estoque:composicao_detalhe' producao.composicao_id %}"><strong>{{ producao.produto_final }}</strong></a>
+            <br><small>{{ producao.itens.count }} componente(s) consumido(s)</small>
+          </td>
+          <td>{{ producao.quantidade_final|quantidade_br }}</td>
+          <td>R$ {{ producao.custo_total|floatformat:2 }}</td>
+          <td>
+            <span class="status {% if producao.status == 'CANCELADO' %}status-warning{% else %}status-success{% endif %}">{{ producao.get_status_display }}</span>
+          </td>
+          <td>{{ producao.usuario }}</td>
+          <td>{{ producao.motivo }}</td>
+        </tr>
+      {% empty %}
+        <tr><td colspan="8" class="empty">Nenhuma produção encontrada para os filtros.</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+
+{% if producoes|length >= 200 %}
+  <p class="help-text">Mostrando as 200 produções mais recentes. Use os filtros ou exporte o CSV para análise completa.</p>
+{% endif %}
+{% endblock %}
+
+{% block extra_js %}
+<script src="{% static 'vendor/chartjs/chart.umd-4.4.8.min.js' %}"></script>
+<script>
+  (function () {
+    var dataElement = document.getElementById("producao-chart-data");
+    if (!dataElement || !window.Chart) return;
+    var data = JSON.parse(dataElement.textContent || "{}");
+    var source = data.status || {};
+    var labels = source.labels && source.labels.length ? source.labels : ["Sem produções"];
+    var values = source.values && source.values.length ? source.values : [1];
+    var isEmpty = !source.values || !source.values.length || source.values.every(function (value) { return Number(value) === 0; });
+    var canvas = document.getElementById("producao-status-chart");
+    if (!canvas) return;
+    new Chart(canvas, {
+      type: "doughnut",
+      data: {
+        labels: labels,
+        datasets: [{
+          data: values,
+          backgroundColor: isEmpty ? ["#e5ebf4"] : ["#0050e8", "#f59e0b", "#059669", "#dc2626"],
+          borderColor: "#ffffff",
+          borderWidth: 3,
+        }],
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        cutout: "64%",
+        plugins: {
+          legend: { position: "bottom", labels: { boxWidth: 10, usePointStyle: true, padding: 14 } },
+          tooltip: { enabled: !isEmpty },
+        },
+      },
+    });
+  })();
+</script>
+{% endblock %}

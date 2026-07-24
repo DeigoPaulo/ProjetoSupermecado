@@ -14,4 +14,5 @@ urlpatterns = [
     path("<int:pk>/editar/", views.EntradaCompraUpdateView.as_view(), name="editar"),
     path("<int:pk>/finalizar/", views.finalizar_entrada, name="finalizar"),
     path("<int:pk>/cancelar/", views.cancelar_entrada, name="cancelar"),
+    path("<int:pk>/excluir-rascunho/", views.excluir_rascunho, name="excluir_rascunho"),
 ]

@@ -1,0 +1,96 @@
+{% load formatadores %}
+<!doctype html>
+<html lang="pt-br">
+<head>
+  <meta charset="utf-8">
+  <title>Ordem de produção #{{ ordem.id }}</title>
+  <style>
+    :root { color: #001a46; font-family: Arial, sans-serif; }
+    body { margin: 0; background: #fff; }
+    .sheet { max-width: 920px; margin: 24px auto; padding: 28px; border: 1px solid #d7e2f5; }
+    .top { display: flex; justify-content: space-between; gap: 24px; border-bottom: 2px solid #0b4fe8; padding-bottom: 16px; }
+    h1 { margin: 0 0 6px; font-size: 24px; }
+    h2 { margin: 24px 0 10px; font-size: 16px; }
+    .muted { color: #52627a; font-size: 13px; }
+    .badge { display: inline-block; padding: 6px 10px; border-radius: 4px; background: #eaf1ff; color: #0046c7; font-weight: 700; }
+    .grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; margin-top: 18px; }
+    .box { border: 1px solid #d7e2f5; padding: 10px; min-height: 54px; }
+    .box span { display: block; color: #52627a; font-size: 11px; text-transform: uppercase; }
+    .box strong { display: block; margin-top: 4px; font-size: 15px; }
+    table { width: 100%; border-collapse: collapse; margin-top: 8px; }
+    th, td { border: 1px solid #d7e2f5; padding: 9px; text-align: left; }
+    th { background: #f3f7ff; font-size: 12px; text-transform: uppercase; }
+    .signatures { display: grid; grid-template-columns: 1fr 1fr; gap: 32px; margin-top: 42px; }
+    .signature { border-top: 1px solid #001a46; padding-top: 8px; text-align: center; font-size: 12px; }
+    .actions { max-width: 920px; margin: 16px auto 0; text-align: right; }
+    button { border: 0; border-radius: 4px; background: #0b4fe8; color: #fff; padding: 10px 16px; font-weight: 700; cursor: pointer; }
+    @media print {
+      .actions { display: none; }
+      .sheet { margin: 0; max-width: none; border: 0; }
+    }
+  </style>
+</head>
+<body>
+  <div class="actions">
+    <button type="button" onclick="window.print()">Imprimir</button>
+  </div>
+  <main class="sheet">
+    <section class="top">
+      <div>
+        <h1>Ordem de produção #{{ ordem.id }}</h1>
+        <div class="muted">{{ ordem.empresa }} | {{ ordem.filial }}</div>
+      </div>
+      <div>
+        <span class="badge">{{ ordem.get_status_display }}</span>
+      </div>
+    </section>
+
+    <section class="grid">
+      <div class="box"><span>Data programada</span><strong>{{ ordem.data_programada|date:"d/m/Y" }}</strong></div>
+      <div class="box"><span>Produto final</span><strong>{{ ordem.produto_final }}</strong></div>
+      <div class="box"><span>Quantidade planejada</span><strong>{{ ordem.quantidade_planejada|quantidade_br }}</strong></div>
+      <div class="box"><span>Prioridade</span><strong>{{ ordem.get_prioridade_display }}</strong></div>
+      <div class="box"><span>Setor responsável</span><strong>{{ ordem.setor_responsavel|default:"-" }}</strong></div>
+      <div class="box"><span>Etapa</span><strong>{{ ordem.get_etapa_operacional_display }}</strong></div>
+      <div class="box"><span>Responsável operacional</span><strong>{{ ordem.responsavel_operacional.username|default:"-" }}</strong></div>
+      <div class="box"><span>Responsável</span><strong>{{ ordem.usuario.username }}</strong></div>
+    </section>
+
+    <h2>Componentes previstos</h2>
+    <table>
+      <thead>
+        <tr>
+          <th>Produto</th>
+          <th>Código</th>
+          <th>Qtd da receita</th>
+          <th>Qtd para produzir</th>
+          <th>Conferido</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for item in componentes %}
+          <tr>
+            <td>{{ item.produto.nome }}</td>
+            <td>{{ item.produto.codigo_barras|default:item.produto.codigo_interno }}</td>
+            <td>{{ item.quantidade_receita|quantidade_br }}</td>
+            <td><strong>{{ item.quantidade_prevista|quantidade_br }}</strong></td>
+            <td>____</td>
+          </tr>
+        {% empty %}
+          <tr><td colspan="5">Nenhum componente cadastrado.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+
+    <h2>Orientação</h2>
+    <p><strong>Motivo:</strong> {{ ordem.motivo }}</p>
+    {% if ordem.observacao %}<p><strong>Observação:</strong> {{ ordem.observacao }}</p>{% endif %}
+    {% if ordem.producao_gerada %}<p><strong>Produção gerada:</strong> #{{ ordem.producao_gerada_id }} em {{ ordem.concluido_em|date:"d/m/Y H:i" }}</p>{% endif %}
+
+    <section class="signatures">
+      <div class="signature">Separação / produção</div>
+      <div class="signature">Conferência</div>
+    </section>
+  </main>
+</body>
+</html>

@@ -5,9 +5,9 @@ from .models import DocumentoFiscalSincronizado, Empresa, EventoEntradaSincroniz
 
 @admin.register(Empresa)
 class EmpresaAdmin(admin.ModelAdmin):
-    list_display = ("nome_fantasia", "razao_social", "cnpj", "modo_implantacao", "sincronizacao_automatica", "is_active")
+    list_display = ("nome_fantasia", "razao_social", "cnpj", "modo_implantacao", "politica_conflito_sincronizacao", "sincronizacao_automatica", "is_active")
     search_fields = ("nome_fantasia", "razao_social", "cnpj")
-    list_filter = ("modo_implantacao", "sincronizacao_automatica", "is_active")
+    list_filter = ("modo_implantacao", "politica_conflito_sincronizacao", "sincronizacao_automatica", "is_active")
 
 
 @admin.register(Filial)

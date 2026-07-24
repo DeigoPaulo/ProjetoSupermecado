@@ -147,6 +147,22 @@ class FiscalTests(TestCase):
         self.assertEqual(payload["filiais"][0]["serie_nfce"], 1)
         self.assertIn("venda(s) aguardando NFC-e", " ".join(payload["filiais"][0]["pendencias"]))
 
+    def test_contingencia_json_exporta_documentos_prontos_com_xml_e_auditoria(self):
+        documento = preparar_documento_venda(self.venda, self.user)
+
+        response = self.client.get("/fiscal/contingencia.json")
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertEqual(payload["contrato"], "fiscal_contingencia_v1")
+        self.assertEqual(payload["status"], StatusDocumentoFiscal.PRONTO)
+        self.assertEqual(payload["total"], 1)
+        self.assertEqual(payload["documentos"][0]["id"], documento.id)
+        self.assertEqual(payload["documentos"][0]["origem"], {"tipo": "venda", "id": self.venda.id})
+        self.assertIn("<NFe", payload["documentos"][0]["xml"])
+        self.assertIn("Nao substitui assinatura", payload["observacao"])
+        self.assertTrue(LogAuditoria.objects.filter(modulo="fiscal", acao="EXPORTA_CONTINGENCIA_FISCAL").exists())
+
     def test_tela_produtos_fiscais_mostra_pendencias_e_prontos(self):
         Produto.objects.create(
             codigo_barras="7890000000001",

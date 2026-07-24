@@ -14,10 +14,12 @@ from .models import (
     ItemProducaoComposicaoProduto,
     ItemDesmembramentoProduto,
     MovimentacaoEstoque,
+    OrdemProducaoComposicao,
     PerdaEstoque,
     ProducaoComposicaoProduto,
     StatusDesmembramentoProduto,
     StatusInventario,
+    StatusOrdemProducaoComposicao,
     StatusProducaoComposicao,
     TipoDesmembramentoProduto,
     TipoMovimentacaoEstoque,
@@ -290,6 +292,64 @@ def cancelar_producao_composicao(*, producao, usuario, motivo, supervisor=None, 
         ip=ip,
     )
     return producao
+
+
+@transaction.atomic
+def confirmar_ordem_producao_composicao(*, ordem, usuario, supervisor=None, ip=None):
+    ordem = (
+        OrdemProducaoComposicao.objects.select_for_update()
+        .select_related("composicao", "filial", "produto_final")
+        .get(pk=ordem.pk)
+    )
+    if ordem.status != StatusOrdemProducaoComposicao.PLANEJADA:
+        raise ValidationError("Apenas ordens planejadas podem ser produzidas.")
+    producao = confirmar_producao_composicao(
+        composicao=ordem.composicao,
+        filial=ordem.filial,
+        quantidade_final=ordem.quantidade_planejada,
+        usuario=usuario,
+        motivo=f"Ordem de produção {ordem.id}: {ordem.motivo}",
+        observacao=ordem.observacao,
+        supervisor=supervisor,
+        ip=ip,
+    )
+    ordem.status = StatusOrdemProducaoComposicao.PRODUZIDA
+    ordem.producao_gerada = producao
+    ordem.concluido_em = timezone.now()
+    ordem.save(update_fields=["status", "producao_gerada", "concluido_em", "atualizado_em"])
+    LogAuditoria.objects.create(
+        usuario=usuario,
+        modulo="estoque",
+        acao="ORDEM_PRODUCAO_COMPOSICAO_CONFIRMADA",
+        descricao=f"Ordem de produção {ordem.id} confirmou a produção {producao.id}.{_autorizacao_texto(supervisor)}",
+        objeto_tipo="OrdemProducaoComposicao",
+        objeto_id=str(ordem.id),
+        ip=ip,
+    )
+    return ordem
+
+
+@transaction.atomic
+def cancelar_ordem_producao_composicao(*, ordem, usuario, motivo, supervisor=None, ip=None):
+    if not motivo:
+        raise ValidationError("Informe o motivo do cancelamento.")
+    ordem = OrdemProducaoComposicao.objects.select_for_update().get(pk=ordem.pk)
+    if ordem.status != StatusOrdemProducaoComposicao.PLANEJADA:
+        raise ValidationError("Apenas ordens planejadas podem ser canceladas.")
+    ordem.status = StatusOrdemProducaoComposicao.CANCELADA
+    ordem.observacao = f"{ordem.observacao}\nCancelada: {motivo}".strip()
+    ordem.concluido_em = timezone.now()
+    ordem.save(update_fields=["status", "observacao", "concluido_em", "atualizado_em"])
+    LogAuditoria.objects.create(
+        usuario=usuario,
+        modulo="estoque",
+        acao="ORDEM_PRODUCAO_COMPOSICAO_CANCELADA",
+        descricao=f"Ordem de produção {ordem.id} cancelada. Motivo: {motivo}.{_autorizacao_texto(supervisor)}",
+        objeto_tipo="OrdemProducaoComposicao",
+        objeto_id=str(ordem.id),
+        ip=ip,
+    )
+    return ordem
 
 
 @transaction.atomic

@@ -12,7 +12,7 @@ from django.utils.dateparse import parse_date
 from apps.accounts.permissions import CADASTROS, COMPRAS, ESTOQUE, PDV, RELATORIOS, has_role, role_required
 from apps.compras.models import EntradaCompra, StatusEntradaCompra
 from apps.estoque.models import Estoque, MovimentacaoEstoque, PerdaEstoque, TipoMovimentacaoEstoque
-from apps.pdv.models import Caixa, StatusCaixa
+from apps.pdv.models import Caixa, Sangria, StatusCaixa, Suprimento
 from apps.produtos.models import Produto
 from apps.vendas.models import DevolucaoVenda, ItemDevolucaoVenda, ItemVenda, PagamentoVenda, StatusVenda, Venda
 
@@ -106,6 +106,10 @@ def _csv_safe(value):
     return text
 
 
+def _csv_money(value):
+    return f"{Decimal(value or 0):.2f}".replace(".", ",")
+
+
 def _caixas_periodo(data_inicio, data_fim):
     return Caixa.objects.filter(
         data_abertura__date__gte=data_inicio,
@@ -134,6 +138,18 @@ def _resumo_caixas_por_operador(caixas_qs):
         .values("caixa__usuario_abertura_id")
         .annotate(vendas=Count("id"), total_vendas=Sum("total_liquido"))
     }
+    sangrias_por_operador = {
+        item["caixa__usuario_abertura_id"]: item["total"] or Decimal("0.00")
+        for item in Sangria.objects.filter(caixa__in=caixas_qs)
+        .values("caixa__usuario_abertura_id")
+        .annotate(total=Sum("valor"))
+    }
+    suprimentos_por_operador = {
+        item["caixa__usuario_abertura_id"]: item["total"] or Decimal("0.00")
+        for item in Suprimento.objects.filter(caixa__in=caixas_qs)
+        .values("caixa__usuario_abertura_id")
+        .annotate(total=Sum("valor"))
+    }
     resumo = []
     for item in caixas_qs.values("usuario_abertura_id", "usuario_abertura__username").annotate(
         caixas=Count("id"),
@@ -142,6 +158,8 @@ def _resumo_caixas_por_operador(caixas_qs):
         valor_conferido=Sum("valor_conferido"),
     ).order_by("usuario_abertura__username"):
         vendas = vendas_por_operador.get(item["usuario_abertura_id"], {})
+        sangrias = sangrias_por_operador.get(item["usuario_abertura_id"], Decimal("0.00"))
+        suprimentos = suprimentos_por_operador.get(item["usuario_abertura_id"], Decimal("0.00"))
         resumo.append({
             "operador_id": item["usuario_abertura_id"],
             "operador": item["usuario_abertura__username"] or "Sem operador",
@@ -152,6 +170,9 @@ def _resumo_caixas_por_operador(caixas_qs):
             "diferenca": (item["valor_conferido"] or 0) - (item["valor_declarado"] or 0),
             "vendas": vendas.get("vendas") or 0,
             "total_vendas": vendas.get("total_vendas") or 0,
+            "sangrias": sangrias,
+            "suprimentos": suprimentos,
+            "saldo_operacional": (vendas.get("total_vendas") or Decimal("0.00")) + suprimentos - sangrias,
         })
     return resumo
 
@@ -814,6 +835,8 @@ def caixas(request):
         "valor_inicial_total": caixas_qs.aggregate(total=Sum("valor_inicial"))["total"] or 0,
         "valor_final_total": caixas_qs.aggregate(total=Sum("valor_final"))["total"] or 0,
         "valor_conferido_total": caixas_qs.aggregate(total=Sum("valor_conferido"))["total"] or 0,
+        "total_sangrias": Sangria.objects.filter(caixa__in=caixas_qs).aggregate(total=Sum("valor"))["total"] or 0,
+        "total_suprimentos": Suprimento.objects.filter(caixa__in=caixas_qs).aggregate(total=Sum("valor"))["total"] or 0,
         "diferenca_total": diferenca_total,
         "resumo_por_operador": _resumo_caixas_por_operador(caixas_qs),
         "pagamentos_por_forma": PagamentoVenda.objects.filter(
@@ -858,17 +881,20 @@ def caixas_csv(request):
         ])
     writer.writerow([])
     writer.writerow(["Resumo por operador"])
-    writer.writerow(["Operador", "Caixas", "Vendas", "Total vendas", "Valor inicial", "Declarado", "Conferido", "Diferenca"])
+    writer.writerow(["Operador", "Caixas", "Vendas", "Total vendas", "Sangrias", "Suprimentos", "Saldo operacional", "Valor inicial", "Declarado", "Conferido", "Diferenca"])
     for item in _resumo_caixas_por_operador(caixas_qs):
         writer.writerow([
             _csv_safe(item["operador"]),
             item["caixas"],
             item["vendas"],
-            str(item["total_vendas"]).replace(".", ","),
-            str(item["valor_inicial"]).replace(".", ","),
-            str(item["valor_declarado"]).replace(".", ","),
-            str(item["valor_conferido"]).replace(".", ","),
-            str(item["diferenca"]).replace(".", ","),
+            _csv_money(item["total_vendas"]),
+            _csv_money(item["sangrias"]),
+            _csv_money(item["suprimentos"]),
+            _csv_money(item["saldo_operacional"]),
+            _csv_money(item["valor_inicial"]),
+            _csv_money(item["valor_declarado"]),
+            _csv_money(item["valor_conferido"]),
+            _csv_money(item["diferenca"]),
         ])
     return response
 
@@ -888,6 +914,8 @@ def caixas_imprimir(request):
         "valor_inicial_total": caixas_qs.aggregate(total=Sum("valor_inicial"))["total"] or 0,
         "valor_final_total": caixas_qs.aggregate(total=Sum("valor_final"))["total"] or 0,
         "valor_conferido_total": caixas_qs.aggregate(total=Sum("valor_conferido"))["total"] or 0,
+        "total_sangrias": Sangria.objects.filter(caixa__in=caixas_qs).aggregate(total=Sum("valor"))["total"] or 0,
+        "total_suprimentos": Suprimento.objects.filter(caixa__in=caixas_qs).aggregate(total=Sum("valor"))["total"] or 0,
         "diferenca_total": diferenca_total,
         "resumo_por_operador": _resumo_caixas_por_operador(caixas_qs),
         "pagamentos_por_forma": PagamentoVenda.objects.filter(

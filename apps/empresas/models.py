@@ -17,6 +17,11 @@ class ModoImplantacao(models.TextChoices):
     NUVEM_AGENTE = "NUVEM_AGENTE", "Nuvem com agente local"
 
 
+class PoliticaConflitoSincronizacao(models.TextChoices):
+    MANUAL = "MANUAL", "Resolver manualmente"
+    REMOTO_PRODUTOS_ESTOQUE = "REMOTO_PRODUTOS_ESTOQUE", "Nuvem prevalece para produtos e estoque"
+
+
 class StatusSincronizacao(models.TextChoices):
     PENDENTE = "PENDENTE", "Pendente"
     PROCESSANDO = "PROCESSANDO", "Processando"
@@ -49,6 +54,12 @@ class Empresa(models.Model):
     )
     sincronizacao_automatica = models.BooleanField("Sincronizacao automatica", default=False)
     url_sincronizacao = models.URLField("URL segura da nuvem", blank=True)
+    politica_conflito_sincronizacao = models.CharField(
+        "Politica de conflito",
+        max_length=40,
+        choices=PoliticaConflitoSincronizacao.choices,
+        default=PoliticaConflitoSincronizacao.MANUAL,
+    )
     is_active = models.BooleanField(default=True)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)

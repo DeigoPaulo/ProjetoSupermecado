@@ -1,0 +1,153 @@
+{% extends "base.html" %}
+
+{% block title %}Fila de produção{% endblock %}
+
+{% block content %}
+<header class="page-header">
+  <div>
+    <h1>Fila de produção</h1>
+    <p>Ordens planejadas agrupadas por setor e etapa operacional.</p>
+  </div>
+  <div class="actions">
+    <a class="secondary-button" href="{% url 'estoque:ordens_producao_composicao' %}">Ordens</a>
+    <a class="secondary-button" href="{% url 'estoque:alertas_sla_producao' %}">Alertas de SLA</a>
+    <a class="primary-button" href="{% url 'estoque:ordem_producao_composicao_nova' %}">Nova ordem</a>
+  </div>
+</header>
+
+<section class="metrics-grid">
+  <article class="metric"><span>Ordens na fila</span><strong>{{ totais.ordens }}</strong></article>
+  <article class="metric"><span>Setores</span><strong>{{ totais.setores }}</strong></article>
+  <article class="metric"><span>Atrasadas</span><strong>{{ totais.atrasadas }}</strong></article>
+  <article class="metric"><span>Urgentes</span><strong>{{ totais.urgentes }}</strong></article>
+  <article class="metric"><span>Fora do SLA</span><strong>{{ totais.sla_estouradas }}</strong></article>
+  <article class="metric"><span>Qtd planejada</span><strong>{{ totais.quantidade|quantidade_br }}</strong></article>
+  <article class="metric"><span>Maior tempo parado</span><strong>{{ totais.maior_tempo_label }}</strong><small>{{ totais.gargalo_setor }}</small></article>
+</section>
+
+<form method="get" class="toolbar toolbar-wrap">
+  <select name="modo">
+    <option value="dia" {% if modo == "dia" %}selected{% endif %}>Atrasadas e hoje</option>
+    <option value="todas" {% if modo == "todas" %}selected{% endif %}>Todas planejadas</option>
+  </select>
+  <input type="search" name="setor" value="{{ setor }}" placeholder="Setor responsável">
+  <select name="etapa">
+    <option value="">Todas as etapas</option>
+    {% for valor, rotulo in etapa_opcoes %}
+      <option value="{{ valor }}" {% if etapa == valor %}selected{% endif %}>{{ rotulo }}</option>
+    {% endfor %}
+  </select>
+  <select name="responsavel">
+    <option value="">Todos responsáveis</option>
+    {% for usuario in responsaveis_opcoes %}
+      <option value="{{ usuario.id }}" {% if responsavel == usuario.id|stringformat:'s' %}selected{% endif %}>{{ usuario.username }}</option>
+    {% endfor %}
+  </select>
+  <select name="sla">
+    <option value="">Todos os SLAs</option>
+    <option value="fora" {% if sla == "fora" %}selected{% endif %}>Somente fora do SLA</option>
+  </select>
+  <button type="submit">Filtrar</button>
+</form>
+
+{% if alertas_sla_recentes %}
+  <section class="panel mt-panel">
+    <div class="panel-title">Alertas de SLA enviados</div>
+    <table>
+      <thead>
+        <tr><th>Quando</th><th>Ordem</th><th>Destinatario</th><th>Papel</th><th>Mensagem</th></tr>
+      </thead>
+      <tbody>
+        {% for alerta in alertas_sla_recentes %}
+          <tr>
+            <td>{{ alerta.criado_em|date:"d/m/Y H:i" }}</td>
+            <td>Ordem #{{ alerta.ordem_id }} - {{ alerta.ordem.produto_final }}</td>
+            <td>{{ alerta.usuario.username }}</td>
+            <td>{{ alerta.papel }}</td>
+            <td>{{ alerta.mensagem }}</td>
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </section>
+{% endif %}
+
+{% if responsaveis_resumo %}
+  <section class="panel mt-panel">
+    <div class="panel-title">Gargalos por responsÃ¡vel</div>
+    <div class="metrics-grid">
+      {% for item in responsaveis_resumo %}
+        <article class="metric">
+          <span>{{ item.nome }}</span>
+          <strong>{{ item.maior_tempo_label }}</strong>
+          <small>
+            {{ item.total }} ordem{% if item.total != 1 %}s{% endif %} -
+            {{ item.quantidade|quantidade_br }} planejado
+            {% if item.ordem_gargalo %}- Ordem #{{ item.ordem_gargalo.id }}{% endif %}
+          </small>
+        </article>
+      {% endfor %}
+    </div>
+  </section>
+{% endif %}
+
+{% for grupo in grupos %}
+  <section class="panel mt-panel">
+    <div class="panel-title">{{ grupo.setor }}</div>
+    <div class="metrics-grid">
+      <article class="metric"><span>Ordens</span><strong>{{ grupo.total }}</strong></article>
+      <article class="metric"><span>Qtd planejada</span><strong>{{ grupo.quantidade|quantidade_br }}</strong></article>
+      <article class="metric"><span>Atrasadas</span><strong>{{ grupo.atrasadas }}</strong></article>
+      <article class="metric"><span>Urgentes</span><strong>{{ grupo.urgentes }}</strong></article>
+      <article class="metric"><span>Fora do SLA</span><strong>{{ grupo.sla_estouradas }}</strong></article>
+      <article class="metric"><span>Maior tempo</span><strong>{{ grupo.maior_tempo_label }}</strong>{% if grupo.ordem_gargalo %}<small>Ordem #{{ grupo.ordem_gargalo.id }}</small>{% endif %}</article>
+    </div>
+    <div class="active-filters">
+      {% for etapa_nome, total in grupo.etapas.items %}
+        <span class="filter-chip"><strong>{{ etapa_nome }}:</strong> {{ total }}</span>
+      {% endfor %}
+    </div>
+    <table>
+      <thead>
+        <tr><th>Data</th><th>Produto</th><th>Qtd</th><th>Prioridade</th><th>Responsável</th><th>Etapa</th><th>Filial</th><th>Ações</th></tr>
+      </thead>
+      <tbody>
+        {% for ordem in grupo.ordens %}
+          <tr>
+            <td>
+              {{ ordem.data_programada|date:"d/m/Y" }}
+              {% if ordem.data_programada < hoje %}<br><small class="text-danger">Atrasada</small>{% endif %}
+            </td>
+            <td><strong>{{ ordem.produto_final }}</strong><br><small>Ordem #{{ ordem.id }} - {{ ordem.motivo }}</small></td>
+            <td>{{ ordem.quantidade_planejada|quantidade_br }}</td>
+            <td><span class="status {% if ordem.prioridade == 'URGENTE' %}status-danger{% elif ordem.prioridade == 'ALTA' %}status-warning{% endif %}">{{ ordem.get_prioridade_display }}</span></td>
+            <td>{{ ordem.responsavel_operacional.username|default:"-" }}</td>
+            <td>
+              {{ ordem.get_etapa_operacional_display }}
+              <br><small>Tempo na etapa: {{ ordem.tempo_etapa_atual }}</small>
+              <br><small>Meta SLA: {{ ordem.sla_meta_label }}</small>
+              {% if ordem.sla_estourado %}
+                <br><span class="status status-warning">Fora do SLA +{{ ordem.sla_atraso_label }}</span>
+              {% else %}
+                <br><span class="status status-success">Dentro do SLA</span>
+              {% endif %}
+              {% if ordem.ultimo_apontamento_etapa %}
+                <br><small>{{ ordem.ultimo_apontamento_etapa.criado_em|date:"d/m/Y H:i" }} por {{ ordem.ultimo_apontamento_etapa.usuario.username }}</small>
+              {% endif %}
+            </td>
+            <td>{{ ordem.filial }}</td>
+            <td class="actions-inline">
+              <a class="secondary-button" href="{% url 'estoque:ordem_producao_composicao_imprimir' ordem.pk %}" target="_blank">Imprimir</a>
+              <a class="secondary-button" href="{% url 'estoque:ordens_producao_composicao' %}?q={{ ordem.produto_final.nome|urlencode }}">Abrir</a>
+            </td>
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </section>
+{% empty %}
+  <section class="panel mt-panel">
+    <div class="empty p-3">Nenhuma ordem planejada na fila.</div>
+  </section>
+{% endfor %}
+{% endblock %}

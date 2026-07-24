@@ -1,6 +1,6 @@
 {% extends "base.html" %}
 
-{% block title %}Composicao {{ composicao.id }}{% endblock %}
+{% block title %}Composição {{ composicao.id }}{% endblock %}
 
 {% block content %}
 <header class="page-header">
@@ -19,17 +19,26 @@
   <article class="metric"><span>Componentes</span><strong>{{ composicao.itens.count }}</strong></article>
   <article class="metric"><span>Custo previsto</span><strong>R$ {{ resumo_visual.custo_previsto|floatformat:2 }}</strong></article>
   <article class="metric"><span>Capacidade atual</span><strong>{{ resumo_visual.capacidade_maxima|quantidade_br }}</strong></article>
+  <article class="metric"><span>Estoque mínimo</span><strong>{{ resumo_visual.estoque_minimo|quantidade_br }}</strong></article>
+  <article class="metric"><span>Demanda</span><strong>{{ resumo_visual.demanda_reposicao|quantidade_br }}</strong></article>
+  <article class="metric"><span>Produção sugerida</span><strong>{{ resumo_visual.producao_sugerida|quantidade_br }}</strong></article>
 </section>
 
 <section class="composition-overview panel">
   <div>
-    <span class="composition-kicker">Visao operacional</span>
+    <span class="composition-kicker">Visão operacional</span>
     <h2>{{ composicao.produto_final }}</h2>
-    <p>Composicao {% if composicao.is_active %}ativa{% else %}inativa{% endif %}, com estoque atual do produto final em {{ resumo_visual.estoque_final|quantidade_br }} e {{ composicao.producoes.count }} producao(oes) registrada(s).</p>
+    <p>Composição {% if composicao.is_active %}ativa{% else %}inativa{% endif %}, com estoque atual do produto final em {{ resumo_visual.estoque_final|quantidade_br }} e {{ composicao.producoes.count }} produção(ões) registrada(s).</p>
+    {% if resumo_visual.demanda_reposicao > 0 %}
+      <p>Demanda de reposição: faltam {{ resumo_visual.demanda_reposicao|quantidade_br }} para alcançar o estoque mínimo. A produção sugerida agora é {{ resumo_visual.producao_sugerida|quantidade_br }}, limitada pelos componentes disponíveis.</p>
+    {% else %}
+      <p>Produto final acima do estoque mínimo. Ainda é possível produzir até {{ resumo_visual.capacidade_maxima|quantidade_br }} conforme o saldo dos componentes.</p>
+    {% endif %}
   </div>
   <div class="composition-stock-pill">
     <span>Estoque final</span>
     <strong>{{ resumo_visual.estoque_final|quantidade_br }}</strong>
+    <small>Mínimo {{ resumo_visual.estoque_minimo|quantidade_br }}</small>
   </div>
 </section>
 
@@ -70,7 +79,7 @@
   </div>
 
   <div class="panel">
-    <div class="panel-title">Produzir composicao</div>
+    <div class="panel-title">Produzir composição</div>
     <form method="post" action="{% url 'estoque:composicao_produzir' composicao.pk %}" class="form-grid form-confirm" data-msg="Confirmar producao e atualizar o estoque?">
       {% csrf_token %}
       {% for field in producao_form %}
@@ -88,7 +97,7 @@
 </section>
 
 <div class="panel">
-  <div class="panel-title">Ultimas producoes</div>
+  <div class="panel-title">Últimas produções</div>
   <table>
     <thead><tr><th>Data</th><th>Filial</th><th>Qtd</th><th>Custo</th><th>Status</th><th>Usuario</th><th>Cancelar</th></tr></thead>
     <tbody>
@@ -115,7 +124,7 @@
           </td>
         </tr>
       {% empty %}
-        <tr><td colspan="7" class="empty">Nenhuma producao registrada.</td></tr>
+        <tr><td colspan="7" class="empty">Nenhuma produção registrada.</td></tr>
       {% endfor %}
     </tbody>
   </table>

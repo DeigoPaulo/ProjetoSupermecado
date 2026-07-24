@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% load formatadores %}
 
 {% block title %}Desmembramentos{% endblock %}
 
@@ -40,11 +41,11 @@
         <tr>
           <td>{{ item.criado_em|date:"d/m/Y H:i" }}</td>
           <td>{{ item.filial }}</td>
-          <td><a href="{% url 'estoque:desmembramento_detalhe' item.pk %}"><strong>{{ item.produto_origem }}</strong></a><br><small>Saida: {{ item.quantidade_origem }}</small></td>
+          <td><a href="{% url 'estoque:desmembramento_detalhe' item.pk %}"><strong>{{ item.produto_origem }}</strong></a><br><small>Saida: {{ item.quantidade_origem|quantidade_br }}</small></td>
           <td>
             {% for destino in item.itens.all %}
               <strong>{{ destino.produto_destino }}</strong><br>
-              <small>Entrada: {{ destino.quantidade_gerada }} {{ destino.unidade }} | Custo unit.: R$ {{ destino.custo_unitario_calculado }}</small>
+              <small>Entrada: {{ destino.quantidade_gerada|quantidade_br }} {{ destino.unidade }} | Custo unit.: R$ {{ destino.custo_unitario_calculado }}</small>
             {% endfor %}
           </td>
           <td>R$ {{ item.custo_total_origem }}</td>

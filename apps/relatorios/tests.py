@@ -6,7 +6,7 @@ from django.test import TestCase
 from apps.accounts.models import PerfilUsuario, TipoPerfil
 from apps.empresas.models import Empresa, Filial
 from apps.estoque.models import MovimentacaoEstoque, TipoMovimentacaoEstoque
-from apps.pdv.models import Caixa, StatusCaixa
+from apps.pdv.models import Caixa, Sangria, StatusCaixa, Suprimento
 from apps.produtos.models import Categoria, Produto
 from apps.vendas.models import FormaPagamento, PagamentoVenda, StatusVenda, Venda
 
@@ -66,6 +66,8 @@ class DashboardTests(TestCase):
         )
         forma = FormaPagamento.objects.create(nome="Dinheiro", tipo="DINHEIRO")
         PagamentoVenda.objects.create(venda=venda, forma_pagamento=forma, valor=Decimal("80"))
+        Sangria.objects.create(caixa=caixa_a, usuario=operador_a, valor=Decimal("20"), motivo="Retirada parcial")
+        Suprimento.objects.create(caixa=caixa_a, usuario=operador_a, valor=Decimal("15"), motivo="Troco inicial extra")
         self.client.force_login(self.usuario)
 
         url = f"/caixas/?operador={operador_a.pk}"
@@ -83,8 +85,11 @@ class DashboardTests(TestCase):
         self.assertNotContains(response, "R$ 50,00")
         self.assertContains(csv_response, "Filtro operador;caixa_maria")
         self.assertContains(csv_response, "Resumo por operador")
-        self.assertContains(csv_response, "Declarado;Conferido;Diferenca")
+        self.assertContains(csv_response, "Total vendas;Sangrias;Suprimentos;Saldo operacional")
+        self.assertContains(csv_response, "80,00;20,00;15,00;75,00")
         self.assertContains(imprimir, "Operador: caixa_maria")
+        self.assertContains(imprimir, "Saldo operacional")
+        self.assertContains(imprimir, "R$ 75,00")
         self.assertContains(imprimir, "Forma de pagamento")
 
     def test_relatorio_movimentacoes_formata_quantidades_no_padrao_brasileiro(self):

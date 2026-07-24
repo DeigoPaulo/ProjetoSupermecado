@@ -52,6 +52,8 @@
                 <a href="{% url 'estoque:desmembramento_relatorio' %}"><i class="fa-solid fa-chart-column"></i> Rendimento</a>
                 <a href="{% url 'estoque:receitas_desmembramento' %}"><i class="fa-solid fa-diagram-project"></i> Receitas de desmembramento</a>
                 <a href="{% url 'estoque:composicoes' %}"><i class="fa-solid fa-boxes-packing"></i> Composições</a>
+                <a href="{% url 'estoque:ordens_producao_composicao' %}"><i class="fa-solid fa-calendar-check"></i> Ordens de produção</a>
+                <a href="{% url 'estoque:composicao_producoes_relatorio' %}"><i class="fa-solid fa-industry"></i> Produções</a>
               {% endif %}
               {% if access.compras %}
                 <a href="{% url 'compras:lista' %}"><i class="fa-solid fa-cart-flatbed"></i> Compras</a>

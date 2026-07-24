@@ -89,7 +89,15 @@ document.addEventListener("DOMContentLoaded", function () {
     if (desktopBridge && desktopUrl && window.fetch) {
       window.fetch(desktopUrl, { credentials: "same-origin" })
         .then(function (response) { return response.json(); })
-        .then(function (payload) { return desktopBridge(payload); })
+        .then(function (payload) {
+          var impressao = payload && payload.impressao;
+          if (impressao && impressao.mensagem && !impressao.impressora_configurada) {
+            window.alert(impressao.mensagem);
+            imprimirCupomFallback(url);
+            return null;
+          }
+          return desktopBridge(payload);
+        })
         .catch(function () { imprimirCupomFallback(url); });
       return;
     }
@@ -375,6 +383,7 @@ document.addEventListener("DOMContentLoaded", function () {
     var button = form.querySelector("[data-cadastro-lookup-button]");
     var feedback = form.querySelector("[data-cadastro-lookup-feedback]");
     var cnpjInput = form.querySelector("[data-lookup-target='cnpj'], #id_cnpj");
+    var cepInput = form.querySelector("[data-lookup-target='cep'], #id_cep_consulta");
     var lookupUrl = form.getAttribute("data-cadastro-lookup-url");
 
     function setFeedback(message, isError) {
@@ -399,20 +408,24 @@ document.addEventListener("DOMContentLoaded", function () {
       fields.forEach(function (field) {
         fillIfEmpty(field, data.dados[field]);
       });
-      setFeedback(data.mensagem || "Cadastro local encontrado e aplicado aos campos vazios.", false);
+      setFeedback(data.mensagem || "Cadastro encontrado e aplicado aos campos vazios.", false);
     }
 
     function runLookup() {
-      if (!lookupUrl || !cnpjInput) return;
-      var digits = (cnpjInput.value || "").replace(/\D/g, "");
-      if (digits.length !== 14) {
-        setFeedback("Informe um CNPJ com 14 digitos para consultar.", true);
-        cnpjInput.focus();
+      if (!lookupUrl) return;
+      var cnpjDigits = cnpjInput ? (cnpjInput.value || "").replace(/\D/g, "") : "";
+      var cepDigits = cepInput ? (cepInput.value || "").replace(/\D/g, "") : "";
+      var tipo = cnpjDigits.length === 14 ? "cnpj" : (cepDigits.length === 8 ? "cep" : "");
+      var digits = tipo === "cnpj" ? cnpjDigits : cepDigits;
+      if (!tipo) {
+        setFeedback("Informe um CNPJ com 14 digitos ou um CEP com 8 digitos para consultar.", true);
+        if (cnpjInput && cnpjDigits.length !== 14) cnpjInput.focus();
+        else if (cepInput) cepInput.focus();
         return;
       }
       if (button) button.disabled = true;
       setFeedback("Consultando cadastro...", false);
-      fetch(lookupUrl + "?cnpj=" + encodeURIComponent(digits), { headers: { "Accept": "application/json" } })
+      fetch(lookupUrl + "?" + tipo + "=" + encodeURIComponent(digits), { headers: { "Accept": "application/json" } })
         .then(function (response) {
           return response.json().then(function (payload) {
             if (!response.ok) throw new Error(payload.mensagem || "Nao foi possivel consultar o cadastro.");
@@ -420,7 +433,7 @@ document.addEventListener("DOMContentLoaded", function () {
           });
         })
         .then(function (payload) {
-          if (payload.status === "local_match") {
+          if (payload.dados) {
             applyLookupData(payload);
             return;
           }

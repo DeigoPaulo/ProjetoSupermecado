@@ -23,6 +23,12 @@
         {% endif %}
       {% endif %}
     </div>
+    {% if mensagem_impressao_nativa %}
+      <div class="notice notice-warning form-field-wide">
+        <i class="fa-solid fa-triangle-exclamation"></i>
+        <span>{{ mensagem_impressao_nativa }}</span>
+      </div>
+    {% endif %}
     <p class="form-help form-field-wide" id="labels-print-feedback" role="status" aria-live="polite"></p>
   </form>
 

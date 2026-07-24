@@ -87,7 +87,16 @@
             {% endfor %}
           </td>
           <td>{{ entrada.data_recebimento|date:"d/m/Y H:i" }}</td>
-          <td><a href="{% url 'compras:detalhe' entrada.pk %}?next={{ request.get_full_path|urlencode }}">Abrir</a></td>
+          <td class="actions-inline">
+            <a href="{% url 'compras:detalhe' entrada.pk %}?next={{ request.get_full_path|urlencode }}">Abrir</a>
+            {% if entrada.status == "RASCUNHO" %}
+              <form method="post" action="{% url 'compras:excluir_rascunho' entrada.pk %}" class="inline-form form-confirm" data-msg="Excluir este rascunho de compra?">
+                {% csrf_token %}
+                <input type="hidden" name="next" value="{{ request.get_full_path }}">
+                <button class="secondary-button" type="submit">Excluir</button>
+              </form>
+            {% endif %}
+          </td>
         </tr>
       {% empty %}
         <tr><td colspan="9" class="empty">Nenhuma entrada de compra registrada.</td></tr>

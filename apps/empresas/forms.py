@@ -2,7 +2,7 @@ from django import forms
 
 from apps.core_forms import aplicar_select2
 
-from .models import Empresa, Filial, ModoImplantacao
+from .models import Empresa, Filial, ModoImplantacao, PoliticaConflitoSincronizacao
 
 
 class EmpresaForm(forms.ModelForm):
@@ -20,6 +20,7 @@ class EmpresaForm(forms.ModelForm):
             "modo_implantacao",
             "sincronizacao_automatica",
             "url_sincronizacao",
+            "politica_conflito_sincronizacao",
             "is_active",
         ]
         widgets = {
@@ -29,8 +30,13 @@ class EmpresaForm(forms.ModelForm):
             "logo": forms.ClearableFileInput(attrs={"accept": ".png,.jpg,.jpeg,image/png,image/jpeg"}),
         }
 
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.fields["politica_conflito_sincronizacao"].required = False
+
     def clean(self):
         cleaned = super().clean()
+        cleaned["politica_conflito_sincronizacao"] = cleaned.get("politica_conflito_sincronizacao") or PoliticaConflitoSincronizacao.MANUAL
         modo = cleaned.get("modo_implantacao")
         url = (cleaned.get("url_sincronizacao") or "").strip()
         sincroniza = cleaned.get("sincronizacao_automatica")

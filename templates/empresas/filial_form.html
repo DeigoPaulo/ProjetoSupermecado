@@ -21,7 +21,8 @@
       <div class="form-note">
         <strong>Consulta CNPJ/CEP preparada.</strong>
         <span>O sistema valida o CNPJ e reaproveita dados locais. Quando o provedor externo for configurado, preencherá endereco, municipio, UF e codigo IBGE.</span>
-        <button class="secondary-button" type="button" data-cadastro-lookup-button><i class="fa-solid fa-magnifying-glass"></i> Consultar CNPJ</button>
+        <label class="form-field lookup-field"><span>CEP para consulta</span><input type="text" id="id_cep_consulta" class="mask-cep" data-lookup-target="cep" placeholder="00000-000"></label>
+        <button class="secondary-button" type="button" data-cadastro-lookup-button><i class="fa-solid fa-magnifying-glass"></i> Consultar CNPJ/CEP</button>
         <a class="secondary-button" href="{% url 'empresas:consulta_cadastro' %}" target="_blank">Ver ponto de integracao</a>
       </div>
       <div class="form-note" data-cadastro-lookup-feedback hidden></div>

@@ -1,18 +1,21 @@
+from datetime import timedelta
 from decimal import Decimal
 from io import BytesIO, StringIO
 from unittest.mock import patch
 
+from django.conf import settings
 from django.contrib.auth import get_user_model
 from django.core.files.uploadedfile import SimpleUploadedFile
 from django.core.management import call_command
 from django.test import Client, TestCase, override_settings
+from django.utils import timezone
 from PIL import Image
 
 from apps.estoque.models import Estoque, MovimentacaoEstoque, TipoMovimentacaoEstoque
 from apps.produtos.models import Categoria, Produto
 
 from .forms import EmpresaForm
-from .models import DocumentoFiscalSincronizado, Empresa, EventoEntradaSincronizacao, EventoSincronizacao, Filial, ModoImplantacao, StatusEventoEntrada, StatusSincronizacao, VendaSincronizada
+from .models import DocumentoFiscalSincronizado, Empresa, EventoEntradaSincronizacao, EventoSincronizacao, Filial, ModoImplantacao, PoliticaConflitoSincronizacao, StatusEventoEntrada, StatusSincronizacao, VendaSincronizada
 from . import services_eventos_entrada
 from .services_eventos_entrada import ConflitoSincronizacao, processar_entrada_sincronizacao
 from .services_sincronizacao import enfileirar_evento, processar_fila
@@ -72,6 +75,7 @@ class EmpresasViewsTests(TestCase):
         self.assertContains(response, "Empresas e filiais")
         self.assertContains(response, "Mercado Teste")
         self.assertContains(response, "IBGE 3550308")
+        self.assertContains(response, "Conflito: Resolver manualmente")
 
     def test_busca_json_retorna_filial_para_select2(self):
         response = self.client.get("/empresas/filiais/busca.json", {"q": "Matriz"})
@@ -89,6 +93,8 @@ class EmpresasViewsTests(TestCase):
         self.assertContains(empresa_response, "Identificacao")
         self.assertContains(empresa_response, "Contato e visual")
         self.assertContains(empresa_response, "Implantacao e conectividade")
+        self.assertContains(empresa_response, "Politica de conflito")
+        self.assertContains(empresa_response, "Nuvem prevalece para produtos e estoque")
         self.assertContains(empresa_response, "modo local nao publica o sistema na internet")
         self.assertContains(empresa_response, "Consulta CNPJ/CEP preparada")
         self.assertContains(empresa_response, "Consultar CNPJ")
@@ -119,6 +125,25 @@ class EmpresasViewsTests(TestCase):
         empresa = form.save()
         self.assertFalse(empresa.sincronizacao_automatica)
         self.assertEqual(empresa.url_sincronizacao, "")
+        self.assertEqual(empresa.politica_conflito_sincronizacao, PoliticaConflitoSincronizacao.MANUAL)
+
+    def test_formulario_empresa_salva_politica_de_conflito(self):
+        form = EmpresaForm(
+            data={
+                "razao_social": "Mercado Sync Ltda",
+                "nome_fantasia": "Mercado Sync",
+                "cnpj": "33.333.333/0001-33",
+                "modo_implantacao": ModoImplantacao.HIBRIDO,
+                "sincronizacao_automatica": "on",
+                "url_sincronizacao": "https://nuvem.exemplo.com/api/",
+                "politica_conflito_sincronizacao": PoliticaConflitoSincronizacao.REMOTO_PRODUTOS_ESTOQUE,
+                "is_active": "on",
+            }
+        )
+
+        self.assertTrue(form.is_valid(), form.errors)
+        empresa = form.save()
+        self.assertEqual(empresa.politica_conflito_sincronizacao, PoliticaConflitoSincronizacao.REMOTO_PRODUTOS_ESTOQUE)
 
     def test_logo_da_empresa_aceita_png_e_bloqueia_gif(self):
         dados = {
@@ -792,9 +817,94 @@ class EmpresasViewsTests(TestCase):
         self.assertEqual(diagnostico["filas"]["entrada"]["erros"], 1)
         self.assertGreaterEqual(diagnostico["retaguarda"]["vendas"], 2)
         self.assertGreaterEqual(diagnostico["retaguarda"]["documentos_fiscais"], 1)
+        self.assertGreaterEqual(diagnostico["empresas"]["politica_manual"], 1)
+        self.assertIn("MANUAL", diagnostico["empresas"]["politicas_conflito"])
+        self.assertIn("Politica manual", erro.content.decode("utf-8"))
+        self.assertIn("Nuvem produtos/estoque", erro.content.decode("utf-8"))
         self.assertIn("processar_sincronizacao_completa", diagnostico["operacao"]["comando"])
         self.assertFalse(diagnostico["operacao"]["pronto"])
         self.assertTrue(diagnostico["operacao"]["alertas"])
+
+    def test_diagnostico_sincronizacao_exibe_idade_e_tentativas_esgotadas(self):
+        saida = EventoSincronizacao.objects.create(
+            empresa=self.empresa,
+            filial=self.filial,
+            tipo="produto.atualizado",
+            objeto_tipo="Produto",
+            objeto_id="987",
+            chave_idempotencia="produto:saida:esgotado",
+            payload={"codigo_barras": "789987"},
+            status=StatusSincronizacao.ERRO,
+            tentativas=settings.SINCRONIZACAO_MAX_TENTATIVAS,
+            ultimo_erro="Timeout permanente",
+        )
+        entrada = EventoEntradaSincronizacao.objects.create(
+            identificador="5c1b2d0f-5a0d-4b2f-9b3c-5a4f93d01a22",
+            chave_idempotencia="produto:entrada:antigo",
+            empresa=self.empresa,
+            tipo="produto.atualizado",
+            payload={"payload": {"nome": "Produto antigo"}},
+            status=StatusEventoEntrada.CONFLITO,
+            ultimo_erro="Conflito antigo",
+        )
+        EventoSincronizacao.objects.filter(pk=saida.pk).update(criado_em=timezone.now() - timedelta(minutes=42))
+        EventoEntradaSincronizacao.objects.filter(pk=entrada.pk).update(recebido_em=timezone.now() - timedelta(minutes=31))
+
+        painel = self.client.get("/empresas/sincronizacao/")
+        diagnostico_response = self.client.get("/empresas/sincronizacao/diagnostico.json")
+        diagnostico = diagnostico_response.json()
+
+        self.assertEqual(diagnostico_response.status_code, 200)
+        self.assertEqual(diagnostico["filas"]["saida"]["esgotados"], 1)
+        self.assertGreaterEqual(diagnostico["filas"]["saida"]["idade_mais_antigo_minutos"], 41)
+        self.assertGreaterEqual(diagnostico["filas"]["entrada"]["idade_mais_antigo_minutos"], 30)
+        self.assertIn("esgotaram as tentativas automaticas", " ".join(diagnostico["operacao"]["alertas"]))
+        self.assertContains(painel, "Fila saida mais antiga")
+        self.assertContains(painel, "Saida esgotada")
+        self.assertContains(painel, "Status operacional da sincronizacao")
+        self.assertContains(painel, "Politica manual")
+        self.assertContains(painel, "Nuvem produtos/estoque")
+
+    def test_politica_de_conflito_aceita_remoto_para_produto_e_audita_resolucao(self):
+        self.empresa.politica_conflito_sincronizacao = PoliticaConflitoSincronizacao.REMOTO_PRODUTOS_ESTOQUE
+        self.empresa.save(update_fields=["politica_conflito_sincronizacao"])
+        categoria = Categoria.objects.create(nome="Mercearia")
+        produto = Produto.objects.create(
+            nome="Arroz Local",
+            codigo_barras="7890001112223",
+            categoria=categoria,
+            preco_custo=Decimal("10.00"),
+            preco_venda=Decimal("15.00"),
+        )
+        Produto.objects.filter(pk=produto.pk).update(updated_at=timezone.now())
+        evento = EventoEntradaSincronizacao.objects.create(
+            identificador="ba5d3849-d8ed-4a59-9d9e-230d10309fed",
+            chave_idempotencia="produto:remoto:prevalece",
+            empresa=self.empresa,
+            tipo="produto.atualizado",
+            payload={
+                "criado_em": (timezone.now() - timedelta(days=1)).isoformat(),
+                "payload": {
+                    "codigo_barras": "7890001112223",
+                    "nome": "Arroz Remoto",
+                    "categoria": {"nome": "Mercearia"},
+                    "preco_custo": "11.00",
+                    "preco_venda": "17.50",
+                    "vendido_no_pdv": True,
+                },
+            },
+        )
+
+        resultado = processar_entrada_sincronizacao()
+
+        evento.refresh_from_db()
+        produto.refresh_from_db()
+        self.assertEqual(resultado, {"processados": 1, "erros": 0})
+        self.assertEqual(evento.status, StatusEventoEntrada.PROCESSADO)
+        self.assertIn("nuvem prevalece", evento.resolucao_conflito)
+        self.assertIsNotNone(evento.resolvido_em)
+        self.assertEqual(produto.nome, "Arroz Remoto")
+        self.assertEqual(produto.preco_venda, Decimal("17.50"))
 
     def test_processador_de_entrada_marca_conflito_para_venda_com_total_diferente(self):
         existente_evento = EventoEntradaSincronizacao.objects.create(
@@ -929,6 +1039,8 @@ class EmpresasViewsTests(TestCase):
         self.assertContains(response, "sistema.ping")
         self.assertContains(response, "/empresas/sincronizacao/entrada/")
         self.assertContains(detalhe, "Evento de entrada sistema.ping")
+        self.assertContains(detalhe, "Politica de conflito")
+        self.assertContains(detalhe, "Resolver manualmente")
         self.assertContains(detalhe, "Payload recebido")
 
     def test_painel_reprocessa_evento_de_entrada_com_erro(self):
@@ -995,6 +1107,9 @@ class EmpresasViewsTests(TestCase):
         evento.refresh_from_db()
         painel = self.client.get("/empresas/sincronizacao/")
         self.assertContains(detalhe, "Marcar conflito como resolvido")
+        self.assertContains(detalhe, "Conflito aguardando decisao")
+        self.assertContains(detalhe, "Venda e fiscal permanecem manuais por seguranca")
+        self.assertContains(detalhe, "Politica da empresa")
         self.assertContains(vazio, "Informe a decisao tomada")
         self.assertEqual(evento.status, StatusEventoEntrada.RESOLVIDO)
         self.assertEqual(evento.resolvido_por, self.user)
@@ -1067,7 +1182,7 @@ class EmpresasViewsTests(TestCase):
             nome="Loja Consulta",
             cnpj="11.222.333/0001-81",
             telefone="(11) 98888-0000",
-            endereco="Av Filial, 200",
+            endereco="Av Filial, 200 - CEP 01001-000",
             municipio="Sao Paulo",
             uf="SP",
             codigo_municipio_ibge="3550308",
@@ -1076,13 +1191,17 @@ class EmpresasViewsTests(TestCase):
         empresa_response = self.client.get("/empresas/consulta-cadastro.json", {"cnpj": "12345678000195"})
         filial_response = self.client.get("/empresas/consulta-cadastro.json", {"cnpj": "11.222.333/0001-81"})
         invalido = self.client.get("/empresas/consulta-cadastro.json", {"cnpj": "11.111.111/1111-11"})
-        externo = self.client.get("/empresas/consulta-cadastro.json", {"cep": "01001000"})
+        cep_local = self.client.get("/empresas/consulta-cadastro.json", {"cep": "01001000"})
+        externo = self.client.get("/empresas/consulta-cadastro.json", {"cep": "30140071"})
 
         self.assertEqual(empresa_response.status_code, 200)
         self.assertEqual(empresa_response.json()["status"], "local_match")
         self.assertEqual(empresa_response.json()["dados"]["nome_fantasia"], "Empresa Consulta")
         self.assertEqual(filial_response.json()["dados"]["tipo"], "filial")
         self.assertEqual(filial_response.json()["dados"]["codigo_municipio_ibge"], "3550308")
+        self.assertEqual(cep_local.json()["status"], "local_match")
+        self.assertEqual(cep_local.json()["consulta"]["tipo"], "cep")
+        self.assertEqual(cep_local.json()["dados"]["municipio"], "Sao Paulo")
         self.assertEqual(invalido.status_code, 400)
         self.assertEqual(invalido.json()["status"], "invalid")
         self.assertEqual(externo.json()["status"], "external_provider_required")

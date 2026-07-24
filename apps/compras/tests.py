@@ -6,6 +6,7 @@ from django.core.exceptions import ValidationError
 from django.test import TestCase
 from django.utils import timezone
 
+from apps.auditoria.models import LogAuditoria
 from apps.empresas.models import Empresa, Filial
 from apps.estoque.models import Estoque, MovimentacaoEstoque, TipoMovimentacaoEstoque
 from apps.financeiro.models import ContaFinanceira, ContaMovimentoFinanceiro, StatusContaFinanceira, TipoContaFinanceira, TipoContaMovimento
@@ -449,6 +450,52 @@ class ComprasFinanceiroTests(TestCase):
         self.assertContains(lista, finalizada.numero_documento)
         self.assertContains(apenas_rascunhos, rascunho.numero_documento)
         self.assertNotContains(apenas_rascunhos, finalizada.numero_documento)
+
+    def test_excluir_rascunho_de_compra_remove_itens_sem_movimentar_estoque(self):
+        self.client.force_login(self.admin)
+        entrada = EntradaCompra.objects.create(
+            fornecedor=self.fornecedor,
+            filial=self.filial,
+            usuario=self.usuario,
+            numero_documento="NF-RASC-DEL",
+        )
+        ItemEntradaCompra.objects.create(
+            entrada=entrada,
+            produto=self.produto,
+            quantidade=Decimal("2.000"),
+            custo_unitario=Decimal("5.00"),
+            total=Decimal("10.00"),
+        )
+
+        detalhe = self.client.get(f"/compras/{entrada.id}/")
+        self.assertContains(detalhe, "Excluir rascunho")
+
+        response = self.client.post(
+            f"/compras/{entrada.id}/excluir-rascunho/",
+            {"next": "/compras/?status=RASCUNHO"},
+            follow=True,
+        )
+
+        self.assertContains(response, "Rascunho de compra excluído com sucesso")
+        self.assertFalse(EntradaCompra.objects.filter(pk=entrada.pk).exists())
+        self.assertEqual(MovimentacaoEstoque.objects.count(), 0)
+        self.assertEqual(ContaFinanceira.objects.count(), 0)
+        self.assertTrue(LogAuditoria.objects.filter(acao="ENTRADA_COMPRA_RASCUNHO_EXCLUIDA", objeto_id=str(entrada.id)).exists())
+
+    def test_excluir_rascunho_de_compra_bloqueia_entrada_finalizada(self):
+        self.client.force_login(self.admin)
+        entrada = EntradaCompra.objects.create(
+            fornecedor=self.fornecedor,
+            filial=self.filial,
+            usuario=self.usuario,
+            numero_documento="NF-FINAL-NAO-DEL",
+            status=StatusEntradaCompra.FINALIZADA,
+        )
+
+        response = self.client.post(f"/compras/{entrada.id}/excluir-rascunho/", follow=True)
+
+        self.assertContains(response, "Somente entradas em rascunho podem ser excluídas")
+        self.assertTrue(EntradaCompra.objects.filter(pk=entrada.pk).exists())
 
     def test_lista_compras_exibe_status_financeiro_da_entrada(self):
         self.client.force_login(self.admin)

@@ -1,0 +1,21 @@
+{% extends "base.html" %}
+
+{% block title %}SLA de producao{% endblock %}
+
+{% block content %}
+<header class="page-header">
+  <div>
+    <h1>SLA de producao</h1>
+    <p>Defina a meta de tempo por setor. Quando a filial ficar vazia, a meta vale para todas as filiais da empresa.</p>
+  </div>
+  <div class="actions">
+    <a class="secondary-button" href="{% url 'estoque:slas_setor_producao' %}">Voltar</a>
+  </div>
+</header>
+
+<form method="post" class="form-card">
+  {% csrf_token %}
+  {{ form.as_p }}
+  <button type="submit">Salvar SLA</button>
+</form>
+{% endblock %}

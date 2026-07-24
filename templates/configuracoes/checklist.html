@@ -28,11 +28,18 @@
     <strong>{{ resumo.total }}</strong>
     <span>Total mapeado</span>
   </div>
+  <div class="project-summary project-summary-partial">
+    <strong>{{ resumo.percentual_ponderado }}%</strong>
+    <span>Avanço ponderado</span>
+  </div>
 </section>
 
 <div class="project-progress" role="progressbar" aria-valuenow="{{ resumo.percentual }}" aria-valuemin="0" aria-valuemax="100">
   <span style="width: {{ resumo.percentual }}%"></span>
 </div>
+<p class="text-muted mt-2">
+  O percentual concluído conta apenas itens finalizados; o avanço ponderado considera itens em andamento como meio caminho.
+</p>
 
 <form method="get" class="toolbar checklist-filter">
   <input type="search" name="q" value="{{ filtros.q }}" placeholder="Buscar no checklist">
@@ -141,6 +148,9 @@
         <strong>{{ grupo.concluidos }}/{{ grupo.total }}</strong>
       </header>
       <div class="checklist-progress"><span style="width: {{ grupo.percentual }}%"></span></div>
+      {% if grupo.parciais %}
+        <p class="text-muted mt-2">Avanço ponderado: {{ grupo.percentual_ponderado }}% com {{ grupo.parciais }} item(ns) em andamento.</p>
+      {% endif %}
       <div class="checklist-items">
         {% for titulo, status, descricao in grupo.itens %}
           <article class="checklist-item">
@@ -181,7 +191,7 @@
   <header class="checklist-section-header">
     <div>
       <h2>Documentos de referência</h2>
-      <p>Fontes usadas para conferir o escopo e definir as proximas etapas.</p>
+      <p>Fontes usadas para conferir o escopo e definir as próximas etapas.</p>
     </div>
     <i class="fa-solid fa-folder-open" aria-hidden="true"></i>
   </header>

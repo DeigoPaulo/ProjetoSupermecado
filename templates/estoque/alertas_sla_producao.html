@@ -1,0 +1,81 @@
+{% extends "base.html" %}
+
+{% block title %}Alertas de SLA{% endblock %}
+
+{% block content %}
+<header class="page-header">
+  <div>
+    <h1>Alertas de SLA</h1>
+    <p>Ordens de produção que exigem acompanhamento do responsável ou da supervisão.</p>
+  </div>
+  <div class="actions">
+    <a class="secondary-button" href="{% url 'estoque:ordens_producao_composicao_fila' %}">Fila de produção</a>
+    <a class="secondary-button" href="{% url 'estoque:composicao_producoes_relatorio' %}">Relatório</a>
+  </div>
+</header>
+
+<section class="metrics-grid">
+  <article class="metric"><span>Abertos</span><strong>{{ resumo.abertos }}</strong></article>
+  <article class="metric"><span>Visualizados</span><strong>{{ resumo.visualizados }}</strong></article>
+  <article class="metric"><span>Total</span><strong>{{ resumo.total }}</strong></article>
+</section>
+
+<form method="get" class="toolbar">
+  <select name="status">
+    <option value="abertos" {% if filtro == "abertos" %}selected{% endif %}>Somente abertos</option>
+    <option value="visualizados" {% if filtro == "visualizados" %}selected{% endif %}>Visualizados</option>
+    <option value="todos" {% if filtro == "todos" %}selected{% endif %}>Todos</option>
+  </select>
+  <button type="submit">Filtrar</button>
+</form>
+
+<section class="panel">
+  <div class="panel-title">Meus alertas</div>
+  <table>
+    <thead>
+      <tr>
+        <th>Quando</th>
+        <th>Ordem</th>
+        <th>Filial</th>
+        <th>Papel</th>
+        <th>Mensagem</th>
+        <th>Status</th>
+        <th>Ações</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for alerta in alertas %}
+        <tr>
+          <td>{{ alerta.criado_em|date:"d/m/Y H:i" }}</td>
+          <td>
+            <strong>Ordem #{{ alerta.ordem_id }}</strong><br>
+            <small>{{ alerta.ordem.produto_final }}</small>
+          </td>
+          <td>{{ alerta.ordem.filial }}</td>
+          <td>{{ alerta.papel }}</td>
+          <td>{{ alerta.mensagem }}</td>
+          <td>
+            {% if alerta.visualizado_em %}
+              <span class="status status-success">Visualizado</span><br>
+              <small>{{ alerta.visualizado_em|date:"d/m/Y H:i" }}</small>
+            {% else %}
+              <span class="status status-warning">Aberto</span>
+            {% endif %}
+          </td>
+          <td class="actions-inline">
+            <a class="secondary-button" href="{% url 'estoque:ordens_producao_composicao' %}?q={{ alerta.ordem.produto_final.nome|urlencode }}">Abrir ordem</a>
+            {% if not alerta.visualizado_em %}
+              <form method="post" action="{% url 'estoque:alerta_sla_producao_visualizar' alerta.pk %}" class="inline-form">
+                {% csrf_token %}
+                <button type="submit" class="secondary-button">Marcar visto</button>
+              </form>
+            {% endif %}
+          </td>
+        </tr>
+      {% empty %}
+        <tr><td colspan="7" class="empty">Nenhum alerta encontrado.</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</section>
+{% endblock %}

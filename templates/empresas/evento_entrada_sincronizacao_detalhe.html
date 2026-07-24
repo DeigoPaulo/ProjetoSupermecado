@@ -14,6 +14,7 @@
 <section class="metrics-grid">
   <article class="metric"><span>Status</span><strong>{{ evento.get_status_display }}</strong></article>
   <article class="metric"><span>Empresa</span><strong>{{ evento.empresa }}</strong></article>
+  <article class="metric"><span>Politica de conflito</span><strong>{{ evento.empresa.get_politica_conflito_sincronizacao_display }}</strong></article>
   <article class="metric"><span>Recebido</span><strong>{{ evento.recebido_em|date:"d/m/Y H:i" }}</strong></article>
   <article class="metric"><span>Processado</span><strong>{{ evento.processado_em|date:"d/m/Y H:i"|default:"-" }}</strong></article>
 </section>
@@ -26,6 +27,7 @@
       <dt>Chave idempotente</dt><dd><code>{{ evento.chave_idempotencia }}</code></dd>
       <dt>Tipo</dt><dd>{{ evento.tipo }}</dd>
       <dt>Status tecnico</dt><dd>{{ evento.status }}</dd>
+      <dt>Politica da empresa</dt><dd>{{ evento.empresa.get_politica_conflito_sincronizacao_display }}</dd>
       <dt>Recebido em</dt><dd>{{ evento.recebido_em|date:"d/m/Y H:i:s" }}</dd>
       <dt>Processado em</dt><dd>{{ evento.processado_em|date:"d/m/Y H:i:s"|default:"-" }}</dd>
     </dl>
@@ -42,6 +44,10 @@
       {% endif %}
     </dl>
     {% if evento.status == "CONFLITO" %}
+      <div class="form-note form-note-warning">
+        <strong>Conflito aguardando decisao.</strong>
+        <span>Venda e fiscal permanecem manuais por seguranca; produto e estoque so sao resolvidos automaticamente quando a empresa usa a politica de nuvem prevalecendo.</span>
+      </div>
       <form method="post" action="{% url 'empresas:sincronizacao_entrada_resolver_conflito' evento.pk %}" class="stacked-form">
         {% csrf_token %}
         <label class="form-field">

@@ -1,0 +1,51 @@
+{% extends "base.html" %}
+
+{% block title %}SLAs de producao{% endblock %}
+
+{% block content %}
+<header class="page-header">
+  <div>
+    <h1>SLAs de producao por setor</h1>
+    <p>Metas de tempo usadas no relatorio de producoes e na gestao da fila operacional.</p>
+  </div>
+  <div class="actions">
+    <a class="secondary-button" href="{% url 'estoque:composicao_producoes_relatorio' %}">Relatorio</a>
+    <a class="primary-button" href="{% url 'estoque:sla_setor_producao_novo' %}">Novo SLA</a>
+  </div>
+</header>
+
+<form method="get" class="toolbar toolbar-wrap">
+  <input type="search" name="q" value="{{ request.GET.q }}" placeholder="Buscar por setor, empresa ou filial">
+  <button type="submit">Buscar</button>
+  {% if request.GET.q %}<a class="secondary-button" href="{% url 'estoque:slas_setor_producao' %}">Limpar</a>{% endif %}
+</form>
+
+<div class="panel">
+  <table>
+    <thead>
+      <tr>
+        <th>Setor</th>
+        <th>Empresa</th>
+        <th>Filial</th>
+        <th>Meta</th>
+        <th>Status</th>
+        <th>Acoes</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for configuracao in configuracoes %}
+        <tr>
+          <td><strong>{{ configuracao.setor }}</strong></td>
+          <td>{{ configuracao.empresa.nome_fantasia|default:configuracao.empresa.razao_social }}</td>
+          <td>{{ configuracao.filial|default:"Todas as filiais" }}</td>
+          <td>{{ configuracao.meta_minutos }} min</td>
+          <td><span class="status {% if configuracao.is_active %}status-success{% else %}status-warning{% endif %}">{% if configuracao.is_active %}Ativo{% else %}Inativo{% endif %}</span></td>
+          <td><a class="secondary-button" href="{% url 'estoque:sla_setor_producao_editar' configuracao.pk %}">Editar</a></td>
+        </tr>
+      {% empty %}
+        <tr><td colspan="6" class="empty">Nenhuma meta de SLA cadastrada.</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endblock %}

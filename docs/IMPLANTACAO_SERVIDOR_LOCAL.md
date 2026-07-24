@@ -37,6 +37,20 @@ Depois acesse pelo navegador:
 http://IP-DO-SERVIDOR:8000/
 ```
 
+## Serviço Windows planejado
+
+A tarefa agendada continua como fallback operacional. Para o instalador/serviço real, o contrato atual do sistema usa:
+
+```text
+Nome: MercaFlowServidorLocal
+Comando: .\.venv\Scripts\python.exe -m waitress --listen=0.0.0.0:8000 config.wsgi:application
+Healthcheck: /login/
+Restart: iniciar com o Windows e reiniciar automaticamente em falha
+Logs: logs/django.log e logs/servidor-local.log
+```
+
+Use uma conta local dedicada, sem permissao de administrador diario. O `runserver` deve ficar apenas para desenvolvimento ou contingencia assistida.
+
 ## Agendar inicializacao no Windows
 
 Para iniciar o servidor quando o usuario do servidor entrar no Windows:
@@ -100,7 +114,7 @@ O script agenda o comando `processar_sincronizacao_completa`, que processa a fil
 
 ## Proximas evolucoes
 
-- Empacotar o servidor como servico Windows real.
+- Gerar instalador/servico Windows assinado a partir do contrato MercaFlowServidorLocal.
 - Criptografar backup automatico em producao.
 - Criar instalador assinado para o servidor local.
 - Criar rotina de atualizacao com rollback.

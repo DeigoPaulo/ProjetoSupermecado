@@ -67,6 +67,24 @@
 <section class="panel">
   <div class="panel-heading">
     <div>
+      <h2>Servico Windows planejado</h2>
+      <p>Contrato operacional para empacotar o servidor local como servico real, mantendo a tarefa agendada como fallback.</p>
+    </div>
+  </div>
+  <dl class="detail-list">
+    <dt>Nome do servico</dt><dd><code>{{ payload.servico_windows.nome }}</code></dd>
+    <dt>Status</dt><dd>{{ payload.servico_windows.status }}</dd>
+    <dt>Usuario recomendado</dt><dd>{{ payload.servico_windows.usuario_recomendado }}</dd>
+    <dt>Comando de producao</dt><dd><code>{{ payload.servico_windows.comando_producao }}</code></dd>
+    <dt>Fallback atual</dt><dd><code>{{ payload.servico_windows.fallback_operacional }}</code></dd>
+    <dt>Healthcheck</dt><dd><code>{{ payload.servico_windows.healthcheck }}</code></dd>
+    <dt>Restart</dt><dd>{{ payload.servico_windows.restart }}</dd>
+  </dl>
+</section>
+
+<section class="panel">
+  <div class="panel-heading">
+    <div>
       <h2>Artefatos locais</h2>
       <p>Arquivos iniciais para rodar e manter o servidor administrativo dentro da loja.</p>
     </div>

@@ -17,6 +17,7 @@ from django.views.generic.base import TemplateResponseMixin
 from django.views.generic.edit import ModelFormMixin, ProcessFormView
 
 from apps.accounts.permissions import COMPRAS, RoleRequiredMixin, role_required, supervisor_from_request
+from apps.auditoria.models import LogAuditoria
 from apps.estoque.models import Estoque, MovimentacaoEstoque
 from apps.financeiro.models import ContaFinanceira, StatusContaFinanceira
 
@@ -361,5 +362,36 @@ def cancelar_entrada(request, pk):
         messages.success(request, "Entrada cancelada, estoque revertido e financeiro ajustado.")
 
     return redirect("compras:detalhe", pk=entrada.pk)
+
+
+@login_required
+@role_required(*COMPRAS)
+def excluir_rascunho(request, pk):
+    entrada = get_object_or_404(EntradaCompra.objects.prefetch_related("itens"), pk=pk)
+    retorno = request.POST.get("next") or reverse("compras:lista")
+    if not url_has_allowed_host_and_scheme(retorno, allowed_hosts={request.get_host()}):
+        retorno = reverse("compras:lista")
+    if request.method != "POST":
+        return redirect("compras:detalhe", pk=entrada.pk)
+    if entrada.status != StatusEntradaCompra.RASCUNHO:
+        messages.error(request, "Somente entradas em rascunho podem ser excluídas. Entradas finalizadas devem ser canceladas com reversão.")
+        return redirect("compras:detalhe", pk=entrada.pk)
+
+    entrada_id = entrada.id
+    fornecedor = str(entrada.fornecedor)
+    total_itens = entrada.itens.count()
+    numero_documento = entrada.numero_documento or "-"
+    LogAuditoria.objects.create(
+        usuario=request.user,
+        modulo="compras",
+        acao="ENTRADA_COMPRA_RASCUNHO_EXCLUIDA",
+        descricao=f"Rascunho de compra {entrada_id} excluído. Fornecedor: {fornecedor}. Documento: {numero_documento}. Itens: {total_itens}.",
+        objeto_tipo="EntradaCompra",
+        objeto_id=str(entrada_id),
+        ip=request.META.get("REMOTE_ADDR"),
+    )
+    entrada.delete()
+    messages.success(request, "Rascunho de compra excluído com sucesso. Nenhum estoque ou financeiro foi movimentado.")
+    return redirect(retorno)
 
 # Create your views here.

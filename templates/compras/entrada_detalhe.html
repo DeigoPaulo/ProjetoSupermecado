@@ -11,6 +11,11 @@
   <div class="actions">
     {% if entrada.status == "RASCUNHO" %}
       <a class="secondary-button" href="{% url 'compras:editar' entrada.pk %}?next={{ retorno_lista_url|urlencode }}">Editar</a>
+      <form method="post" action="{% url 'compras:excluir_rascunho' entrada.pk %}" class="inline-form form-confirm" data-msg="Excluir este rascunho de compra? Esta ação não mexe no estoque, mas remove o rascunho e seus itens.">
+        {% csrf_token %}
+        <input type="hidden" name="next" value="{{ retorno_lista_url }}">
+        <button class="secondary-button" type="submit">Excluir rascunho</button>
+      </form>
     {% endif %}
     <a class="secondary-button" href="{% url 'compras:detalhe_imprimir' entrada.pk %}" target="_blank"><i class="fa-solid fa-file-pdf"></i> PDF</a>
     <a class="secondary-button" href="{{ retorno_lista_url }}">Voltar</a>

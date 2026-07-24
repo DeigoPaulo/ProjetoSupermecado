@@ -12,7 +12,7 @@
     p { margin: 2px 0; color: #53657d; }
     .actions { margin: 10px 0; text-align: right; }
     button { border: 0; border-radius: 5px; background: #0050e8; color: #fff; padding: 9px 14px; font-weight: 700; cursor: pointer; }
-    .summary { display: grid; grid-template-columns: repeat(5, 1fr); gap: 8px; margin: 12px 0; }
+    .summary { display: grid; grid-template-columns: repeat(7, 1fr); gap: 8px; margin: 12px 0; }
     .summary div { border: 1px solid #d8e1ef; padding: 9px; }
     .summary span { display: block; color: #607089; }
     .summary strong { display: block; margin-top: 3px; font-size: 15px; }
@@ -40,21 +40,26 @@
     <div><span>Valor inicial</span><strong>R$ {{ valor_inicial_total|floatformat:2 }}</strong></div>
     <div><span>Valor declarado</span><strong>R$ {{ valor_final_total|floatformat:2 }}</strong></div>
     <div><span>Valor conferido</span><strong>R$ {{ valor_conferido_total|floatformat:2 }}</strong></div>
+    <div><span>Sangrias</span><strong>R$ {{ total_sangrias|floatformat:2 }}</strong></div>
+    <div><span>Suprimentos</span><strong>R$ {{ total_suprimentos|floatformat:2 }}</strong></div>
     <div><span>Diferença</span><strong>R$ {{ diferenca_total|floatformat:2 }}</strong></div>
   </section>
   <table style="margin-bottom: 12px;">
-    <thead><tr><th>Operador</th><th>Caixas</th><th>Vendas</th><th>Total vendido</th><th>Inicial</th><th>Declarado</th><th>Conferido</th><th>Diferença</th></tr></thead>
+    <thead><tr><th>Operador</th><th>Caixas</th><th>Vendas</th><th>Total vendido</th><th>Sangrias</th><th>Suprimentos</th><th>Saldo operacional</th><th>Inicial</th><th>Declarado</th><th>Conferido</th><th>Diferença</th></tr></thead>
     <tbody>
       {% for item in resumo_por_operador %}
         <tr>
           <td>{{ item.operador }}</td><td>{{ item.caixas }}</td><td>{{ item.vendas }}</td>
           <td class="money">R$ {{ item.total_vendas|floatformat:2 }}</td>
+          <td class="money">R$ {{ item.sangrias|floatformat:2 }}</td>
+          <td class="money">R$ {{ item.suprimentos|floatformat:2 }}</td>
+          <td class="money">R$ {{ item.saldo_operacional|floatformat:2 }}</td>
           <td class="money">R$ {{ item.valor_inicial|floatformat:2 }}</td>
           <td class="money">R$ {{ item.valor_declarado|floatformat:2 }}</td>
           <td class="money">R$ {{ item.valor_conferido|floatformat:2 }}</td>
           <td class="money">R$ {{ item.diferenca|floatformat:2 }}</td>
         </tr>
-      {% empty %}<tr><td colspan="8">Nenhum operador no periodo.</td></tr>{% endfor %}
+      {% empty %}<tr><td colspan="11">Nenhum operador no periodo.</td></tr>{% endfor %}
     </tbody>
   </table>
   <table>

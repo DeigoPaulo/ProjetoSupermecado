@@ -4,7 +4,7 @@ from django.db import transaction
 from django.utils.dateparse import parse_datetime
 from django.utils import timezone
 
-from .models import EventoEntradaSincronizacao, StatusEventoEntrada
+from .models import EventoEntradaSincronizacao, PoliticaConflitoSincronizacao, StatusEventoEntrada
 
 
 class ManipuladorEventoNaoEncontrado(Exception):
@@ -51,6 +51,10 @@ def _dados_evento(evento):
     return payload
 
 
+def _forcar_remoto(evento):
+    return bool(evento.payload.get("_sync_force_remote"))
+
+
 def _evento_remoto_em(evento):
     bruto = evento.payload.get("criado_em") or evento.payload.get("atualizado_em")
     if not bruto:
@@ -79,7 +83,7 @@ def _produto_salvar(evento):
 
     produto = Produto.all_objects.filter(codigo_barras=codigo_barras).first()
     remoto_em = _evento_remoto_em(evento)
-    if produto and remoto_em and produto.updated_at and produto.updated_at > remoto_em:
+    if produto and remoto_em and produto.updated_at and produto.updated_at > remoto_em and not _forcar_remoto(evento):
         raise ConflitoSincronizacao("Produto local foi alterado depois do evento remoto.")
 
     valores = {
@@ -135,7 +139,7 @@ def _estoque_saldo_atualizar(evento):
 
     estoque, _ = Estoque.objects.get_or_create(produto=produto, filial=filial)
     remoto_em = _evento_remoto_em(evento)
-    if remoto_em and estoque.atualizado_em and estoque.atualizado_em > remoto_em:
+    if remoto_em and estoque.atualizado_em and estoque.atualizado_em > remoto_em and not _forcar_remoto(evento):
         raise ConflitoSincronizacao("Estoque local foi alterado depois do evento remoto.")
 
     quantidade_atual = _valor_decimal(dados, "quantidade_atual")
@@ -284,6 +288,22 @@ def processar_evento_entrada(evento):
     manipulador(evento)
 
 
+def _pode_resolver_conflito_com_remoto(evento, erro):
+    if evento.empresa.politica_conflito_sincronizacao != PoliticaConflitoSincronizacao.REMOTO_PRODUTOS_ESTOQUE:
+        return False
+    if evento.tipo not in {"produto.criado", "produto.atualizado", "estoque.saldo_atualizado"}:
+        return False
+    return "foi alterado depois do evento remoto" in str(erro)
+
+
+def _resolver_conflito_com_remoto(evento):
+    evento.payload = {**evento.payload, "_sync_force_remote": True}
+    processar_evento_entrada(evento)
+    evento.payload.pop("_sync_force_remote", None)
+    evento.resolucao_conflito = "Resolvido automaticamente pela politica da empresa: nuvem prevalece para produtos e estoque."
+    evento.resolvido_em = timezone.now()
+
+
 def processar_entrada_sincronizacao(*, limite=50):
     candidatos = list(
         EventoEntradaSincronizacao.objects.filter(status=StatusEventoEntrada.RECEBIDO)
@@ -299,10 +319,25 @@ def processar_entrada_sincronizacao(*, limite=50):
             try:
                 processar_evento_entrada(evento)
             except ConflitoSincronizacao as exc:
-                evento.status = StatusEventoEntrada.CONFLITO
-                evento.ultimo_erro = str(exc)[:2000]
-                evento.save(update_fields=["status", "ultimo_erro", "atualizado_em"])
-                resultado["erros"] += 1
+                if _pode_resolver_conflito_com_remoto(evento, exc):
+                    try:
+                        _resolver_conflito_com_remoto(evento)
+                    except Exception as novo_exc:
+                        evento.status = StatusEventoEntrada.CONFLITO
+                        evento.ultimo_erro = str(novo_exc)[:2000]
+                        evento.save(update_fields=["status", "ultimo_erro", "atualizado_em"])
+                        resultado["erros"] += 1
+                    else:
+                        evento.status = StatusEventoEntrada.PROCESSADO
+                        evento.ultimo_erro = ""
+                        evento.processado_em = timezone.now()
+                        evento.save(update_fields=["payload", "status", "ultimo_erro", "resolucao_conflito", "resolvido_em", "processado_em", "atualizado_em"])
+                        resultado["processados"] += 1
+                else:
+                    evento.status = StatusEventoEntrada.CONFLITO
+                    evento.ultimo_erro = str(exc)[:2000]
+                    evento.save(update_fields=["status", "ultimo_erro", "atualizado_em"])
+                    resultado["erros"] += 1
             except Exception as exc:
                 evento.status = StatusEventoEntrada.ERRO
                 evento.ultimo_erro = str(exc)[:2000]

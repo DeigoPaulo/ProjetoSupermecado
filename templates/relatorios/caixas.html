@@ -44,13 +44,15 @@
   <article class="metric"><span>Valor inicial</span><strong>R$ {{ valor_inicial_total|floatformat:2 }}</strong></article>
   <article class="metric"><span>Declarado</span><strong>R$ {{ valor_final_total|floatformat:2 }}</strong></article>
   <article class="metric"><span>Conferido</span><strong>R$ {{ valor_conferido_total|floatformat:2 }}</strong></article>
+  <article class="metric"><span>Sangrias</span><strong>R$ {{ total_sangrias|floatformat:2 }}</strong></article>
+  <article class="metric"><span>Suprimentos</span><strong>R$ {{ total_suprimentos|floatformat:2 }}</strong></article>
   <article class="metric"><span>Diferença conferida</span><strong>R$ {{ diferenca_total|floatformat:2 }}</strong></article>
 </section>
 
 <div class="panel">
   <div class="panel-title">Resumo por operador/funcionario</div>
   <table>
-    <thead><tr><th>Operador</th><th>Caixas</th><th>Vendas</th><th>Total vendido</th><th>Inicial</th><th>Declarado</th><th>Conferido</th><th>Diferença</th></tr></thead>
+    <thead><tr><th>Operador</th><th>Caixas</th><th>Vendas</th><th>Total vendido</th><th>Sangrias</th><th>Suprimentos</th><th>Saldo operacional</th><th>Inicial</th><th>Declarado</th><th>Conferido</th><th>Diferença</th></tr></thead>
     <tbody>
       {% for item in resumo_por_operador %}
         <tr>
@@ -58,13 +60,16 @@
           <td>{{ item.caixas }}</td>
           <td>{{ item.vendas }}</td>
           <td><strong>R$ {{ item.total_vendas|floatformat:2 }}</strong></td>
+          <td>R$ {{ item.sangrias|floatformat:2 }}</td>
+          <td>R$ {{ item.suprimentos|floatformat:2 }}</td>
+          <td><strong>R$ {{ item.saldo_operacional|floatformat:2 }}</strong></td>
           <td>R$ {{ item.valor_inicial|floatformat:2 }}</td>
           <td>R$ {{ item.valor_declarado|floatformat:2 }}</td>
           <td>R$ {{ item.valor_conferido|floatformat:2 }}</td>
           <td><strong>R$ {{ item.diferenca|floatformat:2 }}</strong></td>
         </tr>
       {% empty %}
-        <tr><td colspan="8" class="empty">Nenhum operador no periodo.</td></tr>
+        <tr><td colspan="11" class="empty">Nenhum operador no periodo.</td></tr>
       {% endfor %}
     </tbody>
   </table>

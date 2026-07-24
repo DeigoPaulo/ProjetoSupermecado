@@ -280,7 +280,7 @@ class AcessoPdvNuvemTests(TestCase):
         resposta = self.client.get("/pdv/acessos-nuvem/")
 
         self.assertContains(resposta, "1 acesso pendente")
-        self.assertContains(resposta, "Ha operador aguardando liberacao")
+        self.assertContains(resposta, "Há operador aguardando liberação")
 
     @override_settings(PDV_NUVEM_REQUER_APROVACAO=True)
     def test_pdv_nuvem_bloqueia_operador_sem_aprovacao(self):
@@ -290,6 +290,7 @@ class AcessoPdvNuvemTests(TestCase):
 
         self.assertEqual(resposta.status_code, 403)
         self.assertContains(resposta, "Acesso ao PDV em nuvem pendente", status_code=403)
+        self.assertContains(resposta, "O admin ou gerente já pode aprovar ou recusar", status_code=403)
         self.assertEqual(AcessoPdvNuvem.objects.filter(usuario=self.operador, status=StatusAcessoPdvNuvem.PENDENTE).count(), 1)
 
     @override_settings(PDV_NUVEM_REQUER_APROVACAO=True)
@@ -345,6 +346,45 @@ class AcessoPdvNuvemTests(TestCase):
         self.assertContains(resposta, f'data-desktop-print-url="/pdv/vendas/{venda.id}/impressao-desktop.json"')
         self.assertEqual(self.client.session["pdv_cart"], {})
         self.assertEqual(Venda.objects.count(), 1)
+
+    def test_impressao_desktop_avisa_quando_cupom_nao_tem_impressora_padrao(self):
+        categoria = Categoria.objects.create(nome="Mercearia")
+        produto = Produto.objects.create(codigo_barras="789100000002", nome="Feijao", categoria=categoria, preco_custo=Decimal("7"), preco_venda=Decimal("12"))
+        Estoque.objects.create(produto=produto, filial=self.filial, quantidade_atual=Decimal("10"))
+        caixa = Caixa.objects.create(filial=self.filial, usuario_abertura=self.operador, valor_inicial=Decimal("100"))
+        ConfiguracaoImpressao.objects.create(
+            empresa=self.filial.empresa,
+            filial=self.filial,
+            tipo_documento=TipoDocumentoImpressao.CUPOM_NAO_FISCAL,
+            impressora_padrao="",
+        )
+        forma = FormaPagamento.objects.create(nome="Dinheiro", tipo="DINHEIRO", permite_troco=True)
+        session = self.client.session
+        session["pdv_cart"] = {str(produto.id): "1"}
+        session.save()
+        self.client.force_login(self.operador)
+        self.client.post(
+            "/pdv/",
+            {
+                "action": "finish",
+                "caixa": caixa.id,
+                "cliente": "",
+                "desconto": "0",
+                "vencimento_financeiro": "",
+                "pagamento_forma": [forma.id],
+                "pagamento_valor": ["12.00"],
+            },
+        )
+        venda = Venda.objects.get()
+
+        resposta = self.client.get(f"/pdv/vendas/{venda.id}/impressao-desktop.json")
+
+        self.assertEqual(resposta.status_code, 200)
+        payload = resposta.json()
+        self.assertTrue(payload["impressao"]["configurada"])
+        self.assertFalse(payload["impressao"]["impressora_configurada"])
+        self.assertEqual(payload["impressao"]["impressora_padrao"], "")
+        self.assertIn("sem impressora padrão definida", payload["impressao"]["mensagem"])
 
     def test_remover_item_do_pdv_reduz_uma_unidade_por_vez(self):
         categoria = Categoria.objects.create(nome="Mercearia")

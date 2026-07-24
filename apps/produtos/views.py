@@ -289,16 +289,35 @@ def etiquetas(request):
             "colunas": configuracao_etiqueta.colunas_etiqueta,
         }
     linguagens_nativas = {"ZPL", "EPL", "PPLA", "PPLB"}
+    mensagem_impressao_nativa = ""
+    impressora_etiqueta_configurada = bool(
+        configuracao_etiqueta and (configuracao_etiqueta.impressora_padrao or "").strip()
+    )
+    if produtos and dimensoes_modelo:
+        if not configuracao_etiqueta:
+            mensagem_impressao_nativa = (
+                "Cadastre uma configuração de impressão do tipo Etiqueta em Sistema > Impressões para liberar a impressão direta."
+            )
+        elif not impressora_etiqueta_configurada:
+            mensagem_impressao_nativa = (
+                "A configuração de etiqueta existe, mas está sem impressora padrão. Defina a impressora em Sistema > Impressões."
+            )
+        elif configuracao_etiqueta.linguagem_impressora not in linguagens_nativas:
+            mensagem_impressao_nativa = (
+                "A impressão direta de etiquetas exige linguagem nativa ZPL, EPL, PPLA ou PPLB. Use o navegador ou ajuste a configuração."
+            )
     impressao_nativa_disponivel = bool(
         produtos
         and dimensoes_modelo
         and configuracao_etiqueta
-        and configuracao_etiqueta.impressora_padrao
+        and impressora_etiqueta_configurada
         and configuracao_etiqueta.linguagem_impressora in linguagens_nativas
     )
     payload_etiquetas = None
     if impressao_nativa_disponivel:
         payload_etiquetas = {
+            "contrato": "label_print_v1",
+            "origem": "produtos_etiquetas",
             "impressora_padrao": configuracao_etiqueta.impressora_padrao,
             "linguagem": configuracao_etiqueta.linguagem_impressora,
             "dpi": configuracao_etiqueta.dpi_impressora,
@@ -330,6 +349,7 @@ def etiquetas(request):
             "configuracao_etiqueta": configuracao_etiqueta,
             "modelo_salvo": modelo_salvo,
             "impressao_nativa_disponivel": impressao_nativa_disponivel,
+            "mensagem_impressao_nativa": mensagem_impressao_nativa,
             "payload_etiquetas": payload_etiquetas,
         },
     )

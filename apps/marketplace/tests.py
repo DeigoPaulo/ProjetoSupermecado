@@ -135,6 +135,57 @@ class FluxoPedidoOnlineTests(TestCase):
         resposta = self.client.post("/pedidos-online/api/pedidos/", data="{}", content_type="application/json")
         self.assertEqual(resposta.status_code, 401)
 
+    @override_settings(MARKETPLACE_GEOCODING_PROVIDER_URL="https://mapas.example/rota")
+    def test_api_status_da_integracao_autentica_e_nao_expoe_token(self):
+        integracao = IntegracaoMarketplace.objects.create(nome="Parceiro", filial=self.filial, usuario=self.usuario, token_prefixo="temporario", token_hash="temporario")
+        PoliticaEntrega.objects.create(
+            filial=self.filial,
+            raio_maximo_km=Decimal("8"),
+            valor_minimo_pedido=Decimal("25"),
+            frete_gratis_acima=Decimal("80"),
+            bairros_atendidos="Centro",
+            permite_retirada=True,
+        )
+        token = gerar_token_integracao(integracao)
+
+        invalida = self.client.get("/pedidos-online/api/status/", HTTP_X_INTEGRATION_KEY="token-invalido")
+        resposta = self.client.get("/pedidos-online/api/status/", HTTP_X_INTEGRATION_KEY=token)
+
+        self.assertEqual(invalida.status_code, 401)
+        self.assertEqual(resposta.status_code, 200)
+        payload = resposta.json()
+        self.assertEqual(payload["status"], "ok")
+        self.assertEqual(payload["contrato"], "marketplace_partner_v1")
+        self.assertEqual(payload["integracao"]["token_prefixo"], integracao.token_prefixo)
+        self.assertEqual(payload["filial"]["id"], self.filial.id)
+        self.assertTrue(payload["recursos"]["idempotencia_por_referencia"])
+        self.assertTrue(payload["recursos"]["politica_entrega"])
+        self.assertEqual(payload["politica_entrega"]["contrato"], "delivery_policy_v1")
+        self.assertTrue(payload["politica_entrega"]["ativa"])
+        self.assertEqual(payload["politica_entrega"]["raio_maximo_km"], "8.00")
+        self.assertEqual(payload["politica_entrega"]["valor_minimo_pedido"], "25.00")
+        self.assertEqual(payload["politica_entrega"]["frete_gratis_acima"], "80.00")
+        self.assertTrue(payload["politica_entrega"]["bairro_obrigatorio"])
+        self.assertTrue(payload["politica_entrega"]["calculo_entrega"]["manual_distancia"])
+        self.assertTrue(payload["politica_entrega"]["calculo_entrega"]["geocoding"])
+        self.assertIn("Nenhuma faixa de taxa cadastrada.", payload["alertas"])
+        self.assertNotIn(token, json.dumps(payload))
+        integracao.refresh_from_db()
+        self.assertIsNotNone(integracao.ultimo_uso_em)
+
+    def test_api_status_avisa_quando_filial_nao_tem_politica_entrega(self):
+        integracao = IntegracaoMarketplace.objects.create(nome="Parceiro", filial=self.filial, usuario=self.usuario, token_prefixo="temporario", token_hash="temporario")
+        token = gerar_token_integracao(integracao)
+
+        resposta = self.client.get("/pedidos-online/api/status/", HTTP_X_INTEGRATION_KEY=token)
+
+        self.assertEqual(resposta.status_code, 200)
+        payload = resposta.json()
+        self.assertFalse(payload["politica_entrega"]["ativa"])
+        self.assertFalse(payload["politica_entrega"]["permite_entrega"])
+        self.assertTrue(payload["politica_entrega"]["permite_retirada"])
+        self.assertIn("Filial sem politica de entrega ativa", payload["alertas"][0])
+
     def test_api_cria_pedido_e_impede_duplicidade(self):
         integracao = IntegracaoMarketplace.objects.create(nome="Parceiro", filial=self.filial, usuario=self.usuario, token_prefixo="temporario", token_hash="temporario")
         token = gerar_token_integracao(integracao)

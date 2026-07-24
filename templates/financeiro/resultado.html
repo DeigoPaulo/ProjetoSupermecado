@@ -49,6 +49,26 @@
   <article class="metric"><span>Receitas realizadas</span><strong>R$ {{ receitas|floatformat:2 }}</strong></article>
   <article class="metric"><span>Despesas realizadas</span><strong>R$ {{ despesas|floatformat:2 }}</strong></article>
   <article class="metric"><span>Resultado</span><strong>R$ {{ resultado|floatformat:2 }}</strong></article>
+  <article class="metric"><span>Margem operacional</span><strong>{{ dre_gerencial.margem_percentual|floatformat:2 }}%</strong></article>
+</section>
+
+<section class="panel table-panel">
+  <div class="panel-title">DRE gerencial</div>
+  <p class="muted">Demonstrativo gerencial baseado no livro financeiro. Serve para acompanhamento interno e não substitui relatório contábil oficial.</p>
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>Grupo</th><th>Valor</th><th>Observação</th></tr></thead>
+      <tbody>
+        {% for linha in dre_gerencial.linhas %}
+          <tr>
+            <td>{{ linha.grupo }}</td>
+            <td><strong>R$ {{ linha.valor|floatformat:2 }}</strong></td>
+            <td>{{ linha.observacao }}</td>
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
 </section>
 
 <section class="panel table-panel">

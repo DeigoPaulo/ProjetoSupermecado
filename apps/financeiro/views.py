@@ -237,6 +237,39 @@ def _resultado_financeiro_periodo(data_inicio, data_fim):
         "por_categoria": por_categoria,
         "saldos_contas": saldos_contas,
         "balancete_contas": _balancete_contas_periodo(data_inicio, data_fim),
+        "dre_gerencial": _dre_gerencial(receitas, despesas, por_categoria),
+    }
+
+
+def _dre_gerencial(receitas, despesas, por_categoria):
+    resultado = receitas - despesas
+    margem = Decimal("0.00")
+    if receitas:
+        margem = (resultado / receitas * Decimal("100.00")).quantize(Decimal("0.01"))
+    linhas = [
+        {
+            "grupo": "Receita operacional",
+            "valor": receitas,
+            "natureza": "entrada",
+            "observacao": "Entradas realizadas no livro financeiro, sem transferencias internas.",
+        },
+        {
+            "grupo": "Despesas operacionais",
+            "valor": despesas,
+            "natureza": "saida",
+            "observacao": "Saidas realizadas no livro financeiro, sem transferencias internas.",
+        },
+        {
+            "grupo": "Resultado operacional",
+            "valor": resultado,
+            "natureza": "resultado",
+            "observacao": "Receitas menos despesas no periodo filtrado.",
+        },
+    ]
+    return {
+        "linhas": linhas,
+        "categorias": sorted(por_categoria, key=lambda item: (item["tipo"], item["categoria"])),
+        "margem_percentual": margem,
     }
 
 
@@ -433,6 +466,12 @@ def resultado_financeiro_csv(request):
         f"{resultado['despesas']:.2f}".replace(".", ","),
         f"{resultado['resultado']:.2f}".replace(".", ","),
     ])
+    writer.writerow([])
+    writer.writerow(["DRE gerencial"])
+    writer.writerow(["Grupo", "Valor", "Observacao"])
+    for linha in resultado["dre_gerencial"]["linhas"]:
+        writer.writerow([linha["grupo"], valor_csv(linha["valor"]), linha["observacao"]])
+    writer.writerow(["Margem operacional", f"{resultado['dre_gerencial']['margem_percentual']:.2f}".replace(".", ",") + "%", "Resultado dividido pela receita operacional."])
     writer.writerow([])
     writer.writerow(["Origem", "Receitas", "Despesas", "Resultado"])
     for linha in resultado["por_origem"]:

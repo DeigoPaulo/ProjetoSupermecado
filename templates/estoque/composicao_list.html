@@ -1,16 +1,19 @@
 {% extends "base.html" %}
 
-{% block title %}Composicoes{% endblock %}
+{% block title %}Composições{% endblock %}
 
 {% block content %}
 <header class="page-header">
   <div>
-    <h1>Composicoes</h1>
-    <p>Receitas para kits, cestas e producao interna com consumo de componentes.</p>
+    <h1>Composições</h1>
+    <p>Receitas para kits, cestas e produção interna com consumo de componentes.</p>
   </div>
   <div class="actions">
+    <a class="secondary-button" href="{% url 'estoque:composicoes_csv' %}?{{ request.GET.urlencode }}">Excel/CSV</a>
+    <a class="secondary-button" href="{% url 'estoque:ordens_producao_composicao' %}">Ordens</a>
+    <a class="secondary-button" href="{% url 'estoque:composicao_producoes_relatorio' %}">Relatório de produções</a>
     <a class="secondary-button" href="{% url 'estoque:desmembramentos' %}">Desmembramentos</a>
-    <a class="primary-button" href="{% url 'estoque:composicao_nova' %}">Nova composicao</a>
+    <a class="primary-button" href="{% url 'estoque:composicao_nova' %}">Nova composição</a>
   </div>
 </header>
 
@@ -19,23 +22,58 @@
   <button type="submit">Buscar</button>
 </form>
 
+<form method="post" action="{% url 'estoque:composicoes_programar_sugestoes' %}" class="toolbar toolbar-wrap form-confirm" data-msg="Gerar ordens planejadas para as composições com demanda e capacidade disponível?">
+  {% csrf_token %}
+  <label class="form-field-inline">
+    <span>Data das ordens</span>
+    <input type="date" name="data_programada" value="{% now 'Y-m-d' %}">
+  </label>
+  <button type="submit" class="secondary-button">Programar sugestões</button>
+</form>
+
+<section class="metrics-grid">
+  <article class="metric"><span>Composições</span><strong>{{ total_composicoes }}</strong></article>
+  <article class="metric"><span>Capacidade total</span><strong>{{ total_capacidade|quantidade_br }}</strong></article>
+  <article class="metric"><span>Demanda mínima</span><strong>{{ total_demanda_producao|quantidade_br }}</strong></article>
+  <article class="metric"><span>Produção sugerida</span><strong>{{ total_producao_sugerida|quantidade_br }}</strong></article>
+  <article class="metric"><span>Alertas</span><strong>{{ total_alertas_insumo|add:total_alertas_demanda }}</strong></article>
+</section>
+
 <div class="panel">
   <table>
     <thead>
-      <tr><th>Produto final</th><th>Qtd final</th><th>Tipo</th><th>Componentes</th><th>Status</th><th></th></tr>
+      <tr><th>Produto final</th><th>Qtd final</th><th>Capacidade</th><th>Estoque final</th><th>Demanda</th><th>Sugestão</th><th>Componentes</th><th>Status</th><th></th></tr>
     </thead>
     <tbody>
       {% for composicao in composicoes %}
         <tr>
           <td><a href="{% url 'estoque:composicao_detalhe' composicao.pk %}"><strong>{{ composicao.produto_final }}</strong></a><br><small>{{ composicao.filial|default:"Todas as filiais" }}</small></td>
-          <td>{{ composicao.quantidade_final }}</td>
-          <td>{{ composicao.get_tipo_display }}</td>
+          <td>{{ composicao.quantidade_final|quantidade_br }}</td>
+          <td><strong>{{ composicao.resumo_visual.capacidade_maxima|quantidade_br }}</strong></td>
+          <td>{{ composicao.resumo_visual.estoque_final|quantidade_br }}<br><small>Mín.: {{ composicao.resumo_visual.estoque_minimo|quantidade_br }}</small></td>
+          <td>{{ composicao.resumo_visual.demanda_reposicao|quantidade_br }}</td>
+          <td><strong>{{ composicao.resumo_visual.producao_sugerida|quantidade_br }}</strong></td>
           <td>{{ composicao.itens.count }}</td>
-          <td><span class="status {% if composicao.is_active %}status-success{% endif %}">{% if composicao.is_active %}Ativa{% else %}Inativa{% endif %}</span></td>
-          <td><a class="secondary-button" href="{% url 'estoque:composicao_editar' composicao.pk %}">Editar</a></td>
+          <td>
+            {% if composicao.tem_alerta_insumo %}
+              <span class="status status-warning">Insumo baixo</span>
+            {% elif composicao.tem_demanda_producao %}
+              <span class="status status-warning">Produzir</span>
+            {% else %}
+              <span class="status {% if composicao.is_active %}status-success{% endif %}">{% if composicao.is_active %}Ativa{% else %}Inativa{% endif %}</span>
+            {% endif %}
+            <br><small>{{ composicao.get_tipo_display }}</small>
+          </td>
+          <td>
+            {% if composicao.pode_produzir_capacidade %}
+              <a class="secondary-button" href="{% url 'estoque:composicao_detalhe' composicao.pk %}?quantidade={{ composicao.quantidade_planejada }}">{{ composicao.rotulo_producao_planejada }}</a>
+              <a class="secondary-button" href="{% url 'estoque:ordem_producao_composicao_nova' %}?composicao={{ composicao.pk }}&quantidade={{ composicao.quantidade_planejada }}">Programar</a>
+            {% endif %}
+            <a class="secondary-button" href="{% url 'estoque:composicao_editar' composicao.pk %}">Editar</a>
+          </td>
         </tr>
       {% empty %}
-        <tr><td colspan="6" class="empty">Nenhuma composicao cadastrada.</td></tr>
+        <tr><td colspan="9" class="empty">Nenhuma composição cadastrada.</td></tr>
       {% endfor %}
     </tbody>
   </table>

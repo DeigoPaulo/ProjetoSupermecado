@@ -22,7 +22,7 @@ from django.views.decorators.http import require_GET, require_POST
 from apps.accounts.permissions import CLIENTES, COMPRAS, ESTOQUE, PDV, RELATORIOS, SISTEMA, role_required
 
 from .forms import EmpresaForm, FilialForm
-from .models import DocumentoFiscalSincronizado, Empresa, EventoEntradaSincronizacao, EventoSincronizacao, Filial, StatusEventoEntrada, StatusSincronizacao, VendaSincronizada
+from .models import DocumentoFiscalSincronizado, Empresa, EventoEntradaSincronizacao, EventoSincronizacao, Filial, PoliticaConflitoSincronizacao, StatusEventoEntrada, StatusSincronizacao, VendaSincronizada
 
 
 def _apenas_digitos(valor):
@@ -87,6 +87,21 @@ def _buscar_empresa_por_cnpj(digitos):
 def _buscar_filial_por_cnpj(digitos):
     for filial in Filial.objects.select_related("empresa"):
         if _apenas_digitos(filial.cnpj or filial.empresa.cnpj) == digitos:
+            return filial
+    return None
+
+
+
+def _buscar_empresa_por_cep(digitos):
+    for empresa in Empresa.objects.all():
+        if digitos and digitos in _apenas_digitos(empresa.endereco):
+            return empresa
+    return None
+
+
+def _buscar_filial_por_cep(digitos):
+    for filial in Filial.objects.select_related("empresa"):
+        if digitos and digitos in _apenas_digitos(filial.endereco):
             return filial
     return None
 
@@ -314,6 +329,7 @@ def consulta_cadastro_placeholder(request):
         },
         "campos_previstos": [
             "cnpj",
+            "cep",
             "razao_social",
             "nome_fantasia",
             "telefone",
@@ -343,6 +359,12 @@ def consulta_cadastro_placeholder(request):
         digitos = _apenas_digitos(cep)
         if len(digitos) != 8:
             return JsonResponse({**payload_base, "status": "invalid", "mensagem": "CEP deve ter 8 digitos.", "consulta": {"tipo": "cep", "valor": digitos}}, status=400)
+        filial = _buscar_filial_por_cep(digitos)
+        empresa = _buscar_empresa_por_cep(digitos)
+        if filial:
+            return JsonResponse({**payload_base, "status": "local_match", "mensagem": "CEP encontrado nas filiais locais.", "consulta": {"tipo": "cep", "valor": digitos}, "dados": _dados_filial(filial)})
+        if empresa:
+            return JsonResponse({**payload_base, "status": "local_match", "mensagem": "CEP encontrado nas empresas locais.", "consulta": {"tipo": "cep", "valor": digitos}, "dados": _dados_empresa(empresa)})
         if provider_cep:
             resultado = _consultar_provider_cadastro(provider_cep, "cep", digitos)
             status_http = 502 if resultado["status"] == "external_provider_error" else 200
@@ -424,15 +446,34 @@ def _sincronizacao_diagnostico_payload(request):
     documentos_fiscais_qs = dados["documentos_fiscais_qs"]
     saida = dict(eventos_qs.values_list("status").annotate(total=Count("id")))
     entrada = dict(eventos_entrada_qs.values_list("status").annotate(total=Count("id")))
-    empresas_por_modo = dict(Empresa.objects.filter(is_active=True).values_list("modo_implantacao").annotate(total=Count("id")))
+    empresas_ativas_qs = Empresa.objects.filter(is_active=True)
+    if dados["filtros"]["empresa"].isdigit():
+        empresas_ativas_qs = empresas_ativas_qs.filter(pk=dados["filtros"]["empresa"])
+    empresas_por_modo = dict(empresas_ativas_qs.values_list("modo_implantacao").annotate(total=Count("id")))
+    politicas_conflito = dict(empresas_ativas_qs.values_list("politica_conflito_sincronizacao").annotate(total=Count("id")))
+    politica_manual = politicas_conflito.get(PoliticaConflitoSincronizacao.MANUAL, 0)
+    politica_remoto_produtos_estoque = politicas_conflito.get(PoliticaConflitoSincronizacao.REMOTO_PRODUTOS_ESTOQUE, 0)
     pendentes_saida = saida.get(StatusSincronizacao.PENDENTE, 0)
     erros_saida = saida.get(StatusSincronizacao.ERRO, 0)
     conflitos_entrada = entrada.get(StatusEventoEntrada.CONFLITO, 0)
     erros_entrada = entrada.get(StatusEventoEntrada.ERRO, 0)
     recebidos_entrada = entrada.get(StatusEventoEntrada.RECEBIDO, 0)
+    agora = timezone.now()
+    evento_saida_antigo = eventos_qs.filter(status__in=[StatusSincronizacao.PENDENTE, StatusSincronizacao.ERRO]).order_by("criado_em").first()
+    evento_entrada_antigo = eventos_entrada_qs.filter(
+        status__in=[StatusEventoEntrada.RECEBIDO, StatusEventoEntrada.ERRO, StatusEventoEntrada.CONFLITO]
+    ).order_by("recebido_em").first()
+    idade_saida_minutos = int((agora - evento_saida_antigo.criado_em).total_seconds() // 60) if evento_saida_antigo else 0
+    idade_entrada_minutos = int((agora - evento_entrada_antigo.recebido_em).total_seconds() // 60) if evento_entrada_antigo else 0
+    esgotados_saida = eventos_qs.filter(
+        status=StatusSincronizacao.ERRO,
+        tentativas__gte=settings.SINCRONIZACAO_MAX_TENTATIVAS,
+    ).count()
     alertas = []
     if erros_saida:
         alertas.append(f"{erros_saida} evento(s) de saida com erro aguardando reprocessamento.")
+    if esgotados_saida:
+        alertas.append(f"{esgotados_saida} evento(s) de saida esgotaram as tentativas automaticas.")
     if erros_entrada:
         alertas.append(f"{erros_entrada} evento(s) de entrada com erro técnico.")
     if conflitos_entrada:
@@ -454,6 +495,8 @@ def _sincronizacao_diagnostico_payload(request):
                 "processando": saida.get(StatusSincronizacao.PROCESSANDO, 0),
                 "enviados": saida.get(StatusSincronizacao.ENVIADO, 0),
                 "erros": erros_saida,
+                "esgotados": esgotados_saida,
+                "idade_mais_antigo_minutos": idade_saida_minutos,
                 "proxima_tentativa": timezone.localtime(proxima_saida.proxima_tentativa_em).isoformat() if proxima_saida and proxima_saida.proxima_tentativa_em else None,
                 "proximo_evento": str(proxima_saida.identificador) if proxima_saida else None,
             },
@@ -463,6 +506,7 @@ def _sincronizacao_diagnostico_payload(request):
                 "conflitos": conflitos_entrada,
                 "erros": erros_entrada,
                 "resolvidos": entrada.get(StatusEventoEntrada.RESOLVIDO, 0),
+                "idade_mais_antigo_minutos": idade_entrada_minutos,
                 "proximo_evento": str(proxima_entrada.identificador) if proxima_entrada else None,
             },
         },
@@ -472,9 +516,12 @@ def _sincronizacao_diagnostico_payload(request):
             "documentos_fiscais": documentos_fiscais_qs.count(),
         },
         "empresas": {
-            "total_ativas": Empresa.objects.filter(is_active=True).count(),
+            "total_ativas": empresas_ativas_qs.count(),
             "por_modo": empresas_por_modo,
-            "sincronizacao_automatica": Empresa.objects.filter(is_active=True, sincronizacao_automatica=True).count(),
+            "politicas_conflito": politicas_conflito,
+            "politica_manual": politica_manual,
+            "politica_remoto_produtos_estoque": politica_remoto_produtos_estoque,
+            "sincronizacao_automatica": empresas_ativas_qs.filter(sincronizacao_automatica=True).count(),
         },
         "operacao": {
             "comando": "python manage.py processar_sincronizacao_completa --limite-saida 50 --limite-entrada 50",
@@ -500,6 +547,7 @@ def sincronizacao(request):
     contagens = dict(eventos_qs.values_list("status").annotate(total=Count("id")))
     contagens_entrada = dict(eventos_entrada_qs.values_list("status").annotate(total=Count("id")))
     total_vendas_sync = vendas_qs.aggregate(total=Sum("total_liquido"))["total"] or 0
+    diagnostico_operacional = _sincronizacao_diagnostico_payload(request)
     base_dir = Path(settings.BASE_DIR)
     python_exe = base_dir / ".venv" / "Scripts" / "python.exe"
     comando_sincronizacao = f'"{python_exe}" manage.py processar_sincronizacao_completa --limite-saida 50 --limite-entrada 50'
@@ -529,6 +577,7 @@ def sincronizacao(request):
         "total_vendas_sincronizadas": vendas_qs.count(),
         "valor_vendas_sincronizadas": total_vendas_sync,
         "total_documentos_fiscais_sincronizados": documentos_fiscais_qs.count(),
+        "diagnostico_operacional": diagnostico_operacional,
         "comando_sincronizacao": comando_sincronizacao,
         "comando_agendador": comando_agendador,
         "script_agendador_sincronizacao": script_agendador_sincronizacao,

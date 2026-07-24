@@ -3,6 +3,7 @@ from django.contrib.auth.decorators import login_required
 from django.core.exceptions import ValidationError
 from django.http import HttpResponse, JsonResponse
 from django.shortcuts import get_object_or_404, redirect, render
+from django.utils import timezone
 
 from apps.accounts.permissions import RELATORIOS, SISTEMA, role_required
 from apps.auditoria.models import LogAuditoria
@@ -156,6 +157,86 @@ def documentos(request):
 @role_required(*RELATORIOS)
 def diagnostico_json(request):
     return JsonResponse(_diagnostico_prontidao_fiscal())
+
+
+@login_required
+@role_required(*RELATORIOS)
+def contingencia_json(request):
+    status = request.GET.get("status", StatusDocumentoFiscal.PRONTO)
+    filial_id = request.GET.get("filial")
+    status_permitidos = {
+        StatusDocumentoFiscal.PRONTO,
+        StatusDocumentoFiscal.REJEITADO,
+        StatusDocumentoFiscal.CANCELADO,
+    }
+    if status not in status_permitidos:
+        status = StatusDocumentoFiscal.PRONTO
+    documentos_qs = DocumentoFiscal.objects.select_related(
+        "filial",
+        "filial__empresa",
+        "venda",
+        "pedido_online",
+        "natureza_operacao",
+    ).filter(status=status).order_by("criado_em")
+    if filial_id:
+        documentos_qs = documentos_qs.filter(filial_id=filial_id)
+    documentos = list(documentos_qs[:200])
+    itens = []
+    for documento in documentos:
+        if not documento.xml_conteudo and documento.status == StatusDocumentoFiscal.PRONTO:
+            salvar_xml_documento(documento)
+        itens.append(
+            {
+                "id": documento.id,
+                "tipo_documento": documento.tipo_documento,
+                "ambiente": documento.ambiente,
+                "filial": {
+                    "id": documento.filial_id,
+                    "nome": documento.filial.nome,
+                    "cnpj": documento.filial.cnpj or documento.filial.empresa.cnpj,
+                    "uf": documento.filial.uf,
+                    "codigo_municipio_ibge": documento.filial.codigo_municipio_ibge,
+                },
+                "origem": {
+                    "tipo": "venda" if documento.venda_id else "pedido_online" if documento.pedido_online_id else "manual",
+                    "id": documento.venda_id or documento.pedido_online_id,
+                },
+                "serie": documento.serie,
+                "numero": documento.numero,
+                "status": documento.status,
+                "valor_total": str(documento.valor_total),
+                "chave_acesso": documento.chave_acesso,
+                "protocolo": documento.protocolo,
+                "natureza_operacao": documento.natureza_operacao.descricao if documento.natureza_operacao else "",
+                "mensagem_retorno": documento.mensagem_retorno,
+                "xml": documento.xml_conteudo,
+                "criado_em": timezone.localtime(documento.criado_em).isoformat(),
+                "atualizado_em": timezone.localtime(documento.atualizado_em).isoformat(),
+            }
+        )
+    payload = {
+        "contrato": "fiscal_contingencia_v1",
+        "gerado_em": timezone.localtime().isoformat(),
+        "status": status,
+        "filial_id": int(filial_id) if filial_id and filial_id.isdigit() else None,
+        "total": len(itens),
+        "limite": 200,
+        "observacao": (
+            "Exportacao operacional para contingencia/suporte. "
+            "Nao substitui assinatura, autorizacao ou transmissao oficial pela SEFAZ."
+        ),
+        "documentos": itens,
+    }
+    LogAuditoria.objects.create(
+        usuario=request.user,
+        modulo="fiscal",
+        acao="EXPORTA_CONTINGENCIA_FISCAL",
+        descricao=f"Exportacao de contingencia fiscal gerada com {len(itens)} documento(s), status {status}.",
+        objeto_tipo="DocumentoFiscal",
+        objeto_id="contingencia",
+        ip=request.META.get("REMOTE_ADDR"),
+    )
+    return JsonResponse(payload, json_dumps_params={"ensure_ascii": False, "indent": 2})
 
 
 @login_required

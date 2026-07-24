@@ -378,6 +378,58 @@ def _decimal_geocoding(valor):
         return None
 
 
+def _politica_entrega_parceiro_payload(filial):
+    politica = PoliticaEntrega.objects.filter(filial=filial, is_active=True).prefetch_related("faixas").first()
+    geocoding_configurado = bool(getattr(settings, "MARKETPLACE_GEOCODING_PROVIDER_URL", ""))
+    if not politica:
+        return {
+            "contrato": "delivery_policy_v1",
+            "ativa": False,
+            "permite_retirada": True,
+            "permite_entrega": False,
+            "calculo_entrega": {
+                "manual_distancia": False,
+                "geocoding": geocoding_configurado,
+                "timeout_segundos": getattr(settings, "MARKETPLACE_GEOCODING_TIMEOUT_SEGUNDOS", 5),
+            },
+            "alertas": ["Filial sem politica de entrega ativa. Envie pedidos como retirada ou configure a politica."],
+        }
+    faixas = list(politica.faixas.all())
+    alertas = []
+    if not faixas:
+        alertas.append("Nenhuma faixa de taxa cadastrada.")
+    if faixas and faixas[-1].distancia_final_km < politica.raio_maximo_km:
+        alertas.append("A ultima faixa nao cobre todo o raio maximo.")
+    bairros_atendidos = bool(str(politica.bairros_atendidos or "").strip())
+    bairros_bloqueados = bool(str(politica.bairros_bloqueados or "").strip())
+    return {
+        "contrato": "delivery_policy_v1",
+        "ativa": True,
+        "permite_retirada": politica.permite_retirada,
+        "permite_entrega": True,
+        "raio_maximo_km": str(politica.raio_maximo_km),
+        "valor_minimo_pedido": str(politica.valor_minimo_pedido),
+        "frete_gratis_acima": str(politica.frete_gratis_acima) if politica.frete_gratis_acima is not None else None,
+        "bairro_obrigatorio": bairros_atendidos,
+        "possui_bairros_bloqueados": bairros_bloqueados,
+        "horarios_entrega": politica.horarios_entrega,
+        "calculo_entrega": {
+            "manual_distancia": True,
+            "geocoding": geocoding_configurado,
+            "timeout_segundos": getattr(settings, "MARKETPLACE_GEOCODING_TIMEOUT_SEGUNDOS", 5),
+        },
+        "faixas": [
+            {
+                "distancia_inicial_km": str(faixa.distancia_inicial_km),
+                "distancia_final_km": str(faixa.distancia_final_km),
+                "taxa": str(faixa.taxa),
+            }
+            for faixa in faixas
+        ],
+        "alertas": alertas,
+    }
+
+
 def _consultar_distancia_entrega(*, politica, endereco):
     provider_url = getattr(settings, "MARKETPLACE_GEOCODING_PROVIDER_URL", "")
     if not provider_url:
@@ -487,6 +539,61 @@ def _autenticar_integracao(request):
         if integracao.token_valido(token):
             return integracao
     return None
+
+
+@csrf_exempt
+def api_status_integracao(request):
+    if request.method != "GET":
+        return JsonResponse({"erro": "Metodo nao permitido."}, status=405)
+    integracao = _autenticar_integracao(request)
+    if not integracao:
+        return JsonResponse({"erro": "Chave de integracao invalida."}, status=401)
+    pedidos = integracao.pedidos.all()
+    pagamentos_pendentes = pedidos.filter(
+        status_pagamento=StatusPagamentoPedido.PENDENTE
+    ).exclude(status=StatusPedido.CANCELADO).count()
+    pedidos_abertos = pedidos.exclude(status__in=[StatusPedido.CONCLUIDO, StatusPedido.CANCELADO]).count()
+    alertas = []
+    politica_entrega = _politica_entrega_parceiro_payload(integracao.filial)
+    if pagamentos_pendentes:
+        alertas.append(f"{pagamentos_pendentes} pedido(s) com pagamento pendente.")
+    if pedidos_abertos:
+        alertas.append(f"{pedidos_abertos} pedido(s) em fluxo operacional.")
+    alertas.extend(politica_entrega.get("alertas", []))
+    integracao.ultimo_uso_em = timezone.now()
+    integracao.save(update_fields=["ultimo_uso_em"])
+    return JsonResponse(
+        {
+            "status": "ok",
+            "contrato": "marketplace_partner_v1",
+            "integracao": {
+                "id": integracao.id,
+                "nome": integracao.nome,
+                "token_prefixo": integracao.token_prefixo,
+                "ativa": integracao.is_active,
+            },
+            "filial": {
+                "id": integracao.filial_id,
+                "nome": integracao.filial.nome,
+                "empresa": integracao.filial.empresa.nome_fantasia,
+            },
+            "recursos": {
+                "receber_pedido": True,
+                "idempotencia_por_referencia": True,
+                "documento_destinatario": True,
+                "calculo_entrega_manual_ou_geocoding": True,
+                "politica_entrega": True,
+            },
+            "politica_entrega": politica_entrega,
+            "pedidos": {
+                "total": pedidos.count(),
+                "abertos": pedidos_abertos,
+                "pagamentos_pendentes": pagamentos_pendentes,
+            },
+            "alertas": alertas,
+            "servidor_em": timezone.localtime().isoformat(),
+        }
+    )
 
 
 @csrf_exempt

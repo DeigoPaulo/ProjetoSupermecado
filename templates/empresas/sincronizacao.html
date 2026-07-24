@@ -31,6 +31,26 @@
   <article class="metric"><span>Documentos fiscais</span><strong>{{ total_documentos_fiscais_sincronizados }}</strong></article>
 </section>
 
+<section class="metrics-grid">
+  <article class="metric"><span>Fila saida mais antiga</span><strong>{{ diagnostico_operacional.filas.saida.idade_mais_antigo_minutos }} min</strong></article>
+  <article class="metric"><span>Saida esgotada</span><strong>{{ diagnostico_operacional.filas.saida.esgotados }}</strong></article>
+  <article class="metric"><span>Fila entrada mais antiga</span><strong>{{ diagnostico_operacional.filas.entrada.idade_mais_antigo_minutos }} min</strong></article>
+</section>
+
+<section class="metrics-grid">
+  <article class="metric"><span>Politica manual</span><strong>{{ diagnostico_operacional.empresas.politica_manual }}</strong></article>
+  <article class="metric"><span>Nuvem produtos/estoque</span><strong>{{ diagnostico_operacional.empresas.politica_remoto_produtos_estoque }}</strong></article>
+  <article class="metric"><span>Empresas filtradas</span><strong>{{ diagnostico_operacional.empresas.total_ativas }}</strong></article>
+</section>
+
+<section class="operation-notice {% if diagnostico_operacional.operacao.alertas %}operation-notice-warning{% endif %}">
+  <i class="fa-solid fa-stethoscope"></i>
+  <div>
+    <strong>Status operacional da sincronizacao</strong>
+    <span>{% if diagnostico_operacional.operacao.alertas %}{{ diagnostico_operacional.operacao.alertas|length }} alerta(s) ativo(s). Veja o diagnostico JSON para suporte.{% else %}Nenhum atraso ou bloqueio critico detectado no filtro atual.{% endif %}</span>
+  </div>
+</section>
+
 <section class="operation-notice">
   <i class="fa-solid fa-arrows-rotate"></i>
   <div>

@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% load formatadores %}
 
 {% block title %}Desmembramento {{ desmembramento.id }}{% endblock %}
 
@@ -15,7 +16,7 @@
 
 <section class="metrics-grid">
   <article class="metric"><span>Status</span><strong>{{ desmembramento.get_status_display }}</strong></article>
-  <article class="metric"><span>Origem</span><strong>{{ desmembramento.quantidade_origem }}</strong></article>
+  <article class="metric"><span>Origem</span><strong>{{ desmembramento.quantidade_origem|quantidade_br }}</strong></article>
   <article class="metric"><span>Custo origem</span><strong>R$ {{ desmembramento.custo_total_origem }}</strong></article>
   <article class="metric"><span>Criado</span><strong>{{ desmembramento.criado_em|date:"d/m H:i" }}</strong></article>
 </section>
@@ -27,7 +28,7 @@
     <tbody>
       <tr>
         <td>{{ desmembramento.produto_origem }}</td>
-        <td>{{ desmembramento.quantidade_origem }}</td>
+        <td>{{ desmembramento.quantidade_origem|quantidade_br }}</td>
         <td>R$ {{ desmembramento.custo_total_origem }}</td>
         <td>{{ desmembramento.motivo }}</td>
       </tr>
@@ -43,7 +44,7 @@
       {% for item in desmembramento.itens.all %}
         <tr>
           <td>{{ item.produto_destino }}</td>
-          <td>{{ item.quantidade_gerada }}</td>
+          <td>{{ item.quantidade_gerada|quantidade_br }}</td>
           <td>{{ item.unidade }}</td>
           <td>{{ item.get_tipo_saida_display }}</td>
           <td>{{ item.lote|default:"-" }}</td>

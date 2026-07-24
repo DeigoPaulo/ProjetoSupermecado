@@ -804,6 +804,13 @@ def venda_impressao_desktop(request, venda_id):
     if reimpressao:
         _registrar_reimpressao_cupom(request, venda, origem="app_desktop")
     impressao = configuracao_impressao_para(venda.filial, TipoDocumentoImpressao.CUPOM_NAO_FISCAL)
+    impressora_padrao = (impressao.impressora_padrao or "").strip() if impressao else ""
+    impressora_configurada = bool(impressora_padrao)
+    mensagem_impressao = ""
+    if not impressao:
+        mensagem_impressao = "Nenhuma configuração de impressão para cupom foi encontrada. Configure em Sistema > Impressões."
+    elif not impressora_configurada:
+        mensagem_impressao = "Configuração de cupom encontrada, mas sem impressora padrão definida. Informe a impressora em Sistema > Impressões."
     pagamentos = list(venda.pagamentos.all())
     tem_dinheiro = any((pagamento.forma_pagamento.tipo or "").upper() == "DINHEIRO" for pagamento in pagamentos)
     abrir_gaveta = bool(not reimpressao and impressao and impressao.gaveta_automatica and impressao.abrir_gaveta_em_dinheiro and tem_dinheiro)
@@ -857,11 +864,13 @@ def venda_impressao_desktop(request, venda_id):
             ],
             "impressao": {
                 "configurada": bool(impressao),
-                "impressora_padrao": impressao.impressora_padrao if impressao else "",
+                "impressora_configurada": impressora_configurada,
+                "impressora_padrao": impressora_padrao,
                 "modelo_papel": impressao.modelo_papel if impressao else "",
                 "numero_vias": impressao.numero_vias if impressao else 1,
                 "impressao_automatica": impressao.impressao_automatica if impressao else False,
                 "mensagem_rodape": impressao.mensagem_rodape if impressao else "",
+                "mensagem": mensagem_impressao,
             },
             "gaveta": {
                 "abrir": abrir_gaveta,

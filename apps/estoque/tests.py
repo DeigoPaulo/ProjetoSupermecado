@@ -1,22 +1,29 @@
-from datetime import date
+from datetime import date, timedelta
 from decimal import Decimal
 
 from django.contrib.auth import get_user_model
 from django.core.exceptions import ValidationError
 from django.test import Client, TestCase
+from django.utils import timezone
 
 from apps.auditoria.models import LogAuditoria
+from apps.accounts.models import PerfilUsuario, TipoPerfil
 from apps.empresas.models import Empresa, Filial
 from apps.estoque.models import (
+    AlertaSLAOrdemProducao,
     ComposicaoProduto,
+    ConfiguracaoSLASetorProducao,
     DesmembramentoProduto,
     Estoque,
+    HistoricoEtapaOrdemProducaoComposicao,
     ItemComposicaoProduto,
     MovimentacaoEstoque,
+    OrdemProducaoComposicao,
     PerdaEstoque,
     ProducaoComposicaoProduto,
     ReceitaDesmembramento,
     StatusDesmembramentoProduto,
+    StatusOrdemProducaoComposicao,
     StatusProducaoComposicao,
     TipoDesmembramentoProduto,
     TipoMovimentacaoEstoque,
@@ -509,7 +516,7 @@ class EstoqueViewsTests(TestCase):
             quantidade_final=Decimal("1.000"),
         )
         ItemComposicaoProduto.objects.create(composicao=composicao, produto_componente=componente, quantidade=Decimal("3.000"))
-        Estoque.objects.create(produto=componente, filial=self.filial, quantidade_atual=Decimal("1.000"))
+        Estoque.objects.create(produto=componente, filial=self.filial, quantidade_atual=Decimal("0.000"))
 
         with self.assertRaises(ValidationError):
             confirmar_producao_composicao(
@@ -584,7 +591,7 @@ class EstoqueViewsTests(TestCase):
 
         lista = self.client.get("/estoque/composicoes/")
         form = self.client.get("/estoque/composicoes/nova/")
-        self.assertContains(lista, "Composicoes")
+        self.assertContains(lista, "Composições")
         self.assertContains(form, "Nova composicao")
         self.assertContains(form, "componentes-0-produto_componente")
 
@@ -608,7 +615,7 @@ class EstoqueViewsTests(TestCase):
             follow=True,
         )
         self.assertContains(response, "Composicao salva com sucesso")
-        self.assertContains(response, "Visao operacional")
+        self.assertContains(response, "Visão operacional")
         self.assertContains(response, "Custo previsto")
         self.assertContains(response, "Capacidade atual")
         self.assertContains(response, "Componente tela")
@@ -645,6 +652,545 @@ class EstoqueViewsTests(TestCase):
         producao.refresh_from_db()
         self.assertEqual(producao.status, StatusProducaoComposicao.CANCELADO)
         self.assertEqual(Estoque.objects.get(produto=componente, filial=self.filial).quantidade_atual, Decimal("5.000"))
+
+    def test_lista_de_composicoes_exibe_alerta_de_insumo_baixo(self):
+        componente = Produto.objects.create(
+            codigo_barras="7893333333410",
+            nome="Componente baixo",
+            categoria=self.categoria,
+            preco_custo="2.00",
+            preco_venda="3.00",
+        )
+        produto_final = Produto.objects.create(
+            codigo_barras="7893333333411",
+            nome="Kit com alerta",
+            categoria=self.categoria,
+            preco_custo="0.00",
+            preco_venda="12.00",
+        )
+        Estoque.objects.create(produto=componente, filial=self.filial, quantidade_atual=Decimal("1.000"))
+        composicao = ComposicaoProduto.objects.create(
+            empresa=self.empresa,
+            filial=self.filial,
+            produto_final=produto_final,
+            quantidade_final=Decimal("1.000"),
+            tipo=TipoDesmembramentoProduto.KIT,
+        )
+        ItemComposicaoProduto.objects.create(
+            composicao=composicao,
+            produto_componente=componente,
+            quantidade=Decimal("2.000"),
+        )
+
+        response = self.client.get("/estoque/composicoes/")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "Alertas")
+        self.assertContains(response, "Insumo baixo")
+        self.assertContains(response, "Kit com alerta")
+        self.assertContains(response, "<strong>0,500</strong>", html=True)
+        self.assertContains(response, "Produzir capacidade")
+
+        detalhe = self.client.get(f"/estoque/composicoes/{composicao.pk}/", {"quantidade": "0.500"})
+
+        self.assertContains(detalhe, 'value="0.500"')
+
+    def test_lista_de_composicoes_sugere_producao_por_demanda_minima(self):
+        componente = Produto.objects.create(
+            codigo_barras="7893333333412",
+            nome="Componente demanda",
+            categoria=self.categoria,
+            preco_custo="2.00",
+            preco_venda="3.00",
+        )
+        produto_final = Produto.objects.create(
+            codigo_barras="7893333333413",
+            nome="Kit demanda",
+            categoria=self.categoria,
+            preco_custo="0.00",
+            preco_venda="12.00",
+            estoque_minimo=Decimal("5.000"),
+        )
+        Estoque.objects.create(produto=componente, filial=self.filial, quantidade_atual=Decimal("6.000"))
+        Estoque.objects.create(produto=produto_final, filial=self.filial, quantidade_atual=Decimal("1.000"))
+        composicao = ComposicaoProduto.objects.create(
+            empresa=self.empresa,
+            filial=self.filial,
+            produto_final=produto_final,
+            quantidade_final=Decimal("1.000"),
+            tipo=TipoDesmembramentoProduto.KIT,
+        )
+        ItemComposicaoProduto.objects.create(
+            composicao=composicao,
+            produto_componente=componente,
+            quantidade=Decimal("2.000"),
+        )
+
+        response = self.client.get("/estoque/composicoes/")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "Demanda mínima")
+        self.assertContains(response, "Produção sugerida")
+        self.assertContains(response, "Kit demanda")
+        self.assertContains(response, "Produzir")
+        self.assertContains(response, "<strong>3</strong>", html=True)
+        self.assertContains(response, "?quantidade=3.000")
+        self.assertContains(response, "Produzir sugestão")
+        self.assertContains(response, "Programar sugest")
+
+        detalhe = self.client.get(f"/estoque/composicoes/{composicao.pk}/", {"quantidade": "3.000"})
+
+        self.assertContains(detalhe, 'value="3.000"')
+        self.assertContains(detalhe, "Reposição até estoque mínimo")
+        self.assertContains(detalhe, "Demanda de reposição")
+
+        data_programada = timezone.localdate() + timedelta(days=1)
+        programacao = self.client.post(
+            "/estoque/composicoes/programar-sugestoes/",
+            {"data_programada": data_programada.isoformat()},
+            follow=True,
+        )
+
+        self.assertContains(programacao, "ordem(ns) de producao programada(s) por demanda")
+        ordem = OrdemProducaoComposicao.objects.get(composicao=composicao)
+        self.assertEqual(ordem.quantidade_planejada, Decimal("3.000"))
+        self.assertEqual(ordem.data_programada, data_programada)
+        self.assertEqual(ordem.status, StatusOrdemProducaoComposicao.PLANEJADA)
+        self.assertEqual(ordem.motivo, "Reposicao automatica ate estoque minimo")
+        self.assertTrue(
+            LogAuditoria.objects.filter(
+                acao="ORDEM_PRODUCAO_COMPOSICAO_SUGERIDA",
+                objeto_id=str(ordem.id),
+            ).exists()
+        )
+
+        repetir = self.client.post(
+            "/estoque/composicoes/programar-sugestoes/",
+            {"data_programada": data_programada.isoformat()},
+            follow=True,
+        )
+
+        self.assertContains(repetir, "ja tinham ordem planejada")
+        self.assertEqual(OrdemProducaoComposicao.objects.filter(composicao=composicao).count(), 1)
+
+    def test_exportacao_csv_de_composicoes_respeita_busca_e_planejamento(self):
+        componente = Produto.objects.create(
+            codigo_barras="7893333333414",
+            nome="Componente CSV",
+            categoria=self.categoria,
+            preco_custo="2.00",
+            preco_venda="3.00",
+        )
+        produto_final = Produto.objects.create(
+            codigo_barras="7893333333415",
+            nome="Kit CSV planejamento",
+            categoria=self.categoria,
+            preco_custo="0.00",
+            preco_venda="12.00",
+            estoque_minimo=Decimal("5.000"),
+        )
+        fora = Produto.objects.create(
+            codigo_barras="7893333333416",
+            nome="Kit fora CSV",
+            categoria=self.categoria,
+            preco_custo="0.00",
+            preco_venda="9.00",
+        )
+        Estoque.objects.create(produto=componente, filial=self.filial, quantidade_atual=Decimal("6.000"))
+        Estoque.objects.create(produto=produto_final, filial=self.filial, quantidade_atual=Decimal("1.000"))
+        composicao = ComposicaoProduto.objects.create(
+            empresa=self.empresa,
+            filial=self.filial,
+            produto_final=produto_final,
+            quantidade_final=Decimal("1.000"),
+            tipo=TipoDesmembramentoProduto.KIT,
+        )
+        ItemComposicaoProduto.objects.create(composicao=composicao, produto_componente=componente, quantidade=Decimal("2.000"))
+        ComposicaoProduto.objects.create(
+            empresa=self.empresa,
+            filial=self.filial,
+            produto_final=fora,
+            quantidade_final=Decimal("1.000"),
+            tipo=TipoDesmembramentoProduto.KIT,
+        )
+
+        lista = self.client.get("/estoque/composicoes/", {"q": "planejamento"})
+        csv_response = self.client.get("/estoque/composicoes/exportar.csv", {"q": "planejamento"})
+
+        self.assertContains(lista, "Excel/CSV")
+        self.assertEqual(csv_response.status_code, 200)
+        conteudo = csv_response.content.decode("utf-8-sig")
+        self.assertIn("Producao sugerida", conteudo)
+        self.assertIn("Demanda reposicao", conteudo)
+        self.assertIn("Kit CSV planejamento", conteudo)
+        self.assertIn("Produzir", conteudo)
+        self.assertNotIn("Kit fora CSV", conteudo)
+
+    def test_relatorio_de_producoes_de_composicao_filtra_e_exporta_csv(self):
+        componente = Produto.objects.create(
+            codigo_barras="7893333333417",
+            nome="Componente produção relatório",
+            categoria=self.categoria,
+            preco_custo="2.00",
+            preco_venda="3.00",
+        )
+        produto_final = Produto.objects.create(
+            codigo_barras="7893333333418",
+            nome="Kit produção relatório",
+            categoria=self.categoria,
+            preco_custo="0.00",
+            preco_venda="12.00",
+        )
+        outro_final = Produto.objects.create(
+            codigo_barras="7893333333419",
+            nome="Kit fora relatório produção",
+            categoria=self.categoria,
+            preco_custo="0.00",
+            preco_venda="10.00",
+        )
+        Estoque.objects.create(produto=componente, filial=self.filial, quantidade_atual=Decimal("8.000"))
+        composicao = ComposicaoProduto.objects.create(
+            empresa=self.empresa,
+            filial=self.filial,
+            produto_final=produto_final,
+            quantidade_final=Decimal("1.000"),
+            tipo=TipoDesmembramentoProduto.KIT,
+        )
+        outra_composicao = ComposicaoProduto.objects.create(
+            empresa=self.empresa,
+            filial=self.filial,
+            produto_final=outro_final,
+            quantidade_final=Decimal("1.000"),
+            tipo=TipoDesmembramentoProduto.KIT,
+        )
+        ItemComposicaoProduto.objects.create(composicao=composicao, produto_componente=componente, quantidade=Decimal("2.000"))
+        ItemComposicaoProduto.objects.create(composicao=outra_composicao, produto_componente=componente, quantidade=Decimal("1.000"))
+        confirmar_producao_composicao(
+            composicao=composicao,
+            filial=self.filial,
+            quantidade_final=Decimal("2.000"),
+            usuario=self.user,
+            motivo="Produção relatório alvo",
+        )
+        confirmar_producao_composicao(
+            composicao=outra_composicao,
+            filial=self.filial,
+            quantidade_final=Decimal("1.000"),
+            usuario=self.user,
+            motivo="Produção fora",
+        )
+
+        ordem = OrdemProducaoComposicao.objects.create(
+            composicao=composicao,
+            empresa=self.empresa,
+            filial=self.filial,
+            produto_final=produto_final,
+            quantidade_planejada=Decimal("2.000"),
+            data_programada=timezone.localdate(),
+            setor_responsavel="Padaria",
+            etapa_operacional="CONFERENCIA",
+            status=StatusOrdemProducaoComposicao.PRODUZIDA,
+            usuario=self.user,
+            motivo="Producao relatorio alvo",
+            concluido_em=timezone.now(),
+        )
+        historico_separacao = HistoricoEtapaOrdemProducaoComposicao.objects.create(
+            ordem=ordem,
+            etapa_anterior="SEPARACAO",
+            etapa_nova="PRODUCAO",
+            usuario=self.user,
+        )
+        historico_producao = HistoricoEtapaOrdemProducaoComposicao.objects.create(
+            ordem=ordem,
+            etapa_anterior="PRODUCAO",
+            etapa_nova="CONFERENCIA",
+            usuario=self.user,
+        )
+        inicio = timezone.now() - timedelta(minutes=105)
+        OrdemProducaoComposicao.objects.filter(pk=ordem.pk).update(
+            criado_em=inicio,
+            concluido_em=inicio + timedelta(minutes=105),
+        )
+        HistoricoEtapaOrdemProducaoComposicao.objects.filter(pk=historico_separacao.pk).update(
+            criado_em=inicio + timedelta(minutes=45)
+        )
+        HistoricoEtapaOrdemProducaoComposicao.objects.filter(pk=historico_producao.pk).update(
+            criado_em=inicio + timedelta(minutes=75)
+        )
+        ConfiguracaoSLASetorProducao.objects.create(
+            empresa=self.empresa,
+            filial=self.filial,
+            setor="Padaria",
+            meta_minutos=60,
+        )
+
+        pagina = self.client.get("/estoque/composicoes/producoes/relatorio/", {"q": "alvo"})
+        csv_response = self.client.get("/estoque/composicoes/producoes/relatorio/exportar.csv", {"q": "alvo"})
+
+        self.assertEqual(pagina.status_code, 200)
+        self.assertContains(pagina, "Relatório de produções")
+        self.assertContains(pagina, "producao-chart-data")
+        self.assertContains(pagina, "Duracao por etapa das ordens")
+        self.assertContains(pagina, "SLA por setor")
+        self.assertContains(pagina, "Fora da meta")
+        self.assertContains(pagina, "45 min")
+        self.assertContains(pagina, f"Ordem #{ordem.id}")
+        self.assertContains(pagina, "Kit produção relatório")
+        self.assertContains(pagina, "Produção relatório alvo")
+        self.assertNotContains(pagina, "Kit fora relatório produção")
+        self.assertEqual(csv_response.status_code, 200)
+        conteudo = csv_response.content.decode("utf-8-sig")
+        self.assertIn("Componentes consumidos", conteudo)
+        self.assertIn("Resumo de duracao por etapa das ordens", conteudo)
+        self.assertIn("Resumo de SLA por setor", conteudo)
+        self.assertIn("Fora da meta", conteudo)
+        self.assertIn("1h 00min", conteudo)
+        self.assertIn("Ordem critica", conteudo)
+        self.assertIn(f"Ordem #{ordem.id}", conteudo)
+        self.assertIn("Kit produção relatório", conteudo)
+        self.assertIn("Componente produção relatório: 4.000", conteudo)
+        self.assertNotIn("Kit fora relatório produção", conteudo)
+
+    def test_configuracao_sla_setor_producao_cadastra_e_lista(self):
+        response = self.client.post(
+            "/estoque/composicoes/slas-setor/nova/",
+            {
+                "empresa": self.empresa.id,
+                "filial": self.filial.id,
+                "setor": "Padaria",
+                "meta_minutos": 75,
+                "observacao": "Meta para producao diaria",
+                "is_active": "on",
+            },
+            follow=True,
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "Padaria")
+        configuracao = ConfiguracaoSLASetorProducao.objects.get(setor="Padaria")
+        self.assertEqual(configuracao.meta_minutos, 75)
+
+        lista = self.client.get("/estoque/composicoes/slas-setor/", {"q": "Padaria"})
+        self.assertContains(lista, "SLAs de producao por setor")
+        self.assertContains(lista, "75 min")
+        self.assertContains(lista, self.filial.nome)
+
+        editar = self.client.post(
+            f"/estoque/composicoes/slas-setor/{configuracao.id}/editar/",
+            {
+                "empresa": self.empresa.id,
+                "filial": "",
+                "setor": "Padaria",
+                "meta_minutos": 90,
+                "observacao": "Meta geral",
+                "is_active": "on",
+            },
+            follow=True,
+        )
+        self.assertContains(editar, "90 min")
+        configuracao.refresh_from_db()
+        self.assertIsNone(configuracao.filial)
+
+    def test_ordem_de_producao_de_composicao_programa_e_confirma_estoque(self):
+        componente = Produto.objects.create(
+            codigo_barras="7893333333420",
+            nome="Componente ordem",
+            categoria=self.categoria,
+            preco_custo="2.00",
+            preco_venda="3.00",
+        )
+        produto_final = Produto.objects.create(
+            codigo_barras="7893333333421",
+            nome="Kit ordem",
+            categoria=self.categoria,
+            preco_custo="0.00",
+            preco_venda="12.00",
+        )
+        Estoque.objects.create(produto=componente, filial=self.filial, quantidade_atual=Decimal("8.000"))
+        composicao = ComposicaoProduto.objects.create(
+            empresa=self.empresa,
+            filial=self.filial,
+            produto_final=produto_final,
+            quantidade_final=Decimal("1.000"),
+            tipo=TipoDesmembramentoProduto.KIT,
+        )
+        ItemComposicaoProduto.objects.create(composicao=composicao, produto_componente=componente, quantidade=Decimal("2.000"))
+        data_programada = timezone.localdate() + timedelta(days=1)
+        responsavel = get_user_model().objects.create_user(username="operador_producao", password="123")
+
+        response = self.client.post(
+            "/estoque/composicoes/ordens/nova/",
+            {
+                "composicao": composicao.id,
+                "filial": self.filial.id,
+                "quantidade_planejada": "2.000",
+                "data_programada": data_programada.isoformat(),
+                "prioridade": "URGENTE",
+                "setor_responsavel": "Padaria",
+                "etapa_operacional": "SEPARACAO",
+                "responsavel_operacional": responsavel.id,
+                "motivo": "Programar kits para fim de semana",
+                "observacao": "",
+            },
+            follow=True,
+        )
+
+        self.assertContains(response, "Ordem de produção criada com sucesso")
+        ordem = OrdemProducaoComposicao.objects.get()
+        self.assertEqual(ordem.status, StatusOrdemProducaoComposicao.PLANEJADA)
+        self.assertContains(response, "Excel/CSV")
+        self.assertContains(response, "Kit ordem")
+        self.assertContains(response, "Programar kits para fim de semana")
+        self.assertContains(response, f"/estoque/composicoes/ordens/{ordem.id}/imprimir/")
+        self.assertContains(response, "Próximas ordens")
+        self.assertContains(response, f"inicio={data_programada.isoformat()}")
+        self.assertContains(response, "Urgente")
+        self.assertContains(response, "Urgentes")
+        self.assertContains(response, "Padaria")
+        self.assertContains(response, "setor=Padaria")
+        self.assertContains(response, "operador_producao")
+        self.assertContains(response, "Separação")
+
+        etapa_response = self.client.post(
+            f"/estoque/composicoes/ordens/{ordem.id}/etapa/",
+            {"etapa_operacional": "PRODUCAO"},
+            follow=True,
+        )
+        self.assertContains(etapa_response, "Etapa da ordem atualizada")
+        ordem.refresh_from_db()
+        self.assertEqual(ordem.etapa_operacional, "PRODUCAO")
+        historico = HistoricoEtapaOrdemProducaoComposicao.objects.get(ordem=ordem)
+        self.assertEqual(historico.etapa_anterior, "SEPARACAO")
+        self.assertEqual(historico.etapa_nova, "PRODUCAO")
+        self.assertTrue(LogAuditoria.objects.filter(acao="ORDEM_PRODUCAO_COMPOSICAO_ETAPA", objeto_id=str(ordem.id)).exists())
+
+        lista_com_apontamento = self.client.get("/estoque/composicoes/ordens/", {"etapa": "PRODUCAO"})
+        self.assertContains(lista_com_apontamento, "por admin")
+        self.assertContains(lista_com_apontamento, "Tempo na etapa")
+
+        impressao = self.client.get(f"/estoque/composicoes/ordens/{ordem.id}/imprimir/")
+        self.assertEqual(impressao.status_code, 200)
+        self.assertContains(impressao, f"Ordem de produção #{ordem.id}")
+        self.assertContains(impressao, "Componentes previstos")
+        self.assertContains(impressao, "Componente ordem")
+        self.assertContains(impressao, "4")
+        self.assertContains(impressao, "Urgente")
+        self.assertContains(impressao, "Padaria")
+        self.assertContains(impressao, "Produção")
+        self.assertContains(impressao, "operador_producao")
+
+        csv_response = self.client.get("/estoque/composicoes/ordens/exportar.csv", {"q": "fim de semana"})
+        self.assertEqual(csv_response.status_code, 200)
+        conteudo = csv_response.content.decode("utf-8-sig")
+        self.assertIn("Data programada", conteudo)
+        self.assertIn("Kit ordem", conteudo)
+        self.assertIn("Urgente", conteudo)
+        self.assertIn("Padaria", conteudo)
+        self.assertIn("Produção", conteudo)
+        self.assertIn("operador_producao", conteudo)
+        self.assertIn("Planejada", conteudo)
+        self.assertIn("Status SLA", conteudo)
+        self.assertIn("Meta SLA", conteudo)
+        self.assertIn("Programar kits para fim de semana", conteudo)
+
+        filtro_setor = self.client.get("/estoque/composicoes/ordens/", {"setor": "Padaria"})
+        self.assertContains(filtro_setor, "Kit ordem")
+
+        filtro_etapa = self.client.get("/estoque/composicoes/ordens/", {"etapa": "PRODUCAO"})
+        self.assertContains(filtro_etapa, "Kit ordem")
+
+        filtro_responsavel = self.client.get("/estoque/composicoes/ordens/", {"responsavel": responsavel.id})
+        self.assertContains(filtro_responsavel, "Kit ordem")
+
+        ordem_hoje = OrdemProducaoComposicao.objects.create(
+            composicao=composicao,
+            empresa=self.empresa,
+            filial=self.filial,
+            produto_final=produto_final,
+            quantidade_planejada=Decimal("1.000"),
+            data_programada=timezone.localdate(),
+            prioridade="ALTA",
+            setor_responsavel="Padaria",
+            etapa_operacional="SEPARACAO",
+            responsavel_operacional=responsavel,
+            usuario=self.user,
+            motivo="Fila do dia",
+        )
+        ConfiguracaoSLASetorProducao.objects.update_or_create(
+            empresa=self.empresa,
+            filial=self.filial,
+            setor="Padaria",
+            defaults={"meta_minutos": 1, "is_active": True},
+        )
+        OrdemProducaoComposicao.objects.filter(pk=ordem_hoje.pk).update(
+            criado_em=timezone.now() - timedelta(minutes=15)
+        )
+        gerente = get_user_model().objects.create_user(username="gerente_producao", password="123")
+        PerfilUsuario.objects.create(usuario=gerente, filial=self.filial, tipo=TipoPerfil.GERENTE)
+        fila_dia = self.client.get("/estoque/composicoes/ordens/fila/")
+        fila_todas = self.client.get("/estoque/composicoes/ordens/fila/", {"modo": "todas"})
+        self.assertContains(fila_dia, "Fila de produção")
+        self.assertContains(fila_dia, "Padaria")
+        self.assertContains(fila_dia, "Fila do dia")
+        self.assertContains(fila_dia, "operador_producao")
+        self.assertContains(fila_dia, "Fora do SLA")
+        self.assertContains(fila_dia, "Meta SLA")
+        self.assertContains(fila_dia, "Alertas de SLA enviados")
+        self.assertContains(fila_dia, "gerente_producao")
+        self.assertNotContains(fila_dia, "Programar kits para fim de semana")
+        self.assertEqual(AlertaSLAOrdemProducao.objects.filter(ordem=ordem_hoje).count(), 2)
+        self.client.get("/estoque/composicoes/ordens/fila/")
+        self.assertEqual(AlertaSLAOrdemProducao.objects.filter(ordem=ordem_hoje).count(), 2)
+        self.assertTrue(LogAuditoria.objects.filter(acao="ALERTA_SLA_ORDEM_PRODUCAO", objeto_id=str(ordem_hoje.id)).exists())
+        alerta_gerente = AlertaSLAOrdemProducao.objects.get(ordem=ordem_hoje, usuario=gerente)
+        self.client.force_login(gerente)
+        central_alertas = self.client.get("/estoque/composicoes/alertas-sla/")
+        self.assertContains(central_alertas, "Alertas de SLA")
+        self.assertContains(central_alertas, "Somente abertos")
+        self.assertContains(central_alertas, f"Ordem #{ordem_hoje.id}")
+        self.assertContains(central_alertas, "Marcar visto")
+        visualizar_alerta = self.client.post(
+            f"/estoque/composicoes/alertas-sla/{alerta_gerente.id}/visualizar/",
+            follow=True,
+        )
+        self.assertContains(visualizar_alerta, "Alerta marcado como visualizado")
+        alerta_gerente.refresh_from_db()
+        self.assertIsNotNone(alerta_gerente.visualizado_em)
+        self.assertTrue(
+            LogAuditoria.objects.filter(
+                acao="VISUALIZAR_ALERTA_SLA_ORDEM_PRODUCAO",
+                objeto_id=str(alerta_gerente.id),
+            ).exists()
+        )
+        self.client.force_login(self.user)
+        fila_sla = self.client.get("/estoque/composicoes/ordens/fila/", {"modo": "todas", "sla": "fora"})
+        self.assertContains(fila_sla, "Somente fora do SLA")
+        self.assertContains(fila_sla, "Fila do dia")
+        self.assertNotContains(fila_sla, "Programar kits para fim de semana")
+        self.assertContains(fila_todas, "Programar kits para fim de semana")
+        self.assertContains(fila_todas, f"/estoque/composicoes/ordens/{ordem_hoje.id}/imprimir/")
+
+        fila_responsavel = self.client.get("/estoque/composicoes/ordens/fila/", {"modo": "todas", "responsavel": responsavel.id})
+        self.assertContains(fila_responsavel, "operador_producao")
+        self.assertContains(fila_responsavel, "por admin")
+        self.assertContains(fila_responsavel, "Tempo na etapa")
+        self.assertContains(fila_responsavel, "Maior tempo parado")
+        self.assertContains(fila_responsavel, "Maior tempo")
+        self.assertContains(fila_responsavel, "Gargalos por respons")
+        self.assertContains(fila_responsavel, f"Ordem #{ordem_hoje.id}")
+
+        response = self.client.post(
+            f"/estoque/composicoes/ordens/{ordem.id}/confirmar/",
+            {"supervisor_usuario": "admin", "supervisor_senha": "123"},
+            follow=True,
+        )
+
+        self.assertContains(response, "Ordem produzida e estoque atualizado")
+        ordem.refresh_from_db()
+        self.assertEqual(ordem.status, StatusOrdemProducaoComposicao.PRODUZIDA)
+        self.assertIsNotNone(ordem.producao_gerada)
+        self.assertEqual(Estoque.objects.get(produto=componente, filial=self.filial).quantidade_atual, Decimal("4.000"))
+        self.assertEqual(Estoque.objects.get(produto=produto_final, filial=self.filial).quantidade_atual, Decimal("2.000"))
 
     def test_desmembramento_nao_permite_estoque_insuficiente(self):
         destino = Produto.objects.create(
@@ -928,6 +1474,16 @@ class EstoqueViewsTests(TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertContains(response, "Cancelar desmembramento")
         self.assertContains(response, "saldo suficiente para voltar")
+        self.assertContains(response, ">1</strong>")
+        self.assertContains(response, ">10</td>")
+        self.assertNotContains(response, "1,000")
+        self.assertNotContains(response, "10,000")
+
+        lista = self.client.get("/estoque/desmembramentos/")
+        self.assertContains(lista, "Saida: 1")
+        self.assertContains(lista, "Entrada: 10 UN")
+        self.assertNotContains(lista, "Saida: 1,000")
+        self.assertNotContains(lista, "Entrada: 10,000")
 
     def test_exportacao_csv_de_desmembramentos_respeita_busca_por_destino(self):
         destino = Produto.objects.create(
@@ -1011,7 +1567,7 @@ class EstoqueViewsTests(TestCase):
         self.assertEqual(receita.tipo_saida, TipoSaidaDesmembramento.SUBPRODUTO)
         self.assertContains(response, "Bala avulsa receita")
         self.assertContains(response, "Subproduto")
-        self.assertContains(response, "1,000 -> 30,000")
+        self.assertContains(response, "1 -> 30")
         self.assertContains(response, f"/estoque/desmembramentos/novo/?receita={receita.id}")
 
     def test_tela_receita_desmembramento_usa_busca_remota_de_produtos(self):

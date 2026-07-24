@@ -225,9 +225,12 @@ class ProdutoViewsTests(TestCase):
         self.assertContains(response, "Zebra ZD421")
         self.assertContains(response, "300 DPI")
         self.assertContains(response, "Imprimir direto")
+        self.assertEqual(response.context["payload_etiquetas"]["contrato"], "label_print_v1")
+        self.assertEqual(response.context["payload_etiquetas"]["origem"], "produtos_etiquetas")
         self.assertEqual(response.context["payload_etiquetas"]["linguagem"], "ZPL")
         self.assertEqual(response.context["payload_etiquetas"]["modelo"]["largura_mm"], 80.0)
         self.assertEqual(response.context["payload_etiquetas"]["itens"][0]["copias"], 1)
+        self.assertIn("preco", response.context["payload_etiquetas"]["itens"][0])
 
     def test_etiqueta_profissional_oferece_impressao_direta_ppla(self):
         empresa = Empresa.objects.create(
@@ -253,6 +256,33 @@ class ProdutoViewsTests(TestCase):
         self.assertContains(response, "Imprimir direto")
         self.assertEqual(response.context["payload_etiquetas"]["linguagem"], "PPLA")
         self.assertEqual(response.context["payload_etiquetas"]["impressora_padrao"], "Argox OS-214")
+
+    def test_etiqueta_profissional_avisa_quando_nao_tem_impressora_padrao(self):
+        empresa = Empresa.objects.create(
+            razao_social="Mercado Sem Impressora Ltda",
+            nome_fantasia="Mercado Sem Impressora",
+            cnpj="11223344000155",
+        )
+        ConfiguracaoImpressao.objects.create(
+            empresa=empresa,
+            tipo_documento=TipoDocumentoImpressao.ETIQUETA,
+            largura_etiqueta_mm=Decimal("80.00"),
+            altura_etiqueta_mm=Decimal("40.00"),
+            impressora_padrao="",
+            linguagem_impressora="ZPL",
+        )
+
+        response = self.client.get(
+            "/produtos/etiquetas/",
+            {"busca": self.produto.codigo_barras, "modelo": "configurado", "quantidade_copias": "1"},
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "sem impressora padrão")
+        self.assertContains(response, "Imprimir pelo navegador")
+        self.assertNotContains(response, "Imprimir direto")
+        self.assertFalse(response.context["impressao_nativa_disponivel"])
+        self.assertIsNone(response.context["payload_etiquetas"])
 
     def test_etiqueta_profissional_usa_modelo_nomeado(self):
         empresa = Empresa.objects.create(

@@ -71,6 +71,10 @@ class ConfiguracoesOperacionaisTests(TestCase):
         self.assertEqual(backup["Content-Type"], "application/json; charset=utf-8")
         self.assertTrue(backup.content.startswith(b"["))
         self.assertContains(checklist, "Testes automatizados")
+        self.assertContains(checklist, "Avan")
+        self.assertContains(checklist, "ponderado")
+        self.assertRegex(checklist.content.decode("utf-8"), r"[0-9]+%</strong>\s*<span>[^<]*ponderado")
+        self.assertContains(checklist, "O percentual conclu")
         self.assertContains(checklist, "Próximas etapas")
         self.assertContains(checklist, "Recorte automático dos itens em andamento")
         self.assertContains(checklist, "Mapa do roadmap")
@@ -80,6 +84,7 @@ class ConfiguracoesOperacionaisTests(TestCase):
         self.assertContains(checklist, "Dispositivos")
         self.assertContains(checklist, "alta prioridade")
         self.assertContains(checklist, "Alta")
+        self.assertContains(checklist, "M" + "\u00e9" + "dia")
         self.assertContains(checklist, "Homologar o adaptador TEF")
         self.assertContains(checklist, "Fechar pacote instalavel")
         self.assertContains(checklist, "Buscar no checklist")
@@ -87,6 +92,8 @@ class ConfiguracoesOperacionaisTests(TestCase):
         self.assertContains(checklist, "Todos os grupos")
         self.assertContains(checklist, "Todas as trilhas")
         self.assertContains(checklist, "Todas as prioridades")
+        self.assertContains(checklist, "Documentos de referência")
+        self.assertNotContains(checklist, "documentaÃ")
         self.assertContains(checklist, "Excel/CSV")
         self.assertContains(checklist, "Arquitetura PDV desktop local")
         self.assertContains(checklist, "Padrão R$ em todos os formulários")
@@ -215,29 +222,27 @@ class ConfiguracoesOperacionaisTests(TestCase):
         self.assertContains(checklist, "Complementar desmembramento e fracionamento de produtos")
         self.assertContains(checklist, "Desmembramento e fracionamento de produtos")
         self.assertContains(checklist, "models DesmembramentoProduto, ItemDesmembramentoProduto e ReceitaDesmembramento")
-        self.assertContains(checklist, "receitas/conversões padrao por empresa/filial")
-        self.assertContains(checklist, "aplicacao automatica de receita no formulário")
-        self.assertContains(checklist, "operacao atômica com trava")
-        self.assertContains(checklist, "validacao de estoque suficiente")
-        self.assertContains(checklist, "entrada de um ou vários produtos destino no serviço transacional")
-        self.assertContains(checklist, "prévia/simulacao antes de confirmar")
+        self.assertContains(checklist, "receitas/conversões por empresa/filial")
+        self.assertContains(checklist, "simulação antes de confirmar")
+        self.assertContains(checklist, "O serviço transacional faz baixa da origem")
+        self.assertContains(checklist, "As telas de lista, detalhe e receitas exibem quantidades no padrão brasileiro")
+        self.assertContains(checklist, "quantidade_br")
         self.assertContains(checklist, "busca remota por código de barras")
-        self.assertContains(checklist, "código interno/SKU")
-        self.assertContains(checklist, "custo proporcional por quantidade")
+        self.assertContains(checklist, "SKU e nome")
+        self.assertContains(checklist, "custo proporcional")
         self.assertContains(checklist, "cancelamento seguro com movimentos inversos")
-        self.assertContains(checklist, "para todos os destinos")
-        self.assertContains(checklist, "exportacao CSV por filtro")
-        self.assertContains(checklist, "múltiplos destinos para a tela dinâmica")
-        self.assertContains(checklist, "açougue por peso")
-        self.assertContains(checklist, "Relatórios gerenciais completos de rendimento e perdas")
+        self.assertContains(checklist, "relatórios/CSV gerenciais")
+        self.assertContains(checklist, "fluxos reais de açougue")
         self.assertContains(checklist, "Consulta de CNPJ e CEP")
         self.assertContains(checklist, "CADASTRO_CNPJ_PROVIDER_URL")
         self.assertContains(checklist, "CADASTRO_CEP_PROVIDER_URL")
         self.assertContains(checklist, "fallback local/offline")
-        self.assertContains(checklist, "Políticas de entrega por filial")
+        self.assertContains(checklist, "Pol" + "\u00ed" + "ticas de entrega por filial")
         self.assertContains(checklist, "delivery_geocode_v1")
         self.assertContains(checklist, "MARKETPLACE_GEOCODING_PROVIDER_URL")
         self.assertContains(checklist, "fallback manual de distancia")
+        self.assertContains(checklist, "delivery_policy_v1")
+        self.assertContains(checklist, "marketplace_partner_v1")
 
     def test_checklist_filtra_por_status_grupo_e_busca(self):
         response = self.client.get(
@@ -408,7 +413,7 @@ class ConfiguracoesOperacionaisTests(TestCase):
         self.assertContains(response, "Servidor local administrativo")
         self.assertContains(response, "não um segundo sistema")
         self.assertContains(response, "PDV desktop segue separado e restrito ao operador")
-        self.assertContains(response, "Serviço Windows/Linux")
+        self.assertContains(response, "Servico Windows/Linux")
         self.assertContains(response, "Backup local automático")
         self.assertContains(response, "scripts/run_local_server.ps1")
         self.assertContains(response, "scripts/register_local_server_task.ps1")
@@ -425,6 +430,10 @@ class ConfiguracoesOperacionaisTests(TestCase):
         self.assertEqual(payload["contrato"], "erp_local_admin_v1")
         self.assertTrue(payload["acesso"]["usa_navegador"])
         self.assertTrue(payload["acesso"]["pdv_desktop_separado"])
+        self.assertEqual(payload["servico_windows"]["nome"], "MercaFlowServidorLocal")
+        self.assertEqual(payload["servico_windows"]["status"], "especificado")
+        self.assertIn("waitress", payload["servico_windows"]["comando_producao"])
+        self.assertEqual(payload["servico_windows"]["healthcheck"], "/login/")
         self.assertEqual(payload["scripts"]["subir_servidor"], "scripts/run_local_server.ps1")
         self.assertEqual(payload["scripts"]["registrar_servidor"], "scripts/register_local_server_task.ps1")
         self.assertEqual(payload["scripts"]["backup_local"], "scripts/backup_local.ps1")
@@ -896,6 +905,21 @@ class ConfiguracoesOperacionaisTests(TestCase):
         self.assertContains(list_response, "Com gaveta")
         self.assertContains(list_response, "Dinheiro")
 
+    def test_central_de_impressao_alerta_configuracao_sem_impressora(self):
+        ConfiguracaoImpressao.objects.create(
+            empresa=self.empresa,
+            filial=self.filial,
+            tipo_documento=TipoDocumentoImpressao.CUPOM_NAO_FISCAL,
+            modelo_papel=ModeloPapel.BOBINA_80,
+            impressora_padrao="",
+        )
+
+        response = self.client.get("/configuracoes/impressoes/")
+
+        self.assertContains(response, "Sem impressora")
+        self.assertContains(response, "Existem configurações ativas sem impressora padrão")
+        self.assertContains(response, "Não definida")
+
     def test_gaveta_automatica_nao_e_obrigatoria_e_so_serve_para_caixa(self):
         response = self.client.post(
             "/configuracoes/impressoes/nova/",
@@ -975,6 +999,8 @@ class ConfiguracoesOperacionaisTests(TestCase):
         self.assertEqual(payload["status"], "ok")
         config = payload["configuracoes"][0]
         self.assertEqual(config["impressora_padrao"], "EPSON TM-T20")
+        self.assertTrue(config["impressora_configurada"])
+        self.assertEqual(config["mensagem"], "")
         self.assertTrue(config["impressao_automatica"])
         self.assertTrue(config["gaveta"]["automatica"])
         self.assertTrue(config["gaveta"]["abrir_em_dinheiro"])
@@ -1001,7 +1027,10 @@ class ConfiguracoesOperacionaisTests(TestCase):
         response = self.client.get("/configuracoes/impressoes/desktop.json")
 
         self.assertEqual(response.status_code, 200)
-        etiqueta = response.json()["configuracoes"][0]["etiqueta"]
+        config = response.json()["configuracoes"][0]
+        self.assertFalse(config["impressora_configurada"])
+        self.assertIn("sem impressora padrão definida", config["mensagem"])
+        etiqueta = config["etiqueta"]
         self.assertEqual(etiqueta["largura_mm"], 100.0)
         self.assertEqual(etiqueta["altura_mm"], 50.0)
         self.assertEqual(etiqueta["colunas"], 2)
@@ -1050,11 +1079,16 @@ class ConfiguracoesOperacionaisTests(TestCase):
         self.assertEqual(teste.status_code, 200)
         etiqueta_teste = teste.json()
         self.assertEqual(etiqueta_teste["status"], "ok")
+        self.assertEqual(etiqueta_teste["contrato"], "label_print_v1")
+        self.assertEqual(etiqueta_teste["origem"], "configuracoes_modelo_etiqueta_teste")
         self.assertEqual(etiqueta_teste["impressora_padrao"], "Zebra ZD220")
         self.assertEqual(etiqueta_teste["linguagem"], "ZPL")
         self.assertEqual(etiqueta_teste["modelo"]["id"], novo.id)
         self.assertEqual(etiqueta_teste["modelo"]["largura_mm"], 100.0)
         self.assertEqual(etiqueta_teste["itens"][0]["nome"], "ETIQUETA TESTE")
         self.assertEqual(etiqueta_teste["itens"][0]["codigo"], "789000000001")
+        self.assertEqual(etiqueta_teste["itens"][0]["preco"], "9.99")
+        self.assertEqual(etiqueta_teste["itens"][0]["copias"], 1)
+        self.assertNotIn("pre?o", etiqueta_teste["itens"][0])
 
 # Create your tests here.

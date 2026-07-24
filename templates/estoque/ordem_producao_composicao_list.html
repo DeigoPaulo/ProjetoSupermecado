@@ -1,0 +1,147 @@
+{% extends "base.html" %}
+
+{% block title %}Ordens de produção{% endblock %}
+
+{% block content %}
+<header class="page-header">
+  <div>
+    <h1>Ordens de produção</h1>
+    <p>Programação de kits, cestas e produtos internos antes da baixa dos componentes.</p>
+  </div>
+  <div class="actions">
+    <a class="secondary-button" href="{% url 'estoque:ordens_producao_composicao_fila' %}">Fila</a>
+    <a class="secondary-button" href="{% url 'estoque:ordens_producao_composicao_csv' %}?{{ request.GET.urlencode }}">Excel/CSV</a>
+    <a class="secondary-button" href="{% url 'estoque:composicao_producoes_relatorio' %}">Relatório de produções</a>
+    <a class="primary-button" href="{% url 'estoque:ordem_producao_composicao_nova' %}">Nova ordem</a>
+  </div>
+</header>
+
+<section class="metrics-grid">
+  <article class="metric"><span>Planejadas</span><strong>{{ total_planejadas }}</strong></article>
+  <article class="metric"><span>Produzidas</span><strong>{{ total_produzidas }}</strong></article>
+  <article class="metric"><span>Canceladas</span><strong>{{ total_canceladas }}</strong></article>
+  <article class="metric"><span>Qtd planejada</span><strong>{{ total_quantidade_planejada|quantidade_br }}</strong></article>
+</section>
+
+<section class="metrics-grid">
+  <a class="metric metric-link" href="?status=PLANEJADA&fim={{ fila_producao.data_ontem|date:'Y-m-d' }}">
+    <span>Fila atrasada</span><strong>{{ fila_producao.atrasadas }}</strong>
+  </a>
+  <a class="metric metric-link" href="?status=PLANEJADA&inicio={{ fila_producao.data_hoje|date:'Y-m-d' }}&fim={{ fila_producao.data_hoje|date:'Y-m-d' }}">
+    <span>Produzir hoje</span><strong>{{ fila_producao.hoje }}</strong>
+  </a>
+  <a class="metric metric-link" href="?status=PLANEJADA&inicio={{ fila_producao.data_amanha|date:'Y-m-d' }}">
+    <span>Próximas ordens</span><strong>{{ fila_producao.proximas }}</strong>
+  </a>
+  <a class="metric metric-link" href="?status=PLANEJADA&prioridade=URGENTE">
+    <span>Urgentes</span><strong>{{ fila_producao.urgentes }}</strong>
+  </a>
+</section>
+
+{% if fila_por_setor %}
+  <section class="metrics-grid">
+    {% for setor in fila_por_setor %}
+      <a class="metric metric-link" href="?status=PLANEJADA&setor={{ setor.setor_responsavel|urlencode }}">
+        <span>{{ setor.setor_responsavel }}</span>
+        <strong>{{ setor.total }}</strong>
+        <small>{{ setor.quantidade|quantidade_br }} planejado</small>
+      </a>
+    {% endfor %}
+  </section>
+{% endif %}
+
+<form method="get" class="toolbar toolbar-wrap">
+  <input type="search" name="q" value="{{ request.GET.q }}" placeholder="Produto, código ou motivo">
+  <input type="search" name="setor" value="{{ request.GET.setor }}" placeholder="Setor responsável">
+  <input type="date" name="inicio" value="{{ request.GET.inicio }}">
+  <input type="date" name="fim" value="{{ request.GET.fim }}">
+  <select name="status">
+    <option value="">Todos os status</option>
+    {% for valor, rotulo in status_opcoes %}
+      <option value="{{ valor }}" {% if request.GET.status == valor %}selected{% endif %}>{{ rotulo }}</option>
+    {% endfor %}
+  </select>
+  <select name="prioridade">
+    <option value="">Todas as prioridades</option>
+    {% for valor, rotulo in prioridade_opcoes %}
+      <option value="{{ valor }}" {% if request.GET.prioridade == valor %}selected{% endif %}>{{ rotulo }}</option>
+    {% endfor %}
+  </select>
+  <select name="etapa">
+    <option value="">Todas as etapas</option>
+    {% for valor, rotulo in etapa_opcoes %}
+      <option value="{{ valor }}" {% if request.GET.etapa == valor %}selected{% endif %}>{{ rotulo }}</option>
+    {% endfor %}
+  </select>
+  <select name="responsavel">
+    <option value="">Todos responsáveis</option>
+    {% for usuario in responsaveis_opcoes %}
+      <option value="{{ usuario.id }}" {% if request.GET.responsavel == usuario.id|stringformat:'s' %}selected{% endif %}>{{ usuario.username }}</option>
+    {% endfor %}
+  </select>
+  <button type="submit">Filtrar</button>
+</form>
+
+<div class="panel">
+  <table>
+    <thead>
+      <tr><th>Programada</th><th>Produto</th><th>Filial</th><th>Qtd</th><th>Prioridade</th><th>Setor</th><th>Responsável</th><th>Etapa</th><th>Status</th><th>Motivo</th><th>Ações</th></tr>
+    </thead>
+    <tbody>
+      {% for ordem in ordens %}
+        <tr>
+          <td>{{ ordem.data_programada|date:"d/m/Y" }}</td>
+          <td><strong>{{ ordem.produto_final }}</strong><br><small>Ordem #{{ ordem.id }}</small></td>
+          <td>{{ ordem.filial }}</td>
+          <td>{{ ordem.quantidade_planejada|quantidade_br }}</td>
+          <td><span class="status {% if ordem.prioridade == 'URGENTE' %}status-danger{% elif ordem.prioridade == 'ALTA' %}status-warning{% endif %}">{{ ordem.get_prioridade_display }}</span></td>
+          <td>{{ ordem.setor_responsavel|default:"-" }}</td>
+          <td>{{ ordem.responsavel_operacional.username|default:"-" }}</td>
+          <td>
+            {{ ordem.get_etapa_operacional_display }}
+            <br><small>Tempo na etapa: {{ ordem.tempo_etapa_atual }}</small>
+            {% if ordem.ultimo_apontamento_etapa %}
+              <br><small>{{ ordem.ultimo_apontamento_etapa.criado_em|date:"d/m/Y H:i" }} por {{ ordem.ultimo_apontamento_etapa.usuario.username }}</small>
+            {% endif %}
+          </td>
+          <td><span class="status {% if ordem.status == 'PLANEJADA' %}status-warning{% elif ordem.status == 'PRODUZIDA' %}status-success{% endif %}">{{ ordem.get_status_display }}</span></td>
+          <td>{{ ordem.motivo }}</td>
+          <td>
+            <a class="secondary-button" href="{% url 'estoque:ordem_producao_composicao_imprimir' ordem.pk %}" target="_blank">Imprimir</a>
+            {% if ordem.status == "PLANEJADA" %}
+              <form method="post" action="{% url 'estoque:ordem_producao_composicao_etapa' ordem.pk %}" class="compact-form">
+                {% csrf_token %}
+                <select name="etapa_operacional">
+                  {% for valor, rotulo in etapa_opcoes %}
+                    <option value="{{ valor }}" {% if ordem.etapa_operacional == valor %}selected{% endif %}>{{ rotulo }}</option>
+                  {% endfor %}
+                </select>
+                <button class="secondary-button" type="submit">Etapa</button>
+              </form>
+              <form method="post" action="{% url 'estoque:ordem_producao_composicao_confirmar' ordem.pk %}" class="compact-form form-confirm" data-msg="Produzir esta ordem e atualizar o estoque?">
+                {% csrf_token %}
+                <input type="text" name="supervisor_usuario" placeholder="Supervisor" required>
+                <input type="password" name="supervisor_senha" placeholder="Senha" required>
+                <button class="secondary-button" type="submit">Produzir</button>
+              </form>
+              <form method="post" action="{% url 'estoque:ordem_producao_composicao_cancelar' ordem.pk %}" class="compact-form form-confirm" data-msg="Cancelar esta ordem de produção?">
+                {% csrf_token %}
+                <input type="text" name="motivo" placeholder="Motivo" required>
+                <input type="text" name="supervisor_usuario" placeholder="Supervisor" required>
+                <input type="password" name="supervisor_senha" placeholder="Senha" required>
+                <button class="secondary-button" type="submit">Cancelar</button>
+              </form>
+            {% elif ordem.producao_gerada %}
+              <a class="secondary-button" href="{% url 'estoque:composicao_detalhe' ordem.composicao_id %}">Ver produção</a>
+            {% else %}
+              -
+            {% endif %}
+          </td>
+        </tr>
+      {% empty %}
+        <tr><td colspan="11" class="empty">Nenhuma ordem de produção encontrada.</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endblock %}

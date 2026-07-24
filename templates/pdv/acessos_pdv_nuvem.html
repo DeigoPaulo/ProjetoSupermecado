@@ -21,14 +21,14 @@
 <section class="operation-notice operation-notice-warning">
   <i class="fa-solid fa-bell"></i>
   <div>
-    <strong>Ha operador aguardando liberacao do PDV em nuvem.</strong>
-    <span>Analise a filial, o horario e o IP antes de aprovar o acesso ao caixa.</span>
+    <strong>Há operador aguardando liberação do PDV em nuvem.</strong>
+    <span>Analise a filial, o horário e o IP antes de aprovar o acesso ao caixa.</span>
   </div>
 </section>
 {% endif %}
 
 <section class="panel mt-panel">
-  <div class="panel-title">Solicitacoes pendentes</div>
+  <div class="panel-title">Solicitações pendentes</div>
   <div class="cloud-access-list">
     {% for acesso in pendentes %}
       <article class="cloud-access-card">
@@ -39,22 +39,22 @@
         </div>
         <form method="post" action="{% url 'pdv:decidir_acesso_pdv_nuvem' acesso.id %}" class="cloud-access-actions">
           {% csrf_token %}
-          <input type="text" name="justificativa" placeholder="Observacao opcional">
+          <input type="text" name="justificativa" placeholder="Observação opcional">
           <button class="secondary-button danger-button" type="submit" name="acao" value="recusar"><i class="fa-solid fa-ban"></i> Recusar</button>
           <button class="primary-button" type="submit" name="acao" value="aprovar"><i class="fa-solid fa-check"></i> Aprovar</button>
         </form>
       </article>
     {% empty %}
-      <div class="empty">Nenhuma solicitacao pendente.</div>
+      <div class="empty">Nenhuma solicitação pendente.</div>
     {% endfor %}
   </div>
 </section>
 
 <section class="panel mt-panel">
-  <div class="panel-title">Historico recente</div>
+  <div class="panel-title">Histórico recente</div>
   <table>
     <thead>
-      <tr><th>Operador</th><th>Filial</th><th>Status</th><th>Decidido por</th><th>Data</th><th>Observacao</th></tr>
+      <tr><th>Operador</th><th>Filial</th><th>Status</th><th>Decidido por</th><th>Data</th><th>Observação</th></tr>
     </thead>
     <tbody>
       {% for acesso in historico %}
@@ -67,7 +67,7 @@
           <td>{{ acesso.justificativa|default:"-" }}</td>
         </tr>
       {% empty %}
-        <tr><td colspan="6" class="empty">Nenhuma decisao registrada.</td></tr>
+        <tr><td colspan="6" class="empty">Nenhuma decisão registrada.</td></tr>
       {% endfor %}
     </tbody>
   </table>

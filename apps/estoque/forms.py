@@ -5,9 +5,11 @@ from apps.core_forms import aplicar_select2
 
 from .models import (
     ComposicaoProduto,
+    ConfiguracaoSLASetorProducao,
     InventarioEstoque,
     ItemComposicaoProduto,
     ItemInventarioEstoque,
+    OrdemProducaoComposicao,
     PerdaEstoque,
     ReceitaDesmembramento,
     TipoDesmembramentoProduto,
@@ -244,3 +246,59 @@ class ProducaoComposicaoForm(forms.Form):
             self.initial.setdefault("filial", composicao.filial)
         self.initial.setdefault("quantidade_final", composicao.quantidade_final if composicao else 1)
         aplicar_select2(self, ["filial"])
+
+
+class OrdemProducaoComposicaoForm(forms.ModelForm):
+    class Meta:
+        model = OrdemProducaoComposicao
+        fields = [
+            "composicao",
+            "filial",
+            "quantidade_planejada",
+            "data_programada",
+            "prioridade",
+            "setor_responsavel",
+            "etapa_operacional",
+            "responsavel_operacional",
+            "motivo",
+            "observacao",
+        ]
+        widgets = {
+            "data_programada": forms.DateInput(attrs={"type": "date"}),
+            "observacao": forms.Textarea(attrs={"rows": 3}),
+        }
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        from django.contrib.auth import get_user_model
+        from apps.empresas.models import Filial
+
+        self.fields["composicao"].queryset = ComposicaoProduto.objects.filter(is_active=True).select_related("produto_final", "filial")
+        self.fields["filial"].queryset = Filial.objects.filter(is_active=True)
+        self.fields["responsavel_operacional"].queryset = get_user_model().objects.filter(is_active=True).order_by("username")
+        aplicar_select2(self, ["composicao", "filial", "responsavel_operacional"])
+
+
+class ConfiguracaoSLASetorProducaoForm(forms.ModelForm):
+    class Meta:
+        model = ConfiguracaoSLASetorProducao
+        fields = ["empresa", "filial", "setor", "meta_minutos", "observacao", "is_active"]
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        from apps.empresas.models import Empresa, Filial
+
+        self.fields["empresa"].queryset = Empresa.objects.filter(is_active=True)
+        self.fields["filial"].queryset = Filial.objects.filter(is_active=True)
+        self.fields["filial"].required = False
+        self.fields["setor"].widget.attrs["placeholder"] = "Ex.: Padaria, Acougue, Hortifruti"
+        self.fields["meta_minutos"].widget.attrs["min"] = 1
+        aplicar_select2(self, ["empresa", "filial"])
+
+    def clean(self):
+        cleaned = super().clean()
+        composicao = cleaned.get("composicao")
+        filial = cleaned.get("filial")
+        if composicao and filial and composicao.filial_id and composicao.filial_id != filial.id:
+            self.add_error("filial", "A filial deve ser a mesma vinculada à composição.")
+        return cleaned

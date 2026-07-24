@@ -1,0 +1,29 @@
+{% extends "base.html" %}
+
+{% block title %}Nova ordem de produção{% endblock %}
+
+{% block content %}
+<header class="page-header">
+  <div>
+    <h1>Nova ordem de produção</h1>
+    <p>Planeje a produção antes de consumir componentes e atualizar o estoque.</p>
+  </div>
+  <div class="actions">
+    <a class="secondary-button" href="{% url 'estoque:ordens_producao_composicao' %}">Voltar</a>
+  </div>
+</header>
+
+<div class="panel">
+  <form method="post" class="form-grid">
+    {% csrf_token %}
+    {% for field in form %}
+      <label class="form-field {% if field.name == 'observacao' %}span-2{% endif %}">
+        <span>{{ field.label }}</span>
+        {{ field }}
+        {{ field.errors }}
+      </label>
+    {% endfor %}
+    <button class="primary-button span-2" type="submit">Salvar ordem</button>
+  </form>
+</div>
+{% endblock %}
