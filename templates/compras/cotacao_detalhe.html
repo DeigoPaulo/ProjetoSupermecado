@@ -1,0 +1,94 @@
+{% extends "base.html" %}
+
+{% block title %}Cotação {{ cotacao.id }}{% endblock %}
+
+{% block content %}
+<header class="page-header">
+  <div>
+    <h1>Cotação {{ cotacao.id }}</h1>
+    <p>{{ cotacao.referencia|default:"Sem referência" }} - {{ cotacao.filial }}</p>
+  </div>
+  <div class="actions">
+    {% if cotacao.status == "RASCUNHO" %}<a class="secondary-button" href="{% url 'compras:cotacao_editar' cotacao.pk %}">Editar</a>{% endif %}
+    {% if cotacao.status == "ABERTA" %}<a class="primary-button" href="{% url 'compras:cotacao_resposta' cotacao.pk %}">Registrar proposta</a>{% endif %}
+    <a class="secondary-button" href="{% url 'compras:cotacoes' %}">Voltar</a>
+  </div>
+</header>
+
+<section class="metrics-grid">
+  <article class="metric"><span>Status</span><strong>{{ cotacao.get_status_display }}</strong></article>
+  <article class="metric"><span>Itens</span><strong>{{ cotacao.itens.count }}</strong></article>
+  <article class="metric"><span>Propostas</span><strong>{{ cotacao.respostas.count }}</strong></article>
+  <article class="metric"><span>Validade</span><strong>{{ cotacao.validade|date:"d/m/Y"|default:"-" }}</strong></article>
+</section>
+
+<section class="operation-notice">
+  Cotação e propostas não movimentam estoque nem criam financeiro. Somente a proposta selecionada gera um pedido em rascunho.
+</section>
+
+{% if cotacao.status == "RASCUNHO" %}
+  <section class="panel mt-panel">
+    <div class="panel-title">Abrir para propostas</div>
+    <form method="post" action="{% url 'compras:cotacao_abrir' cotacao.pk %}" class="form-confirm" data-msg="Abrir esta cotação e bloquear a edição dos itens?">
+      {% csrf_token %}
+      <button class="primary-button" type="submit">Abrir cotação</button>
+    </form>
+  </section>
+{% elif cotacao.status == "ENCERRADA" and cotacao.pedido_gerado %}
+  <section class="operation-notice">
+    Cotação encerrada com o pedido
+    <a href="{% url 'compras:pedido_detalhe' cotacao.pedido_gerado.pk %}">#{{ cotacao.pedido_gerado.pk }}</a>.
+  </section>
+{% endif %}
+
+<div class="panel">
+  <div class="panel-title">Itens solicitados</div>
+  <table>
+    <thead><tr><th>Produto</th><th>Quantidade</th></tr></thead>
+    <tbody>
+      {% for item in cotacao.itens.all %}
+        <tr><td>{{ item.produto }}</td><td>{{ item.quantidade|quantidade_br }}</td></tr>
+      {% empty %}
+        <tr><td colspan="2" class="empty">Nenhum item informado.</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+
+<section class="checklist-next-grid mt-panel">
+  {% for resposta in cotacao.respostas.all %}
+    <article class="panel">
+      <div class="panel-title">
+        {{ resposta.fornecedor }}
+        {% if resposta.selecionada %}<span class="status status-success">Selecionada</span>{% endif %}
+      </div>
+      <p>Prazo: {{ resposta.prazo_entrega_dias }} dia(s) · Total disponível: <strong>R$ {{ resposta.total_proposto|floatformat:2 }}</strong></p>
+      <table>
+        <thead><tr><th>Produto</th><th>Disponível</th><th>Custo unitário</th><th>Total</th></tr></thead>
+        <tbody>
+          {% for preco in resposta.precos.all %}
+            <tr>
+              <td>{{ preco.item.produto }}</td>
+              <td>{{ preco.disponivel|yesno:"Sim,Não" }}</td>
+              <td>{% if preco.custo_unitario is not None %}R$ {{ preco.custo_unitario|floatformat:2 }}{% else %}-{% endif %}</td>
+              <td>{% if preco.total_proposto is not None %}R$ {{ preco.total_proposto|floatformat:2 }}{% else %}-{% endif %}</td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+      {% if cotacao.status == "ABERTA" %}
+        {% if resposta.proposta_completa %}
+          <form method="post" action="{% url 'compras:cotacao_selecionar' cotacao.pk resposta.pk %}" class="form-confirm" data-msg="Selecionar esta proposta e gerar o pedido em rascunho?">
+            {% csrf_token %}
+            <button class="primary-button" type="submit">Selecionar e gerar pedido</button>
+          </form>
+        {% else %}
+          <div class="message warning">Proposta incompleta: não pode gerar pedido.</div>
+        {% endif %}
+      {% endif %}
+    </article>
+  {% empty %}
+    <article class="panel"><div class="empty">Nenhuma proposta registrada.</div></article>
+  {% endfor %}
+</section>
+{% endblock %}

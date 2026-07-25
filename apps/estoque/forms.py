@@ -26,6 +26,9 @@ class MovimentacaoEstoqueForm(forms.Form):
     motivo = forms.CharField(max_length=255, required=False)
     referencia = forms.CharField(max_length=120, required=False)
     custo_unitario = forms.DecimalField(max_digits=10, decimal_places=2, required=False, min_value=0)
+    codigo_lote = forms.CharField(max_length=60, required=False, label="Lote")
+    fabricacao = forms.DateField(required=False, widget=forms.DateInput(attrs={"type": "date"}))
+    validade = forms.DateField(required=False, widget=forms.DateInput(attrs={"type": "date"}))
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
@@ -35,6 +38,43 @@ class MovimentacaoEstoqueForm(forms.Form):
         self.fields["produto"].queryset = Produto.objects.all()
         self.fields["filial"].queryset = Filial.objects.filter(is_active=True)
         aplicar_select2(self, ["produto", "filial"])
+
+    def clean(self):
+        cleaned_data = super().clean()
+        codigo_lote = (cleaned_data.get("codigo_lote") or "").strip()
+        fabricacao = cleaned_data.get("fabricacao")
+        validade = cleaned_data.get("validade")
+        if (fabricacao or validade) and not codigo_lote:
+            self.add_error("codigo_lote", "Informe o lote ao preencher fabricacao ou validade.")
+        if fabricacao and validade and fabricacao > validade:
+            self.add_error("validade", "A validade nao pode ser anterior a fabricacao.")
+        if codigo_lote and cleaned_data.get("tipo") not in {
+            TipoMovimentacaoEstoque.ENTRADA,
+            TipoMovimentacaoEstoque.DEVOLUCAO,
+            TipoMovimentacaoEstoque.AJUSTE,
+            TipoMovimentacaoEstoque.SAIDA,
+            TipoMovimentacaoEstoque.VENDA,
+            TipoMovimentacaoEstoque.PERDA,
+        }:
+            self.add_error("codigo_lote", "Este tipo de movimento nao aceita lote.")
+        return cleaned_data
+
+
+class AtribuirSaldoLoteForm(forms.Form):
+    codigo = forms.CharField(max_length=60, label="Codigo do lote")
+    quantidade = forms.DecimalField(max_digits=12, decimal_places=3, min_value=0.001)
+    custo_unitario = forms.DecimalField(max_digits=10, decimal_places=2, min_value=0)
+    fabricacao = forms.DateField(required=False, widget=forms.DateInput(attrs={"type": "date"}))
+    validade = forms.DateField(required=False, widget=forms.DateInput(attrs={"type": "date"}))
+    motivo = forms.CharField(max_length=255)
+
+    def clean(self):
+        cleaned_data = super().clean()
+        fabricacao = cleaned_data.get("fabricacao")
+        validade = cleaned_data.get("validade")
+        if fabricacao and validade and fabricacao > validade:
+            self.add_error("validade", "A validade nao pode ser anterior a fabricacao.")
+        return cleaned_data
 
 
 class InventarioEstoqueForm(forms.ModelForm):

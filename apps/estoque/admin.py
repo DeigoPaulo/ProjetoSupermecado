@@ -1,6 +1,6 @@
 from django.contrib import admin
 
-from .models import Estoque, InventarioEstoque, ItemInventarioEstoque, MovimentacaoEstoque, PerdaEstoque
+from .models import Estoque, InventarioEstoque, ItemInventarioEstoque, LoteEstoque, MovimentacaoEstoque, PerdaEstoque
 
 
 @admin.register(Estoque)
@@ -15,6 +15,13 @@ class MovimentacaoEstoqueAdmin(admin.ModelAdmin):
     list_display = ("produto", "filial", "tipo", "quantidade", "usuario", "data")
     search_fields = ("produto__nome", "referencia", "motivo")
     list_filter = ("tipo", "filial", "data")
+
+
+@admin.register(LoteEstoque)
+class LoteEstoqueAdmin(admin.ModelAdmin):
+    list_display = ("codigo", "produto", "filial", "quantidade_atual", "validade", "custo_unitario", "criado_em")
+    search_fields = ("codigo", "produto__nome", "produto__codigo_barras", "origem_referencia")
+    list_filter = ("filial", "validade", "criado_em")
 
 
 class ItemInventarioEstoqueInline(admin.TabularInline):

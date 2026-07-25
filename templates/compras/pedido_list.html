@@ -1,0 +1,60 @@
+{% extends "base.html" %}
+
+{% block title %}Pedidos de compra{% endblock %}
+
+{% block content %}
+<header class="page-header">
+  <div>
+    <h1>Pedidos de compra</h1>
+    <p>Planejamento anterior ao recebimento. Pedidos não movimentam estoque nem criam contas financeiras.</p>
+  </div>
+  <div class="actions">
+    <a class="secondary-button" href="{% url 'compras:cotacoes' %}">Cotações</a>
+    <a class="secondary-button" href="{% url 'compras:lista' %}">Entradas recebidas</a>
+    <a class="primary-button" href="{% url 'compras:pedido_novo' %}"><i class="fa-solid fa-circle-plus"></i> Novo pedido</a>
+  </div>
+</header>
+
+<section class="metrics-grid">
+  <article class="metric"><span>Total</span><strong>{{ resumo.total }}</strong></article>
+  <article class="metric"><span>Rascunhos</span><strong>{{ resumo.rascunhos }}</strong></article>
+  <article class="metric"><span>Enviados</span><strong>{{ resumo.enviados }}</strong></article>
+  <article class="metric"><span>Convertidos</span><strong>{{ resumo.convertidos }}</strong></article>
+  <article class="metric"><span>Cancelados</span><strong>{{ resumo.cancelados }}</strong></article>
+</section>
+
+<form method="get" class="toolbar">
+  <input type="search" name="q" value="{{ request.GET.q }}" placeholder="Fornecedor ou referência">
+  <select name="status">
+    <option value="">Todos os status</option>
+    {% for valor, rotulo in status_choices %}
+      <option value="{{ valor }}" {% if request.GET.status == valor %}selected{% endif %}>{{ rotulo }}</option>
+    {% endfor %}
+  </select>
+  <button type="submit">Buscar</button>
+  {% if request.GET.q or request.GET.status %}<a class="secondary-button" href="{% url 'compras:pedidos' %}">Limpar</a>{% endif %}
+</form>
+
+<div class="panel">
+  <table>
+    <thead><tr><th>Pedido</th><th>Fornecedor</th><th>Filial</th><th>Referência</th><th>Itens</th><th>Total previsto</th><th>Status</th><th>Previsão</th><th></th></tr></thead>
+    <tbody>
+      {% for pedido in pedidos %}
+        <tr>
+          <td>#{{ pedido.id }}</td>
+          <td>{{ pedido.fornecedor }}</td>
+          <td>{{ pedido.filial }}</td>
+          <td>{{ pedido.referencia|default:"-" }}</td>
+          <td>{{ pedido.itens.count }}</td>
+          <td>R$ {{ pedido.total_previsto|floatformat:2 }}</td>
+          <td><span class="status {% if pedido.status == 'ENVIADO' or pedido.status == 'CONVERTIDO' %}status-success{% elif pedido.status == 'CANCELADO' %}status-muted{% else %}status-warning{% endif %}">{{ pedido.get_status_display }}</span></td>
+          <td>{{ pedido.previsao_entrega|date:"d/m/Y"|default:"-" }}</td>
+          <td><a href="{% url 'compras:pedido_detalhe' pedido.pk %}">Abrir</a></td>
+        </tr>
+      {% empty %}
+        <tr><td colspan="9" class="empty">Nenhum pedido de compra registrado.</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endblock %}

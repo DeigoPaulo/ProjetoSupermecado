@@ -1,0 +1,54 @@
+{% extends "base.html" %}
+
+{% block title %}Cotação de compra{% endblock %}
+
+{% block content %}
+<header class="page-header">
+  <div>
+    <h1>{% if cotacao %}Editar cotação {{ cotacao.id }}{% else %}Nova cotação{% endif %}</h1>
+    <p>Defina os produtos e quantidades que serão enviados aos fornecedores.</p>
+  </div>
+</header>
+
+<form method="post" class="panel purchase-form">
+  {% csrf_token %}
+  <section class="form-section purchase-section">
+    <div class="form-section-header">
+      <h2>Dados da cotação</h2>
+      <p>A cotação em rascunho não altera estoque, financeiro ou pedidos.</p>
+    </div>
+    <div class="form-grid purchase-head">
+      {% for field in form %}
+        <label class="form-field {% if field.name == 'observacoes' %}span-2{% endif %}">
+          <span>{{ field.label }}</span>{{ field }}
+          {% if field.errors %}<small class="field-error">{{ field.errors|striptags }}</small>{% endif %}
+        </label>
+      {% endfor %}
+    </div>
+  </section>
+
+  <section class="form-section purchase-section">
+    <div class="form-section-header">
+      <h2>Itens para cotar</h2>
+      <p>Um produto deve aparecer apenas uma vez.</p>
+    </div>
+    {{ formset.management_form }}
+    {% if formset.non_form_errors %}<div class="message error">{{ formset.non_form_errors|striptags }}</div>{% endif %}
+    <div class="purchase-items">
+      {% for item_form in formset %}
+        <div class="purchase-item-row">
+          {% for hidden in item_form.hidden_fields %}{{ hidden }}{% endfor %}
+          {% for field in item_form.visible_fields %}
+            <label class="form-field"><span>{{ field.label }}</span>{{ field }}{% if field.errors %}<small class="field-error">{{ field.errors|striptags }}</small>{% endif %}</label>
+          {% endfor %}
+        </div>
+      {% endfor %}
+    </div>
+  </section>
+
+  <div class="form-actions purchase-actions">
+    <a class="secondary-button" href="{% if cotacao %}{% url 'compras:cotacao_detalhe' cotacao.pk %}{% else %}{% url 'compras:cotacoes' %}{% endif %}">Cancelar</a>
+    <button class="primary-button" type="submit">Salvar rascunho</button>
+  </div>
+</form>
+{% endblock %}

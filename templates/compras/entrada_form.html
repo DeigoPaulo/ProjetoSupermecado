@@ -10,6 +10,13 @@
   </div>
 </header>
 
+{% if object.chave_acesso_xml %}
+  <section class="operation-notice">
+    Rascunho importado da NF-e {{ object.chave_acesso_xml }}. Confira fornecedor, filial, itens, quantidades,
+    custos e vencimento antes de finalizar.
+  </section>
+{% endif %}
+
 <form method="post" class="panel purchase-form">
   {% csrf_token %}
   {% if retorno_lista_url %}<input type="hidden" name="next" value="{{ retorno_lista_url }}">{% endif %}
@@ -44,6 +51,14 @@
         {{ form.vencimento_financeiro }}
         {{ form.vencimento_financeiro.errors }}
       </div>
+      {% if object.chave_acesso_xml %}
+        <div class="field">
+          {{ form.total_documento.label_tag }}
+          {{ form.total_documento }}
+          <small>Total fiscal da NF-e usado na conta a pagar.</small>
+          {{ form.total_documento.errors }}
+        </div>
+      {% endif %}
       <div class="field checkbox-field">
         {{ form.gerar_conta_financeira }}
         {{ form.gerar_conta_financeira.label_tag }}
@@ -60,7 +75,7 @@
   <section class="form-section purchase-section">
     <div class="form-section-header">
       <h2>Itens recebidos</h2>
-      <p>Informe produto, quantidade e custo. Ao finalizar, o sistema atualiza estoque e financeiro.</p>
+      <p>Informe produto, quantidade e custo. Ao finalizar, o sistema atualiza estoque e financeiro. Lote, fabricacao e validade sao opcionais e ativam o rastreio FEFO.</p>
     </div>
     {{ formset.management_form }}
     <div class="purchase-items">

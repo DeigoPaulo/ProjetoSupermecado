@@ -24,10 +24,28 @@
 
 <section class="metrics-grid">
   <article class="metric"><span>Status</span><strong>{{ entrada.status }}</strong></article>
-  <article class="metric"><span>Total</span><strong>R$ {{ entrada.total_produtos|floatformat:2 }}</strong></article>
+  <article class="metric"><span>Total dos produtos</span><strong>R$ {{ entrada.total_produtos|floatformat:2 }}</strong></article>
+  {% if entrada.total_documento != None %}
+    <article class="metric"><span>Total da NF-e</span><strong>R$ {{ entrada.total_documento|floatformat:2 }}</strong></article>
+  {% endif %}
   <article class="metric"><span>Documento</span><strong>{{ entrada.numero_documento|default:"-" }}</strong></article>
   <article class="metric"><span>Vencimento</span><strong>{{ entrada.vencimento_financeiro|date:"d/m/Y"|default:"Ao finalizar" }}</strong></article>
 </section>
+
+{% if entrada.chave_acesso_xml %}
+  <section class="operation-notice">
+    Entrada importada da NF-e {{ entrada.chave_acesso_xml }} em {{ entrada.importada_xml_em|date:"d/m/Y H:i" }}.
+    O total fiscal da nota e usado no financeiro; os itens abaixo determinam estoque e custo.
+  </section>
+{% endif %}
+
+{% if entrada.pedido_origem %}
+  <section class="operation-notice">
+    Entrada originada do pedido de compra
+    <a href="{% url 'compras:pedido_detalhe' entrada.pedido_origem.pk %}">#{{ entrada.pedido_origem.pk }}</a>.
+    Fornecedor e filial permanecem vinculados ao pedido para preservar o rastreio.
+  </section>
+{% endif %}
 
 {% if entrada.contas_financeiras.exists %}
   <section class="panel mt-panel">
@@ -136,7 +154,7 @@
 <div class="panel">
   <div class="panel-title">Itens recebidos</div>
   <table>
-    <thead><tr><th>Produto</th><th>Quantidade</th><th>Custo unitario</th><th>Total</th><th>Atualiza custo</th></tr></thead>
+    <thead><tr><th>Produto</th><th>Quantidade</th><th>Custo unitario</th><th>Total</th><th>Lote / validade</th><th>Atualiza custo</th></tr></thead>
     <tbody>
       {% for item in entrada.itens.all %}
         <tr>
@@ -144,10 +162,11 @@
           <td>{{ item.quantidade|quantidade_br }}</td>
           <td>R$ {{ item.custo_unitario|floatformat:2 }}</td>
           <td>R$ {{ item.total|floatformat:2 }}</td>
+          <td>{{ item.codigo_lote|default:"-" }}{% if item.validade %}<br><small>{{ item.validade|date:"d/m/Y" }}</small>{% endif %}</td>
           <td>{{ item.atualizar_preco_custo|yesno:"Sim,Nao" }}</td>
         </tr>
       {% empty %}
-        <tr><td colspan="5" class="empty">Nenhum item informado.</td></tr>
+        <tr><td colspan="6" class="empty">Nenhum item informado.</td></tr>
       {% endfor %}
     </tbody>
   </table>

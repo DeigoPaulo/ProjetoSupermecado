@@ -1,0 +1,49 @@
+{% extends "base.html" %}
+
+{% block title %}Atribuir saldo a lote{% endblock %}
+
+{% block content %}
+<header class="page-header">
+  <div>
+    <h1>Atribuir saldo a lote</h1>
+    <p>{{ estoque.produto }} — {{ estoque.filial }}</p>
+  </div>
+</header>
+
+<section class="metrics-grid">
+  <article class="metric"><span>Saldo físico</span><strong>{{ estoque.quantidade_atual|quantidade_br }}</strong></article>
+  <article class="metric"><span>Já rastreado</span><strong>{{ saldo_rastreado|quantidade_br }}</strong></article>
+  <article class="metric"><span>Disponível sem lote</span><strong>{{ saldo_sem_lote|quantidade_br }}</strong></article>
+</section>
+
+<form method="post" class="panel purchase-form">
+  {% csrf_token %}
+  {{ form.non_field_errors }}
+  <section class="form-section">
+    <div class="form-section-header">
+      <h2>Identificação da camada</h2>
+      <p>Informe somente a quantidade fisicamente confirmada para este lote.</p>
+    </div>
+    <div class="form-grid">
+      {% for field in form %}
+        <label class="form-field">
+          <span>{{ field.label }}</span>
+          {{ field }}
+          {% if field.errors %}<small class="field-error">{{ field.errors|striptags }}</small>{% endif %}
+        </label>
+      {% endfor %}
+    </div>
+  </section>
+  <section class="form-section">
+    <div class="form-section-header"><h2>Autorização</h2></div>
+    <div class="form-grid">
+      <label class="form-field"><span>Supervisor ou admin</span><input class="no-upper" type="text" name="supervisor_usuario" required></label>
+      <label class="form-field"><span>Senha</span><input class="no-upper" type="password" name="supervisor_senha" required></label>
+    </div>
+  </section>
+  <div class="form-actions">
+    <a class="secondary-button" href="{% url 'estoque:reconciliacao_lotes' %}">Cancelar</a>
+    <button class="primary-button" type="submit">Atribuir sem alterar saldo</button>
+  </div>
+</form>
+{% endblock %}

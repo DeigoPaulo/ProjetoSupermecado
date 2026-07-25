@@ -6,6 +6,9 @@ app_name = "estoque"
 
 urlpatterns = [
     path("", views.EstoqueListView.as_view(), name="lista"),
+    path("lotes/", views.LoteEstoqueListView.as_view(), name="lotes"),
+    path("lotes/reconciliacao/", views.reconciliacao_lotes, name="reconciliacao_lotes"),
+    path("lotes/reconciliacao/<int:pk>/atribuir/", views.atribuir_saldo_lote, name="atribuir_saldo_lote"),
     path("movimentar/", views.movimentar, name="movimentar"),
     path("inventarios/", views.InventarioListView.as_view(), name="inventarios"),
     path("inventarios/novo/", views.CriarInventarioView.as_view(), name="inventario_novo"),

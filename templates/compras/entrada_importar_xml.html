@@ -1,0 +1,47 @@
+{% extends "base.html" %}
+
+{% block title %}Importar XML de entrada{% endblock %}
+
+{% block content %}
+<header class="page-header">
+  <div>
+    <h1>Importar XML de entrada</h1>
+    <p>A NF-e sera validada e transformada em um rascunho para revisao.</p>
+  </div>
+</header>
+
+<section class="operation-notice">
+  A importacao nao altera estoque nem financeiro. O sistema exige uma NF-e autorizada, fornecedor e filial
+  cadastrados pelos respectivos CNPJs e todos os produtos associados por GTIN ou codigo interno.
+</section>
+
+<form method="post" enctype="multipart/form-data" class="panel purchase-form">
+  {% csrf_token %}
+  <section class="form-section purchase-section">
+    <div class="form-section-header">
+      <h2>Arquivo fiscal</h2>
+      <p>O limite e de 5 MB. NF-es repetidas sao bloqueadas pela chave de acesso.</p>
+    </div>
+    <div class="form-grid">
+      <div class="field span-2">
+        {{ form.arquivo_xml.label_tag }}
+        {{ form.arquivo_xml }}
+        {% if form.arquivo_xml.help_text %}<small>{{ form.arquivo_xml.help_text }}</small>{% endif %}
+        {{ form.arquivo_xml.errors }}
+      </div>
+      <div class="field checkbox-field span-2">
+        {{ form.gerar_conta_financeira }}
+        {{ form.gerar_conta_financeira.label_tag }}
+        {{ form.gerar_conta_financeira.errors }}
+      </div>
+    </div>
+  </section>
+
+  <div class="form-actions purchase-actions">
+    <a class="secondary-button" href="{% url 'compras:lista' %}">Cancelar</a>
+    <button class="primary-button" type="submit">
+      <i class="fa-solid fa-file-import"></i> Validar e criar rascunho
+    </button>
+  </div>
+</form>
+{% endblock %}

@@ -3,6 +3,7 @@ from decimal import Decimal
 
 from django.contrib.auth import get_user_model
 from django.core.exceptions import ValidationError
+from django.db.models import Sum
 from django.test import Client, TestCase
 from django.utils import timezone
 
@@ -16,20 +17,28 @@ from apps.estoque.models import (
     DesmembramentoProduto,
     Estoque,
     HistoricoEtapaOrdemProducaoComposicao,
+    InventarioEstoque,
     ItemComposicaoProduto,
+    ItemInventarioEstoque,
+    LoteEstoque,
     MovimentacaoEstoque,
+    MovimentacaoLoteEstoque,
     OrdemProducaoComposicao,
     PerdaEstoque,
     ProducaoComposicaoProduto,
     ReceitaDesmembramento,
     StatusDesmembramentoProduto,
+    StatusInventario,
     StatusOrdemProducaoComposicao,
     StatusProducaoComposicao,
     TipoDesmembramentoProduto,
     TipoMovimentacaoEstoque,
     TipoSaidaDesmembramento,
+    movimentar_estoque,
 )
 from apps.estoque.services import (
+    aplicar_inventario,
+    atribuir_saldo_historico_lote,
     cancelar_desmembramento_produto,
     cancelar_producao_composicao,
     confirmar_desmembramento_multidestino,
@@ -68,6 +77,7 @@ class EstoqueViewsTests(TestCase):
         self.assertContains(response, "Autorizacao")
         self.assertContains(response, "Movimentacoes manuais ficam registradas")
         self.assertContains(response, "select2-field")
+
 
     def test_form_perda_exibe_rastreabilidade_e_autorizacao(self):
         response = self.client.get("/estoque/perdas/nova/")
@@ -1631,3 +1641,354 @@ class EstoqueViewsTests(TestCase):
         self.assertEqual(payload.json()["receita"]["produto_origem_id"], self.produto.id)
         self.assertEqual(payload.json()["receita"]["produto_destino_id"], destino.id)
         self.assertEqual(payload.json()["receita"]["tipo_saida"], TipoSaidaDesmembramento.PERDA)
+class RastreioLoteEstoqueTests(TestCase):
+    def setUp(self):
+        self.usuario = get_user_model().objects.create_superuser("lotes", "lotes@example.com", "123")
+        self.empresa = Empresa.objects.create(
+            razao_social="Mercado Lotes",
+            nome_fantasia="Mercado Lotes",
+            cnpj="63.456.789/0001-10",
+        )
+        self.filial = Filial.objects.create(empresa=self.empresa, nome="Matriz Lotes", cnpj=self.empresa.cnpj)
+        self.categoria = Categoria.all_objects.create(nome="Categoria Lotes")
+        self.produto = Produto.objects.create(
+            codigo_barras="7896345678901",
+            nome="Produto por lote",
+            categoria=self.categoria,
+            preco_custo=Decimal("5.00"),
+            preco_venda=Decimal("9.00"),
+        )
+        self.client.force_login(self.usuario)
+
+    def _entrada_lote(self, codigo, quantidade, validade, custo):
+        return movimentar_estoque(
+            produto=self.produto,
+            filial=self.filial,
+            tipo=TipoMovimentacaoEstoque.ENTRADA,
+            quantidade=Decimal(quantidade),
+            usuario=self.usuario,
+            motivo="Entrada teste",
+            referencia=f"teste:{codigo}",
+            custo_unitario=Decimal(custo),
+            codigo_lote=codigo,
+            validade=validade,
+        )
+
+    def test_entrada_cria_camada_de_lote_e_historico_de_custo(self):
+        movimento = self._entrada_lote("LOTE-A", "5.000", date(2026, 9, 30), "4.50")
+
+        lote = LoteEstoque.objects.get()
+        alocacao = MovimentacaoLoteEstoque.objects.get()
+        self.assertEqual(lote.quantidade_inicial, Decimal("5.000"))
+        self.assertEqual(lote.quantidade_atual, Decimal("5.000"))
+        self.assertEqual(lote.custo_unitario, Decimal("4.50"))
+        self.assertEqual(lote.origem_referencia, "teste:LOTE-A")
+        self.assertEqual(alocacao.movimentacao, movimento)
+        self.assertEqual(alocacao.lote, lote)
+
+    def test_saida_consumo_fefo_primeiro_lote_a_vencer(self):
+        self._entrada_lote("LOTE-TARDE", "4.000", date(2026, 12, 31), "6.00")
+        self._entrada_lote("LOTE-CEDO", "3.000", date(2026, 8, 15), "5.00")
+
+        saida = movimentar_estoque(
+            produto=self.produto,
+            filial=self.filial,
+            tipo=TipoMovimentacaoEstoque.VENDA,
+            quantidade=Decimal("5.000"),
+            usuario=self.usuario,
+            referencia="venda:fefo",
+            custo_unitario=Decimal("5.50"),
+        )
+
+        cedo = LoteEstoque.objects.get(codigo="LOTE-CEDO")
+        tarde = LoteEstoque.objects.get(codigo="LOTE-TARDE")
+        self.assertEqual(cedo.quantidade_atual, Decimal("0.000"))
+        self.assertEqual(tarde.quantidade_atual, Decimal("2.000"))
+        self.assertEqual(
+            list(saida.alocacoes_lote.values_list("lote__codigo", "quantidade")),
+            [("LOTE-CEDO", Decimal("3.000")), ("LOTE-TARDE", Decimal("2.000"))],
+        )
+
+    def test_saldo_legado_sem_lote_continua_utilizavel(self):
+        Estoque.objects.create(
+            produto=self.produto,
+            filial=self.filial,
+            quantidade_atual=Decimal("10.000"),
+        )
+        self._entrada_lote("LOTE-R", "2.000", date(2026, 10, 10), "5.00")
+
+        saida = movimentar_estoque(
+            produto=self.produto,
+            filial=self.filial,
+            tipo=TipoMovimentacaoEstoque.SAIDA,
+            quantidade=Decimal("5.000"),
+            usuario=self.usuario,
+        )
+
+        self.assertEqual(Estoque.objects.get(produto=self.produto, filial=self.filial).quantidade_atual, Decimal("7.000"))
+        self.assertEqual(LoteEstoque.objects.get().quantidade_atual, Decimal("0.000"))
+        self.assertEqual(saida.alocacoes_lote.aggregate(total=Sum("quantidade"))["total"], Decimal("2.000"))
+
+    def test_saida_de_lote_explicito_sem_saldo_reverte_movimento(self):
+        self._entrada_lote("LOTE-X", "2.000", date(2026, 10, 10), "5.00")
+        estoque = Estoque.objects.get(produto=self.produto, filial=self.filial)
+        estoque.quantidade_atual = Decimal("5.000")
+        estoque.save(update_fields=["quantidade_atual", "atualizado_em"])
+
+        with self.assertRaisesMessage(ValidationError, "Saldo insuficiente no lote"):
+            movimentar_estoque(
+                produto=self.produto,
+                filial=self.filial,
+                tipo=TipoMovimentacaoEstoque.SAIDA,
+                quantidade=Decimal("3.000"),
+                usuario=self.usuario,
+                codigo_lote="LOTE-X",
+            )
+
+        self.assertEqual(Estoque.objects.get(produto=self.produto, filial=self.filial).quantidade_atual, Decimal("5.000"))
+        self.assertEqual(LoteEstoque.objects.get().quantidade_atual, Decimal("2.000"))
+        self.assertEqual(MovimentacaoEstoque.objects.count(), 1)
+
+    def test_painel_exibe_alertas_de_validade(self):
+        self._entrada_lote("LOTE-VENCIDO", "1.000", timezone.localdate() - timedelta(days=1), "5.00")
+        self._entrada_lote("LOTE-PROXIMO", "1.000", timezone.localdate() + timedelta(days=10), "5.00")
+
+        response = self.client.get("/estoque/lotes/")
+
+        self.assertContains(response, "Lotes e validades")
+        self.assertContains(response, "Vencidos com saldo")
+        self.assertContains(response, "Vencem em 30 dias")
+        self.assertEqual(response.context["resumo_lotes"]["vencidos"], 1)
+        self.assertEqual(response.context["resumo_lotes"]["proximos"], 1)
+
+    def test_atribuicao_historica_nao_altera_saldo_e_respeita_limite_sem_lote(self):
+        estoque = Estoque.objects.create(
+            produto=self.produto,
+            filial=self.filial,
+            quantidade_atual=Decimal("10.000"),
+        )
+
+        lote = atribuir_saldo_historico_lote(
+            estoque=estoque,
+            codigo="HIST-01",
+            quantidade=Decimal("6.000"),
+            custo_unitario=Decimal("4.80"),
+            usuario=self.usuario,
+            motivo="Contagem fisica por lote",
+            validade=date(2026, 12, 31),
+        )
+
+        estoque.refresh_from_db()
+        self.assertEqual(estoque.quantidade_atual, Decimal("10.000"))
+        self.assertEqual(lote.quantidade_atual, Decimal("6.000"))
+        self.assertEqual(lote.origem_referencia, f"atribuicao_historico:estoque:{estoque.id}")
+        self.assertTrue(LogAuditoria.objects.filter(acao="ATRIBUICAO_SALDO_HISTORICO_LOTE").exists())
+        with self.assertRaisesMessage(ValidationError, "excede o saldo sem lote"):
+            atribuir_saldo_historico_lote(
+                estoque=estoque,
+                codigo="HIST-02",
+                quantidade=Decimal("5.000"),
+                custo_unitario=Decimal("4.90"),
+                usuario=self.usuario,
+                motivo="Excesso",
+            )
+
+    def test_tela_reconciliacao_exige_autorizacao_e_atribui_lote(self):
+        estoque = Estoque.objects.create(
+            produto=self.produto,
+            filial=self.filial,
+            quantidade_atual=Decimal("4.000"),
+        )
+        painel = self.client.get("/estoque/lotes/reconciliacao/")
+        self.assertContains(painel, "Reconciliação de lotes")
+        self.assertContains(painel, "4")
+
+        response = self.client.post(
+            f"/estoque/lotes/reconciliacao/{estoque.pk}/atribuir/",
+            {
+                "codigo": "TELA-01",
+                "quantidade": "2.000",
+                "custo_unitario": "5.00",
+                "fabricacao": "",
+                "validade": "2026-12-31",
+                "motivo": "Conferencia no deposito",
+                "supervisor_usuario": self.usuario.username,
+                "supervisor_senha": "123",
+            },
+            follow=True,
+        )
+
+        self.assertContains(response, "Saldo atribuido ao lote TELA-01")
+        self.assertEqual(LoteEstoque.objects.get().quantidade_atual, Decimal("2.000"))
+        self.assertEqual(Estoque.objects.get().quantidade_atual, Decimal("4.000"))
+
+    def test_inventario_reduz_lotes_somente_quando_rastreado_excede_novo_saldo(self):
+        estoque = Estoque.objects.create(
+            produto=self.produto,
+            filial=self.filial,
+            quantidade_atual=Decimal("10.000"),
+        )
+        atribuir_saldo_historico_lote(
+            estoque=estoque,
+            codigo="INV-CEDO",
+            quantidade=Decimal("3.000"),
+            custo_unitario=Decimal("5.00"),
+            usuario=self.usuario,
+            motivo="Base inventario",
+            validade=date(2026, 8, 31),
+        )
+        atribuir_saldo_historico_lote(
+            estoque=estoque,
+            codigo="INV-TARDE",
+            quantidade=Decimal("3.000"),
+            custo_unitario=Decimal("6.00"),
+            usuario=self.usuario,
+            motivo="Base inventario",
+            validade=date(2026, 12, 31),
+        )
+        inventario = InventarioEstoque.objects.create(
+            filial=self.filial,
+            usuario=self.usuario,
+            descricao="Contagem com lotes",
+        )
+        ItemInventarioEstoque.objects.create(
+            inventario=inventario,
+            produto=self.produto,
+            quantidade_sistema=Decimal("10.000"),
+            quantidade_contada=Decimal("3.000"),
+            diferenca=Decimal("-7.000"),
+        )
+
+        aplicar_inventario(inventario=inventario, usuario=self.usuario)
+
+        inventario.refresh_from_db()
+        cedo = LoteEstoque.objects.get(codigo="INV-CEDO")
+        tarde = LoteEstoque.objects.get(codigo="INV-TARDE")
+        movimento = MovimentacaoEstoque.objects.get(referencia=f"inventario:{inventario.id}")
+        self.assertEqual(inventario.status, StatusInventario.APLICADO)
+        self.assertEqual(cedo.quantidade_atual, Decimal("0.000"))
+        self.assertEqual(tarde.quantidade_atual, Decimal("3.000"))
+        self.assertEqual(movimento.alocacoes_lote.aggregate(total=Sum("quantidade"))["total"], Decimal("3.000"))
+
+    def test_aumento_de_inventario_permanece_sem_lote(self):
+        estoque = Estoque.objects.create(
+            produto=self.produto,
+            filial=self.filial,
+            quantidade_atual=Decimal("2.000"),
+        )
+        inventario = InventarioEstoque.objects.create(
+            filial=self.filial,
+            usuario=self.usuario,
+            descricao="Aumento sem lote presumido",
+        )
+        ItemInventarioEstoque.objects.create(
+            inventario=inventario,
+            produto=self.produto,
+            quantidade_sistema=Decimal("2.000"),
+            quantidade_contada=Decimal("5.000"),
+            diferenca=Decimal("3.000"),
+        )
+
+        aplicar_inventario(inventario=inventario, usuario=self.usuario)
+
+        estoque.refresh_from_db()
+        self.assertEqual(estoque.quantidade_atual, Decimal("5.000"))
+        self.assertEqual(LoteEstoque.objects.count(), 0)
+
+    def test_desmembramento_consome_origem_cria_destino_e_cancela_lotes(self):
+        destino = Produto.objects.create(
+            codigo_barras="7896345678999",
+            nome="Destino rastreado",
+            categoria=self.categoria,
+            preco_custo=Decimal("0.00"),
+            preco_venda=Decimal("3.00"),
+        )
+        self._entrada_lote("ORIGEM-01", "2.000", date(2026, 9, 30), "5.00")
+
+        desmembramento = confirmar_desmembramento_multidestino(
+            filial=self.filial,
+            produto_origem=self.produto,
+            quantidade_origem=Decimal("1.000"),
+            destinos=[{
+                "produto": destino,
+                "quantidade": Decimal("4.000"),
+                "lote": "DESTINO-01",
+                "validade": date(2026, 8, 31),
+            }],
+            usuario=self.usuario,
+            motivo="Transformacao rastreada",
+        )
+
+        origem = LoteEstoque.objects.get(codigo="ORIGEM-01")
+        lote_destino = LoteEstoque.objects.get(codigo="DESTINO-01")
+        movimento_origem = MovimentacaoEstoque.objects.get(
+            referencia=f"desmembramento:{desmembramento.id}:origem"
+        )
+        self.assertEqual(origem.quantidade_atual, Decimal("1.000"))
+        self.assertEqual(lote_destino.quantidade_atual, Decimal("4.000"))
+        self.assertEqual(movimento_origem.alocacoes_lote.get().lote, origem)
+
+        cancelar_desmembramento_produto(
+            desmembramento=desmembramento,
+            usuario=self.usuario,
+            motivo="Cancelar teste rastreado",
+        )
+
+        origem.refresh_from_db()
+        lote_destino.refresh_from_db()
+        self.assertEqual(origem.quantidade_atual, Decimal("2.000"))
+        self.assertEqual(lote_destino.quantidade_atual, Decimal("0.000"))
+        retorno = MovimentacaoEstoque.objects.get(
+            referencia=f"desmembramento:{desmembramento.id}:cancelamento:origem"
+        )
+        self.assertEqual(retorno.alocacoes_lote.get().lote, origem)
+
+    def test_producao_consome_componentes_fefo_e_cancelamento_restaura_camadas(self):
+        produto_final = Produto.objects.create(
+            codigo_barras="7896345678988",
+            nome="Produto final rastreado",
+            categoria=self.categoria,
+            preco_custo=Decimal("0.00"),
+            preco_venda=Decimal("12.00"),
+        )
+        composicao = ComposicaoProduto.objects.create(
+            empresa=self.empresa,
+            filial=self.filial,
+            produto_final=produto_final,
+            quantidade_final=Decimal("1.000"),
+            observacao="Composicao rastreada",
+        )
+        ItemComposicaoProduto.objects.create(
+            composicao=composicao,
+            produto_componente=self.produto,
+            quantidade=Decimal("1.000"),
+        )
+        self._entrada_lote("COMP-01", "5.000", date(2026, 10, 31), "5.00")
+
+        producao = confirmar_producao_composicao(
+            composicao=composicao,
+            filial=self.filial,
+            quantidade_final=Decimal("2.000"),
+            usuario=self.usuario,
+            motivo="Produzir lote de teste",
+        )
+
+        lote = LoteEstoque.objects.get(codigo="COMP-01")
+        movimento_consumo = MovimentacaoEstoque.objects.get(
+            referencia=f"composicao:{producao.id}:componente:{self.produto.id}"
+        )
+        self.assertEqual(lote.quantidade_atual, Decimal("3.000"))
+        self.assertEqual(movimento_consumo.alocacoes_lote.get().quantidade, Decimal("2.000"))
+
+        cancelar_producao_composicao(
+            producao=producao,
+            usuario=self.usuario,
+            motivo="Cancelar producao rastreada",
+        )
+
+        lote.refresh_from_db()
+        self.assertEqual(lote.quantidade_atual, Decimal("5.000"))
+        reversao = MovimentacaoEstoque.objects.get(
+            referencia=f"composicao:{producao.id}:cancelamento:componente:{producao.itens.get().id}"
+        )
+        self.assertEqual(reversao.alocacoes_lote.get().quantidade, Decimal("2.000"))

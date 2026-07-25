@@ -128,6 +128,16 @@ CHECKLIST_GRUPOS = [
         ],
     },
     {
+        "titulo": "Escopo original a decidir",
+        "descricao": "Itens previstos nos documentos iniciais que não devem desaparecer do roadmap sem uma decisão explícita de produto.",
+        "itens": [
+            ("Recuperação de senha", "partial", "Fluxo seguro por e-mail implementado com resposta pública neutra, link temporário de uso único, validação de senha do Django, telas próprias e configuração SMTP por ambiente. Em desenvolvimento, o backend de console permite testar sem provedor externo. Falta configurar e homologar o SMTP real de produção para concluir o item."),
+            ("Cotação e pedido de compra", "done", "Ciclo prévio completo com cotação por filial e itens, abertura controlada, propostas únicas por fornecedor, preços e disponibilidade por produto, comparação de totais e prazos e seleção auditada da proposta. A proposta escolhida gera pedido em rascunho sem estoque ou financeiro. O pedido possui envio, cancelamento e conversão única em entrada vinculada; excluir a entrada enquanto rascunho reabre o pedido. Somente a finalização da entrada usa o serviço existente para movimentar estoque e criar financeiro."),
+            ("Importação de XML de entrada", "done", "Importação segura de NF-e autorizada implementada com limite de arquivo, bloqueio de DTD/entidades, validação da chave e prevenção de duplicidade. O sistema identifica fornecedor e filial por CNPJ, associa todos os produtos por GTIN ou código cadastrado e rejeita integralmente arquivos com itens sem correspondência. A NF-e cria somente uma entrada em rascunho auditada para revisão, separa total dos produtos do total fiscal usado no financeiro e não movimenta estoque ou contas antes da finalização pelo fluxo existente."),
+            ("Estoque geral por lote, validade e custo histórico", "partial", "Camada retrocompatível implementada sem substituir o saldo agregado: entradas manuais, compras e NF-e com grupo rastro podem gerar lotes com fabricação, validade, quantidade e custo histórico; saídas e vendas consomem as camadas por FEFO e registram a alocação por movimento. O painel lista saldos, vencidos e itens a vencer em 30 dias, enquanto estoque legado sem lote continua utilizável. A reconciliação permite atribuir saldo histórico a lotes com limite, autorização, motivo e auditoria sem alterar o físico; reduções de inventário ajustam camadas somente quando o rastreado excederia a nova contagem, e aumentos permanecem sem lote até atribuição explícita. Produção e desmembramento agora consomem lotes de componentes/origens por FEFO, criam camadas nos destinos identificados e seus cancelamentos restauram as alocações originais de forma transacional. Para concluir, falta definir e aplicar a política de lote obrigatório por produto sem bloquear o legado."),
+        ],
+    },
+    {
         "titulo": "Próximas fases",
         "descricao": "Itens previstos na documentacao, ainda fora do MVP atual.",
         "itens": [

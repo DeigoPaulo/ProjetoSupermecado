@@ -1,0 +1,59 @@
+{% extends "base.html" %}
+
+{% block title %}Pedido de compra{% endblock %}
+
+{% block content %}
+<header class="page-header">
+  <div>
+    <h1>{% if pedido %}Editar pedido {{ pedido.id }}{% else %}Novo pedido de compra{% endif %}</h1>
+    <p>Prepare os itens e custos previstos antes de enviar ao fornecedor.</p>
+  </div>
+</header>
+
+<form method="post" class="panel purchase-form">
+  {% csrf_token %}
+  <section class="form-section purchase-section">
+    <div class="form-section-header">
+      <h2>Dados do pedido</h2>
+      <p>O pedido é apenas planejamento e não altera o saldo ou o financeiro.</p>
+    </div>
+    <div class="form-grid purchase-head">
+      {% for field in form %}
+        <label class="form-field {% if field.name == 'observacoes' %}span-2{% endif %}">
+          <span>{{ field.label }}</span>
+          {{ field }}
+          {% if field.errors %}<small class="field-error">{{ field.errors|striptags }}</small>{% endif %}
+        </label>
+      {% endfor %}
+    </div>
+  </section>
+
+  <section class="form-section purchase-section">
+    <div class="form-section-header">
+      <h2>Itens solicitados</h2>
+      <p>Informe produto, quantidade e custo unitário previsto. Um produto deve aparecer apenas uma vez.</p>
+    </div>
+    {{ formset.management_form }}
+    {% if formset.non_form_errors %}<div class="message error">{{ formset.non_form_errors|striptags }}</div>{% endif %}
+    <div class="purchase-items">
+      {% for item_form in formset %}
+        <div class="purchase-item-row">
+          {% for hidden in item_form.hidden_fields %}{{ hidden }}{% endfor %}
+          {% for field in item_form.visible_fields %}
+            <label class="form-field">
+              <span>{{ field.label }}</span>
+              {{ field }}
+              {% if field.errors %}<small class="field-error">{{ field.errors|striptags }}</small>{% endif %}
+            </label>
+          {% endfor %}
+        </div>
+      {% endfor %}
+    </div>
+  </section>
+
+  <div class="form-actions purchase-actions">
+    <a class="secondary-button" href="{% if pedido %}{% url 'compras:pedido_detalhe' pedido.pk %}{% else %}{% url 'compras:pedidos' %}{% endif %}">Cancelar</a>
+    <button class="primary-button" type="submit">Salvar rascunho</button>
+  </div>
+</form>
+{% endblock %}

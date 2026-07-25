@@ -9,8 +9,11 @@
     <p>Entradas de mercadoria por fornecedor. Rascunhos nao alteram estoque; entradas finalizadas aumentam o saldo.</p>
   </div>
   <div class="actions">
+    <a class="secondary-button" href="{% url 'compras:cotacoes' %}"><i class="fa-solid fa-scale-balanced"></i> Cotações</a>
+    <a class="secondary-button" href="{% url 'compras:pedidos' %}"><i class="fa-solid fa-clipboard-list"></i> Pedidos de compra</a>
     <a class="secondary-button" href="{% url 'compras:csv' %}?{{ request.GET.urlencode }}"><i class="fa-solid fa-file-csv"></i> Excel/CSV</a>
     <a class="secondary-button" href="{% url 'compras:imprimir' %}?{{ request.GET.urlencode }}" target="_blank"><i class="fa-solid fa-file-pdf"></i> PDF</a>
+    <a class="secondary-button" href="{% url 'compras:importar_xml' %}"><i class="fa-solid fa-file-code"></i> Importar XML</a>
     <a class="primary-button" href="{% url 'compras:nova' %}">
       <i class="fa-solid fa-circle-plus"></i> Nova entrada
     </a>

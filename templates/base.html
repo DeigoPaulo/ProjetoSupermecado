@@ -46,6 +46,7 @@
               <summary><i class="fa-solid fa-warehouse"></i> Estoque e compras</summary>
               {% if access.estoque %}
                 <a href="{% url 'estoque:lista' %}"><i class="fa-solid fa-warehouse"></i> Estoque</a>
+                <a href="{% url 'estoque:lotes' %}"><i class="fa-solid fa-boxes-stacked"></i> Lotes e validades</a>
                 <a href="{% url 'estoque:inventarios' %}"><i class="fa-solid fa-clipboard-check"></i> Inventários</a>
                 <a href="{% url 'estoque:perdas' %}"><i class="fa-solid fa-triangle-exclamation"></i> Perdas</a>
                 <a href="{% url 'estoque:desmembramentos' %}"><i class="fa-solid fa-code-branch"></i> Desmembramentos</a>
@@ -57,6 +58,8 @@
               {% endif %}
               {% if access.compras %}
                 <a href="{% url 'compras:lista' %}"><i class="fa-solid fa-cart-flatbed"></i> Compras</a>
+                <a href="{% url 'compras:cotacoes' %}"><i class="fa-solid fa-scale-balanced"></i> Cotações</a>
+                <a href="{% url 'compras:pedidos' %}"><i class="fa-solid fa-clipboard-list"></i> Pedidos de compra</a>
               {% endif %}
             </details>
           {% endif %}

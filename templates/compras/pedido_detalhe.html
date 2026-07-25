@@ -1,0 +1,84 @@
+{% extends "base.html" %}
+
+{% block title %}Pedido {{ pedido.id }}{% endblock %}
+
+{% block content %}
+<header class="page-header">
+  <div>
+    <h1>Pedido de compra {{ pedido.id }}</h1>
+    <p>{{ pedido.fornecedor }} - {{ pedido.filial }}</p>
+  </div>
+  <div class="actions">
+    {% if pedido.status == "RASCUNHO" %}<a class="secondary-button" href="{% url 'compras:pedido_editar' pedido.pk %}">Editar</a>{% endif %}
+    <a class="secondary-button" href="{% url 'compras:pedidos' %}">Voltar</a>
+  </div>
+</header>
+
+<section class="metrics-grid">
+  <article class="metric"><span>Status</span><strong>{{ pedido.get_status_display }}</strong></article>
+  <article class="metric"><span>Total previsto</span><strong>R$ {{ pedido.total_previsto|floatformat:2 }}</strong></article>
+  <article class="metric"><span>Referência</span><strong>{{ pedido.referencia|default:"-" }}</strong></article>
+  <article class="metric"><span>Previsão</span><strong>{{ pedido.previsao_entrega|date:"d/m/Y"|default:"-" }}</strong></article>
+</section>
+
+<section class="operation-notice">
+  Este pedido não movimenta estoque e não cria conta a pagar. O recebimento continua sendo registrado em Entradas de compra.
+</section>
+
+{% if pedido.status == "RASCUNHO" %}
+  <section class="panel mt-panel">
+    <div class="panel-title">Enviar ao fornecedor</div>
+    <form method="post" action="{% url 'compras:pedido_enviar' pedido.pk %}" class="form-confirm" data-msg="Marcar este pedido como enviado ao fornecedor?">
+      {% csrf_token %}
+      <button class="primary-button" type="submit">Marcar como enviado</button>
+    </form>
+  </section>
+{% endif %}
+
+{% if pedido.status == "ENVIADO" %}
+  <section class="panel mt-panel">
+    <div class="panel-title">Gerar entrada de compra</div>
+    <p>Os dados serão copiados para uma entrada em rascunho. Estoque e financeiro só serão alterados quando essa entrada for finalizada.</p>
+    <form method="post" action="{% url 'compras:pedido_gerar_entrada' pedido.pk %}" class="form-confirm" data-msg="Gerar uma entrada em rascunho a partir deste pedido?">
+      {% csrf_token %}
+      <button class="primary-button" type="submit">Gerar entrada em rascunho</button>
+    </form>
+  </section>
+{% elif pedido.status == "CONVERTIDO" and pedido.entrada_gerada %}
+  <section class="operation-notice">
+    Este pedido gerou a entrada de compra
+    <a href="{% url 'compras:detalhe' pedido.entrada_gerada.pk %}">#{{ pedido.entrada_gerada.pk }}</a>.
+  </section>
+{% endif %}
+
+{% if pedido.status == "RASCUNHO" or pedido.status == "ENVIADO" %}
+  <section class="panel mt-panel">
+    <div class="panel-title">Cancelar pedido</div>
+    <form method="post" action="{% url 'compras:pedido_cancelar' pedido.pk %}" class="form-grid form-confirm" data-msg="Cancelar este pedido de compra?">
+      {% csrf_token %}
+      <label class="form-field span-2"><span>Motivo</span><input type="text" name="motivo" required></label>
+      <div class="form-actions"><button class="secondary-button" type="submit">Cancelar pedido</button></div>
+    </form>
+  </section>
+{% endif %}
+
+<div class="panel">
+  <div class="panel-title">Itens solicitados</div>
+  <table>
+    <thead><tr><th>Produto</th><th>Quantidade</th><th>Custo unitário previsto</th><th>Total previsto</th></tr></thead>
+    <tbody>
+      {% for item in pedido.itens.all %}
+        <tr>
+          <td>{{ item.produto }}</td>
+          <td>{{ item.quantidade|quantidade_br }}</td>
+          <td>R$ {{ item.custo_unitario_previsto|floatformat:2 }}</td>
+          <td>R$ {{ item.total_previsto|floatformat:2 }}</td>
+        </tr>
+      {% empty %}
+        <tr><td colspan="4" class="empty">Nenhum item informado.</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% if pedido.observacoes %}<div class="panel-subtitle">Observações</div><p>{{ pedido.observacoes|linebreaksbr }}</p>{% endif %}
+</div>
+{% endblock %}

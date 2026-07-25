@@ -1,0 +1,55 @@
+{% extends "base.html" %}
+
+{% block title %}Proposta da cotação {{ cotacao.id }}{% endblock %}
+
+{% block content %}
+<header class="page-header">
+  <div>
+    <h1>Registrar proposta</h1>
+    <p>Cotação {{ cotacao.id }} - {{ cotacao.referencia|default:cotacao.filial }}</p>
+  </div>
+</header>
+
+<form method="post" class="panel purchase-form">
+  {% csrf_token %}
+  <section class="form-section purchase-section">
+    <div class="form-section-header"><h2>Fornecedor e prazo</h2></div>
+    <div class="form-grid purchase-head">
+      {% for field in form %}
+        <label class="form-field {% if field.name == 'observacoes' %}span-2{% endif %}">
+          <span>{{ field.label }}</span>{{ field }}
+          {% if field.errors %}<small class="field-error">{{ field.errors|striptags }}</small>{% endif %}
+        </label>
+      {% endfor %}
+    </div>
+  </section>
+
+  <section class="form-section purchase-section">
+    <div class="form-section-header">
+      <h2>Preços por item</h2>
+      <p>Desmarque disponível quando o fornecedor não puder atender um produto.</p>
+    </div>
+    {{ formset.management_form }}
+    <div class="panel">
+      <table>
+        <thead><tr><th>Produto</th><th>Quantidade</th><th>Disponível</th><th>Custo unitário</th></tr></thead>
+        <tbody>
+          {% for preco_form in formset %}
+            <tr>
+              <td>{{ preco_form.item }}{{ preco_form.item_obj.produto }}</td>
+              <td>{{ preco_form.item_obj.quantidade|quantidade_br }}</td>
+              <td>{{ preco_form.disponivel }} {{ preco_form.disponivel.errors }}</td>
+              <td>{{ preco_form.custo_unitario }}{% if preco_form.custo_unitario.errors %}<small class="field-error">{{ preco_form.custo_unitario.errors|striptags }}</small>{% endif %}</td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <div class="form-actions purchase-actions">
+    <a class="secondary-button" href="{% url 'compras:cotacao_detalhe' cotacao.pk %}">Cancelar</a>
+    <button class="primary-button" type="submit">Salvar proposta</button>
+  </div>
+</form>
+{% endblock %}

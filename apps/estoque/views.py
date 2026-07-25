@@ -24,6 +24,7 @@ from apps.produtos.models import Produto
 from .forms import (
     ComposicaoProdutoForm,
     ConfiguracaoSLASetorProducaoForm,
+    AtribuirSaldoLoteForm,
     DesmembramentoDestinoFormSet,
     DesmembramentoProdutoForm,
     InventarioEstoqueForm,
@@ -44,6 +45,7 @@ from .models import (
     HistoricoEtapaOrdemProducaoComposicao,
     InventarioEstoque,
     ItemDesmembramentoProduto,
+    LoteEstoque,
     OrdemProducaoComposicao,
     PerdaEstoque,
     ProducaoComposicaoProduto,
@@ -57,6 +59,7 @@ from .models import (
 )
 from .services import (
     aplicar_inventario,
+    atribuir_saldo_historico_lote,
     cancelar_producao_composicao,
     cancelar_ordem_producao_composicao,
     cancelar_desmembramento_produto,
@@ -65,6 +68,7 @@ from .services import (
     confirmar_desmembramento_simples,
     confirmar_producao_composicao,
     registrar_perda_estoque,
+    saldo_rastreado_lotes,
     simular_desmembramento_multidestino,
     simular_desmembramento_simples,
 )
@@ -187,6 +191,117 @@ class EstoqueListView(LoginRequiredMixin, RoleRequiredMixin, ListView):
         if termo:
             queryset = queryset.filter(produto__nome__icontains=termo) | queryset.filter(produto__codigo_barras__icontains=termo)
         return queryset
+
+
+class LoteEstoqueListView(LoginRequiredMixin, RoleRequiredMixin, ListView):
+    required_roles = ESTOQUE
+    model = LoteEstoque
+    template_name = "estoque/lote_list.html"
+    context_object_name = "lotes"
+    paginate_by = 40
+
+    def get_queryset(self):
+        queryset = LoteEstoque.objects.select_related("produto", "filial", "filial__empresa")
+        termo = (self.request.GET.get("q") or "").strip()
+        if termo:
+            queryset = queryset.filter(
+                Q(codigo__icontains=termo)
+                | Q(produto__nome__icontains=termo)
+                | Q(produto__codigo_barras__icontains=termo)
+            )
+        situacao = self.request.GET.get("situacao")
+        hoje = timezone.localdate()
+        if situacao == "VENCIDO":
+            queryset = queryset.filter(validade__lt=hoje, quantidade_atual__gt=0)
+        elif situacao == "PROXIMO":
+            queryset = queryset.filter(
+                validade__gte=hoje,
+                validade__lte=hoje + timedelta(days=30),
+                quantidade_atual__gt=0,
+            )
+        elif situacao == "COM_SALDO":
+            queryset = queryset.filter(quantidade_atual__gt=0)
+        return queryset
+
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        hoje = timezone.localdate()
+        base = LoteEstoque.objects.filter(quantidade_atual__gt=0)
+        context["resumo_lotes"] = {
+            "com_saldo": base.count(),
+            "vencidos": base.filter(validade__lt=hoje).count(),
+            "proximos": base.filter(validade__gte=hoje, validade__lte=hoje + timedelta(days=30)).count(),
+            "sem_validade": base.filter(validade__isnull=True).count(),
+        }
+        return context
+
+
+@login_required
+@role_required(*ESTOQUE)
+def reconciliacao_lotes(request):
+    estoques = list(
+        Estoque.objects.select_related("produto", "filial", "filial__empresa").order_by(
+            "produto__nome", "filial__nome"
+        )
+    )
+    termo = (request.GET.get("q") or "").strip()
+    if termo:
+        termo_normalizado = termo.casefold()
+        estoques = [
+            estoque
+            for estoque in estoques
+            if termo_normalizado in estoque.produto.nome.casefold()
+            or termo_normalizado in estoque.produto.codigo_barras.casefold()
+            or termo_normalizado in estoque.filial.nome.casefold()
+        ]
+    linhas = []
+    for estoque in estoques:
+        rastreado = saldo_rastreado_lotes(produto=estoque.produto, filial=estoque.filial)
+        sem_lote = estoque.quantidade_atual - rastreado
+        if sem_lote > 0:
+            linhas.append({"estoque": estoque, "rastreado": rastreado, "sem_lote": sem_lote})
+    return render(request, "estoque/reconciliacao_lotes.html", {"linhas": linhas})
+
+
+@login_required
+@role_required(*ESTOQUE)
+def atribuir_saldo_lote(request, pk):
+    estoque = get_object_or_404(
+        Estoque.objects.select_related("produto", "filial", "filial__empresa"),
+        pk=pk,
+    )
+    rastreado = saldo_rastreado_lotes(produto=estoque.produto, filial=estoque.filial)
+    saldo_sem_lote = estoque.quantidade_atual - rastreado
+    if request.method == "POST":
+        form = AtribuirSaldoLoteForm(request.POST)
+        if form.is_valid():
+            try:
+                supervisor = supervisor_from_request(request)
+                lote = atribuir_saldo_historico_lote(
+                    estoque=estoque,
+                    usuario=request.user,
+                    supervisor=supervisor,
+                    ip=request.META.get("REMOTE_ADDR"),
+                    **form.cleaned_data,
+                )
+            except ValidationError as exc:
+                for mensagem in exc.messages:
+                    form.add_error(None, mensagem)
+            else:
+                messages.success(request, f"Saldo atribuido ao lote {lote.codigo} sem alterar o estoque agregado.")
+                return redirect("estoque:reconciliacao_lotes")
+    else:
+        form = AtribuirSaldoLoteForm(initial={"custo_unitario": estoque.produto.preco_custo})
+    return render(
+        request,
+        "estoque/atribuicao_lote_form.html",
+        {
+            "estoque": estoque,
+            "saldo_rastreado": rastreado,
+            "saldo_sem_lote": saldo_sem_lote,
+            "form": form,
+        },
+    )
 
 
 @login_required

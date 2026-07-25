@@ -21,9 +21,37 @@ from apps.auditoria.models import LogAuditoria
 from apps.estoque.models import Estoque, MovimentacaoEstoque
 from apps.financeiro.models import ContaFinanceira, StatusContaFinanceira
 
-from .forms import EntradaCompraForm, ItemEntradaCompraFormSet
-from .models import EntradaCompra, StatusEntradaCompra
-from .services import cancelar_entrada_compra, finalizar_entrada_compra
+from .forms import (
+    CotacaoCompraForm,
+    EntradaCompraForm,
+    ImportarXMLEntradaForm,
+    ItemCotacaoCompraFormSet,
+    ItemEntradaCompraFormSet,
+    ItemPedidoCompraFormSet,
+    PedidoCompraForm,
+    PrecoRespostaCotacaoFormSet,
+    RespostaCotacaoFornecedorForm,
+)
+from .models import (
+    CotacaoCompra,
+    EntradaCompra,
+    PedidoCompra,
+    PrecoRespostaCotacao,
+    RespostaCotacaoFornecedor,
+    StatusCotacaoCompra,
+    StatusEntradaCompra,
+    StatusPedidoCompra,
+)
+from .services import (
+    abrir_cotacao_compra,
+    cancelar_entrada_compra,
+    cancelar_pedido_compra,
+    converter_pedido_em_entrada,
+    enviar_pedido_compra,
+    finalizar_entrada_compra,
+    gerar_pedido_da_resposta,
+)
+from .services_xml import importar_xml_entrada
 
 
 FINANCEIRO_CHOICES = [
@@ -33,6 +61,354 @@ FINANCEIRO_CHOICES = [
     ("VENCIDA", "Conta vencida"),
     ("SEM_CONTA", "Sem conta financeira"),
 ]
+
+
+@login_required
+@role_required(*COMPRAS)
+def importar_xml(request):
+    form = ImportarXMLEntradaForm(request.POST or None, request.FILES or None)
+    if request.method == "POST" and form.is_valid():
+        try:
+            entrada = importar_xml_entrada(
+                form.cleaned_data["arquivo_xml"].read(),
+                usuario=request.user,
+                gerar_conta_financeira=form.cleaned_data["gerar_conta_financeira"],
+                ip=request.META.get("REMOTE_ADDR"),
+            )
+        except ValidationError as exc:
+            for mensagem in exc.messages:
+                form.add_error("arquivo_xml", mensagem)
+        else:
+            messages.success(
+                request,
+                "NF-e importada como rascunho. Revise todos os dados antes de finalizar.",
+            )
+            return redirect("compras:editar", pk=entrada.pk)
+    return render(request, "compras/entrada_importar_xml.html", {"form": form})
+
+
+@login_required
+@role_required(*COMPRAS)
+def cotacoes_compra_lista(request):
+    cotacoes = CotacaoCompra.objects.select_related("filial", "usuario").prefetch_related("itens", "respostas")
+    termo = (request.GET.get("q") or "").strip()
+    if termo:
+        cotacoes = cotacoes.filter(Q(referencia__icontains=termo) | Q(filial__nome__icontains=termo))
+    status = (request.GET.get("status") or "").strip()
+    if status in dict(StatusCotacaoCompra.choices):
+        cotacoes = cotacoes.filter(status=status)
+    por_status = {
+        item["status"]: item["quantidade"]
+        for item in CotacaoCompra.objects.values("status").annotate(quantidade=Count("id"))
+    }
+    return render(request, "compras/cotacao_list.html", {
+        "cotacoes": cotacoes,
+        "status_choices": StatusCotacaoCompra.choices,
+        "resumo": {
+            "total": sum(por_status.values()),
+            "rascunhos": por_status.get(StatusCotacaoCompra.RASCUNHO, 0),
+            "abertas": por_status.get(StatusCotacaoCompra.ABERTA, 0),
+            "encerradas": por_status.get(StatusCotacaoCompra.ENCERRADA, 0),
+        },
+    })
+
+
+@login_required
+@role_required(*COMPRAS)
+def cotacao_compra_form(request, pk=None):
+    cotacao = get_object_or_404(CotacaoCompra, pk=pk) if pk else None
+    if cotacao and cotacao.status != StatusCotacaoCompra.RASCUNHO:
+        messages.error(request, "Somente cotacoes em rascunho podem ser editadas.")
+        return redirect("compras:cotacao_detalhe", pk=cotacao.pk)
+
+    form = CotacaoCompraForm(request.POST or None, instance=cotacao)
+    formset = ItemCotacaoCompraFormSet(request.POST or None, instance=cotacao, prefix="itens")
+    if request.method == "POST" and form.is_valid() and formset.is_valid():
+        nova = cotacao is None
+        with transaction.atomic():
+            cotacao = form.save(commit=False)
+            if nova:
+                cotacao.usuario = request.user
+            cotacao.save()
+            formset.instance = cotacao
+            formset.save()
+            LogAuditoria.objects.create(
+                usuario=request.user,
+                modulo="compras",
+                acao="CRIACAO_COTACAO_COMPRA" if nova else "EDICAO_COTACAO_COMPRA",
+                descricao=f"Cotacao de compra {cotacao.id} {'criada' if nova else 'editada'} em rascunho.",
+                objeto_tipo="CotacaoCompra",
+                objeto_id=str(cotacao.id),
+                ip=request.META.get("REMOTE_ADDR"),
+            )
+        messages.success(request, "Cotacao salva como rascunho. Nenhum estoque ou financeiro foi alterado.")
+        return redirect("compras:cotacao_detalhe", pk=cotacao.pk)
+    return render(request, "compras/cotacao_form.html", {"form": form, "formset": formset, "cotacao": cotacao})
+
+
+@login_required
+@role_required(*COMPRAS)
+def cotacao_compra_detalhe(request, pk):
+    cotacao = get_object_or_404(
+        CotacaoCompra.objects.select_related("filial", "usuario")
+        .prefetch_related(
+            "itens__produto",
+            "respostas__fornecedor",
+            "respostas__precos__item__produto",
+        ),
+        pk=pk,
+    )
+    return render(request, "compras/cotacao_detalhe.html", {"cotacao": cotacao})
+
+
+@login_required
+@role_required(*COMPRAS)
+def cotacao_compra_abrir(request, pk):
+    cotacao = get_object_or_404(CotacaoCompra.objects.prefetch_related("itens"), pk=pk)
+    if request.method == "POST":
+        try:
+            abrir_cotacao_compra(cotacao, usuario=request.user, ip=request.META.get("REMOTE_ADDR"))
+        except ValidationError as exc:
+            messages.error(request, " ".join(exc.messages))
+        else:
+            messages.success(request, "Cotacao aberta para registrar propostas de fornecedores.")
+    return redirect("compras:cotacao_detalhe", pk=cotacao.pk)
+
+
+@login_required
+@role_required(*COMPRAS)
+def cotacao_resposta_form(request, pk):
+    cotacao = get_object_or_404(CotacaoCompra.objects.prefetch_related("itens__produto"), pk=pk)
+    if cotacao.status != StatusCotacaoCompra.ABERTA:
+        messages.error(request, "Propostas so podem ser registradas em cotacoes abertas.")
+        return redirect("compras:cotacao_detalhe", pk=cotacao.pk)
+    itens = list(cotacao.itens.all())
+    item_queryset = cotacao.itens.select_related("produto")
+    form = RespostaCotacaoFornecedorForm(request.POST or None)
+    initial = [{"item": item.pk, "disponivel": True} for item in itens]
+    formset = PrecoRespostaCotacaoFormSet(
+        request.POST or None,
+        prefix="precos",
+        initial=None if request.method == "POST" else initial,
+        form_kwargs={"item_queryset": item_queryset},
+    )
+    itens_por_id = {str(item.pk): item for item in itens}
+    for indice, preco_form in enumerate(formset.forms):
+        item_id = (
+            preco_form.data.get(f"{preco_form.prefix}-item")
+            if preco_form.is_bound
+            else str(initial[indice]["item"])
+        )
+        preco_form.item_obj = itens_por_id.get(str(item_id))
+
+    if request.method == "POST" and form.is_valid() and formset.is_valid():
+        linhas = [linha.cleaned_data for linha in formset.forms]
+        ids_recebidos = [linha["item"].pk for linha in linhas]
+        fornecedor = form.cleaned_data["fornecedor"]
+        if cotacao.respostas.filter(fornecedor=fornecedor).exists():
+            form.add_error("fornecedor", "Este fornecedor ja possui proposta nesta cotacao.")
+        elif len(ids_recebidos) != len(set(ids_recebidos)) or set(ids_recebidos) != {item.pk for item in itens}:
+            messages.error(request, "A proposta deve informar exatamente todos os itens da cotacao.")
+        else:
+            try:
+                with transaction.atomic():
+                    resposta = form.save(commit=False)
+                    resposta.cotacao = cotacao
+                    resposta.usuario = request.user
+                    resposta.save()
+                    PrecoRespostaCotacao.objects.bulk_create(
+                        [
+                            PrecoRespostaCotacao(
+                                resposta=resposta,
+                                item=linha["item"],
+                                disponivel=linha["disponivel"],
+                                custo_unitario=linha["custo_unitario"],
+                            )
+                            for linha in linhas
+                        ]
+                    )
+                    LogAuditoria.objects.create(
+                        usuario=request.user,
+                        modulo="compras",
+                        acao="REGISTRO_PROPOSTA_COTACAO",
+                        descricao=f"Proposta de {resposta.fornecedor} registrada na cotacao {cotacao.id}.",
+                        objeto_tipo="CotacaoCompra",
+                        objeto_id=str(cotacao.id),
+                        ip=request.META.get("REMOTE_ADDR"),
+                    )
+            except ValidationError as exc:
+                messages.error(request, " ".join(exc.messages))
+            else:
+                messages.success(request, "Proposta registrada para comparacao.")
+                return redirect("compras:cotacao_detalhe", pk=cotacao.pk)
+    return render(request, "compras/cotacao_resposta_form.html", {
+        "cotacao": cotacao,
+        "form": form,
+        "formset": formset,
+    })
+
+
+@login_required
+@role_required(*COMPRAS)
+def cotacao_selecionar_resposta(request, pk, resposta_pk):
+    cotacao = get_object_or_404(CotacaoCompra, pk=pk)
+    resposta = get_object_or_404(RespostaCotacaoFornecedor, pk=resposta_pk, cotacao=cotacao)
+    if request.method == "POST":
+        try:
+            pedido = gerar_pedido_da_resposta(
+                resposta,
+                usuario=request.user,
+                ip=request.META.get("REMOTE_ADDR"),
+            )
+        except ValidationError as exc:
+            messages.error(request, " ".join(exc.messages))
+        else:
+            messages.success(request, "Proposta selecionada e pedido criado como rascunho.")
+            return redirect("compras:pedido_detalhe", pk=pedido.pk)
+    return redirect("compras:cotacao_detalhe", pk=cotacao.pk)
+
+
+@login_required
+@role_required(*COMPRAS)
+def pedidos_compra_lista(request):
+    pedidos = PedidoCompra.objects.select_related("fornecedor", "filial", "usuario").prefetch_related("itens")
+    termo = (request.GET.get("q") or "").strip()
+    if termo:
+        pedidos = pedidos.filter(
+            Q(referencia__icontains=termo)
+            | Q(fornecedor__razao_social__icontains=termo)
+            | Q(fornecedor__nome_fantasia__icontains=termo)
+        )
+    status = (request.GET.get("status") or "").strip()
+    if status in dict(StatusPedidoCompra.choices):
+        pedidos = pedidos.filter(status=status)
+    por_status = {
+        item["status"]: item["quantidade"]
+        for item in PedidoCompra.objects.values("status").annotate(quantidade=Count("id"))
+    }
+    return render(request, "compras/pedido_list.html", {
+        "pedidos": pedidos,
+        "status_choices": StatusPedidoCompra.choices,
+        "resumo": {
+            "total": sum(por_status.values()),
+            "rascunhos": por_status.get(StatusPedidoCompra.RASCUNHO, 0),
+            "enviados": por_status.get(StatusPedidoCompra.ENVIADO, 0),
+            "convertidos": por_status.get(StatusPedidoCompra.CONVERTIDO, 0),
+            "cancelados": por_status.get(StatusPedidoCompra.CANCELADO, 0),
+        },
+    })
+
+
+@login_required
+@role_required(*COMPRAS)
+def pedido_compra_form(request, pk=None):
+    pedido = get_object_or_404(PedidoCompra, pk=pk) if pk else None
+    if pedido and pedido.status != StatusPedidoCompra.RASCUNHO:
+        messages.error(request, "Somente pedidos em rascunho podem ser editados.")
+        return redirect("compras:pedido_detalhe", pk=pedido.pk)
+
+    form = PedidoCompraForm(request.POST or None, instance=pedido)
+    formset = ItemPedidoCompraFormSet(request.POST or None, instance=pedido, prefix="itens")
+    if request.method == "POST" and form.is_valid() and formset.is_valid():
+        novo = pedido is None
+        with transaction.atomic():
+            pedido = form.save(commit=False)
+            if novo:
+                pedido.usuario = request.user
+            pedido.save()
+            formset.instance = pedido
+            itens = formset.save(commit=False)
+            for item in itens:
+                item.total_previsto = item.quantidade * item.custo_unitario_previsto
+                item.save()
+            for removido in formset.deleted_objects:
+                removido.delete()
+            formset.save_m2m()
+            total = sum((item.total_previsto for item in pedido.itens.all()), 0)
+            pedido.total_previsto = total
+            pedido.save(update_fields=["total_previsto", "updated_at"])
+            LogAuditoria.objects.create(
+                usuario=request.user,
+                modulo="compras",
+                acao="CRIACAO_PEDIDO_COMPRA" if novo else "EDICAO_PEDIDO_COMPRA",
+                descricao=f"Pedido de compra {pedido.id} {'criado' if novo else 'editado'} em rascunho com total previsto R$ {total}.",
+                objeto_tipo="PedidoCompra",
+                objeto_id=str(pedido.id),
+                ip=request.META.get("REMOTE_ADDR"),
+            )
+        messages.success(request, "Pedido de compra salvo como rascunho. Estoque e financeiro nao foram alterados.")
+        return redirect("compras:pedido_detalhe", pk=pedido.pk)
+
+    return render(request, "compras/pedido_form.html", {
+        "form": form,
+        "formset": formset,
+        "pedido": pedido,
+    })
+
+
+@login_required
+@role_required(*COMPRAS)
+def pedido_compra_detalhe(request, pk):
+    pedido = get_object_or_404(
+        PedidoCompra.objects.select_related("fornecedor", "filial", "usuario").prefetch_related("itens__produto"),
+        pk=pk,
+    )
+    return render(request, "compras/pedido_detalhe.html", {"pedido": pedido})
+
+
+@login_required
+@role_required(*COMPRAS)
+def pedido_compra_enviar(request, pk):
+    pedido = get_object_or_404(PedidoCompra.objects.prefetch_related("itens"), pk=pk)
+    if request.method == "POST":
+        try:
+            enviar_pedido_compra(pedido, usuario=request.user, ip=request.META.get("REMOTE_ADDR"))
+        except ValidationError as exc:
+            messages.error(request, " ".join(exc.messages))
+        else:
+            messages.success(request, "Pedido marcado como enviado. Nenhum estoque ou financeiro foi movimentado.")
+    return redirect("compras:pedido_detalhe", pk=pedido.pk)
+
+
+@login_required
+@role_required(*COMPRAS)
+def pedido_compra_cancelar(request, pk):
+    pedido = get_object_or_404(PedidoCompra, pk=pk)
+    if request.method == "POST":
+        try:
+            cancelar_pedido_compra(
+                pedido,
+                usuario=request.user,
+                motivo=request.POST.get("motivo", ""),
+                ip=request.META.get("REMOTE_ADDR"),
+            )
+        except ValidationError as exc:
+            messages.error(request, " ".join(exc.messages))
+        else:
+            messages.success(request, "Pedido de compra cancelado sem alterar estoque ou financeiro.")
+    return redirect("compras:pedido_detalhe", pk=pedido.pk)
+
+
+@login_required
+@role_required(*COMPRAS)
+def pedido_compra_gerar_entrada(request, pk):
+    pedido = get_object_or_404(PedidoCompra.objects.prefetch_related("itens"), pk=pk)
+    if request.method == "POST":
+        try:
+            entrada = converter_pedido_em_entrada(
+                pedido,
+                usuario=request.user,
+                ip=request.META.get("REMOTE_ADDR"),
+            )
+        except ValidationError as exc:
+            messages.error(request, " ".join(exc.messages))
+        else:
+            messages.success(
+                request,
+                "Entrada criada como rascunho. Confira os itens antes de finalizar; estoque e financeiro ainda nao foram alterados.",
+            )
+            return redirect("compras:detalhe", pk=entrada.pk)
+    return redirect("compras:pedido_detalhe", pk=pedido.pk)
 
 
 def entradas_filtradas(params):
@@ -209,7 +585,7 @@ class EntradaCompraDetailView(LoginRequiredMixin, RoleRequiredMixin, DetailView)
     context_object_name = "entrada"
 
     def get_queryset(self):
-        return EntradaCompra.objects.select_related("fornecedor", "filial", "usuario").prefetch_related(
+        return EntradaCompra.objects.select_related("fornecedor", "filial", "usuario", "pedido_origem").prefetch_related(
             "itens__produto",
             "contas_financeiras__lancamentos__conta",
             "contas_financeiras__lancamentos__usuario",
@@ -367,7 +743,7 @@ def cancelar_entrada(request, pk):
 @login_required
 @role_required(*COMPRAS)
 def excluir_rascunho(request, pk):
-    entrada = get_object_or_404(EntradaCompra.objects.prefetch_related("itens"), pk=pk)
+    entrada = get_object_or_404(EntradaCompra.objects.select_related("pedido_origem").prefetch_related("itens"), pk=pk)
     retorno = request.POST.get("next") or reverse("compras:lista")
     if not url_has_allowed_host_and_scheme(retorno, allowed_hosts={request.get_host()}):
         retorno = reverse("compras:lista")
@@ -381,6 +757,7 @@ def excluir_rascunho(request, pk):
     fornecedor = str(entrada.fornecedor)
     total_itens = entrada.itens.count()
     numero_documento = entrada.numero_documento or "-"
+    pedido_origem = entrada.pedido_origem
     LogAuditoria.objects.create(
         usuario=request.user,
         modulo="compras",
@@ -391,6 +768,21 @@ def excluir_rascunho(request, pk):
         ip=request.META.get("REMOTE_ADDR"),
     )
     entrada.delete()
+    if pedido_origem and pedido_origem.status == StatusPedidoCompra.CONVERTIDO:
+        pedido_origem.status = StatusPedidoCompra.ENVIADO
+        pedido_origem.save(update_fields=["status", "updated_at"])
+        LogAuditoria.objects.create(
+            usuario=request.user,
+            modulo="compras",
+            acao="REABERTURA_PEDIDO_APOS_EXCLUSAO_ENTRADA",
+            descricao=(
+                f"Pedido de compra {pedido_origem.id} voltou para enviado apos exclusao "
+                f"da entrada em rascunho {entrada_id}."
+            ),
+            objeto_tipo="PedidoCompra",
+            objeto_id=str(pedido_origem.id),
+            ip=request.META.get("REMOTE_ADDR"),
+        )
     messages.success(request, "Rascunho de compra excluído com sucesso. Nenhum estoque ou financeiro foi movimentado.")
     return redirect(retorno)
 

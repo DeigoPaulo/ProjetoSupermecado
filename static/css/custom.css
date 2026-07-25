@@ -1137,6 +1137,33 @@ input[type="checkbox"] {
   font-weight: 700;
 }
 
+.auth-form {
+  display: grid;
+  gap: 14px;
+}
+
+.auth-copy {
+  margin: 0;
+  color: var(--muted);
+  line-height: 1.5;
+}
+
+.auth-link {
+  color: var(--primary);
+  font-weight: 700;
+  text-align: center;
+  text-decoration: none;
+}
+
+.auth-link:hover {
+  text-decoration: underline;
+}
+
+.auth-button {
+  width: 100%;
+  justify-content: center;
+}
+
 .access-actions {
   display: grid;
   gap: 10px;

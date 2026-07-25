@@ -2,6 +2,7 @@ from decimal import Decimal
 
 from django.core.exceptions import ValidationError
 from django.db import transaction
+from django.db.models import F
 from django.utils import timezone
 
 from apps.auditoria.models import LogAuditoria
@@ -13,7 +14,9 @@ from .models import (
     InventarioEstoque,
     ItemProducaoComposicaoProduto,
     ItemDesmembramentoProduto,
+    LoteEstoque,
     MovimentacaoEstoque,
+    MovimentacaoLoteEstoque,
     OrdemProducaoComposicao,
     PerdaEstoque,
     ProducaoComposicaoProduto,
@@ -25,12 +28,122 @@ from .models import (
     TipoMovimentacaoEstoque,
     TipoPerdaEstoque,
     TipoSaidaDesmembramento,
+    consumir_lotes_movimentacao,
+    criar_lote_movimentacao,
     movimentar_estoque,
+    restaurar_lotes_movimentacao,
 )
 
 
 def _autorizacao_texto(supervisor):
     return f" Autorizado por: {supervisor}." if supervisor else ""
+
+
+def saldo_rastreado_lotes(*, produto, filial, bloquear=False):
+    lotes = LoteEstoque.objects.filter(
+        produto=produto,
+        filial=filial,
+        quantidade_atual__gt=0,
+    )
+    if bloquear:
+        lotes = lotes.select_for_update()
+    return sum((lote.quantidade_atual for lote in lotes), Decimal("0.000"))
+
+
+@transaction.atomic
+def atribuir_saldo_historico_lote(
+    *,
+    estoque,
+    codigo,
+    quantidade,
+    custo_unitario,
+    usuario,
+    motivo,
+    fabricacao=None,
+    validade=None,
+    supervisor=None,
+    ip=None,
+):
+    motivo = (motivo or "").strip()
+    codigo = (codigo or "").strip()
+    if not motivo:
+        raise ValidationError("Informe o motivo da atribuicao.")
+    if not codigo:
+        raise ValidationError("Informe o codigo do lote.")
+    if quantidade <= 0:
+        raise ValidationError("Quantidade deve ser maior que zero.")
+    if custo_unitario < 0:
+        raise ValidationError("Custo unitario nao pode ser negativo.")
+
+    estoque = Estoque.objects.select_for_update().select_related("produto", "filial").get(pk=estoque.pk)
+    lotes_atuais = list(
+        LoteEstoque.objects.select_for_update().filter(
+            produto=estoque.produto,
+            filial=estoque.filial,
+            quantidade_atual__gt=0,
+        )
+    )
+    saldo_rastreado = sum((lote.quantidade_atual for lote in lotes_atuais), Decimal("0.000"))
+    saldo_sem_lote = estoque.quantidade_atual - saldo_rastreado
+    if saldo_sem_lote < quantidade:
+        raise ValidationError(
+            f"A quantidade excede o saldo sem lote disponivel ({saldo_sem_lote})."
+        )
+
+    lote = LoteEstoque(
+        produto=estoque.produto,
+        filial=estoque.filial,
+        codigo=codigo,
+        fabricacao=fabricacao,
+        validade=validade,
+        quantidade_inicial=quantidade,
+        quantidade_atual=quantidade,
+        custo_unitario=custo_unitario,
+        origem_referencia=f"atribuicao_historico:estoque:{estoque.id}",
+    )
+    lote.full_clean()
+    lote.save()
+    LogAuditoria.objects.create(
+        usuario=usuario,
+        modulo="estoque",
+        acao="ATRIBUICAO_SALDO_HISTORICO_LOTE",
+        descricao=(
+            f"{quantidade} de {estoque.produto} / {estoque.filial} atribuido ao lote {codigo} "
+            f"sem alterar o saldo agregado. Motivo: {motivo}.{_autorizacao_texto(supervisor)}"
+        ),
+        objeto_tipo="LoteEstoque",
+        objeto_id=str(lote.id),
+        ip=ip,
+    )
+    return lote
+
+
+def reconciliar_lotes_reducao_inventario(*, produto, filial, saldo_novo, movimentacao):
+    lotes = list(
+        LoteEstoque.objects.select_for_update().filter(
+            produto=produto,
+            filial=filial,
+            quantidade_atual__gt=0,
+        ).order_by(F("validade").asc(nulls_last=True), "criado_em", "id")
+    )
+    saldo_rastreado = sum((lote.quantidade_atual for lote in lotes), Decimal("0.000"))
+    excesso_rastreado = max(saldo_rastreado - saldo_novo, Decimal("0.000"))
+    reduzido = Decimal("0.000")
+    for lote in lotes:
+        if excesso_rastreado <= 0:
+            break
+        quantidade = min(lote.quantidade_atual, excesso_rastreado)
+        lote.quantidade_atual -= quantidade
+        lote.save(update_fields=["quantidade_atual", "atualizado_em"])
+        MovimentacaoLoteEstoque.objects.create(
+            movimentacao=movimentacao,
+            lote=lote,
+            quantidade=quantidade,
+            custo_unitario=lote.custo_unitario,
+        )
+        excesso_rastreado -= quantidade
+        reduzido += quantidade
+    return reduzido
 
 
 @transaction.atomic
@@ -54,7 +167,7 @@ def aplicar_inventario(*, inventario, usuario, supervisor=None, ip=None):
         estoque.save()
 
         if item.diferenca != 0:
-            MovimentacaoEstoque.objects.create(
+            movimentacao = MovimentacaoEstoque.objects.create(
                 produto=item.produto,
                 filial=inventario.filial,
                 tipo=TipoMovimentacaoEstoque.AJUSTE,
@@ -63,6 +176,13 @@ def aplicar_inventario(*, inventario, usuario, supervisor=None, ip=None):
                 referencia=f"inventario:{inventario.id}",
                 usuario=usuario,
             )
+            if item.diferenca < 0:
+                reconciliar_lotes_reducao_inventario(
+                    produto=item.produto,
+                    filial=inventario.filial,
+                    saldo_novo=item.quantidade_contada,
+                    movimentacao=movimentacao,
+                )
 
     inventario.status = StatusInventario.APLICADO
     inventario.aplicado_em = timezone.now()
@@ -181,7 +301,7 @@ def confirmar_producao_composicao(*, composicao, filial, quantidade_final, usuar
         estoque_componente.quantidade_atual -= quantidade_consumida
         estoque_componente.full_clean()
         estoque_componente.save()
-        MovimentacaoEstoque.objects.create(
+        movimento_componente = MovimentacaoEstoque.objects.create(
             produto=produto_componente,
             filial=filial,
             tipo=TipoMovimentacaoEstoque.DESMEMBRAMENTO,
@@ -191,6 +311,10 @@ def confirmar_producao_composicao(*, composicao, filial, quantidade_final, usuar
             custo_unitario=custo_unitario,
             custo_total=custo_item,
             usuario=usuario,
+        )
+        consumir_lotes_movimentacao(
+            movimentacao=movimento_componente,
+            quantidade=quantidade_consumida,
         )
 
     estoque_final, _ = Estoque.objects.select_for_update().get_or_create(produto=composicao.produto_final, filial=filial)
@@ -245,7 +369,7 @@ def cancelar_producao_composicao(*, producao, usuario, motivo, supervisor=None, 
     estoque_final.quantidade_atual -= producao.quantidade_final
     estoque_final.full_clean()
     estoque_final.save()
-    MovimentacaoEstoque.objects.create(
+    movimento_final_cancelamento = MovimentacaoEstoque.objects.create(
         produto=producao.produto_final,
         filial=producao.filial,
         tipo=TipoMovimentacaoEstoque.DESMEMBRAMENTO,
@@ -256,6 +380,12 @@ def cancelar_producao_composicao(*, producao, usuario, motivo, supervisor=None, 
         custo_total=producao.custo_total,
         usuario=usuario,
     )
+    reconciliar_lotes_reducao_inventario(
+        produto=producao.produto_final,
+        filial=producao.filial,
+        saldo_novo=estoque_final.quantidade_atual,
+        movimentacao=movimento_final_cancelamento,
+    )
 
     for item in producao.itens.select_related("produto_componente"):
         estoque_componente, _ = Estoque.objects.select_for_update().get_or_create(
@@ -265,7 +395,7 @@ def cancelar_producao_composicao(*, producao, usuario, motivo, supervisor=None, 
         estoque_componente.quantidade_atual += item.quantidade_consumida
         estoque_componente.full_clean()
         estoque_componente.save()
-        MovimentacaoEstoque.objects.create(
+        movimento_reversao = MovimentacaoEstoque.objects.create(
             produto=item.produto_componente,
             filial=producao.filial,
             tipo=TipoMovimentacaoEstoque.DESMEMBRAMENTO,
@@ -276,6 +406,14 @@ def cancelar_producao_composicao(*, producao, usuario, motivo, supervisor=None, 
             custo_total=item.custo_total,
             usuario=usuario,
         )
+        movimento_origem = MovimentacaoEstoque.objects.filter(
+            referencia=f"composicao:{producao.id}:componente:{item.produto_componente_id}"
+        ).first()
+        if movimento_origem:
+            restaurar_lotes_movimentacao(
+                movimentacao_origem=movimento_origem,
+                movimentacao_reversao=movimento_reversao,
+            )
 
     producao.status = StatusProducaoComposicao.CANCELADO
     producao.cancelado_em = timezone.now()
@@ -403,7 +541,7 @@ def confirmar_desmembramento_multidestino(
     estoque_origem.quantidade_atual -= quantidade_origem
     estoque_origem.full_clean()
     estoque_origem.save()
-    MovimentacaoEstoque.objects.create(
+    movimento_origem = MovimentacaoEstoque.objects.create(
         produto=produto_origem,
         filial=filial,
         tipo=TipoMovimentacaoEstoque.DESMEMBRAMENTO,
@@ -413,6 +551,10 @@ def confirmar_desmembramento_multidestino(
         custo_unitario=custo_origem,
         custo_total=custo_total_origem,
         usuario=usuario,
+    )
+    consumir_lotes_movimentacao(
+        movimentacao=movimento_origem,
+        quantidade=quantidade_origem,
     )
 
     for destino in destinos:
@@ -465,7 +607,7 @@ def confirmar_desmembramento_multidestino(
             estoque_destino.quantidade_atual += quantidade_destino
             estoque_destino.full_clean()
             estoque_destino.save()
-            MovimentacaoEstoque.objects.create(
+            movimento_destino = MovimentacaoEstoque.objects.create(
                 produto=produto_destino,
                 filial=filial,
                 tipo=TipoMovimentacaoEstoque.DESMEMBRAMENTO,
@@ -476,6 +618,14 @@ def confirmar_desmembramento_multidestino(
                 custo_total=custo_total_item,
                 usuario=usuario,
             )
+            if item.lote:
+                criar_lote_movimentacao(
+                    movimentacao=movimento_destino,
+                    codigo_lote=item.lote,
+                    quantidade=quantidade_destino,
+                    custo_unitario=custo_unitario_base,
+                    validade=item.validade,
+                )
 
     LogAuditoria.objects.create(
         usuario=usuario,
@@ -647,7 +797,7 @@ def cancelar_desmembramento_produto(*, desmembramento, usuario, motivo, supervis
         estoque_destino.quantidade_atual -= item.quantidade_gerada
         estoque_destino.full_clean()
         estoque_destino.save()
-        MovimentacaoEstoque.objects.create(
+        movimento_cancelamento = MovimentacaoEstoque.objects.create(
             produto=item.produto_destino,
             filial=desmembramento.filial,
             tipo=TipoMovimentacaoEstoque.DESMEMBRAMENTO,
@@ -658,11 +808,25 @@ def cancelar_desmembramento_produto(*, desmembramento, usuario, motivo, supervis
             custo_total=item.custo_total,
             usuario=usuario,
         )
+        if item.lote:
+            consumir_lotes_movimentacao(
+                movimentacao=movimento_cancelamento,
+                quantidade=item.quantidade_gerada,
+                codigo_lote=item.lote,
+                exigir_lote=True,
+            )
+        else:
+            reconciliar_lotes_reducao_inventario(
+                produto=item.produto_destino,
+                filial=desmembramento.filial,
+                saldo_novo=estoque_destino.quantidade_atual,
+                movimentacao=movimento_cancelamento,
+            )
 
     estoque_origem.quantidade_atual += desmembramento.quantidade_origem
     estoque_origem.full_clean()
     estoque_origem.save()
-    MovimentacaoEstoque.objects.create(
+    movimento_retorno_origem = MovimentacaoEstoque.objects.create(
         produto=desmembramento.produto_origem,
         filial=desmembramento.filial,
         tipo=TipoMovimentacaoEstoque.DESMEMBRAMENTO,
@@ -673,6 +837,14 @@ def cancelar_desmembramento_produto(*, desmembramento, usuario, motivo, supervis
         custo_total=desmembramento.custo_total_origem,
         usuario=usuario,
     )
+    movimento_baixa_origem = MovimentacaoEstoque.objects.filter(
+        referencia=f"desmembramento:{desmembramento.id}:origem"
+    ).first()
+    if movimento_baixa_origem:
+        restaurar_lotes_movimentacao(
+            movimentacao_origem=movimento_baixa_origem,
+            movimentacao_reversao=movimento_retorno_origem,
+        )
 
     desmembramento.status = StatusDesmembramentoProduto.CANCELADO
     desmembramento.cancelado_em = timezone.now()

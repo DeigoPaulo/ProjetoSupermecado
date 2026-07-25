@@ -193,6 +193,23 @@ LOGIN_URL = 'login'
 LOGIN_REDIRECT_URL = 'relatorios:dashboard'
 LOGOUT_REDIRECT_URL = 'login'
 
+EMAIL_BACKEND = os.getenv(
+    "EMAIL_BACKEND",
+    (
+        "django.core.mail.backends.console.EmailBackend"
+        if DEBUG
+        else "django.core.mail.backends.smtp.EmailBackend"
+    ),
+)
+EMAIL_HOST = os.getenv("EMAIL_HOST", "")
+EMAIL_PORT = int(os.getenv("EMAIL_PORT", "587"))
+EMAIL_HOST_USER = os.getenv("EMAIL_HOST_USER", "")
+EMAIL_HOST_PASSWORD = os.getenv("EMAIL_HOST_PASSWORD", "")
+EMAIL_USE_TLS = env_bool("EMAIL_USE_TLS", True)
+EMAIL_USE_SSL = env_bool("EMAIL_USE_SSL", False)
+EMAIL_TIMEOUT = int(os.getenv("EMAIL_TIMEOUT", "10"))
+DEFAULT_FROM_EMAIL = os.getenv("DEFAULT_FROM_EMAIL", "nao-responda@supermercado.local")
+
 PDV_NUVEM_REQUER_APROVACAO = env_bool("PDV_NUVEM_REQUER_APROVACAO", False)
 PDV_DESKTOP_VERSION = os.getenv("PDV_DESKTOP_VERSION", "0.1.0")
 PDV_DESKTOP_MIN_VERSION = os.getenv("PDV_DESKTOP_MIN_VERSION", PDV_DESKTOP_VERSION)
