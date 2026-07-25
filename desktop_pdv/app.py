@@ -4,6 +4,7 @@ import argparse
 import json
 import os
 import sys
+from decimal import Decimal, InvalidOperation
 from pathlib import Path
 from datetime import datetime, timezone
 from uuid import uuid4
@@ -25,6 +26,26 @@ class TerminalRecusado(RuntimeError):
 
 class ServidorPdvIndisponivel(RuntimeError):
     pass
+
+
+def normalizar_valor_tef(valor) -> str:
+    texto = str(valor or "").strip()
+    if not texto:
+        raise ValueError("Informe o valor do pagamento.")
+    if "," in texto and "." in texto:
+        texto = texto.replace(".", "").replace(",", ".")
+    else:
+        texto = texto.replace(",", ".")
+    try:
+        valor_decimal = Decimal(texto)
+    except InvalidOperation as exc:
+        raise ValueError("Informe um valor monetario valido.") from exc
+    if not valor_decimal.is_finite() or valor_decimal <= 0:
+        raise ValueError("O valor deve ser maior que zero.")
+    valor_centavos = valor_decimal.quantize(Decimal("0.01"))
+    if valor_centavos != valor_decimal:
+        raise ValueError("O valor nao pode ter fracao menor que um centavo.")
+    return format(valor_centavos, ".2f")
 
 
 def caminho_configuracao() -> Path:
@@ -310,6 +331,34 @@ class PonteLocal:
 
     def __init__(self, bootstrap: dict):
         self.bootstrap = bootstrap
+        self._tef_operacoes = {}
+
+    def _reutilizar_operacao_tef(self, operacao: str, chave: str, assinatura: tuple) -> dict | None:
+        if not chave:
+            return None
+        registro = self._tef_operacoes.get((operacao, chave))
+        if not registro:
+            return None
+        if registro["assinatura"] != assinatura:
+            return {
+                "status": "erro",
+                "aprovado": False,
+                "estornado": False,
+                "mensagem": "Chave de idempotencia reutilizada com dados diferentes.",
+            }
+        resultado = dict(registro["resultado"])
+        resultado["reutilizado"] = True
+        return resultado
+
+    def _guardar_operacao_tef(self, operacao: str, chave: str, assinatura: tuple, resultado: dict) -> None:
+        if not chave:
+            return
+        if len(self._tef_operacoes) >= 200:
+            self._tef_operacoes.pop(next(iter(self._tef_operacoes)))
+        self._tef_operacoes[(operacao, chave)] = {
+            "assinatura": assinatura,
+            "resultado": dict(resultado),
+        }
 
     def status(self) -> dict:
         return {
@@ -338,6 +387,169 @@ class PonteLocal:
 
     def deviceLogs(self, limite: int = 50) -> dict:
         return self.listar_eventos_dispositivos(limite)
+
+    def homologar_dispositivos(self, opcoes: dict | None = None) -> dict:
+        opcoes = opcoes if isinstance(opcoes, dict) else {}
+        verificacoes = []
+
+        def adicionar(codigo, nome, status, mensagem, detalhes=None):
+            verificacoes.append(
+                {
+                    "codigo": codigo,
+                    "nome": nome,
+                    "status": status,
+                    "mensagem": mensagem,
+                    "detalhes": detalhes or {},
+                }
+            )
+
+        try:
+            impressoras = listar_impressoras_windows()
+        except ErroDescobertaImpressoras as erro:
+            impressoras = []
+            adicionar("impressora", "Impressoras", "erro", str(erro))
+        else:
+            gaveta_config = self.configuracao_gaveta()
+            impressora_configurada = gaveta_config["impressora_padrao"]
+            encontrada = next(
+                (item for item in impressoras if item["nome"].casefold() == impressora_configurada.casefold()),
+                None,
+            )
+            if impressora_configurada and not encontrada:
+                adicionar(
+                    "impressora",
+                    "Impressoras",
+                    "erro",
+                    f"A impressora configurada '{impressora_configurada}' nao esta instalada.",
+                    {"total_instaladas": len(impressoras), "configurada": impressora_configurada},
+                )
+            elif encontrada and encontrada.get("offline"):
+                adicionar(
+                    "impressora",
+                    "Impressoras",
+                    "erro",
+                    f"A impressora configurada '{impressora_configurada}' esta offline.",
+                    {"total_instaladas": len(impressoras), "configurada": impressora_configurada},
+                )
+            elif impressoras and impressora_configurada:
+                adicionar(
+                    "impressora",
+                    "Impressoras",
+                    "ok",
+                    f"{len(impressoras)} impressora(s) encontrada(s) no Windows.",
+                    {
+                        "total_instaladas": len(impressoras),
+                        "configurada": impressora_configurada,
+                        "padrao": next((item["nome"] for item in impressoras if item.get("padrao")), ""),
+                    },
+                )
+            elif impressoras:
+                adicionar(
+                    "impressora",
+                    "Impressoras",
+                    "atencao",
+                    f"{len(impressoras)} impressora(s) encontrada(s), sem uma impressora de gaveta para comparar.",
+                    {
+                        "total_instaladas": len(impressoras),
+                        "padrao": next((item["nome"] for item in impressoras if item.get("padrao")), ""),
+                    },
+                )
+            else:
+                adicionar("impressora", "Impressoras", "atencao", "Nenhuma impressora instalada foi encontrada.")
+
+        balanca = self.configuracao_balanca()
+        if not balanca["habilitada"]:
+            adicionar("balanca", "Balanca", "nao_aplicavel", "Balanca desabilitada para este terminal.")
+        elif opcoes.get("ler_balanca"):
+            leitura = self.ler_peso_balanca()
+            adicionar(
+                "balanca",
+                "Balanca",
+                "ok" if leitura.get("status") == "ok" else "erro",
+                leitura.get("mensagem") or (
+                    f"Peso lido: {leitura.get('peso')} {leitura.get('unidade')}"
+                    if leitura.get("status") == "ok"
+                    else "A balanca nao confirmou a leitura."
+                ),
+                leitura,
+            )
+        elif balanca["leitura_automatica"] and balanca["porta"]:
+            adicionar(
+                "balanca",
+                "Balanca",
+                "atencao",
+                "Configuracao pronta; execute a leitura com peso conhecido para homologar fisicamente.",
+                {"protocolo": balanca["protocolo"], "porta": balanca["porta"], "modelo": balanca["modelo"]},
+            )
+        else:
+            adicionar("balanca", "Balanca", "erro", "Balanca habilitada sem protocolo automatico e porta configurados.")
+
+        gaveta = self.configuracao_gaveta()
+        if not gaveta["habilitada"]:
+            adicionar("gaveta", "Gaveta", "nao_aplicavel", "Gaveta desabilitada para este terminal.")
+        elif not gaveta["impressora_padrao"]:
+            adicionar("gaveta", "Gaveta", "erro", "Gaveta habilitada sem impressora configurada para o pulso.")
+        elif opcoes.get("acionar_gaveta"):
+            resultado_gaveta = self.abrir_gaveta({"motivo": "homologacao_dispositivos"})
+            adicionar(
+                "gaveta",
+                "Gaveta",
+                "ok" if resultado_gaveta.get("status") == "ok" else "erro",
+                resultado_gaveta.get("mensagem") or "Pulso enviado; confirme a abertura fisica da gaveta.",
+                resultado_gaveta,
+            )
+        else:
+            adicionar(
+                "gaveta",
+                "Gaveta",
+                "atencao",
+                "Configuracao pronta; autorize o pulso para confirmar a abertura fisica.",
+                {"impressora": gaveta["impressora_padrao"]},
+            )
+
+        tef = self.configuracao_tef()
+        provedor = str(tef.get("provedor") or "NAO_CONFIGURADO").upper()
+        if provedor == "NAO_CONFIGURADO":
+            adicionar("tef", "TEF", "atencao", "Nenhum provedor TEF foi configurado para este terminal.")
+        else:
+            adicionar(
+                "tef",
+                "TEF",
+                "atencao",
+                "Contrato configurado; a transacao de teste deve ser feita no ambiente de homologacao da adquirente.",
+                {"provedor": provedor, "modo": tef.get("modo_integracao") or "SIMULADO"},
+            )
+
+        status = "ok"
+        if any(item["status"] == "erro" for item in verificacoes):
+            status = "erro"
+        elif any(item["status"] == "atencao" for item in verificacoes):
+            status = "atencao"
+        resultado = {
+            "status": status,
+            "contrato": "pdv_device_homologation_v1",
+            "mensagem": (
+                "Pre-homologacao concluida sem pendencias."
+                if status == "ok"
+                else "Pre-homologacao concluida com pendencias para revisar."
+            ),
+            "verificacoes": verificacoes,
+            "homologacao_fisica_concluida": False,
+        }
+        registrar_evento_dispositivo(
+            "homologacao_dispositivos",
+            {
+                "status": status,
+                "mensagem": resultado["mensagem"],
+                "contrato": resultado["contrato"],
+                "verificacoes": verificacoes,
+                "homologacao_fisica_concluida": False,
+            },
+        )
+        return resultado
+
+    def runDeviceDiagnostics(self, opcoes: dict | None = None) -> dict:
+        return self.homologar_dispositivos(opcoes)
 
     def configuracao_balanca(self) -> dict:
         dispositivos = self.bootstrap.get("dispositivos", {})
@@ -489,10 +701,21 @@ class PonteLocal:
                 },
             )
             return resultado
-        valor = str((payload or {}).get("valor") or "").strip()
         tipo = str((payload or {}).get("tipo") or "").strip().upper()
-        if not valor or not tipo:
-            resultado = {"status": "erro", "mensagem": "Informe tipo e valor do pagamento.", "aprovado": False}
+        valor_informado = str((payload or {}).get("valor") or "").strip()
+        tipos_permitidos = {
+            str(item).strip().upper()
+            for item in (tef.get("tipos_pagamento") or ["CREDITO", "DEBITO", "PIX"])
+            if str(item).strip()
+        }
+        try:
+            valor = normalizar_valor_tef((payload or {}).get("valor"))
+            if not tipo:
+                raise ValueError("Informe o tipo do pagamento.")
+            if tipo not in tipos_permitidos:
+                raise ValueError("Tipo de pagamento nao habilitado para este terminal.")
+        except ValueError as exc:
+            resultado = {"status": "erro", "mensagem": str(exc), "aprovado": False}
             registrar_evento_dispositivo(
                 "tef",
                 {
@@ -500,10 +723,15 @@ class PonteLocal:
                     "mensagem": resultado["mensagem"],
                     "provedor": provedor,
                     "tipo": tipo,
-                    "valor": valor,
+                    "valor": valor_informado,
                 },
             )
             return resultado
+        chave_idempotencia = str((payload or {}).get("idempotency_key") or "").strip()[:120]
+        assinatura = (provedor, tipo, valor)
+        resultado_reutilizado = self._reutilizar_operacao_tef("pagamento", chave_idempotencia, assinatura)
+        if resultado_reutilizado:
+            return resultado_reutilizado
         referencia = uuid4().hex.upper()
         resultado = {
             "status": "ok",
@@ -517,6 +745,7 @@ class PonteLocal:
             "codigo_autorizacao": referencia[28:34],
             "mensagem_processadora": "Pagamento aprovado pelo simulador TEF do app desktop.",
         }
+        self._guardar_operacao_tef("pagamento", chave_idempotencia, assinatura, resultado)
         registrar_evento_dispositivo(
             "tef",
             {
@@ -537,7 +766,7 @@ class PonteLocal:
         tef = self.configuracao_tef()
         provedor = str(tef.get("provedor") or "NAO_CONFIGURADO").upper()
         tipo = str((payload or {}).get("tipo") or "").strip().upper()
-        valor = str((payload or {}).get("valor") or "").strip()
+        valor_informado = str((payload or {}).get("valor") or "").strip()
         transacao_original = str((payload or {}).get("transacao_externa_id") or "").strip()
         if provedor == "NAO_CONFIGURADO":
             resultado = {
@@ -552,13 +781,17 @@ class PonteLocal:
                     "mensagem": resultado["mensagem"],
                     "provedor": provedor,
                     "tipo": tipo,
-                    "valor": valor,
+                    "valor": valor_informado,
                     "transacao_externa_id": transacao_original,
                 },
             )
             return resultado
-        if not transacao_original or not valor:
-            resultado = {"status": "erro", "mensagem": "Informe transacao original e valor do estorno.", "estornado": False}
+        try:
+            valor = normalizar_valor_tef((payload or {}).get("valor"))
+            if not transacao_original:
+                raise ValueError("Informe a transacao original do estorno.")
+        except ValueError as exc:
+            resultado = {"status": "erro", "mensagem": str(exc), "estornado": False}
             registrar_evento_dispositivo(
                 "tef_estorno",
                 {
@@ -566,11 +799,16 @@ class PonteLocal:
                     "mensagem": resultado["mensagem"],
                     "provedor": provedor,
                     "tipo": tipo,
-                    "valor": valor,
+                    "valor": valor_informado,
                     "transacao_externa_id": transacao_original,
                 },
             )
             return resultado
+        chave_idempotencia = str((payload or {}).get("idempotency_key") or "").strip()[:120]
+        assinatura = (provedor, tipo, valor, transacao_original)
+        resultado_reutilizado = self._reutilizar_operacao_tef("estorno", chave_idempotencia, assinatura)
+        if resultado_reutilizado:
+            return resultado_reutilizado
         referencia = uuid4().hex.upper()
         resultado = {
             "status": "ok",
@@ -585,6 +823,7 @@ class PonteLocal:
             "codigo_autorizacao": referencia[28:34],
             "mensagem_processadora": "Estorno aprovado pelo simulador TEF do app desktop.",
         }
+        self._guardar_operacao_tef("estorno", chave_idempotencia, assinatura, resultado)
         registrar_evento_dispositivo(
             "tef_estorno",
             {
@@ -632,6 +871,7 @@ def executar(reconfigurar: bool = False) -> None:
         "readScale: function() { return window.pywebview.api.readScale(); },"
         "scaleConfig: function() { return window.pywebview.api.scaleConfig(); },"
         "deviceLogs: function(limite) { return window.pywebview.api.deviceLogs(limite); },"
+        "runDeviceDiagnostics: function(opcoes) { return window.pywebview.api.homologar_dispositivos(opcoes); },"
         "openCashDrawer: function(payload) { return window.pywebview.api.openCashDrawer(payload); },"
         "listPrinters: function() { return window.pywebview.api.listar_impressoras(); },"
         "status: function() { return window.pywebview.api.status(); }"

@@ -81,6 +81,11 @@ class Produto(models.Model):
     preco_venda = models.DecimalField(max_digits=10, decimal_places=2)
     preco_promocional = models.DecimalField(max_digits=10, decimal_places=2, null=True, blank=True)
     estoque_minimo = models.DecimalField(max_digits=12, decimal_places=3, default=0)
+    exige_lote = models.BooleanField(
+        "Exigir lote nas novas entradas",
+        default=False,
+        help_text="Quando ativo, novas entradas deste produto devem informar um lote. O saldo legado continua utilizavel.",
+    )
     vendido_no_pdv = models.BooleanField(default=True)
     vendido_no_marketplace = models.BooleanField(default=False)
     imagem = models.ImageField(upload_to="produtos/", blank=True, null=True, validators=[VALIDAR_IMAGEM_PNG_JPEG])

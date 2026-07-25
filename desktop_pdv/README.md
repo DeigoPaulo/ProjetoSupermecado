@@ -24,14 +24,25 @@ esta desabilitada. Gaveta desabilitada ou sem impressora retorna aviso e não de
 bloquear a venda.
 
 A balança usa o contrato `pdv_scale_v1` recebido no bootstrap do terminal. A ponte
-local expoe `scaleConfig()` e `readScale()` com fallback manual; enquanto o driver
-físico serial/TCP ainda não estiver conectado, e possivel homologar a tela com
-`SUPERMERCADO_PDV_PESO_SIMULADO=1,250`. Falhas e retornos manuais da balança
-sao gravados em `devices.log.jsonl` na pasta local do terminal e podem ser
+local expõe `scaleConfig()` e `readScale()` com fallback manual. O driver genérico
+suporta Serial RS-232/USB via `pyserial`, TCP/IP no formato `endereço:porta` e
+arquivo texto local. A leitura tem timeout e tamanho limitados, normaliza decimal
+e rejeita peso instável, zerado, negativo ou em sobrecarga. Protocolos que exigem
+comandos proprietários ainda precisam de um adaptador validado com o fabricante.
+Para homologar a tela sem equipamento, use
+`SUPERMERCADO_PDV_PESO_SIMULADO=1,250`. Falhas e retornos manuais da balança são
+gravados em `devices.log.jsonl` na pasta local do terminal e podem ser
 consultados pela ponte `window.SupermercadoDesktop.deviceLogs()`. Na inicialização,
 o app tenta enviar os eventos ainda não sincronizados para
 `/pdv/api/terminal/device-events/`; se o servidor estiver indisponível, o PDV abre
 normalmente e tenta novamente depois.
+
+A Central do App expõe `window.SupermercadoDesktop.runDeviceDiagnostics(opcoes)`
+com o contrato `pdv_device_homologation_v1`. O roteiro consolida impressoras,
+balança, gaveta e TEF e grava a evidência em `devices.log.jsonl`. Por padrão ele
+é não invasivo: não imprime, não abre gaveta e não cria cobrança. A leitura da
+balança e o pulso da gaveta exigem seleção explícita na tela; o pulso ainda pede
+confirmação do operador.
 
 ## Desenvolvimento
 

@@ -1606,7 +1606,15 @@ def ordem_producao_composicao_confirmar(request, pk):
         return redirect("estoque:ordens_producao_composicao")
     try:
         supervisor = supervisor_from_request(request)
-        confirmar_ordem_producao_composicao(ordem=ordem, usuario=request.user, supervisor=supervisor, ip=request.META.get("REMOTE_ADDR"))
+        confirmar_ordem_producao_composicao(
+            ordem=ordem,
+            usuario=request.user,
+            codigo_lote=request.POST.get("codigo_lote", "").strip(),
+            fabricacao=request.POST.get("fabricacao") or None,
+            validade=request.POST.get("validade") or None,
+            supervisor=supervisor,
+            ip=request.META.get("REMOTE_ADDR"),
+        )
     except ValidationError as exc:
         messages.error(request, " ".join(exc.messages))
     else:

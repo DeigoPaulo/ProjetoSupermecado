@@ -112,6 +112,10 @@ class ConfiguracoesOperacionaisTests(TestCase):
         self.assertContains(checklist, "configurar balanca por caixa")
         self.assertContains(checklist, "bootstrap do app desktop entregam essa configuracao")
         self.assertContains(checklist, "contrato pdv_scale_v1")
+        self.assertContains(checklist, "driver genérico real")
+        self.assertContains(checklist, "Serial RS-232/USB via pyserial")
+        self.assertContains(checklist, "rejeição de peso instável")
+        self.assertContains(checklist, "validar parâmetros e comandos do fabricante escolhido")
         self.assertContains(checklist, "fallback manual")
         self.assertContains(checklist, "ponte local para expor a configuracao da balanca")
         self.assertContains(checklist, "peso simulado para homologacao")
@@ -144,6 +148,8 @@ class ConfiguracoesOperacionaisTests(TestCase):
         self.assertContains(checklist, "aguarda resposta da maquininha")
         self.assertContains(checklist, "terminal sem TEF configurado retorna aviso")
         self.assertContains(checklist, "eventos locais tef em devices.log.jsonl")
+        self.assertContains(checklist, "chave idempotente por tentativa")
+        self.assertContains(checklist, "reutiliza a autorização ou estorno já aprovado")
         self.assertContains(checklist, "confirmar o estorno eletrônico aprovado pela operadora")
         self.assertContains(checklist, "pdv_cash_drawer_v1")
         self.assertContains(checklist, "ponte openCashDrawer")
@@ -269,9 +275,11 @@ class ConfiguracoesOperacionaisTests(TestCase):
         self.assertContains(checklist, "atribuir saldo histórico a lotes")
         self.assertContains(checklist, "reduções de inventário ajustam camadas")
         self.assertContains(checklist, "aumentos permanecem sem lote")
-        self.assertContains(checklist, "Produção e desmembramento agora consomem lotes")
+        self.assertContains(checklist, "Produção e desmembramento consomem lotes")
         self.assertContains(checklist, "cancelamentos restauram as alocações originais")
         self.assertContains(checklist, "política de lote obrigatório por produto")
+        self.assertContains(checklist, "vem desativada")
+        self.assertContains(checklist, "NF-e sem rastro")
         self.assertEqual(checklist.context["resumo"]["pendentes"], 0)
 
     def test_checklist_filtra_por_status_grupo_e_busca(self):
@@ -560,7 +568,32 @@ class ConfiguracoesOperacionaisTests(TestCase):
         self.assertContains(form_response, "Fiscal por terminal")
         self.assertContains(form_response, "TEF por adaptador")
         self.assertContains(form_response, "Balanca local")
+        self.assertContains(form_response, "driver genérico")
+        self.assertContains(form_response, "endereço:porta")
         self.assertContains(form_response, "Licenciamento do app desktop")
+
+    def test_terminal_valida_endereco_tcp_e_adaptador_especifico_da_balanca(self):
+        base = {
+            "filial": self.filial.id,
+            "nome": "Caixa balanca",
+            "provedor_tef": ProvedorTef.NAO_CONFIGURADO,
+            "modo_integracao_tef": ModoIntegracaoTef.DESKTOP_BRIDGE,
+            "usa_balanca": "on",
+            "protocolo_balanca": ProtocoloBalanca.TCP_IP,
+            "porta_balanca": "192.168.1.50",
+            "status_licenca": StatusLicencaTerminal.PENDENTE,
+            "permite_modo_offline": "on",
+            "ativo": "on",
+        }
+        tcp_invalido = self.client.post("/configuracoes/terminais-pdv/novo/", base)
+        outro_sem_modelo = self.client.post(
+            "/configuracoes/terminais-pdv/novo/",
+            {**base, "protocolo_balanca": ProtocoloBalanca.OUTRO, "porta_balanca": "adaptador-local"},
+        )
+
+        self.assertContains(tcp_invalido, "formato endereco:porta")
+        self.assertContains(outro_sem_modelo, "Informe o modelo para desenvolver")
+        self.assertFalse(TerminalPdv.objects.filter(nome="Caixa balanca").exists())
 
     def test_lista_terminais_pdv_filtra_por_licenca_e_status(self):
         TerminalPdv.objects.create(filial=self.filial, nome="Caixa Liberado", status_licenca=StatusLicencaTerminal.LIBERADA)
@@ -634,6 +667,12 @@ class ConfiguracoesOperacionaisTests(TestCase):
         self.assertContains(response, "Diagnóstico local deste terminal")
         self.assertContains(response, "Ler diagnóstico local")
         self.assertContains(response, "desktop-device-logs")
+        self.assertContains(response, "Pré-homologação deste terminal")
+        self.assertContains(response, "pdv_device_homologation_v1")
+        self.assertContains(response, "Executar pré-homologação")
+        self.assertContains(response, "Ler a balança agora")
+        self.assertContains(response, "Enviar pulso de teste para a gaveta")
+        self.assertContains(response, "não imprime e não cria cobrança TEF")
         self.assertContains(response, "Diagnóstico consolidado dos terminais")
         self.assertContains(response, "1 evento(s) recebidos")
         self.assertContains(response, "Driver fisico indisponivel")
@@ -644,6 +683,9 @@ class ConfiguracoesOperacionaisTests(TestCase):
         self.assertContains(response, "Sem fiscal automático")
         self.assertContains(response, "Pacote JSON")
         self.assertContains(checklist, "Central do App PDV desktop")
+        self.assertContains(checklist, "pdv_device_homologation_v1")
+        self.assertContains(checklist, "não imprime nem cria cobrança")
+        self.assertContains(checklist, "grava a evidência em devices.log.jsonl")
         self.assertContains(checklist, "manifesto JSON do app desktop")
         self.assertContains(checklist, "Pacote JSON por terminal")
         self.assertContains(checklist, "mesmo design, componentes, atalhos e regras do PDV web")

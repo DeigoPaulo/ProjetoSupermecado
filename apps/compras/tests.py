@@ -1503,7 +1503,18 @@ class ImportacaoXMLEntradaTests(TestCase):
         conta = ContaFinanceira.objects.get(entrada_compra=entrada)
         self.assertEqual(conta.valor, Decimal("18.00"))
 
+    def test_xml_sem_rastro_rejeita_produto_com_lote_obrigatorio_sem_criar_rascunho(self):
+        self.produto.exige_lote = True
+        self.produto.save(update_fields=["exige_lote", "updated_at"])
+
+        with self.assertRaisesMessage(ValidationError, "nao informou rastro"):
+            importar_xml_entrada(self._xml(), usuario=self.usuario)
+
+        self.assertEqual(EntradaCompra.objects.count(), 0)
+
     def test_xml_com_rastro_importa_lote_e_finalizacao_cria_camada_fefo(self):
+        self.produto.exige_lote = True
+        self.produto.save(update_fields=["exige_lote", "updated_at"])
         marcador = f"<cEANTrib>{self.produto.codigo_barras}</cEANTrib>".encode()
         rastro = marcador + (
             b"<rastro><nLote>XML-LOTE-01</nLote><qLote>3.000</qLote>"

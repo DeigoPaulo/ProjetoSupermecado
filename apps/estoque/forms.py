@@ -44,6 +44,15 @@ class MovimentacaoEstoqueForm(forms.Form):
         codigo_lote = (cleaned_data.get("codigo_lote") or "").strip()
         fabricacao = cleaned_data.get("fabricacao")
         validade = cleaned_data.get("validade")
+        produto = cleaned_data.get("produto")
+        tipo = cleaned_data.get("tipo")
+        if (
+            produto
+            and produto.exige_lote
+            and tipo == TipoMovimentacaoEstoque.ENTRADA
+            and not codigo_lote
+        ):
+            self.add_error("codigo_lote", "Este produto exige lote nas novas entradas.")
         if (fabricacao or validade) and not codigo_lote:
             self.add_error("codigo_lote", "Informe o lote ao preencher fabricacao ou validade.")
         if fabricacao and validade and fabricacao > validade:
@@ -275,8 +284,12 @@ class ProducaoComposicaoForm(forms.Form):
     quantidade_final = forms.DecimalField(max_digits=12, decimal_places=3, min_value=0.001)
     motivo = forms.CharField(max_length=255)
     observacao = forms.CharField(widget=forms.Textarea(attrs={"rows": 3}), required=False)
+    codigo_lote = forms.CharField(max_length=60, required=False, label="Lote do produto final")
+    fabricacao = forms.DateField(required=False, widget=forms.DateInput(attrs={"type": "date"}))
+    validade = forms.DateField(required=False, widget=forms.DateInput(attrs={"type": "date"}))
 
     def __init__(self, *args, composicao=None, **kwargs):
+        self._composicao = composicao
         super().__init__(*args, **kwargs)
         from apps.empresas.models import Filial
 
@@ -286,6 +299,23 @@ class ProducaoComposicaoForm(forms.Form):
             self.initial.setdefault("filial", composicao.filial)
         self.initial.setdefault("quantidade_final", composicao.quantidade_final if composicao else 1)
         aplicar_select2(self, ["filial"])
+
+    def clean(self):
+        cleaned_data = super().clean()
+        codigo_lote = (cleaned_data.get("codigo_lote") or "").strip()
+        fabricacao = cleaned_data.get("fabricacao")
+        validade = cleaned_data.get("validade")
+        if self.composicao and self.composicao.produto_final.exige_lote and not codigo_lote:
+            self.add_error("codigo_lote", "O produto final exige lote.")
+        if (fabricacao or validade) and not codigo_lote:
+            self.add_error("codigo_lote", "Informe o lote ao preencher fabricacao ou validade.")
+        if fabricacao and validade and fabricacao > validade:
+            self.add_error("validade", "A validade nao pode ser anterior a fabricacao.")
+        return cleaned_data
+
+    @property
+    def composicao(self):
+        return getattr(self, "_composicao", None)
 
 
 class OrdemProducaoComposicaoForm(forms.ModelForm):

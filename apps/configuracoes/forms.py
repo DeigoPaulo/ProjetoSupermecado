@@ -205,8 +205,18 @@ class TerminalPdvForm(forms.ModelForm):
     def clean(self):
         cleaned = super().clean()
         if cleaned.get("usa_balanca"):
-            if cleaned.get("protocolo_balanca") == "NAO_CONFIGURADO":
+            protocolo = cleaned.get("protocolo_balanca")
+            porta = (cleaned.get("porta_balanca") or "").strip()
+            if protocolo == "NAO_CONFIGURADO":
                 self.add_error("protocolo_balanca", "Informe o protocolo da balanca.")
-            if not cleaned.get("porta_balanca"):
+            if not porta:
                 self.add_error("porta_balanca", "Informe a porta, caminho ou endereco da balanca.")
+            elif protocolo == "TCP_IP":
+                host, separador, numero_porta = porta.rpartition(":")
+                if not separador or not host.strip() or not numero_porta.isdigit():
+                    self.add_error("porta_balanca", "Para TCP/IP, informe no formato endereco:porta.")
+                elif not 1 <= int(numero_porta) <= 65535:
+                    self.add_error("porta_balanca", "Informe uma porta TCP/IP entre 1 e 65535.")
+            if protocolo == "OUTRO" and not (cleaned.get("modelo_balanca") or "").strip():
+                self.add_error("modelo_balanca", "Informe o modelo para desenvolver ou selecionar o adaptador especifico.")
         return cleaned

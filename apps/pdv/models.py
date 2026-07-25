@@ -107,6 +107,13 @@ class TerminalPdv(models.Model):
             "unidade_padrao": "KG",
             "precisao_decimal": 3,
             "timeout_ms": 3000,
+            "baudrate": 9600,
+            "bytesize": 8,
+            "paridade": "N",
+            "stopbits": "1",
+            "comando_leitura": "",
+            "terminador": "\\r\\n",
+            "fator_conversao": "1",
             "fallback_manual": True,
             "status_operacional": "habilitada" if leitura_automatica else "manual",
         }

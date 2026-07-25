@@ -35,6 +35,7 @@ class ProdutoForm(forms.ModelForm):
             "preco_venda",
             "preco_promocional",
             "estoque_minimo",
+            "exige_lote",
             "vendido_no_pdv",
             "vendido_no_marketplace",
             "imagem",

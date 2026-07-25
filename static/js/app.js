@@ -338,6 +338,63 @@ document.addEventListener("DOMContentLoaded", function () {
     });
   }
 
+  var desktopDeviceDiagnosticsButton = document.getElementById("desktop-device-diagnostics");
+  if (desktopDeviceDiagnosticsButton) {
+    desktopDeviceDiagnosticsButton.addEventListener("click", function () {
+      var feedback = document.getElementById("desktop-device-diagnostics-feedback");
+      var tbody = document.getElementById("desktop-device-diagnostics-body");
+      var scale = document.getElementById("desktop-diagnostic-scale");
+      var drawer = document.getElementById("desktop-diagnostic-drawer");
+      var bridge = window.SupermercadoDesktop && window.SupermercadoDesktop.runDeviceDiagnostics;
+      var opcoes = {
+        ler_balanca: Boolean(scale && scale.checked),
+        acionar_gaveta: Boolean(drawer && drawer.checked)
+      };
+      if (!bridge) {
+        if (feedback) feedback.textContent = "Pré-homologação disponível somente dentro do aplicativo desktop.";
+        return;
+      }
+      if (opcoes.acionar_gaveta && !window.confirm("A gaveta está livre e pode ser aberta agora?")) return;
+      desktopDeviceDiagnosticsButton.disabled = true;
+      if (feedback) feedback.textContent = "Executando verificações locais...";
+      Promise.resolve(bridge.call(window.SupermercadoDesktop, opcoes))
+        .then(function (payload) {
+          if (!payload || !Array.isArray(payload.verificacoes)) {
+            throw new Error((payload && payload.mensagem) || "Resposta de diagnóstico inválida.");
+          }
+          if (tbody) {
+            tbody.innerHTML = "";
+            payload.verificacoes.forEach(function (item) {
+              var row = document.createElement("tr");
+              var nome = document.createElement("td");
+              var status = document.createElement("td");
+              var mensagem = document.createElement("td");
+              var chip = document.createElement("span");
+              nome.textContent = item.nome || item.codigo || "-";
+              chip.className = "status " + (
+                item.status === "ok" ? "status-success" :
+                item.status === "erro" ? "status-warning" : "status-muted"
+              );
+              chip.textContent = item.status || "-";
+              status.appendChild(chip);
+              mensagem.textContent = item.mensagem || "-";
+              row.appendChild(nome);
+              row.appendChild(status);
+              row.appendChild(mensagem);
+              tbody.appendChild(row);
+            });
+          }
+          if (feedback) feedback.textContent = payload.mensagem || "Pré-homologação concluída.";
+        })
+        .catch(function (erro) {
+          if (feedback) feedback.textContent = "Falha na pré-homologação: " + erro.message;
+        })
+        .finally(function () {
+          desktopDeviceDiagnosticsButton.disabled = false;
+        });
+    });
+  }
+
   function aplicarCamposMonetarios(root) {
     var escopo = root || document;
     var nomesMonetarios = /(^|_)(valor|preço|custo|desconto|taxa|frete|total)(_|$)/i;
@@ -476,6 +533,11 @@ document.addEventListener("DOMContentLoaded", function () {
         tipo: form.getAttribute("data-refund-tipo") || "",
         valor: form.getAttribute("data-refund-valor") || "",
         transacao_externa_id: form.getAttribute("data-refund-transacao") || "",
+        idempotency_key: [
+          "refund",
+          form.getAttribute("data-refund-transacao") || "",
+          form.getAttribute("data-refund-valor") || "",
+        ].join(":"),
       }))
         .then(function (resultado) {
           if (!resultado || resultado.status !== "ok" || !resultado.estornado) {
@@ -812,13 +874,17 @@ document.addEventListener("DOMContentLoaded", function () {
       processarPagamentoEletronico(linha, tipo);
     }
 
-    function limparAutorizacaoPagamento(row) {
+    function limparAutorizacaoPagamento(row, preservarRequisicao) {
       if (!row) return;
       ["pagamento_status", "pagamento_transacao_externa_id", "pagamento_nsu", "pagamento_codigo_autorizacao", "pagamento_mensagem_processadora"].forEach(function (nome) {
         var campo = row.querySelector("input[name='" + nome + "']");
         if (campo) campo.value = "";
       });
       row.classList.remove("is-authorized");
+      if (!preservarRequisicao) {
+        delete row.dataset.tefRequestKey;
+        delete row.dataset.tefRequestSignature;
+      }
     }
 
     function aplicarAutorizacaoPagamento(row, resultado) {
@@ -841,7 +907,7 @@ document.addEventListener("DOMContentLoaded", function () {
       var input = row && row.querySelector("input[name='pagamento_valor']");
       var select = row && row.querySelector("select");
       if (!row || !input || !select) return;
-      limparAutorizacaoPagamento(row);
+      limparAutorizacaoPagamento(row, true);
       if (!bridge) {
         informarPagamentoFeedback("Maquininha disponível somente no app desktop. Configure o terminal ou use uma forma manual.");
         select.focus();
@@ -853,8 +919,19 @@ document.addEventListener("DOMContentLoaded", function () {
         input.focus();
         return;
       }
+      var assinaturaRequisicao = tipo + "|" + valor;
+      if (!row.dataset.tefRequestKey || row.dataset.tefRequestSignature !== assinaturaRequisicao) {
+        row.dataset.tefRequestKey = window.crypto && window.crypto.randomUUID
+          ? window.crypto.randomUUID()
+          : "pdv-" + Date.now() + "-" + Math.random().toString(16).slice(2);
+        row.dataset.tefRequestSignature = assinaturaRequisicao;
+      }
       informarPagamentoFeedback("Aguardando resposta da maquininha...");
-      Promise.resolve(bridge.call(window.SupermercadoDesktop, { tipo: tipo, valor: valor }))
+      Promise.resolve(bridge.call(window.SupermercadoDesktop, {
+        tipo: tipo,
+        valor: valor,
+        idempotency_key: row.dataset.tefRequestKey,
+      }))
         .then(function (resultado) {
           if (!resultado || resultado.status !== "ok" || !resultado.aprovado) {
             throw new Error((resultado && resultado.mensagem) || "Pagamento recusado ou não confirmado.");
@@ -864,7 +941,7 @@ document.addEventListener("DOMContentLoaded", function () {
           select.focus();
         })
         .catch(function (erro) {
-          limparAutorizacaoPagamento(row);
+          limparAutorizacaoPagamento(row, true);
           informarPagamentoFeedback("Não foi possivel confirmar na maquininha: " + erro.message);
           select.focus();
         });

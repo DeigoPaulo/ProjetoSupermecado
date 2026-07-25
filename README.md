@@ -73,7 +73,6 @@ O projeto lê variáveis do arquivo `.env`. Use `.env.example` como base.
 
 ## Próximos passos
 
-1. Definir e aplicar a política opcional de lote obrigatório por produto sem bloquear o estoque legado.
-2. Homologar o PDV desktop com balança, TEF, impressora e gaveta reais.
-3. Gerar instaladores assinados para o PDV e o servidor local.
-4. Escolher e homologar provedores externos antes de ativar SEFAZ, CNPJ/CEP e mapas em produção.
+1. Homologar o PDV desktop com balança, TEF, impressora e gaveta reais.
+2. Gerar instaladores assinados para o PDV e o servidor local.
+3. Escolher e homologar provedores externos antes de ativar SEFAZ, CNPJ/CEP e mapas em produção.

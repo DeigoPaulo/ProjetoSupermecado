@@ -120,6 +120,11 @@
               </form>
               <form method="post" action="{% url 'estoque:ordem_producao_composicao_confirmar' ordem.pk %}" class="compact-form form-confirm" data-msg="Produzir esta ordem e atualizar o estoque?">
                 {% csrf_token %}
+                {% if ordem.produto_final.exige_lote %}
+                  <input type="text" name="codigo_lote" placeholder="Lote do produto final" required>
+                  <input type="date" name="fabricacao" title="Fabricacao">
+                  <input type="date" name="validade" title="Validade">
+                {% endif %}
                 <input type="text" name="supervisor_usuario" placeholder="Supervisor" required>
                 <input type="password" name="supervisor_senha" placeholder="Senha" required>
                 <button class="secondary-button" type="submit">Produzir</button>

@@ -531,7 +531,14 @@ class ItemDesmembramentoProduto(models.Model):
         return self.percentual_rendimento - self.percentual_rendimento_esperado
 
 
-def consumir_lotes_movimentacao(*, movimentacao, quantidade, codigo_lote="", exigir_lote=False):
+def consumir_lotes_movimentacao(
+    *,
+    movimentacao,
+    quantidade,
+    codigo_lote="",
+    lote_id=None,
+    exigir_lote=False,
+):
     restante = quantidade
     codigo_lote = (codigo_lote or "").strip()
     lotes = LoteEstoque.objects.select_for_update().filter(
@@ -541,6 +548,8 @@ def consumir_lotes_movimentacao(*, movimentacao, quantidade, codigo_lote="", exi
     )
     if codigo_lote:
         lotes = lotes.filter(codigo=codigo_lote)
+    if lote_id:
+        lotes = lotes.filter(pk=lote_id)
     lotes = lotes.order_by(models.F("validade").asc(nulls_last=True), "criado_em", "id")
     consumido = 0
     for lote in lotes:
@@ -672,6 +681,8 @@ def movimentar_estoque(
             usuario=usuario,
         )
         codigo_lote = (codigo_lote or "").strip()
+        if produto.exige_lote and tipo == TipoMovimentacaoEstoque.ENTRADA and not codigo_lote:
+            raise ValidationError("Este produto exige lote nas novas entradas.")
         if tipo in [TipoMovimentacaoEstoque.SAIDA, TipoMovimentacaoEstoque.VENDA, TipoMovimentacaoEstoque.PERDA]:
             consumir_lotes_movimentacao(
                 movimentacao=movimentacao,

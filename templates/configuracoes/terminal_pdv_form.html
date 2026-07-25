@@ -31,7 +31,7 @@
       <label class="form-field"><span>{{ form.modelo_balanca.label }}</span>{{ form.modelo_balanca }}{{ form.modelo_balanca.errors }}</label>
       <div class="form-note form-field-wide">
         <strong>Balanca local.</strong>
-        <span>Quando habilitada, o app desktop lê o peso na maquina do caixa e devolve a quantidade em KG para produtos pesaveis. Se indisponivel, o operador ainda pode informar a quantidade manualmente.</span>
+        <span>O driver genérico aceita porta serial (COM3), TCP/IP (endereço:porta) e caminho de arquivo texto. O app devolve a quantidade em KG e mantém entrada manual se a leitura falhar. Protocolos proprietários ainda exigem adaptador validado com o fabricante.</span>
       </div>
       <label class="form-field"><span>{{ form.status_licenca.label }}</span>{{ form.status_licenca }}{{ form.status_licenca.errors }}</label>
       <label class="form-field"><span>{{ form.observacao_licenca.label }}</span>{{ form.observacao_licenca }}{{ form.observacao_licenca.errors }}</label>

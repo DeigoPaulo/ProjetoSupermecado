@@ -48,6 +48,44 @@
 <section class="panel desktop-diagnostics">
   <div class="panel-heading">
     <div>
+      <h2>Pré-homologação deste terminal</h2>
+      <p>Executa um roteiro único de prontidão e grava uma evidência local usando o contrato pdv_device_homologation_v1.</p>
+    </div>
+    <button type="button" class="primary-button" id="desktop-device-diagnostics">
+      <i class="fa-solid fa-list-check"></i> Executar pré-homologação
+    </button>
+  </div>
+  <div class="operation-notice">
+    <i class="fa-solid fa-shield-halved"></i>
+    <div>
+      <strong>O diagnóstico padrão não imprime e não cria cobrança TEF.</strong>
+      <span>A leitura da balança e o pulso da gaveta são opcionais. O pulso deve ser executado somente com a gaveta livre e o operador presente.</span>
+    </div>
+  </div>
+  <div class="form-grid">
+    <label class="checkbox-field">
+      <input type="checkbox" id="desktop-diagnostic-scale">
+      Ler a balança agora
+    </label>
+    <label class="checkbox-field">
+      <input type="checkbox" id="desktop-diagnostic-drawer">
+      Enviar pulso de teste para a gaveta
+    </label>
+  </div>
+  <div id="desktop-device-diagnostics-feedback" class="form-help">Aguardando execução dentro do aplicativo desktop.</div>
+  <div class="table-wrapper">
+    <table>
+      <thead><tr><th>Verificação</th><th>Status</th><th>Resultado</th></tr></thead>
+      <tbody id="desktop-device-diagnostics-body">
+        <tr><td colspan="3" class="empty">Nenhuma pré-homologação executada.</td></tr>
+      </tbody>
+    </table>
+  </div>
+</section>
+
+<section class="panel desktop-diagnostics">
+  <div class="panel-heading">
+    <div>
       <h2>Diagnóstico local deste terminal</h2>
       <p>Consulta os últimos eventos de impressora, gaveta, TEF e balança gravados na máquina do caixa.</p>
     </div>

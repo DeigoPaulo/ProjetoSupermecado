@@ -212,7 +212,11 @@ class ItemEntradaCompraForm(forms.ModelForm):
         cleaned_data = super().clean()
         fabricacao = cleaned_data.get("fabricacao")
         validade = cleaned_data.get("validade")
-        if (fabricacao or validade) and not (cleaned_data.get("codigo_lote") or "").strip():
+        codigo_lote = (cleaned_data.get("codigo_lote") or "").strip()
+        produto = cleaned_data.get("produto")
+        if produto and produto.exige_lote and not codigo_lote:
+            self.add_error("codigo_lote", "Este produto exige lote nas novas entradas.")
+        if (fabricacao or validade) and not codigo_lote:
             self.add_error("codigo_lote", "Informe o lote ao preencher fabricacao ou validade.")
         if fabricacao and validade and fabricacao > validade:
             self.add_error("validade", "A validade nao pode ser anterior a fabricacao.")

@@ -1992,3 +1992,120 @@ class RastreioLoteEstoqueTests(TestCase):
             referencia=f"composicao:{producao.id}:cancelamento:componente:{producao.itens.get().id}"
         )
         self.assertEqual(reversao.alocacoes_lote.get().quantidade, Decimal("2.000"))
+
+    def test_politica_opt_in_bloqueia_nova_entrada_sem_afetar_produto_legado(self):
+        movimentar_estoque(
+            produto=self.produto,
+            filial=self.filial,
+            tipo=TipoMovimentacaoEstoque.ENTRADA,
+            quantidade=Decimal("1.000"),
+            custo_unitario=Decimal("5.00"),
+        )
+        self.produto.exige_lote = True
+        self.produto.save(update_fields=["exige_lote", "updated_at"])
+
+        with self.assertRaisesMessage(ValidationError, "exige lote"):
+            movimentar_estoque(
+                produto=self.produto,
+                filial=self.filial,
+                tipo=TipoMovimentacaoEstoque.ENTRADA,
+                quantidade=Decimal("1.000"),
+                custo_unitario=Decimal("5.00"),
+            )
+
+        estoque = Estoque.objects.get(produto=self.produto, filial=self.filial)
+        self.assertEqual(estoque.quantidade_atual, Decimal("1.000"))
+
+    def test_producao_com_lote_obrigatorio_cria_camada_e_cancelamento_baixa_a_mesma_camada(self):
+        produto_final = Produto.objects.create(
+            codigo_barras="7896345678977",
+            nome="Produto final com lote obrigatorio",
+            categoria=self.categoria,
+            preco_custo=Decimal("0.00"),
+            preco_venda=Decimal("12.00"),
+            exige_lote=True,
+        )
+        composicao = ComposicaoProduto.objects.create(
+            empresa=self.empresa,
+            filial=self.filial,
+            produto_final=produto_final,
+            quantidade_final=Decimal("1.000"),
+        )
+        ItemComposicaoProduto.objects.create(
+            composicao=composicao,
+            produto_componente=self.produto,
+            quantidade=Decimal("1.000"),
+        )
+        self._entrada_lote("COMP-OBRIG-01", "2.000", date(2026, 10, 31), "5.00")
+
+        with self.assertRaisesMessage(ValidationError, "produto final exige lote"):
+            confirmar_producao_composicao(
+                composicao=composicao,
+                filial=self.filial,
+                quantidade_final=Decimal("1.000"),
+                usuario=self.usuario,
+                motivo="Tentativa sem lote",
+            )
+
+        movimentar_estoque(
+            produto=produto_final,
+            filial=self.filial,
+            tipo=TipoMovimentacaoEstoque.ENTRADA,
+            quantidade=Decimal("2.000"),
+            custo_unitario=Decimal("4.00"),
+            codigo_lote="FINAL-01",
+            validade=date(2027, 1, 31),
+        )
+        producao = confirmar_producao_composicao(
+            composicao=composicao,
+            filial=self.filial,
+            quantidade_final=Decimal("1.000"),
+            usuario=self.usuario,
+            motivo="Producao identificada",
+            codigo_lote="FINAL-01",
+            fabricacao=date(2026, 7, 25),
+            validade=date(2026, 12, 31),
+        )
+        lote_final = LoteEstoque.objects.get(
+            produto=produto_final,
+            origem_referencia=f"composicao:{producao.id}:final",
+        )
+        lote_homonimo = LoteEstoque.objects.exclude(pk=lote_final.pk).get(
+            produto=produto_final,
+            codigo="FINAL-01",
+        )
+        self.assertEqual(lote_final.quantidade_atual, Decimal("1.000"))
+
+        cancelar_producao_composicao(
+            producao=producao,
+            usuario=self.usuario,
+            motivo="Cancelar producao identificada",
+        )
+        lote_final.refresh_from_db()
+        lote_homonimo.refresh_from_db()
+        self.assertEqual(lote_final.quantidade_atual, Decimal("0.000"))
+        self.assertEqual(lote_homonimo.quantidade_atual, Decimal("2.000"))
+
+    def test_desmembramento_exige_lote_somente_no_destino_controlado(self):
+        destino = Produto.objects.create(
+            codigo_barras="7896345678966",
+            nome="Destino com lote obrigatorio",
+            categoria=self.categoria,
+            preco_custo=Decimal("0.00"),
+            preco_venda=Decimal("3.00"),
+            exige_lote=True,
+        )
+        self._entrada_lote("ORIGEM-OBRIG-01", "2.000", date(2026, 9, 30), "5.00")
+
+        with self.assertRaisesMessage(ValidationError, "destino Destino com lote obrigatorio exige lote"):
+            confirmar_desmembramento_multidestino(
+                filial=self.filial,
+                produto_origem=self.produto,
+                quantidade_origem=Decimal("1.000"),
+                destinos=[{"produto": destino, "quantidade": Decimal("2.000")}],
+                usuario=self.usuario,
+                motivo="Tentativa sem lote",
+            )
+
+        origem = Estoque.objects.get(produto=self.produto, filial=self.filial)
+        self.assertEqual(origem.quantidade_atual, Decimal("2.000"))

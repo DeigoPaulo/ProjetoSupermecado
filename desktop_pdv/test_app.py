@@ -3,13 +3,13 @@ import os
 import tempfile
 import unittest
 from pathlib import Path
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
 import app
 from devices.printers import ErroDescobertaImpressoras, listar_impressoras_windows
 from devices.labels import montar_etiquetas_epl, montar_etiquetas_nativas, montar_etiquetas_ppla, montar_etiquetas_zpl
 from devices.printing import ErroImpressao, montar_cupom_escpos, montar_pulso_gaveta_escpos, montar_texto_cupom
-from devices.scales import ler_peso_balanca, normalizar_configuracao_balanca
+from devices.scales import ErroBalanca, extrair_peso_resposta, ler_peso_balanca, normalizar_configuracao_balanca
 
 
 class RespostaJson:
@@ -196,7 +196,7 @@ class AppDesktopTests(unittest.TestCase):
         self.assertEqual(config["unidade_padrao"], "KG")
         self.assertEqual(leitura["status"], "erro")
         self.assertTrue(leitura["fallback_manual"])
-        self.assertIn("Driver fisico", leitura["mensagem"])
+        self.assertIn("COM3", leitura["mensagem"])
         self.assertEqual(ponte.scaleConfig()["contrato"], "pdv_scale_v1")
         self.assertEqual(ponte.readScale()["status"], "erro")
 
@@ -294,6 +294,47 @@ class AppDesktopTests(unittest.TestCase):
         self.assertEqual(diagnostico["eventos"][0]["payload"]["status"], "ok")
         self.assertEqual(diagnostico["eventos"][1]["payload"]["status"], "erro")
 
+    def test_tef_valida_valor_e_modalidade_antes_de_processar(self):
+        with tempfile.TemporaryDirectory() as pasta:
+            caminho = Path(pasta) / "terminal" / "config.json"
+            with patch.dict(os.environ, {"SUPERMERCADO_PDV_CONFIG": str(caminho)}):
+                ponte = app.PonteLocal(
+                    {
+                        "tef": {
+                            "provedor": "STONE",
+                            "modo_integracao": "DESKTOP_BRIDGE",
+                            "tipos_pagamento": ["DEBITO", "PIX"],
+                        }
+                    }
+                )
+
+                decimal_brasileiro = ponte.processPayment({"tipo": "PIX", "valor": "25,50"})
+                modalidade_bloqueada = ponte.processPayment({"tipo": "CREDITO", "valor": "25.50"})
+                valor_negativo = ponte.processPayment({"tipo": "PIX", "valor": "-1"})
+                fracao_centavo = ponte.processPayment({"tipo": "PIX", "valor": "1.001"})
+
+        self.assertEqual(decimal_brasileiro["status"], "ok")
+        self.assertEqual(decimal_brasileiro["valor"], "25.50")
+        self.assertFalse(modalidade_bloqueada["aprovado"])
+        self.assertIn("nao habilitado", modalidade_bloqueada["mensagem"])
+        self.assertFalse(valor_negativo["aprovado"])
+        self.assertIn("maior que zero", valor_negativo["mensagem"])
+        self.assertFalse(fracao_centavo["aprovado"])
+        self.assertIn("fracao menor", fracao_centavo["mensagem"])
+
+    def test_tef_reutiliza_pagamento_com_mesma_chave_sem_nova_autorizacao(self):
+        ponte = app.PonteLocal({"tef": {"provedor": "STONE", "modo_integracao": "DESKTOP_BRIDGE"}})
+        payload = {"tipo": "PIX", "valor": "25.50", "idempotency_key": "venda-local-1-pix"}
+
+        primeira = ponte.processPayment(payload)
+        repetida = ponte.processPayment(payload)
+        conflito = ponte.processPayment({**payload, "valor": "30.00"})
+
+        self.assertEqual(repetida["transacao_externa_id"], primeira["transacao_externa_id"])
+        self.assertTrue(repetida["reutilizado"])
+        self.assertEqual(conflito["status"], "erro")
+        self.assertIn("dados diferentes", conflito["mensagem"])
+
     def test_simulador_tef_aprova_estorno_e_registra_diagnostico(self):
         with tempfile.TemporaryDirectory() as pasta:
             caminho = Path(pasta) / "terminal" / "config.json"
@@ -327,6 +368,34 @@ class AppDesktopTests(unittest.TestCase):
         self.assertEqual(diagnostico["eventos"][0]["payload"]["status"], "ok")
         self.assertEqual(diagnostico["eventos"][1]["payload"]["status"], "erro")
 
+    def test_tef_valida_valor_do_estorno_antes_de_processar(self):
+        ponte = app.PonteLocal({"tef": {"provedor": "STONE", "modo_integracao": "DESKTOP_BRIDGE"}})
+
+        sem_transacao = ponte.refundPayment({"tipo": "PIX", "valor": "10.00"})
+        valor_zero = ponte.refundPayment(
+            {"tipo": "PIX", "valor": "0", "transacao_externa_id": "TEF-SIM-ORIGINAL"}
+        )
+
+        self.assertFalse(sem_transacao["estornado"])
+        self.assertIn("transacao original", sem_transacao["mensagem"])
+        self.assertFalse(valor_zero["estornado"])
+        self.assertIn("maior que zero", valor_zero["mensagem"])
+
+    def test_tef_reutiliza_estorno_com_mesma_chave(self):
+        ponte = app.PonteLocal({"tef": {"provedor": "STONE", "modo_integracao": "DESKTOP_BRIDGE"}})
+        payload = {
+            "tipo": "PIX",
+            "valor": "10.00",
+            "transacao_externa_id": "TEF-SIM-ORIGINAL",
+            "idempotency_key": "refund:TEF-SIM-ORIGINAL:10.00",
+        }
+
+        primeiro = ponte.refundPayment(payload)
+        repetido = ponte.refundPayment(payload)
+
+        self.assertEqual(repetido["estorno_transacao_id"], primeiro["estorno_transacao_id"])
+        self.assertTrue(repetido["reutilizado"])
+
     def test_leitura_de_balanca_aceita_peso_simulado_para_homologacao(self):
         config = normalizar_configuracao_balanca(
             {"habilitada": True, "protocolo": "SERIAL", "porta": "COM3", "leitura_automatica": True}
@@ -339,6 +408,71 @@ class AppDesktopTests(unittest.TestCase):
         self.assertEqual(leitura["peso"], "1.250")
         self.assertEqual(leitura["unidade"], "KG")
         self.assertTrue(leitura["simulado"])
+
+    def test_parser_generico_de_balanca_aceita_decimal_e_conversao_de_gramas(self):
+        self.assertEqual(extrair_peso_resposta(b"ST,GS, 1.250 kg\r\n"), "1.250")
+        self.assertEqual(extrair_peso_resposta("PESO: 001250", fator_conversao="0.001"), "1.250")
+        with self.assertRaisesRegex(ErroBalanca, "peso instavel"):
+            extrair_peso_resposta("US,GS, 1.250 kg")
+
+    def test_driver_serial_generico_le_resposta_sem_simulador(self):
+        conexao = MagicMock()
+        conexao.read_until.return_value = b"ST,GS, 2.375 kg\r\n"
+        config = {
+            "habilitada": True,
+            "leitura_automatica": True,
+            "protocolo": "SERIAL",
+            "porta": "COM3",
+        }
+
+        with patch("devices.scales._abrir_serial", return_value=conexao):
+            resultado = ler_peso_balanca(config)
+
+        self.assertEqual(resultado["status"], "ok")
+        self.assertEqual(resultado["peso"], "2.375")
+        self.assertFalse(resultado["simulado"])
+        conexao.read_until.assert_called_once_with(b"\r\n", 256)
+        conexao.close.assert_called_once()
+
+    def test_driver_tcp_generico_valida_endereco_e_le_resposta(self):
+        conexao = MagicMock()
+        conexao.recv.return_value = b"0.875 kg\r\n"
+        contexto = MagicMock()
+        contexto.__enter__.return_value = conexao
+        config = {
+            "habilitada": True,
+            "leitura_automatica": True,
+            "protocolo": "TCP_IP",
+            "porta": "192.168.1.50:4001",
+            "timeout_ms": 1500,
+        }
+
+        with patch("devices.scales.socket.create_connection", return_value=contexto) as conectar:
+            resultado = ler_peso_balanca(config)
+        endereco_invalido = ler_peso_balanca({**config, "porta": "sem-porta"})
+
+        self.assertEqual(resultado["peso"], "0.875")
+        self.assertFalse(resultado["simulado"])
+        conectar.assert_called_once_with(("192.168.1.50", 4001), timeout=1.5)
+        self.assertEqual(endereco_invalido["status"], "erro")
+        self.assertIn("endereco:porta", endereco_invalido["mensagem"])
+
+    def test_driver_arquivo_texto_le_peso_com_limite_local(self):
+        with tempfile.TemporaryDirectory() as pasta:
+            caminho = Path(pasta) / "peso.txt"
+            caminho.write_text("PESO=3,420 KG", encoding="ascii")
+            resultado = ler_peso_balanca(
+                {
+                    "habilitada": True,
+                    "leitura_automatica": True,
+                    "protocolo": "ARQUIVO_TXT",
+                    "porta": str(caminho),
+                }
+            )
+
+        self.assertEqual(resultado["status"], "ok")
+        self.assertEqual(resultado["peso"], "3.420")
+        self.assertFalse(resultado["simulado"])
 
     def test_monta_cupom_operacional_sem_imagens_com_corte_e_gaveta(self):
         payload = {
@@ -497,6 +631,81 @@ class AppDesktopTests(unittest.TestCase):
         self.assertEqual(resposta["bytes"], 320)
         self.assertEqual(imprimir_mock.call_args.args[0], "Zebra ZD421")
         self.assertTrue(imprimir_mock.call_args.args[1].startswith(b"^XA"))
+
+    def test_pre_homologacao_padrao_e_nao_invasiva_e_grava_evidencia(self):
+        bootstrap = {
+            "dispositivos": {
+                "balanca": {
+                    "habilitada": True,
+                    "leitura_automatica": True,
+                    "protocolo": "SERIAL",
+                    "porta": "COM3",
+                },
+                "gaveta": {
+                    "habilitada": True,
+                    "impressora_padrao": "EPSON TM-T20",
+                },
+            },
+            "tef": {"provedor": "STONE", "modo_integracao": "DESKTOP_BRIDGE"},
+        }
+        with tempfile.TemporaryDirectory() as pasta:
+            config_path = Path(pasta) / "terminal" / "config.json"
+            with patch.dict(os.environ, {"SUPERMERCADO_PDV_CONFIG": str(config_path)}):
+                with patch(
+                    "app.listar_impressoras_windows",
+                    return_value=[{"nome": "EPSON TM-T20", "padrao": True, "offline": False}],
+                ):
+                    with patch("app.imprimir_raw_windows") as imprimir_mock:
+                        resultado = app.PonteLocal(bootstrap).runDeviceDiagnostics()
+                eventos = app.listar_eventos_dispositivo()["eventos"]
+
+        self.assertEqual(resultado["contrato"], "pdv_device_homologation_v1")
+        self.assertEqual(resultado["status"], "atencao")
+        self.assertFalse(resultado["homologacao_fisica_concluida"])
+        self.assertEqual([item["codigo"] for item in resultado["verificacoes"]], ["impressora", "balanca", "gaveta", "tef"])
+        self.assertFalse(imprimir_mock.called)
+        self.assertEqual(eventos[-1]["tipo"], "homologacao_dispositivos")
+        self.assertEqual(eventos[-1]["payload"]["contrato"], "pdv_device_homologation_v1")
+
+    def test_pre_homologacao_executa_acoes_fisicas_somente_quando_solicitadas(self):
+        bootstrap = {
+            "dispositivos": {
+                "balanca": {
+                    "habilitada": True,
+                    "leitura_automatica": True,
+                    "protocolo": "SERIAL",
+                    "porta": "COM3",
+                },
+                "gaveta": {
+                    "habilitada": True,
+                    "impressora_padrao": "EPSON TM-T20",
+                },
+            },
+            "tef": {"provedor": "NAO_CONFIGURADO"},
+        }
+        with tempfile.TemporaryDirectory() as pasta:
+            config_path = Path(pasta) / "terminal" / "config.json"
+            with patch.dict(
+                os.environ,
+                {
+                    "SUPERMERCADO_PDV_CONFIG": str(config_path),
+                    "SUPERMERCADO_PDV_PESO_SIMULADO": "1,250",
+                },
+            ):
+                with patch(
+                    "app.listar_impressoras_windows",
+                    return_value=[{"nome": "EPSON TM-T20", "padrao": True, "offline": False}],
+                ):
+                    with patch("app.imprimir_raw_windows", return_value=5) as imprimir_mock:
+                        resultado = app.PonteLocal(bootstrap).homologar_dispositivos(
+                            {"ler_balanca": True, "acionar_gaveta": True}
+                        )
+
+        por_codigo = {item["codigo"]: item for item in resultado["verificacoes"]}
+        self.assertEqual(por_codigo["balanca"]["status"], "ok")
+        self.assertEqual(por_codigo["balanca"]["detalhes"]["peso"], "1.250")
+        self.assertEqual(por_codigo["gaveta"]["status"], "ok")
+        self.assertEqual(imprimir_mock.call_count, 1)
 
 
 if __name__ == "__main__":

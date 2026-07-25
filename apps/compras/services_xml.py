@@ -276,6 +276,16 @@ def importar_xml_entrada(conteudo, *, usuario, gerar_conta_financeira=True, ip=N
         raise ValidationError(
             ["Nenhuma entrada foi criada. Cadastre ou corrija os produtos sem correspondencia:"] + nao_encontrados
         )
+    sem_lote_obrigatorio = [
+        f"item {item['numero'] or '?'}: {produto.nome}"
+        for item, produto in itens_resolvidos
+        if produto.exige_lote and not (item["codigo_lote"] or "").strip()
+    ]
+    if sem_lote_obrigatorio:
+        raise ValidationError(
+            ["Nenhuma entrada foi criada. A NF-e nao informou rastro para produtos que exigem lote:"]
+            + sem_lote_obrigatorio
+        )
 
     with transaction.atomic():
         if EntradaCompra.objects.select_for_update().filter(chave_acesso_xml=dados["chave"]).exists():

@@ -1,3 +1,4 @@
+from datetime import date
 from decimal import Decimal
 
 from django.core.exceptions import ValidationError
@@ -37,6 +38,15 @@ from .models import (
 
 def _autorizacao_texto(supervisor):
     return f" Autorizado por: {supervisor}." if supervisor else ""
+
+
+def _normalizar_data_lote(valor, rotulo):
+    if not valor or isinstance(valor, date):
+        return valor
+    try:
+        return date.fromisoformat(str(valor))
+    except ValueError as exc:
+        raise ValidationError(f"Informe uma data de {rotulo} valida.") from exc
 
 
 def saldo_rastreado_lotes(*, produto, filial, bloquear=False):
@@ -239,7 +249,20 @@ def registrar_perda_estoque(*, produto, filial, usuario, tipo, quantidade, motiv
 
 
 @transaction.atomic
-def confirmar_producao_composicao(*, composicao, filial, quantidade_final, usuario, motivo, observacao="", supervisor=None, ip=None):
+def confirmar_producao_composicao(
+    *,
+    composicao,
+    filial,
+    quantidade_final,
+    usuario,
+    motivo,
+    observacao="",
+    codigo_lote="",
+    fabricacao=None,
+    validade=None,
+    supervisor=None,
+    ip=None,
+):
     if not motivo:
         raise ValidationError("Informe o motivo da producao.")
     if quantidade_final <= 0:
@@ -255,6 +278,15 @@ def confirmar_producao_composicao(*, composicao, filial, quantidade_final, usuar
         raise ValidationError("Composicao inativa nao pode ser produzida.")
     if composicao.filial_id and composicao.filial_id != filial.id:
         raise ValidationError("Composicao pertence a outra filial.")
+    codigo_lote = (codigo_lote or "").strip()
+    fabricacao = _normalizar_data_lote(fabricacao, "fabricacao")
+    validade = _normalizar_data_lote(validade, "validade")
+    if composicao.produto_final.exige_lote and not codigo_lote:
+        raise ValidationError("O produto final exige lote.")
+    if (fabricacao or validade) and not codigo_lote:
+        raise ValidationError("Informe o lote ao preencher fabricacao ou validade.")
+    if fabricacao and validade and fabricacao > validade:
+        raise ValidationError("A validade nao pode ser anterior a fabricacao.")
 
     itens_receita = list(composicao.itens.select_related("produto_componente"))
     if not itens_receita:
@@ -321,7 +353,7 @@ def confirmar_producao_composicao(*, composicao, filial, quantidade_final, usuar
     estoque_final.quantidade_atual += quantidade_final
     estoque_final.full_clean()
     estoque_final.save()
-    MovimentacaoEstoque.objects.create(
+    movimento_final = MovimentacaoEstoque.objects.create(
         produto=composicao.produto_final,
         filial=filial,
         tipo=TipoMovimentacaoEstoque.DESMEMBRAMENTO,
@@ -332,6 +364,15 @@ def confirmar_producao_composicao(*, composicao, filial, quantidade_final, usuar
         custo_total=custo_total,
         usuario=usuario,
     )
+    if codigo_lote:
+        criar_lote_movimentacao(
+            movimentacao=movimento_final,
+            codigo_lote=codigo_lote,
+            quantidade=quantidade_final,
+            custo_unitario=custo_total / quantidade_final,
+            fabricacao=fabricacao,
+            validade=validade,
+        )
 
     LogAuditoria.objects.create(
         usuario=usuario,
@@ -380,12 +421,28 @@ def cancelar_producao_composicao(*, producao, usuario, motivo, supervisor=None, 
         custo_total=producao.custo_total,
         usuario=usuario,
     )
-    reconciliar_lotes_reducao_inventario(
-        produto=producao.produto_final,
-        filial=producao.filial,
-        saldo_novo=estoque_final.quantidade_atual,
-        movimentacao=movimento_final_cancelamento,
+    movimento_final_origem = MovimentacaoEstoque.objects.filter(
+        referencia=f"composicao:{producao.id}:final"
+    ).first()
+    alocacao_final = (
+        movimento_final_origem.alocacoes_lote.select_related("lote").first()
+        if movimento_final_origem
+        else None
     )
+    if alocacao_final:
+        consumir_lotes_movimentacao(
+            movimentacao=movimento_final_cancelamento,
+            quantidade=producao.quantidade_final,
+            lote_id=alocacao_final.lote_id,
+            exigir_lote=True,
+        )
+    else:
+        reconciliar_lotes_reducao_inventario(
+            produto=producao.produto_final,
+            filial=producao.filial,
+            saldo_novo=estoque_final.quantidade_atual,
+            movimentacao=movimento_final_cancelamento,
+        )
 
     for item in producao.itens.select_related("produto_componente"):
         estoque_componente, _ = Estoque.objects.select_for_update().get_or_create(
@@ -433,7 +490,16 @@ def cancelar_producao_composicao(*, producao, usuario, motivo, supervisor=None, 
 
 
 @transaction.atomic
-def confirmar_ordem_producao_composicao(*, ordem, usuario, supervisor=None, ip=None):
+def confirmar_ordem_producao_composicao(
+    *,
+    ordem,
+    usuario,
+    codigo_lote="",
+    fabricacao=None,
+    validade=None,
+    supervisor=None,
+    ip=None,
+):
     ordem = (
         OrdemProducaoComposicao.objects.select_for_update()
         .select_related("composicao", "filial", "produto_final")
@@ -448,6 +514,9 @@ def confirmar_ordem_producao_composicao(*, ordem, usuario, supervisor=None, ip=N
         usuario=usuario,
         motivo=f"Ordem de produção {ordem.id}: {ordem.motivo}",
         observacao=ordem.observacao,
+        codigo_lote=codigo_lote,
+        fabricacao=fabricacao,
+        validade=validade,
         supervisor=supervisor,
         ip=ip,
     )
@@ -514,6 +583,13 @@ def confirmar_desmembramento_multidestino(
             raise ValidationError("As quantidades do desmembramento devem ser maiores que zero.")
         if produto_origem == destino["produto"]:
             raise ValidationError("Produto origem e produto destino devem ser diferentes.")
+        tipo_saida = destino.get("tipo_saida") or TipoSaidaDesmembramento.VENDAVEL
+        if (
+            tipo_saida != TipoSaidaDesmembramento.PERDA
+            and destino["produto"].exige_lote
+            and not (destino.get("lote") or "").strip()
+        ):
+            raise ValidationError(f"O produto destino {destino['produto']} exige lote.")
 
     estoque_origem, _ = Estoque.objects.select_for_update().get_or_create(produto=produto_origem, filial=filial)
     if estoque_origem.quantidade_disponivel < quantidade_origem:

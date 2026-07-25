@@ -19,8 +19,16 @@ class MarcaAdmin(admin.ModelAdmin):
 
 @admin.register(Produto)
 class ProdutoAdmin(admin.ModelAdmin):
-    list_display = ("nome", "codigo_barras", "categoria", "preco_venda", "produto_pesavel", "is_active")
+    list_display = ("nome", "codigo_barras", "categoria", "preco_venda", "produto_pesavel", "exige_lote", "is_active")
     search_fields = ("nome", "codigo_barras", "codigo_interno")
-    list_filter = ("categoria", "marca", "produto_pesavel", "vendido_no_pdv", "vendido_no_marketplace", "is_active")
+    list_filter = (
+        "categoria",
+        "marca",
+        "produto_pesavel",
+        "exige_lote",
+        "vendido_no_pdv",
+        "vendido_no_marketplace",
+        "is_active",
+    )
 
 # Register your models here.
