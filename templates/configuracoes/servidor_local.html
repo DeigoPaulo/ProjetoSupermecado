@@ -24,10 +24,19 @@
 
 <section class="metrics-grid">
   <article class="metric"><span>Contrato</span><strong>{{ payload.contrato }}</strong></article>
+  <article class="metric"><span>Prontidao local</span><strong>{{ prontidao.percentual }}%</strong></article>
   <article class="metric"><span>Local</span><strong>{{ modos.local.empresas }}</strong></article>
-  <article class="metric"><span>Híbrido</span><strong>{{ modos.hibrido.empresas }}</strong></article>
+  <article class="metric"><span>Hibrido</span><strong>{{ modos.hibrido.empresas }}</strong></article>
   <article class="metric"><span>Nuvem/agente</span><strong>{{ modos.nuvem_agente.empresas }}</strong></article>
   <article class="metric"><span>PDV separado</span><strong>Sim</strong></article>
+</section>
+
+<section class="operation-notice {% if prontidao.bloqueios %}operation-notice-warning{% endif %}">
+  <i class="fa-solid fa-clipboard-check"></i>
+  <div>
+    <strong>Prontidao do servidor local: {{ prontidao.status }}</strong>
+    <span>{{ prontidao.proximo_passo }} Contrato {{ prontidao.contrato }}.</span>
+  </div>
 </section>
 
 <section class="split-grid">
@@ -67,8 +76,8 @@
 <section class="panel">
   <div class="panel-heading">
     <div>
-      <h2>Servico Windows planejado</h2>
-      <p>Contrato operacional para empacotar o servidor local como servico real, mantendo a tarefa agendada como fallback.</p>
+      <h2>Serviço Windows preparado</h2>
+      <p>Instalador operacional do servidor local como serviço real, mantendo a tarefa agendada como contingência.</p>
     </div>
   </div>
   <dl class="detail-list">
@@ -94,7 +103,11 @@
       <thead><tr><th>Uso</th><th>Arquivo</th></tr></thead>
       <tbody>
         <tr><td>Subir servidor</td><td><code>{{ payload.scripts.subir_servidor }}</code></td></tr>
-        <tr><td>Agendar servidor</td><td><code>{{ payload.scripts.registrar_servidor }}</code></td></tr>
+                <tr><td>Agendar servidor (contingência)</td><td><code>{{ payload.scripts.registrar_servidor }}</code></td></tr>
+        <tr><td>Instalar serviço Windows</td><td><code>{{ payload.scripts.instalar_servico }}</code></td></tr>
+        <tr><td>Diagnosticar serviço</td><td><code>{{ payload.scripts.diagnosticar_servico }}</code></td></tr>
+        <tr><td>Remover serviço</td><td><code>{{ payload.scripts.remover_servico }}</code></td></tr>
+        <tr><td>Template WinSW</td><td><code>{{ payload.scripts.template_servico }}</code></td></tr>
         <tr><td>Backup local</td><td><code>{{ payload.scripts.backup_local }}</code></td></tr>
         <tr><td>Agendar backup</td><td><code>{{ payload.scripts.registrar_backup }}</code></td></tr>
         <tr><td>Senha do backup criptografado</td><td><code>{{ payload.scripts.backup_criptografia_env }}</code></td></tr>

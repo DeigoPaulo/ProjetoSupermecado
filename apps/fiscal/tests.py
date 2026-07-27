@@ -4,7 +4,7 @@ from decimal import Decimal
 from django.contrib.auth import get_user_model
 from django.core.exceptions import ValidationError
 from django.core.files.uploadedfile import SimpleUploadedFile
-from django.test import Client, TestCase
+from django.test import Client, TestCase, override_settings
 from django.utils import timezone as django_timezone
 from cryptography import x509
 from cryptography.hazmat.primitives import hashes, serialization
@@ -127,14 +127,15 @@ class FiscalTests(TestCase):
         self.assertContains(response, f"#{self.venda.id}")
         self.assertContains(response, "Venda ao consumidor")
         self.assertContains(response, "Homologacao")
+        self.assertContains(response, "Produção fiscal")
         self.assertContains(response, "Situacao fiscal")
         self.assertContains(response, "Pronta")
         self.assertContains(response, "Valido ate")
         self.assertContains(response, "Produtos fiscais")
-        self.assertContains(response, "Pendencias automaticas")
-        self.assertContains(response, "Prontidao fiscal")
-        self.assertContains(response, "Prontidao por filial")
-        self.assertContains(response, "Diagnostico JSON")
+        self.assertContains(response, "Pendências automáticas")
+        self.assertContains(response, "Prontidão fiscal")
+        self.assertContains(response, "Prontidão por filial")
+        self.assertContains(response, "Diagnóstico JSON")
 
     def test_diagnostico_json_fiscal_resume_prontidao_por_filial(self):
         response = self.client.get("/fiscal/diagnostico.json")
@@ -146,6 +147,38 @@ class FiscalTests(TestCase):
         self.assertEqual(payload["resumo"]["vendas_pendentes"], 1)
         self.assertEqual(payload["filiais"][0]["serie_nfce"], 1)
         self.assertIn("venda(s) aguardando NFC-e", " ".join(payload["filiais"][0]["pendencias"]))
+        self.assertEqual(payload["contrato"], "fiscal_readiness_v1")
+        self.assertEqual(payload["producao"]["contrato"], "fiscal_production_readiness_v1")
+        self.assertEqual(payload["producao"]["filiais_em_producao"], 0)
+        self.assertFalse(payload["producao"]["transmissao_real_disponivel"])
+        self.assertTrue(payload["producao"]["homologacao_simulada_disponivel"])
+
+
+    def test_diagnostico_json_fiscal_alerta_producao_sem_adaptador_sefaz(self):
+        self.configuracao.ambiente = AmbienteFiscal.PRODUCAO
+        self.configuracao.save(update_fields=["ambiente"])
+
+        response = self.client.get("/fiscal/diagnostico.json")
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertEqual(payload["producao"]["filiais_em_producao"], 1)
+        self.assertFalse(payload["producao"]["sefaz_adapter_configurado"])
+        self.assertFalse(payload["producao"]["transmissao_real_disponivel"])
+        self.assertIn("adaptador SEFAZ oficial", " ".join(payload["producao"]["alertas"]))
+
+    @override_settings(FISCAL_SEFAZ_ADAPTER="sefaz.oficial.Adapter")
+    def test_diagnostico_json_fiscal_marca_producao_pronta_com_adaptador(self):
+        self.configuracao.ambiente = AmbienteFiscal.PRODUCAO
+        self.configuracao.save(update_fields=["ambiente"])
+
+        response = self.client.get("/fiscal/diagnostico.json")
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertTrue(payload["producao"]["sefaz_adapter_configurado"])
+        self.assertTrue(payload["producao"]["transmissao_real_disponivel"])
+        self.assertEqual(payload["producao"]["alertas"], [])
 
     def test_contingencia_json_exporta_documentos_prontos_com_xml_e_auditoria(self):
         documento = preparar_documento_venda(self.venda, self.user)
@@ -265,7 +298,7 @@ class FiscalTests(TestCase):
 
         response = self.client.get("/fiscal/")
 
-        self.assertContains(response, "Pendencias automaticas")
+        self.assertContains(response, "Pendências automáticas")
         self.assertContains(response, "Tentativa automatica em")
         self.assertContains(response, "1 pendencia")
 
@@ -401,6 +434,47 @@ class FiscalTests(TestCase):
         self.assertEqual(response_natureza.status_code, 200)
         self.assertContains(response_natureza, "Operacao fiscal")
         self.assertContains(response_natureza, "Use CFOP com 4 digitos")
+
+    def test_edicao_de_serie_e_natureza_fiscal_gera_auditoria(self):
+        serie = SerieFiscal.objects.get(filial=self.filial)
+        natureza = NaturezaOperacao.objects.get(descricao="Venda ao consumidor")
+
+        response_serie = self.client.post(
+            f"/fiscal/series/{serie.pk}/editar/",
+            {
+                "filial": self.filial.pk,
+                "tipo_documento": TipoDocumentoFiscal.NFCE,
+                "serie": 2,
+                "proximo_numero": 150,
+                "ativo": "on",
+            },
+            REMOTE_ADDR="127.0.0.10",
+        )
+        response_natureza = self.client.post(
+            f"/fiscal/naturezas/{natureza.pk}/editar/",
+            {
+                "descricao": "Venda presencial",
+                "cfop": "5102",
+                "tipo_documento": TipoDocumentoFiscal.NFCE,
+                "movimenta_estoque": "on",
+                "ativo": "on",
+            },
+            REMOTE_ADDR="127.0.0.11",
+        )
+
+        self.assertRedirects(response_serie, "/fiscal/")
+        self.assertRedirects(response_natureza, "/fiscal/")
+        log_serie = LogAuditoria.objects.get(acao="ATUALIZA_SERIE_FISCAL", objeto_id=str(serie.pk))
+        log_natureza = LogAuditoria.objects.get(
+            acao="ATUALIZA_NATUREZA_OPERACAO",
+            objeto_id=str(natureza.pk),
+        )
+        self.assertEqual(log_serie.usuario, self.user)
+        self.assertEqual(log_serie.ip, "127.0.0.10")
+        self.assertIn("Serie fiscal 2", log_serie.descricao)
+        self.assertEqual(log_natureza.usuario, self.user)
+        self.assertEqual(log_natureza.ip, "127.0.0.11")
+        self.assertIn("Venda presencial", log_natureza.descricao)
 
     def test_bloqueia_nfce_sem_certificado_a1(self):
         self.configuracao.certificado_a1_criptografado = None

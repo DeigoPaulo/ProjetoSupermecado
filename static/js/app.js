@@ -1,4 +1,18 @@
 document.addEventListener("DOMContentLoaded", function () {
+  var desktopCloseButton = document.getElementById("desktop-close-application");
+  if (desktopCloseButton) {
+    desktopCloseButton.addEventListener("click", function () {
+      var bridge = window.SupermercadoDesktop && window.SupermercadoDesktop.closeApplication;
+      if (!bridge) return;
+      if (!window.confirm("Fechar o aplicativo PDV?")) return;
+      desktopCloseButton.disabled = true;
+      Promise.resolve(bridge.call(window.SupermercadoDesktop)).catch(function () {
+        desktopCloseButton.disabled = false;
+        window.alert("Nao foi possivel fechar o aplicativo.");
+      });
+    });
+  }
+
   function aplicarMascaras() {
     if (typeof window.jQuery === "undefined" || !window.jQuery.fn.mask) {
       window.setTimeout(aplicarMascaras, 100);
@@ -229,7 +243,7 @@ document.addEventListener("DOMContentLoaded", function () {
           if (!resultado || resultado.status !== "ok") {
             throw new Error((resultado && resultado.mensagem) || "A impressora não confirmou o lote.");
           }
-          if (feedback) feedback.textContent = "Etiquetas enviadas para " + resultado.impressora + ".";
+          if (feedback) feedback.textContent = resultado.copias + " etiqueta(s) de " + resultado.itens + " produto(s) enviadas para " + resultado.impressora + ".";
         }).catch(function (erro) {
           if (feedback) feedback.textContent = "Falha na impressão direta: " + erro.message;
         }).finally(function () {
@@ -533,7 +547,7 @@ document.addEventListener("DOMContentLoaded", function () {
         tipo: form.getAttribute("data-refund-tipo") || "",
         valor: form.getAttribute("data-refund-valor") || "",
         transacao_externa_id: form.getAttribute("data-refund-transacao") || "",
-        idempotency_key: [
+        idempotency_key: form.getAttribute("data-refund-key") || [
           "refund",
           form.getAttribute("data-refund-transacao") || "",
           form.getAttribute("data-refund-valor") || "",
@@ -545,13 +559,19 @@ document.addEventListener("DOMContentLoaded", function () {
           }
           var autorizacao = form.querySelector("input[name='autorizacao']");
           var mensagem = form.querySelector("input[name='mensagem_processadora']");
+          var transacaoEstorno = form.querySelector("input[name='transacao_estorno_id']");
           if (autorizacao && !autorizacao.value.trim()) {
             autorizacao.value = resultado.codigo_autorizacao || resultado.nsu || resultado.estorno_transacao_id || "";
           }
+          if (transacaoEstorno) {
+            transacaoEstorno.value = resultado.estorno_transacao_id || "";
+          }
           if (mensagem) {
             mensagem.value = resultado.mensagem_processadora || "Estorno aprovado pela maquininha.";
-          }
-          form.dataset.tefRefundReady = "1";
+            if (resultado.estorno_transacao_id) {
+              mensagem.value += " Transacao de estorno: " + resultado.estorno_transacao_id + ".";
+            }
+          }          form.dataset.tefRefundReady = "1";
           form.submit();
         })
         .catch(function (erro) {
@@ -599,6 +619,9 @@ document.addEventListener("DOMContentLoaded", function () {
     var scaleButton = document.querySelector("[data-pdv-read-scale]");
     var scaleFeedback = document.getElementById("pdv-scale-feedback");
     var descontoInput = document.getElementById("id_desconto");
+    var discountAuthorization = document.getElementById("pdv-discount-authorization");
+    var discountSupervisor = discountAuthorization && discountAuthorization.querySelector("input[name='supervisor_usuario']");
+    var discountPassword = discountAuthorization && discountAuthorization.querySelector("input[name='supervisor_senha']");
     var recebidoInput = document.getElementById("id_valor_recebido");
     var finishForm = document.getElementById("pdv-finish-form");
     var finalizeButton = document.getElementById("pdv-finalize-button");
@@ -622,6 +645,12 @@ document.addEventListener("DOMContentLoaded", function () {
     var modalRestante = document.getElementById("pdv-modal-restante");
     var modalTroco = document.getElementById("pdv-modal-troco");
     var electronicChoice = document.getElementById("pdv-electronic-choice");
+    var pixPanel = document.getElementById("pdv-pix-panel");
+    var pixQrCode = document.getElementById("pdv-pix-qrcode");
+    var pixValue = document.getElementById("pdv-pix-value");
+    var pixMessage = document.getElementById("pdv-pix-message");
+    var pixSimulation = document.getElementById("pdv-pix-simulation");
+    var pixPollingToken = 0;
     var pdvModals = document.querySelectorAll(".pdv-modal");
     var postSaleModal = document.getElementById("pdv-post-sale-modal");
     var postSalePrintButton = document.getElementById("pdv-print-last-sale");
@@ -680,10 +709,23 @@ document.addEventListener("DOMContentLoaded", function () {
       if (modalTroco) modalTroco.textContent = formatMoney(Math.max(recebidoPagamentos - totalFinal, 0));
     }
 
+    function atualizarAutorizacaoDesconto() {
+      if (!discountAuthorization) return;
+      var exigeAutorizacao = Math.max(decimalFromInput(descontoInput && descontoInput.value), 0) > 0;
+      discountAuthorization.hidden = !exigeAutorizacao;
+      if (discountSupervisor) discountSupervisor.required = exigeAutorizacao;
+      if (discountPassword) discountPassword.required = exigeAutorizacao;
+      if (!exigeAutorizacao) {
+        if (discountSupervisor) discountSupervisor.value = "";
+        if (discountPassword) discountPassword.value = "";
+      }
+    }
+
     function abrirPagamentos() {
       if (!paymentModal) return;
       paymentModal.classList.add("is-open");
       paymentModal.setAttribute("aria-hidden", "false");
+      atualizarAutorizacaoDesconto();
       atualizarResumoPdv();
       var firstSelect = paymentModal.querySelector("select");
       if (firstSelect) firstSelect.focus();
@@ -781,6 +823,13 @@ document.addEventListener("DOMContentLoaded", function () {
 
     function finalizarVendaPdv() {
       if (!finishForm) return;
+      var desconto = Math.max(decimalFromInput(descontoInput && descontoInput.value), 0);
+      if (desconto > 0 && (!discountSupervisor || !discountSupervisor.value.trim() || !discountPassword || !discountPassword.value)) {
+        informarPagamentoFeedback("Informe usuário e senha do supervisor ou administrador para autorizar o desconto.");
+        if (discountSupervisor && !discountSupervisor.value.trim()) discountSupervisor.focus();
+        else if (discountPassword) discountPassword.focus();
+        return;
+      }
       if (!pagamentoCompleto()) {
         informarPagamentoFeedback("Informe uma forma e complete o valor restante.");
         var primeiroSelect = paymentModal && paymentModal.querySelector("select");
@@ -902,14 +951,71 @@ document.addEventListener("DOMContentLoaded", function () {
       row.classList.add("is-authorized");
     }
 
+    function ocultarPixPanel() {
+      pixPollingToken += 1;
+      if (!pixPanel) return;
+      pixPanel.hidden = true;
+      if (pixQrCode) pixQrCode.removeAttribute("src");
+      if (pixSimulation) pixSimulation.hidden = true;
+    }
+
+    function exibirPixPanel(resultado) {
+      if (!pixPanel || !resultado) return;
+      pixPanel.hidden = false;
+      if (pixQrCode && resultado.pix_qr_code_image) pixQrCode.src = resultado.pix_qr_code_image;
+      if (pixValue) pixValue.textContent = formatMoney(decimalFromInput(resultado.valor));
+      if (pixMessage) pixMessage.textContent = resultado.mensagem_processadora || "Aguardando confirmação do PIX...";
+      if (pixSimulation) pixSimulation.hidden = !resultado.pix_simulado;
+    }
+
+    function aguardarConfirmacaoPix(resultadoInicial, requestKey) {
+      var bridge = window.SupermercadoDesktop && window.SupermercadoDesktop.checkPayment;
+      if (!bridge) return Promise.reject(new Error("Consulta PIX indisponivel neste aplicativo desktop."));
+      exibirPixPanel(resultadoInicial);
+      var token = ++pixPollingToken;
+      var tentativas = 0;
+      return new Promise(function (resolve, reject) {
+        function consultar() {
+          if (token !== pixPollingToken) {
+            reject(new Error("Consulta PIX cancelada pelo operador."));
+            return;
+          }
+          tentativas += 1;
+          if (tentativas > 120) {
+            reject(new Error("Tempo limite aguardando a confirmação do PIX."));
+            return;
+          }
+          Promise.resolve(bridge.call(window.SupermercadoDesktop, {
+            transacao_externa_id: resultadoInicial.transacao_externa_id,
+            idempotency_key: requestKey,
+          }))
+            .then(function (resultado) {
+              if (resultado && resultado.status === "ok" && resultado.aprovado) {
+                resolve(resultado);
+                return;
+              }
+              if (!resultado || resultado.status === "erro" || resultado.status === "recusado") {
+                reject(new Error((resultado && resultado.mensagem) || "PIX recusado ou não confirmado."));
+                return;
+              }
+              exibirPixPanel(resultado);
+              window.setTimeout(consultar, 1000);
+            })
+            .catch(reject);
+        }
+        window.setTimeout(consultar, 800);
+      });
+    }
+
     function processarPagamentoEletronico(row, tipo) {
       var bridge = window.SupermercadoDesktop && window.SupermercadoDesktop.processPayment;
       var input = row && row.querySelector("input[name='pagamento_valor']");
       var select = row && row.querySelector("select");
       if (!row || !input || !select) return;
       limparAutorizacaoPagamento(row, true);
+      ocultarPixPanel();
       if (!bridge) {
-        informarPagamentoFeedback("Maquininha disponível somente no app desktop. Configure o terminal ou use uma forma manual.");
+        informarPagamentoFeedback("Maquininha disponivel somente no app desktop. Configure o terminal ou use uma forma manual.");
         select.focus();
         return;
       }
@@ -926,30 +1032,39 @@ document.addEventListener("DOMContentLoaded", function () {
           : "pdv-" + Date.now() + "-" + Math.random().toString(16).slice(2);
         row.dataset.tefRequestSignature = assinaturaRequisicao;
       }
-      informarPagamentoFeedback("Aguardando resposta da maquininha...");
+      informarPagamentoFeedback(tipo === "pix" ? "Gerando QR Code PIX..." : "Aguardando resposta da maquininha...");
       Promise.resolve(bridge.call(window.SupermercadoDesktop, {
         tipo: tipo,
         valor: valor,
         idempotency_key: row.dataset.tefRequestKey,
       }))
         .then(function (resultado) {
+          if (tipo === "pix" && resultado && resultado.status === "pending") {
+            informarPagamentoFeedback("QR Code PIX disponível. Aguardando pagamento do cliente...");
+            return aguardarConfirmacaoPix(resultado, row.dataset.tefRequestKey);
+          }
+          return resultado;
+        })
+        .then(function (resultado) {
           if (!resultado || resultado.status !== "ok" || !resultado.aprovado) {
-            throw new Error((resultado && resultado.mensagem) || "Pagamento recusado ou não confirmado.");
+            throw new Error((resultado && resultado.mensagem) || "Pagamento recusado ou nao confirmado.");
           }
           aplicarAutorizacaoPagamento(row, resultado);
+          ocultarPixPanel();
           informarPagamentoFeedback("Pagamento " + tipo.toUpperCase() + " aprovado. Aut. " + resultado.codigo_autorizacao + ".");
           select.focus();
         })
         .catch(function (erro) {
           limparAutorizacaoPagamento(row, true);
-          informarPagamentoFeedback("Não foi possivel confirmar na maquininha: " + erro.message);
+          ocultarPixPanel();
+          informarPagamentoFeedback("Nao foi possivel confirmar na maquininha: " + erro.message);
           select.focus();
         });
     }
-
     function fecharPagamentos() {
       if (!paymentModal) return;
       fecharEscolhaEletronica();
+      ocultarPixPanel();
       paymentModal.classList.remove("is-open");
       paymentModal.setAttribute("aria-hidden", "true");
       if (openPaymentButton) openPaymentButton.focus();
@@ -1154,7 +1269,18 @@ document.addEventListener("DOMContentLoaded", function () {
       atualizarResumoPdv();
     }
 
-    if (descontoInput) descontoInput.addEventListener("input", atualizarResumoPdv);
+    if (descontoInput) {
+      descontoInput.addEventListener("input", function () {
+        var autorizados = paymentRows && paymentRows.querySelectorAll(".pdv-payment-row.is-authorized");
+        if (autorizados && autorizados.length) {
+          autorizados.forEach(function (row) { limparAutorizacaoPagamento(row); });
+          ocultarPixPanel();
+          informarPagamentoFeedback("O desconto alterou o total. Reprocesse os pagamentos eletrônicos.");
+        }
+        atualizarAutorizacaoDesconto();
+        atualizarResumoPdv();
+      });
+    }
     if (recebidoInput) recebidoInput.addEventListener("input", atualizarResumoPdv);
     if (openPaymentButton) openPaymentButton.addEventListener("click", abrirPagamentos);
     if (closePaymentButton) closePaymentButton.addEventListener("click", fecharPagamentos);
@@ -1284,6 +1410,15 @@ document.addEventListener("DOMContentLoaded", function () {
         if (key === "Enter" || key === "Escape") {
           event.preventDefault();
           fecharPosVenda();
+          return;
+        }
+        if (key.length === 1 && !event.ctrlKey && !event.altKey && !event.metaKey) {
+          event.preventDefault();
+          fecharPosVenda();
+          if (buscaProduto) {
+            buscaProduto.value = key;
+            buscaProduto.focus();
+          }
           return;
         }
       }
@@ -1490,6 +1625,7 @@ document.addEventListener("DOMContentLoaded", function () {
     document.querySelectorAll(".pdv-mode .content > .messages .message").forEach(function (message) {
       window.setTimeout(function () { message.remove(); }, message.classList.contains("error") ? 3800 : 1800);
     });
+    atualizarAutorizacaoDesconto();
     atualizarResumoPdv();
   }
 });

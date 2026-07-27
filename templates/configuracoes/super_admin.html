@@ -107,6 +107,42 @@
 <section class="panel">
   <div class="panel-heading">
     <div>
+      <h2>Fila de telas avançadas</h2>
+      <p>Modelos que ainda precisam de CRUD guiado, consulta protegida ou evolução futura fora do admin Django.</p>
+    </div>
+  </div>
+  {% if modelos_avancados_pendentes %}
+    <div class="table-wrapper">
+      <table>
+        <thead><tr><th>Área</th><th>Modelos</th><th>Prioridade</th><th>Status recomendado</th><th>Próxima ação</th><th></th></tr></thead>
+        <tbody>
+          {% for item in modelos_avancados_pendentes %}
+            <tr>
+              <td><strong>{{ item.area }}</strong></td>
+              <td>{{ item.modelos }}</td>
+              <td><span class="status {% if item.prioridade == 'Alta' %}status-danger{% elif item.prioridade == 'Média' %}status-warning{% else %}status-muted{% endif %}">{{ item.prioridade }}</span></td>
+              <td><strong>{{ item.status }}</strong></td>
+              <td>{{ item.acao }}</td>
+              <td><a class="secondary-button compact-button" href="{% url item.url_name %}">Abrir</a></td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  {% else %}
+    <div class="operation-notice success-notice">
+      <i class="fa-solid fa-circle-check"></i>
+      <div>
+        <strong>Fila avançada concluída</strong>
+        <span>Os modelos internos possuem cadastro guiado ou consulta protegida fora do admin padrão do Django.</span>
+      </div>
+    </div>
+  {% endif %}
+</section>
+
+<section class="panel">
+  <div class="panel-heading">
+    <div>
       <h2>Atividade recente</h2>
       <p>Últimas ações auditadas no sistema, para leitura rápida antes de investigar em detalhes.</p>
     </div>
@@ -208,13 +244,14 @@
     <h2>Inventário técnico</h2>
     <div class="table-wrapper">
       <table>
-        <thead><tr><th>App</th><th>Modelo</th><th>Registros</th></tr></thead>
+        <thead><tr><th>App</th><th>Modelo</th><th>Registros</th><th></th></tr></thead>
         <tbody>
           {% for modelo in modelos %}
             <tr>
               <td>{{ modelo.app }}</td>
-              <td>{{ modelo.modelo }}</td>
+              <td><strong>{{ modelo.modelo }}</strong><br><small>{{ modelo.modelo_tecnico }}</small></td>
               <td><strong>{{ modelo.total|default:"-" }}</strong></td>
+              <td><a class="secondary-button compact-button" href="{{ modelo.inspecao_url }}">Inspecionar</a></td>
             </tr>
           {% endfor %}
         </tbody>

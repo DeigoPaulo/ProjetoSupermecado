@@ -1,3 +1,4 @@
+from django.conf import settings
 from django.contrib import messages
 from django.contrib.auth.decorators import login_required
 from django.core.exceptions import ValidationError
@@ -13,7 +14,7 @@ from apps.vendas.models import StatusVenda, Venda
 
 from .certificados import salvar_certificado_a1
 from .forms import ConfiguracaoFiscalForm, NaturezaOperacaoForm, SerieFiscalForm
-from .models import ConfiguracaoFiscal, DocumentoFiscal, NaturezaOperacao, SerieFiscal, StatusDocumentoFiscal, TipoDocumentoFiscal
+from .models import AmbienteFiscal, ConfiguracaoFiscal, DocumentoFiscal, NaturezaOperacao, SerieFiscal, StatusDocumentoFiscal, TipoDocumentoFiscal
 from .services import (
     cancelar_documento,
     pendencias_preparacao_fiscal,
@@ -79,6 +80,23 @@ def _diagnostico_prontidao_fiscal():
                 "status": status,
             }
         )
+    producao_configs = [config for config in configuracoes.values() if config.ambiente == AmbienteFiscal.PRODUCAO]
+    sefaz_adapter = getattr(settings, "FISCAL_SEFAZ_ADAPTER", "")
+    sefaz_adapter_configurado = bool(sefaz_adapter)
+    alertas_producao = []
+    if producao_configs and not sefaz_adapter_configurado:
+        alertas_producao.append("Existe filial em produção fiscal, mas nenhum adaptador SEFAZ oficial foi configurado.")
+    if not producao_configs:
+        alertas_producao.append("Nenhuma filial em produção fiscal; transmissão real permanece fora de uso.")
+
+    producao = {
+        "contrato": "fiscal_production_readiness_v1",
+        "filiais_em_producao": len(producao_configs),
+        "sefaz_adapter_configurado": sefaz_adapter_configurado,
+        "transmissao_real_disponivel": bool(producao_configs and sefaz_adapter_configurado),
+        "homologacao_simulada_disponivel": True,
+        "alertas": alertas_producao,
+    }
     resumo = {
         "filiais": len(filiais),
         "filiais_prontas": sum(1 for filial in filiais if filial["status"] == "Pronta"),
@@ -88,7 +106,7 @@ def _diagnostico_prontidao_fiscal():
         "documentos_prontos": DocumentoFiscal.objects.filter(status=StatusDocumentoFiscal.PRONTO).count(),
         "documentos_rejeitados": DocumentoFiscal.objects.filter(status=StatusDocumentoFiscal.REJEITADO).count(),
     }
-    return {"resumo": resumo, "filiais": filiais, "alertas": alertas}
+    return {"contrato": "fiscal_readiness_v1", "resumo": resumo, "filiais": filiais, "alertas": alertas, "producao": producao}
 
 
 @login_required
@@ -332,7 +350,20 @@ def serie_form(request, pk=None):
     if request.method == "POST":
         form = SerieFiscalForm(request.POST, instance=serie)
         if form.is_valid():
-            form.save()
+            criando = serie is None
+            serie = form.save()
+            LogAuditoria.objects.create(
+                usuario=request.user,
+                modulo="fiscal",
+                acao="CRIA_SERIE_FISCAL" if criando else "ATUALIZA_SERIE_FISCAL",
+                descricao=(
+                    f"Serie fiscal {serie.serie} ({serie.get_tipo_documento_display()}) "
+                    f"da filial {serie.filial} {'criada' if criando else 'atualizada'}."
+                ),
+                objeto_tipo="SerieFiscal",
+                objeto_id=str(serie.pk),
+                ip=request.META.get("REMOTE_ADDR"),
+            )
             messages.success(request, "Serie fiscal salva.")
             return redirect("fiscal:documentos")
     else:
@@ -347,7 +378,20 @@ def natureza_form(request, pk=None):
     if request.method == "POST":
         form = NaturezaOperacaoForm(request.POST, instance=natureza)
         if form.is_valid():
-            form.save()
+            criando = natureza is None
+            natureza = form.save()
+            LogAuditoria.objects.create(
+                usuario=request.user,
+                modulo="fiscal",
+                acao="CRIA_NATUREZA_OPERACAO" if criando else "ATUALIZA_NATUREZA_OPERACAO",
+                descricao=(
+                    f"Natureza de operacao {natureza.descricao} (CFOP {natureza.cfop}) "
+                    f"{'criada' if criando else 'atualizada'}."
+                ),
+                objeto_tipo="NaturezaOperacao",
+                objeto_id=str(natureza.pk),
+                ip=request.META.get("REMOTE_ADDR"),
+            )
             messages.success(request, "Natureza de operacao salva.")
             return redirect("fiscal:documentos")
     else:

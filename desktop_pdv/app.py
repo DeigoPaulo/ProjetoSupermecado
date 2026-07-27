@@ -1,9 +1,18 @@
 from __future__ import annotations
 
 import argparse
+import base64
+import hashlib
+import io
+import hmac
+import html
 import json
 import os
 import sys
+import threading
+
+import qrcode
+
 from decimal import Decimal, InvalidOperation
 from pathlib import Path
 from datetime import datetime, timezone
@@ -16,8 +25,30 @@ from devices.printers import ErroDescobertaImpressoras, listar_impressoras_windo
 from devices.labels import montar_etiquetas_nativas
 from devices.printing import ErroImpressao, imprimir_raw_windows, montar_cupom_escpos, montar_pulso_gaveta_escpos
 from devices.scales import ler_peso_balanca, normalizar_configuracao_balanca
+from devices.secrets import ErroProtecaoSegredo, desproteger_segredo, proteger_segredo
+from devices.runtime import instancia_unica_terminal
+from devices.events import EventLog
+from devices.tef import (
+    AdaptadorTefIndisponivel,
+    criar_adaptador_tef,
+    validar_resposta_tef,
+)
 
 APP_DIR = Path(__file__).resolve().parent
+
+_SYNC_EVENTOS_LOCK = threading.Lock()
+
+
+def _sincronizacao_eventos_exclusiva(func):
+    def wrapper(*args, **kwargs):
+        if not _SYNC_EVENTOS_LOCK.acquire(blocking=False):
+            return {"status": "ocupado", "enviados": 0, "mensagem": "Sincronizacao de eventos ja em andamento."}
+        try:
+            return func(*args, **kwargs)
+        finally:
+            _SYNC_EVENTOS_LOCK.release()
+    return wrapper
+
 
 
 class TerminalRecusado(RuntimeError):
@@ -48,6 +79,19 @@ def normalizar_valor_tef(valor) -> str:
     return format(valor_centavos, ".2f")
 
 
+def gerar_qr_code_data_url(conteudo: str) -> str:
+    conteudo = str(conteudo or "").strip()
+    if not conteudo:
+        raise ValueError("Conteudo PIX ausente para gerar o QR Code.")
+    qr = qrcode.QRCode(version=None, error_correction=qrcode.constants.ERROR_CORRECT_M, box_size=8, border=4)
+    qr.add_data(conteudo)
+    qr.make(fit=True)
+    imagem = qr.make_image(fill_color="black", back_color="white")
+    buffer = io.BytesIO()
+    imagem.save(buffer, format="PNG")
+    return "data:image/png;base64," + base64.b64encode(buffer.getvalue()).decode("ascii")
+
+
 def caminho_configuracao() -> Path:
     caminho_informado = os.environ.get("SUPERMERCADO_PDV_CONFIG", "").strip()
     if caminho_informado:
@@ -65,21 +109,78 @@ def carregar_configuracao() -> dict:
         raise RuntimeError("Terminal ainda nao ativado.")
     with config_path.open(encoding="utf-8") as arquivo:
         config = json.load(arquivo)
+
+    chave_protegida = str(config.get("terminal_chave_protegida") or "").strip()
+    chave_legada = str(config.get("terminal_chave") or "").strip()
+    migrar_chave_legada = bool(chave_legada)
+    if chave_protegida:
+        try:
+            config["terminal_chave"] = desproteger_segredo(chave_protegida)
+        except ErroProtecaoSegredo as exc:
+            raise RuntimeError(f"Nao foi possivel abrir a chave protegida do terminal: {exc}") from exc
+
+    tef = dict(config.get("tef") or {})
+    tef_protegida = str(tef.get("configuracao_protegida") or "").strip()
+    tef_legada = tef.get("configuracao")
+    migrar_tef_legada = bool(tef_legada)
+    if tef_protegida:
+        try:
+            configuracao_tef = json.loads(desproteger_segredo(tef_protegida))
+        except (ErroProtecaoSegredo, json.JSONDecodeError) as exc:
+            raise RuntimeError(f"Nao foi possivel abrir a configuracao TEF protegida: {exc}") from exc
+        if not isinstance(configuracao_tef, dict):
+            raise RuntimeError("A configuracao TEF protegida possui formato invalido.")
+        tef["configuracao"] = configuracao_tef
+    if tef:
+        config["tef"] = tef
+
     obrigatorios = ("servidor_base_url", "terminal_id", "terminal_chave")
     ausentes = [campo for campo in obrigatorios if not str(config.get(campo, "")).strip()]
     if ausentes:
         raise RuntimeError(f"Configuracao incompleta: {', '.join(ausentes)}.")
     config["servidor_base_url"] = config["servidor_base_url"].rstrip("/")
+    config["_credencial_protegida"] = bool(chave_protegida or migrar_chave_legada)
+    config["_tef_configuracao_protegida"] = bool(tef_protegida or migrar_tef_legada or not tef.get("configuracao"))
+    if migrar_chave_legada or migrar_tef_legada:
+        salvar_configuracao(config)
     return config
 
 
 def salvar_configuracao(config: dict) -> None:
     config_path = caminho_configuracao()
     config_path.parent.mkdir(parents=True, exist_ok=True)
+    persistida = dict(config)
+    persistida.pop("_credencial_protegida", None)
+    persistida.pop("_tef_configuracao_protegida", None)
+
+    chave = str(persistida.pop("terminal_chave", "") or "").strip()
+    if chave:
+        try:
+            persistida["terminal_chave_protegida"] = proteger_segredo(chave)
+        except ErroProtecaoSegredo as exc:
+            raise RuntimeError(f"Nao foi possivel proteger a chave do terminal: {exc}") from exc
+    if not str(persistida.get("terminal_chave_protegida") or "").strip():
+        raise RuntimeError("Chave do terminal ausente na configuracao.")
+
+    if "tef" in persistida:
+        tef = dict(persistida.get("tef") or {})
+        configuracao_tef = tef.pop("configuracao", None)
+        if configuracao_tef:
+            try:
+                serializada = json.dumps(configuracao_tef, ensure_ascii=True, sort_keys=True, separators=(",", ":"))
+                tef["configuracao_protegida"] = proteger_segredo(serializada)
+            except (TypeError, ErroProtecaoSegredo) as exc:
+                raise RuntimeError(f"Nao foi possivel proteger a configuracao TEF: {exc}") from exc
+        else:
+            tef.pop("configuracao_protegida", None)
+        persistida["tef"] = tef
+
     temporario = config_path.with_suffix(".tmp")
     with temporario.open("w", encoding="utf-8") as arquivo:
-        json.dump(config, arquivo, ensure_ascii=True, indent=2)
+        json.dump(persistida, arquivo, ensure_ascii=True, indent=2)
     temporario.replace(config_path)
+    config["_credencial_protegida"] = True
+    config["_tef_configuracao_protegida"] = True
 
 
 def caminho_log_dispositivos() -> Path:
@@ -117,37 +218,101 @@ def bootstrap_permite_modo_offline(bootstrap: dict) -> bool:
     )
 
 
-def registrar_evento_dispositivo(tipo: str, payload: dict) -> None:
-    caminho = caminho_log_dispositivos()
+def bootstrap_cache_dentro_validade(bootstrap: dict, config: dict, agora: datetime | None = None) -> bool:
+    salvo_em = str((bootstrap or {}).get("cache_salvo_em") or "").strip()
+    if not salvo_em:
+        return False
     try:
-        caminho.parent.mkdir(parents=True, exist_ok=True)
-        evento = {
-            "em": datetime.now(timezone.utc).isoformat(),
-            "tipo": tipo,
-            "payload": payload,
-        }
-        with caminho.open("a", encoding="utf-8") as arquivo:
-            arquivo.write(json.dumps(evento, ensure_ascii=True, sort_keys=True) + "\n")
+        instante = datetime.fromisoformat(salvo_em.replace("Z", "+00:00"))
+        limite_horas = int((config or {}).get("offline_cache_max_hours") or 24)
+    except (TypeError, ValueError):
+        return False
+    if instante.tzinfo is None:
+        instante = instante.replace(tzinfo=timezone.utc)
+    limite_horas = max(1, min(limite_horas, 168))
+    agora = agora or datetime.now(timezone.utc)
+    idade_segundos = (agora - instante.astimezone(timezone.utc)).total_seconds()
+    return -300 <= idade_segundos <= limite_horas * 3600
+
+
+def montar_pagina_contingencia(bootstrap: dict) -> str:
+    terminal = bootstrap.get("terminal", {}) if isinstance(bootstrap, dict) else {}
+    nome_terminal = html.escape(str(terminal.get("nome") or "Terminal PDV"))
+    cache_salvo_em = html.escape(str(bootstrap.get("cache_salvo_em") or "Nao informado"))
+    mensagem = html.escape(str(bootstrap.get("mensagem_conexao") or "Servidor local indisponivel."))
+    return f"""<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>PDV aguardando servidor</title>
+  <style>
+    * {{ box-sizing: border-box; }}
+    body {{ margin: 0; min-height: 100vh; display: grid; place-items: center; font-family: Arial, sans-serif; color: #fff; background: #06245c; }}
+    main {{ width: min(760px, calc(100% - 48px)); text-align: center; }}
+    .status {{ display: inline-flex; align-items: center; gap: 9px; padding: 8px 12px; border: 1px solid #ffd37a; border-radius: 6px; color: #ffe2a6; background: rgba(255, 174, 0, .12); font-size: 13px; font-weight: 700; }}
+    .dot {{ width: 10px; height: 10px; border-radius: 50%; background: #ffb020; box-shadow: 0 0 0 6px rgba(255, 176, 32, .14); }}
+    h1 {{ margin: 26px 0 10px; font-size: 44px; line-height: 1.08; }}
+    .terminal {{ margin: 0; color: #bcd2ff; font-size: 18px; font-weight: 700; }}
+    .message {{ margin: 28px auto 0; max-width: 620px; color: #e7efff; font-size: 17px; line-height: 1.55; }}
+    .safety {{ margin: 18px auto 0; max-width: 620px; padding-top: 18px; border-top: 1px solid rgba(255,255,255,.22); color: #bcd2ff; line-height: 1.5; }}
+    button {{ margin-top: 30px; min-width: 260px; min-height: 50px; border: 0; border-radius: 7px; color: #063179; background: #fff; font-size: 16px; font-weight: 800; cursor: pointer; }}
+    button:disabled {{ opacity: .62; cursor: wait; }}
+    kbd {{ margin-left: 8px; padding: 3px 6px; border: 1px solid #b7c8e8; border-radius: 4px; background: #edf3ff; font: inherit; font-size: 12px; }}
+    .detail {{ min-height: 22px; margin-top: 15px; color: #ffe2a6; font-size: 13px; font-weight: 700; }}
+    footer {{ margin-top: 34px; color: #91addf; font-size: 12px; }}
+    @media (max-width: 600px) {{ h1 {{ font-size: 34px; }} main {{ width: min(100% - 28px, 760px); }} }}
+  </style>
+</head>
+<body>
+  <main>
+    <span class="status"><span class="dot"></span>AGUARDANDO SERVIDOR LOCAL</span>
+    <h1>PDV temporariamente indisponivel</h1>
+    <p class="terminal">{nome_terminal}</p>
+    <p class="message">A conexao com o servidor da loja foi interrompida. Verifique a rede interna ou o computador servidor e tente novamente.</p>
+    <p class="safety">Por seguranca, novas vendas, pagamentos e alteracoes de estoque permanecem bloqueados ate a licenca e os dados operacionais serem validados novamente.</p>
+    <button id="retry" type="button">Tentar novamente <kbd>F5</kbd></button>
+    <p class="detail" id="detail">{mensagem}</p>
+    <footer>Ultima configuracao autorizada: {cache_salvo_em}</footer>
+  </main>
+  <script>
+    const button = document.getElementById('retry');
+    const detail = document.getElementById('detail');
+    async function reconnect() {{
+      if (!window.SupermercadoDesktop || !window.SupermercadoDesktop.reconnect) {{ detail.textContent = 'A ponte local ainda esta iniciando. Tente novamente.'; return; }}
+      button.disabled = true;
+      detail.textContent = 'Validando terminal e licenca no servidor...';
+      try {{
+        const result = await window.SupermercadoDesktop.reconnect();
+        if (result.status === 'ok') {{ detail.textContent = 'Conexao restabelecida. Abrindo o caixa...'; window.location.replace(result.url); return; }}
+        detail.textContent = result.mensagem || 'O servidor ainda nao respondeu.';
+      }} catch (error) {{ detail.textContent = 'Nao foi possivel restabelecer a conexao.'; }}
+      button.disabled = false;
+      button.focus();
+    }}
+    button.addEventListener('click', reconnect);
+    document.addEventListener('keydown', function (event) {{ if (event.key === 'F5' || event.key === 'Enter') {{ event.preventDefault(); reconnect(); }} }});
+    button.focus();
+  </script>
+</body>
+</html>"""
+
+def _event_log() -> EventLog:
+    return EventLog(caminho_log_dispositivos())
+
+
+def registrar_evento_dispositivo(tipo: str, payload: dict) -> None:
+    try:
+        _event_log().append(tipo, payload)
     except OSError:
         return
 
 
 def listar_eventos_dispositivo(limite: int = 50) -> dict:
-    caminho = caminho_log_dispositivos()
     try:
-        linhas = caminho.read_text(encoding="utf-8").splitlines()
-    except FileNotFoundError:
-        return {"status": "ok", "eventos": [], "total": 0}
+        return _event_log().listar(limite)
     except OSError as erro:
         return {"status": "erro", "mensagem": str(erro), "eventos": [], "total": 0}
-
-    eventos = []
-    for linha in linhas[-max(1, min(int(limite or 50), 200)):]:
-        try:
-            eventos.append(json.loads(linha))
-        except json.JSONDecodeError:
-            eventos.append({"tipo": "log_corrompido", "payload": {"linha": linha[:200]}})
-    return {"status": "ok", "eventos": eventos, "total": len(linhas)}
 
 
 def validar_terminal(config: dict) -> dict:
@@ -184,6 +349,9 @@ def obter_bootstrap_operacional(config: dict) -> dict:
             raise RuntimeError("Servidor PDV indisponivel e nao existe bootstrap offline autorizado.") from cache_erro
         if not bootstrap_permite_modo_offline(bootstrap):
             raise RuntimeError("Servidor PDV indisponivel e o terminal nao permite modo offline.") from erro
+        if not bootstrap_cache_dentro_validade(bootstrap, config):
+            registrar_evento_dispositivo("bootstrap", {"status": "cache_expirado", "cache_salvo_em": bootstrap.get("cache_salvo_em")})
+            raise RuntimeError("Servidor PDV indisponivel e o bootstrap offline autorizado expirou.") from erro
         bootstrap = dict(bootstrap)
         bootstrap["status_conexao"] = "offline"
         bootstrap["mensagem_conexao"] = str(erro)
@@ -200,20 +368,26 @@ def obter_bootstrap_operacional(config: dict) -> dict:
     return bootstrap
 
 
+@_sincronizacao_eventos_exclusiva
 def sincronizar_eventos_dispositivo(config: dict, limite: int = 100) -> dict:
-    diagnostico = listar_eventos_dispositivo(limite=200)
-    if diagnostico.get("status") != "ok":
-        return diagnostico
-    total = int(diagnostico.get("total") or 0)
     try:
-        ja_enviados = int(config.get("diagnostico_eventos_sincronizados") or 0)
+        cursor = int(config.get("diagnostico_eventos_sincronizados") or 0)
     except (TypeError, ValueError):
-        ja_enviados = 0
-    pendentes = max(total - ja_enviados, 0)
-    if pendentes <= 0:
-        return {"status": "ok", "enviados": 0, "pendentes": 0, "total": total}
+        cursor = 0
+    try:
+        lote = _event_log().pendentes(cursor, limite)
+    except OSError as erro:
+        return {"status": "erro", "mensagem": str(erro), "enviados": 0, "pendentes": 0, "total": 0}
 
-    eventos = diagnostico.get("eventos", [])[-min(pendentes, limite):]
+    eventos = lote["eventos"]
+    if not eventos:
+        if lote["cursor_reiniciado"]:
+            config_atualizada = dict(config)
+            config_atualizada["diagnostico_eventos_sincronizados"] = lote["cursor"]
+            salvar_configuracao(config_atualizada)
+            config["diagnostico_eventos_sincronizados"] = lote["cursor"]
+        return {"status": "ok", "enviados": 0, "pendentes": 0, "total": lote["total"]}
+
     requisicao = Request(
         f"{config['servidor_base_url']}/pdv/api/terminal/device-events/",
         data=json.dumps({"eventos": eventos}).encode("utf-8"),
@@ -230,29 +404,130 @@ def sincronizar_eventos_dispositivo(config: dict, limite: int = 100) -> dict:
         with urlopen(requisicao, timeout=8) as resposta:
             retorno = json.load(resposta)
     except (HTTPError, URLError, TimeoutError, OSError) as erro:
-        return {"status": "erro", "mensagem": str(erro), "enviados": 0, "pendentes": pendentes, "total": total}
+        return {
+            "status": "erro",
+            "mensagem": str(erro),
+            "enviados": 0,
+            "pendentes": lote["pendentes"],
+            "total": lote["total"],
+        }
 
-    if retorno.get("status") == "ok":
-        config_atualizada = dict(config)
-        config_atualizada["diagnostico_eventos_sincronizados"] = total
-        try:
+    processados = int(retorno.get("processados", retorno.get("recebidos", 0)) or 0)
+    if retorno.get("status") != "ok" or processados != len(eventos):
+        return {
+            "status": "erro",
+            "mensagem": "O servidor nao confirmou o lote completo de diagnosticos.",
+            "enviados": 0,
+            "pendentes": lote["pendentes"],
+            "total": lote["total"],
+        }
+
+    novo_cursor = lote["proximo_cursor"]
+    config_atualizada = dict(config)
+    config_atualizada["diagnostico_eventos_sincronizados"] = novo_cursor
+    try:
+        salvar_configuracao(config_atualizada)
+        compactacao = _event_log().compactar_confirmados(novo_cursor)
+        if compactacao["compactado"]:
+            novo_cursor = compactacao["cursor"]
+            config_atualizada["diagnostico_eventos_sincronizados"] = novo_cursor
             salvar_configuracao(config_atualizada)
-        except OSError as erro:
-            return {"status": "erro", "mensagem": str(erro), "enviados": retorno.get("recebidos", 0), "pendentes": pendentes, "total": total}
-    return {"status": retorno.get("status", "ok"), "enviados": retorno.get("recebidos", 0), "pendentes": pendentes, "total": total}
+    except (OSError, RuntimeError) as erro:
+        return {
+            "status": "erro",
+            "mensagem": str(erro),
+            "enviados": len(eventos),
+            "pendentes": max(lote["total"] - lote["proximo_cursor"], 0),
+            "total": lote["total"],
+        }
+
+    config["diagnostico_eventos_sincronizados"] = novo_cursor
+    total_atual = compactacao["total"]
+    return {
+        "status": "ok",
+        "enviados": len(eventos),
+        "pendentes": max(total_atual - novo_cursor, 0),
+        "total": total_atual,
+        "compactados": compactacao["removidos"],
+    }
+
+
+def intervalo_sincronizacao_eventos(config: dict) -> int:
+    try:
+        intervalo = int(config.get("diagnostico_sync_interval_seconds") or 60)
+    except (TypeError, ValueError):
+        intervalo = 60
+    return max(15, min(intervalo, 3600))
+
+
+def sincronizar_eventos_periodicamente(config: dict, parar: threading.Event) -> None:
+    intervalo = intervalo_sincronizacao_eventos(config)
+    while not parar.wait(intervalo):
+        sincronizar_eventos_dispositivo(config)
 
 
 def verificar_versao(bootstrap: dict) -> dict:
     aplicativo = bootstrap.get("aplicativo", {})
+    pacote = aplicativo.get("pacote", {}) if isinstance(aplicativo, dict) else {}
     return {
         "instalada": APP_VERSION,
         "vigente": aplicativo.get("versao_vigente", APP_VERSION),
         "atualizacao_disponivel": bool(aplicativo.get("atualizacao_disponivel", False)),
         "atualizacao_obrigatoria": bool(aplicativo.get("atualizacao_obrigatoria", False)),
+        "politica_atualizacao": aplicativo.get("politica_atualizacao", {}),
+        "pacote_disponivel": bool(pacote.get("disponivel", False)),
+        "pacote_nome": Path(str(pacote.get("nome") or "")).name,
+        "pacote_sha256": str(pacote.get("sha256") or "").lower(),
+        "pacote_url": str(pacote.get("url") or ""),
     }
 
 
-def avisar_atualizacao(situacao: dict) -> None:
+def preparar_atualizacao(config: dict, situacao: dict) -> dict:
+    if not situacao.get("pacote_disponivel"):
+        raise RuntimeError("O pacote de atualizacao ainda nao foi publicado.")
+    nome = situacao.get("pacote_nome") or "SupermercadoPDV.exe"
+    sha_esperado = situacao.get("pacote_sha256", "")
+    if len(sha_esperado) != 64:
+        raise RuntimeError("O pacote publicado nao possui SHA-256 valido.")
+    pasta = caminho_configuracao().parent / "updates"
+    pasta.mkdir(parents=True, exist_ok=True)
+    destino = pasta / nome
+    temporario = destino.with_suffix(destino.suffix + ".part")
+    requisicao = Request(
+        situacao["pacote_url"],
+        headers={
+            "Accept": "application/octet-stream",
+            "X-Terminal-ID": config["terminal_id"],
+            "X-Terminal-Key": config["terminal_chave"],
+            "X-PDV-Version": APP_VERSION,
+        },
+        method="GET",
+    )
+    digest = hashlib.sha256()
+    try:
+        with urlopen(requisicao, timeout=60) as resposta, temporario.open("wb") as arquivo:
+            while True:
+                bloco = resposta.read(1024 * 1024)
+                if not bloco:
+                    break
+                digest.update(bloco)
+                arquivo.write(bloco)
+    except (HTTPError, URLError, TimeoutError, OSError) as erro:
+        temporario.unlink(missing_ok=True)
+        raise RuntimeError(f"Nao foi possivel baixar a atualizacao: {erro}") from erro
+    sha_recebido = digest.hexdigest()
+    if not hmac.compare_digest(sha_recebido, sha_esperado):
+        temporario.unlink(missing_ok=True)
+        raise RuntimeError("A atualizacao baixada falhou na verificacao SHA-256.")
+    temporario.replace(destino)
+    registrar_evento_dispositivo(
+        "atualizacao",
+        {"status": "preparada", "versao": situacao["vigente"], "arquivo": nome, "sha256": sha_recebido},
+    )
+    return {"status": "ok", "arquivo": str(destino), "sha256": sha_recebido, "versao": situacao["vigente"]}
+
+
+def avisar_atualizacao(situacao: dict, config: dict | None = None) -> None:
     if not situacao["atualizacao_disponivel"]:
         return
     from tkinter import messagebox
@@ -260,12 +535,26 @@ def avisar_atualizacao(situacao: dict) -> None:
     mensagem = (
         f"Versao instalada: {situacao['instalada']}\n"
         f"Versao vigente: {situacao['vigente']}\n\n"
-        "Solicite ao admin master a instalacao da versao publicada no ERP."
+        "O pacote publicado exige autorizacao previa do admin master para este terminal."
     )
-    if situacao["atualizacao_obrigatoria"]:
+    baixar = bool(
+        config
+        and situacao.get("pacote_disponivel")
+        and messagebox.askyesno(
+            "Atualizacao do PDV",
+            mensagem + "\n\nDeseja baixar e verificar o pacote agora? A instalacao continuara manual.",
+        )
+    )
+    if baixar:
+        resultado = preparar_atualizacao(config, situacao)
+        messagebox.showinfo("Atualizacao preparada", f"Pacote verificado em:\n{resultado['arquivo']}")
+        if situacao["atualizacao_obrigatoria"]:
+            raise RuntimeError("Atualizacao obrigatoria preparada; instale o pacote antes de abrir o PDV.")
+    elif situacao["atualizacao_obrigatoria"]:
         messagebox.showerror("Atualizacao obrigatoria", mensagem)
         raise RuntimeError("Atualizacao obrigatoria do PDV Desktop.")
-    messagebox.showwarning("Atualizacao disponivel", mensagem)
+    else:
+        messagebox.showwarning("Atualizacao disponivel", mensagem)
 
 
 def ativar_terminal(config_atual: dict | None = None) -> dict:
@@ -329,9 +618,23 @@ def ativar_terminal(config_atual: dict | None = None) -> dict:
 class PonteLocal:
     """Contrato inicial exposto ao JavaScript da mesma tela web do PDV."""
 
-    def __init__(self, bootstrap: dict):
+    def __init__(self, bootstrap: dict, config: dict | None = None):
         self.bootstrap = bootstrap
+        self.config = dict(config or {})
         self._tef_operacoes = {}
+        self._tef_pagamentos_pendentes = {}
+        self._adaptador_tef = None
+        self._janela = None
+
+    def vincular_janela(self, janela) -> None:
+        self._janela = janela
+
+    def closeApplication(self) -> dict:
+        if self._janela is None:
+            return {"status": "erro", "mensagem": "Janela do aplicativo indisponivel."}
+
+        threading.Timer(0.15, self._janela.destroy).start()
+        return {"status": "ok", "mensagem": "Encerrando o PDV."}
 
     def _reutilizar_operacao_tef(self, operacao: str, chave: str, assinatura: tuple) -> dict | None:
         if not chave:
@@ -364,11 +667,41 @@ class PonteLocal:
         return {
             "status": "ok",
             "ambiente": "desktop",
+            "status_conexao": self.bootstrap.get("status_conexao", "online"),
             "terminal": self.bootstrap.get("terminal", {}),
             "recursos": self.bootstrap.get("recursos", {}),
             "dispositivos": self.bootstrap.get("dispositivos", {}),
             "aplicativo": self.bootstrap.get("aplicativo", {}),
+            "sincronizacao_eventos": {
+                "contrato": "pdv_device_event_queue_v1",
+                "periodica": True,
+                "intervalo_segundos": intervalo_sincronizacao_eventos(self.config),
+            },
+            "seguranca_local": {
+                "contrato": "pdv_local_secret_v1",
+                "credencial_protegida": bool(self.config.get("_credencial_protegida")),
+                "configuracao_tef_protegida": bool(self.config.get("_tef_configuracao_protegida")),
+                "mecanismo": "WINDOWS_DPAPI",
+                "contrato_instancia": "pdv_single_instance_v1",
+                "instancia_unica_por_terminal": True,
+            },
         }
+
+    def reconnect(self) -> dict:
+        if not self.config:
+            return {"status": "erro", "mensagem": "Configuracao do terminal indisponivel para reconexao."}
+        try:
+            bootstrap = validar_terminal(self.config)
+        except TerminalRecusado as erro:
+            registrar_evento_dispositivo("bootstrap", {"status": "recusado", "mensagem": str(erro)})
+            return {"status": "bloqueado", "mensagem": str(erro)}
+        except (ServidorPdvIndisponivel, TimeoutError, OSError) as erro:
+            return {"status": "offline", "mensagem": str(erro)}
+        salvar_bootstrap_cache(bootstrap)
+        self.bootstrap = bootstrap
+        sincronizar_eventos_dispositivo(self.config)
+        registrar_evento_dispositivo("bootstrap", {"status": "reconectado"})
+        return {"status": "ok", "url": f"{self.config['servidor_base_url']}/pdv/"}
 
     def listar_impressoras(self) -> dict:
         try:
@@ -653,21 +986,47 @@ class PonteLocal:
         return self.abrir_gaveta(payload)
 
     def imprimir_etiquetas(self, payload: dict) -> dict:
-        impressora = str(payload.get("impressora_padrao", "")).strip() if isinstance(payload, dict) else ""
+        payload = payload if isinstance(payload, dict) else {}
+        impressora = str(payload.get("impressora_padrao", "")).strip()
+        linguagem = str(payload.get("linguagem", "")).upper()
+        itens = payload.get("itens") if isinstance(payload.get("itens"), list) else []
+        total_copias = 0
+        for item in itens:
+            if not isinstance(item, dict):
+                continue
+            try:
+                total_copias += int(item.get("copias") or 1)
+            except (TypeError, ValueError):
+                continue
+        evidencia = {
+            "impressora": impressora,
+            "linguagem": linguagem,
+            "itens": len(itens),
+            "copias": total_copias,
+            "contrato": str(payload.get("contrato") or ""),
+        }
         try:
+            if not impressora:
+                raise ErroImpressao("Nenhuma impressora foi configurada para o lote de etiquetas.")
             dados = montar_etiquetas_nativas(payload)
             if len(dados) > 2 * 1024 * 1024:
                 raise ErroImpressao("Lote de etiquetas excede o limite local de 2 MB.")
             total_bytes = imprimir_raw_windows(impressora, dados, "Etiquetas de gondola")
         except (ErroImpressao, AttributeError, TypeError) as erro:
-            return {"status": "erro", "mensagem": str(erro), "impresso": False}
-        return {
+            resultado = {"status": "erro", "mensagem": str(erro), "impresso": False}
+            registrar_evento_dispositivo("etiquetas", {**evidencia, **resultado})
+            return resultado
+        resultado = {
             "status": "ok",
             "impresso": True,
             "impressora": impressora,
-            "linguagem": str(payload.get("linguagem", "")).upper(),
+            "linguagem": linguagem,
             "bytes": total_bytes,
+            "itens": len(itens),
+            "copias": total_copias,
         }
+        registrar_evento_dispositivo("etiquetas", {**evidencia, "status": "ok", "impresso": True, "bytes": total_bytes})
+        return resultado
 
     def printLabels(self, payload: dict) -> dict:
         return self.imprimir_etiquetas(payload)
@@ -681,192 +1040,230 @@ class PonteLocal:
     def configuracao_tef(self) -> dict:
         return self.bootstrap.get("tef", {})
 
+    def _obter_adaptador_tef(self):
+        if self._adaptador_tef is None:
+            self._adaptador_tef = criar_adaptador_tef(self.config, self.configuracao_tef())
+        return self._adaptador_tef
+
+    def _registrar_retorno_tef(self, evento: str, resultado: dict, payload: dict) -> None:
+        campos = (
+            "status",
+            "mensagem",
+            "mensagem_processadora",
+            "provedor",
+            "modo",
+            "tipo",
+            "valor",
+            "transacao_externa_id",
+            "estorno_transacao_id",
+            "nsu",
+            "codigo_autorizacao",
+            "pix_simulado",
+        )
+        evidencia = {campo: resultado[campo] for campo in campos if resultado.get(campo) not in (None, "")}
+        evidencia.setdefault("status", "erro")
+        evidencia.setdefault("tipo", str((payload or {}).get("tipo") or "").strip().upper())
+        evidencia.setdefault("valor", str((payload or {}).get("valor") or "").strip())
+        registrar_evento_dispositivo(evento, evidencia)
+
     def processPayment(self, payload: dict) -> dict:
+        payload = dict(payload or {})
         tef = self.configuracao_tef()
         provedor = str(tef.get("provedor") or "NAO_CONFIGURADO").upper()
-        if provedor == "NAO_CONFIGURADO":
-            resultado = {
-                "status": "erro",
-                "mensagem": "TEF/maquininha nao configurado para este terminal.",
-                "aprovado": False,
-            }
-            registrar_evento_dispositivo(
-                "tef",
-                {
-                    "status": "erro",
-                    "mensagem": resultado["mensagem"],
-                    "provedor": provedor,
-                    "tipo": str((payload or {}).get("tipo") or "").strip().upper(),
-                    "valor": str((payload or {}).get("valor") or "").strip(),
-                },
-            )
-            return resultado
-        tipo = str((payload or {}).get("tipo") or "").strip().upper()
-        valor_informado = str((payload or {}).get("valor") or "").strip()
+        tipo = str(payload.get("tipo") or "").strip().upper()
         tipos_permitidos = {
             str(item).strip().upper()
             for item in (tef.get("tipos_pagamento") or ["CREDITO", "DEBITO", "PIX"])
             if str(item).strip()
         }
         try:
-            valor = normalizar_valor_tef((payload or {}).get("valor"))
+            valor = normalizar_valor_tef(payload.get("valor"))
             if not tipo:
                 raise ValueError("Informe o tipo do pagamento.")
             if tipo not in tipos_permitidos:
                 raise ValueError("Tipo de pagamento nao habilitado para este terminal.")
-        except ValueError as exc:
-            resultado = {"status": "erro", "mensagem": str(exc), "aprovado": False}
-            registrar_evento_dispositivo(
-                "tef",
-                {
-                    "status": "erro",
-                    "mensagem": resultado["mensagem"],
-                    "provedor": provedor,
-                    "tipo": tipo,
-                    "valor": valor_informado,
-                },
-            )
-            return resultado
-        chave_idempotencia = str((payload or {}).get("idempotency_key") or "").strip()[:120]
-        assinatura = (provedor, tipo, valor)
-        resultado_reutilizado = self._reutilizar_operacao_tef("pagamento", chave_idempotencia, assinatura)
-        if resultado_reutilizado:
-            return resultado_reutilizado
-        referencia = uuid4().hex.upper()
-        resultado = {
-            "status": "ok",
-            "aprovado": True,
-            "tipo": tipo,
-            "valor": valor,
-            "provedor": provedor,
-            "modo": tef.get("modo_integracao") or "SIMULADO",
-            "transacao_externa_id": f"TEF-SIM-{referencia[:16]}",
-            "nsu": referencia[16:28],
-            "codigo_autorizacao": referencia[28:34],
-            "mensagem_processadora": "Pagamento aprovado pelo simulador TEF do app desktop.",
-        }
-        self._guardar_operacao_tef("pagamento", chave_idempotencia, assinatura, resultado)
-        registrar_evento_dispositivo(
-            "tef",
-            {
-                "status": "ok",
-                "mensagem": resultado["mensagem_processadora"],
+            adaptador = self._obter_adaptador_tef()
+        except (ValueError, AdaptadorTefIndisponivel) as exc:
+            resultado = {
+                "status": "erro",
+                "mensagem": str(exc),
+                "aprovado": False,
                 "provedor": provedor,
-                "modo": resultado["modo"],
+                "tipo": tipo,
+            }
+            self._registrar_retorno_tef("tef", resultado, payload)
+            return resultado
+
+        chave = str(payload.get("idempotency_key") or "").strip()[:120]
+        assinatura = (provedor, tipo, valor)
+        reutilizado = self._reutilizar_operacao_tef("pagamento", chave, assinatura)
+        if reutilizado:
+            return reutilizado
+
+        requisicao = {**payload, "tipo": tipo, "valor": valor}
+        try:
+            resultado = validar_resposta_tef(adaptador.processar(requisicao), "pagamento")
+        except Exception as exc:
+            resultado = {
+                "status": "erro",
+                "mensagem": f"Falha no driver TEF: {exc}",
+                "aprovado": False,
+                "provedor": provedor,
                 "tipo": tipo,
                 "valor": valor,
-                "transacao_externa_id": resultado["transacao_externa_id"],
-                "nsu": resultado["nsu"],
-                "codigo_autorizacao": resultado["codigo_autorizacao"],
-            },
-        )
+            }
+        resultado.setdefault("provedor", provedor)
+        resultado.setdefault("tipo", tipo)
+        resultado.setdefault("valor", valor)
+        if resultado.get("pix_qr_code") and not resultado.get("pix_qr_code_image"):
+            resultado["pix_qr_code_image"] = gerar_qr_code_data_url(resultado["pix_qr_code"])
+
+        self._guardar_operacao_tef("pagamento", chave, assinatura, resultado)
+        if resultado.get("status") == "pending":
+            self._tef_pagamentos_pendentes[resultado["transacao_externa_id"]] = {
+                "chave_idempotencia": chave,
+                "assinatura": assinatura,
+                "ultimo_status": "pending",
+            }
+        self._registrar_retorno_tef("tef", resultado, requisicao)
+        return resultado
+
+    def checkPayment(self, payload: dict) -> dict:
+        payload = dict(payload or {})
+        transacao = str(payload.get("transacao_externa_id") or "").strip()
+        if not transacao:
+            return {"status": "erro", "aprovado": False, "mensagem": "Transacao PIX ausente para consulta."}
+        try:
+            adaptador = self._obter_adaptador_tef()
+            resultado = validar_resposta_tef(adaptador.consultar(payload), "consulta")
+        except Exception as exc:
+            resultado = {
+                "status": "erro",
+                "aprovado": False,
+                "mensagem": f"Falha na consulta TEF: {exc}",
+                "transacao_externa_id": transacao,
+            }
+            self._registrar_retorno_tef("tef", resultado, payload)
+            return resultado
+
+        registro = self._tef_pagamentos_pendentes.get(transacao)
+        status_anterior = registro.get("ultimo_status") if registro else None
+        status_atual = resultado.get("status")
+        if status_atual == "ok" and registro:
+            self._guardar_operacao_tef(
+                "pagamento",
+                registro["chave_idempotencia"],
+                registro["assinatura"],
+                resultado,
+            )
+        if registro:
+            registro["ultimo_status"] = status_atual
+        if status_atual != status_anterior:
+            self._registrar_retorno_tef("tef", resultado, payload)
         return resultado
 
     def refundPayment(self, payload: dict) -> dict:
+        payload = dict(payload or {})
         tef = self.configuracao_tef()
         provedor = str(tef.get("provedor") or "NAO_CONFIGURADO").upper()
-        tipo = str((payload or {}).get("tipo") or "").strip().upper()
-        valor_informado = str((payload or {}).get("valor") or "").strip()
-        transacao_original = str((payload or {}).get("transacao_externa_id") or "").strip()
-        if provedor == "NAO_CONFIGURADO":
+        tipo = str(payload.get("tipo") or "").strip().upper()
+        transacao = str(payload.get("transacao_externa_id") or "").strip()
+        try:
+            valor = normalizar_valor_tef(payload.get("valor"))
+            if not transacao:
+                raise ValueError("Informe a transacao original do estorno.")
+            adaptador = self._obter_adaptador_tef()
+        except (ValueError, AdaptadorTefIndisponivel) as exc:
             resultado = {
                 "status": "erro",
-                "mensagem": "TEF/maquininha nao configurado para este terminal.",
+                "mensagem": str(exc),
                 "estornado": False,
-            }
-            registrar_evento_dispositivo(
-                "tef_estorno",
-                {
-                    "status": "erro",
-                    "mensagem": resultado["mensagem"],
-                    "provedor": provedor,
-                    "tipo": tipo,
-                    "valor": valor_informado,
-                    "transacao_externa_id": transacao_original,
-                },
-            )
-            return resultado
-        try:
-            valor = normalizar_valor_tef((payload or {}).get("valor"))
-            if not transacao_original:
-                raise ValueError("Informe a transacao original do estorno.")
-        except ValueError as exc:
-            resultado = {"status": "erro", "mensagem": str(exc), "estornado": False}
-            registrar_evento_dispositivo(
-                "tef_estorno",
-                {
-                    "status": "erro",
-                    "mensagem": resultado["mensagem"],
-                    "provedor": provedor,
-                    "tipo": tipo,
-                    "valor": valor_informado,
-                    "transacao_externa_id": transacao_original,
-                },
-            )
-            return resultado
-        chave_idempotencia = str((payload or {}).get("idempotency_key") or "").strip()[:120]
-        assinatura = (provedor, tipo, valor, transacao_original)
-        resultado_reutilizado = self._reutilizar_operacao_tef("estorno", chave_idempotencia, assinatura)
-        if resultado_reutilizado:
-            return resultado_reutilizado
-        referencia = uuid4().hex.upper()
-        resultado = {
-            "status": "ok",
-            "estornado": True,
-            "tipo": tipo,
-            "valor": valor,
-            "provedor": provedor,
-            "modo": tef.get("modo_integracao") or "SIMULADO",
-            "transacao_externa_id": transacao_original,
-            "estorno_transacao_id": f"TEF-SIM-REF-{referencia[:16]}",
-            "nsu": referencia[16:28],
-            "codigo_autorizacao": referencia[28:34],
-            "mensagem_processadora": "Estorno aprovado pelo simulador TEF do app desktop.",
-        }
-        self._guardar_operacao_tef("estorno", chave_idempotencia, assinatura, resultado)
-        registrar_evento_dispositivo(
-            "tef_estorno",
-            {
-                "status": "ok",
-                "mensagem": resultado["mensagem_processadora"],
                 "provedor": provedor,
-                "modo": resultado["modo"],
+                "tipo": tipo,
+            }
+            self._registrar_retorno_tef("tef_estorno", resultado, payload)
+            return resultado
+
+        chave = str(payload.get("idempotency_key") or "").strip()[:120]
+        assinatura = (provedor, tipo, valor, transacao)
+        reutilizado = self._reutilizar_operacao_tef("estorno", chave, assinatura)
+        if reutilizado:
+            return reutilizado
+
+        requisicao = {**payload, "tipo": tipo, "valor": valor, "transacao_externa_id": transacao}
+        try:
+            resultado = validar_resposta_tef(adaptador.estornar(requisicao), "estorno")
+        except Exception as exc:
+            resultado = {
+                "status": "erro",
+                "mensagem": f"Falha no driver TEF: {exc}",
+                "estornado": False,
+                "provedor": provedor,
                 "tipo": tipo,
                 "valor": valor,
-                "transacao_externa_id": transacao_original,
-                "estorno_transacao_id": resultado["estorno_transacao_id"],
-                "nsu": resultado["nsu"],
-                "codigo_autorizacao": resultado["codigo_autorizacao"],
-            },
-        )
+                "transacao_externa_id": transacao,
+            }
+        resultado.setdefault("provedor", provedor)
+        resultado.setdefault("tipo", tipo)
+        resultado.setdefault("valor", valor)
+        resultado.setdefault("transacao_externa_id", transacao)
+        self._guardar_operacao_tef("estorno", chave, assinatura, resultado)
+        self._registrar_retorno_tef("tef_estorno", resultado, requisicao)
         return resultado
-
 
 def executar(reconfigurar: bool = False) -> None:
     try:
         config_atual = carregar_configuracao()
     except (RuntimeError, json.JSONDecodeError):
         config_atual = None
-    config = ativar_terminal(config_atual) if reconfigurar or config_atual is None else config_atual
+
+    if reconfigurar and config_atual:
+        terminal_atual = config_atual["terminal_id"]
+        with instancia_unica_terminal(terminal_atual):
+            config = ativar_terminal(config_atual)
+            if config["terminal_id"] == terminal_atual:
+                _executar_interface_pdv(config)
+            else:
+                with instancia_unica_terminal(config["terminal_id"]):
+                    _executar_interface_pdv(config)
+        return
+
+    config = ativar_terminal(config_atual) if config_atual is None else config_atual
+    with instancia_unica_terminal(config["terminal_id"]):
+        _executar_interface_pdv(config)
+
+
+def _executar_interface_pdv(config: dict) -> None:
     bootstrap = obter_bootstrap_operacional(config)
     sincronizar_eventos_dispositivo(config)
-    avisar_atualizacao(verificar_versao(bootstrap))
+    avisar_atualizacao(verificar_versao(bootstrap), config)
+    parar_sincronizacao = threading.Event()
+    thread_sincronizacao = threading.Thread(
+        target=sincronizar_eventos_periodicamente,
+        args=(config, parar_sincronizacao),
+        name="pdv-device-events-sync",
+        daemon=True,
+    )
     url_pdv = f"{config['servidor_base_url']}/pdv/"
     import webview
 
+    ponte = PonteLocal(bootstrap, config)
+    conteudo = {"html": montar_pagina_contingencia(bootstrap)} if bootstrap.get("status_conexao") == "offline" else {"url": url_pdv}
     janela = webview.create_window(
         "PDV Supermercado",
-        url=url_pdv,
-        js_api=PonteLocal(bootstrap),
+        js_api=ponte,
         fullscreen=bool(config.get("tela_cheia", True)),
         resizable=bool(config.get("permitir_redimensionar", False)),
         min_size=(1024, 700),
+        **conteudo,
     )
+    ponte.vincular_janela(janela)
     janela.events.loaded += lambda: janela.evaluate_js(
         "window.SupermercadoDesktop = {"
         "printSale: function(payload) { return window.pywebview.api.imprimir_venda(payload); },"
         "printLabels: function(payload) { return window.pywebview.api.imprimir_etiquetas(payload); },"
         "processPayment: function(payload) { return window.pywebview.api.processPayment(payload); },"
+        "checkPayment: function(payload) { return window.pywebview.api.checkPayment(payload); },"
         "refundPayment: function(payload) { return window.pywebview.api.refundPayment(payload); },"
         "readScale: function() { return window.pywebview.api.readScale(); },"
         "scaleConfig: function() { return window.pywebview.api.scaleConfig(); },"
@@ -874,10 +1271,19 @@ def executar(reconfigurar: bool = False) -> None:
         "runDeviceDiagnostics: function(opcoes) { return window.pywebview.api.homologar_dispositivos(opcoes); },"
         "openCashDrawer: function(payload) { return window.pywebview.api.openCashDrawer(payload); },"
         "listPrinters: function() { return window.pywebview.api.listar_impressoras(); },"
-        "status: function() { return window.pywebview.api.status(); }"
+        "status: function() { return window.pywebview.api.status(); },"
+        "reconnect: function() { return window.pywebview.api.reconnect(); },"
+        "closeApplication: function() { return window.pywebview.api.closeApplication(); }"
         "};"
+        "document.documentElement.classList.add('desktop-pdv');"
+        "document.dispatchEvent(new CustomEvent('supermercado:desktop-ready'));"
     )
-    webview.start(private_mode=False)
+    thread_sincronizacao.start()
+    try:
+        webview.start(private_mode=False)
+    finally:
+        parar_sincronizacao.set()
+        thread_sincronizacao.join(timeout=2)
     if janela is None:
         raise RuntimeError("Nao foi possivel iniciar a janela do PDV.")
 

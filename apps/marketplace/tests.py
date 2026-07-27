@@ -161,6 +161,8 @@ class FluxoPedidoOnlineTests(TestCase):
         self.assertTrue(payload["recursos"]["idempotencia_por_referencia"])
         self.assertTrue(payload["recursos"]["politica_entrega"])
         self.assertEqual(payload["politica_entrega"]["contrato"], "delivery_policy_v1")
+        self.assertEqual(payload["prontidao"]["contrato"], "marketplace_partner_readiness_v1")
+        self.assertIn(payload["prontidao"]["status"], {"Pronta para homologação", "Atenção", "Bloqueada"})
         self.assertTrue(payload["politica_entrega"]["ativa"])
         self.assertEqual(payload["politica_entrega"]["raio_maximo_km"], "8.00")
         self.assertEqual(payload["politica_entrega"]["valor_minimo_pedido"], "25.00")
@@ -264,7 +266,9 @@ class FluxoPedidoOnlineTests(TestCase):
 
         self.assertEqual(pagina.status_code, 200)
         self.assertContains(pagina, "Pedidos recebidos")
+        self.assertContains(pagina, "Prontas para homologação")
         self.assertContains(pagina, "Parceiro")
+        self.assertContains(pagina, "Atenção")
         self.assertContains(pagina, "pedido(s) em fluxo operacional")
         self.assertEqual(diagnostico.status_code, 200)
         dados = diagnostico.json()
@@ -272,6 +276,9 @@ class FluxoPedidoOnlineTests(TestCase):
         self.assertEqual(dados["resumo"]["pedidos_recebidos"], 1)
         self.assertEqual(dados["resumo"]["pedidos_abertos"], 1)
         self.assertEqual(dados["integracoes"][0]["token_prefixo"], integracao.token_prefixo)
+        self.assertEqual(dados["integracoes"][0]["prontidao"]["contrato"], "marketplace_partner_readiness_v1")
+        self.assertIn("politica_entrega", dados["integracoes"][0])
+        self.assertEqual(dados["resumo"]["com_bloqueio"], 0)
         self.assertNotIn(token, json.dumps(dados))
 
     def test_diagnostico_de_integracoes_exige_perfil_de_sistema(self):
@@ -346,7 +353,32 @@ class FluxoPedidoOnlineTests(TestCase):
         self.assertEqual(dados["politicas"][0]["filial"], str(self.filial))
         self.assertEqual(dados["geocodificacao"]["contrato"], "delivery_geocode_v1")
         self.assertTrue(dados["geocodificacao"]["fallback_manual_distancia"])
+        self.assertEqual(dados["prontidao"]["contrato"], "delivery_policy_readiness_v1")
+        self.assertEqual(dados["prontidao"]["status"], "configuration_required")
+        self.assertEqual(dados["politicas"][0]["prontidao"]["status"], "blocked")
 
+    @override_settings(MARKETPLACE_GEOCODING_PROVIDER_URL="https://mapas.example/rota?destino={destino}")
+    def test_diagnostico_entrega_fica_pronto_para_homologar_provider(self):
+        politica = PoliticaEntrega.objects.create(
+            filial=self.filial,
+            raio_maximo_km=Decimal("8"),
+            valor_minimo_pedido=Decimal("20"),
+        )
+        FaixaTaxaEntrega.objects.create(
+            politica=politica,
+            distancia_inicial_km=Decimal("0"),
+            distancia_final_km=Decimal("8"),
+            taxa=Decimal("7.50"),
+        )
+        self.client.force_login(self.usuario)
+
+        resposta = self.client.get("/pedidos-online/politicas-entrega/diagnostico.json")
+
+        self.assertEqual(resposta.status_code, 200)
+        dados = resposta.json()
+        self.assertEqual(dados["prontidao"]["status"], "ready_for_provider_homologation")
+        self.assertTrue(dados["prontidao"]["provider_configurado"])
+        self.assertEqual(dados["politicas"][0]["prontidao"]["status"], "ready_for_provider_homologation")
     @override_settings(MARKETPLACE_GEOCODING_PROVIDER_URL="https://mapas.example/rota?destino={destino}", MARKETPLACE_GEOCODING_TIMEOUT_SEGUNDOS=4)
     def test_politicas_entrega_simula_distancia_com_geocodificacao_configurada(self):
         politica = PoliticaEntrega.objects.create(filial=self.filial, raio_maximo_km=Decimal("8"), valor_minimo_pedido=Decimal("20"))

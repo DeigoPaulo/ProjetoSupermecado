@@ -171,6 +171,7 @@
         <article class="metric"><span>Saldo origem</span><strong>{{ previa.saldo_origem }}</strong></article>
         <article class="metric"><span>Saida origem</span><strong>{{ previa.quantidade_origem }}</strong></article>
         <article class="metric"><span>Entrada destino</span><strong>{{ previa.quantidade_destino }}</strong></article>
+        <article class="metric"><span>Rendimento total</span><strong>{{ previa.rendimento_total }}%</strong></article>
         <article class="metric"><span>Custo unitario destino</span><strong>R$ {{ previa.custo_unitario_destino|floatformat:2 }}</strong></article>
       </div>
       <div class="operation-notice {% if not previa.estoque_suficiente %}notice-warning{% endif %}">
@@ -180,6 +181,21 @@
           <span>{{ previa.produto_origem }} ficara com {{ previa.saldo_origem_apos }}. Os destinos receberao {{ previa.quantidade_destino }} unidade(s) no total, com custo total de R$ {{ previa.custo_total_origem|floatformat:2 }}.</span>
         </div>
       </div>
+      {% if previa.conservacao_massa_aplicada %}
+        <div class="operation-notice {% if not previa.conservacao_massa_valida %}notice-warning{% endif %}">
+          <i class="fa-solid fa-weight-scale"></i>
+          <div>
+            <strong>{% if previa.conservacao_massa_valida %}Conservação de massa conferida{% else %}Conservação de massa inválida{% endif %}</strong>
+            {% if previa.conservacao_massa_valida %}
+              <span>Produtos, subprodutos e perdas correspondem exatamente à quantidade de origem.</span>
+            {% elif previa.excesso_quantidade %}
+              <span>Os destinos excedem a origem em {{ previa.excesso_quantidade }} KG. Ajuste as quantidades antes de confirmar.</span>
+            {% else %}
+              <span>Faltam classificar {{ previa.quantidade_nao_classificada }} KG. Registre essa diferença como produto, subproduto ou perda.</span>
+            {% endif %}
+          </div>
+        </div>
+      {% endif %}
       <div class="panel">
         <table>
           <thead>

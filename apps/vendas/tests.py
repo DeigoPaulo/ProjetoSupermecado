@@ -13,8 +13,8 @@ from apps.clientes.models import Cliente
 from apps.pdv.models import Caixa
 from apps.produtos.models import Categoria, Produto
 
-from .models import FormaPagamento, PagamentoVenda, StatusPagamento, StatusVenda, TipoDocumentoConsumidor, Venda
-from .services import cancelar_venda, confirmar_estorno_pagamento_eletronico, finalizar_venda, registrar_devolucao_venda
+from .models import EstornoParcialPagamento, FormaPagamento, PagamentoVenda, StatusEstornoParcial, StatusPagamento, StatusVenda, TipoDocumentoConsumidor, Venda
+from .services import cancelar_venda, confirmar_estorno_pagamento_eletronico, confirmar_estorno_parcial_eletronico, finalizar_venda, registrar_devolucao_venda
 
 
 class VendaServiceTests(TestCase):
@@ -112,11 +112,36 @@ class VendaServiceTests(TestCase):
 
         self.assertEqual(devolucao.valor_total, Decimal("25.00000"))
         self.assertEqual(PagamentoVenda.objects.filter(venda=venda, status=StatusPagamento.CONFIRMADO).count(), 2)
-        estornos = LancamentoFinanceiro.objects.filter(origem="ESTORNO", pagamento_venda__venda=venda).order_by("pagamento_venda__valor")
+        estornos = LancamentoFinanceiro.objects.filter(origem="ESTORNO", pagamento_venda__venda=venda)
+        self.assertEqual(estornos.count(), 1)
+        self.assertEqual(estornos.get().valor, Decimal("10.00"))
+
+        estorno_pix = EstornoParcialPagamento.objects.get(devolucao=devolucao)
+        self.assertEqual(estorno_pix.valor, Decimal("15.00"))
+        self.assertEqual(estorno_pix.status, StatusEstornoParcial.PENDENTE)
+        self.assertFalse(estornos.filter(pagamento_venda=estorno_pix.pagamento).exists())
+
+        confirmar_estorno_parcial_eletronico(
+            estorno=estorno_pix,
+            usuario=self.usuario,
+            autorizacao="PIX-EST-123",
+            transacao_estorno_id="REFUND-PIX-123",
+            mensagem_processadora="Estorno PIX aprovado.",
+        )
+        estorno_pix.refresh_from_db()
+        self.assertEqual(estorno_pix.status, StatusEstornoParcial.CONFIRMADO)
+        self.assertEqual(estorno_pix.transacao_estorno_id, "REFUND-PIX-123")
         self.assertEqual(estornos.count(), 2)
         self.assertEqual(estornos.aggregate(total=Sum("valor"))["total"], Decimal("25.00"))
-        self.assertEqual(estornos[0].valor, Decimal("10.00"))
-        self.assertEqual(estornos[1].valor, Decimal("15.00"))
+        with self.assertRaisesMessage(ValidationError, "Apenas estornos parciais pendentes"):
+            confirmar_estorno_parcial_eletronico(
+                estorno=estorno_pix,
+                usuario=self.usuario,
+                autorizacao="REPETIDO",
+            )
+        self.assertEqual(estornos.count(), 2)
+        with self.assertRaisesMessage(ValidationError, "Venda com devolução parcial não pode ser cancelada integralmente"):
+            cancelar_venda(venda=venda, usuario=self.usuario, motivo="Cancelamento indevido")
 
     def test_finalizar_venda_rejeita_pagamento_incompleto(self):
         with self.assertRaises(ValidationError):

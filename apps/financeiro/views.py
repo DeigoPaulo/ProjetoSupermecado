@@ -6,8 +6,9 @@ from decimal import Decimal
 from django.contrib import messages
 from django.contrib.auth.decorators import login_required
 from django.core.exceptions import ValidationError
-from django.db.models import Sum
-from django.http import HttpResponse
+from django.core.paginator import Paginator
+from django.db.models import Q, Sum
+from django.http import HttpResponse, JsonResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.utils import timezone
 from django.utils.dateparse import parse_date
@@ -18,8 +19,8 @@ from apps.empresas.models import Filial
 from apps.vendas.models import PagamentoVenda, StatusVenda
 
 from .forms import BaixaContaForm, CategoriaFinanceiraForm, ContaFinanceiraForm, ContaMovimentoFinanceiroForm, TransferenciaFinanceiraForm
-from .models import CategoriaFinanceira, ContaFinanceira, ContaMovimentoFinanceiro, LancamentoFinanceiro, StatusContaFinanceira, TipoContaFinanceira, TipoLancamentoFinanceiro, TransferenciaFinanceira
-from .services import baixar_conta, cancelar_conta, estornar_lancamento, realizar_transferencia
+from .models import CategoriaFinanceira, ConciliacaoLancamentoFinanceiro, ContaFinanceira, ContaMovimentoFinanceiro, LancamentoFinanceiro, StatusContaFinanceira, TipoContaFinanceira, TipoLancamentoFinanceiro, TransferenciaFinanceira
+from .services import baixar_conta, cancelar_conta, conciliar_lancamento, estornar_lancamento, realizar_transferencia
 
 
 def _periodo_from_request(request):
@@ -156,6 +157,27 @@ def _conciliacao_periodo(data_inicio, data_fim):
     return list(linhas.values())
 
 
+
+
+def _valor_monetario_json(valor):
+    return f"{valor.quantize(Decimal('0.01')):.2f}"
+
+def _conciliacao_bancaria_json(resumo):
+    por_conta = []
+    for linha in resumo["por_conta"]:
+        por_conta.append({
+            **linha,
+            "valor_total": _valor_monetario_json(linha["valor_total"]),
+            "valor_conciliado": _valor_monetario_json(linha["valor_conciliado"]),
+        })
+    return {
+        **resumo,
+        "percentual": _valor_monetario_json(resumo["percentual"]),
+        "valor_total": _valor_monetario_json(resumo["valor_total"]),
+        "valor_conciliado": _valor_monetario_json(resumo["valor_conciliado"]),
+        "valor_pendente": _valor_monetario_json(resumo["valor_pendente"]),
+        "por_conta": por_conta,
+    }
 def _resultado_financeiro_periodo(data_inicio, data_fim):
     lancamentos = (
         LancamentoFinanceiro.objects.select_related("conta", "conta__filial", "conta_financeira", "conta_financeira__categoria")
@@ -228,6 +250,7 @@ def _resultado_financeiro_periodo(data_inicio, data_fim):
             }
         )
 
+    conciliacao_bancaria = _resumo_conciliacao_periodo(data_inicio, data_fim)
     return {
         "receitas": receitas,
         "despesas": despesas,
@@ -238,6 +261,8 @@ def _resultado_financeiro_periodo(data_inicio, data_fim):
         "saldos_contas": saldos_contas,
         "balancete_contas": _balancete_contas_periodo(data_inicio, data_fim),
         "dre_gerencial": _dre_gerencial(receitas, despesas, por_categoria),
+        "conciliacao_bancaria": conciliacao_bancaria,
+        "pacote_contabil": _pacote_contabil_gerencial(data_inicio, data_fim, receitas, despesas, conciliacao_bancaria),
     }
 
 
@@ -300,6 +325,92 @@ def _balancete_contas_periodo(data_inicio, data_fim):
             }
         )
     return linhas
+
+
+
+def _resumo_conciliacao_periodo(data_inicio, data_fim):
+    lancamentos = LancamentoFinanceiro.objects.filter(data__range=(data_inicio, data_fim))
+    total_lancamentos = lancamentos.count()
+    total_valor = lancamentos.aggregate(total=Sum("valor"))["total"] or Decimal("0.00")
+    conciliados_qs = lancamentos.filter(conciliacao_bancaria__isnull=False)
+    conciliados = conciliados_qs.count()
+    valor_conciliado = conciliados_qs.aggregate(total=Sum("valor"))["total"] or Decimal("0.00")
+    percentual = Decimal("0.00")
+    if total_lancamentos:
+        percentual = (Decimal(conciliados) / Decimal(total_lancamentos) * Decimal("100.00")).quantize(Decimal("0.01"))
+    por_conta = []
+    for conta in ContaMovimentoFinanceiro.objects.select_related("filial").filter(lancamentos__data__range=(data_inicio, data_fim)).distinct():
+        movimentos = lancamentos.filter(conta=conta)
+        movimentos_conciliados = movimentos.filter(conciliacao_bancaria__isnull=False)
+        conta_total = movimentos.count()
+        conta_conciliados = movimentos_conciliados.count()
+        por_conta.append({
+            "filial": conta.filial.nome,
+            "conta": conta.nome,
+            "total": conta_total,
+            "conciliados": conta_conciliados,
+            "pendentes": conta_total - conta_conciliados,
+            "valor_total": movimentos.aggregate(total=Sum("valor"))["total"] or Decimal("0.00"),
+            "valor_conciliado": movimentos_conciliados.aggregate(total=Sum("valor"))["total"] or Decimal("0.00"),
+        })
+    return {
+        "total_lancamentos": total_lancamentos,
+        "conciliados": conciliados,
+        "pendentes": total_lancamentos - conciliados,
+        "percentual": percentual,
+        "valor_total": total_valor,
+        "valor_conciliado": valor_conciliado,
+        "valor_pendente": total_valor - valor_conciliado,
+        "por_conta": por_conta,
+    }
+
+
+def _pacote_contabil_gerencial(data_inicio, data_fim, receitas, despesas, conciliacao_bancaria):
+    lancamentos_periodo = LancamentoFinanceiro.objects.filter(data__gte=data_inicio, data__lte=data_fim)
+    transferencias = lancamentos_periodo.filter(origem="TRANSFERENCIA")
+    estornos = lancamentos_periodo.filter(estorno_de__isnull=False)
+    total_entradas_livro = lancamentos_periodo.filter(tipo=TipoLancamentoFinanceiro.ENTRADA).aggregate(total=Sum("valor"))["total"] or Decimal("0.00")
+    total_saidas_livro = lancamentos_periodo.filter(tipo=TipoLancamentoFinanceiro.SAIDA).aggregate(total=Sum("valor"))["total"] or Decimal("0.00")
+    transferencias_entradas = transferencias.filter(tipo=TipoLancamentoFinanceiro.ENTRADA).aggregate(total=Sum("valor"))["total"] or Decimal("0.00")
+    transferencias_saidas = transferencias.filter(tipo=TipoLancamentoFinanceiro.SAIDA).aggregate(total=Sum("valor"))["total"] or Decimal("0.00")
+    estornos_valor = estornos.aggregate(total=Sum("valor"))["total"] or Decimal("0.00")
+    linhas = [
+        {
+            "item": "Receitas operacionais",
+            "valor": receitas,
+            "observacao": "Entradas sem transferências internas, usadas na DRE gerencial.",
+        },
+        {
+            "item": "Despesas operacionais",
+            "valor": despesas,
+            "observacao": "Saídas sem transferências internas, usadas na DRE gerencial.",
+        },
+        {
+            "item": "Resultado operacional",
+            "valor": receitas - despesas,
+            "observacao": "Diferença entre receitas e despesas do período filtrado.",
+        },
+        {
+            "item": "Movimentação total do livro",
+            "valor": total_entradas_livro - total_saidas_livro,
+            "observacao": "Inclui transferências e serve para conferência do saldo das contas de movimento.",
+        },
+    ]
+    alertas = [
+        "Pacote gerencial para conferência interna e envio preliminar ao contador; não substitui SPED, ECD, ECF ou obrigações oficiais.",
+        "Conferir documentos fiscais, centro de custo, plano de contas e conciliação bancária antes do fechamento contábil oficial.",
+    ]
+    return {
+        "linhas": linhas,
+        "total_lancamentos": lancamentos_periodo.count(),
+        "transferencias": transferencias.count(),
+        "transferencias_entradas": transferencias_entradas,
+        "transferencias_saidas": transferencias_saidas,
+        "estornos": estornos.count(),
+        "estornos_valor": estornos_valor,
+        "conciliacao_bancaria": conciliacao_bancaria,
+        "alertas": alertas,
+    }
 
 
 @login_required
@@ -503,6 +614,19 @@ def resultado_financeiro_csv(request):
             valor_csv(linha["saldo_atual"]),
         ])
     writer.writerow([])
+    writer.writerow(["Pacote contabil gerencial"])
+    writer.writerow(["Item", "Valor", "Observacao"])
+    for linha in resultado["pacote_contabil"]["linhas"]:
+        writer.writerow([linha["item"], valor_csv(linha["valor"]), linha["observacao"]])
+    writer.writerow(["Total de lancamentos", resultado["pacote_contabil"]["total_lancamentos"], "Registros do livro financeiro no periodo."])
+    writer.writerow(["Transferencias internas", resultado["pacote_contabil"]["transferencias"], f"Entradas {valor_csv(resultado['pacote_contabil']['transferencias_entradas'])} / Saidas {valor_csv(resultado['pacote_contabil']['transferencias_saidas'])}"])
+    writer.writerow(["Estornos", resultado["pacote_contabil"]["estornos"], f"Valor {valor_csv(resultado['pacote_contabil']['estornos_valor'])}"])
+    conciliacao = resultado["conciliacao_bancaria"]
+    writer.writerow(["Conciliação bancária", f"{conciliacao['percentual']:.2f}".replace(".", ",") + "%", f"{conciliacao['conciliados']} conciliados / {conciliacao['pendentes']} pendentes"])
+    writer.writerow(["Valor conciliado", valor_csv(conciliacao["valor_conciliado"]), f"Pendente {valor_csv(conciliacao['valor_pendente'])}"])
+    for alerta in resultado["pacote_contabil"]["alertas"]:
+        writer.writerow(["Alerta", "", alerta])
+    writer.writerow([])
     writer.writerow(["Balancete gerencial por conta"])
     writer.writerow(["Filial", "Conta movimento", "Tipo", "Saldo anterior", "Entradas", "Saidas", "Saldo final"])
     for linha in resultado["balancete_contas"]:
@@ -516,6 +640,35 @@ def resultado_financeiro_csv(request):
             valor_csv(linha["saldo_final"]),
         ])
     return response
+
+
+@login_required
+@role_required(*RELATORIOS)
+def resultado_pacote_contabil_json(request):
+    data_inicio, data_fim = _periodo_from_request(request)
+    resultado = _resultado_financeiro_periodo(data_inicio, data_fim)
+    pacote = resultado["pacote_contabil"]
+    payload = {
+        "contrato": "financial_accounting_package_v1",
+        "periodo": {"inicio": data_inicio.isoformat(), "fim": data_fim.isoformat()},
+        "resumo": {
+            "receitas": _valor_monetario_json(resultado["receitas"]),
+            "despesas": _valor_monetario_json(resultado["despesas"]),
+            "resultado": _valor_monetario_json(resultado["resultado"]),
+            "margem_operacional_percentual": _valor_monetario_json(resultado["dre_gerencial"]["margem_percentual"]),
+            "total_lancamentos": pacote["total_lancamentos"],
+            "transferencias_internas": pacote["transferencias"],
+            "estornos": pacote["estornos"],
+        },
+        "dre_gerencial": resultado["dre_gerencial"],
+        "balancete_contas": resultado["balancete_contas"],
+        "conciliacao_bancaria": _conciliacao_bancaria_json(resultado["conciliacao_bancaria"]),
+        "pacote_contabil": pacote,
+        "alertas": pacote["alertas"],
+        "observacao": "Pacote gerencial de conferencia interna; nao substitui SPED, ECD, ECF ou obrigacoes oficiais.",
+    }
+    return JsonResponse(payload)
+
 
 
 def _lancamentos_filtrados(request):
@@ -540,6 +693,99 @@ def _lancamentos_filtrados(request):
         "filial_id": filial_id,
         "tipo": tipo,
     }
+
+
+
+def _lancamentos_conciliacao_filtrados(request):
+    data_inicio, data_fim = _periodo_from_request(request)
+    filtros = {
+        "data_inicio": data_inicio,
+        "data_fim": data_fim,
+        "conta": request.GET.get("conta", "").strip(),
+        "status": request.GET.get("status", "").strip(),
+        "q": request.GET.get("q", "").strip(),
+    }
+    lancamentos = LancamentoFinanceiro.objects.select_related(
+        "conta", "conta__filial", "conta__filial__empresa", "usuario", "conciliacao_bancaria", "conciliacao_bancaria__usuario"
+    ).filter(data__range=(data_inicio, data_fim))
+    if filtros["conta"].isdigit():
+        lancamentos = lancamentos.filter(conta_id=filtros["conta"])
+    if filtros["status"] == "conciliado":
+        lancamentos = lancamentos.filter(conciliacao_bancaria__isnull=False)
+    elif filtros["status"] == "pendente":
+        lancamentos = lancamentos.filter(conciliacao_bancaria__isnull=True)
+    if filtros["q"]:
+        lancamentos = lancamentos.filter(
+            Q(descricao__icontains=filtros["q"])
+            | Q(origem__icontains=filtros["q"])
+            | Q(conciliacao_bancaria__referencia_externa__icontains=filtros["q"])
+        )
+    return lancamentos, filtros
+
+
+@login_required
+@role_required(*RELATORIOS)
+def conciliacao_bancaria(request):
+    lancamentos, filtros = _lancamentos_conciliacao_filtrados(request)
+    total = lancamentos.count()
+    conciliados = lancamentos.filter(conciliacao_bancaria__isnull=False).count()
+    pagina = Paginator(lancamentos, 50).get_page(request.GET.get("page"))
+    query = request.GET.copy()
+    query.pop("page", None)
+    return render(request, "financeiro/conciliacao_bancaria.html", {
+        **filtros,
+        "pagina": pagina,
+        "query_sem_pagina": query.urlencode(),
+        "contas_opcoes": ContaMovimentoFinanceiro.objects.filter(ativa=True).select_related("filial"),
+        "total": total,
+        "conciliados": conciliados,
+        "pendentes": total - conciliados,
+    })
+
+
+@login_required
+@role_required(*SISTEMA)
+def conciliar_lancamento_view(request, pk):
+    lancamento = get_object_or_404(LancamentoFinanceiro, pk=pk)
+    if request.method == "POST":
+        data_conciliacao = parse_date(request.POST.get("data_conciliacao", "")) or timezone.localdate()
+        try:
+            conciliar_lancamento(
+                lancamento=lancamento,
+                data_conciliacao=data_conciliacao,
+                referencia_externa=request.POST.get("referencia_externa", ""),
+                observacao=request.POST.get("observacao", ""),
+                usuario=request.user,
+                ip=request.META.get("REMOTE_ADDR"),
+            )
+        except ValidationError as exc:
+            messages.error(request, " ".join(exc.messages))
+        else:
+            messages.success(request, f"Lancamento #{lancamento.pk} conciliado com o extrato.")
+    return redirect("financeiro:conciliacao_bancaria")
+
+
+@login_required
+@role_required(*RELATORIOS)
+def conciliacao_bancaria_csv(request):
+    lancamentos, filtros = _lancamentos_conciliacao_filtrados(request)
+    response = HttpResponse(content_type="text/csv; charset=utf-8")
+    response["Content-Disposition"] = f'attachment; filename="conciliacao_bancaria_{filtros["data_inicio"]}_{filtros["data_fim"]}.csv"'
+    response.write("\ufeff")
+    writer = csv.writer(response, delimiter=";")
+    writer.writerow(["Data", "Conta", "Filial", "Tipo", "Descricao", "Valor", "Status", "Data conciliacao", "Referencia", "Responsavel", "Observacao"])
+    for lancamento in lancamentos:
+        conciliacao = getattr(lancamento, "conciliacao_bancaria", None)
+        writer.writerow([
+            lancamento.data.strftime("%d/%m/%Y"), lancamento.conta.nome, lancamento.conta.filial,
+            lancamento.get_tipo_display(), lancamento.descricao, str(lancamento.valor).replace(".", ","),
+            "Conciliado" if conciliacao else "Pendente",
+            conciliacao.data_conciliacao.strftime("%d/%m/%Y") if conciliacao else "",
+            conciliacao.referencia_externa if conciliacao else "",
+            conciliacao.usuario.get_username() if conciliacao else "",
+            conciliacao.observacao if conciliacao else "",
+        ])
+    return response
 
 
 @login_required

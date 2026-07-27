@@ -1,7 +1,15 @@
 {
-  "servidor_base_url": "http://127.0.0.1:8000",
-  "terminal_id": "00000000-0000-0000-0000-000000000000",
-  "terminal_chave": "INFORME_A_CHAVE_GERADA_NO_ERP",
-  "tela_cheia": true,
-  "permitir_redimensionar": false
+    "servidor_base_url":  "http://127.0.0.1:8000",
+    "terminal_id":  "00000000-0000-0000-0000-000000000000",
+    "terminal_chave":  "INFORME_A_CHAVE_GERADA_NO_ERP",
+    "tela_cheia":  true,
+    "permitir_redimensionar":  false,
+    "offline_cache_max_hours":  24,
+    "tef":  {
+                "adaptador":  "SIMULADOR",
+                "configuracao":  {
+
+                                 }
+            },
+    "diagnostico_sync_interval_seconds":  60
 }

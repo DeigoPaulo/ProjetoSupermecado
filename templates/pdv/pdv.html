@@ -185,6 +185,14 @@
               <label class="form-field"><span>Desconto da venda</span>{{ finish_form.desconto }}</label>
               <label class="form-field"><span>Vencimento crediario</span>{{ finish_form.vencimento_financeiro }}</label>
             </div>
+            <div class="pdv-discount-authorization" id="pdv-discount-authorization" hidden>
+              <div>
+                <strong><i class="fa-solid fa-user-shield"></i> Autorização obrigatória</strong>
+                <span>Todo desconto exige usuário e senha de supervisor ou administrador e fica registrado na auditoria.</span>
+              </div>
+              <label class="form-field"><span>Supervisor</span><input type="text" name="supervisor_usuario" autocomplete="username"></label>
+              <label class="form-field"><span>Senha</span><input type="password" name="supervisor_senha" autocomplete="current-password"></label>
+            </div>
             <div class="pdv-payment-shortcuts" aria-label="Atalhos de pagamento">
               <span><kbd>F1</kbd> Dinheiro</span><span><kbd>F2</kbd> Convenio</span><span><kbd>F3</kbd> Eletronico</span><span><kbd>F4</kbd> Outros</span>
             </div>
@@ -196,6 +204,15 @@
               <button type="button" data-pdv-electronic-payment="credito"><kbd>F1</kbd> Credito</button>
               <button type="button" data-pdv-electronic-payment="debito"><kbd>F2</kbd> Debito</button>
               <button type="button" data-pdv-electronic-payment="pix"><kbd>F3</kbd> PIX</button>
+            </div>
+            <div class="pdv-pix-panel" id="pdv-pix-panel" hidden aria-live="polite">
+              <div class="pdv-pix-copy">
+                <span>PIX dinâmico</span>
+                <strong id="pdv-pix-value">R$ 0,00</strong>
+                <p id="pdv-pix-message">Aponte a câmera do aplicativo bancário para o QR Code.</p>
+                <small id="pdv-pix-simulation" hidden>Simulação de desenvolvimento: este QR Code não realiza cobrança real.</small>
+              </div>
+              <img id="pdv-pix-qrcode" alt="QR Code PIX para pagamento">
             </div>
             <div class="pdv-payment-rows" id="pdv-payment-rows">
               <div class="pdv-payment-row">
@@ -276,9 +293,9 @@
     <div class="pdv-post-sale-modal is-open" id="pdv-post-sale-modal" aria-hidden="false" data-print-url="{% url 'pdv:recibo_venda' ultima_venda.id %}" data-desktop-print-url="{% url 'pdv:venda_impressao_desktop' ultima_venda.id %}">
       <div class="pdv-post-sale-dialog">
         <span class="pdv-post-sale-icon"><i class="fa-solid fa-circle-check"></i></span>
-        <h2>Venda #{{ ultima_venda.id }} finalizada</h2>
-        <strong>R$ {{ ultima_venda.total_liquido|floatformat:2 }}</strong>
-        <p>Carrinho liberado para a proxima compra.</p>
+        <span class="pdv-post-sale-kicker">Venda #{{ ultima_venda.id }} finalizada · R$ {{ ultima_venda.total_liquido|floatformat:2 }}</span>
+        <h2>CAIXA LIVRE</h2>
+        <p>Pronto para atender o próximo cliente.</p>
         <div class="pdv-post-sale-actions">
           <button type="button" class="primary-button" id="pdv-print-last-sale"><i class="fa-solid fa-print"></i> Imprimir cupom <kbd>F10</kbd></button>
           <button type="button" class="secondary-button" id="pdv-close-post-sale">Nova venda <kbd>Enter</kbd></button>

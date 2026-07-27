@@ -8,7 +8,10 @@
     <h1>Terminais PDV</h1>
     <p>Cadastre as maquinas de caixa autorizadas para operar o aplicativo local por filial.</p>
   </div>
-  <a class="primary-button" href="{% url 'configuracoes:terminal_pdv_novo' %}"><i class="fa-solid fa-plus"></i> Novo terminal</a>
+  <div class="page-actions">
+    <a class="secondary-button" href="{% url 'configuracoes:terminais_pdv_diagnosticos' %}"><i class="fa-solid fa-stethoscope"></i> Diagnósticos</a>
+    <a class="primary-button" href="{% url 'configuracoes:terminal_pdv_novo' %}"><i class="fa-solid fa-plus"></i> Novo terminal</a>
+  </div>
 </header>
 
 {% if chave_nova %}
@@ -70,6 +73,7 @@
           <th>TEF</th>
           <th>Balanca</th>
           <th>Licenca</th>
+          <th>Atualizacao</th>
           <th>Offline/local</th>
           <th>Fiscal</th>
           <th>Ultima conexao</th>
@@ -87,6 +91,7 @@
             <td><strong>{{ terminal.get_provedor_tef_display }}</strong><br><small>{{ terminal.get_modo_integracao_tef_display }}</small></td>
             <td>{% if terminal.usa_balanca %}<span class="status status-success">Configurada</span><br><small>{{ terminal.get_protocolo_balanca_display }} - {{ terminal.porta_balanca }}</small>{% else %}<span class="status status-muted">Nao usa</span>{% endif %}</td>
             <td>{% if terminal.licenca_liberada %}<span class="status status-success">Liberada</span>{% elif terminal.status_licenca == "PENDENTE" %}<span class="status status-warning">Pendente</span>{% else %}<span class="status status-muted">{{ terminal.get_status_licenca_display }}</span>{% endif %}{% if terminal.licenca_liberada_em %}<br><small>{{ terminal.licenca_liberada_em|date:"d/m/Y H:i" }}</small>{% endif %}</td>
+            <td><strong>{{ terminal.get_canal_atualizacao_display }}</strong><br>{% if terminal.bloquear_atualizacoes %}<span class="status status-warning">Congelada</span>{% else %}<span class="status status-success">Liberada pelo canal</span>{% endif %}</td>
             <td>{% if terminal.permite_modo_offline %}<span class="status status-success">Permitido</span>{% else %}<span class="status status-muted">Somente online local</span>{% endif %}</td>
             <td>{% if terminal.emite_documento_fiscal %}<span class="status status-success">Emite NFC-e</span>{% else %}<span class="status status-warning">Sem fiscal automatico</span>{% endif %}</td>
             <td>{{ terminal.ultima_conexao|date:"d/m/Y H:i"|default:"Nunca" }}</td>
@@ -117,7 +122,7 @@
             </td>
           </tr>
         {% empty %}
-          <tr><td colspan="12" class="empty">Nenhum terminal PDV cadastrado.</td></tr>
+          <tr><td colspan="13" class="empty">Nenhum terminal PDV cadastrado.</td></tr>
         {% endfor %}
       </tbody>
     </table>

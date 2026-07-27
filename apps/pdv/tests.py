@@ -1,5 +1,8 @@
+import hashlib
 import json
+import tempfile
 from decimal import Decimal
+from pathlib import Path
 
 from django.contrib.auth import get_user_model
 from django.core.exceptions import ValidationError
@@ -13,11 +16,24 @@ from apps.estoque.models import Estoque
 from apps.financeiro.models import ContaMovimentoFinanceiro, LancamentoFinanceiro, TipoContaMovimento, TipoLancamentoFinanceiro
 from apps.fiscal.models import AmbienteFiscal, ConfiguracaoFiscal, DocumentoFiscal, NaturezaOperacao, SerieFiscal, TipoDocumentoFiscal
 from apps.produtos.models import Categoria, Produto
-from apps.vendas.models import FormaPagamento, StatusPagamento, StatusVenda, Venda
-from apps.vendas.services import cancelar_venda, finalizar_venda
+from apps.vendas.models import EstornoParcialPagamento, FormaPagamento, StatusEstornoParcial, StatusPagamento, StatusVenda, Venda
+from apps.vendas.services import cancelar_venda, finalizar_venda, registrar_devolucao_venda
 
-from .models import AcessoPdvNuvem, Caixa, EventoDispositivoTerminal, ModoIntegracaoTef, ProtocoloBalanca, ProvedorTef, Sangria, StatusAcessoPdvNuvem, StatusCaixa, StatusLicencaTerminal, Suprimento, TerminalPdv
+from .models import AcessoPdvNuvem, Caixa, CanalAtualizacaoPdv, EventoDispositivoTerminal, ModoIntegracaoTef, ProtocoloBalanca, ProvedorTef, Sangria, StatusAcessoPdvNuvem, StatusCaixa, StatusLicencaTerminal, Suprimento, TerminalPdv
 from .services_acesso import acesso_pdv_nuvem_aprovado, decidir_acesso_pdv_nuvem, solicitar_acesso_pdv_nuvem
+
+def criar_artefato_pdv_teste(caminho, conteudo, versao="0.1.0", assinado=False):
+    caminho.write_bytes(conteudo)
+    assinatura = "Valid" if assinado else "NotSigned"
+    metadados = {
+        "version": versao,
+        "filename": caminho.name,
+        "size_bytes": len(conteudo),
+        "sha256": hashlib.sha256(conteudo).hexdigest(),
+        "executable_signature": assinatura,
+        "msi_signature": assinatura if caminho.suffix.lower() == ".msi" else "",
+    }
+    caminho.with_name(caminho.name + ".version.json").write_text(json.dumps(metadados), encoding="utf-8")
 
 
 class AcessoPdvNuvemTests(TestCase):
@@ -90,6 +106,7 @@ class AcessoPdvNuvemTests(TestCase):
         self.assertEqual(resposta.json()["dispositivos"]["gaveta"]["impressora_padrao"], "EPSON TM-T20")
         self.assertTrue(resposta.json()["dispositivos"]["gaveta"]["abrir_em_movimento_caixa"])
         self.assertEqual(resposta.json()["tef"]["contrato"], "pdv_tef_v1")
+        self.assertTrue(resposta.json()["tef"]["simulador_permitido"])
         self.assertIn("PIX", resposta.json()["tef"]["tipos_pagamento"])
         self.assertIsNone(resposta.json()["aplicativo"]["versao_cliente"])
         self.assertFalse(resposta.json()["aplicativo"]["atualizacao_disponivel"])
@@ -97,6 +114,27 @@ class AcessoPdvNuvemTests(TestCase):
         terminal.refresh_from_db()
         self.assertIsNotNone(terminal.ultima_conexao)
         self.assertEqual(terminal.ultimo_ip, "192.168.1.25")
+
+    @override_settings(PDV_TEF_SIMULATOR_ENABLED=False)
+    def test_bootstrap_bloqueia_simulador_tef_em_producao(self):
+        terminal = TerminalPdv(
+            filial=self.filial,
+            nome="Caixa producao",
+            provedor_tef=ProvedorTef.STONE,
+            status_licenca=StatusLicencaTerminal.LIBERADA,
+        )
+        chave = terminal.gerar_chave_api()
+        terminal.save()
+
+        resposta = self.client.get(
+            "/pdv/api/terminal/bootstrap/",
+            HTTP_X_TERMINAL_ID=str(terminal.identificador),
+            HTTP_X_TERMINAL_KEY=chave,
+        )
+
+        self.assertEqual(resposta.status_code, 200)
+        self.assertFalse(resposta.json()["tef"]["simulador_permitido"])
+
 
     @override_settings(PDV_DESKTOP_VERSION="0.3.0", PDV_DESKTOP_MIN_VERSION="0.2.0")
     def test_bootstrap_controla_versao_instalada_sem_atualizacao_automatica(self):
@@ -124,6 +162,162 @@ class AcessoPdvNuvemTests(TestCase):
         self.assertTrue(obrigatoria.json()["aplicativo"]["atualizacao_obrigatoria"])
         self.assertTrue(obrigatoria.json()["aplicativo"]["atualizacao_requer_admin_master"])
 
+    @override_settings(
+        PDV_DESKTOP_VERSION="0.3.0",
+        PDV_DESKTOP_MIN_VERSION="0.1.0",
+        PDV_DESKTOP_RELEASE_CHANNEL=CanalAtualizacaoPdv.PILOTO,
+    )
+    def test_rollout_piloto_e_congelamento_controlam_atualizacao_por_terminal(self):
+        estavel = TerminalPdv.objects.create(
+            filial=self.filial,
+            nome="Caixa estavel",
+            status_licenca=StatusLicencaTerminal.LIBERADA,
+            canal_atualizacao=CanalAtualizacaoPdv.ESTAVEL,
+        )
+        piloto = TerminalPdv.objects.create(
+            filial=self.filial,
+            nome="Caixa piloto",
+            status_licenca=StatusLicencaTerminal.LIBERADA,
+            canal_atualizacao=CanalAtualizacaoPdv.PILOTO,
+        )
+        congelado = TerminalPdv.objects.create(
+            filial=self.filial,
+            nome="Caixa congelado",
+            status_licenca=StatusLicencaTerminal.LIBERADA,
+            canal_atualizacao=CanalAtualizacaoPdv.PILOTO,
+            bloquear_atualizacoes=True,
+        )
+        respostas = {}
+        for nome, terminal in [("estavel", estavel), ("piloto", piloto), ("congelado", congelado)]:
+            chave = terminal.gerar_chave_api()
+            terminal.save(update_fields=["chave_api_hash", "chave_api_prefixo"])
+            respostas[nome] = self.client.get(
+                "/pdv/api/terminal/bootstrap/",
+                HTTP_X_TERMINAL_ID=str(terminal.identificador),
+                HTTP_X_TERMINAL_KEY=chave,
+                HTTP_X_PDV_VERSION="0.2.0",
+            ).json()["aplicativo"]
+
+        self.assertFalse(respostas["estavel"]["atualizacao_disponivel"])
+        self.assertEqual(respostas["estavel"]["politica_atualizacao"]["motivo"], "aguardando_canal_estavel")
+        self.assertTrue(respostas["piloto"]["atualizacao_disponivel"])
+        self.assertEqual(respostas["piloto"]["politica_atualizacao"]["motivo"], "atualizacao_liberada")
+        self.assertFalse(respostas["congelado"]["atualizacao_disponivel"])
+        self.assertEqual(respostas["congelado"]["politica_atualizacao"]["motivo"], "terminal_congelado")
+
+    @override_settings(
+        PDV_DESKTOP_VERSION="0.3.0",
+        PDV_DESKTOP_MIN_VERSION="0.2.0",
+        PDV_DESKTOP_RELEASE_CHANNEL=CanalAtualizacaoPdv.PILOTO,
+    )
+    def test_versao_insegura_ignora_congelamento_e_permanece_obrigatoria(self):
+        terminal = TerminalPdv(
+            filial=self.filial,
+            nome="Caixa inseguro",
+            status_licenca=StatusLicencaTerminal.LIBERADA,
+            bloquear_atualizacoes=True,
+        )
+        chave = terminal.gerar_chave_api()
+        terminal.save()
+
+        resposta = self.client.get(
+            "/pdv/api/terminal/bootstrap/",
+            HTTP_X_TERMINAL_ID=str(terminal.identificador),
+            HTTP_X_TERMINAL_KEY=chave,
+            HTTP_X_PDV_VERSION="0.1.0",
+        ).json()["aplicativo"]
+
+        self.assertTrue(resposta["atualizacao_disponivel"])
+        self.assertTrue(resposta["atualizacao_obrigatoria"])
+        self.assertEqual(resposta["politica_atualizacao"]["motivo"], "versao_abaixo_do_minimo")
+
+    def test_terminal_licenciado_baixa_atualizacao_publicada_com_hash_e_auditoria(self):
+        terminal = TerminalPdv(filial=self.filial, nome="Caixa update", status_licenca=StatusLicencaTerminal.LIBERADA)
+        chave = terminal.gerar_chave_api()
+        terminal.save()
+        conteudo = b"instalador-pdv-controlado"
+        with tempfile.TemporaryDirectory() as pasta:
+            caminho = Path(pasta) / "SupermercadoPDV.exe"
+            criar_artefato_pdv_teste(caminho, conteudo, versao="0.4.0")
+            with override_settings(PDV_DESKTOP_INSTALLER_PATH=caminho, PDV_DESKTOP_VERSION="0.4.0", PDV_DESKTOP_REQUIRE_SIGNED_INSTALLER=False):
+                bootstrap = self.client.get(
+                    "/pdv/api/terminal/bootstrap/",
+                    HTTP_X_TERMINAL_ID=str(terminal.identificador),
+                    HTTP_X_TERMINAL_KEY=chave,
+                    HTTP_X_PDV_VERSION="0.3.0",
+                )
+                resposta = self.client.get(
+                    "/pdv/api/terminal/update/",
+                    HTTP_X_TERMINAL_ID=str(terminal.identificador),
+                    HTTP_X_TERMINAL_KEY=chave,
+                    HTTP_X_PDV_VERSION="0.3.0",
+                    REMOTE_ADDR="192.168.1.31",
+                )
+                recebido = b"".join(resposta.streaming_content)
+
+        pacote = bootstrap.json()["aplicativo"]["pacote"]
+        self.assertEqual(bootstrap.status_code, 200)
+        self.assertTrue(pacote["disponivel"])
+        self.assertEqual(pacote["nome"], "SupermercadoPDV.exe")
+        self.assertEqual(pacote["sha256"], hashlib.sha256(conteudo).hexdigest())
+        self.assertIn("/pdv/api/terminal/update/", pacote["url"])
+        self.assertFalse(pacote["instalacao_automatica"])
+        self.assertEqual(resposta.status_code, 200)
+        self.assertEqual(recebido, conteudo)
+        self.assertEqual(resposta["X-PDV-Version"], "0.4.0")
+        self.assertEqual(resposta["X-PDV-SHA256"], hashlib.sha256(conteudo).hexdigest())
+        log = LogAuditoria.objects.get(acao="DOWNLOAD_ATUALIZACAO_PDV_DESKTOP", objeto_id=str(terminal.id))
+        self.assertEqual(log.ip, "192.168.1.31")
+
+    @override_settings(
+        PDV_DESKTOP_VERSION="0.4.0",
+        PDV_DESKTOP_MIN_VERSION="0.1.0",
+        PDV_DESKTOP_RELEASE_CHANNEL=CanalAtualizacaoPdv.PILOTO,
+    )
+    def test_download_rejeita_terminal_fora_do_rollout_e_audita(self):
+        terminal = TerminalPdv(
+            filial=self.filial,
+            nome="Caixa fora rollout",
+            status_licenca=StatusLicencaTerminal.LIBERADA,
+            canal_atualizacao=CanalAtualizacaoPdv.ESTAVEL,
+        )
+        chave = terminal.gerar_chave_api()
+        terminal.save()
+
+        resposta = self.client.get(
+            "/pdv/api/terminal/update/",
+            HTTP_X_TERMINAL_ID=str(terminal.identificador),
+            HTTP_X_TERMINAL_KEY=chave,
+            HTTP_X_PDV_VERSION="0.3.0",
+        )
+
+        self.assertEqual(resposta.status_code, 403)
+        self.assertEqual(resposta.json()["status"], "atualizacao_nao_liberada")
+        self.assertEqual(resposta.json()["politica_atualizacao"]["motivo"], "aguardando_canal_estavel")
+        self.assertTrue(
+            LogAuditoria.objects.filter(
+                acao="DOWNLOAD_ATUALIZACAO_NAO_LIBERADA",
+                objeto_id=str(terminal.pk),
+            ).exists()
+        )
+
+    def test_terminal_sem_licenca_nao_baixa_atualizacao(self):
+        terminal = TerminalPdv(filial=self.filial, nome="Caixa update pendente", status_licenca=StatusLicencaTerminal.PENDENTE)
+        chave = terminal.gerar_chave_api()
+        terminal.save()
+        with tempfile.TemporaryDirectory() as pasta:
+            caminho = Path(pasta) / "SupermercadoPDV.exe"
+            caminho.write_bytes(b"instalador")
+            with override_settings(PDV_DESKTOP_INSTALLER_PATH=caminho):
+                resposta = self.client.get(
+                    "/pdv/api/terminal/update/",
+                    HTTP_X_TERMINAL_ID=str(terminal.identificador),
+                    HTTP_X_TERMINAL_KEY=chave,
+                )
+
+        self.assertEqual(resposta.status_code, 403)
+        self.assertEqual(resposta.json()["status"], "licenca_terminal_bloqueada")
+        self.assertTrue(LogAuditoria.objects.filter(acao="DOWNLOAD_ATUALIZACAO_SEM_LICENCA", objeto_id=str(terminal.id)).exists())
     def test_terminal_rejeita_chave_invalida_e_terminal_inativo(self):
         terminal = TerminalPdv(filial=self.filial, nome="Caixa 02", status_licenca=StatusLicencaTerminal.LIBERADA)
         chave = terminal.gerar_chave_api()
@@ -205,6 +399,49 @@ class AcessoPdvNuvemTests(TestCase):
         self.assertEqual(evento.mensagem, "Driver fisico indisponivel")
         self.assertEqual(evento.payload["porta"], "COM3")
         self.assertIsNotNone(evento.ocorrido_em)
+
+    def test_evento_de_dispositivo_reenviado_nao_e_duplicado(self):
+        terminal = TerminalPdv(filial=self.filial, nome="Caixa idempotente", status_licenca=StatusLicencaTerminal.LIBERADA)
+        chave = terminal.gerar_chave_api()
+        terminal.save()
+        corpo = {
+            "eventos": [
+                {
+                    "id": "evento-local-001",
+                    "em": "2026-07-27T18:00:00+00:00",
+                    "tipo": "tef",
+                    "payload": {"status": "ok", "mensagem": "Aprovado"},
+                }
+            ]
+        }
+
+        primeira = self.client.post(
+            "/pdv/api/terminal/device-events/",
+            data=json.dumps(corpo),
+            content_type="application/json",
+            HTTP_X_TERMINAL_ID=str(terminal.identificador),
+            HTTP_X_TERMINAL_KEY=chave,
+        )
+        segunda = self.client.post(
+            "/pdv/api/terminal/device-events/",
+            data=json.dumps(corpo),
+            content_type="application/json",
+            HTTP_X_TERMINAL_ID=str(terminal.identificador),
+            HTTP_X_TERMINAL_KEY=chave,
+        )
+
+        self.assertEqual(primeira.status_code, 200)
+        self.assertEqual(primeira.json()["processados"], 1)
+        self.assertEqual(primeira.json()["recebidos"], 1)
+        self.assertEqual(segunda.status_code, 200)
+        self.assertEqual(segunda.json()["processados"], 1)
+        self.assertEqual(segunda.json()["recebidos"], 0)
+        self.assertEqual(segunda.json()["duplicados"], 1)
+        self.assertEqual(
+            EventoDispositivoTerminal.objects.filter(terminal=terminal, evento_id="evento-local-001").count(),
+            1,
+        )
+
 
     def test_terminal_sem_licenca_nao_sincroniza_eventos_de_dispositivo(self):
         terminal = TerminalPdv(filial=self.filial, nome="Caixa eventos bloqueado", status_licenca=StatusLicencaTerminal.PENDENTE)
@@ -337,7 +574,7 @@ class AcessoPdvNuvemTests(TestCase):
         )
 
         self.assertRedirects(resposta, "/pdv/")
-        self.assertContains(resposta, "Carrinho liberado para a proxima compra.")
+        self.assertContains(resposta, "CAIXA LIVRE")
         self.assertContains(resposta, "Nenhum item no carrinho.")
         self.assertContains(resposta, "pdv-cash-drawer-action")
         self.assertContains(resposta, "pagamento_em_dinheiro")
@@ -347,6 +584,51 @@ class AcessoPdvNuvemTests(TestCase):
         self.assertEqual(self.client.session["pdv_cart"], {})
         self.assertEqual(Venda.objects.count(), 1)
 
+    def test_desconto_exige_supervisor_e_registra_autorizacao_no_log(self):
+        categoria = Categoria.objects.create(nome="Mercearia desconto")
+        produto = Produto.objects.create(
+            codigo_barras="789100000090",
+            nome="Produto com desconto",
+            categoria=categoria,
+            preco_custo=Decimal("10"),
+            preco_venda=Decimal("15"),
+        )
+        Estoque.objects.create(produto=produto, filial=self.filial, quantidade_atual=Decimal("10"))
+        caixa = Caixa.objects.create(filial=self.filial, usuario_abertura=self.operador, valor_inicial=Decimal("100"))
+        forma = FormaPagamento.objects.create(nome="Dinheiro desconto", tipo="DINHEIRO", permite_troco=True)
+        session = self.client.session
+        session["pdv_cart"] = {str(produto.id): "2"}
+        session.save()
+        self.client.force_login(self.operador)
+        dados = {
+            "action": "finish",
+            "caixa": caixa.id,
+            "cliente": "",
+            "desconto": "5.00",
+            "vencimento_financeiro": "",
+            "pagamento_forma": [forma.id],
+            "pagamento_valor": ["25.00"],
+        }
+
+        sem_autorizacao = self.client.post("/pdv/", dados, follow=True)
+
+        self.assertContains(sem_autorizacao, "Informe usuario e senha do supervisor.")
+        self.assertEqual(Venda.objects.count(), 0)
+        self.assertEqual(self.client.session["pdv_cart"], {str(produto.id): "2"})
+
+        autorizado = self.client.post(
+            "/pdv/",
+            {**dados, "supervisor_usuario": self.admin.username, "supervisor_senha": "senha"},
+            follow=True,
+        )
+
+        venda = Venda.objects.get()
+        self.assertContains(autorizado, "CAIXA LIVRE")
+        self.assertEqual(venda.desconto, Decimal("5.00"))
+        log = LogAuditoria.objects.get(acao="AUTORIZACAO_DESCONTO_PDV", objeto_id=str(venda.id))
+        self.assertEqual(log.usuario, self.admin)
+        self.assertIn(self.operador.username, log.descricao)
+        self.assertIn(self.admin.username, log.descricao)
     def test_impressao_desktop_avisa_quando_cupom_nao_tem_impressora_padrao(self):
         categoria = Categoria.objects.create(nome="Mercearia")
         produto = Produto.objects.create(codigo_barras="789100000002", nome="Feijao", categoria=categoria, preco_custo=Decimal("7"), preco_venda=Decimal("12"))
@@ -492,8 +774,50 @@ class AcessoPdvNuvemTests(TestCase):
         )
         cancelar_venda(venda=venda, usuario=self.admin, motivo="Cancelamento teste")
         pagamento = venda.pagamentos.get()
-        self.client.force_login(self.admin)
+        self.client.force_login(self.operador)
+        sem_permissao = self.client.get("/pdv/pagamentos/estornos-pendentes/diagnostico.json")
+        self.assertEqual(sem_permissao.status_code, 403)
+        tela_sem_permissao = self.client.get("/pdv/pagamentos/estornos-pendentes/")
+        self.assertEqual(tela_sem_permissao.status_code, 403)
 
+        self.client.force_login(self.admin)
+        diagnostico_pendente = self.client.get("/pdv/pagamentos/estornos-pendentes/diagnostico.json")
+        self.assertEqual(diagnostico_pendente.status_code, 200)
+        payload_pendente = diagnostico_pendente.json()
+        self.assertEqual(payload_pendente["contrato"], "payment_refund_readiness_v1")
+        self.assertEqual(payload_pendente["status"], "attention_required")
+        self.assertEqual(payload_pendente["resumo"]["pendentes"], 1)
+        self.assertEqual(payload_pendente["resumo"]["valor_pendente"], "12.00")
+        self.assertEqual(payload_pendente["estornos"][0]["pagamento_id"], pagamento.id)
+        self.assertTrue(payload_pendente["estornos"][0]["confirmar_url"])
+
+        tela_pendente = self.client.get("/pdv/pagamentos/estornos-pendentes/")
+        self.assertEqual(tela_pendente.status_code, 200)
+        self.assertContains(tela_pendente, "Estornos eletrônicos")
+        self.assertContains(tela_pendente, "R$ 12.00")
+        self.assertContains(tela_pendente, "TEF-SIM-ESTORNO")
+        self.assertContains(tela_pendente, "Abrir venda")
+        self.assertContains(tela_pendente, "keyboard-row")
+        self.assertContains(tela_pendente, "data-open-url")
+        self.assertContains(tela_pendente, 'event.key === "ArrowDown"')
+        self.assertContains(tela_pendente, 'event.key === "Enter"')
+        self.assertContains(tela_pendente, "refund-selected-form")
+        self.assertContains(tela_pendente, "data-tef-refund-form")
+        self.assertContains(tela_pendente, 'event.key === "F10"')
+        self.assertContains(tela_pendente, 'event.ctrlKey && event.key === "Enter"')
+
+        sem_evidencia = self.client.post(
+            f"/pdv/pagamentos/{pagamento.id}/confirmar-estorno/",
+            {
+                "supervisor_usuario": self.admin.username,
+                "supervisor_senha": "senha",
+            },
+            follow=True,
+        )
+        pagamento.refresh_from_db()
+        self.assertEqual(pagamento.status, StatusPagamento.ESTORNO_PENDENTE)
+        self.assertContains(sem_evidencia, "Informe a autorizacao ou o retorno da adquirente")
+        self.assertFalse(LancamentoFinanceiro.objects.filter(pagamento_venda=pagamento, origem="ESTORNO").exists())
         resposta = self.client.post(
             f"/pdv/pagamentos/{pagamento.id}/confirmar-estorno/",
             {
@@ -502,18 +826,88 @@ class AcessoPdvNuvemTests(TestCase):
                 "mensagem_processadora": "Estorno aprovado pelo simulador TEF do app desktop.",
                 "supervisor_usuario": self.admin.username,
                 "supervisor_senha": "senha",
+                "next": "estornos_eletronicos",
             },
             follow=True,
         )
 
         pagamento.refresh_from_db()
-        self.assertRedirects(resposta, f"/pdv/vendas/{venda.id}/")
+        self.assertRedirects(resposta, "/pdv/pagamentos/estornos-pendentes/")
         self.assertEqual(pagamento.status, StatusPagamento.ESTORNADO)
+        diagnostico_limpo = self.client.get("/pdv/pagamentos/estornos-pendentes/diagnostico.json").json()
+        self.assertEqual(diagnostico_limpo["status"], "clear")
+        self.assertEqual(diagnostico_limpo["resumo"]["pendentes"], 0)
         self.assertIn("EST987", pagamento.mensagem_processadora)
         self.assertIn("simulador TEF", pagamento.mensagem_processadora)
         self.assertTrue(LancamentoFinanceiro.objects.filter(pagamento_venda=pagamento, origem="ESTORNO").exists())
         self.assertContains(resposta, "Estorno eletrônico confirmado")
 
+    def test_fila_confirma_estorno_eletronico_parcial_da_devolucao(self):
+        categoria = Categoria.objects.create(nome="Bebidas estorno parcial")
+        produto = Produto.objects.create(
+            codigo_barras="789100009901",
+            nome="Suco",
+            categoria=categoria,
+            preco_custo=Decimal("4.00"),
+            preco_venda=Decimal("10.00"),
+        )
+        Estoque.objects.create(produto=produto, filial=self.filial, quantidade_atual=Decimal("10.000"))
+        caixa = Caixa.objects.create(filial=self.filial, usuario_abertura=self.operador, valor_inicial=Decimal("100.00"))
+        dinheiro = FormaPagamento.objects.create(nome="Dinheiro parcial", tipo="DINHEIRO")
+        pix = FormaPagamento.objects.create(nome="PIX parcial", tipo="PIX")
+        venda = finalizar_venda(
+            caixa=caixa,
+            usuario=self.operador,
+            itens=[{"produto": produto, "quantidade": Decimal("2.000")}],
+            pagamentos=[
+                {"forma_pagamento": dinheiro, "valor": Decimal("8.00")},
+                {
+                    "forma_pagamento": pix,
+                    "valor": Decimal("12.00"),
+                    "transacao_externa_id": "PIX-PARCIAL-ORIGINAL",
+                    "nsu": "NSU-PARCIAL",
+                },
+            ],
+        )
+        devolucao = registrar_devolucao_venda(
+            venda=venda,
+            usuario=self.admin,
+            itens=[{"item_venda": venda.itens.get(), "quantidade": Decimal("1.000")}],
+            motivo="Devolução parcial teste",
+            supervisor=self.admin,
+        )
+        estorno = EstornoParcialPagamento.objects.get(devolucao=devolucao)
+
+        self.client.force_login(self.admin)
+        diagnostico = self.client.get("/pdv/pagamentos/estornos-pendentes/diagnostico.json").json()
+        self.assertEqual(diagnostico["resumo"]["pendentes"], 1)
+        self.assertEqual(diagnostico["resumo"]["valor_pendente"], "6.00")
+        self.assertEqual(diagnostico["estornos"][0]["tipo_estorno"], "PARCIAL")
+        self.assertEqual(diagnostico["estornos"][0]["chave"], f"estorno-parcial-{estorno.id}")
+
+        resposta = self.client.post(
+            f"/pdv/pagamentos/estornos-parciais/{estorno.id}/confirmar/",
+            {
+                "autorizacao": "AUT-PARCIAL",
+                "transacao_estorno_id": "REFUND-PARCIAL-1",
+                "mensagem_processadora": "Aprovado pelo TEF.",
+                "supervisor_usuario": self.admin.username,
+                "supervisor_senha": "senha",
+                "next": "estornos_eletronicos",
+            },
+            follow=True,
+        )
+        estorno.refresh_from_db()
+        self.assertRedirects(resposta, "/pdv/pagamentos/estornos-pendentes/")
+        self.assertEqual(estorno.status, StatusEstornoParcial.CONFIRMADO)
+        self.assertEqual(estorno.transacao_estorno_id, "REFUND-PARCIAL-1")
+        self.assertTrue(
+            LancamentoFinanceiro.objects.filter(
+                pagamento_venda=estorno.pagamento,
+                origem="ESTORNO",
+                valor=Decimal("6.00"),
+            ).exists()
+        )
     def test_terminal_sem_fiscal_automatico_finaliza_venda_sem_preparar_nfce(self):
         categoria = Categoria.objects.create(nome="Mercearia")
         produto = Produto.objects.create(

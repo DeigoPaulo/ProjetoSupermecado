@@ -1,5 +1,6 @@
 from django.conf import settings
 from django.db import models
+from django.utils import timezone
 
 
 class StatusVenda(models.TextChoices):
@@ -29,6 +30,12 @@ class StatusPagamento(models.TextChoices):
     ESTORNADO = "ESTORNADO", "Estornado"
 
 
+class StatusEstornoParcial(models.TextChoices):
+    PENDENTE = "PENDENTE", "Pendente"
+    CONFIRMADO = "CONFIRMADO", "Confirmado"
+    RECUSADO = "RECUSADO", "Recusado"
+
+
 class FormaPagamento(models.Model):
     nome = models.CharField(max_length=100)
     tipo = models.CharField(max_length=50)
@@ -48,7 +55,6 @@ class FormaPagamento(models.Model):
 
     def __str__(self):
         return self.nome
-
 
 class Venda(models.Model):
     filial = models.ForeignKey("empresas.Filial", on_delete=models.PROTECT, related_name="vendas")
@@ -123,6 +129,37 @@ class PagamentoVenda(models.Model):
     estorno_solicitado_em = models.DateTimeField(null=True, blank=True)
     estornado_em = models.DateTimeField(null=True, blank=True)
     data = models.DateTimeField(auto_now_add=True)
+
+class EstornoParcialPagamento(models.Model):
+    pagamento = models.ForeignKey(PagamentoVenda, on_delete=models.PROTECT, related_name="estornos_parciais")
+    devolucao = models.ForeignKey(DevolucaoVenda, on_delete=models.PROTECT, related_name="estornos_pagamentos")
+    valor = models.DecimalField(max_digits=12, decimal_places=2)
+    status = models.CharField(max_length=20, choices=StatusEstornoParcial.choices, default=StatusEstornoParcial.PENDENTE)
+    motivo = models.CharField(max_length=255)
+    transacao_estorno_id = models.CharField(max_length=120, blank=True)
+    codigo_autorizacao = models.CharField(max_length=60, blank=True)
+    mensagem_processadora = models.CharField(max_length=255, blank=True)
+    solicitado_em = models.DateTimeField(default=timezone.now)
+    confirmado_em = models.DateTimeField(null=True, blank=True)
+    usuario_confirmacao = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.PROTECT,
+        null=True,
+        blank=True,
+        related_name="estornos_parciais_confirmados",
+    )
+
+    class Meta:
+        ordering = ["solicitado_em", "id"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["pagamento", "devolucao"],
+                name="vendas_estorno_parcial_pagamento_devolucao_unico",
+            )
+        ]
+
+    def __str__(self):
+        return f"Estorno parcial {self.id} - Pagamento {self.pagamento_id}"
 
 
 class PreVenda(models.Model):

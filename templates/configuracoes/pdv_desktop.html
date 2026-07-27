@@ -1,4 +1,4 @@
-﻿{% extends "base.html" %}
+{% extends "base.html" %}
 
 {% block title %}App PDV desktop{% endblock %}
 
@@ -10,7 +10,7 @@
   </div>
   <div class="actions">
     {% if instalador.disponivel %}
-      <a class="primary-button" href="{% url 'configuracoes:pdv_desktop_download_windows' %}"><i class="fa-solid fa-download"></i> Baixar Windows</a>
+      <a class="primary-button" href="{% url 'configuracoes:pdv_desktop_download_windows' %}"><i class="fa-solid fa-download"></i> Baixar instalador Windows</a>
     {% else %}
       <span class="status status-warning"><i class="fa-solid fa-clock"></i> Aguardando build assinado</span>
     {% endif %}
@@ -35,6 +35,23 @@
     <span>{{ instalador.tamanho|filesizeformat }} &middot; SHA-256 <code>{{ instalador.sha256 }}</code></span>
   </div>
 </section>
+{% if not instalador.assinatura_valida %}
+<section class="operation-notice operation-notice-warning">
+  <i class="fa-solid fa-triangle-exclamation"></i>
+  <div>
+    <strong>Pacote de homologação sem assinatura digital.</strong>
+    <span>O PDV não está publicado na Microsoft Store. Se o Windows informar que aceita somente aplicativos verificados pela Microsoft, abra Configurações &gt; Aplicativos &gt; Configurações avançadas de aplicativos e, em “Escolher onde obter aplicativos”, selecione “De qualquer lugar”. Em produção, use um instalador assinado pela Deigo Tecnologia.</span>
+  </div>
+</section>
+{% endif %}
+{% elif instalador.arquivo_encontrado and instalador.problemas %}
+<section class="operation-notice operation-notice-warning">
+  <i class="fa-solid fa-triangle-exclamation"></i>
+  <div>
+    <strong>Artefato encontrado, mas bloqueado para distribuição</strong>
+    {% for problema in instalador.problemas %}<span>{{ problema }}</span>{% endfor %}
+  </div>
+</section>
 {% endif %}
 
 <section class="metrics-grid">
@@ -42,7 +59,18 @@
   <article class="metric"><span>Licenças liberadas</span><strong>{{ licencas_liberadas }}</strong></article>
   <article class="metric"><span>Pendentes</span><strong>{{ licencas_pendentes }}</strong></article>
   <article class="metric"><span>Bloqueadas/canceladas</span><strong>{{ licencas_bloqueadas }}</strong></article>
+  <article class="metric"><span>Canal piloto</span><strong>{{ prontidao_desktop.terminais.canal_piloto }}</strong></article>
+  <article class="metric"><span>Atualizações congeladas</span><strong>{{ prontidao_desktop.terminais.atualizacoes_congeladas }}</strong></article>
+  <article class="metric"><span>Prontidão desktop</span><strong>{{ prontidao_desktop.percentual }}%</strong></article>
   <article class="metric"><span>Contrato TEF</span><strong>pdv_tef_v1</strong></article>
+</section>
+
+<section class="operation-notice {% if prontidao_desktop.bloqueios %}operation-notice-warning{% endif %}">
+  <i class="fa-solid fa-laptop-code"></i>
+  <div>
+    <strong>Prontidão do App PDV desktop: {{ prontidao_desktop.status }}</strong>
+    <span>{{ prontidao_desktop.proximo_passo }} Contrato {{ prontidao_desktop.contrato }}.</span>
+  </div>
 </section>
 
 <section class="panel desktop-diagnostics">

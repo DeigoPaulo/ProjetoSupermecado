@@ -7,11 +7,13 @@ from django.conf import settings
 from django.contrib.auth import get_user_model
 from django.core.files.uploadedfile import SimpleUploadedFile
 from django.core.management import call_command
+from django.core.management.base import CommandError
 from django.test import Client, TestCase, override_settings
 from django.utils import timezone
 from PIL import Image
 
-from apps.estoque.models import Estoque, MovimentacaoEstoque, TipoMovimentacaoEstoque
+from apps.auditoria.models import LogAuditoria
+from apps.estoque.models import Estoque, MovimentacaoEstoque, TipoMovimentacaoEstoque, movimentar_estoque
 from apps.produtos.models import Categoria, Produto
 
 from .forms import EmpresaForm
@@ -90,7 +92,7 @@ class EmpresasViewsTests(TestCase):
         filial_response = self.client.get(f"/empresas/filiais/{self.filial.pk}/editar/")
 
         self.assertEqual(empresa_response.status_code, 200)
-        self.assertContains(empresa_response, "Identificacao")
+        self.assertContains(empresa_response, "Identificação")
         self.assertContains(empresa_response, "Contato e visual")
         self.assertContains(empresa_response, "Implantacao e conectividade")
         self.assertContains(empresa_response, "Politica de conflito")
@@ -103,10 +105,11 @@ class EmpresasViewsTests(TestCase):
         self.assertEqual(filial_response.status_code, 200)
         self.assertContains(filial_response, "Loja")
         self.assertContains(filial_response, "Dados fiscais da filial")
-        self.assertContains(filial_response, "Necessario para preencher o XML da NFC-e")
+        self.assertContains(filial_response, "Necessário para preencher o XML da NFC-e")
         self.assertContains(filial_response, "select2-field")
         self.assertContains(filial_response, "data-cadastro-lookup-feedback")
-        self.assertContains(filial_response, "Ver ponto de integracao")
+        self.assertContains(filial_response, "Ver ponto de integração")
+        self.assertContains(filial_response, "Diagnóstico JSON")
 
     def test_modo_local_desativa_e_remove_sincronizacao_externa(self):
         form = EmpresaForm(
@@ -197,6 +200,154 @@ class EmpresasViewsTests(TestCase):
         self.assertFalse(criado)
         self.assertFalse(EventoSincronizacao.objects.exists())
 
+    def test_movimentacao_local_nao_publica_saldo_automaticamente(self):
+        categoria = Categoria.objects.create(nome="Mercearia local")
+        produto = Produto.objects.create(
+            codigo_barras="7891000000001",
+            nome="Produto local",
+            categoria=categoria,
+            preco_custo="2.00",
+            preco_venda="3.00",
+        )
+
+        movimentar_estoque(
+            produto=produto,
+            filial=self.filial,
+            tipo=TipoMovimentacaoEstoque.ENTRADA,
+            quantidade=Decimal("5.000"),
+            usuario=self.user,
+            referencia="entrada:local:1",
+        )
+
+        self.assertFalse(EventoSincronizacao.objects.exists())
+
+    def test_movimentacao_hibrida_publica_saldo_com_idempotencia(self):
+        self.empresa.modo_implantacao = ModoImplantacao.HIBRIDO
+        self.empresa.sincronizacao_automatica = True
+        self.empresa.url_sincronizacao = "https://nuvem.exemplo.com/api/"
+        self.empresa.save()
+        categoria = Categoria.objects.create(nome="Mercearia hibrida")
+        produto = Produto.objects.create(
+            codigo_barras="7891000000002",
+            codigo_interno="SYNC-002",
+            nome="Produto hibrido",
+            categoria=categoria,
+            preco_custo="4.00",
+            preco_venda="6.00",
+        )
+
+        movimentacao = movimentar_estoque(
+            produto=produto,
+            filial=self.filial,
+            tipo=TipoMovimentacaoEstoque.ENTRADA,
+            quantidade=Decimal("7.500"),
+            usuario=self.user,
+            motivo="Recebimento local",
+            referencia="entrada:compra:10",
+        )
+
+        evento_produto = EventoSincronizacao.objects.get(tipo="produto.atualizado")
+        evento = EventoSincronizacao.objects.get(tipo="estoque.saldo_atualizado")
+        self.assertEqual(EventoSincronizacao.objects.count(), 2)
+        self.assertEqual(evento_produto.payload["contrato"], "produto_snapshot_v1")
+        self.assertEqual(evento_produto.payload["codigo_barras"], produto.codigo_barras)
+        self.assertEqual(evento_produto.payload["preco_venda"], "6.00")
+        self.assertEqual(evento_produto.payload["categoria"], {"nome": "Mercearia hibrida"})
+        self.assertEqual(evento.filial, self.filial)
+        self.assertEqual(evento.objeto_tipo, "Estoque")
+        self.assertEqual(
+            evento.chave_idempotencia,
+            f"estoque:{self.filial.pk}:{produto.pk}:movimentacao:{movimentacao.pk}",
+        )
+        self.assertEqual(evento.payload["contrato"], "estoque_saldo_v1")
+        self.assertEqual(evento.payload["codigo_barras"], produto.codigo_barras)
+        self.assertEqual(evento.payload["filial_cnpj"], self.filial.cnpj)
+        self.assertEqual(evento.payload["quantidade_atual"], "7.500")
+        self.assertEqual(evento.payload["quantidade_reservada"], "0.000")
+        self.assertEqual(evento.payload["movimentacao"]["tipo"], TipoMovimentacaoEstoque.ENTRADA)
+        self.assertEqual(evento.payload["movimentacao"]["referencia"], "entrada:compra:10")
+
+        produto.preco_venda = Decimal("6.50")
+        produto.preco_promocional = Decimal("5.90")
+        produto.exige_lote = True
+        produto.save()
+
+        revisoes = EventoSincronizacao.objects.filter(tipo="produto.atualizado").order_by("pk")
+        self.assertEqual(revisoes.count(), 2)
+        self.assertEqual(revisoes.last().payload["preco_venda"], "6.50")
+        self.assertEqual(revisoes.last().payload["preco_promocional"], "5.90")
+        self.assertTrue(revisoes.last().payload["exige_lote"])
+        self.assertEqual(EventoSincronizacao.objects.filter(tipo="estoque.saldo_atualizado").count(), 1)
+
+    def test_movimentacao_recebida_da_nuvem_nao_gera_evento_de_retorno(self):
+        self.empresa.modo_implantacao = ModoImplantacao.HIBRIDO
+        self.empresa.sincronizacao_automatica = True
+        self.empresa.url_sincronizacao = "https://nuvem.exemplo.com/api/"
+        self.empresa.save()
+        categoria = Categoria.objects.create(nome="Mercearia remota")
+        produto = Produto.objects.create(
+            codigo_barras="7891000000003",
+            nome="Produto remoto",
+            categoria=categoria,
+            preco_custo="5.00",
+            preco_venda="8.00",
+        )
+        Estoque.objects.create(produto=produto, filial=self.filial, quantidade_atual=Decimal("9.000"))
+
+        MovimentacaoEstoque.objects.create(
+            produto=produto,
+            filial=self.filial,
+            tipo=TipoMovimentacaoEstoque.AJUSTE,
+            quantidade=Decimal("9.000"),
+            referencia="sync:11111111-1111-1111-1111-111111111111",
+        )
+
+        self.assertFalse(EventoSincronizacao.objects.exists())
+
+    def test_produto_recebido_da_nuvem_nao_publica_snapshot_de_retorno(self):
+        self.empresa.modo_implantacao = ModoImplantacao.HIBRIDO
+        self.empresa.sincronizacao_automatica = True
+        self.empresa.url_sincronizacao = "https://nuvem.exemplo.com/api/"
+        self.empresa.save()
+        categoria = Categoria.objects.create(nome="Mercearia sem eco")
+        produto = Produto.objects.create(
+            codigo_barras="7891000000004",
+            nome="Produto antes da nuvem",
+            categoria=categoria,
+            preco_custo="5.00",
+            preco_venda="8.00",
+        )
+        Estoque.objects.create(produto=produto, filial=self.filial, quantidade_atual=Decimal("2.000"))
+        EventoSincronizacao.objects.all().delete()
+        evento_entrada = EventoEntradaSincronizacao.objects.create(
+            identificador="22222222-2222-2222-2222-222222222222",
+            chave_idempotencia="produto:sem-eco:1",
+            empresa=self.empresa,
+            tipo="produto.atualizado",
+            payload={
+                "payload": {
+                    "codigo_barras": produto.codigo_barras,
+                    "nome": "Produto atualizado pela nuvem",
+                    "categoria": {"nome": categoria.nome},
+                    "preco_custo": "5.50",
+                    "preco_venda": "9.00",
+                    "preco_promocional": "8.50",
+                    "estoque_minimo": "1.000",
+                    "exige_lote": True,
+                    "vendido_no_pdv": True,
+                }
+            },
+        )
+
+        processar_entrada_sincronizacao()
+
+        evento_entrada.refresh_from_db()
+        produto.refresh_from_db()
+        self.assertEqual(evento_entrada.status, StatusEventoEntrada.PROCESSADO)
+        self.assertEqual(produto.nome, "Produto atualizado pela nuvem")
+        self.assertEqual(produto.preco_promocional, Decimal("8.50"))
+        self.assertTrue(produto.exige_lote)
+        self.assertFalse(EventoSincronizacao.objects.exists())
     def test_fila_hibrida_e_idempotente(self):
         self.empresa.modo_implantacao = ModoImplantacao.HIBRIDO
         self.empresa.sincronizacao_automatica = True
@@ -247,6 +398,9 @@ class EmpresasViewsTests(TestCase):
         evento.refresh_from_db()
         self.assertRedirects(resposta, "/empresas/sincronizacao/")
         self.assertEqual(evento.status, StatusSincronizacao.PENDENTE)
+        log = LogAuditoria.objects.get(acao="REPROCESSA_SINCRONIZACAO_SAIDA", objeto_id=str(evento.pk))
+        self.assertEqual(log.usuario, self.user)
+        self.assertEqual(log.objeto_tipo, "EventoSincronizacao")
         self.assertEqual(evento.tentativas, 0)
         self.assertEqual(evento.ultimo_erro, "")
 
@@ -306,6 +460,122 @@ class EmpresasViewsTests(TestCase):
 
         self.assertEqual(chamadas, [("saida", 10), ("entrada", 5)])
         self.assertIn("2 enviado(s), 1 erro(s) de saida", saida_stdout.getvalue())
+
+    def test_comando_gera_carga_inicial_por_filial_com_idempotencia(self):
+        self.empresa.modo_implantacao = ModoImplantacao.HIBRIDO
+        self.empresa.sincronizacao_automatica = True
+        self.empresa.url_sincronizacao = "https://nuvem.exemplo.com/api/"
+        self.empresa.save()
+        filial_dois = Filial.objects.create(
+            empresa=self.empresa,
+            nome="Filial carga",
+            cnpj="44.444.444/0002-25",
+        )
+        categoria = Categoria.objects.create(nome="Carga inicial")
+        produto_a = Produto.objects.create(
+            codigo_barras="7891000000010",
+            nome="Produto carga A",
+            categoria=categoria,
+            preco_custo="2.00",
+            preco_venda="3.00",
+        )
+        produto_b = Produto.objects.create(
+            codigo_barras="7891000000011",
+            nome="Produto carga B",
+            categoria=categoria,
+            preco_custo="4.00",
+            preco_venda="6.00",
+        )
+        Estoque.objects.create(produto=produto_a, filial=self.filial, quantidade_atual=Decimal("99.000"))
+        Estoque.objects.create(produto=produto_a, filial=filial_dois, quantidade_atual=Decimal("5.000"))
+        Estoque.objects.create(
+            produto=produto_b,
+            filial=filial_dois,
+            quantidade_atual=Decimal("8.000"),
+            quantidade_reservada=Decimal("1.000"),
+        )
+        primeira_saida = StringIO()
+        segunda_saida = StringIO()
+
+        call_command(
+            "gerar_snapshot_sincronizacao",
+            empresa=self.empresa.pk,
+            filial=filial_dois.pk,
+            stdout=primeira_saida,
+        )
+        call_command(
+            "gerar_snapshot_sincronizacao",
+            empresa=self.empresa.pk,
+            filial=filial_dois.pk,
+            stdout=segunda_saida,
+        )
+
+        self.assertEqual(EventoSincronizacao.objects.filter(tipo="produto.atualizado").count(), 2)
+        saldos = EventoSincronizacao.objects.filter(tipo="estoque.saldo_atualizado")
+        self.assertEqual(saldos.count(), 2)
+        self.assertEqual(set(saldos.values_list("filial_id", flat=True)), {filial_dois.pk})
+        self.assertEqual(
+            {evento.payload["quantidade_atual"] for evento in saldos},
+            {"5.000", "8.000"},
+        )
+        self.assertIn("2 produto(s) novo(s)", primeira_saida.getvalue())
+        self.assertIn("2 saldo(s) novo(s)", primeira_saida.getvalue())
+        self.assertIn("0 produto(s) novo(s)", segunda_saida.getvalue())
+        self.assertIn("0 saldo(s) novo(s)", segunda_saida.getvalue())
+
+    def test_comando_carga_inicial_bloqueia_empresa_local(self):
+        with self.assertRaisesMessage(CommandError, "modo hibrido/agente"):
+            call_command("gerar_snapshot_sincronizacao", empresa=self.empresa.pk)
+
+    def test_painel_gera_carga_inicial_por_filial_com_auditoria(self):
+        self.empresa.modo_implantacao = ModoImplantacao.HIBRIDO
+        self.empresa.sincronizacao_automatica = True
+        self.empresa.url_sincronizacao = "https://nuvem.exemplo.com/api/"
+        self.empresa.save()
+        categoria = Categoria.objects.create(nome="Carga pelo painel")
+        produto = Produto.objects.create(
+            codigo_barras="7891000000020",
+            nome="Produto carga painel",
+            categoria=categoria,
+            preco_custo="2.00",
+            preco_venda="3.00",
+        )
+        Estoque.objects.create(produto=produto, filial=self.filial, quantidade_atual=Decimal("12.000"))
+
+        response = self.client.post(
+            "/empresas/sincronizacao/carga-inicial/",
+            {"empresa": self.empresa.pk, "filial": self.filial.pk, "limite": 100},
+            follow=True,
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "1 produto(s) e 1 saldo(s) novo(s)")
+        self.assertEqual(EventoSincronizacao.objects.filter(tipo="produto.atualizado").count(), 1)
+        self.assertEqual(EventoSincronizacao.objects.filter(tipo="estoque.saldo_atualizado").count(), 1)
+        log = LogAuditoria.objects.get(acao="GERA_CARGA_INICIAL_SINCRONIZACAO")
+        self.assertEqual(log.usuario, self.user)
+        self.assertEqual(log.objeto_tipo, "Filial")
+        self.assertEqual(log.objeto_id, str(self.filial.pk))
+
+        response = self.client.post(
+            "/empresas/sincronizacao/carga-inicial/",
+            {"empresa": self.empresa.pk, "filial": self.filial.pk, "limite": 100},
+            follow=True,
+        )
+        self.assertContains(response, "0 produto(s) e 0 saldo(s) novo(s)")
+        self.assertEqual(EventoSincronizacao.objects.count(), 2)
+
+    def test_painel_carga_inicial_bloqueia_empresa_local(self):
+        response = self.client.post(
+            "/empresas/sincronizacao/carga-inicial/",
+            {"empresa": self.empresa.pk, "limite": 100},
+            follow=True,
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "modo hibrido/agente")
+        self.assertFalse(EventoSincronizacao.objects.exists())
+        self.assertFalse(LogAuditoria.objects.filter(acao="GERA_CARGA_INICIAL_SINCRONIZACAO").exists())
 
     @override_settings(
         SINCRONIZACAO_RETRY_BASE_SEGUNDOS=30,
@@ -824,6 +1094,8 @@ class EmpresasViewsTests(TestCase):
         self.assertIn("processar_sincronizacao_completa", diagnostico["operacao"]["comando"])
         self.assertFalse(diagnostico["operacao"]["pronto"])
         self.assertTrue(diagnostico["operacao"]["alertas"])
+        self.assertEqual(diagnostico["prontidao"]["contrato"], "sync_readiness_v1")
+        self.assertContains(erro, "Prontidao da sincronizacao")
 
     def test_diagnostico_sincronizacao_exibe_idade_e_tentativas_esgotadas(self):
         saida = EventoSincronizacao.objects.create(
@@ -864,6 +1136,23 @@ class EmpresasViewsTests(TestCase):
         self.assertContains(painel, "Status operacional da sincronizacao")
         self.assertContains(painel, "Politica manual")
         self.assertContains(painel, "Nuvem produtos/estoque")
+        self.assertContains(painel, "sync_readiness_v1")
+
+    @override_settings(SINCRONIZACAO_API_TOKEN="")
+    def test_prontidao_sincronizacao_bloqueia_hibrido_sem_configuracao(self):
+        self.empresa.modo_implantacao = ModoImplantacao.HIBRIDO
+        self.empresa.sincronizacao_automatica = True
+        self.empresa.url_sincronizacao = ""
+        self.empresa.save(update_fields=["modo_implantacao", "sincronizacao_automatica", "url_sincronizacao"])
+
+        painel = self.client.get("/empresas/sincronizacao/")
+        diagnostico = self.client.get("/empresas/sincronizacao/diagnostico.json").json()
+
+        self.assertEqual(diagnostico["prontidao"]["contrato"], "sync_readiness_v1")
+        self.assertEqual(diagnostico["prontidao"]["status"], "Bloqueada")
+        self.assertEqual(diagnostico["prontidao"]["empresas"]["hibrido"], 1)
+        self.assertIn("SINCRONIZACAO_API_TOKEN", " ".join(diagnostico["prontidao"]["bloqueios"]))
+        self.assertContains(painel, "Prontidao da sincronizacao: Bloqueada")
 
     def test_politica_de_conflito_aceita_remoto_para_produto_e_audita_resolucao(self):
         self.empresa.politica_conflito_sincronizacao = PoliticaConflitoSincronizacao.REMOTO_PRODUTOS_ESTOQUE
@@ -1064,6 +1353,9 @@ class EmpresasViewsTests(TestCase):
         self.assertRedirects(response, "/empresas/sincronizacao/")
         self.assertEqual(evento.status, StatusEventoEntrada.RECEBIDO)
         self.assertEqual(evento.ultimo_erro, "")
+        log = LogAuditoria.objects.get(acao="REPROCESSA_SINCRONIZACAO_ENTRADA", objeto_id=str(evento.pk))
+        self.assertEqual(log.usuario, self.user)
+        self.assertEqual(log.objeto_tipo, "EventoEntradaSincronizacao")
 
     def test_painel_reprocessa_evento_de_entrada_com_conflito(self):
         evento = EventoEntradaSincronizacao.objects.create(
@@ -1118,6 +1410,9 @@ class EmpresasViewsTests(TestCase):
         self.assertContains(resolvido, "Resolvido manualmente")
         self.assertContains(resolvido, "manter documento local")
         self.assertContains(painel, "Conflitos resolvidos")
+        log = LogAuditoria.objects.get(acao="RESOLVE_CONFLITO_SINCRONIZACAO", objeto_id=str(evento.pk))
+        self.assertEqual(log.usuario, self.user)
+        self.assertIn("manter documento local", log.descricao)
 
     def test_cria_filial_com_dados_fiscais(self):
         response = self.client.post(
@@ -1167,6 +1462,59 @@ class EmpresasViewsTests(TestCase):
         self.assertEqual(payload["contrato"], "cadastro_lookup_v1")
         self.assertIn("codigo_municipio_ibge", payload["campos_previstos"])
 
+
+    def test_endpoint_consulta_cadastro_diagnostico_mostra_modo_local_e_base(self):
+        response = self.client.get("/empresas/consulta-cadastro/diagnostico.json")
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertEqual(payload["contrato"], "cadastro_lookup_v1")
+        self.assertEqual(payload["status"], "ready_with_local_fallback")
+        self.assertEqual(payload["provedores"]["modo_operacao"], "local_offline")
+        self.assertFalse(payload["provedores"]["cnpj_configurado"])
+        self.assertFalse(payload["provedores"]["cep_configurado"])
+        self.assertTrue(payload["fallback_local"])
+        self.assertEqual(payload["prontidao"]["contrato"], "cadastro_lookup_readiness_v1")
+        self.assertEqual(payload["prontidao"]["status"], "local_fallback_only")
+        self.assertEqual(payload["prontidao"]["provedores_configurados"], 0)
+        self.assertTrue(payload["prontidao"]["fallback_local_disponivel"])
+        self.assertGreaterEqual(payload["base_local"]["empresas_com_cnpj"], 1)
+        self.assertGreaterEqual(payload["base_local"]["filiais_com_cnpj"], 1)
+        self.assertIn("CNPJ opera", payload["alertas"][0])
+
+    @override_settings(
+        CADASTRO_CNPJ_PROVIDER_URL="https://cadastro.example/cnpj/{cnpj}",
+        CADASTRO_CEP_PROVIDER_URL="https://cep.example/{cep}",
+        CADASTRO_LOOKUP_TIMEOUT_SEGUNDOS=3,
+    )
+    def test_endpoint_consulta_cadastro_diagnostico_mostra_provedores_configurados(self):
+        response = self.client.get("/empresas/consulta-cadastro/diagnostico.json")
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertEqual(payload["status"], "ready_with_external_provider")
+        self.assertEqual(payload["provedores"]["modo_operacao"], "externo_com_fallback_local")
+        self.assertTrue(payload["provedores"]["cnpj_configurado"])
+        self.assertTrue(payload["provedores"]["cep_configurado"])
+        self.assertEqual(payload["provedores"]["timeout_segundos"], 3)
+        self.assertEqual(payload["prontidao"]["contrato"], "cadastro_lookup_readiness_v1")
+        self.assertEqual(payload["prontidao"]["status"], "ready_for_provider_homologation")
+        self.assertEqual(payload["prontidao"]["provedores_configurados"], 2)
+        self.assertEqual(payload["alertas"], [])
+
+    @override_settings(
+        CADASTRO_CNPJ_PROVIDER_URL="https://cadastro.example/cnpj/{cnpj}",
+        CADASTRO_CEP_PROVIDER_URL="",
+    )
+    def test_endpoint_consulta_cadastro_diagnostico_mostra_configuracao_parcial(self):
+        response = self.client.get("/empresas/consulta-cadastro/diagnostico.json")
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertEqual(payload["prontidao"]["status"], "partially_configured")
+        self.assertEqual(payload["prontidao"]["provedores_configurados"], 1)
+        self.assertEqual(payload["prontidao"]["provedores_necessarios"], 2)
+        self.assertTrue(payload["prontidao"]["recomendacoes"])
     def test_endpoint_consulta_cadastro_valida_cnpj_e_reaproveita_dados_locais(self):
         empresa = Empresa.objects.create(
             razao_social="Empresa Consulta Ltda",

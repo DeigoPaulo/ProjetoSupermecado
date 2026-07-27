@@ -1,5 +1,7 @@
-﻿import hashlib
+import hashlib
+import json
 import tempfile
+from decimal import Decimal
 from pathlib import Path
 
 from django.contrib.auth import get_user_model
@@ -9,12 +11,25 @@ from apps.accounts.models import PerfilUsuario, TipoPerfil
 from apps.auditoria.models import LogAuditoria
 from apps.empresas.models import Empresa, Filial, ModoImplantacao
 from apps.financeiro.models import ContaMovimentoFinanceiro, TipoContaMovimento
-from apps.pdv.models import EventoDispositivoTerminal, ModoIntegracaoTef, ProtocoloBalanca, ProvedorTef, StatusLicencaTerminal, TerminalPdv
-from apps.vendas.models import FormaPagamento
+from apps.pdv.models import Caixa, CanalAtualizacaoPdv, EventoDispositivoTerminal, ModoIntegracaoTef, ProtocoloBalanca, ProvedorTef, StatusLicencaTerminal, TerminalPdv
+from apps.vendas.models import FormaPagamento, PagamentoVenda, StatusPagamento, Venda
 
 from .models import ConfiguracaoImpressao, ModeloEtiqueta, ModeloPapel, TipoDocumentoImpressao
 from .services import configuracao_impressao_para, criar_configuracoes_padrao, estilos_impressao
 from .templatetags.formatadores import quantidade_br
+
+def criar_artefato_pdv_teste(caminho, conteudo, versao="0.1.0", assinado=False):
+    caminho.write_bytes(conteudo)
+    assinatura = "Valid" if assinado else "NotSigned"
+    metadados = {
+        "version": versao,
+        "filename": caminho.name,
+        "size_bytes": len(conteudo),
+        "sha256": hashlib.sha256(conteudo).hexdigest(),
+        "executable_signature": assinatura,
+        "msi_signature": assinatura if caminho.suffix.lower() == ".msi" else "",
+    }
+    caminho.with_name(caminho.name + ".version.json").write_text(json.dumps(metadados), encoding="utf-8")
 
 
 class FormatadoresTemplateTests(SimpleTestCase):
@@ -93,7 +108,7 @@ class ConfiguracoesOperacionaisTests(TestCase):
         self.assertContains(checklist, "Todas as trilhas")
         self.assertContains(checklist, "Todas as prioridades")
         self.assertContains(checklist, "Documentos de referência")
-        self.assertNotContains(checklist, "documentaÃ")
+        self.assertNotContains(checklist, "documenta" + "\u00c3")
         self.assertContains(checklist, "Excel/CSV")
         self.assertContains(checklist, "Arquitetura PDV desktop local")
         self.assertContains(checklist, "Padrão R$ em todos os formulários")
@@ -121,6 +136,11 @@ class ConfiguracoesOperacionaisTests(TestCase):
         self.assertContains(checklist, "peso simulado para homologacao")
         self.assertContains(checklist, "botão Peso e atalho F12")
         self.assertContains(checklist, "devices.log.jsonl")
+        self.assertContains(checklist, "pdv_device_event_queue_v1")
+        self.assertContains(checklist, "lotes são enviados do mais antigo ao mais novo")
+        self.assertContains(checklist, "compactação atômica remove somente registros já confirmados")
+        self.assertContains(checklist, "thread exclusiva sincroniza periodicamente")
+        self.assertContains(checklist, "sem depender de reiniciar o caixa")
         self.assertContains(checklist, "ponte deviceLogs")
         self.assertContains(checklist, "leitura visual desse diagnóstico")
         self.assertContains(checklist, "endpoint autenticado por terminal")
@@ -133,6 +153,11 @@ class ConfiguracoesOperacionaisTests(TestCase):
         self.assertContains(checklist, "envia diretamente ao spooler Windows em RAW/ESC-POS")
         self.assertContains(checklist, "sem abrir pré-visualizacao")
         self.assertContains(checklist, "PIX dinâmico")
+        self.assertContains(checklist, "Desconto supervisionado no PDV")
+        self.assertContains(checklist, "log de auditoria")
+        self.assertContains(checklist, "camada de tela cheia informa CAIXA LIVRE")
+        self.assertContains(checklist, "checkPayment")
+        self.assertContains(checklist, "mera geração do QR como pagamento")
         self.assertContains(checklist, "somente após pagamento confirmado")
         self.assertContains(checklist, "tenta preparar a NFC-e automaticamente")
         self.assertContains(checklist, "desativar essa tentativa por terminal PDV")
@@ -140,10 +165,26 @@ class ConfiguracoesOperacionaisTests(TestCase):
         self.assertContains(checklist, "ultima tentativa automatica auditada")
         self.assertContains(checklist, "pendencia fica auditada")
         self.assertContains(checklist, "Transmissao simulada em homologacao")
+        self.assertContains(checklist, "fiscal_production_readiness_v1")
         self.assertContains(checklist, "transmissão SEFAZ real")
         self.assertContains(checklist, "simulador TEF rastreável")
+        self.assertContains(checklist, "contrato único de adaptadores")
+        self.assertContains(checklist, "simulador deixou de ser implícito")
+        self.assertContains(checklist, "sem driver instalado falha de forma segura")
         self.assertContains(checklist, "provedor TEF e modo de integracao por adaptador")
         self.assertContains(checklist, "pdv_tef_v1")
+        self.assertContains(checklist, "bootstrap local autorizado com validade padrão de 24 horas")
+        self.assertContains(checklist, "pdv_local_secret_v1")
+        self.assertContains(checklist, "DPAPI vinculado ao usuário do Windows")
+        self.assertContains(checklist, "parâmetros sensíveis do adaptador TEF")
+        self.assertContains(checklist, "restaura os valores somente em memória")
+        self.assertContains(checklist, "migra automaticamente instalações legadas")
+        self.assertContains(checklist, "pdv_single_instance_v1")
+        self.assertContains(checklist, "impedir duas janelas do mesmo caixa")
+        self.assertContains(checklist, "reconfiguração também reserva primeiro a identidade atual")
+        self.assertContains(checklist, "bloqueia venda, pagamento e estoque")
+        self.assertContains(checklist, "F5/Enter")
+        self.assertContains(checklist, "cache vencido ou terminal recusado permanece bloqueado")
         self.assertContains(checklist, "ponte processPayment")
         self.assertContains(checklist, "aguarda resposta da maquininha")
         self.assertContains(checklist, "terminal sem TEF configurado retorna aviso")
@@ -151,6 +192,9 @@ class ConfiguracoesOperacionaisTests(TestCase):
         self.assertContains(checklist, "chave idempotente por tentativa")
         self.assertContains(checklist, "reutiliza a autorização ou estorno já aprovado")
         self.assertContains(checklist, "confirmar o estorno eletrônico aprovado pela operadora")
+        self.assertContains(checklist, "processa diretamente a parcela selecionada")
+        self.assertContains(checklist, "aguarda a resposta da maquininha")
+        self.assertContains(checklist, "exige evidência informada da adquirente")
         self.assertContains(checklist, "pdv_cash_drawer_v1")
         self.assertContains(checklist, "ponte openCashDrawer")
         self.assertContains(checklist, "registra diagnóstico local da gaveta")
@@ -224,6 +268,9 @@ class ConfiguracoesOperacionaisTests(TestCase):
         self.assertContains(checklist, "ZPL, EPL, PPLA ou PPLB")
         self.assertContains(checklist, "homologacao por modelo")
         self.assertContains(checklist, "etiqueta de teste por modelo")
+        self.assertContains(checklist, "limita 500 produtos, 100 cópias por produto e 2.000 etiquetas por lote")
+        self.assertContains(checklist, "diagnóstico local de sucesso ou falha")
+        self.assertContains(checklist, "quantidade de produtos e cópias efetivamente enviada")
         self.assertContains(checklist, "teste de modelo usa a mesma ponte local")
         self.assertContains(checklist, "Complementar desmembramento e fracionamento de produtos")
         self.assertContains(checklist, "Desmembramento e fracionamento de produtos")
@@ -243,6 +290,7 @@ class ConfiguracoesOperacionaisTests(TestCase):
         self.assertContains(checklist, "CADASTRO_CNPJ_PROVIDER_URL")
         self.assertContains(checklist, "CADASTRO_CEP_PROVIDER_URL")
         self.assertContains(checklist, "fallback local/offline")
+        self.assertContains(checklist, "diagnóstico JSON")
         self.assertContains(checklist, "Pol" + "\u00ed" + "ticas de entrega por filial")
         self.assertContains(checklist, "delivery_geocode_v1")
         self.assertContains(checklist, "MARKETPLACE_GEOCODING_PROVIDER_URL")
@@ -255,7 +303,8 @@ class ConfiguracoesOperacionaisTests(TestCase):
         self.assertContains(checklist, "Importação de XML de entrada")
         self.assertContains(checklist, "Estoque geral por lote, validade e custo histórico")
         self.assertContains(checklist, "link temporário de uso único")
-        self.assertContains(checklist, "homologar o SMTP real de produção")
+        self.assertContains(checklist, "password_reset_readiness_v1")
+        self.assertContains(checklist, "homologar entrega e recuperação ponta a ponta")
         self.assertContains(checklist, "gera pedido em rascunho")
         self.assertContains(checklist, "conversão única em entrada vinculada")
         self.assertContains(checklist, "sem estoque ou financeiro")
@@ -280,6 +329,10 @@ class ConfiguracoesOperacionaisTests(TestCase):
         self.assertContains(checklist, "política de lote obrigatório por produto")
         self.assertContains(checklist, "vem desativada")
         self.assertContains(checklist, "NF-e sem rastro")
+        self.assertContains(checklist, "Progresso finalizado")
+        self.assertContains(checklist, "Diferença em andamento")
+        self.assertContains(checklist, "Impacto estimado")
+        self.assertIn("diferenca_ponderada", checklist.context["resumo"])
         self.assertEqual(checklist.context["resumo"]["pendentes"], 0)
 
     def test_checklist_filtra_por_status_grupo_e_busca(self):
@@ -343,11 +396,13 @@ class ConfiguracoesOperacionaisTests(TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertContains(response, "Super admin")
         self.assertContains(response, "Área restrita ao admin master")
+        self.assertContains(response, "Fila avançada concluída")
         self.assertContains(response, "Prontidão operacional")
         self.assertContains(response, "Empresas e filiais")
         self.assertContains(response, "Terminais PDV")
         self.assertContains(response, "Servidor local/admin")
         self.assertContains(response, "Inventário técnico")
+        self.assertContains(response, "Inspecionar")
         self.assertContains(response, "Diagnóstico JSON")
         self.assertContains(response, "Excel/CSV")
         self.assertContains(response, "Pendências acionáveis")
@@ -364,6 +419,7 @@ class ConfiguracoesOperacionaisTests(TestCase):
         self.assertContains(response, "Alertas de sincronização")
         self.assertContains(response, "Sincronização com alerta")
         self.assertContains(response, "Diagnóstico da sincronização")
+        self.assertContains(response, "Estornos eletrônicos pendentes")
         self.assertContains(response, "Ambiente e segurança")
         self.assertContains(response, "Banco padrão")
         self.assertContains(response, "Pasta media")
@@ -381,10 +437,12 @@ class ConfiguracoesOperacionaisTests(TestCase):
         self.assertEqual(payload["usuario"], "admin")
         self.assertIn("diagnosticos", payload)
         self.assertIn("modelos", payload)
+        self.assertIn("inspecao_url", payload["modelos"][0])
         self.assertIn("perfis_por_tipo", payload)
         self.assertIn("resumo_checklist", payload)
         self.assertIn("pendencias_acionaveis", payload)
         self.assertIn("cobertura_telas", payload)
+        self.assertIn("modelos_avancados_pendentes", payload)
         self.assertIn("atividade_recente", payload)
         self.assertIn("investigacoes", payload)
         self.assertIn("ambiente_operacional", payload)
@@ -395,13 +453,49 @@ class ConfiguracoesOperacionaisTests(TestCase):
         self.assertEqual(payload["links"]["sincronizacao_diagnostico_json"], "http://localhost/empresas/sincronizacao/diagnostico.json")
         self.assertIn("Usuários sem perfil", [item["titulo"] for item in payload["pendencias_acionaveis"]])
         self.assertIn("Sincronização com alerta", [item["titulo"] for item in payload["pendencias_acionaveis"]])
+        self.assertIn("Estornos eletrônicos pendentes", [item["titulo"] for item in payload["pendencias_acionaveis"]])
         self.assertIn("Fiscal", [item["area"] for item in payload["cobertura_telas"]])
+        self.assertTrue(all(item["status"] == "Completa" for item in payload["cobertura_telas"]))
+        fiscal = next(item for item in payload["cobertura_telas"] if item["area"] == "Fiscal")
+        self.assertEqual(fiscal["status"], "Completa")
+        self.assertNotIn("Séries fiscais e naturezas", [item["area"] for item in payload["modelos_avancados_pendentes"]])
+        self.assertEqual(payload["modelos_avancados_pendentes"], [])
         self.assertIn("Auditoria do PDV", [item["titulo"] for item in payload["investigacoes"]])
         self.assertIn("Diagnóstico da sincronização", [item["titulo"] for item in payload["investigacoes"]])
         self.assertIn("DEBUG", [item["item"] for item in payload["ambiente_operacional"]])
         self.assertIn(payload["prontidao_operacional"]["status"], {"Pronta", "Atenção", "Crítica"})
         self.assertGreaterEqual(payload["total_modelos"], 1)
 
+    def test_super_admin_destaca_valor_de_estorno_eletronico_pendente(self):
+        PerfilUsuario.objects.create(usuario=self.user, filial=self.filial, tipo=TipoPerfil.ADMINISTRADOR)
+        caixa = Caixa.objects.create(filial=self.filial, usuario_abertura=self.user)
+        venda = Venda.objects.create(
+            filial=self.filial,
+            caixa=caixa,
+            usuario=self.user,
+            total_liquido=Decimal("42.50"),
+        )
+        forma = FormaPagamento.objects.create(nome="PIX", tipo="PIX")
+        PagamentoVenda.objects.create(
+            venda=venda,
+            forma_pagamento=forma,
+            valor=Decimal("42.50"),
+            status=StatusPagamento.ESTORNO_PENDENTE,
+            transacao_externa_id="PIX-ESTORNO-001",
+        )
+
+        response = self.client.get("/configuracoes/super-admin/diagnostico.json")
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        diagnostico = next(item for item in payload["diagnosticos"] if item["titulo"] == "Estornos eletrônicos pendentes")
+        pendencia = next(item for item in payload["pendencias_acionaveis"] if item["titulo"] == "Estornos eletrônicos pendentes")
+        self.assertEqual(diagnostico["valor"], 1)
+        self.assertIn("R$ 42.50", diagnostico["descricao"])
+        self.assertEqual(pendencia["prioridade"], "Alta")
+        self.assertEqual(pendencia["total"], 1)
+        self.assertEqual(pendencia["url_name"], "pdv:estornos_eletronicos")
+        self.assertEqual(payload["prontidao_operacional"]["status"], "Crítica")
     def test_super_admin_diagnostico_csv_para_suporte_restrito(self):
         PerfilUsuario.objects.create(usuario=self.user, filial=self.filial, tipo=TipoPerfil.ADMINISTRADOR)
         LogAuditoria.objects.create(
@@ -419,12 +513,37 @@ class ConfiguracoesOperacionaisTests(TestCase):
         self.assertIn("Secao;Item;Status/Prioridade;Total/Valor;Descricao/Acao", conteudo)
         self.assertIn("Diagnostico;Admin masters;Acesso", conteudo)
         self.assertIn("Pendencia;Usuários sem perfil;Alta", conteudo)
-        self.assertIn("Cobertura;Fiscal;Operacional", conteudo)
+        self.assertIn("Cobertura;Fiscal;Completa", conteudo)
+        self.assertNotIn("Modelo avancado;Séries fiscais e naturezas;Alta", conteudo)
+        self.assertNotIn("Modelo avancado;", conteudo)
         self.assertIn("Atividade;EXPORTACAO_TESTE;configuracoes", conteudo)
         self.assertIn("Investigacao;Auditoria de configurações;Link", conteudo)
         self.assertIn("Ambiente;DEBUG;", conteudo)
         self.assertIn("Prontidao;", conteudo)
         self.assertIn("Perfil;Administrador;Ativo", conteudo)
+
+    def test_super_admin_modelo_inspecao_protegida_paginada_e_sem_admin_django(self):
+        PerfilUsuario.objects.create(usuario=self.user, filial=self.filial, tipo=TipoPerfil.ADMINISTRADOR)
+        get_user_model().objects.create_user("operador_visivel", "operador_visivel@example.com", "123")
+
+        response = self.client.get("/configuracoes/super-admin/modelos/auth/user/", {"q": "operador"})
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "Inspeção de modelo")
+        self.assertContains(response, "Consulta protegida, sem edição direta")
+        self.assertContains(response, "operador_visivel")
+        self.assertContains(response, "Página")
+        self.assertContains(response, "••••")
+        self.assertNotContains(response, "Admin Django")
+
+    def test_super_admin_modelo_inspecao_exige_admin_master(self):
+        gerente = get_user_model().objects.create_user("gerente_modelo", "gerente_modelo@example.com", "123")
+        PerfilUsuario.objects.create(usuario=gerente, filial=self.filial, tipo=TipoPerfil.GERENTE)
+        self.client.force_login(gerente)
+
+        response = self.client.get("/configuracoes/super-admin/modelos/auth/user/")
+
+        self.assertEqual(response.status_code, 403)
 
     def test_super_admin_exige_admin_master(self):
         gerente = get_user_model().objects.create_user("gerente_super_admin", "gerente_super_admin@example.com", "123")
@@ -455,6 +574,10 @@ class ConfiguracoesOperacionaisTests(TestCase):
         self.assertContains(response, "Backup local automático")
         self.assertContains(response, "scripts/run_local_server.ps1")
         self.assertContains(response, "scripts/register_local_server_task.ps1")
+        self.assertContains(response, "scripts/install_local_server_service.ps1")
+        self.assertContains(response, "scripts/test_local_server_service.ps1")
+        self.assertContains(response, "scripts/uninstall_local_server_service.ps1")
+        self.assertContains(response, "server_local/windows/MercaFlowServidorLocal.xml.template")
         self.assertContains(response, "scripts/backup_local.ps1")
         self.assertContains(response, "scripts/register_backup_task.ps1")
         self.assertContains(response, "BACKUP_ENCRYPTION_PASSPHRASE")
@@ -463,17 +586,29 @@ class ConfiguracoesOperacionaisTests(TestCase):
         self.assertContains(response, "docs/IMPLANTACAO_SERVIDOR_LOCAL.md")
         self.assertContains(response, "Supermercado Modelo")
         self.assertContains(response, "Servidor local com sincronizacao em nuvem")
+        self.assertContains(response, "Prontidao do servidor local")
+        self.assertContains(response, "local_admin_readiness_v1")
         self.assertEqual(manifest.status_code, 200)
         payload = manifest.json()
         self.assertEqual(payload["contrato"], "erp_local_admin_v1")
+        self.assertEqual(payload["prontidao"]["contrato"], "local_admin_readiness_v1")
+        self.assertIn(payload["prontidao"]["status"], ["Homologacao parcial", "Pronta com ressalvas", "Pronta"])
+        self.assertTrue(payload["prontidao"]["arquivos"]["backup_local"]["existe"])
         self.assertTrue(payload["acesso"]["usa_navegador"])
         self.assertTrue(payload["acesso"]["pdv_desktop_separado"])
         self.assertEqual(payload["servico_windows"]["nome"], "MercaFlowServidorLocal")
-        self.assertEqual(payload["servico_windows"]["status"], "especificado")
+        self.assertEqual(payload["servico_windows"]["status"], "instalador_preparado")
         self.assertIn("waitress", payload["servico_windows"]["comando_producao"])
         self.assertEqual(payload["servico_windows"]["healthcheck"], "/login/")
         self.assertEqual(payload["scripts"]["subir_servidor"], "scripts/run_local_server.ps1")
         self.assertEqual(payload["scripts"]["registrar_servidor"], "scripts/register_local_server_task.ps1")
+        self.assertEqual(payload["scripts"]["instalar_servico"], "scripts/install_local_server_service.ps1")
+        self.assertEqual(payload["scripts"]["diagnosticar_servico"], "scripts/test_local_server_service.ps1")
+        self.assertEqual(payload["scripts"]["remover_servico"], "scripts/uninstall_local_server_service.ps1")
+        self.assertEqual(payload["scripts"]["template_servico"], "server_local/windows/MercaFlowServidorLocal.xml.template")
+        self.assertTrue(payload["prontidao"]["arquivos"]["instalar_servico"]["existe"])
+        self.assertEqual(payload["servico_windows"]["contrato"], "local_windows_service_v1")
+        self.assertIn("SHA-256", payload["servico_windows"]["wrapper"])
         self.assertEqual(payload["scripts"]["backup_local"], "scripts/backup_local.ps1")
         self.assertEqual(payload["scripts"]["registrar_backup"], "scripts/register_backup_task.ps1")
         self.assertEqual(payload["scripts"]["backup_criptografia_env"], "BACKUP_ENCRYPTION_PASSPHRASE")
@@ -531,6 +666,8 @@ class ConfiguracoesOperacionaisTests(TestCase):
                 "modo_integracao_tef": ModoIntegracaoTef.DESKTOP_BRIDGE,
                 "status_licenca": StatusLicencaTerminal.LIBERADA,
                 "observacao_licenca": "Caixa contratado",
+                "canal_atualizacao": CanalAtualizacaoPdv.PILOTO,
+                "bloquear_atualizacoes": "on",
                 "permite_modo_offline": "on",
                 "emite_documento_fiscal": "on",
                 "ativo": "on",
@@ -546,6 +683,8 @@ class ConfiguracoesOperacionaisTests(TestCase):
         self.assertEqual(terminal.provedor_tef, ProvedorTef.PAGBANK)
         self.assertEqual(terminal.modo_integracao_tef, ModoIntegracaoTef.DESKTOP_BRIDGE)
         self.assertEqual(terminal.status_licenca, StatusLicencaTerminal.LIBERADA)
+        self.assertEqual(terminal.canal_atualizacao, CanalAtualizacaoPdv.PILOTO)
+        self.assertTrue(terminal.bloquear_atualizacoes)
         self.assertEqual(terminal.licenca_liberada_por, self.user)
         self.assertIsNotNone(terminal.licenca_liberada_em)
         self.assertTrue(terminal.chave_api_hash)
@@ -558,6 +697,9 @@ class ConfiguracoesOperacionaisTests(TestCase):
         self.assertContains(response, "Emite NFC-e")
         self.assertContains(response, "PagBank")
         self.assertContains(response, "Liberada")
+        self.assertContains(response, "Piloto")
+        self.assertContains(response, "Congelada")
+        self.assertTrue(LogAuditoria.objects.filter(acao="POLITICA_ATUALIZACAO_TERMINAL_PDV", objeto_id=str(terminal.pk)).exists())
 
         segunda_visualizacao = self.client.get("/configuracoes/terminais-pdv/")
         self.assertNotContains(segunda_visualizacao, "sera mostrada somente agora")
@@ -571,6 +713,7 @@ class ConfiguracoesOperacionaisTests(TestCase):
         self.assertContains(form_response, "driver genérico")
         self.assertContains(form_response, "endereço:porta")
         self.assertContains(form_response, "Licenciamento do app desktop")
+        self.assertContains(form_response, "Atualizacao controlada")
 
     def test_terminal_valida_endereco_tcp_e_adaptador_especifico_da_balanca(self):
         base = {
@@ -617,6 +760,66 @@ class ConfiguracoesOperacionaisTests(TestCase):
         self.assertNotContains(busca, "Caixa Liberado")
         self.assertContains(busca_com_filtro, "Caixa Pendente")
         self.assertNotContains(busca_com_filtro, "Caixa Liberado")
+        self.assertContains(liberados, "Diagnósticos")
+
+    def test_diagnosticos_dos_terminais_filtram_paginam_e_exportam_csv(self):
+        terminal = TerminalPdv.objects.create(filial=self.filial, nome="Caixa Diagnostico")
+        outro = TerminalPdv.objects.create(filial=self.filial, nome="Caixa Outro")
+        EventoDispositivoTerminal.objects.create(
+            terminal=terminal,
+            tipo="balanca",
+            status="erro",
+            mensagem="Driver da balanca indisponivel",
+        )
+        EventoDispositivoTerminal.objects.create(
+            terminal=terminal,
+            tipo="tef",
+            status="ok",
+            mensagem="Pagamento aprovado",
+        )
+        EventoDispositivoTerminal.objects.create(
+            terminal=outro,
+            tipo="balanca",
+            status="erro",
+            mensagem="Falha de outro terminal",
+        )
+        EventoDispositivoTerminal.objects.bulk_create(
+            [
+                EventoDispositivoTerminal(
+                    terminal=terminal,
+                    tipo="impressora",
+                    status="ok",
+                    mensagem=f"Teste de pagina {indice}",
+                )
+                for indice in range(51)
+            ]
+        )
+
+        filtrada = self.client.get(
+            "/configuracoes/terminais-pdv/diagnosticos/",
+            {"terminal": terminal.pk, "tipo": "balanca", "status": "erro"},
+        )
+        paginada = self.client.get(
+            "/configuracoes/terminais-pdv/diagnosticos/",
+            {"terminal": terminal.pk, "page": 2},
+        )
+        csv_response = self.client.get(
+            "/configuracoes/terminais-pdv/diagnosticos/exportar.csv",
+            {"terminal": terminal.pk, "status": "erro"},
+        )
+        csv_texto = csv_response.content.decode("utf-8-sig")
+
+        self.assertEqual(filtrada.status_code, 200)
+        self.assertContains(filtrada, "Diagnósticos dos terminais PDV")
+        self.assertContains(filtrada, "Driver da balanca indisponivel")
+        self.assertNotContains(filtrada, "Pagamento aprovado")
+        self.assertNotContains(filtrada, "Falha de outro terminal")
+        self.assertEqual(paginada.context["pagina"].number, 2)
+        self.assertEqual(paginada.context["pagina"].paginator.num_pages, 2)
+        self.assertEqual(csv_response["Content-Type"], "text/csv; charset=utf-8")
+        self.assertIn("Caixa Diagnostico", csv_texto)
+        self.assertIn("Driver da balanca indisponivel", csv_texto)
+        self.assertNotIn("Falha de outro terminal", csv_texto)
 
     def test_central_app_pdv_desktop_mostra_arquitetura_e_terminais(self):
         terminal = TerminalPdv.objects.create(
@@ -631,6 +834,8 @@ class ConfiguracoesOperacionaisTests(TestCase):
             status_licenca=StatusLicencaTerminal.LIBERADA,
             licenca_liberada_por=self.user,
             emite_documento_fiscal=False,
+            canal_atualizacao=CanalAtualizacaoPdv.PILOTO,
+            bloquear_atualizacoes=True,
         )
         ConfiguracaoImpressao.objects.create(
             empresa=self.empresa,
@@ -662,6 +867,8 @@ class ConfiguracoesOperacionaisTests(TestCase):
         self.assertContains(response, "Licenças liberadas")
         self.assertContains(response, "Pendentes")
         self.assertContains(response, "Bloqueadas/canceladas")
+        self.assertContains(response, "Prontidão do App PDV desktop")
+        self.assertContains(response, "pdv_desktop_readiness_v1")
         self.assertContains(response, "pdv_tef_v1")
         self.assertContains(response, "Manifesto JSON")
         self.assertContains(response, "Diagnóstico local deste terminal")
@@ -682,6 +889,10 @@ class ConfiguracoesOperacionaisTests(TestCase):
         self.assertContains(response, "Serial RS-232/USB")
         self.assertContains(response, "Sem fiscal automático")
         self.assertContains(response, "Pacote JSON")
+        self.assertContains(response, "Atualizacao controlada")
+        self.assertContains(response, "Canal pronto")
+        self.assertContains(response, "Empacotamento pronto")
+        self.assertContains(response, "WiX v4")
         self.assertContains(checklist, "Central do App PDV desktop")
         self.assertContains(checklist, "pdv_device_homologation_v1")
         self.assertContains(checklist, "não imprime nem cria cobrança")
@@ -701,6 +912,15 @@ class ConfiguracoesOperacionaisTests(TestCase):
         self.assertContains(checklist, "informa sua versao no bootstrap")
         self.assertContains(checklist, "bloqueia versao insegura")
         self.assertContains(checklist, "sem atualizacao automatica fora do licenciamento")
+        self.assertContains(checklist, "canal de atualização autenticado")
+        self.assertContains(checklist, "pdv_update_rollout_v1")
+        self.assertContains(checklist, "caixas piloto")
+        self.assertContains(checklist, "valida SHA-256")
+        self.assertContains(checklist, "sem atualização silenciosa")
+        self.assertContains(checklist, "pdv_windows_installer_v1")
+        self.assertContains(checklist, "PDV_DESKTOP_REQUIRE_SIGNED_INSTALLER")
+        self.assertContains(checklist, "exigem manifesto .version.json")
+        self.assertContains(checklist, "homologar instalacao/upgrade/desinstalacao em Windows limpo")
         self.assertContains(checklist, "salva cache local do bootstrap autorizado")
         self.assertContains(checklist, "recusa de licença, chave ou terminal bloqueado nunca usa o cache")
         self.assertContains(checklist, "licenca por máquina")
@@ -708,7 +928,7 @@ class ConfiguracoesOperacionaisTests(TestCase):
         self.assertContains(checklist, "não recebem pacote de ativacao")
         self.assertContains(checklist, "projeto/artefato separado")
         self.assertContains(checklist, "baixado por dentro do sistema somente com autorizacao do admin master")
-        self.assertContains(checklist, "histórico consolidado dos eventos recebidos pelo servidor")
+        self.assertContains(checklist, "filtros por máquina/tipo/status/período")
 
         manifest = self.client.get("/configuracoes/pdv-desktop/manifest.json")
         self.assertEqual(manifest.status_code, 200)
@@ -716,7 +936,26 @@ class ConfiguracoesOperacionaisTests(TestCase):
         self.assertEqual(payload["status"], "ok")
         self.assertEqual(payload["licenciamento"]["modelo"], "por_terminal")
         self.assertTrue(payload["licenciamento"]["download_requer_admin_master"])
+        self.assertEqual(payload["prontidao"]["contrato"], "pdv_desktop_readiness_v1")
+        self.assertEqual(payload["prontidao"]["status"], "Bloqueada")
+        self.assertEqual(payload["prontidao"]["terminais"]["licencas_liberadas"], 1)
+        self.assertTrue(payload["prontidao"]["instalador"]["build_msi_preparado"])
+        self.assertTrue(payload["prontidao"]["instalador"]["assinatura_obrigatoria_producao"])
         self.assertEqual(payload["contratos"]["tef"], "pdv_tef_v1")
+        self.assertEqual(payload["contratos"]["fila_eventos_dispositivo"], "pdv_device_event_queue_v1")
+        self.assertEqual(payload["contratos"]["instalador_windows"], "pdv_windows_installer_v1")
+        self.assertEqual(payload["contratos"]["credencial_local"], "pdv_local_secret_v1")
+        self.assertEqual(payload["contratos"]["instancia_local"], "pdv_single_instance_v1")
+        self.assertTrue(payload["recursos"]["credencial_terminal_dpapi"])
+        self.assertTrue(payload["recursos"]["configuracao_tef_dpapi"])
+        self.assertTrue(payload["recursos"]["instancia_unica_por_terminal"])
+        self.assertTrue(payload["recursos"]["eventos_dispositivo_idempotentes"])
+        self.assertTrue(payload["recursos"]["compactacao_preserva_pendentes"])
+        self.assertTrue(payload["recursos"]["sincronizacao_periodica_eventos"])
+        self.assertEqual(payload["politica_atualizacao"]["contrato"], "pdv_update_rollout_v1")
+        self.assertTrue(payload["politica_atualizacao"]["versao_minima_sobrepoe_congelamento"])
+        self.assertEqual(payload["prontidao"]["terminais"]["canal_piloto"], 1)
+        self.assertEqual(payload["prontidao"]["terminais"]["atualizacoes_congeladas"], 1)
         self.assertTrue(payload["recursos"]["fiscal_por_terminal"])
         terminal_payload = next(item for item in payload["terminais"] if item["nome"] == "Caixa 02")
         self.assertEqual(terminal_payload["provedor_tef"], ProvedorTef.STONE)
@@ -726,6 +965,8 @@ class ConfiguracoesOperacionaisTests(TestCase):
         self.assertTrue(terminal_payload["balanca"]["leitura_automatica"])
         self.assertEqual(terminal_payload["licenca"]["status"], StatusLicencaTerminal.LIBERADA)
         self.assertTrue(terminal_payload["licenca"]["liberada"])
+        self.assertEqual(terminal_payload["atualizacao"]["canal"], CanalAtualizacaoPdv.PILOTO)
+        self.assertTrue(terminal_payload["atualizacao"]["bloqueada_pelo_admin"])
         self.assertIn("/pdv/api/terminal/bootstrap/", terminal_payload["bootstrap_url"])
 
         pacote = self.client.get(f"/configuracoes/pdv-desktop/terminais/{terminal.pk}/pacote.json")
@@ -733,6 +974,9 @@ class ConfiguracoesOperacionaisTests(TestCase):
         pacote_payload = pacote.json()
         self.assertEqual(pacote_payload["terminal"]["nome"], "Caixa 02")
         self.assertEqual(pacote_payload["interface"]["modo"], "webview_compartilhada")
+        self.assertEqual(pacote_payload["atualizacao"]["contrato"], "pdv_update_rollout_v1")
+        self.assertEqual(pacote_payload["atualizacao"]["canal_terminal"], CanalAtualizacaoPdv.PILOTO)
+        self.assertTrue(pacote_payload["atualizacao"]["bloqueada_pelo_admin"])
         self.assertTrue(pacote_payload["interface"]["mesmo_layout_do_pdv_web"])
         self.assertIn("/pdv/", pacote_payload["interface"]["pdv_url"])
         self.assertEqual(pacote_payload["licenciamento"]["modelo"], "por_terminal")
@@ -788,8 +1032,8 @@ class ConfiguracoesOperacionaisTests(TestCase):
         conteudo = b"executavel-pdv-teste"
         with tempfile.TemporaryDirectory() as pasta:
             caminho = Path(pasta) / "SupermercadoPDV.exe"
-            caminho.write_bytes(conteudo)
-            with override_settings(PDV_DESKTOP_INSTALLER_PATH=caminho):
+            criar_artefato_pdv_teste(caminho, conteudo)
+            with override_settings(PDV_DESKTOP_INSTALLER_PATH=caminho, PDV_DESKTOP_REQUIRE_SIGNED_INSTALLER=False):
                 central = self.client.get("/configuracoes/pdv-desktop/")
                 manifest = self.client.get("/configuracoes/pdv-desktop/manifest.json")
                 download = self.client.get("/configuracoes/pdv-desktop/download/windows/")
@@ -800,10 +1044,52 @@ class ConfiguracoesOperacionaisTests(TestCase):
         self.assertEqual(artefato["status"], "disponivel")
         self.assertEqual(artefato["tamanho_bytes"], len(conteudo))
         self.assertEqual(artefato["sha256"], hashlib.sha256(conteudo).hexdigest())
+        self.assertTrue(artefato["integridade_valida"])
+        self.assertTrue(artefato["versao_valida"])
+        self.assertFalse(artefato["assinatura_exigida"])
         self.assertEqual(download.status_code, 200)
         self.assertEqual(baixado, conteudo)
         self.assertTrue(LogAuditoria.objects.filter(acao="DOWNLOAD_PDV_DESKTOP", usuario=self.user).exists())
 
+    def test_instalador_alterado_apos_publicacao_e_bloqueado(self):
+        conteudo = b"msi-original"
+        with tempfile.TemporaryDirectory() as pasta:
+            caminho = Path(pasta) / "SupermercadoPDV.msi"
+            criar_artefato_pdv_teste(caminho, conteudo)
+            caminho.write_bytes(conteudo + b"-alterado")
+            with override_settings(
+                PDV_DESKTOP_INSTALLER_PATH=caminho,
+                PDV_DESKTOP_REQUIRE_SIGNED_INSTALLER=False,
+            ):
+                central = self.client.get("/configuracoes/pdv-desktop/")
+                manifest = self.client.get("/configuracoes/pdv-desktop/manifest.json")
+                download = self.client.get("/configuracoes/pdv-desktop/download/windows/")
+
+        artefato = manifest.json()["artefatos"]["windows_x64"]
+        self.assertContains(central, "Artefato encontrado, mas bloqueado para distribuição")
+        self.assertContains(central, "SHA-256 do instalador diverge do manifesto")
+        self.assertEqual(artefato["status"], "aguardando_build")
+        self.assertFalse(artefato["integridade_valida"])
+        self.assertEqual(download.status_code, 404)
+        self.assertFalse(LogAuditoria.objects.filter(acao="DOWNLOAD_PDV_DESKTOP", usuario=self.user).exists())
+
+    def test_producao_exige_assinaturas_validas_do_executavel_e_msi(self):
+        conteudo = b"msi-sem-assinatura"
+        with tempfile.TemporaryDirectory() as pasta:
+            caminho = Path(pasta) / "SupermercadoPDV.msi"
+            criar_artefato_pdv_teste(caminho, conteudo, assinado=False)
+            with override_settings(
+                PDV_DESKTOP_INSTALLER_PATH=caminho,
+                PDV_DESKTOP_REQUIRE_SIGNED_INSTALLER=True,
+            ):
+                manifest = self.client.get("/configuracoes/pdv-desktop/manifest.json")
+                download = self.client.get("/configuracoes/pdv-desktop/download/windows/")
+
+        artefato = manifest.json()["artefatos"]["windows_x64"]
+        self.assertFalse(artefato["assinatura_valida"])
+        self.assertTrue(artefato["assinatura_exigida"])
+        self.assertIn("Assinatura digital valida", artefato["problemas"][0])
+        self.assertEqual(download.status_code, 404)
     def test_gerente_nao_baixa_instalador_desktop(self):
         gerente = get_user_model().objects.create_user("gerente_download", password="123")
         PerfilUsuario.objects.create(usuario=gerente, filial=self.filial, tipo=TipoPerfil.GERENTE)
@@ -847,6 +1133,8 @@ class ConfiguracoesOperacionaisTests(TestCase):
                 "modo_integracao_tef": ModoIntegracaoTef.DESKTOP_BRIDGE,
                 "status_licenca": StatusLicencaTerminal.LIBERADA,
                 "observacao_licenca": "Tentativa de liberar",
+                "canal_atualizacao": CanalAtualizacaoPdv.PILOTO,
+                "bloquear_atualizacoes": "on",
                 "permite_modo_offline": "on",
                 "emite_documento_fiscal": "on",
                 "ativo": "on",
@@ -859,6 +1147,9 @@ class ConfiguracoesOperacionaisTests(TestCase):
         self.assertEqual(terminal.status_licenca, StatusLicencaTerminal.PENDENTE)
         self.assertIsNone(terminal.licenca_liberada_por)
         self.assertEqual(terminal.observacao_licenca, "Aguardando liberacao do admin master.")
+        self.assertEqual(terminal.canal_atualizacao, CanalAtualizacaoPdv.ESTAVEL)
+        self.assertFalse(terminal.bloquear_atualizacoes)
+        self.assertFalse(LogAuditoria.objects.filter(acao="POLITICA_ATUALIZACAO_TERMINAL_PDV", objeto_id=str(terminal.pk)).exists())
 
     def test_admin_master_altera_licenca_do_terminal_por_acao_rapida(self):
         terminal = TerminalPdv.objects.create(filial=self.filial, nome="Caixa Licenca Rapida")
@@ -1069,6 +1360,8 @@ class ConfiguracoesOperacionaisTests(TestCase):
         self.assertEqual(response.status_code, 200)
         payload = response.json()
         self.assertEqual(payload["status"], "ok")
+        self.assertEqual(payload["prontidao"]["contrato"], "print_readiness_v1")
+        self.assertEqual(payload["prontidao"]["resumo"]["com_impressora"], 1)
         config = payload["configuracoes"][0]
         self.assertEqual(config["impressora_padrao"], "EPSON TM-T20")
         self.assertTrue(config["impressora_configurada"])
@@ -1099,7 +1392,13 @@ class ConfiguracoesOperacionaisTests(TestCase):
         response = self.client.get("/configuracoes/impressoes/desktop.json")
 
         self.assertEqual(response.status_code, 200)
-        config = response.json()["configuracoes"][0]
+        payload = response.json()
+        self.assertEqual(payload["prontidao"]["contrato"], "print_readiness_v1")
+        self.assertEqual(payload["prontidao"]["status"], "Atencao")
+        self.assertEqual(payload["prontidao"]["resumo"]["sem_impressora"], 1)
+        self.assertEqual(payload["prontidao"]["resumo"]["etiquetas_com_linguagem_nativa"], 1)
+        self.assertIn("modelo profissional", " ".join(payload["prontidao"]["alertas"]))
+        config = payload["configuracoes"][0]
         self.assertFalse(config["impressora_configurada"])
         self.assertIn("sem impressora padrão definida", config["mensagem"])
         etiqueta = config["etiqueta"]
@@ -1141,6 +1440,7 @@ class ConfiguracoesOperacionaisTests(TestCase):
         self.assertFalse(primeiro.padrao)
         novo = ModeloEtiqueta.objects.get(nome="Promocional grande")
         payload = self.client.get("/configuracoes/impressoes/desktop.json").json()
+        self.assertEqual(payload["prontidao"]["resumo"]["modelos_profissionais"], 2)
         modelos = payload["configuracoes"][0]["etiqueta"]["modelos"]
         self.assertEqual(modelos[1]["id"], novo.id)
         self.assertEqual(modelos[1]["orientacao"], "PAISAGEM")

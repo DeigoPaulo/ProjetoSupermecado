@@ -39,6 +39,12 @@
         <strong>Licenciamento do app desktop.</strong>
         <span>O instalador e o pacote de ativacao devem ser liberados pelo admin master por terminal/maquina contratada. Terminal bloqueado ou pendente nao deve ativar o app no caixa.</span>
       </div>
+      <label class="form-field"><span>{{ form.canal_atualizacao.label }}</span>{{ form.canal_atualizacao }}{{ form.canal_atualizacao.errors }}</label>
+      <label class="toggle-field">{{ form.bloquear_atualizacoes }} <span>{{ form.bloquear_atualizacoes.label }}</span>{{ form.bloquear_atualizacoes.errors }}</label>
+      <div class="form-note form-field-wide">
+        <strong>Atualizacao controlada.</strong>
+        <span>Use o canal piloto em poucos caixas antes da liberacao estavel. O congelamento bloqueia atualizacoes opcionais; versoes abaixo do minimo de seguranca continuam obrigatorias.</span>
+      </div>
       <label class="toggle-field">{{ form.permite_modo_offline }} <span>{{ form.permite_modo_offline.label }}</span>{{ form.permite_modo_offline.errors }}</label>
       <label class="toggle-field">{{ form.emite_documento_fiscal }} <span>{{ form.emite_documento_fiscal.label }}</span>{{ form.emite_documento_fiscal.errors }}</label>
       <div class="form-note form-field-wide">

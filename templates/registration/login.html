@@ -19,6 +19,11 @@
       {{ form.password }}
     </label>
     <button class="primary-button" type="submit">Acessar</button>
+    <button class="secondary-button auth-button desktop-only" id="desktop-close-application" type="button">
+      <i class="fa-solid fa-power-off"></i>
+      Fechar aplicativo
+      <kbd>Alt+F4</kbd>
+    </button>
     <a class="auth-link" href="{% url 'password_reset' %}">Esqueci minha senha</a>
   </form>
 </section>

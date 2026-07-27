@@ -53,6 +53,11 @@ class StatusLicencaTerminal(models.TextChoices):
     CANCELADA = "CANCELADA", "Cancelada"
 
 
+class CanalAtualizacaoPdv(models.TextChoices):
+    ESTAVEL = "ESTAVEL", "Estavel"
+    PILOTO = "PILOTO", "Piloto"
+
+
 class TerminalPdv(models.Model):
     identificador = models.UUIDField(default=uuid.uuid4, unique=True, editable=False)
     filial = models.ForeignKey("empresas.Filial", on_delete=models.PROTECT, related_name="terminais_pdv")
@@ -72,6 +77,8 @@ class TerminalPdv(models.Model):
     licenca_liberada_em = models.DateTimeField(null=True, blank=True)
     licenca_liberada_por = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.PROTECT, null=True, blank=True, related_name="terminais_pdv_liberados")
     observacao_licenca = models.CharField(max_length=255, blank=True)
+    canal_atualizacao = models.CharField(max_length=20, choices=CanalAtualizacaoPdv.choices, default=CanalAtualizacaoPdv.ESTAVEL)
+    bloquear_atualizacoes = models.BooleanField(default=False)
     ativo = models.BooleanField(default=True)
     ultima_conexao = models.DateTimeField(null=True, blank=True)
     ultimo_ip = models.GenericIPAddressField(null=True, blank=True)
@@ -125,6 +132,7 @@ class TerminalPdv(models.Model):
 
 class EventoDispositivoTerminal(models.Model):
     terminal = models.ForeignKey(TerminalPdv, on_delete=models.CASCADE, related_name="eventos_dispositivo")
+    evento_id = models.CharField(max_length=80, null=True, blank=True)
     tipo = models.CharField(max_length=40)
     status = models.CharField(max_length=40, blank=True)
     mensagem = models.CharField(max_length=255, blank=True)
@@ -137,6 +145,9 @@ class EventoDispositivoTerminal(models.Model):
         indexes = [
             models.Index(fields=["terminal", "-recebido_em"]),
             models.Index(fields=["tipo", "status"]),
+        ]
+        constraints = [
+            models.UniqueConstraint(fields=["terminal", "evento_id"], name="uniq_evento_dispositivo_terminal"),
         ]
 
     def __str__(self):

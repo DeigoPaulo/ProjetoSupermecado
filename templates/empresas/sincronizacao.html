@@ -41,6 +41,15 @@
   <article class="metric"><span>Politica manual</span><strong>{{ diagnostico_operacional.empresas.politica_manual }}</strong></article>
   <article class="metric"><span>Nuvem produtos/estoque</span><strong>{{ diagnostico_operacional.empresas.politica_remoto_produtos_estoque }}</strong></article>
   <article class="metric"><span>Empresas filtradas</span><strong>{{ diagnostico_operacional.empresas.total_ativas }}</strong></article>
+  <article class="metric"><span>Prontidao sync</span><strong>{{ diagnostico_operacional.prontidao.percentual }}%</strong></article>
+</section>
+
+<section class="operation-notice {% if diagnostico_operacional.prontidao.bloqueios %}operation-notice-warning{% endif %}">
+  <i class="fa-solid fa-network-wired"></i>
+  <div>
+    <strong>Prontidao da sincronizacao: {{ diagnostico_operacional.prontidao.status }}</strong>
+    <span>{{ diagnostico_operacional.prontidao.proximo_passo }} Contrato {{ diagnostico_operacional.prontidao.contrato }}.</span>
+  </div>
 </section>
 
 <section class="operation-notice {% if diagnostico_operacional.operacao.alertas %}operation-notice-warning{% endif %}">
@@ -59,6 +68,35 @@
   </div>
 </section>
 
+<form method="post" action="{% url 'empresas:sincronizacao_carga_inicial' %}" class="form-grid panel form-confirm" data-msg="Gerar a carga inicial de catálogo e saldos para sincronização?">
+  {% csrf_token %}
+  <div class="panel-title">Carga inicial de catálogo e estoque</div>
+  <label>
+    <span>Empresa</span>
+    <select name="empresa" required>
+      <option value="">Selecione</option>
+      {% for empresa in empresas_carga_opcoes %}
+        <option value="{{ empresa.id }}">{{ empresa.nome_fantasia }}</option>
+      {% endfor %}
+    </select>
+  </label>
+  <label>
+    <span>Filial</span>
+    <select name="filial">
+      <option value="">Todas as filiais</option>
+      {% for filial in filiais_carga_opcoes %}
+        <option value="{{ filial.id }}">{{ filial.empresa.nome_fantasia }} - {{ filial.nome }}</option>
+      {% endfor %}
+    </select>
+  </label>
+  <label>
+    <span>Limite de saldos</span>
+    <input type="number" name="limite" min="1" max="100000" value="5000" required>
+  </label>
+  <div class="form-actions">
+    <button type="submit" class="primary-button"><i class="fa-solid fa-cloud-arrow-up"></i> Gerar carga inicial</button>
+  </div>
+</form>
 <section class="panel code-sample">
   <div class="panel-title">Agendamento no servidor local</div>
   <span>Use o script recomendado para registrar a rotina no Agendador de Tarefas do Windows no servidor da loja.</span>

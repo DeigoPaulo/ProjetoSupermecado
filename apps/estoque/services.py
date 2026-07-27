@@ -39,6 +39,35 @@ from .models import (
 def _autorizacao_texto(supervisor):
     return f" Autorizado por: {supervisor}." if supervisor else ""
 
+TIPOS_COM_CONSERVACAO_MASSA = {
+    TipoDesmembramentoProduto.ACOUGUE,
+    TipoDesmembramentoProduto.HORTIFRUTI,
+}
+
+
+def _conservacao_massa_aplicavel(*, tipo, produto_origem, destinos):
+    return bool(
+        tipo in TIPOS_COM_CONSERVACAO_MASSA
+        and produto_origem.unidade == "KG"
+        and all(destino["produto"].unidade == "KG" for destino in destinos)
+    )
+
+
+def _resumo_conservacao_massa(*, tipo, produto_origem, quantidade_origem, destinos):
+    quantidade_total = sum((destino["quantidade"] for destino in destinos), Decimal("0.000"))
+    aplicavel = _conservacao_massa_aplicavel(tipo=tipo, produto_origem=produto_origem, destinos=destinos)
+    excesso = max(quantidade_total - quantidade_origem, Decimal("0.000")) if aplicavel else Decimal("0.000")
+    nao_classificada = max(quantidade_origem - quantidade_total, Decimal("0.000")) if aplicavel else Decimal("0.000")
+    rendimento_total = ((quantidade_total / quantidade_origem) * Decimal("100")).quantize(Decimal("0.01"))
+    return {
+        "aplicavel": aplicavel,
+        "valida": not aplicavel or (excesso == 0 and nao_classificada == 0),
+        "quantidade_total": quantidade_total,
+        "excesso": excesso,
+        "nao_classificada": nao_classificada,
+        "rendimento_total": rendimento_total,
+    }
+
 
 def _normalizar_data_lote(valor, rotulo):
     if not valor or isinstance(valor, date):
@@ -600,6 +629,21 @@ def confirmar_desmembramento_multidestino(
     quantidade_total_destinos = sum(destino["quantidade"] for destino in destinos)
     if quantidade_total_destinos <= 0:
         raise ValidationError("As quantidades do desmembramento devem ser maiores que zero.")
+    conservacao = _resumo_conservacao_massa(
+        tipo=tipo,
+        produto_origem=produto_origem,
+        quantidade_origem=quantidade_origem,
+        destinos=destinos,
+    )
+    if not conservacao["valida"]:
+        if conservacao["excesso"]:
+            detalhe = f"Excesso: {conservacao['excesso']:.3f} KG."
+        else:
+            detalhe = f"Quantidade nao classificada: {conservacao['nao_classificada']:.3f} KG."
+        raise ValidationError(
+            f"Conservacao de massa invalida: {quantidade_origem:.3f} KG de origem devem corresponder "
+            f"aos {quantidade_total_destinos:.3f} KG de destinos, incluindo perdas. {detalhe}"
+        )
     custo_unitario_base = custo_total_origem / quantidade_total_destinos
 
     desmembramento = DesmembramentoProduto.objects.create(
@@ -747,7 +791,15 @@ def confirmar_desmembramento_simples(
     )
 
 
-def simular_desmembramento_multidestino(*, filial, produto_origem, quantidade_origem, destinos, **_):
+def simular_desmembramento_multidestino(
+    *,
+    filial,
+    produto_origem,
+    quantidade_origem,
+    destinos,
+    tipo=TipoDesmembramentoProduto.SIMPLES,
+    **_,
+):
     if quantidade_origem <= 0:
         raise ValidationError("As quantidades do desmembramento devem ser maiores que zero.")
     destinos = list(destinos or [])
@@ -766,6 +818,12 @@ def simular_desmembramento_multidestino(*, filial, produto_origem, quantidade_or
     quantidade_total_destinos = sum(destino["quantidade"] for destino in destinos)
     if quantidade_total_destinos <= 0:
         raise ValidationError("As quantidades do desmembramento devem ser maiores que zero.")
+    conservacao = _resumo_conservacao_massa(
+        tipo=tipo,
+        produto_origem=produto_origem,
+        quantidade_origem=quantidade_origem,
+        destinos=destinos,
+    )
     custo_unitario_destino = custo_total_origem / quantidade_total_destinos
     destinos_previstos = [
         {
@@ -797,6 +855,11 @@ def simular_desmembramento_multidestino(*, filial, produto_origem, quantidade_or
         "estoque_suficiente": saldo_origem >= quantidade_origem,
         "custo_total_origem": custo_total_origem,
         "custo_unitario_destino": custo_unitario_destino,
+        "conservacao_massa_aplicada": conservacao["aplicavel"],
+        "conservacao_massa_valida": conservacao["valida"],
+        "excesso_quantidade": conservacao["excesso"],
+        "quantidade_nao_classificada": conservacao["nao_classificada"],
+        "rendimento_total": conservacao["rendimento_total"],
     }
 
 

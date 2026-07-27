@@ -1,0 +1,205 @@
+{% extends "base.html" %}
+
+{% block title %}Estornos eletrônicos{% endblock %}
+
+{% block content %}
+<header class="page-header">
+  <div>
+    <h1>Estornos eletrônicos</h1>
+    <p>PIX e TEF aguardando confirmação do retorno da adquirente.</p>
+  </div>
+  <div class="actions">
+    <a class="secondary-button" href="{% url 'pdv:estornos_eletronicos_diagnostico' %}"><i class="fa-solid fa-code"></i> Diagnóstico JSON</a>
+    <a class="secondary-button" href="{% url 'configuracoes:super_admin' %}"><i class="fa-solid fa-arrow-left"></i> Super admin</a>
+  </div>
+</header>
+
+<section class="metrics-grid">
+  <article class="metric"><span>Pendentes</span><strong>{{ diagnostico.resumo.pendentes }}</strong><small>aguardando adquirente</small></article>
+  <article class="metric"><span>Valor pendente</span><strong>R$ {{ diagnostico.resumo.valor_pendente }}</strong><small>a devolver</small></article>
+  <article class="metric"><span>Atrasados</span><strong>{{ diagnostico.resumo.atrasados }}</strong><small>há {{ diagnostico.limite_alerta_minutos }} minutos ou mais</small></article>
+</section>
+
+{% if diagnostico.recomendacoes %}
+  <section class="operation-notice operation-notice-warning">
+    <i class="fa-solid fa-triangle-exclamation"></i>
+    <div>
+      <strong>Ação da supervisão necessária.</strong>
+      <span>{{ diagnostico.recomendacoes.0 }} No aplicativo desktop, a confirmação chama a maquininha e aguarda a aprovação. No navegador, confirme somente depois de processar o estorno diretamente na adquirente.</span>
+    </div>
+  </section>
+{% endif %}
+
+{% if diagnostico.estornos %}
+<section class="panel" id="refund-action-panel">
+  <div class="panel-heading">
+    <div>
+      <h2>Processar estorno selecionado</h2>
+      <p>Venda <strong id="refund-selected-sale">#{{ diagnostico.estornos.0.venda_id }}</strong> · <span id="refund-selected-method">{{ diagnostico.estornos.0.forma_pagamento }}</span> · <strong id="refund-selected-value">R$ {{ diagnostico.estornos.0.valor }}</strong></p>
+    </div>
+    <span class="status status-warning">Aguardando adquirente</span>
+  </div>
+  <form
+    method="post"
+    action="{{ diagnostico.estornos.0.confirmar_url }}"
+    class="form-grid form-confirm"
+    id="refund-selected-form"
+    data-msg="Processar o estorno selecionado e confirmar o retorno da adquirente?"
+    data-tef-refund-form
+    data-refund-tipo="{{ diagnostico.estornos.0.tipo }}"
+    data-refund-valor="{{ diagnostico.estornos.0.valor }}"
+    data-refund-transacao="{{ diagnostico.estornos.0.transacao_externa_id }}"
+    data-refund-key="{{ diagnostico.estornos.0.chave }}"
+  >
+    {% csrf_token %}
+    <input type="hidden" name="next" value="estornos_eletronicos">
+    <input type="hidden" name="mensagem_processadora" value="">
+    <input type="hidden" name="transacao_estorno_id" value="">
+    <label class="form-field">
+      <span>Autorização/NSU do estorno</span>
+      <input type="text" name="autorizacao" autocomplete="off" placeholder="Preenchido pelo TEF ou informado manualmente">
+    </label>
+    <label class="form-field">
+      <span>Observação</span>
+      <input type="text" name="motivo" autocomplete="off" placeholder="Motivo ou referência operacional">
+    </label>
+    <label class="form-field">
+      <span>Supervisor</span>
+      <input type="text" name="supervisor_usuario" autocomplete="username" required>
+    </label>
+    <label class="form-field">
+      <span>Senha do supervisor</span>
+      <input type="password" name="supervisor_senha" autocomplete="current-password" required>
+    </label>
+    <div class="form-actions actions">
+      <button class="primary-button" type="submit"><i class="fa-solid fa-rotate-left"></i> Processar e confirmar <kbd>F10</kbd></button>
+      <span class="muted">Use as setas para selecionar e Ctrl+Enter ou F10 para processar.</span>
+    </div>
+  </form>
+</section>
+{% endif %}
+
+<section class="panel">
+  <div class="panel-heading">
+    <div><h2>Fila de devoluções eletrônicas</h2><p>As 100 solicitações mais antigas aparecem primeiro.</p></div>
+  </div>
+  <div class="table-wrapper">
+    <table>
+      <thead><tr><th>Venda</th><th>Filial / caixa</th><th>Forma</th><th>Transação / NSU</th><th>Valor</th><th>Espera</th><th></th></tr></thead>
+      <tbody>
+        {% for estorno in diagnostico.estornos %}
+          <tr
+            class="keyboard-row{% if forloop.first %} is-selected{% endif %}"
+            tabindex="0"
+            aria-selected="{% if forloop.first %}true{% else %}false{% endif %}"
+            data-open-url="{% url 'pdv:venda_detalhe' estorno.venda_id %}"
+            data-confirm-url="{{ estorno.confirmar_url }}"
+            data-pagamento-id="{{ estorno.pagamento_id }}"
+            data-refund-key="{{ estorno.chave }}"
+            data-venda-id="{{ estorno.venda_id }}"
+            data-forma="{{ estorno.forma_pagamento }}"
+            data-refund-tipo="{{ estorno.tipo }}"
+            data-refund-valor="{{ estorno.valor }}"
+            data-refund-transacao="{{ estorno.transacao_externa_id }}"
+          >
+            <td><strong>#{{ estorno.venda_id }}</strong></td>
+            <td>{{ estorno.filial }}<br><small>Caixa #{{ estorno.caixa_id }}</small></td>
+            <td>{{ estorno.forma_pagamento }}<br><small>{{ estorno.tipo }} · {{ estorno.tipo_estorno|lower }}</small></td>
+            <td>{{ estorno.transacao_externa_id|default:"-" }}<br><small>NSU {{ estorno.nsu|default:"-" }}</small></td>
+            <td><strong>R$ {{ estorno.valor }}</strong></td>
+            <td><span class="status {% if estorno.atrasado %}status-danger{% else %}status-warning{% endif %}">{{ estorno.idade_minutos }} min</span></td>
+            <td><a class="secondary-button compact-button" href="{% url 'pdv:venda_detalhe' estorno.venda_id %}">Abrir venda</a></td>
+          </tr>
+        {% empty %}
+          <tr><td colspan="7" class="empty">Nenhum estorno eletrônico pendente.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</section>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+(function () {
+  "use strict";
+  var rows = Array.prototype.slice.call(document.querySelectorAll(".keyboard-row[data-open-url]"));
+  if (!rows.length) return;
+  var selectedIndex = 0;
+  var selectedRefundKey = rows[0].dataset.refundKey;
+  var form = document.getElementById("refund-selected-form");
+  var sale = document.getElementById("refund-selected-sale");
+  var method = document.getElementById("refund-selected-method");
+  var value = document.getElementById("refund-selected-value");
+
+  function clearAuthorization() {
+    if (!form) return;
+    ["autorizacao", "motivo", "mensagem_processadora", "transacao_estorno_id"].forEach(function (name) {
+      var field = form.querySelector("[name='" + name + "']");
+      if (field) field.value = "";
+    });
+    delete form.dataset.tefRefundReady;
+  }
+
+  function syncAction(row) {
+    if (!form) return;
+    if (selectedRefundKey !== row.dataset.refundKey) clearAuthorization();
+    selectedRefundKey = row.dataset.refundKey;
+    form.action = row.dataset.confirmUrl;
+    form.setAttribute("data-refund-tipo", row.dataset.refundTipo || "");
+    form.setAttribute("data-refund-valor", row.dataset.refundValor || "");
+    form.setAttribute("data-refund-transacao", row.dataset.refundTransacao || "");
+    form.setAttribute("data-refund-key", row.dataset.refundKey || "");
+    sale.textContent = "#" + row.dataset.vendaId;
+    method.textContent = row.dataset.forma;
+    value.textContent = "R$ " + row.dataset.refundValor;
+  }
+
+  function selectRow(index, focus) {
+    selectedIndex = Math.max(0, Math.min(index, rows.length - 1));
+    rows.forEach(function (row, currentIndex) {
+      var selected = currentIndex === selectedIndex;
+      row.classList.toggle("is-selected", selected);
+      row.setAttribute("aria-selected", selected ? "true" : "false");
+    });
+    var selectedRow = rows[selectedIndex];
+    syncAction(selectedRow);
+    selectedRow.scrollIntoView({block: "nearest"});
+    if (focus) selectedRow.focus({preventScroll: true});
+  }
+
+  function submitSelected() {
+    if (!form) return;
+    if (typeof form.requestSubmit === "function") form.requestSubmit();
+    else form.querySelector("button[type='submit']").click();
+  }
+
+  rows.forEach(function (row, index) {
+    row.addEventListener("focus", function () { selectRow(index, false); });
+    row.addEventListener("click", function () { selectRow(index, false); });
+  });
+
+  document.addEventListener("keydown", function (event) {
+    var typing = event.target && /input|textarea|select/i.test(event.target.tagName);
+    if (event.key === "F10" || (event.ctrlKey && event.key === "Enter")) {
+      event.preventDefault();
+      submitSelected();
+      return;
+    }
+    if (typing) return;
+    if (event.key === "ArrowDown" || event.key === "ArrowUp") {
+      event.preventDefault();
+      selectRow(selectedIndex + (event.key === "ArrowDown" ? 1 : -1), true);
+    } else if (event.key === "Home" || event.key === "End") {
+      event.preventDefault();
+      selectRow(event.key === "Home" ? 0 : rows.length - 1, true);
+    } else if (event.key === "Enter") {
+      event.preventDefault();
+      window.location.assign(rows[selectedIndex].dataset.openUrl);
+    }
+  });
+
+  selectRow(0, false);
+}());
+</script>
+{% endblock %}

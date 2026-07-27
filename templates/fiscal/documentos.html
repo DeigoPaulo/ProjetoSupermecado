@@ -6,14 +6,14 @@
 <header class="page-header">
   <div>
     <h1>Fiscal</h1>
-    <p>Preparacao e acompanhamento de documentos fiscais da operacao.</p>
+    <p>Preparação e acompanhamento de documentos fiscais da operação.</p>
   </div>
   <div class="actions">
-    <a class="secondary-button" href="{% url 'fiscal:diagnostico_json' %}"><i class="fa-solid fa-code"></i> Diagnostico JSON</a>
+    <a class="secondary-button" href="{% url 'fiscal:diagnostico_json' %}"><i class="fa-solid fa-code"></i> Diagnóstico JSON</a>
     <a class="secondary-button" href="{% url 'fiscal:contingencia_json' %}"><i class="fa-solid fa-file-export"></i> Contingência JSON</a>
     <a class="secondary-button" href="{% url 'fiscal:produtos_fiscais' %}"><i class="fa-solid fa-boxes-stacked"></i> Produtos fiscais</a>
-    <a class="secondary-button" href="{% url 'fiscal:configuracao_nova' %}"><i class="fa-solid fa-gear"></i> Configuracao</a>
-    <a class="secondary-button" href="{% url 'fiscal:serie_nova' %}"><i class="fa-solid fa-hashtag"></i> Serie</a>
+    <a class="secondary-button" href="{% url 'fiscal:configuracao_nova' %}"><i class="fa-solid fa-gear"></i> Configuração</a>
+    <a class="secondary-button" href="{% url 'fiscal:serie_nova' %}"><i class="fa-solid fa-hashtag"></i> Série</a>
     <a class="primary-button" href="{% url 'fiscal:natureza_nova' %}"><i class="fa-solid fa-plus"></i> Natureza</a>
   </div>
 </header>
@@ -23,27 +23,37 @@
   <article class="metric"><span>Prontos</span><strong>{{ pendentes }}</strong></article>
   <article class="metric"><span>Emitidos</span><strong>{{ emitidos }}</strong></article>
   <article class="metric"><span>Rejeitados</span><strong>{{ rejeitados }}</strong></article>
-  <article class="metric"><span>Pendencias automaticas</span><strong>{{ pendencias_automaticas }}</strong></article>
+  <article class="metric"><span>Pendências automáticas</span><strong>{{ pendencias_automaticas }}</strong></article>
 </section>
 
 <section class="operation-notice {% if diagnostico.resumo.alertas %}operation-notice-warning{% endif %}">
   <i class="fa-solid fa-file-shield"></i>
   <div>
-    <strong>Prontidao fiscal: {{ diagnostico.resumo.filiais_prontas }} de {{ diagnostico.resumo.filiais }} filial(is) prontas.</strong>
-    <span>{{ diagnostico.resumo.alertas }} alerta(s), {{ diagnostico.resumo.produtos_pendentes }} produto(s) com pendencia fiscal e {{ diagnostico.resumo.vendas_pendentes }} venda(s) aguardando NFC-e.</span>
+    <strong>Prontidão fiscal: {{ diagnostico.resumo.filiais_prontas }} de {{ diagnostico.resumo.filiais }} filial(is) prontas.</strong>
+    <span>{{ diagnostico.resumo.alertas }} alerta(s), {{ diagnostico.resumo.produtos_pendentes }} produto(s) com pendência fiscal e {{ diagnostico.resumo.vendas_pendentes }} venda(s) aguardando NFC-e.</span>
   </div>
 </section>
+
+{% if diagnostico.producao.alertas %}
+<section class="operation-notice operation-notice-warning">
+  <i class="fa-solid fa-satellite-dish"></i>
+  <div>
+    <strong>Produção fiscal: {% if diagnostico.producao.transmissao_real_disponivel %}transmissão real disponível{% else %}transmissão real pendente{% endif %}.</strong>
+    <span>{{ diagnostico.producao.alertas|join:" " }} Diagnóstico: {{ diagnostico.producao.contrato }}.</span>
+  </div>
+</section>
+{% endif %}
 
 <section class="panel">
   <div class="panel-heading">
     <div>
-      <h2>Prontidao por filial</h2>
-      <p>Conferencia rapida antes de liberar emissao fiscal na loja.</p>
+      <h2>Prontidão por filial</h2>
+      <p>Conferência rápida antes de liberar emissão fiscal na loja.</p>
     </div>
   </div>
   <div class="table-wrapper">
     <table>
-      <thead><tr><th>Filial</th><th>Ambiente</th><th>Serie NFC-e</th><th>Certificado</th><th>Status</th><th>Pendencias</th></tr></thead>
+      <thead><tr><th>Filial</th><th>Ambiente</th><th>Série NFC-e</th><th>Certificado</th><th>Status</th><th>Pendências</th></tr></thead>
       <tbody>
         {% for filial in diagnostico.filiais %}
           <tr>
@@ -59,7 +69,7 @@
                   <ul>{% for pendencia in filial.pendencias %}<li>{{ pendencia }}</li>{% endfor %}</ul>
                 </details>
               {% else %}
-                <span class="status status-success">Sem pendencias</span>
+                <span class="status status-success">Sem pendências</span>
               {% endif %}
             </td>
           </tr>
@@ -142,7 +152,7 @@
         <tr>
           <th>Data</th>
           <th>Tipo</th>
-          <th>Serie/numero</th>
+          <th>Série/numero</th>
           <th>Venda</th>
           <th>Status</th>
           <th>Total</th>
@@ -220,10 +230,10 @@
   </article>
 
   <article class="panel">
-    <h2>Series fiscais</h2>
+    <h2>Séries fiscais</h2>
     <div class="table-wrapper">
       <table>
-        <thead><tr><th>Filial</th><th>Tipo</th><th>Serie</th><th>Proximo</th><th></th></tr></thead>
+        <thead><tr><th>Filial</th><th>Tipo</th><th>Série</th><th>Proximo</th><th></th></tr></thead>
         <tbody>
           {% for serie in series %}
             <tr>
@@ -243,7 +253,7 @@
 </section>
 
 <section class="panel">
-  <h2>Naturezas de operacao</h2>
+  <h2>Naturezas de operação</h2>
   <div class="table-wrapper">
     <table>
       <thead><tr><th>Descricao</th><th>CFOP</th><th>Tipo</th><th>Estoque</th><th></th></tr></thead>
@@ -257,7 +267,7 @@
             <td><a class="secondary-button" href="{% url 'fiscal:natureza_editar' natureza.pk %}">Editar</a></td>
           </tr>
         {% empty %}
-          <tr><td colspan="5" class="empty">Nenhuma natureza de operacao cadastrada.</td></tr>
+          <tr><td colspan="5" class="empty">Nenhuma natureza de operação cadastrada.</td></tr>
         {% endfor %}
       </tbody>
     </table>

@@ -12,6 +12,7 @@
     <a class="primary-button" href="{% url 'financeiro:transferencia_nova' %}"><i class="fa-solid fa-right-left"></i> Transferir</a>
     <a class="secondary-button" href="{% url 'financeiro:livro_csv' %}?{{ request.GET.urlencode }}"><i class="fa-solid fa-file-csv"></i> Excel/CSV</a>
     <a class="secondary-button" href="{% url 'financeiro:resultado' %}">Resultado</a>
+    <a class="secondary-button" href="{% url 'financeiro:conciliacao_bancaria' %}"><i class="fa-solid fa-building-columns"></i> Conciliação bancária</a>
     <a class="secondary-button" href="{% url 'financeiro:contas_movimento' %}">Contas de movimento</a>
     <a class="secondary-button" href="{% url 'financeiro:contas' %}">Contas a pagar/receber</a>
   </div>

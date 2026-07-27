@@ -7,9 +7,9 @@ from django.contrib.auth.decorators import login_required
 from django.contrib.auth.mixins import LoginRequiredMixin
 from django.core.exceptions import ValidationError
 from django.db.models import Q, Sum
-from django.http import JsonResponse
+from django.http import FileResponse, Http404, JsonResponse
 from django.shortcuts import get_object_or_404, redirect, render
-from django.urls import reverse_lazy
+from django.urls import reverse, reverse_lazy
 from django.utils import timezone
 from django.utils.dateparse import parse_datetime
 from django.views.decorators.csrf import csrf_exempt
@@ -19,6 +19,7 @@ from django.views.generic import CreateView, ListView
 from apps.accounts.permissions import PDV, SUPERVISAO, RoleRequiredMixin, has_role, role_required, supervisor_from_request
 from apps.auditoria.models import LogAuditoria
 from apps.clientes.models import Cliente
+from apps.configuracoes.artifacts import artefato_pdv_desktop as _artefato_atualizacao_pdv
 from apps.configuracoes.models import TipoDocumentoImpressao
 from apps.configuracoes.services import configuracao_impressao_para, estilos_impressao
 from apps.empresas.models import Filial
@@ -28,11 +29,11 @@ from apps.financeiro.services import conta_caixa_pdv, registrar_lancamento
 from apps.produtos.models import Produto
 from apps.promocoes.models import PromocaoProduto
 from apps.promocoes.services import preco_atual_produto, promocao_ativa_para_produto
-from apps.vendas.models import FormaPagamento, PagamentoVenda, PreVenda, StatusPagamento, StatusPreVenda, Venda
-from apps.vendas.services import calcular_item, cancelar_pre_venda, cancelar_venda, confirmar_estorno_pagamento_eletronico, converter_pre_venda, criar_pre_venda, finalizar_venda, quantidade_devolvida_item, registrar_devolucao_venda
+from apps.vendas.models import EstornoParcialPagamento, FormaPagamento, PagamentoVenda, PreVenda, StatusEstornoParcial, StatusPagamento, StatusPreVenda, Venda
+from apps.vendas.services import calcular_item, cancelar_pre_venda, cancelar_venda, confirmar_estorno_pagamento_eletronico, confirmar_estorno_parcial_eletronico, converter_pre_venda, criar_pre_venda, finalizar_venda, quantidade_devolvida_item, registrar_devolucao_venda
 
 from .forms import AbrirCaixaForm, AdicionarItemForm, ConferirCaixaForm, FecharCaixaForm, FinalizarVendaForm, PreVendaForm, SangriaForm, SuprimentoForm
-from .models import AcessoPdvNuvem, Caixa, EventoDispositivoTerminal, Sangria, StatusAcessoPdvNuvem, StatusCaixa, Suprimento, TerminalPdv
+from .models import AcessoPdvNuvem, Caixa, CanalAtualizacaoPdv, EventoDispositivoTerminal, Sangria, StatusAcessoPdvNuvem, StatusCaixa, Suprimento, TerminalPdv
 from .services_acesso import acesso_pdv_nuvem_aprovado, decidir_acesso_pdv_nuvem, solicitar_acesso_pdv_nuvem
 
 
@@ -46,6 +47,37 @@ def _versao_em_partes(valor):
         return tuple(int(parte) for parte in str(valor).split("."))
     except (TypeError, ValueError):
         return ()
+
+def _politica_atualizacao_terminal(terminal, versao_cliente):
+    canal_versao = str(getattr(settings, "PDV_DESKTOP_RELEASE_CHANNEL", CanalAtualizacaoPdv.ESTAVEL)).upper()
+    if canal_versao not in CanalAtualizacaoPdv.values:
+        canal_versao = CanalAtualizacaoPdv.ESTAVEL
+    partes_cliente = _versao_em_partes(versao_cliente)
+    possui_atualizacao = bool(partes_cliente and partes_cliente < _versao_em_partes(settings.PDV_DESKTOP_VERSION))
+    obrigatoria = bool(partes_cliente and partes_cliente < _versao_em_partes(settings.PDV_DESKTOP_MIN_VERSION))
+    elegivel_canal = canal_versao == CanalAtualizacaoPdv.ESTAVEL or terminal.canal_atualizacao == CanalAtualizacaoPdv.PILOTO
+    liberada = obrigatoria or (elegivel_canal and not terminal.bloquear_atualizacoes)
+    if obrigatoria:
+        motivo = "versao_abaixo_do_minimo"
+    elif terminal.bloquear_atualizacoes:
+        motivo = "terminal_congelado"
+    elif not elegivel_canal:
+        motivo = "aguardando_canal_estavel"
+    elif possui_atualizacao:
+        motivo = "atualizacao_liberada"
+    else:
+        motivo = "versao_atual"
+    return {
+        "canal_terminal": terminal.canal_atualizacao,
+        "canal_versao": canal_versao,
+        "bloqueada_pelo_admin": terminal.bloquear_atualizacoes,
+        "elegivel_canal": elegivel_canal,
+        "possui_atualizacao": possui_atualizacao,
+        "atualizacao_liberada": liberada,
+        "atualizacao_disponivel": possui_atualizacao and liberada,
+        "atualizacao_obrigatoria": obrigatoria,
+        "motivo": motivo,
+    }
 
 
 def _autenticar_terminal_api(request, acao_sem_licenca):
@@ -160,9 +192,9 @@ def terminal_bootstrap(request):
     terminal.save(update_fields=["ultima_conexao", "ultimo_ip", "atualizado_em"])
     versao_vigente = settings.PDV_DESKTOP_VERSION
     versao_minima = settings.PDV_DESKTOP_MIN_VERSION
-    partes_cliente = _versao_em_partes(versao_cliente)
-    atualizacao_disponivel = bool(partes_cliente and partes_cliente < _versao_em_partes(versao_vigente))
-    atualizacao_obrigatoria = bool(partes_cliente and partes_cliente < _versao_em_partes(versao_minima))
+    politica_atualizacao = _politica_atualizacao_terminal(terminal, versao_cliente)
+    artefato_atualizacao = _artefato_atualizacao_pdv()
+    pacote_atualizacao_liberado = artefato_atualizacao["disponivel"] and politica_atualizacao["atualizacao_disponivel"]
     return JsonResponse(
         {
             "status": "ok",
@@ -184,9 +216,17 @@ def terminal_bootstrap(request):
                 "versao_cliente": versao_cliente or None,
                 "versao_vigente": versao_vigente,
                 "versao_minima": versao_minima,
-                "atualizacao_disponivel": atualizacao_disponivel,
-                "atualizacao_obrigatoria": atualizacao_obrigatoria,
+                "atualizacao_disponivel": politica_atualizacao["atualizacao_disponivel"],
+                "atualizacao_obrigatoria": politica_atualizacao["atualizacao_obrigatoria"],
                 "atualizacao_requer_admin_master": True,
+                "politica_atualizacao": politica_atualizacao,
+                "pacote": {
+                    "disponivel": pacote_atualizacao_liberado,
+                    "nome": artefato_atualizacao["nome"] if pacote_atualizacao_liberado else "",
+                    "sha256": artefato_atualizacao["sha256"] if pacote_atualizacao_liberado else "",
+                    "url": request.build_absolute_uri("/pdv/api/terminal/update/") if pacote_atualizacao_liberado else "",
+                    "instalacao_automatica": False,
+                },
             },
             "filial": {
                 "id": terminal.filial_id,
@@ -209,6 +249,7 @@ def terminal_bootstrap(request):
             "tef": {
                 "provedor": terminal.provedor_tef,
                 "modo_integracao": terminal.modo_integracao_tef,
+                "simulador_permitido": settings.PDV_TEF_SIMULATOR_ENABLED,
                 "contrato": "pdv_tef_v1",
                 "tipos_pagamento": ["CREDITO", "DEBITO", "PIX"],
                 "retorno_esperado": ["status", "transacao_externa_id", "nsu", "codigo_autorizacao", "mensagem_processadora"],
@@ -217,6 +258,49 @@ def terminal_bootstrap(request):
         }
     )
 
+@require_GET
+def terminal_update_download(request):
+    terminal, erro = _autenticar_terminal_api(request, "DOWNLOAD_ATUALIZACAO_SEM_LICENCA")
+    if erro:
+        return erro
+    politica_atualizacao = _politica_atualizacao_terminal(
+        terminal,
+        request.headers.get("X-PDV-Version", "").strip(),
+    )
+    if not politica_atualizacao["atualizacao_disponivel"]:
+        LogAuditoria.objects.create(
+            usuario=None,
+            modulo="pdv",
+            acao="DOWNLOAD_ATUALIZACAO_NAO_LIBERADA",
+            descricao=f"Download recusado para terminal {terminal.nome}: {politica_atualizacao['motivo']}.",
+            objeto_tipo="TerminalPdv",
+            objeto_id=str(terminal.id),
+            ip=request.META.get("REMOTE_ADDR"),
+        )
+        return JsonResponse(
+            {
+                "status": "atualizacao_nao_liberada",
+                "mensagem": "A atualizacao nao esta liberada para este terminal.",
+                "politica_atualizacao": politica_atualizacao,
+            },
+            status=403,
+        )
+    artefato = _artefato_atualizacao_pdv()
+    if not artefato["publicavel"]:
+        raise Http404("Atualizacao do PDV desktop ainda nao publicada.")
+    LogAuditoria.objects.create(
+        usuario=None,
+        modulo="pdv",
+        acao="DOWNLOAD_ATUALIZACAO_PDV_DESKTOP",
+        descricao=f"Terminal {terminal.nome} baixou o pacote {artefato['nome']}.",
+        objeto_tipo="TerminalPdv",
+        objeto_id=str(terminal.id),
+        ip=request.META.get("REMOTE_ADDR"),
+    )
+    response = FileResponse(artefato["caminho"].open("rb"), as_attachment=True, filename=artefato["nome"])
+    response["X-PDV-Version"] = settings.PDV_DESKTOP_VERSION
+    response["X-PDV-SHA256"] = artefato["sha256"]
+    return response
 
 @csrf_exempt
 @require_POST
@@ -233,10 +317,30 @@ def terminal_device_events(request):
     if not isinstance(eventos, list):
         return JsonResponse({"status": "erro", "mensagem": "Campo eventos deve ser uma lista."}, status=400)
 
+    lote = eventos[:100]
+    ids_informados = {
+        str(evento.get("id") or "").strip()[:80]
+        for evento in lote
+        if isinstance(evento, dict) and str(evento.get("id") or "").strip()
+    }
+    ids_existentes = set(
+        EventoDispositivoTerminal.objects.filter(terminal=terminal, evento_id__in=ids_informados)
+        .values_list("evento_id", flat=True)
+    )
+    ids_lote = set()
     objetos = []
-    for evento in eventos[-100:]:
+    processados = 0
+    duplicados = 0
+    for evento in lote:
         if not isinstance(evento, dict):
             continue
+        processados += 1
+        evento_id = str(evento.get("id") or "").strip()[:80] or None
+        if evento_id and (evento_id in ids_existentes or evento_id in ids_lote):
+            duplicados += 1
+            continue
+        if evento_id:
+            ids_lote.add(evento_id)
         evento_payload = evento.get("payload") if isinstance(evento.get("payload"), dict) else {}
         tipo = str(evento.get("tipo") or evento_payload.get("tipo") or "desconhecido")[:40]
         status = str(evento.get("status") or evento_payload.get("status") or "")[:40]
@@ -247,6 +351,7 @@ def terminal_device_events(request):
         objetos.append(
             EventoDispositivoTerminal(
                 terminal=terminal,
+                evento_id=evento_id,
                 tipo=tipo,
                 status=status,
                 mensagem=mensagem,
@@ -256,8 +361,16 @@ def terminal_device_events(request):
         )
 
     if objetos:
-        EventoDispositivoTerminal.objects.bulk_create(objetos)
-    return JsonResponse({"status": "ok", "recebidos": len(objetos), "ignorados": max(len(eventos[-100:]) - len(objetos), 0)})
+        EventoDispositivoTerminal.objects.bulk_create(objetos, ignore_conflicts=True)
+    return JsonResponse(
+        {
+            "status": "ok",
+            "recebidos": len(objetos),
+            "processados": processados,
+            "duplicados": duplicados,
+            "ignorados": len(lote) - processados,
+        }
+    )
 
 
 def _filial_do_usuario(user):
@@ -426,6 +539,13 @@ def pdv(request):
             items, total = _cart_items(cart)
             dados_venda = finish_form.cleaned_data.copy()
             valor_recebido = dados_venda.pop("valor_recebido", None)
+            supervisor_desconto = None
+            if dados_venda["desconto"] > 0:
+                try:
+                    supervisor_desconto = supervisor_from_request(request)
+                except ValidationError as exc:
+                    messages.error(request, " ".join(exc.messages))
+                    return redirect("pdv:pdv")
             total_liquido = total - dados_venda["desconto"]
             try:
                 pagamentos, total_pago = _pagamentos_from_request(request, total_liquido)
@@ -456,6 +576,19 @@ def pdv(request):
                 _save_cart(request, {})
                 request.session.pop(PRE_VENDA_SESSION_KEY, None)
                 request.session["pdv_ultima_venda_id"] = venda.id
+                if supervisor_desconto:
+                    LogAuditoria.objects.create(
+                        usuario=supervisor_desconto,
+                        modulo="pdv",
+                        acao="AUTORIZACAO_DESCONTO_PDV",
+                        descricao=(
+                            f"Desconto de R$ {venda.desconto:.2f} autorizado na venda {venda.id}. "
+                            f"Operador: {request.user.username}. Supervisor: {supervisor_desconto.username}."
+                        ),
+                        objeto_tipo="Venda",
+                        objeto_id=str(venda.id),
+                        ip=request.META.get("REMOTE_ADDR"),
+                    )
                 if any(pagamento["forma_pagamento"].tipo == "DINHEIRO" for pagamento in pagamentos):
                     _agendar_abertura_gaveta(request, venda.caixa, f"venda_{venda.id}_dinheiro", "pagamento_em_dinheiro")
                 request.session.modified = True
@@ -935,7 +1068,112 @@ def confirmar_estorno_pagamento_view(request, pagamento_id):
         messages.error(request, " ".join(exc.messages))
     else:
         messages.success(request, "Estorno eletrônico confirmado e financeiro revertido.")
+    if request.POST.get("next") == "estornos_eletronicos":
+        return redirect("pdv:estornos_eletronicos")
     return redirect("pdv:venda_detalhe", venda_id=pagamento.venda_id)
+
+
+@login_required
+@role_required(*SUPERVISAO)
+def confirmar_estorno_parcial_view(request, estorno_id):
+    estorno = get_object_or_404(
+        EstornoParcialPagamento.objects.select_related("pagamento__venda"),
+        id=estorno_id,
+    )
+    if request.method != "POST":
+        return redirect("pdv:venda_detalhe", venda_id=estorno.pagamento.venda_id)
+    try:
+        supervisor_from_request(request)
+        confirmar_estorno_parcial_eletronico(
+            estorno=estorno,
+            usuario=request.user,
+            autorizacao=request.POST.get("autorizacao", "").strip(),
+            transacao_estorno_id=request.POST.get("transacao_estorno_id", "").strip(),
+            mensagem_processadora=request.POST.get("mensagem_processadora", "").strip(),
+            ip=request.META.get("REMOTE_ADDR"),
+        )
+    except ValidationError as exc:
+        messages.error(request, " ".join(exc.messages))
+    else:
+        messages.success(request, "Estorno eletrônico parcial confirmado e financeiro revertido.")
+    if request.POST.get("next") == "estornos_eletronicos":
+        return redirect("pdv:estornos_eletronicos")
+    return redirect("pdv:venda_detalhe", venda_id=estorno.pagamento.venda_id)
+
+
+def _estornos_eletronicos_payload():
+    agora = timezone.now()
+    limite_alerta_minutos = 15
+    pendentes_integrais = list(
+        PagamentoVenda.objects.filter(status=StatusPagamento.ESTORNO_PENDENTE)
+        .select_related("venda__filial", "venda__caixa", "forma_pagamento")
+        .order_by("estorno_solicitado_em", "data")[:100]
+    )
+    pendentes_parciais = list(
+        EstornoParcialPagamento.objects.filter(status=StatusEstornoParcial.PENDENTE)
+        .select_related("pagamento__venda__filial", "pagamento__venda__caixa", "pagamento__forma_pagamento", "devolucao")
+        .order_by("solicitado_em", "id")[:100]
+    )
+    itens = []
+    for pagamento in pendentes_integrais:
+        solicitado_em = pagamento.estorno_solicitado_em or pagamento.data
+        itens.append({
+            "chave": f"pagamento-{pagamento.pk}", "tipo_estorno": "TOTAL",
+            "pagamento_id": pagamento.pk, "devolucao_id": None,
+            "venda_id": pagamento.venda_id, "filial": str(pagamento.venda.filial),
+            "caixa_id": pagamento.venda.caixa_id, "forma_pagamento": pagamento.forma_pagamento.nome,
+            "tipo": pagamento.forma_pagamento.tipo, "valor": _moeda_json(pagamento.valor),
+            "transacao_externa_id": pagamento.transacao_externa_id, "nsu": pagamento.nsu,
+            "codigo_autorizacao": pagamento.codigo_autorizacao, "solicitado_em_obj": solicitado_em,
+            "confirmar_url": reverse("pdv:confirmar_estorno_pagamento", kwargs={"pagamento_id": pagamento.pk}),
+        })
+    for estorno in pendentes_parciais:
+        pagamento = estorno.pagamento
+        itens.append({
+            "chave": f"estorno-parcial-{estorno.pk}", "tipo_estorno": "PARCIAL",
+            "pagamento_id": pagamento.pk, "devolucao_id": estorno.devolucao_id,
+            "venda_id": pagamento.venda_id, "filial": str(pagamento.venda.filial),
+            "caixa_id": pagamento.venda.caixa_id, "forma_pagamento": pagamento.forma_pagamento.nome,
+            "tipo": pagamento.forma_pagamento.tipo, "valor": _moeda_json(estorno.valor),
+            "transacao_externa_id": pagamento.transacao_externa_id, "nsu": pagamento.nsu,
+            "codigo_autorizacao": pagamento.codigo_autorizacao, "solicitado_em_obj": estorno.solicitado_em,
+            "confirmar_url": reverse("pdv:confirmar_estorno_parcial", kwargs={"estorno_id": estorno.pk}),
+        })
+    itens.sort(key=lambda item: item["solicitado_em_obj"])
+    itens = itens[:100]
+    vencidos = 0
+    valor_total = Decimal("0.00")
+    for item in itens:
+        solicitado_em = item.pop("solicitado_em_obj")
+        idade_minutos = max(0, int((agora - solicitado_em).total_seconds() // 60))
+        item["solicitado_em"] = solicitado_em.isoformat()
+        item["idade_minutos"] = idade_minutos
+        item["atrasado"] = idade_minutos >= limite_alerta_minutos
+        vencidos += 1 if item["atrasado"] else 0
+        valor_total += Decimal(item["valor"])
+    return {
+        "contrato": "payment_refund_readiness_v1",
+        "status": "attention_required" if itens else "clear",
+        "limite_alerta_minutos": limite_alerta_minutos,
+        "resumo": {"pendentes": len(itens), "atrasados": vencidos, "valor_pendente": _moeda_json(valor_total)},
+        "recomendacoes": (["Processar os estornos na adquirente e confirmar cada retorno aprovado no sistema."] if itens else []),
+        "estornos": itens,
+    }
+
+@login_required
+@role_required(*SUPERVISAO)
+def estornos_eletronicos(request):
+    return render(
+        request,
+        "pdv/estornos_eletronicos.html",
+        {"diagnostico": _estornos_eletronicos_payload()},
+    )
+
+
+@login_required
+@role_required(*SUPERVISAO)
+def estornos_eletronicos_diagnostico(request):
+    return JsonResponse(_estornos_eletronicos_payload())
 
 
 def _resumo_caixa(caixa):

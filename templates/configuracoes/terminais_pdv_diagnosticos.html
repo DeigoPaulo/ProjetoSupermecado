@@ -1,0 +1,77 @@
+{% extends "base.html" %}
+
+{% block title %}Diagnósticos dos terminais PDV{% endblock %}
+
+{% block content %}
+<header class="page-header">
+  <div>
+    <h1>Diagnósticos dos terminais PDV</h1>
+    <p>Histórico consolidado por máquina para investigar impressora, gaveta, TEF, balança e conexão local.</p>
+  </div>
+  <div class="page-actions">
+    <a class="secondary-button" href="{% url 'configuracoes:terminais_pdv' %}"><i class="fa-solid fa-arrow-left"></i> Terminais</a>
+    <a class="secondary-button" href="{% url 'configuracoes:terminais_pdv_diagnosticos_csv' %}?{{ request.GET.urlencode }}"><i class="fa-solid fa-file-csv"></i> Excel/CSV</a>
+  </div>
+</header>
+
+<section class="summary-grid">
+  <article class="metric"><span>Eventos filtrados</span><strong>{{ total }}</strong></article>
+  {% for item in resumo %}
+    <article class="metric"><span>{{ item.tipo }}{% if item.status %} / {{ item.status }}{% endif %}</span><strong>{{ item.total }}</strong></article>
+  {% endfor %}
+</section>
+
+<form method="get" class="filter-bar panel">
+  <label class="form-field"><span>Buscar</span><input type="search" name="q" value="{{ filtros.q }}" placeholder="Terminal, filial, tipo ou mensagem"></label>
+  <label class="form-field">
+    <span>Terminal</span>
+    <select name="terminal">
+      <option value="">Todos</option>
+      {% for terminal in terminais %}<option value="{{ terminal.pk }}" {% if filtros.terminal == terminal.pk|stringformat:"s" %}selected{% endif %}>{{ terminal.nome }} - {{ terminal.filial.nome }}</option>{% endfor %}
+    </select>
+  </label>
+  <label class="form-field">
+    <span>Tipo</span>
+    <select name="tipo"><option value="">Todos</option>{% for tipo in tipos %}<option value="{{ tipo }}" {% if filtros.tipo == tipo %}selected{% endif %}>{{ tipo }}</option>{% endfor %}</select>
+  </label>
+  <label class="form-field">
+    <span>Status</span>
+    <select name="status"><option value="">Todos</option>{% for status in status_opcoes %}<option value="{{ status }}" {% if filtros.status == status %}selected{% endif %}>{{ status }}</option>{% endfor %}</select>
+  </label>
+  <label class="form-field"><span>Início</span><input type="date" name="inicio" value="{{ filtros.inicio }}"></label>
+  <label class="form-field"><span>Fim</span><input type="date" name="fim" value="{{ filtros.fim }}"></label>
+  <div class="form-actions">
+    <button class="primary-button" type="submit"><i class="fa-solid fa-filter"></i> Filtrar</button>
+    <a class="secondary-button" href="{% url 'configuracoes:terminais_pdv_diagnosticos' %}">Limpar</a>
+  </div>
+</form>
+
+<section class="panel table-panel">
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>Recebido</th><th>Terminal</th><th>Tipo</th><th>Status</th><th>Mensagem</th><th>Ocorrido no caixa</th></tr></thead>
+      <tbody>
+        {% for evento in pagina %}
+          <tr>
+            <td>{{ evento.recebido_em|date:"d/m/Y H:i:s" }}</td>
+            <td><strong>{{ evento.terminal.nome }}</strong><br><small>{{ evento.terminal.filial }}</small></td>
+            <td>{{ evento.tipo }}</td>
+            <td><span class="status {% if evento.status == 'ok' or evento.status == 'sucesso' %}status-success{% elif evento.status == 'erro' or evento.status == 'falha' %}status-danger{% else %}status-warning{% endif %}">{{ evento.status|default:"evento" }}</span></td>
+            <td>{{ evento.mensagem|default:"-" }}</td>
+            <td>{{ evento.ocorrido_em|date:"d/m/Y H:i:s"|default:"-" }}</td>
+          </tr>
+        {% empty %}
+          <tr><td colspan="6" class="empty">Nenhum diagnóstico encontrado para os filtros informados.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% if pagina.paginator.num_pages > 1 %}
+    <nav class="pagination" aria-label="Paginação dos diagnósticos">
+      {% if pagina.has_previous %}<a class="secondary-button" href="?{% if query_sem_pagina %}{{ query_sem_pagina }}&{% endif %}page={{ pagina.previous_page_number }}">Anterior</a>{% endif %}
+      <span>Página {{ pagina.number }} de {{ pagina.paginator.num_pages }}</span>
+      {% if pagina.has_next %}<a class="secondary-button" href="?{% if query_sem_pagina %}{{ query_sem_pagina }}&{% endif %}page={{ pagina.next_page_number }}">Próxima</a>{% endif %}
+    </nav>
+  {% endif %}
+</section>
+{% endblock %}

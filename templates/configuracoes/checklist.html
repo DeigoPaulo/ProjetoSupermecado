@@ -8,7 +8,10 @@
     <h1>Checklist do projeto</h1>
     <p>Acompanhamento do sistema com base na documentação funcional e técnica.</p>
   </div>
-  <span class="project-percent">{{ resumo.percentual }}% concluído</span>
+  <div class="project-percent-stack" aria-label="Progresso geral do projeto">
+    <span class="project-percent">{{ resumo.percentual }}% finalizado</span>
+    <small>{{ resumo.percentual_ponderado }}% com itens em andamento</small>
+  </div>
 </header>
 
 <section class="project-overview" aria-label="Resumo do projeto">
@@ -32,14 +35,29 @@
     <strong>{{ resumo.percentual_ponderado }}%</strong>
     <span>Avanço ponderado</span>
   </div>
+  <div class="project-summary project-summary-partial">
+    <strong>+{{ resumo.diferenca_ponderada }}%</strong>
+    <span>Diferença em andamento</span>
+  </div>
 </section>
 
-<div class="project-progress" role="progressbar" aria-valuenow="{{ resumo.percentual }}" aria-valuemin="0" aria-valuemax="100">
-  <span style="width: {{ resumo.percentual }}%"></span>
-</div>
-<p class="text-muted mt-2">
-  O percentual concluído conta apenas itens finalizados; o avanço ponderado considera itens em andamento como meio caminho.
-</p>
+<section class="project-progress-panel" aria-label="Comparativo de progresso">
+  <div class="project-progress-row">
+    <strong>Progresso finalizado</strong>
+    <div class="project-progress" role="progressbar" aria-valuenow="{{ resumo.percentual }}" aria-valuemin="0" aria-valuemax="100">
+      <span style="width: {{ resumo.percentual }}%"></span>
+    </div>
+    <b>{{ resumo.percentual }}%</b>
+  </div>
+  <div class="project-progress-row project-progress-row-soft">
+    <strong>Avanço ponderado</strong>
+    <div class="project-progress" role="progressbar" aria-valuenow="{{ resumo.percentual_ponderado }}" aria-valuemin="0" aria-valuemax="100">
+      <span style="width: {{ resumo.percentual_ponderado }}%"></span>
+    </div>
+    <b>{{ resumo.percentual_ponderado }}%</b>
+  </div>
+  <p>O percentual concluído continua separado do andamento: ele só sobe quando um item muda para concluído; o ponderado mostra o quanto os itens em andamento já avançaram.</p>
+</section>
 
 <form method="get" class="toolbar checklist-filter">
   <input type="search" name="q" value="{{ filtros.q }}" placeholder="Buscar no checklist">
@@ -95,6 +113,7 @@
         <strong>{{ item.total }}</strong>
         <small>{{ item.alta }} alta prioridade · {{ item.media }} média</small>
         <p>{{ item.grupos }}</p>
+        <em>Impacto estimado: {{ item.peso_label }}</em>
       </article>
     {% empty %}
       <article class="roadmap-map-card">

@@ -17,13 +17,14 @@
     {% if form.non_field_errors %}<div class="form-note form-note-danger">{{ form.non_field_errors }}</div>{% endif %}
 
     <section class="form-section form-field-wide">
-      <h2>Identificacao</h2>
+      <h2>Identificação</h2>
       <div class="form-note">
         <strong>Consulta CNPJ/CEP preparada.</strong>
-        <span>O sistema valida o CNPJ e reaproveita dados locais. Quando o provedor externo for configurado, tambem preencherá dados publicos automaticamente.</span>
+        <span>O sistema valida o CNPJ e reaproveita dados locais. Quando o provedor externo for configurado, também preencherá dados públicos automaticamente.</span>
         <label class="form-field lookup-field"><span>CEP para consulta</span><input type="text" id="id_cep_consulta" class="mask-cep" data-lookup-target="cep" placeholder="00000-000"></label>
         <button class="secondary-button" type="button" data-cadastro-lookup-button><i class="fa-solid fa-magnifying-glass"></i> Consultar CNPJ/CEP</button>
-        <a class="secondary-button" href="{% url 'empresas:consulta_cadastro' %}" target="_blank">Ver ponto de integracao</a>
+        <a class="secondary-button" href="{% url 'empresas:consulta_cadastro' %}" target="_blank">Ver ponto de integração</a>
+        <a class="secondary-button" href="{% url 'empresas:consulta_cadastro_diagnostico' %}" target="_blank">Diagnóstico JSON</a>
       </div>
       <div class="form-note" data-cadastro-lookup-feedback hidden></div>
       <div class="form-grid form-grid-inner">

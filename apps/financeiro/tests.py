@@ -10,8 +10,8 @@ from apps.empresas.models import Empresa, Filial
 from apps.pdv.models import Caixa
 from apps.vendas.models import FormaPagamento, PagamentoVenda, StatusVenda, Venda
 
-from .models import CategoriaFinanceira, ContaFinanceira, ContaMovimentoFinanceiro, LancamentoFinanceiro, StatusContaFinanceira, TipoContaFinanceira, TipoContaMovimento, TipoLancamentoFinanceiro, TransferenciaFinanceira
-from .services import baixar_conta, cancelar_conta, estornar_lancamento, realizar_transferencia
+from .models import CategoriaFinanceira, ConciliacaoLancamentoFinanceiro, ContaFinanceira, ContaMovimentoFinanceiro, LancamentoFinanceiro, StatusContaFinanceira, TipoContaFinanceira, TipoContaMovimento, TipoLancamentoFinanceiro, TransferenciaFinanceira
+from .services import baixar_conta, cancelar_conta, conciliar_lancamento, estornar_lancamento, realizar_transferencia
 
 
 class FinanceiroTests(TestCase):
@@ -206,9 +206,17 @@ class FinanceiroTests(TestCase):
             usuario=self.user,
             descricao="Deposito interno",
         )
+        lancamento_receita = LancamentoFinanceiro.objects.get(conta_financeira=self.conta_receber)
+        conciliar_lancamento(
+            lancamento=lancamento_receita,
+            data_conciliacao=timezone.localdate(),
+            referencia_externa="EXTRATO-RESULTADO-01",
+            usuario=self.user,
+        )
 
         response = self.client.get("/financeiro/resultado/")
         response_csv = self.client.get("/financeiro/resultado/exportar.csv")
+        response_json = self.client.get("/financeiro/resultado/pacote-contabil.json")
         csv_texto = response_csv.content.decode("utf-8-sig")
 
         self.assertEqual(response.status_code, 200)
@@ -220,6 +228,15 @@ class FinanceiroTests(TestCase):
         self.assertContains(response, "Margem operacional")
         self.assertContains(response, "Saldos por conta de movimento")
         self.assertContains(response, "Balancete gerencial")
+        self.assertContains(response, "Pacote contábil gerencial")
+        self.assertContains(response, "Pacote contábil JSON")
+        self.assertContains(response, "não substitui SPED, ECD, ECF")
+        self.assertContains(response, "Transferências internas")
+        self.assertContains(response, "Estornos rastreados")
+        self.assertContains(response, "Cobertura conciliada")
+        self.assertContains(response, "25,00%")
+        self.assertContains(response, "R$ 210,00")
+        self.assertContains(response, "R$ 250,00")
         self.assertContains(response, "Mercadorias")
         self.assertContains(response, "Caixa resultado")
         self.assertContains(response, "Banco resultado")
@@ -237,6 +254,27 @@ class FinanceiroTests(TestCase):
         self.assertIn("Mercadorias;Conta a pagar;0,00;150,00;-150,00", csv_texto)
         self.assertIn("Filial;Conta movimento;Tipo;Saldo inicial;Entradas periodo;Saidas periodo;Saldo atual", csv_texto)
         self.assertIn("Matriz;Caixa resultado;Caixa fisico;500,00;210,00;150,00;510,00", csv_texto)
+        self.assertIn("Pacote contabil gerencial", csv_texto)
+        self.assertIn("Movimentação total do livro;60,00", csv_texto)
+        self.assertIn("Transferencias internas;2;Entradas 50,00 / Saidas 50,00", csv_texto)
+        self.assertIn("Conciliação bancária;25,00%;1 conciliados / 3 pendentes", csv_texto)
+        self.assertIn("Valor conciliado;210,00;Pendente 250,00", csv_texto)
+        self.assertIn("Alerta;;", csv_texto)
+        self.assertIn("Pacote gerencial para conferência interna", csv_texto)
+        self.assertEqual(response_json.status_code, 200)
+        payload = response_json.json()
+        self.assertEqual(payload["contrato"], "financial_accounting_package_v1")
+        self.assertEqual(payload["resumo"]["receitas"], "210.00")
+        self.assertEqual(payload["resumo"]["despesas"], "150.00")
+        self.assertEqual(payload["resumo"]["resultado"], "60.00")
+        self.assertEqual(payload["resumo"]["transferencias_internas"], 2)
+        self.assertEqual(payload["conciliacao_bancaria"]["conciliados"], 1)
+        self.assertEqual(payload["conciliacao_bancaria"]["pendentes"], 3)
+        self.assertEqual(payload["conciliacao_bancaria"]["percentual"], "25.00")
+        self.assertEqual(payload["conciliacao_bancaria"]["valor_conciliado"], "210.00")
+        self.assertIn("dre_gerencial", payload)
+        self.assertIn("balancete_contas", payload)
+        self.assertIn("não substitui SPED", " ".join(payload["alertas"]))
         self.assertIn("Balancete gerencial por conta", csv_texto)
         self.assertIn("Filial;Conta movimento;Tipo;Saldo anterior;Entradas;Saidas;Saldo final", csv_texto)
         self.assertIn("Matriz;Caixa resultado;Caixa fisico;500,00;210,00;200,00;510,00", csv_texto)
@@ -464,3 +502,54 @@ class FinanceiroTests(TestCase):
         self.assertContains(response, "Estorno do lancamento")
         self.assertContains(response, "Fechado")
         self.assertEqual(LancamentoFinanceiro.objects.filter(estorno_de=lancamento).count(), 1)
+    def test_conciliacao_bancaria_preserva_livro_audita_e_exporta(self):
+        conta_banco = ContaMovimentoFinanceiro.objects.create(
+            filial=self.filial,
+            nome="Banco Matriz",
+            tipo=TipoContaMovimento.BANCO,
+        )
+        baixar_conta(
+            conta=self.conta_receber,
+            usuario=self.user,
+            data_pagamento=timezone.localdate(),
+            valor_pago=Decimal("210.00"),
+            forma_pagamento="TED",
+            conta_movimento=conta_banco,
+        )
+        lancamento = LancamentoFinanceiro.objects.get(conta_financeira=self.conta_receber)
+
+        tela_pendente = self.client.get("/financeiro/conciliacao-bancaria/", {"status": "pendente"})
+        response = self.client.post(
+            f"/financeiro/conciliacao-bancaria/{lancamento.pk}/conciliar/",
+            {
+                "data_conciliacao": timezone.localdate().isoformat(),
+                "referencia_externa": "TED-2026-00091",
+                "observacao": "Conferido no extrato bancario",
+            },
+            REMOTE_ADDR="127.0.0.20",
+            follow=True,
+        )
+        duplicada = self.client.post(
+            f"/financeiro/conciliacao-bancaria/{lancamento.pk}/conciliar/",
+            {"referencia_externa": "OUTRA-REFERENCIA"},
+            follow=True,
+        )
+        tela_conciliada = self.client.get("/financeiro/conciliacao-bancaria/", {"status": "conciliado"})
+        csv_response = self.client.get("/financeiro/conciliacao-bancaria/exportar.csv", {"status": "conciliado"})
+
+        self.assertContains(tela_pendente, "Pendente")
+        self.assertRedirects(response, "/financeiro/conciliacao-bancaria/")
+        self.assertContains(response, "conciliado com o extrato")
+        conciliacao = ConciliacaoLancamentoFinanceiro.objects.get(lancamento=lancamento)
+        self.assertEqual(conciliacao.referencia_externa, "TED-2026-00091")
+        self.assertContains(duplicada, "ja foi conciliado")
+        self.assertEqual(ConciliacaoLancamentoFinanceiro.objects.filter(lancamento=lancamento).count(), 1)
+        self.assertContains(tela_conciliada, "TED-2026-00091")
+        self.assertIn("TED-2026-00091", csv_response.content.decode("utf-8-sig"))
+        log = LogAuditoria.objects.get(acao="CONCILIA_LANCAMENTO_FINANCEIRO", objeto_id=str(conciliacao.pk))
+        self.assertEqual(log.usuario, self.user)
+        self.assertEqual(log.ip, "127.0.0.20")
+        with self.assertRaises(ValidationError):
+            conciliacao.save()
+        lancamento.refresh_from_db()
+        self.assertEqual(lancamento.valor, Decimal("210.00"))

@@ -10,6 +10,7 @@
   </div>
   <div class="actions">
     <a class="secondary-button" href="{% url 'financeiro:resultado_csv' %}?data_inicio={{ data_inicio|date:'Y-m-d' }}&amp;data_fim={{ data_fim|date:'Y-m-d' }}"><i class="fa-solid fa-file-csv"></i> Excel/CSV</a>
+    <a class="secondary-button" href="{% url 'financeiro:resultado_pacote_contabil_json' %}?data_inicio={{ data_inicio|date:'Y-m-d' }}&amp;data_fim={{ data_fim|date:'Y-m-d' }}"><i class="fa-solid fa-code"></i> Pacote contábil JSON</a>
     <a class="secondary-button" href="{% url 'financeiro:livro' %}">Livro</a>
     <a class="secondary-button" href="{% url 'financeiro:contas' %}">Contas</a>
   </div>
@@ -157,6 +158,47 @@
         {% endfor %}
       </tbody>
     </table>
+  </div>
+</section>
+
+
+<section class="panel table-panel">
+  <div class="panel-title">Pacote contábil gerencial</div>
+  <p class="muted">Resumo de conferência para fechamento interno e envio preliminar ao contador. Não substitui SPED, ECD, ECF ou obrigações oficiais.</p>
+  <div class="metrics-grid">
+    <article class="metric"><span>Lançamentos no livro</span><strong>{{ pacote_contabil.total_lancamentos }}</strong></article>
+    <article class="metric"><span>Transferências internas</span><strong>{{ pacote_contabil.transferencias }}</strong></article>
+    <article class="metric"><span>Estornos rastreados</span><strong>{{ pacote_contabil.estornos }}</strong></article>
+    <article class="metric"><span>Cobertura conciliada</span><strong>{{ conciliacao_bancaria.percentual|floatformat:2 }}%</strong></article>
+    <article class="metric"><span>Valor conciliado</span><strong>R$ {{ conciliacao_bancaria.valor_conciliado|floatformat:2 }}</strong></article>
+    <article class="metric"><span>Valor pendente</span><strong>R$ {{ conciliacao_bancaria.valor_pendente|floatformat:2 }}</strong></article>
+  </div>
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>Conta</th><th>Lançamentos</th><th>Conciliados</th><th>Pendentes</th><th>Valor total</th><th>Valor conciliado</th></tr></thead>
+      <tbody>
+        {% for linha in conciliacao_bancaria.por_conta %}
+          <tr><td><strong>{{ linha.conta }}</strong><br><small>{{ linha.filial }}</small></td><td>{{ linha.total }}</td><td>{{ linha.conciliados }}</td><td>{{ linha.pendentes }}</td><td>R$ {{ linha.valor_total|floatformat:2 }}</td><td>R$ {{ linha.valor_conciliado|floatformat:2 }}</td></tr>
+        {% empty %}<tr><td colspan="6" class="empty">Nenhum lançamento no período.</td></tr>{% endfor %}
+      </tbody>
+    </table>
+  </div>
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>Item</th><th>Valor</th><th>Observação</th></tr></thead>
+      <tbody>
+        {% for linha in pacote_contabil.linhas %}
+          <tr>
+            <td>{{ linha.item }}</td>
+            <td><strong>R$ {{ linha.valor|floatformat:2 }}</strong></td>
+            <td>{{ linha.observacao }}</td>
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  <div class="info-list mt-2">
+    {% for alerta in pacote_contabil.alertas %}<span>{{ alerta }}</span>{% endfor %}
   </div>
 </section>
 

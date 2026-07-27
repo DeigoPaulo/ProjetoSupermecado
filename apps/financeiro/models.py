@@ -172,3 +172,25 @@ class LancamentoFinanceiro(models.Model):
 
     def __str__(self):
         return f"{self.get_tipo_display()} - {self.descricao}"
+
+class ConciliacaoLancamentoFinanceiro(models.Model):
+    lancamento = models.OneToOneField(LancamentoFinanceiro, on_delete=models.PROTECT, related_name="conciliacao_bancaria")
+    data_conciliacao = models.DateField(default=timezone.localdate)
+    referencia_externa = models.CharField(max_length=120)
+    observacao = models.CharField(max_length=255, blank=True)
+    usuario = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.PROTECT, related_name="conciliacoes_financeiras")
+    criado_em = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["-data_conciliacao", "-criado_em"]
+
+    def save(self, *args, **kwargs):
+        if self.pk:
+            raise ValidationError("Conciliacoes financeiras nao podem ser alteradas.")
+        super().save(*args, **kwargs)
+
+    def delete(self, *args, **kwargs):
+        raise ValidationError("Conciliacoes financeiras nao podem ser excluidas.")
+
+    def __str__(self):
+        return f"Conciliacao do lancamento #{self.lancamento_id} - {self.referencia_externa}"

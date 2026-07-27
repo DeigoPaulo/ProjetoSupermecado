@@ -6,6 +6,7 @@ app_name = "pdv"
 
 urlpatterns = [
     path("api/terminal/bootstrap/", views.terminal_bootstrap, name="terminal_bootstrap"),
+    path("api/terminal/update/", views.terminal_update_download, name="terminal_update_download"),
     path("api/terminal/device-events/", views.terminal_device_events, name="terminal_device_events"),
     path("", views.pdv, name="pdv"),
     path("consulta-preco/", views.consulta_preco, name="consulta_preco"),
@@ -24,6 +25,9 @@ urlpatterns = [
     path("vendas/<int:venda_id>/impressao-desktop.json", views.venda_impressao_desktop, name="venda_impressao_desktop"),
     path("vendas/<int:venda_id>/cancelar/", views.cancelar_venda_view, name="cancelar_venda"),
     path("pagamentos/<int:pagamento_id>/confirmar-estorno/", views.confirmar_estorno_pagamento_view, name="confirmar_estorno_pagamento"),
+    path("pagamentos/estornos-parciais/<int:estorno_id>/confirmar/", views.confirmar_estorno_parcial_view, name="confirmar_estorno_parcial"),
+    path("pagamentos/estornos-pendentes/", views.estornos_eletronicos, name="estornos_eletronicos"),
+    path("pagamentos/estornos-pendentes/diagnostico.json", views.estornos_eletronicos_diagnostico, name="estornos_eletronicos_diagnostico"),
     path("caixas/", views.CaixaListView.as_view(), name="caixas"),
     path("caixas/abrir/", views.AbrirCaixaView.as_view(), name="abrir_caixa"),
     path("caixas/<int:caixa_id>/", views.caixa_detalhe, name="caixa_detalhe"),

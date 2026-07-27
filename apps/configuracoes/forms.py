@@ -186,6 +186,8 @@ class TerminalPdvForm(forms.ModelForm):
             "modelo_balanca",
             "status_licenca",
             "observacao_licenca",
+            "canal_atualizacao",
+            "bloquear_atualizacoes",
             "permite_modo_offline",
             "emite_documento_fiscal",
             "ativo",

@@ -31,6 +31,16 @@ def _valor_decimal(dados, chave, padrao="0"):
         raise ValueError(f"Valor invalido para {chave}.") from exc
 
 
+def _valor_decimal_opcional(dados, chave):
+    valor = dados.get(chave)
+    if valor in (None, ""):
+        return None
+    try:
+        return Decimal(str(valor).replace(",", "."))
+    except (InvalidOperation, TypeError, ValueError) as exc:
+        raise ValueError(f"Valor invalido para {chave}.") from exc
+
+
 def _valor_booleano(dados, chave, padrao=False):
     valor = dados.get(chave, padrao)
     if isinstance(valor, bool):
@@ -96,7 +106,9 @@ def _produto_salvar(evento):
         "produto_pesavel": _valor_booleano(dados, "produto_pesavel"),
         "preco_custo": _valor_decimal(dados, "preco_custo"),
         "preco_venda": _valor_decimal(dados, "preco_venda"),
+        "preco_promocional": _valor_decimal_opcional(dados, "preco_promocional"),
         "estoque_minimo": _valor_decimal(dados, "estoque_minimo"),
+        "exige_lote": _valor_booleano(dados, "exige_lote"),
         "vendido_no_pdv": _valor_booleano(dados, "vendido_no_pdv", True),
         "vendido_no_marketplace": _valor_booleano(dados, "vendido_no_marketplace"),
         "ncm": _valor_texto(dados, "ncm"),
@@ -110,6 +122,7 @@ def _produto_salvar(evento):
     if produto:
         for campo, valor in valores.items():
             setattr(produto, campo, valor)
+        produto._sincronizacao_entrada = True
         produto.save()
     else:
         Produto.all_objects.create(codigo_barras=codigo_barras, **valores)

@@ -9,7 +9,7 @@ from apps.auditoria.models import LogAuditoria
 from apps.estoque.models import TipoMovimentacaoEstoque, movimentar_estoque
 from apps.promocoes.services import preco_atual_produto
 
-from .models import DevolucaoVenda, ItemDevolucaoVenda, ItemPreVenda, ItemVenda, PagamentoVenda, PreVenda, StatusPagamento, StatusPreVenda, StatusVenda, TipoDocumentoConsumidor, Venda
+from .models import DevolucaoVenda, EstornoParcialPagamento, ItemDevolucaoVenda, ItemPreVenda, ItemVenda, PagamentoVenda, PreVenda, StatusEstornoParcial, StatusPagamento, StatusPreVenda, StatusVenda, TipoDocumentoConsumidor, Venda
 
 
 def calcular_item(produto, quantidade):
@@ -418,16 +418,33 @@ def _ratear_estorno_financeiro_devolucao(devolucao, *, usuario, motivo):
         if valor_proporcional <= 0:
             continue
         valor_estornado = _total_estornado_lancamento(lancamento)
+        if pagamento.transacao_externa_id:
+            valor_parcial_comprometido = sum(
+                (
+                    estorno.valor
+                    for estorno in pagamento.estornos_parciais.exclude(status=StatusEstornoParcial.RECUSADO)
+                ),
+                Decimal("0.00"),
+            )
+            valor_estornado = max(valor_estornado, _quantizar_moeda(valor_parcial_comprometido))
         saldo_lancamento = _quantizar_moeda(lancamento.valor - valor_estornado)
         valor_estornar = min(valor_proporcional, saldo_lancamento, restante_rateio)
         if valor_estornar <= 0:
             continue
-        _registrar_estorno_lancamento_parcial(
-            lancamento=lancamento,
-            valor=valor_estornar,
-            usuario=usuario,
-            motivo=f"Devolucao {devolucao.id}: {motivo}",
-        )
+        if pagamento.transacao_externa_id:
+            EstornoParcialPagamento.objects.create(
+                pagamento=pagamento,
+                devolucao=devolucao,
+                valor=valor_estornar,
+                motivo=motivo,
+            )
+        else:
+            _registrar_estorno_lancamento_parcial(
+                lancamento=lancamento,
+                valor=valor_estornar,
+                usuario=usuario,
+                motivo=f"Devolucao {devolucao.id}: {motivo}",
+            )
         restante_rateio = _quantizar_moeda(restante_rateio - valor_estornar)
         if restante_rateio <= 0:
             break
@@ -476,6 +493,10 @@ def cancelar_venda(*, venda, usuario, motivo, supervisor=None, ip=None):
         raise ValidationError("Apenas vendas finalizadas podem ser canceladas.")
     if not motivo:
         raise ValidationError("Informe o motivo do cancelamento.")
+    if venda.devolucoes.exists():
+        raise ValidationError(
+            "Venda com devolução parcial não pode ser cancelada integralmente; devolva somente os itens restantes."
+        )
 
     for item in venda.itens.select_related("produto"):
         movimentar_estoque(
@@ -530,8 +551,12 @@ def confirmar_estorno_pagamento_eletronico(*, pagamento, usuario, motivo="", aut
         raise ValidationError("Apenas pagamentos com estorno pendente podem ser confirmados.")
     if not pagamento.transacao_externa_id:
         raise ValidationError("Pagamento sem transacao externa deve ser estornado pelo fluxo local.")
+    autorizacao = autorizacao.strip() if autorizacao else ""
+    mensagem_processadora = mensagem_processadora.strip() if mensagem_processadora else ""
+    if not (autorizacao or mensagem_processadora):
+        raise ValidationError("Informe a autorizacao ou o retorno da adquirente antes de confirmar o estorno.")
     agora = timezone.now()
-    mensagem = mensagem_processadora.strip() if mensagem_processadora else "Estorno confirmado pela operadora."
+    mensagem = mensagem_processadora or "Estorno confirmado pela operadora."
     if autorizacao:
         mensagem = f"{mensagem} Autorizacao: {autorizacao}."
     pagamento.status = StatusPagamento.ESTORNADO
@@ -554,6 +579,81 @@ def confirmar_estorno_pagamento_eletronico(*, pagamento, usuario, motivo="", aut
         ip=ip,
     )
     return pagamento
+
+@transaction.atomic
+def confirmar_estorno_parcial_eletronico(
+    *,
+    estorno,
+    usuario,
+    autorizacao="",
+    transacao_estorno_id="",
+    mensagem_processadora="",
+    ip=None,
+):
+    estorno = (
+        EstornoParcialPagamento.objects.select_for_update()
+        .select_related("pagamento__venda", "pagamento__forma_pagamento", "devolucao")
+        .get(pk=estorno.pk)
+    )
+    if estorno.status != StatusEstornoParcial.PENDENTE:
+        raise ValidationError("Apenas estornos parciais pendentes podem ser confirmados.")
+    autorizacao = autorizacao.strip() if autorizacao else ""
+    transacao_estorno_id = transacao_estorno_id.strip() if transacao_estorno_id else ""
+    mensagem_processadora = mensagem_processadora.strip() if mensagem_processadora else ""
+    if not (autorizacao or transacao_estorno_id or mensagem_processadora):
+        raise ValidationError("Informe a autorização ou o retorno da adquirente antes de confirmar o estorno.")
+
+    lancamento = (
+        estorno.pagamento.lancamentos_financeiros.filter(
+            origem="PDV_VENDA",
+            estorno_de__isnull=True,
+        )
+        .order_by("id")
+        .first()
+    )
+    if not lancamento:
+        raise ValidationError("O lançamento financeiro original deste pagamento não foi localizado.")
+    saldo_lancamento = _quantizar_moeda(lancamento.valor - _total_estornado_lancamento(lancamento))
+    if estorno.valor > saldo_lancamento:
+        raise ValidationError("O valor do estorno parcial excede o saldo financeiro disponível.")
+
+    mensagem = mensagem_processadora or "Estorno parcial confirmado pela operadora."
+    _registrar_estorno_lancamento_parcial(
+        lancamento=lancamento,
+        valor=estorno.valor,
+        usuario=usuario,
+        motivo=f"Devolução {estorno.devolucao_id}: {estorno.motivo}",
+    )
+    estorno.status = StatusEstornoParcial.CONFIRMADO
+    estorno.codigo_autorizacao = autorizacao
+    estorno.transacao_estorno_id = transacao_estorno_id
+    estorno.mensagem_processadora = mensagem
+    estorno.confirmado_em = timezone.now()
+    estorno.usuario_confirmacao = usuario
+    estorno.save(
+        update_fields=[
+            "status",
+            "codigo_autorizacao",
+            "transacao_estorno_id",
+            "mensagem_processadora",
+            "confirmado_em",
+            "usuario_confirmacao",
+        ]
+    )
+    LogAuditoria.objects.create(
+        usuario=usuario,
+        modulo="vendas",
+        acao="CONFIRMACAO_ESTORNO_PARCIAL_TEF",
+        descricao=(
+            f"Estorno parcial {estorno.id} confirmado para o pagamento {estorno.pagamento_id}, "
+            f"venda {estorno.pagamento.venda_id}, no valor de R$ {estorno.valor}. "
+            f"Transação original: {estorno.pagamento.transacao_externa_id}."
+        ),
+        objeto_tipo="EstornoParcialPagamento",
+        objeto_id=str(estorno.id),
+        ip=ip,
+    )
+    return estorno
 
 
 def _estornar_lancamento_pagamento(pagamento, *, usuario, motivo):

@@ -99,7 +99,10 @@ def _abrir_serial(config):
     try:
         import serial
     except ImportError as exc:
-        raise ErroBalanca("Driver serial indisponivel. Instale a dependencia pyserial no app desktop.") from exc
+        porta = config.get("porta") or "nao informada"
+        raise ErroBalanca(
+            f"Driver serial indisponivel para {porta}. Instale a dependencia pyserial no app desktop."
+        ) from exc
     paridades = {"N": serial.PARITY_NONE, "E": serial.PARITY_EVEN, "O": serial.PARITY_ODD}
     stopbits = {
         "1": serial.STOPBITS_ONE,

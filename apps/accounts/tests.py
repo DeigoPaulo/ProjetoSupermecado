@@ -35,6 +35,9 @@ class UsuariosViewsTests(TestCase):
         self.assertContains(response, "no-upper")
         self.assertContains(response, "select2-field")
 
+        lista = self.client.get("/usuarios/")
+        self.assertContains(lista, "Diagnóstico de e-mail")
+
     def test_cria_usuario_com_perfil_operacional(self):
         response = self.client.post(
             "/usuarios/novo/",
@@ -56,6 +59,67 @@ class UsuariosViewsTests(TestCase):
         self.assertTrue(usuario.check_password("senha-segura-123"))
         self.assertEqual(usuario.perfil_supermercado.tipo, TipoPerfil.OPERADOR_CAIXA)
         self.assertEqual(usuario.perfil_supermercado.filial, self.filial)
+
+
+class RecuperacaoSenhaDiagnosticoTests(TestCase):
+    def setUp(self):
+        self.user = get_user_model().objects.create_superuser("admin", "admin@example.com", "123")
+        self.client = Client(HTTP_HOST="localhost")
+        self.client.force_login(self.user)
+
+    @override_settings(
+        EMAIL_BACKEND="django.core.mail.backends.console.EmailBackend",
+        EMAIL_HOST="",
+        DEFAULT_FROM_EMAIL="nao-responda@teste.local",
+    )
+    def test_diagnostico_recuperacao_senha_alerta_backend_desenvolvimento(self):
+        response = self.client.get("/usuarios/recuperacao-senha/diagnostico.json")
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertEqual(payload["contrato"], "password_reset_email_v1")
+        self.assertEqual(payload["status"], "needs_configuration")
+        self.assertTrue(payload["backend"]["console"])
+        self.assertFalse(payload["smtp"]["host_configurado"])
+        self.assertTrue(payload["seguranca"]["nao_expoe_credenciais"])
+        self.assertEqual(payload["prontidao"]["contrato"], "password_reset_readiness_v1")
+        self.assertEqual(payload["prontidao"]["status"], "development_only")
+        self.assertFalse(payload["prontidao"]["configuracao_smtp_completa"])
+        self.assertTrue(payload["prontidao"]["bloqueios"])
+        self.assertIn("Backend de desenvolvimento", payload["alertas"][0])
+
+    @override_settings(
+        EMAIL_BACKEND="django.core.mail.backends.smtp.EmailBackend",
+        EMAIL_HOST="smtp.example.com",
+        EMAIL_PORT=587,
+        EMAIL_HOST_USER="usuario@example.com",
+        EMAIL_HOST_PASSWORD="segredo",
+        EMAIL_USE_TLS=True,
+        EMAIL_USE_SSL=False,
+        EMAIL_TIMEOUT=8,
+        DEFAULT_FROM_EMAIL="nao-responda@example.com",
+    )
+    def test_diagnostico_recuperacao_senha_pronto_para_producao_sem_expor_credenciais(self):
+        response = self.client.get("/usuarios/recuperacao-senha/diagnostico.json")
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertEqual(payload["status"], "ready_for_production")
+        self.assertTrue(payload["backend"]["smtp"])
+        self.assertTrue(payload["smtp"]["host_configurado"])
+        self.assertTrue(payload["smtp"]["usuario_configurado"])
+        self.assertTrue(payload["smtp"]["senha_configurada"])
+        self.assertEqual(payload["smtp"]["porta"], 587)
+        self.assertEqual(payload["smtp"]["timeout_segundos"], 8)
+        self.assertEqual(payload["prontidao"]["contrato"], "password_reset_readiness_v1")
+        self.assertEqual(payload["prontidao"]["status"], "ready_for_homologation")
+        self.assertTrue(payload["prontidao"]["configuracao_smtp_completa"])
+        self.assertTrue(payload["prontidao"]["homologacao_real_pendente"])
+        self.assertTrue(payload["prontidao"]["recomendacoes"])
+        self.assertEqual(payload["alertas"], [])
+        self.assertNotContains(response, "smtp.example.com")
+        self.assertNotContains(response, "segredo")
+
 
 
 @override_settings(

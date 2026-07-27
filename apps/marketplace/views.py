@@ -187,6 +187,40 @@ def integracoes(request):
     )
 
 
+
+def _prontidao_integracao_marketplace(integracao, alertas, politica_entrega):
+    bloqueios = []
+    recomendacoes = []
+    if not integracao.is_active:
+        bloqueios.append("Integração inativa.")
+    if not politica_entrega.get("ativa") and not politica_entrega.get("permite_retirada"):
+        bloqueios.append("Filial sem retirada ou entrega liberada para parceiro.")
+    if not integracao.token_prefixo or not integracao.token_hash:
+        bloqueios.append("Chave de integração incompleta.")
+    if not integracao.ultimo_uso_em:
+        recomendacoes.append("Executar chamada de status com a chave do parceiro antes do primeiro pedido real.")
+    if politica_entrega.get("alertas"):
+        recomendacoes.extend(politica_entrega["alertas"])
+    if getattr(integracao, "pagamentos_pendentes", 0):
+        recomendacoes.append("Conferir pedidos com pagamento pendente antes de liberar produção.")
+    if bloqueios:
+        status = "Bloqueada"
+        percentual = 40
+    elif recomendacoes or alertas:
+        status = "Atenção"
+        percentual = 75
+    else:
+        status = "Pronta para homologação"
+        percentual = 100
+    return {
+        "contrato": "marketplace_partner_readiness_v1",
+        "status": status,
+        "percentual": percentual,
+        "bloqueios": bloqueios,
+        "recomendacoes": recomendacoes,
+        "proximo_passo": bloqueios[0] if bloqueios else (recomendacoes[0] if recomendacoes else "Enviar pedido piloto com idempotência e acompanhar separação, pagamento e fiscal."),
+    }
+
 def _diagnostico_integracoes_marketplace():
     integracoes = list(
         IntegracaoMarketplace.objects.select_related("filial__empresa", "usuario")
@@ -216,7 +250,11 @@ def _diagnostico_integracoes_marketplace():
             alerta_integracao.append(f"{integracao.pedidos_abertos} pedido(s) em fluxo operacional.")
         for alerta in alerta_integracao:
             alertas.append({"integracao": integracao.nome, "mensagem": alerta})
+        politica_entrega = _politica_entrega_parceiro_payload(integracao.filial)
+        prontidao = _prontidao_integracao_marketplace(integracao, alerta_integracao, politica_entrega)
         integracao.alertas_operacionais = alerta_integracao
+        integracao.prontidao_operacional = prontidao
+        integracao.politica_entrega_payload = politica_entrega
         payload_integracoes.append(
             {
                 "id": integracao.pk,
@@ -230,6 +268,8 @@ def _diagnostico_integracoes_marketplace():
                 "ultimo_uso_em": integracao.ultimo_uso_em.isoformat() if integracao.ultimo_uso_em else None,
                 "ultimo_pedido_em": integracao.ultimo_pedido_em.isoformat() if integracao.ultimo_pedido_em else None,
                 "alertas": alerta_integracao,
+                "politica_entrega": politica_entrega,
+                "prontidao": prontidao,
             }
         )
     resumo = {
@@ -239,6 +279,8 @@ def _diagnostico_integracoes_marketplace():
         "pedidos_abertos": sum(item.pedidos_abertos for item in integracoes),
         "pagamentos_pendentes": sum(item.pagamentos_pendentes for item in integracoes),
         "alertas": len(alertas),
+        "prontas_homologacao": sum(1 for item in integracoes if getattr(item, "prontidao_operacional", {}).get("status") == "Pronta para homologação"),
+        "com_bloqueio": sum(1 for item in integracoes if getattr(item, "prontidao_operacional", {}).get("status") == "Bloqueada"),
     }
     return {"gerado_em": timezone.now(), "resumo": resumo, "integracoes": integracoes, "payload_integracoes": payload_integracoes, "alertas": alertas}
 
@@ -298,6 +340,7 @@ def politicas_entrega(request):
 
 def _politicas_entrega_diagnostico():
     politicas = PoliticaEntrega.objects.select_related("filial__empresa").prefetch_related("faixas")
+    provider_configurado = bool(getattr(settings, "MARKETPLACE_GEOCODING_PROVIDER_URL", ""))
     itens = []
     resumo = {"politicas": 0, "ativas": 0, "sem_faixas": 0, "com_alerta": 0}
     for politica in politicas:
@@ -307,6 +350,15 @@ def _politicas_entrega_diagnostico():
             alertas.append("Politica inativa.")
         if not faixas:
             alertas.append("Nenhuma faixa de taxa cadastrada.")
+        if faixas and faixas[0].distancia_inicial_km > 0:
+            alertas.append("A primeira faixa nao comeca em 0 km.")
+        for anterior, atual in zip(faixas, faixas[1:]):
+            if atual.distancia_inicial_km > anterior.distancia_final_km:
+                alertas.append("Existem lacunas entre as faixas de distancia.")
+                break
+            if atual.distancia_inicial_km < anterior.distancia_final_km:
+                alertas.append("Existem faixas de distancia sobrepostas.")
+                break
         if faixas and faixas[-1].distancia_final_km < politica.raio_maximo_km:
             alertas.append("A ultima faixa nao cobre todo o raio maximo.")
         if politica.valor_minimo_pedido <= 0:
@@ -324,6 +376,17 @@ def _politicas_entrega_diagnostico():
                 "valor_minimo_pedido": str(politica.valor_minimo_pedido),
                 "frete_gratis_acima": str(politica.frete_gratis_acima) if politica.frete_gratis_acima is not None else None,
                 "permite_retirada": politica.permite_retirada,
+                "prontidao": {
+                    "status": (
+                        "blocked"
+                        if alertas
+                        else "ready_for_provider_homologation"
+                        if provider_configurado
+                        else "ready_with_manual_distance"
+                    ),
+                    "calculo_manual_disponivel": True,
+                    "provider_configurado": provider_configurado,
+                },
                 "faixas": [
                     {
                         "distancia_inicial_km": str(faixa.distancia_inicial_km),
@@ -335,12 +398,36 @@ def _politicas_entrega_diagnostico():
                 "alertas": alertas,
             }
         )
+    if not itens:
+        prontidao_status = "no_policy_configured"
+        prontidao_percentual = 25
+        recomendacoes = ["Cadastre ao menos uma politica de entrega por filial que realiza entregas."]
+    elif resumo["com_alerta"]:
+        prontidao_status = "configuration_required"
+        prontidao_percentual = 65
+        recomendacoes = ["Corrija os alertas de faixa, raio e pedido minimo antes de liberar pedidos para entrega."]
+    elif not provider_configurado:
+        prontidao_status = "ready_with_manual_distance"
+        prontidao_percentual = 85
+        recomendacoes = ["Escolha e homologue um provedor de mapa/rota; o calculo manual permanece disponivel."]
+    else:
+        prontidao_status = "ready_for_provider_homologation"
+        prontidao_percentual = 92
+        recomendacoes = ["Homologue rotas, timeout e indisponibilidade do provedor com enderecos reais das filiais."]
     return {
         "resumo": resumo,
+        "prontidao": {
+            "contrato": "delivery_policy_readiness_v1",
+            "status": prontidao_status,
+            "percentual": prontidao_percentual,
+            "provider_configurado": provider_configurado,
+            "fallback_manual_distancia": True,
+            "recomendacoes": recomendacoes,
+        },
         "politicas": itens,
         "geocodificacao": {
             "contrato": "delivery_geocode_v1",
-            "provider_configurado": bool(getattr(settings, "MARKETPLACE_GEOCODING_PROVIDER_URL", "")),
+            "provider_configurado": provider_configurado,
             "timeout_segundos": getattr(settings, "MARKETPLACE_GEOCODING_TIMEOUT_SEGUNDOS", 5),
             "fallback_manual_distancia": True,
         },
@@ -560,6 +647,7 @@ def api_status_integracao(request):
     if pedidos_abertos:
         alertas.append(f"{pedidos_abertos} pedido(s) em fluxo operacional.")
     alertas.extend(politica_entrega.get("alertas", []))
+    prontidao = _prontidao_integracao_marketplace(integracao, alertas, politica_entrega)
     integracao.ultimo_uso_em = timezone.now()
     integracao.save(update_fields=["ultimo_uso_em"])
     return JsonResponse(
@@ -585,6 +673,7 @@ def api_status_integracao(request):
                 "politica_entrega": True,
             },
             "politica_entrega": politica_entrega,
+            "prontidao": prontidao,
             "pedidos": {
                 "total": pedidos.count(),
                 "abertos": pedidos_abertos,

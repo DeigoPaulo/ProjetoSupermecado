@@ -4,7 +4,7 @@ from django.utils import timezone
 
 from apps.auditoria.models import LogAuditoria
 
-from .models import ContaFinanceira, ContaMovimentoFinanceiro, LancamentoFinanceiro, StatusContaFinanceira, TipoContaFinanceira, TipoContaMovimento, TipoLancamentoFinanceiro, TransferenciaFinanceira
+from .models import ConciliacaoLancamentoFinanceiro, ContaFinanceira, ContaMovimentoFinanceiro, LancamentoFinanceiro, StatusContaFinanceira, TipoContaFinanceira, TipoContaMovimento, TipoLancamentoFinanceiro, TransferenciaFinanceira
 
 
 def registrar_lancamento(*, conta, tipo, descricao, valor, data, usuario, origem, conta_financeira=None, transferencia=None, estorno_de=None, pagamento_venda=None, sangria=None, suprimento=None):
@@ -192,3 +192,29 @@ def cancelar_conta(*, conta, usuario, motivo="", ip=None):
         ip=ip,
     )
     return conta
+
+@transaction.atomic
+def conciliar_lancamento(*, lancamento, data_conciliacao, referencia_externa, usuario, observacao="", ip=None):
+    lancamento = LancamentoFinanceiro.objects.select_for_update().select_related("conta").get(pk=lancamento.pk)
+    referencia_externa = (referencia_externa or "").strip()
+    if not referencia_externa:
+        raise ValidationError("Informe a referencia do extrato ou comprovante.")
+    if ConciliacaoLancamentoFinanceiro.objects.filter(lancamento=lancamento).exists():
+        raise ValidationError("Este lancamento ja foi conciliado.")
+    conciliacao = ConciliacaoLancamentoFinanceiro.objects.create(
+        lancamento=lancamento,
+        data_conciliacao=data_conciliacao,
+        referencia_externa=referencia_externa,
+        observacao=(observacao or "").strip(),
+        usuario=usuario,
+    )
+    LogAuditoria.objects.create(
+        usuario=usuario,
+        modulo="financeiro",
+        acao="CONCILIA_LANCAMENTO_FINANCEIRO",
+        descricao=f"Lancamento #{lancamento.pk} conciliado com a referencia {referencia_externa}.",
+        objeto_tipo="ConciliacaoLancamentoFinanceiro",
+        objeto_id=str(conciliacao.pk),
+        ip=ip,
+    )
+    return conciliacao

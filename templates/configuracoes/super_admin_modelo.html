@@ -1,0 +1,75 @@
+{% extends "base.html" %}
+
+{% block title %}Inspeção de modelo{% endblock %}
+
+{% block content %}
+<header class="page-header">
+  <div>
+    <h1>Inspeção de modelo</h1>
+    <p>{{ modelo_nome }} · {{ app_label }}.{{ model_name }}</p>
+  </div>
+  <div class="actions">
+    <a class="secondary-button" href="{% url 'configuracoes:super_admin' %}"><i class="fa-solid fa-arrow-left"></i> Super admin</a>
+  </div>
+</header>
+
+<section class="operation-notice operation-notice-warning">
+  <i class="fa-solid fa-eye"></i>
+  <div>
+    <strong>Consulta protegida, sem edição direta.</strong>
+    <span>Use esta tela para auditoria rápida. Campos sensíveis são mascarados e alterações continuam nas telas operacionais próprias.</span>
+  </div>
+</section>
+
+<section class="metrics-grid">
+  <article class="metric"><span>Registros filtrados</span><strong>{{ total }}</strong><small>paginação de 20 por página</small></article>
+  <article class="metric"><span>Campos exibidos</span><strong>{{ campos|length }}</strong><small>{{ campos_busca|length }} pesquisável(is)</small></article>
+  <article class="metric"><span>Modelo técnico</span><strong>{{ modelo_tecnico }}</strong><small>{{ modelo_app }}</small></article>
+</section>
+
+<form method="get" class="toolbar">
+  <input type="search" name="q" value="{{ termo }}" placeholder="Buscar nos campos de texto">
+  <button class="primary-button" type="submit"><i class="fa-solid fa-magnifying-glass"></i> Buscar</button>
+  {% if termo %}<a class="secondary-button" href="{% url 'configuracoes:super_admin_modelo' app_label model_name %}">Limpar</a>{% endif %}
+</form>
+
+<section class="panel">
+  <div class="panel-heading">
+    <div>
+      <h2>Registros</h2>
+      <p>Leitura paginada para conferência técnica do admin master.</p>
+    </div>
+  </div>
+  <div class="table-wrapper">
+    <table>
+      <thead>
+        <tr>
+          {% for campo in campos %}<th>{{ campo.verbose_name|capfirst }}</th>{% endfor %}
+        </tr>
+      </thead>
+      <tbody>
+        {% for linha in linhas %}
+          <tr>
+            {% for valor in linha.valores %}<td>{{ valor }}</td>{% endfor %}
+          </tr>
+        {% empty %}
+          <tr><td colspan="{{ campos|length }}" class="empty">Nenhum registro encontrado.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  <div class="pagination-bar">
+    {% if page_obj.has_previous %}
+      <a class="secondary-button compact-button" href="?page={{ page_obj.previous_page_number }}{% if termo %}&q={{ termo|urlencode }}{% endif %}">Anterior</a>
+    {% else %}
+      <span class="secondary-button compact-button disabled">Anterior</span>
+    {% endif %}
+    <strong>Página {{ page_obj.number }} de {{ page_obj.paginator.num_pages }}</strong>
+    {% if page_obj.has_next %}
+      <a class="secondary-button compact-button" href="?page={{ page_obj.next_page_number }}{% if termo %}&q={{ termo|urlencode }}{% endif %}">Próxima</a>
+    {% else %}
+      <span class="secondary-button compact-button disabled">Próxima</span>
+    {% endif %}
+  </div>
+</section>
+{% endblock %}

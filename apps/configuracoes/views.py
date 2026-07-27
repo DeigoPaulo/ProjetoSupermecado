@@ -1,5 +1,5 @@
 import csv
-import hashlib
+import os
 from decimal import Decimal
 from io import StringIO
 from pathlib import Path
@@ -11,22 +11,25 @@ from django.contrib import messages
 from django.contrib.auth.decorators import login_required
 from django.contrib.auth.models import User
 from django.core.management import call_command
+from django.core.paginator import Paginator
 from django.core.exceptions import PermissionDenied
 from django.db import transaction
-from django.db.models import Count, Q
+from django.db.models import Count, Q, Sum
 from django.http import FileResponse, Http404, HttpResponse, JsonResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse
 from django.utils import timezone
+from django.utils.dateparse import parse_date
 
 from apps.accounts.models import PerfilUsuario, TipoPerfil
 from apps.accounts.permissions import SISTEMA, role_required
 from apps.auditoria.models import LogAuditoria
 from apps.empresas.models import Empresa, EventoEntradaSincronizacao, EventoSincronizacao, Filial, ModoImplantacao, StatusEventoEntrada, StatusSincronizacao
 from apps.fiscal.models import ConfiguracaoFiscal
-from apps.pdv.models import AcessoPdvNuvem, EventoDispositivoTerminal, StatusAcessoPdvNuvem, StatusLicencaTerminal, TerminalPdv
-from apps.vendas.models import FormaPagamento
+from apps.pdv.models import AcessoPdvNuvem, CanalAtualizacaoPdv, EventoDispositivoTerminal, StatusAcessoPdvNuvem, StatusLicencaTerminal, TerminalPdv
+from apps.vendas.models import FormaPagamento, PagamentoVenda, StatusPagamento
 
+from .artifacts import artefato_pdv_desktop
 from .forms import ConfiguracaoImpressaoForm, FormaPagamentoForm, ModeloEtiquetaForm, TerminalPdvForm
 from .models import ConfiguracaoImpressao, ModeloEtiqueta, TipoDocumentoImpressao
 from .services import configuracao_impressao_para, criar_configuracoes_padrao
@@ -50,10 +53,11 @@ CHECKLIST_GRUPOS = [
         "titulo": "PDV e caixa",
         "descricao": "Fluxo operacional do caixa de supermercado.",
         "itens": [
-            ("Tela PDV em layout de operador", "done", "PDV sem sidebar, cabendo em 100% de zoom no desktop testado."),
+            ("Tela PDV em layout de operador", "done", "PDV sem sidebar, cabendo em 100% de zoom no desktop testado. Após a venda, uma camada de tela cheia informa CAIXA LIVRE e aceita Enter, Escape ou o início da leitura do próximo código de barras para liberar imediatamente a nova compra."),
             ("Venda com carrinho e baixa de estoque", "done", "Venda finaliza com itens, pagamentos e baixa automatica."),
             ("Pagamento dividido", "done", "Popup aceita múltiplas formas e calcula restante/troco. Atalhos F1/F2/F3/F4 preenchem a linha atual e só criam nova forma quando ainda existe saldo restante; se o pagamento já cobre o total, o PDV avisa o operador em vez de duplicar parcelas automaticamente. Para dois cartões, PIX + cartão ou outra divisão real, o operador informa o valor parcial e adiciona a próxima forma, ficando cada parcela registrada na venda."),
-            ("PIX no pagamento do PDV", "done", "Forma PIX prevista nos dados iniciais e disponivel dentro da escolha de pagamento eletrônico do F3."),
+            ("Desconto supervisionado no PDV", "done", "Todo desconto informado no pagamento exige usuário e senha de supervisor ou administrador. A venda é bloqueada sem credencial válida e a autorização registra desconto, venda, operador, supervisor e IP no log de auditoria."),
+            ("PIX no pagamento do PDV", "done", "Forma PIX disponível dentro da escolha eletrônica do F3. O app desktop gera e exibe QR Code com valor destacado, mantém a parcela pendente e consulta o terminal até receber confirmação; somente o retorno aprovado libera a finalização. O QR do simulador é identificado como teste e o adaptador real poderá usar a tela do PDV, o pinpad compatível ou ambos."),
             ("Campos monetarios no PDV", "done", "Pagamento, fechamento, sangria e suprimento exibem prefixo R$ e valor de pagamento ganhou campo maior."),
             ("Cliente avulso", "done", "Venda presencial pode finalizar sem cliente identificado."),
             ("DAV / pré-venda", "done", "Criacao, listagem, recibo, carregamento no PDV e cancelamento com supervisor."),
@@ -65,10 +69,10 @@ CHECKLIST_GRUPOS = [
             ("Bip e retorno automático de foco", "done", "Leitor envia Enter, inclui o produto, soma repetições e devolve o foco ao campo após o recarregamento."),
             ("Alertas rapidos no PDV", "done", "Mensagens simples viram toasts temporarios; operações críticas continuam exigindo confirmacao ou supervisor."),
             ("Autorizacao do PDV em nuvem", "done", "Operador comum fica bloqueado em ambiente de nuvem, tentativa gera solicitacao, admin/gerente recebe alerta visual no topo/menu e decide pelo painel de aprovacao."),
-            ("Arquitetura PDV desktop local", "partial", "PDV dos caixas deve ser um aplicativo instalado na máquina do operador, fiel ao layout, atalhos e fluxo de venda do PDV web já validado, para que o operador use a mesma experiência nos dois ambientes. O desktop acrescenta integrações locais com impressora, balanca, gaveta e TEF, operacao resiliente e acesso somente ao necessário para venda, pagamento, caixa, consulta e estorno autorizado, sem telas administrativas completas. O app se comunica com o servidor local da loja pela rede interna; esse servidor local conversa com os dispositivos e o banco operacional da filial. Cadastro por filial, chave individual protegida por hash e bootstrap com registro de conexao implementados. O bootstrap diario devolve a configuracao vigente de licenca, TEF, fiscal e balanca para o app instalado se atualizar sem novo pacote. A nuvem/sede sincroniza por API segura, filas e eventos, sem acessar diretamente o banco local do supermercado. Download/ativacao do app desktop exige autorizacao do admin master, pois cada máquina instalada pode representar uma licenca comercial cobrada por terminal; pacote de ativacao so e entregue para terminal com licenca liberada. A Central do App oferece pré-homologação consolidada pelo contrato pdv_device_homologation_v1: inspeciona impressoras, balança, gaveta e TEF, não imprime nem cria cobrança no modo padrão, exige seleção e confirmação para leitura/pulso físico e grava a evidência em devices.log.jsonl para sincronização central. Ainda faltam drivers/adaptadores reais e homologação presencial dos equipamentos."),
-            ("Balanca integrada no PDV", "partial", "Produtos já possuem marcacao de produto pesavel. Terminal PDV agora permite configurar balanca por caixa com protocolo, porta/endereco e modelo; manifesto, pacote JSON e bootstrap do app desktop entregam essa configuracao por máquina usando o contrato pdv_scale_v1, com leitura automatica, unidade KG, precisao de 3 casas, timeout e fallback manual quando a balanca estiver ausente ou falhar. O app desktop já possui ponte local para expor a configuracao da balanca e retornar leitura estruturada com peso simulado para homologacao. A tela do PDV já chama a ponte local pelo botão Peso e atalho F12, preenchendo a quantidade quando recebe o peso ou orientando digitacao manual no navegador comum. Falhas e retornos manuais da balanca ficam registrados no log local devices.log.jsonl da máquina do caixa e podem ser consultados pela ponte deviceLogs; a Central do App PDV desktop já possui leitura visual desse diagnóstico quando aberta dentro do aplicativo instalado. O servidor já possui endpoint autenticado por terminal para receber lotes de diagnósticos locais e armazenar EventoDispositivoTerminal por caixa, e o app desktop tenta enviar automaticamente os eventos ainda não sincronizados na inicializacao sem bloquear a abertura do PDV. A Central do App PDV desktop exibe histórico consolidado dos eventos recebidos pelo servidor, com resumo por tipo/status e últimos eventos por terminal. A pré-homologação consolidada permite solicitar explicitamente uma leitura com peso conhecido e inclui protocolo, porta, modelo, peso e resultado na evidência sincronizável. O agente agora possui driver genérico real para Serial RS-232/USB via pyserial, TCP/IP e arquivo texto local, com timeout limitado, leitura máxima controlada, parser decimal, fator de conversão e rejeição de peso instável, zero, valor negativo e sobrecarga. O cadastro valida TCP/IP no formato endereço:porta e exige identificação do modelo para adaptadores proprietários. Falta validar parâmetros e comandos do fabricante escolhido, conectar a balança física e homologar precisão, estabilidade e timeout para ler peso automaticamente no PDV real."),
-            ("TEF/API de maquininha", "partial", "Pagamentos possuem estados controlados, ID externo, NSU e autorizacao; venda rejeita transacao pendente, recusada ou estornada. Terminais PDV agora configuram provedor TEF e modo de integracao por adaptador, permitindo PagBank, Cielo, Stone, Getnet, Rede, SiTef ou outro fornecedor sem prender o sistema a uma operadora. O bootstrap do app desktop expõe o contrato pdv_tef_v1 com tipos crédito, débito e PIX dinâmico e retorno esperado. No PDV, pagamento eletrônico chama a ponte processPayment do app desktop, aguarda resposta da maquininha/simulador, grava transacao, NSU e autorizacao na linha de pagamento e bloqueia a finalizacao se não houver retorno confirmado; terminal sem TEF configurado retorna aviso ao operador. O app desktop possui simulador TEF rastreável para desenvolvimento enquanto o adaptador real da adquirente não estiver conectado, incluindo pagamento e refundPayment para estorno autorizado pela maquininha, e grava eventos locais tef em devices.log.jsonl, além de tef_estorno, para diagnóstico central de aprovações, falhas e terminais sem maquininha configurada. Antes de chamar o adaptador, a ponte valida modalidade liberada pelo bootstrap, valor monetário positivo e precisão máxima de centavos tanto no pagamento quanto no estorno. O front envia chave idempotente por tentativa e o bridge reutiliza a autorização ou estorno já aprovado quando a mesma solicitação for repetida na sessão, rejeitando a chave caso os dados mudem. Falta conectar e homologar o adaptador real do provedor escolhido, que também deverá honrar a chave idempotente."),
-            ("Reversão de pagamento misto", "partial", "Cancelamento total estorna parcelas locais e marca PIX/TEF com transacao externa como estorno pendente, preservando motivo e rastreabilidade. A tela da venda permite confirmar o estorno eletrônico aprovado pela operadora com senha de supervisor/admin; ao confirmar, o pagamento vira estornado, o lançamento financeiro original recebe lançamento inverso e a auditoria registra a transação. Devoluções parciais agora rateiam o valor devolvido entre os pagamentos confirmados da venda e geram lançamentos financeiros inversos proporcionais, sem marcar a parcela inteira como estornada. Falta automatizar a chamada direta ao fornecedor/adquirente para devoluções eletrônicas parciais."),
+            ("Arquitetura PDV desktop local", "partial", "PDV dos caixas deve ser um aplicativo instalado na máquina do operador, fiel ao layout, atalhos e fluxo de venda do PDV web já validado, para que o operador use a mesma experiência nos dois ambientes. O desktop acrescenta integrações locais com impressora, balanca, gaveta e TEF, operacao resiliente e acesso somente ao necessário para venda, pagamento, caixa, consulta e estorno autorizado, sem telas administrativas completas. O app se comunica com o servidor local da loja pela rede interna; esse servidor local conversa com os dispositivos e o banco operacional da filial. Cadastro por filial, chave individual protegida por hash e bootstrap com registro de conexao implementados. O bootstrap diario devolve a configuracao vigente de licenca, TEF, fiscal e balanca para o app instalado se atualizar sem novo pacote. A nuvem/sede sincroniza por API segura, filas e eventos, sem acessar diretamente o banco local do supermercado. Download/ativacao do app desktop exige autorizacao do admin master, pois cada máquina instalada pode representar uma licenca comercial cobrada por terminal; pacote de ativacao so e entregue para terminal com licenca liberada. A Central do App oferece pré-homologação consolidada pelo contrato pdv_device_homologation_v1: inspeciona impressoras, balança, gaveta e TEF, não imprime nem cria cobrança no modo padrão, exige seleção e confirmação para leitura/pulso físico e grava a evidência em devices.log.jsonl para sincronização central. A fila local agora segue o contrato pdv_device_event_queue_v1: cada evento recebe ID estável, lotes são enviados do mais antigo ao mais novo a partir de cursor confirmado, reenvios são deduplicados por terminal no servidor e a compactação atômica remove somente registros já confirmados, preservando todos os pendentes. Durante o turno, uma thread exclusiva sincroniza periodicamente em intervalo local configurável de 15 a 3.600 segundos e é encerrada de forma limpa junto com a WebView, sem depender de reiniciar o caixa. O bootstrap agora publica o pacote vigente e o canal de atualização autenticado aceita somente terminal ativo com licença liberada pelo admin master; o rollout pdv_update_rollout_v1 permite promover uma versão primeiro em caixas piloto e depois no canal estável, congelar atualizações opcionais por máquina e sobrepor o congelamento quando a versão instalada ficar abaixo do mínimo de segurança. O app baixa para arquivo temporário, valida SHA-256, descarta pacote divergente, registra diagnóstico e mantém a instalação manual, sem atualização silenciosa. A contingência de conexão agora usa bootstrap local autorizado com validade padrão de 24 horas: em queda do servidor mostra uma tela local identificando o caixa, bloqueia venda, pagamento e estoque e permite reconectar por F5/Enter; somente uma nova validação de terminal e licença abre o PDV, enquanto cache vencido ou terminal recusado permanece bloqueado. A chave de ativação e os parâmetros sensíveis do adaptador TEF deixaram de permanecer em texto no config.json: o agente usa o contrato pdv_local_secret_v1 e DPAPI vinculado ao usuário do Windows, restaura os valores somente em memória, migra automaticamente instalações legadas, bloqueia conteúdo corrompido ou copiado para outro usuário e expõe ao diagnóstico somente o estado da proteção. O contrato pdv_single_instance_v1 usa mutex nomeado por hash da identidade do terminal para impedir duas janelas do mesmo caixa na sessão do Windows, sem expor o identificador e liberando o bloqueio ao encerrar. A reconfiguração também reserva primeiro a identidade atual, impedindo troca de ativação enquanto aquele caixa estiver em execução. Ainda faltam drivers/adaptadores reais e homologação presencial dos equipamentos."),
+            ("Balanca integrada no PDV", "partial", "Produtos já possuem marcacao de produto pesavel. Terminal PDV agora permite configurar balanca por caixa com protocolo, porta/endereco e modelo; manifesto, pacote JSON e bootstrap do app desktop entregam essa configuracao por máquina usando o contrato pdv_scale_v1, com leitura automatica, unidade KG, precisao de 3 casas, timeout e fallback manual quando a balanca estiver ausente ou falhar. O app desktop já possui ponte local para expor a configuracao da balanca e retornar leitura estruturada com peso simulado para homologacao. A tela do PDV já chama a ponte local pelo botão Peso e atalho F12, preenchendo a quantidade quando recebe o peso ou orientando digitacao manual no navegador comum. Falhas e retornos manuais da balanca ficam registrados no log local devices.log.jsonl da máquina do caixa e podem ser consultados pela ponte deviceLogs; a Central do App PDV desktop já possui leitura visual desse diagnóstico quando aberta dentro do aplicativo instalado. O servidor já possui endpoint autenticado por terminal para receber lotes de diagnósticos locais e armazenar EventoDispositivoTerminal por caixa, e o app desktop tenta enviar automaticamente os eventos ainda não sincronizados na inicializacao sem bloquear a abertura do PDV. A Central do App PDV desktop exibe histórico consolidado dos eventos recebidos pelo servidor, e uma tela operacional própria oferece resumo, filtros por máquina/tipo/status/período, paginação e exportação CSV. A pré-homologação consolidada permite solicitar explicitamente uma leitura com peso conhecido e inclui protocolo, porta, modelo, peso e resultado na evidência sincronizável. O agente agora possui driver genérico real para Serial RS-232/USB via pyserial, TCP/IP e arquivo texto local, com timeout limitado, leitura máxima controlada, parser decimal, fator de conversão e rejeição de peso instável, zero, valor negativo e sobrecarga. O cadastro valida TCP/IP no formato endereço:porta e exige identificação do modelo para adaptadores proprietários. Falta validar parâmetros e comandos do fabricante escolhido, conectar a balança física e homologar precisão, estabilidade e timeout para ler peso automaticamente no PDV real."),
+            ("TEF/API de maquininha", "partial", "Pagamentos possuem estados controlados, ID externo, NSU e autorizacao; venda rejeita transacao pendente, recusada ou estornada. Terminais PDV agora configuram provedor TEF e modo de integracao por adaptador, permitindo PagBank, Cielo, Stone, Getnet, Rede, SiTef ou outro fornecedor sem prender o sistema a uma operadora. O bootstrap do app desktop expõe o contrato pdv_tef_v1 com tipos crédito, débito e PIX dinâmico e retorno esperado. No PDV, pagamento eletrônico chama a ponte processPayment do app desktop, aguarda resposta da maquininha/simulador, grava transacao, NSU e autorizacao na linha de pagamento e bloqueia a finalizacao se não houver retorno confirmado; terminal sem TEF configurado retorna aviso ao operador. O app desktop possui simulador TEF rastreável para desenvolvimento enquanto o adaptador real da adquirente não estiver conectado, incluindo pagamento e refundPayment para estorno autorizado pela maquininha, e grava eventos locais tef em devices.log.jsonl, além de tef_estorno, para diagnóstico central de aprovações, falhas e terminais sem maquininha configurada. Antes de chamar o adaptador, a ponte valida modalidade liberada pelo bootstrap, valor monetário positivo e precisão máxima de centavos tanto no pagamento quanto no estorno. O front envia chave idempotente por tentativa e o bridge reutiliza a autorização ou estorno já aprovado quando a mesma solicitação for repetida na sessão, rejeitando a chave caso os dados mudem. Para PIX, o contrato também expõe checkPayment: primeiro retorna QR Code e estado pendente, depois consulta a transação até a adquirente confirmar, sem tratar a mera geração do QR como pagamento. A camada local agora possui contrato único de adaptadores para processar, consultar e estornar; o driver é escolhido na configuração protegida da máquina e respostas incompletas são rejeitadas sem aprovar a venda. O simulador deixou de ser implícito: depende de autorização explícita do servidor por PDV_TEF_SIMULATOR_ENABLED e fica bloqueado em produção, enquanto provedor configurado sem driver instalado falha de forma segura. Falta conectar e homologar o pacote real do provedor escolhido em equipamento físico, que também deverá honrar a chave idempotente."),
+            ("Reversão de pagamento misto", "done", "Cancelamento total estorna parcelas locais e mantém PIX/TEF com transação externa em fila supervisionada até a confirmação da adquirente. Devoluções parciais rateiam o valor entre todos os pagamentos confirmados: a parcela local gera saída financeira imediata, enquanto cada fração eletrônica recebe solicitação própria, valor, motivo, vínculo com a devolução, estado e chave idempotente. O diagnóstico protegido payment_refund_readiness_v1 reúne estornos totais e parciais por antiguidade; a tela permite seleção por teclado e processamento com F10 ou Ctrl+Enter. A supervisão pode confirmar o estorno eletrônico aprovado pela operadora. A fila processa diretamente a parcela selecionada, aguarda a resposta da maquininha e, no navegador, exige evidência informada da adquirente. No app desktop, refundPayment chama o adaptador da maquininha com o valor proporcional e a transação original; somente a resposta aprovada cria o lançamento financeiro inverso, registra autorização, ID externo, usuário e auditoria. Reenvios confirmados são bloqueados, solicitações iguais do mesmo pagamento permanecem independentes e uma venda que já teve devolução parcial não aceita cancelamento total posterior, evitando duplicidade de estoque e reembolso. A conexão e homologação física de cada adquirente continuam controladas no item TEF/API de maquininha."),
             ("Padrão R$ em todos os formulários", "done", "Campos numéricos de preço, valor, custo, desconto, taxa, frete e total recebem automaticamente o prefixo R$ no PDV e nas telas administrativas."),
         ],
     },
@@ -84,8 +88,8 @@ CHECKLIST_GRUPOS = [
             ("Perdas", "done", "Baixa de perdas com supervisor/admin e log."),
             ("Movimentacao manual", "done", "Entrada/saída/ajuste/reserva com supervisor/admin, auditoria e formulário separado entre operacao e autorizacao."),
             ("Compras", "done", "Entrada de compra com dados da nota, itens recebidos, rascunho sem movimentar estoque, finalizacao direta com supervisor/admin, atualizacao automatica de estoque, custo do produto, movimentacao de entrada e conta a pagar, baixa direta da conta vinculada com retorno para a entrada, rastreio financeiro da baixa no detalhe da compra, impressão/PDF individual auditável da entrada com itens, financeiro, rastreio financeiro do livro e rastreio de estoque, lista operacional separada do relatório com situacao financeira da entrada, retorno seguro do detalhe e da edição de rascunho para a lista filtrada, filtros por status da entrada e situacao financeira aberta, paga, cancelada, vencida ou sem conta, exportacao Excel/CSV e impressão/PDF da visão operacional filtrada, limpeza rapida de filtros ativos, chips visuais dos filtros aplicados, cards de resumo financeiro de contas abertas, vencidas e pagas com atalho para filtro preservando busca e status atuais, alerta de rascunhos pendentes, rastreio no estoque da entrada com movimentações de entrada e cancelamento vinculadas, e cancelamento protegido de compra finalizada com reversao de estoque, cancelamento da conta aberta, bloqueio quando a conta já foi paga, bloqueio quando o produto já foi consumido a ponto de não existir saldo para reverter e aviso antecipado desses bloqueios na tela da entrada."),
-            ("Etiquetas de gôndola profissionais", "partial", "O documento complementar de etiquetas foi incorporado ao checklist. A tela busca por nome, código de barras e SKU, aceita leitor que envia Enter, cópias por produto e modelos compacto 110x30 mm, completo 100x50 mm, A4 e modelos profissionais salvos por empresa, filial e terminal, sempre sem fundo colorido forçado. Configuracao inclui medidas, gaps, colunas, orientacao, DPI, mídia, impressora e linguagem; a tela envia o lote ao agente desktop, que gera ZPL, EPL, PPLA ou PPLB e imprime em RAW sem pré-visualizacao. Ainda faltam testes com equipamentos físicos."),
-            ("Desmembramento e fracionamento de produtos", "partial", 'Novo documento complementar incorporado ao checklist para estoque avançado. A frente ja possui models DesmembramentoProduto, ItemDesmembramentoProduto e ReceitaDesmembramento, receitas/conversões por empresa/filial, busca remota por código de barras, SKU e nome, simulação antes de confirmar, múltiplos destinos, lote/validade, rendimento esperado e alerta de rendimento abaixo do previsto. O serviço transacional faz baixa da origem, entrada dos destinos vendáveis ou subprodutos, descarte/perda vinculada sem aumentar saldo vendável, custo proporcional, auditoria e cancelamento seguro com movimentos inversos. As telas de lista, detalhe e receitas exibem quantidades no padrão brasileiro com quantidade_br, evitando 1,000 ou 20,000 quando o valor representa unidade inteira. Também foram iniciados kits/composições, produção interna, planejamento por demanda mínima, ordens de produção por setor, etapas, responsáveis, SLA, fila operacional, alertas auditáveis e relatórios/CSV gerenciais. Ainda faltam homologar fluxos reais de açougue, padaria e hortifruti com operação de loja.'),
+            ("Etiquetas de gôndola profissionais", "partial", "O documento complementar de etiquetas foi incorporado ao checklist. A tela busca por nome, código de barras e SKU, aceita leitor que envia Enter, cópias por produto e modelos compacto 110x30 mm, completo 100x50 mm, A4 e modelos profissionais salvos por empresa, filial e terminal, sempre sem fundo colorido forçado. Configuracao inclui medidas, gaps, colunas, orientacao, DPI, mídia, impressora e linguagem; a tela envia o lote ao agente desktop, que gera ZPL, EPL, PPLA ou PPLB e imprime em RAW sem pré-visualizacao. O agente agora valida obrigatoriamente o contrato label_print_v1, impressora e código de barras/SKU, limita 500 produtos, 100 cópias por produto e 2.000 etiquetas por lote e grava diagnóstico local de sucesso ou falha para sincronização central. Ainda faltam testes com equipamentos físicos."),
+            ("Desmembramento e fracionamento de produtos", "partial", 'Novo documento complementar incorporado ao checklist para estoque avançado. A frente ja possui models DesmembramentoProduto, ItemDesmembramentoProduto e ReceitaDesmembramento, receitas/conversões por empresa/filial, busca remota por código de barras, SKU e nome, simulação antes de confirmar, múltiplos destinos, lote/validade, rendimento esperado e alerta de rendimento abaixo do previsto. O serviço transacional faz baixa da origem, entrada dos destinos vendáveis ou subprodutos, descarte/perda vinculada sem aumentar saldo vendável, custo proporcional, auditoria e cancelamento seguro com movimentos inversos. Para açougue e hortifruti em KG, a prévia mostra rendimento total e excesso, e a confirmação exige fechamento exato da massa antes de qualquer movimento: produtos, subprodutos e perdas devem somar a origem, sem criação de peso nem desaparecimento de quebra não classificada; conversões de caixa/fardo para unidades continuam permitidas. As telas de lista, detalhe e receitas exibem quantidades no padrão brasileiro com quantidade_br, evitando 1,000 ou 20,000 quando o valor representa unidade inteira. Também foram iniciados kits/composições, produção interna, planejamento por demanda mínima, ordens de produção por setor, etapas, responsáveis, SLA, fila operacional, alertas auditáveis e relatórios/CSV gerenciais. Ainda faltam homologar fluxos reais de açougue, padaria e hortifruti com operação de loja.'),
         ],
     },
     {
@@ -107,12 +111,12 @@ CHECKLIST_GRUPOS = [
         "itens": [
             ("Login sem caixa alta", "done", "Usuario, e-mail e senha preservam a digitacao original na tela de acesso."),
             ("Busca inteligente/autocomplete", "done", "PDV possui buscas locais por teclado; Select2 aplicado em filial, produto, fornecedor, cliente, categoria e marca nos formulários mais extensos. A busca remota por API foi ativada no Select2, com endpoints JSON para produtos, clientes, fornecedores, filiais, categorias e marcas, uso em compras, financeiro, marketplace, produtos, etiquetas e configuracoes, filtro para produtos vendidos no marketplace e permissões coerentes com os módulos operacionais."),
-            ("Consulta de CNPJ e CEP", "partial", "Formularios de empresa e filial possuem mascaras, avisos, campo auxiliar de CEP, botao de consulta CNPJ/CEP, contrato JSON cadastro_lookup_v1, validacao formal de CNPJ, validacao de CEP, reaproveitamento de dados locais de empresas/filiais por CNPJ ou CEP e preenchimento automatico dos campos vazios quando houver cadastro local correspondente. O endpoint aceita provedores HTTP externos configurados por CADASTRO_CNPJ_PROVIDER_URL, CADASTRO_CEP_PROVIDER_URL e CADASTRO_LOOKUP_TIMEOUT_SEGUNDOS, normaliza respostas de CNPJ/CEP, preserva fallback local/offline e retorna erro controlado quando o servico externo falhar. O front aplica tanto retorno local quanto retorno externo. Falta escolher e homologar a API oficial de producao para CNPJ e CEP."),
+            ("Consulta de CNPJ e CEP", "partial", "Formularios de empresa e filial possuem mascaras, avisos, campo auxiliar de CEP, botao de consulta CNPJ/CEP, contrato JSON cadastro_lookup_v1, validacao formal de CNPJ, validacao de CEP, reaproveitamento de dados locais de empresas/filiais por CNPJ ou CEP e preenchimento automatico dos campos vazios quando houver cadastro local correspondente. O endpoint aceita provedores HTTP externos configurados por CADASTRO_CNPJ_PROVIDER_URL, CADASTRO_CEP_PROVIDER_URL e CADASTRO_LOOKUP_TIMEOUT_SEGUNDOS, normaliza respostas de CNPJ/CEP, expõe diagnóstico JSON com status dos provedores, timeout, modo local/offline, volume reaproveitável da base local e prontidão cadastro_lookup_readiness_v1 para distinguir fallback local, configuração parcial e provedores prontos para homologação, preserva fallback local/offline e retorna erro controlado quando o servico externo falhar. O front aplica tanto retorno local quanto retorno externo. Falta escolher e homologar a API oficial de producao para CNPJ e CEP."),
             ("Cadastros complementares padronizados", "done", "Clientes, fornecedores, produtos e usuários possuem formulários organizados por seções operacionais, com textos de apoio para PDV, compras e etapas futuras."),
             ("Imagens de produto", "done", "Foto principal e galeria adicional com legenda, ordenacao e remoção integradas ao cadastro e preparadas para exibicao no marketplace."),
-            ("Políticas de entrega por filial", "partial", "Raio, faixas por distancia, pedido mínimo, frete grátis, bairros e horarios configuraveis implementados. O cálculo de entrega agora valida bairros atendidos e bloqueados, exigindo bairro quando a filial possui area atendida restrita. A tela de politicas permite simular subtotal, distancia manual, endereco para geocodificacao e bairro por filial usando a mesma regra do pedido real. O diagnóstico JSON informa o contrato delivery_geocode_v1, se MARKETPLACE_GEOCODING_PROVIDER_URL está configurado, timeout e fallback manual de distancia. O endpoint de status do parceiro marketplace_partner_v1 agora expõe a politica delivery_policy_v1 da filial, com retirada, entrega, raio, pedido minimo, frete gratis, bairros, faixas, geocoding e alertas antes do pedido real. Falta escolher e homologar provedor de mapa/rota de produção."),
+            ("Políticas de entrega por filial", "partial", "Raio, faixas por distancia, pedido mínimo, frete grátis, bairros e horarios configuraveis implementados. O cálculo de entrega agora valida bairros atendidos e bloqueados, exigindo bairro quando a filial possui area atendida restrita. A tela de politicas permite simular subtotal, distancia manual, endereco para geocodificacao e bairro por filial usando a mesma regra do pedido real. O diagnóstico JSON informa os contratos delivery_geocode_v1 e delivery_policy_readiness_v1, valida ausência, lacunas, sobreposição e cobertura das faixas, classifica prontidão por filial, informa se MARKETPLACE_GEOCODING_PROVIDER_URL está configurado, timeout e fallback manual de distancia. O endpoint de status do parceiro marketplace_partner_v1 agora expõe a politica delivery_policy_v1 da filial, com retirada, entrega, raio, pedido minimo, frete gratis, bairros, faixas, geocoding e alertas antes do pedido real. Falta escolher e homologar provedor de mapa/rota de produção."),
             ("Certificado digital protegido", "done", "Configuracao fiscal aceita upload A1 .pfx/.p12, criptografa arquivo e senha, lê validade e mostra alertas de vencimento."),
-            ("Identidade visual do supermercado", "done", "Logo no topo, marca d'água sutil no carrinho e paleta operacional restrita implementadas."),
+            ("Identidade visual do supermercado", "done", "Logo no topo, marca d'água sutil no carrinho e paleta operacional restrita implementadas. A identidade do supermercado permanece em destaque; a assinatura do fornecedor Deigo Tecnologia será aplicada de forma discreta no aplicativo desktop, sem competir com a marca da loja."),
         ],
     },
     {
@@ -123,15 +127,15 @@ CHECKLIST_GRUPOS = [
             ("Modelo completo 100x50", "done", "Modelo maior disponivel para etiquetas com mais espaco, mantendo preço como informacao principal e deixando logo, tributos e preço de referência como evolucao configuravel."),
             ("Busca por código de barras nas etiquetas", "done", "Campo de busca aceita digitacao manual e leitor como teclado, mantendo foco automático; a consulta prioriza código de barras/EAN/GTIN e código interno/SKU antes do nome."),
             ("Impressao em medidas reais", "done", "CSS de impressão usa medidas em mm, @media print e oculta menu, filtros e botoes; a cor da etiqueta fica a cargo do papel físico, com impressão limpa em preto."),
-            ("Configuracao profissional de etiquetas", "partial", "Configuracao por empresa/filial persiste impressora, DPI, densidade, velocidade, mídia e linguagem. Modelos nomeados guardam largura, altura, gaps, colunas, orientacao, modelo padrao e vínculo opcional ao terminal; a tela de etiquetas aplica o modelo escolhido e o endpoint desktop sincroniza todos os parâmetros. A central de impressão também prepara etiqueta de teste por modelo para envio direto pelo app desktop. Ainda faltam testes físicos com equipamentos reais."),
-            ("Linguagens nativas de impressoras", "partial", "Arquitetura contempla ZPL, EPL, PPLA e PPLB. A tela web monta um payload confiável no contrato label_print_v1, com modelo, produtos e cópias em chaves ASCII, e aciona printLabels somente no app desktop; o agente gera ZPL, EPL, PPLA ou PPLB, converte medidas por DPI e envia ao spooler Windows em RAW com limite e retorno visível. No navegador permanece a impressão convencional. O teste de modelo usa a mesma ponte local e o mesmo contrato do lote real. Ainda faltam homologacao por modelo e testes físicos."),
+            ("Configuracao profissional de etiquetas", "partial", "Configuracao por empresa/filial persiste impressora, DPI, densidade, velocidade, mídia e linguagem. Modelos nomeados guardam largura, altura, gaps, colunas, orientacao, modelo padrao e vínculo opcional ao terminal; a tela de etiquetas aplica o modelo escolhido e o endpoint desktop sincroniza todos os parâmetros e expõe prontidão print_readiness_v1 com impressoras configuradas, linguagem nativa e modelos profissionais. A central de impressão também prepara etiqueta de teste por modelo para envio direto pelo app desktop. Ainda faltam testes físicos com equipamentos reais."),
+            ("Linguagens nativas de impressoras", "partial", "Arquitetura contempla ZPL, EPL, PPLA e PPLB. A tela web monta um payload confiável no contrato label_print_v1, com modelo, produtos e cópias em chaves ASCII, consulta a prontidão print_readiness_v1 e aciona printLabels somente no app desktop; o agente gera ZPL, EPL, PPLA ou PPLB, converte medidas por DPI e envia ao spooler Windows em RAW com limite e retorno visível. No navegador permanece a impressão convencional. O teste de modelo usa a mesma ponte local e o mesmo contrato do lote real. A ponte bloqueia contrato incompatível ou lote excessivo antes do spooler e retorna ao operador a quantidade de produtos e cópias efetivamente enviada. Ainda faltam homologacao por modelo e testes físicos."),
         ],
     },
     {
         "titulo": "Escopo original a decidir",
         "descricao": "Itens previstos nos documentos iniciais que não devem desaparecer do roadmap sem uma decisão explícita de produto.",
         "itens": [
-            ("Recuperação de senha", "partial", "Fluxo seguro por e-mail implementado com resposta pública neutra, link temporário de uso único, validação de senha do Django, telas próprias e configuração SMTP por ambiente. Em desenvolvimento, o backend de console permite testar sem provedor externo. Falta configurar e homologar o SMTP real de produção para concluir o item."),
+            ("Recuperação de senha", "partial", "Fluxo seguro por e-mail implementado com resposta pública neutra, link temporário de uso único, validação de senha do Django, telas próprias e configuração SMTP por ambiente. Em desenvolvimento, o backend de console permite testar sem provedor externo. O diagnóstico protegido não expõe host, senha ou credenciais e publica a prontidão password_reset_readiness_v1, distinguindo backend de desenvolvimento, configuração incompleta e SMTP pronto para homologação real. Falta configurar o provedor definitivo, validar SPF/DKIM/DMARC e homologar entrega e recuperação ponta a ponta para concluir o item."),
             ("Cotação e pedido de compra", "done", "Ciclo prévio completo com cotação por filial e itens, abertura controlada, propostas únicas por fornecedor, preços e disponibilidade por produto, comparação de totais e prazos e seleção auditada da proposta. A proposta escolhida gera pedido em rascunho sem estoque ou financeiro. O pedido possui envio, cancelamento e conversão única em entrada vinculada; excluir a entrada enquanto rascunho reabre o pedido. Somente a finalização da entrada usa o serviço existente para movimentar estoque e criar financeiro."),
             ("Importação de XML de entrada", "done", "Importação segura de NF-e autorizada implementada com limite de arquivo, bloqueio de DTD/entidades, validação da chave e prevenção de duplicidade. O sistema identifica fornecedor e filial por CNPJ, associa todos os produtos por GTIN ou código cadastrado e rejeita integralmente arquivos com itens sem correspondência. A NF-e cria somente uma entrada em rascunho auditada para revisão, separa total dos produtos do total fiscal usado no financeiro e não movimenta estoque ou contas antes da finalização pelo fluxo existente."),
             ("Estoque geral por lote, validade e custo histórico", "done", "Camada retrocompatível implementada sem substituir o saldo agregado: entradas manuais, compras e NF-e com grupo rastro podem gerar lotes com fabricação, validade, quantidade e custo histórico; saídas e vendas consomem as camadas por FEFO e registram a alocação por movimento. O painel lista saldos, vencidos e itens a vencer em 30 dias, enquanto estoque legado sem lote continua utilizável. A reconciliação permite atribuir saldo histórico a lotes com limite, autorização, motivo e auditoria sem alterar o físico; reduções de inventário ajustam camadas somente quando o rastreado excederia a nova contagem, e aumentos permanecem sem lote até atribuição explícita. Produção e desmembramento consomem lotes de componentes/origens por FEFO, criam camadas nos destinos identificados e seus cancelamentos restauram as alocações originais de forma transacional. A política de lote obrigatório por produto é opcional e vem desativada: quando ativada, bloqueia novas entradas, NF-e sem rastro e produtos gerados por produção ou desmembramento sem lote, sem impedir vendas e demais usos do saldo legado."),
@@ -141,45 +145,26 @@ CHECKLIST_GRUPOS = [
         "titulo": "Próximas fases",
         "descricao": "Itens previstos na documentacao, ainda fora do MVP atual.",
         "itens": [
-            ("Fiscal/NFC-e e NF-e", "partial", "Fila fiscal mostra vendas prontas, pendencias antes da acao e ultima tentativa automatica auditada; tela de produtos fiscais antecipa correcoes de NCM, CEST, origem, CST/CSOSN e alíquota. XML local usa UF e código IBGE da filial. A NFC-e segue a regra de ocorrer somente após pagamento confirmado: por padrao a venda tenta preparar a NFC-e automaticamente, mas o admin pode desativar essa tentativa por terminal PDV quando a empresa decidir operar aquele caixa sem comunicacao fiscal automatica. O PDV exibe no topo se o terminal identificado esta com fiscal automático ligado ou desligado. A venda presencial agora aceita CPF opcional na nota sem cadastro de cliente, pergunta o documento dentro do popup de pagamento, grava o dado na venda e inclui o CPF no XML local da NFC-e; CNPJ solicitado no caixa é bloqueado para NFC-e automática e orientado para NF-e modelo 55. Pedidos online/marketplace agora possuem documento do destinatário e podem preparar NF-e modelo 55 local, com série e natureza fiscal próprias, vinculada ao pedido. Painel fiscal agora traz prontidão por filial, certificado, séries, vendas aguardando documento, produtos com pendência e diagnóstico JSON para suporte. Se faltar cadastro fiscal, a venda não trava e a pendencia fica auditada para correção. Transmissao simulada em homologacao gera chave, protocolo e auditoria, mas ainda faltam assinatura, schema oficial, transmissão SEFAZ real, captura de CPF/CNPJ pelo pinpad quando o TEF permitir e contingência quando a SEFAZ estiver indisponivel. Exportacao operacional de contingencia JSON agora gera pacote fiscal_contingencia_v1 com documentos prontos, rejeitados ou cancelados, XML, origem, filial, valores e auditoria, sem substituir assinatura ou autorizacao oficial da SEFAZ."),
-            ("Financeiro completo", "partial", "Contas a pagar/receber, baixas, cancelamentos, categorias, fluxo de caixa, conciliacao PDV x financeiro, contas de movimento, vendas a vista do PDV no livro, transferencias entre contas, livro financeiro imutavel, estornos por lancamento inverso, resultado por receitas/despesas, cards gerenciais e exportacoes criadas. Resultado financeiro agora inclui visao por origem, categoria, conta de movimento, saldos por filial, balancete gerencial com saldo anterior, entradas, saidas e saldo final por conta, DRE gerencial com receita operacional, despesas, resultado e margem operacional, com CSV gerencial para Excel. A proxima evolucao inclui integracao final com fiscal/contábilidade e relatórios contábeis oficiais."),
-            ("Entradas, saídas e livro contábil", "partial", "Contas de movimento por filial para caixa físico, banco, PIX e outras foram criadas com saldo inicial e saldo atual. Baixas geram entrada ou saída no livro imutavel, vendas a vista do PDV geram entradas automaticas por forma de pagamento, sangria e suprimento geram saída/entrada automatica no Caixa PDV, transferencias geram lançamentos espelhados, atômicos e auditados entre contas da mesma empresa, e estornos rastreáveis criam lancamento inverso sem alterar o original. O livro possui origem, usuario, data, filtros, exportacao CSV, validacao de saldo, relatório de receitas, despesas e resultado que ignora transferencias internas, e balancete gerencial que considera transferencias para refletir o saldo real das contas. Ainda faltam integracao automatica de origens fiscais/contábeis avancadas e relatórios contábeis oficiais. Referencia funcional identificada no ProjetoLimpoGitHub para migracao adaptada, sem alterar o projeto original."),
-            ("Marketplace / pedido online", "partial", "Fluxo operacional completo, API segura com chave por plataforma, validacao de itens, idempotencia e acompanhamento visual de separacao/pagamento na listagem implementados. Pedidos agora guardam CPF, CNPJ ou documento estrangeiro do destinatário, inclusive pela API do parceiro, e o detalhe do pedido permite preparar NF-e modelo 55 local vinculada ao pedido online. A central de integracoes agora mostra saude operacional por canal, pedidos recebidos, pedidos abertos, pagamentos pendentes, alertas de homologacao e diagnostico JSON para suporte sem expor a chave completa. API de parceiros tambem possui endpoint autenticado marketplace_partner_v1 para validar chave, filial, recursos, idempotencia e alertas antes de enviar pedido real. Adaptadores especificos de cada parceiro e transmissão SEFAZ real seguem pendentes."),
+            ("Fiscal/NFC-e e NF-e", "partial", "Fila fiscal mostra vendas prontas, pendencias antes da acao e ultima tentativa automatica auditada; tela de produtos fiscais antecipa correcoes de NCM, CEST, origem, CST/CSOSN e alíquota. XML local usa UF e código IBGE da filial. A NFC-e segue a regra de ocorrer somente após pagamento confirmado: por padrao a venda tenta preparar a NFC-e automaticamente, mas o admin pode desativar essa tentativa por terminal PDV quando a empresa decidir operar aquele caixa sem comunicacao fiscal automatica. O PDV exibe no topo se o terminal identificado esta com fiscal automático ligado ou desligado. A venda presencial agora aceita CPF opcional na nota sem cadastro de cliente, pergunta o documento dentro do popup de pagamento, grava o dado na venda e inclui o CPF no XML local da NFC-e; CNPJ solicitado no caixa é bloqueado para NFC-e automática e orientado para NF-e modelo 55. Pedidos online/marketplace agora possuem documento do destinatário e podem preparar NF-e modelo 55 local, com série e natureza fiscal próprias, vinculada ao pedido. Painel fiscal agora traz prontidão por filial, certificado, séries, vendas aguardando documento, produtos com pendência e diagnóstico JSON fiscal_readiness_v1 para suporte. O diagnóstico também separa homologação simulada de produção real pelo contrato fiscal_production_readiness_v1, alertando quando existe filial em produção sem adaptador oficial SEFAZ configurado. Se faltar cadastro fiscal, a venda não trava e a pendencia fica auditada para correção. Transmissao simulada em homologacao gera chave, protocolo e auditoria, mas ainda faltam assinatura, schema oficial, transmissão SEFAZ real, captura de CPF/CNPJ pelo pinpad quando o TEF permitir e contingência quando a SEFAZ estiver indisponivel. Exportacao operacional de contingencia JSON agora gera pacote fiscal_contingencia_v1 com documentos prontos, rejeitados ou cancelados, XML, origem, filial, valores e auditoria, sem substituir assinatura ou autorizacao oficial da SEFAZ."),
+            ("Financeiro completo", "partial", "Contas a pagar/receber, baixas, cancelamentos, categorias, fluxo de caixa, conciliacao PDV x financeiro, contas de movimento, vendas a vista do PDV no livro, transferencias entre contas, livro financeiro imutavel, estornos por lancamento inverso, resultado por receitas/despesas, cards gerenciais e exportacoes criadas. Resultado financeiro agora inclui visao por origem, categoria, conta de movimento, saldos por filial, balancete gerencial com saldo anterior, entradas, saidas e saldo final por conta, conciliação bancária imutável por lançamento com referência, responsável, filtros, paginação, CSV e auditoria, indicadores de cobertura conciliada por quantidade, valor e conta no fechamento gerencial e pacote contábil JSON, DRE gerencial com receita operacional, despesas, resultado e margem operacional, CSV gerencial para Excel e pacote contábil JSON financial_accounting_package_v1 para conferência interna com contador. A proxima evolucao inclui integracao final com fiscal/contábilidade e relatórios contábeis oficiais."),
+            ("Entradas, saídas e livro contábil", "partial", "Contas de movimento por filial para caixa físico, banco, PIX e outras foram criadas com saldo inicial e saldo atual. Baixas geram entrada ou saída no livro imutavel, vendas a vista do PDV geram entradas automaticas por forma de pagamento, sangria e suprimento geram saída/entrada automatica no Caixa PDV, transferencias geram lançamentos espelhados, atômicos e auditados entre contas da mesma empresa, e estornos rastreáveis criam lancamento inverso sem alterar o original. O livro possui origem, usuario, data, filtros, exportacao CSV, validacao de saldo e conciliação bancária separada e imutável com referência de extrato, responsável e auditoria, relatório de receitas, despesas e resultado que ignora transferencias internas, e balancete gerencial que considera transferencias para refletir o saldo real das contas. Ainda faltam integracao automatica de origens fiscais/contábeis avancadas e relatórios contábeis oficiais. Referencia funcional identificada no ProjetoLimpoGitHub para migracao adaptada, sem alterar o projeto original."),
+            ("Marketplace / pedido online", "partial", "Fluxo operacional completo, API segura com chave por plataforma, validacao de itens, idempotencia e acompanhamento visual de separacao/pagamento na listagem implementados. Pedidos agora guardam CPF, CNPJ ou documento estrangeiro do destinatário, inclusive pela API do parceiro, e o detalhe do pedido permite preparar NF-e modelo 55 local vinculada ao pedido online. A central de integracoes agora mostra saude operacional por canal, pedidos recebidos, pedidos abertos, pagamentos pendentes, alertas de homologacao e prontidão marketplace_partner_readiness_v1 por parceiro, com diagnostico JSON para suporte sem expor a chave completa. API de parceiros tambem possui endpoint autenticado marketplace_partner_v1 para validar chave, filial, recursos, idempotencia, politica de entrega e prontidão antes de enviar pedido real. Adaptadores especificos de cada parceiro e transmissão SEFAZ real seguem pendentes."),
             ("Impressao personalizada", "done", "Configuracoes de papel, margens, fonte, rodape, vias e impressão automatica aplicadas aos recibos. No app desktop, o botão pos-venda usa o payload autenticado existente, monta cupom operacional sem imagens e envia diretamente ao spooler Windows em RAW/ESC-POS, com até três vias, corte de papel e pulso opcional da gaveta, sem abrir pré-visualizacao."),
             ("Descoberta de impressoras locais", "done", "Central de impressão possui campo com sugestões e endpoint de configuracao. A ponte do app desktop consulta as impressoras instaladas no Windows sem shell interativo e devolve nome, porta, driver, estado e impressora padrao para a mesma interface do PDV, tratando timeout ou falha sem bloquear a venda."),
             ("Gaveta de dinheiro opcional", "partial", "Central de impressão permite habilitar ou desabilitar gaveta automatica por empresa/filial e documento de caixa. Bootstrap e pacote do terminal entregam o contrato pdv_cash_drawer_v1 com impressora, abertura em dinheiro e movimentos de caixa. O app desktop possui ponte openCashDrawer, envia pulso ESC/POS pela impressora configurada e registra diagnóstico local da gaveta em sucesso, falha ou desabilitado sem bloquear a venda. Venda em dinheiro, sangria, suprimento, abertura e fechamento de caixa agendam abertura somente depois da operacao ser aceita pelo servidor, preservando senha de supervisor/admin quando exigida. A pré-homologação não aciona a gaveta por padrão e só envia o pulso após seleção explícita e confirmação de segurança pelo operador, registrando a evidência consolidada. Falta testar com gavetas físicas reais."),
             ("Backup/restauracao operacional", "done", "Tela de backup JSON e roteiro de restauracao segura disponíveis em Sistema."),
-            ("Modo local administrativo", "partial", "Para supermercados sem internet ou sem rede estruturada, o produto deve permitir instalação local do servidor administrativo na própria loja, em um computador servidor ou máquina principal, acessado por navegador em localhost ou rede interna. Não é necessário duplicar todo o ERP em um segundo app desktop administrativo; a abordagem profissional é empacotar o servidor local, banco, serviços, backup, atualizações controladas e um atalho/app shell opcional para abrir o painel administrativo. A central Sistema > Servidor local já apresenta arquitetura, requisitos, modos por empresa, riscos pendentes, manifesto JSON erp_local_admin_v1, guia docs/IMPLANTACAO_SERVIDOR_LOCAL.md e scripts scripts/run_local_server.ps1, scripts/register_local_server_task.ps1, scripts/backup_local.ps1, scripts/register_backup_task.ps1 e scripts/register_sync_task.ps1 para operação local inicial, backup e sincronização recorrente no Windows. O backup local já suporta criptografia opcional AES-256 por BACKUP_ENCRYPTION_PASSPHRASE e remoção do zip aberto com -RemoverOriginalCriptografado. Manifesto e tela do servidor local agora especificam o contrato de servico Windows MercaFlowServidorLocal, comando WSGI via Waitress, healthcheck, restart, logs e fallback operacional. O PDV desktop continua separado e restrito ao operador, enquanto gerente/admin acessa o mesmo sistema web local com permissões completas. Falta gerar instalador assinado, registrar o servico Windows real a partir do contrato e concluir a politica final de sincronizacao opcional com a nuvem."),
-            ("Aplicativo desktop/PDF", "partial", "Endpoints de configuracao e payload de impressão da venda preparados para o app desktop, incluindo dados de pagamento eletrônico, NSU, autorizacao e transacao externa para cupom e comprovante. A interface desktop reutiliza o mesmo design, componentes, atalhos e regras do PDV web em um shell WebView separado, adaptando apenas a camada de integracao com hardware e serviços locais. O esqueleto desktop_pdv possui ativacao guiada na primeira execucao, valida o bootstrap licenciado antes de salvar a credencial em LOCALAPPDATA e abrir /pdv/, permite reconfiguracao e protege a chave de versionamento. O build reproduzivel do executavel Windows com PyInstaller também foi preparado. A Central do App PDV desktop publica o instalador somente quando o artefato configurado existe, apresenta tamanho e SHA-256, restringe o download ao admin master e registra a entrega na auditoria. Um script de publicacao atômica confere integridade, impede arquivo parcial na central e grava metadados de versao; versao e caminho do artefato sao configuraveis por ambiente. O app informa sua versao no bootstrap, recebe versao vigente e minima, avisa atualizacao opcional e bloqueia versao insegura; a instalacao continua exigindo o admin master, sem atualizacao automatica fora do licenciamento. O app desktop agora salva cache local do bootstrap autorizado e, se o servidor estiver indisponivel, abre com esse cache somente quando o terminal permite modo offline, registrando diagnostico local; recusa de licença, chave ou terminal bloqueado nunca usa o cache como atalho. O manifesto JSON do app desktop expõe disponibilidade, integridade, contratos e terminais autorizados. Pacote JSON por terminal entrega bootstrap, URL da interface compartilhada, TEF, fiscal, impressão, gaveta, balanca configurada, licenca por máquina e sincronizacao; o bootstrap operacional também devolve a configuracao atual a cada inicializacao. Terminais pendentes, bloqueados ou cancelados não recebem pacote de ativacao nem conseguem inicializar o bootstrap. O aplicativo continua sendo um projeto/artefato separado, baixado por dentro do sistema somente com autorizacao do admin master e configurado com o terminal autorizado. Falta assinar o executavel, gerar o instalador MSI, conectar dispositivos locais e implementar sincronizacao resiliente com servidor local/nuvem."),
-            ("Sincronizacao loja-nuvem", "partial", "Empresa escolhe entre servidor local, hibrido e nuvem com agente. Caixa de saída, processador HTTP e caixa de entrada autenticada usam UUID, idempotencia, token fora do banco, timeout, lotes e retentativa exponencial. Eventos recebidos ficam armazenados antes de alterar dados e já passam por processador interno com handlers por tipo, erro controlado para domínios ainda não implementados, handler inicial de produtos, handler de saldo de estoque por filial, espelho de venda finalizada com painel de retaguarda, espelho fiscal sincronizado, detalhe auditável de eventos com payload e diagnóstico, resolução manual de conflitos com responsável e decisão registrada, exportacao CSV das filas de saída e entrada, diagnóstico JSON operacional com filas, alertas, próximos eventos, idade da fila mais antiga, eventos de sa?da com tentativas esgotadas, empresas por modo e comando sugerido, comando único agendável, roteiro do Agendador de Tarefas do Windows no painel e script scripts/register_sync_task.ps1 para registrar a rotina recorrente. Politica automatica opcional de conflito por empresa foi iniciada: manual por padrao, com nuvem prevalecendo apenas para produtos e saldo de estoque quando configurado, mantendo venda e fiscal para decisao auditavel; painel, diagnostico JSON, listagem de empresas e detalhe auditavel do evento exibem a politica aplicada, e o admin tecnico permite filtrar esse campo. Ainda faltam transmissao SEFAZ real e politicas finais para outros tipos de conflito."),
-            ("Super admin personalizado", "partial", "Painel próprio centraliza empresas, usuários, fiscal, formas de pagamento, impressoes, backup, auditoria e checklist, sem atalho visual para o admin Django. A tela Sistema > Super admin já reúne visão executiva, atalhos críticos, pendências acionáveis, saúde da sincronização, cobertura de telas próprias, atividade recente, atalhos de investigação, diagnóstico de ambiente/segurança, inventário de modelos, diagnóstico JSON e exportação CSV restritos ao admin master para acompanhar dados avançados sem entrar no admin padrão; ainda faltam telas CRUD internas para alguns modelos avançados de baixa frequência."),
+            ("Modo local administrativo", "partial", "Para supermercados sem internet ou sem rede estruturada, o produto deve permitir instalação local do servidor administrativo na própria loja, em um computador servidor ou máquina principal, acessado por navegador em localhost ou rede interna. Não é necessário duplicar todo o ERP em um segundo app desktop administrativo; a abordagem profissional é empacotar o servidor local, banco, serviços, backup, atualizações controladas e um atalho/app shell opcional para abrir o painel administrativo. A central Sistema > Servidor local já apresenta arquitetura, requisitos, modos por empresa, riscos pendentes, manifesto JSON erp_local_admin_v1, guia docs/IMPLANTACAO_SERVIDOR_LOCAL.md e scripts scripts/run_local_server.ps1, scripts/install_local_server_service.ps1, scripts/test_local_server_service.ps1, scripts/uninstall_local_server_service.ps1, server_local/windows/MercaFlowServidorLocal.xml.template, scripts/register_local_server_task.ps1, scripts/backup_local.ps1, scripts/register_backup_task.ps1 e scripts/register_sync_task.ps1 para operação local inicial, backup e sincronização recorrente no Windows. O backup local já suporta criptografia opcional AES-256 por BACKUP_ENCRYPTION_PASSPHRASE e remoção do zip aberto com -RemoverOriginalCriptografado. Manifesto e tela do servidor local agora especificam o contrato de servico Windows MercaFlowServidorLocal, comando WSGI via Waitress, healthcheck, restart, logs, fallback operacional e contrato de prontidao local_admin_readiness_v1 validando scripts, guia, backup criptografado e modos de implantacao. O PDV desktop continua separado e restrito ao operador, enquanto gerente/admin acessa o mesmo sistema web local com permissões completas. O servico Windows real agora possui instalador WinSW validado por SHA-256, Waitress, inicio automatico, reinicio em falha, logs, diagnostico e remocao; a tarefa agendada fica como contingencia. Falta homologar em uma maquina Windows limpa, definir a conta dedicada, empacotar a distribuicao assinada e concluir a politica final de sincronizacao opcional com a nuvem."),
+            ("Aplicativo desktop/PDF", "partial", "Endpoints de configuracao e payload de impressão da venda preparados para o app desktop, incluindo dados de pagamento eletrônico, NSU, autorizacao e transacao externa para cupom e comprovante. A interface desktop reutiliza o mesmo design, componentes, atalhos e regras do PDV web em um shell WebView separado, adaptando apenas a camada de integracao com hardware e serviços locais. O esqueleto desktop_pdv possui ativacao guiada na primeira execucao, valida o bootstrap licenciado antes de salvar a credencial em LOCALAPPDATA e abrir /pdv/, permite reconfiguracao e protege a chave de versionamento. O build reproduzivel do executavel Windows com PyInstaller também foi preparado. A Central do App PDV desktop publica o instalador somente quando o artefato configurado existe, apresenta tamanho e SHA-256, restringe o download ao admin master e registra a entrega na auditoria. Um script de publicacao atômica confere integridade, impede arquivo parcial na central e grava metadados de versao; versao e caminho do artefato sao configuraveis por ambiente. O app informa sua versao no bootstrap, recebe versao vigente e minima, avisa atualizacao opcional e bloqueia versao insegura; a instalacao continua exigindo o admin master, sem atualizacao automatica fora do licenciamento. O app desktop agora salva cache local do bootstrap autorizado e, se o servidor estiver indisponivel, abre com esse cache somente quando o terminal permite modo offline, registrando diagnostico local; recusa de licença, chave ou terminal bloqueado nunca usa o cache como atalho. O manifesto JSON do app desktop expõe disponibilidade, integridade, contratos, terminais autorizados e prontidão de distribuição pelo contrato pdv_desktop_readiness_v1, alertando falta de instalador assinado, ausência de terminais e licenças pendentes. Pacote JSON por terminal entrega bootstrap, URL da interface compartilhada, TEF, fiscal, impressão, gaveta, balanca configurada, licenca por máquina e sincronizacao; o bootstrap operacional também devolve a configuracao atual a cada inicializacao. Terminais pendentes, bloqueados ou cancelados não recebem pacote de ativacao nem conseguem inicializar o bootstrap. O aplicativo continua sendo um projeto/artefato separado, baixado por dentro do sistema somente com autorizacao do admin master e configurado com o terminal autorizado. O canal de manutenção por terminal licenciado baixa o artefato publicado pelo ERP, confere SHA-256 antes de promovê-lo na pasta local de updates e nunca instala silenciosamente; pacote adulterado ou incompleto é descartado. A estrutura pdv_windows_installer_v1 usa WiX v4 para MSI por maquina, upgrade, atalhos, desinstalacao, metadados SHA-256, exigencia opcional de executavel assinado e assinatura do MSI via signtool; a publicacao atomica prioriza o MSI da versao. A Central, o download administrativo, o bootstrap e a atualização do terminal compartilham o mesmo validador: exigem manifesto .version.json, versão vigente e SHA-256 correspondente; em produção, PDV_DESKTOP_REQUIRE_SIGNED_INSTALLER também exige as assinaturas válidas declaradas pelo pipeline antes de distribuir. Falta executar o build com certificado real, publicar o MSI assinado, homologar instalacao/upgrade/desinstalacao em Windows limpo, conectar dispositivos locais e implementar sincronizacao resiliente com servidor local/nuvem."),
+            ("Sincronizacao loja-nuvem", "partial", "Empresa escolhe entre servidor local, hibrido e nuvem com agente. Caixa de saída, processador HTTP e caixa de entrada autenticada usam UUID, idempotencia, token fora do banco, timeout, lotes e retentativa exponencial. Eventos recebidos ficam armazenados antes de alterar dados e já passam por processador interno com handlers por tipo, erro controlado para domínios ainda não implementados, handler inicial de produtos, handler de saldo de estoque por filial, espelho de venda finalizada com painel de retaguarda, espelho fiscal sincronizado, detalhe auditável de eventos com payload e diagnóstico, resolução manual de conflitos com responsável, decisão e LogAuditoria, reprocessamento de entrada/saída também auditado, exportacao CSV das filas de saída e entrada, diagnóstico JSON operacional com filas, alertas, próximos eventos, idade da fila mais antiga, eventos de saída com tentativas esgotadas, empresas por modo, contrato de prontidão sync_readiness_v1 e comando sugerido, comando único agendável, roteiro do Agendador de Tarefas do Windows no painel e script scripts/register_sync_task.ps1 para registrar a rotina recorrente. Movimentações locais de venda, compra, inventário, perda, produção e ajustes agora publicam automaticamente primeiro o snapshot do produto e depois o saldo consolidado da filial, pelos contratos produto_snapshot_v1 e estoque_saldo_v1. Revisões usam hash do conteúdo, saldos usam chave idempotente por movimento e atualizações recebidas da nuvem são marcadas para não gerar eco de produto ou estoque. O comando gerar_snapshot_sincronizacao e a acao protegida no painel preparam a carga inicial de catálogo e saldos já existentes por empresa ou filial, podem ser repetidos sem duplicar eventos, bloqueiam empresas que escolheram o modo somente local e registram a operacao web no log de auditoria. Politica automatica opcional de conflito por empresa foi iniciada: manual por padrao, com nuvem prevalecendo apenas para produtos e saldo de estoque quando configurado, mantendo venda e fiscal para decisao auditavel; painel, diagnostico JSON, listagem de empresas e detalhe auditavel do evento exibem a politica aplicada, e o admin tecnico permite filtrar esse campo. Ainda faltam transmissao SEFAZ real e politicas finais para outros tipos de conflito."),
+            ("Super admin personalizado", "done", "Painel próprio centraliza empresas, usuários, fiscal, formas de pagamento, impressoes, backup, auditoria e checklist, sem atalho visual para o admin Django. A tela Sistema > Super admin reúne visão executiva, atalhos críticos, pendências acionáveis, saúde da sincronização, estornos eletrônicos pendentes com quantidade, valor e tela operacional própria, cobertura de telas próprias, atividade recente, atalhos de investigação, diagnóstico de ambiente/segurança, inventário de modelos, inspeção protegida e paginada por modelo, diagnóstico JSON e exportação CSV restritos ao admin master para acompanhar dados avançados sem entrar no admin padrão. Séries fiscais e naturezas de operação já possuem CRUD guiado, validação e auditoria próprios; sincronização e diagnósticos de dispositivos também possuem consultas protegidas, A fila interna de modelos avançados está concluída. Homologações externas e de hardware permanecem acompanhadas nos itens técnicos específicos."),
         ],
     },
 ]
 
 
 def _instalador_pdv_desktop():
-    caminho = settings.PDV_DESKTOP_INSTALLER_PATH
-    if not caminho.is_file():
-        return {
-            "disponivel": False,
-            "nome": caminho.name,
-            "tamanho": 0,
-            "sha256": "",
-            "atualizado_em": None,
-        }
-    digest = hashlib.sha256()
-    with caminho.open("rb") as arquivo:
-        for bloco in iter(lambda: arquivo.read(1024 * 1024), b""):
-            digest.update(bloco)
-    stat = caminho.stat()
-    return {
-        "disponivel": True,
-        "nome": caminho.name,
-        "tamanho": stat.st_size,
-        "sha256": digest.hexdigest(),
-        "atualizado_em": timezone.datetime.fromtimestamp(stat.st_mtime, tz=timezone.get_current_timezone()),
-    }
+    return artefato_pdv_desktop()
+
 
 DOCUMENTOS_PROJETO = [
     ("Complementar PDV, usabilidade, cadastros e entrega v2", "docs/protótipos/documento_complementar_pdv_usabilidade_cadastros_entrega_v2.docx"),
@@ -341,6 +326,8 @@ def _mapa_trilhas_roadmap(grupos):
     ordenadas = sorted(trilhas.values(), key=lambda item: (-item["alta"], -item["total"], item["trilha"]))
     for item in ordenadas:
         item["grupos"] = ", ".join(sorted(item["grupos"]))
+        item["impacto_estimado"] = item["alta"] + (item["media"] * 0.5)
+        item["peso_label"] = f"{item['impacto_estimado']:.1f}".replace(".", ",")
     return ordenadas
 
 
@@ -389,7 +376,9 @@ def _modelos_backup():
             {
                 "app": modelo._meta.app_label,
                 "modelo": modelo._meta.verbose_name_plural.title(),
+                "modelo_tecnico": modelo._meta.object_name,
                 "total": total,
+                "inspecao_url": reverse("configuracoes:super_admin_modelo", args=[modelo._meta.app_label, modelo._meta.model_name]),
             }
         )
     return sorted(modelos, key=lambda item: (item["app"], item["modelo"]))
@@ -536,6 +525,9 @@ def _super_admin_payload(request):
     ).count()
     sync_conflitos = EventoEntradaSincronizacao.objects.filter(status=StatusEventoEntrada.CONFLITO).count()
     sync_total_alertas = sync_saida_alertas + sync_entrada_alertas
+    estornos_pendentes_qs = PagamentoVenda.objects.filter(status=StatusPagamento.ESTORNO_PENDENTE)
+    estornos_pendentes = estornos_pendentes_qs.count()
+    valor_estornos_pendentes = estornos_pendentes_qs.aggregate(total=Sum("valor"))["total"] or Decimal("0.00")
     diagnosticos = [
         {
             "titulo": "Admin masters",
@@ -578,6 +570,12 @@ def _super_admin_payload(request):
             "valor": sync_total_alertas,
             "descricao": "Eventos de saída/entrada aguardando processamento, erro ou resolução de conflito.",
             "status": "Sincronização",
+        },
+        {
+            "titulo": "Estornos eletrônicos pendentes",
+            "valor": estornos_pendentes,
+            "descricao": f"PIX/TEF aguardando retorno da adquirente. Valor pendente: R$ {valor_estornos_pendentes:.2f}.",
+            "status": "Pagamentos",
         },
     ]
     secoes = [
@@ -676,6 +674,13 @@ def _super_admin_payload(request):
             "acao": "Abrir o painel de sincronização, revisar diagnóstico JSON e reprocessar filas ou resolver conflitos.",
             "url_name": "empresas:sincronizacao",
         },
+        {
+            "prioridade": "Alta",
+            "titulo": "Estornos eletrônicos pendentes",
+            "total": estornos_pendentes,
+            "acao": f"Processar na adquirente e confirmar o retorno aprovado. Valor pendente: R$ {valor_estornos_pendentes:.2f}.",
+            "url_name": "pdv:estornos_eletronicos",
+        },
     ]
     cobertura_telas = [
         {
@@ -695,8 +700,8 @@ def _super_admin_payload(request):
         {
             "area": "Fiscal",
             "modelos": "ConfiguracaoFiscal, SerieFiscal, NaturezaOperacao, DocumentoFiscal",
-            "status": "Operacional",
-            "observacao": "Configuração, séries, naturezas, documentos, XML e pendências fiscais em telas próprias.",
+            "status": "Completa",
+            "observacao": "Configuração, séries e naturezas com CRUD guiado e auditado, além de documentos, XML e pendências fiscais em telas próprias.",
             "url_name": "fiscal:documentos",
         },
         {
@@ -717,24 +722,25 @@ def _super_admin_payload(request):
             "area": "Terminais PDV",
             "modelos": "TerminalPdv",
             "status": "Completa",
-            "observacao": "Licença, chave API, fiscal por terminal, TEF, balança e pacote desktop.",
+            "observacao": "Licença, chave API, fiscal por terminal, TEF, balança, pacote desktop e diagnóstico paginado por máquina com filtros e CSV.",
             "url_name": "configuracoes:terminais_pdv",
         },
         {
             "area": "Sincronização",
             "modelos": "EventoSincronizacao, EventoEntradaSincronizacao, VendaSincronizada, DocumentoFiscalSincronizado",
-            "status": "Consulta",
-            "observacao": "Painel com filas, detalhes, conflitos e exportação; CRUD direto não é recomendado.",
+            "status": "Completa",
+            "observacao": "Painel protegido com filtros, espelhos de vendas e documentos, detalhes, CSV, conflitos e reprocessamento auditado; CRUD direto não é permitido.",
             "url_name": "empresas:sincronizacao",
         },
         {
             "area": "Auditoria e backup",
             "modelos": "LogAuditoria, modelos exportáveis",
-            "status": "Consulta",
-            "observacao": "Logs e exportação operacional protegidos em telas próprias.",
+            "status": "Completa",
+            "observacao": "Logs filtráveis, exportação CSV e backup operacional protegidos em telas próprias.",
             "url_name": "auditoria:logs",
         },
     ]
+    modelos_avancados_pendentes = []
     atividade_recente = [
         {
             "data": timezone.localtime(log.criado_em).isoformat(),
@@ -853,6 +859,7 @@ def _super_admin_payload(request):
         "alertas": alertas,
         "pendencias_acionaveis": pendencias_acionaveis,
         "cobertura_telas": cobertura_telas,
+        "modelos_avancados_pendentes": modelos_avancados_pendentes,
         "atividade_recente": atividade_recente,
         "investigacoes": investigacoes,
         "ambiente_operacional": ambiente_operacional,
@@ -899,6 +906,8 @@ def super_admin_diagnostico_csv(request):
         writer.writerow(["Pendencia", item["titulo"], item["prioridade"], item["total"], item["acao"]])
     for item in payload["cobertura_telas"]:
         writer.writerow(["Cobertura", item["area"], item["status"], item["modelos"], item["observacao"]])
+    for item in payload["modelos_avancados_pendentes"]:
+        writer.writerow(["Modelo avancado", item["area"], item["prioridade"], item["status"], item["acao"]])
     for item in payload["atividade_recente"]:
         writer.writerow(["Atividade", item["acao"], item["modulo"], item["data_label"], item["descricao"]])
     for item in payload["investigacoes"]:
@@ -910,6 +919,85 @@ def super_admin_diagnostico_csv(request):
     for item in payload["perfis_por_tipo"]:
         writer.writerow(["Perfil", item["tipo"], "Ativo", item["total"], "Usuarios ativos por perfil"])
     return response
+
+
+def _modelo_super_admin(app_label, model_name):
+    ignorar = {"Permission", "ContentType", "Session", "LogEntry"}
+    modelo = apps.get_model(app_label, model_name)
+    if not modelo or modelo._meta.object_name in ignorar:
+        raise Http404("Modelo indisponivel para inspecao.")
+    return modelo
+
+
+def _campos_inspecao_modelo(modelo):
+    campos = []
+    for campo in modelo._meta.fields:
+        if campo.get_internal_type() == "BinaryField":
+            continue
+        campos.append(campo)
+        if len(campos) >= 8:
+            break
+    return campos
+
+
+def _valor_inspecao(objeto, campo):
+    nome = campo.name.lower()
+    if any(chave in nome for chave in ["password", "senha", "token", "secret", "chave", "hash"]):
+        return "••••"
+    valor = getattr(objeto, campo.name, None)
+    if valor in (None, ""):
+        return "-"
+    if hasattr(valor, "name") and campo.get_internal_type() == "FileField":
+        return valor.name or "-"
+    texto = str(valor)
+    return f"{texto[:117]}..." if len(texto) > 120 else texto
+
+
+@login_required
+@role_required(*SISTEMA)
+def super_admin_modelo(request, app_label, model_name):
+    _exigir_admin_master(request.user)
+    modelo = _modelo_super_admin(app_label, model_name)
+    termo = (request.GET.get("q") or "").strip()
+    queryset = modelo._default_manager.all()
+    campos_busca = [
+        campo.name
+        for campo in modelo._meta.fields
+        if campo.get_internal_type() in {"CharField", "TextField", "EmailField", "SlugField", "URLField"}
+    ]
+    if termo and campos_busca:
+        filtro = Q()
+        for campo in campos_busca:
+            filtro |= Q(**{f"{campo}__icontains": termo})
+        queryset = queryset.filter(filtro)
+    if modelo._meta.pk:
+        queryset = queryset.order_by(modelo._meta.pk.name)
+    campos = _campos_inspecao_modelo(modelo)
+    paginator = Paginator(queryset, 20)
+    page_obj = paginator.get_page(request.GET.get("page"))
+    linhas = [
+        {
+            "pk": objeto.pk,
+            "valores": [_valor_inspecao(objeto, campo) for campo in campos],
+        }
+        for objeto in page_obj.object_list
+    ]
+    context = {
+        "modelo": modelo,
+        "modelo_nome": str(modelo._meta.verbose_name_plural).capitalize(),
+        "modelo_tecnico": modelo._meta.object_name,
+        "modelo_app": modelo._meta.app_label,
+        "app_label": app_label,
+        "model_name": model_name,
+        "termo": termo,
+        "campos": campos,
+        "linhas": linhas,
+        "page_obj": page_obj,
+        "total": paginator.count,
+        "campos_busca": campos_busca,
+    }
+    return render(request, "configuracoes/super_admin_modelo.html", context)
+
 
 
 @login_required
@@ -938,10 +1026,12 @@ def checklist_projeto(request):
         for grupo in grupos
     ]
     mapa_trilhas = _mapa_trilhas_roadmap(grupos)
+    resumo = _resumo_checklist(grupos)
+    resumo["diferenca_ponderada"] = max(0, resumo["percentual_ponderado"] - resumo["percentual"])
     resumo_filtrado = _resumo_checklist(grupos_filtrados)
     context = {
         "grupos": grupos_filtrados,
-        "resumo": _resumo_checklist(grupos),
+        "resumo": resumo,
         "resumo_filtrado": resumo_filtrado,
         "mapa_trilhas": mapa_trilhas,
         "proximas_etapas": _proximas_etapas_checklist(grupos_filtrados if any(filtros.values()) else grupos),
@@ -988,6 +1078,81 @@ def checklist_projeto_csv(request):
     return response
 
 
+def _pdv_desktop_readiness_payload(instalador, terminais_qs):
+    total_terminais = terminais_qs.count()
+    ativos = terminais_qs.filter(ativo=True).count()
+    liberados = terminais_qs.filter(status_licenca=StatusLicencaTerminal.LIBERADA, ativo=True).count()
+    pendentes = terminais_qs.filter(status_licenca=StatusLicencaTerminal.PENDENTE).count()
+    bloqueados = terminais_qs.filter(status_licenca__in=[StatusLicencaTerminal.BLOQUEADA, StatusLicencaTerminal.CANCELADA]).count()
+    sem_tef = terminais_qs.filter(ativo=True, provedor_tef="").count()
+    sem_fiscal = terminais_qs.filter(ativo=True, emite_documento_fiscal=False).count()
+    com_balanca = terminais_qs.filter(ativo=True, usa_balanca=True).count()
+    pilotos = terminais_qs.filter(ativo=True, canal_atualizacao=CanalAtualizacaoPdv.PILOTO).count()
+    atualizacoes_congeladas = terminais_qs.filter(ativo=True, bloquear_atualizacoes=True).count()
+    build_msi_script = settings.BASE_DIR / "desktop_pdv" / "build_msi.ps1"
+    build_msi_template = settings.BASE_DIR / "desktop_pdv" / "installer" / "Product.wxs.template"
+    build_msi_preparado = build_msi_script.is_file() and build_msi_template.is_file()
+    bloqueios = []
+    recomendacoes = []
+    if not instalador["disponivel"]:
+        bloqueios.extend(instalador["problemas"] or ["Publicar o instalador Windows assinado antes de distribuir o app PDV desktop."])
+    if not build_msi_preparado:
+        bloqueios.append("Preparar script e template reproduziveis para gerar o instalador MSI.")
+    if not total_terminais:
+        bloqueios.append("Cadastrar ao menos um terminal PDV antes da instalacao.")
+    if ativos and not liberados:
+        bloqueios.append("Liberar a licenca de pelo menos um terminal ativo para baixar o pacote de ativacao.")
+    if pendentes:
+        recomendacoes.append(f"Revisar {pendentes} terminal(is) com licenca pendente.")
+    if bloqueados:
+        recomendacoes.append(f"Manter {bloqueados} terminal(is) bloqueado(s)/cancelado(s) fora da distribuicao.")
+    if sem_tef:
+        recomendacoes.append(f"{sem_tef} terminal(is) ativo(s) sem provedor TEF configurado usarao somente fallback/manual.")
+    if sem_fiscal:
+        recomendacoes.append(f"{sem_fiscal} terminal(is) ativo(s) com fiscal automatico desligado.")
+    if atualizacoes_congeladas:
+        recomendacoes.append(f"{atualizacoes_congeladas} terminal(is) com atualizacoes opcionais congeladas pelo admin master.")
+    if bloqueios:
+        status = "Bloqueada"
+        percentual = 45
+        proximo_passo = bloqueios[0]
+    elif recomendacoes:
+        status = "Pronta com ressalvas"
+        percentual = 85
+        proximo_passo = recomendacoes[0]
+    else:
+        status = "Pronta"
+        percentual = 100
+        proximo_passo = "Distribuicao pronta para terminais licenciados."
+    return {
+        "contrato": "pdv_desktop_readiness_v1",
+        "status": status,
+        "percentual": percentual,
+        "proximo_passo": proximo_passo,
+        "bloqueios": bloqueios,
+        "recomendacoes": recomendacoes,
+        "instalador": {
+            "disponivel": instalador["disponivel"],
+            "nome": instalador["nome"],
+            "sha256": instalador["sha256"],
+            "build_msi_preparado": build_msi_preparado,
+            "assinatura_obrigatoria_producao": True,
+        },
+        "terminais": {
+            "total": total_terminais,
+            "ativos": ativos,
+            "licencas_liberadas": liberados,
+            "licencas_pendentes": pendentes,
+            "bloqueados_cancelados": bloqueados,
+            "sem_tef": sem_tef,
+            "sem_fiscal_automatico": sem_fiscal,
+            "com_balanca": com_balanca,
+            "canal_piloto": pilotos,
+            "atualizacoes_congeladas": atualizacoes_congeladas,
+        },
+    }
+
+
 @login_required
 @role_required(*SISTEMA)
 def pdv_desktop(request):
@@ -1000,6 +1165,7 @@ def pdv_desktop(request):
     licencas_bloqueadas = terminais.filter(status_licenca__in=[StatusLicencaTerminal.BLOQUEADA, StatusLicencaTerminal.CANCELADA]).count()
     eventos_dispositivo = EventoDispositivoTerminal.objects.select_related("terminal", "terminal__filial").order_by("-recebido_em")
     resumo_eventos_dispositivo = eventos_dispositivo.values("tipo", "status").annotate(total=Count("id")).order_by("tipo", "status")
+    prontidao_desktop = _pdv_desktop_readiness_payload(instalador, terminais)
     context = {
         "terminais": terminais,
         "total_terminais": total_terminais,
@@ -1011,16 +1177,22 @@ def pdv_desktop(request):
         "resumo_eventos_dispositivo": resumo_eventos_dispositivo,
         "versao_planejada": PDV_DESKTOP_VERSAO_PLANEJADA,
         "instalador": instalador,
+        "prontidao_desktop": prontidao_desktop,
         "artefatos": [
             {
                 "nome": "Windows x64",
-                "status": "Fonte iniciado",
-                "descricao": "Shell WebView com ativacao guiada reutiliza /pdv/; build do .exe preparado, faltando assinatura e instalador MSI.",
+                "status": "Empacotamento pronto",
+                "descricao": "PyInstaller gera o executavel e WiX v4 monta MSI por maquina com upgrade, atalhos, desinstalacao, SHA-256 e assinatura opcional.",
             },
             {
                 "nome": "Bridge local",
                 "status": "Contrato pronto",
-                "descricao": "Conecta impressora, gaveta, TEF, balanca e servidor local da loja.",
+                "descricao": "Conecta impressora, gaveta, TEF, balanca e servidor local, mantendo a chave do terminal protegida pelo DPAPI do Windows.",
+            },
+            {
+                "nome": "Atualizacao controlada",
+                "status": "Canal pronto",
+                "descricao": "Terminal licenciado baixa o pacote publicado, valida SHA-256 e mantém a instalacao manual.",
             },
         ],
     }
@@ -1030,20 +1202,32 @@ def pdv_desktop(request):
 def _pdv_desktop_manifest_payload(request):
     terminais = TerminalPdv.objects.select_related("filial", "filial__empresa").order_by("filial__nome", "nome")
     instalador = _instalador_pdv_desktop()
+    prontidao_desktop = _pdv_desktop_readiness_payload(instalador, terminais)
     return {
         "status": "ok",
         "versao_planejada": PDV_DESKTOP_VERSAO_PLANEJADA,
         "distribuicao": "erp",
+        "politica_atualizacao": {
+            "contrato": "pdv_update_rollout_v1",
+            "canal_versao": settings.PDV_DESKTOP_RELEASE_CHANNEL,
+            "instalacao_automatica": False,
+            "versao_minima_sobrepoe_congelamento": True,
+        },
         "licenciamento": {
             "modelo": "por_terminal",
             "download_requer_admin_master": True,
             "ativacao_requer_terminal_autorizado": True,
             "observacao": "Cada máquina de caixa deve ser liberada pelo admin master antes de baixar/ativar o app desktop.",
         },
+        "prontidao": prontidao_desktop,
         "contratos": {
             "tef": "pdv_tef_v1",
             "impressao": "pdv_print_v1",
             "sincronizacao": "pdv_sync_v1",
+            "fila_eventos_dispositivo": "pdv_device_event_queue_v1",
+            "instalador_windows": "pdv_windows_installer_v1",
+            "credencial_local": "pdv_local_secret_v1",
+            "instancia_local": "pdv_single_instance_v1",
         },
         "recursos": {
             "tef_integrado": True,
@@ -1052,6 +1236,12 @@ def _pdv_desktop_manifest_payload(request):
             "balanca_local": True,
             "fiscal_por_terminal": True,
             "modo_offline": True,
+            "credencial_terminal_dpapi": True,
+            "configuracao_tef_dpapi": True,
+            "instancia_unica_por_terminal": True,
+            "eventos_dispositivo_idempotentes": True,
+            "compactacao_preserva_pendentes": True,
+            "sincronizacao_periodica_eventos": True,
         },
         "artefatos": {
             "windows_x64": {
@@ -1060,6 +1250,11 @@ def _pdv_desktop_manifest_payload(request):
                 "url": request.build_absolute_uri("/configuracoes/pdv-desktop/download/windows/") if instalador["disponivel"] else "",
                 "tamanho_bytes": instalador["tamanho"],
                 "sha256": instalador["sha256"],
+                "integridade_valida": instalador["integridade_valida"],
+                "versao_valida": instalador["versao_valida"],
+                "assinatura_valida": instalador["assinatura_valida"],
+                "assinatura_exigida": instalador["assinatura_exigida"],
+                "problemas": instalador["problemas"],
             }
         },
         "terminais": [
@@ -1076,6 +1271,10 @@ def _pdv_desktop_manifest_payload(request):
                 },
                 "emite_documento_fiscal": terminal.emite_documento_fiscal,
                 "permite_modo_offline": terminal.permite_modo_offline,
+                "atualizacao": {
+                    "canal": terminal.canal_atualizacao,
+                    "bloqueada_pelo_admin": terminal.bloquear_atualizacoes,
+                },
                 "provedor_tef": terminal.provedor_tef,
                 "modo_integracao_tef": terminal.modo_integracao_tef,
                 "balanca": terminal.balanca_configuracao(),
@@ -1098,9 +1297,10 @@ def pdv_desktop_manifest(request):
 @role_required(*SISTEMA)
 def pdv_desktop_download_windows(request):
     _exigir_admin_master(request.user)
-    caminho = settings.PDV_DESKTOP_INSTALLER_PATH
-    if not caminho.is_file():
-        raise Http404("Instalador do PDV desktop ainda não publicado.")
+    instalador = artefato_pdv_desktop()
+    if not instalador["publicavel"]:
+        raise Http404("Instalador do PDV desktop indisponivel ou reprovado na validacao.")
+    caminho = instalador["caminho"]
     LogAuditoria.objects.create(
         usuario=request.user,
         modulo="configuracoes",
@@ -1144,7 +1344,14 @@ def _pdv_desktop_terminal_payload(request, terminal):
             "status": terminal.status_licenca,
             "observacao": "Pacote destinado apenas a máquina licenciada e autorizada pelo admin master.",
         },
-        "filial": {
+        "atualizacao": {
+            "contrato": "pdv_update_rollout_v1",
+            "canal_terminal": terminal.canal_atualizacao,
+            "canal_versao": settings.PDV_DESKTOP_RELEASE_CHANNEL,
+            "bloqueada_pelo_admin": terminal.bloquear_atualizacoes,
+            "instalacao_automatica": False,
+            "versao_minima_sobrepoe_congelamento": True,
+        },        "filial": {
             "id": terminal.filial_id,
             "nome": terminal.filial.nome,
             "empresa": str(terminal.filial.empresa),
@@ -1183,6 +1390,73 @@ def _pdv_desktop_terminal_payload(request, terminal):
     }
 
 
+def _servidor_local_prontidao(base_dir, scripts, pendencias, modos):
+    obrigatorios = {
+        "subir_servidor": scripts["subir_servidor"],
+        "registrar_servidor": scripts["registrar_servidor"],
+        "instalar_servico": scripts["instalar_servico"],
+        "diagnosticar_servico": scripts["diagnosticar_servico"],
+        "remover_servico": scripts["remover_servico"],
+        "template_servico": scripts["template_servico"],
+        "backup_local": scripts["backup_local"],
+        "registrar_backup": scripts["registrar_backup"],
+        "registrar_sincronizacao": scripts["registrar_sincronizacao"],
+        "guia": scripts["guia"],
+    }
+    arquivos = {
+        chave: {
+            "caminho": caminho,
+            "existe": (base_dir / caminho).exists(),
+        }
+        for chave, caminho in obrigatorios.items()
+    }
+    ausentes = [info["caminho"] for info in arquivos.values() if not info["existe"]]
+    planejados = [item["titulo"] for item in pendencias if item["status"] == "planejado"]
+    iniciados = [item["titulo"] for item in pendencias if item["status"] == "iniciado"]
+    backup_criptografia_configurada = bool(os.getenv("BACKUP_ENCRYPTION_PASSPHRASE"))
+    bloqueios = []
+    recomendacoes = []
+    if ausentes:
+        bloqueios.append("Arquivos obrigatorios ausentes: " + ", ".join(ausentes))
+    if planejados:
+        recomendacoes.append("Concluir itens planejados: " + ", ".join(planejados))
+    if iniciados:
+        recomendacoes.append("Homologar itens iniciados: " + ", ".join(iniciados))
+    if not backup_criptografia_configurada:
+        recomendacoes.append("Configurar BACKUP_ENCRYPTION_PASSPHRASE antes de usar backup criptografado em producao.")
+    if bloqueios:
+        status = "Bloqueada"
+        percentual = 50
+        proximo_passo = bloqueios[0]
+    elif planejados:
+        status = "Homologacao parcial"
+        percentual = 78
+        proximo_passo = recomendacoes[0]
+    elif recomendacoes:
+        status = "Pronta com ressalvas"
+        percentual = 90
+        proximo_passo = recomendacoes[0]
+    else:
+        status = "Pronta"
+        percentual = 100
+        proximo_passo = "Servidor local administrativo pronto para operacao assistida."
+    return {
+        "contrato": "local_admin_readiness_v1",
+        "status": status,
+        "percentual": percentual,
+        "proximo_passo": proximo_passo,
+        "backup_criptografia_configurada": backup_criptografia_configurada,
+        "arquivos": arquivos,
+        "bloqueios": bloqueios,
+        "recomendacoes": recomendacoes,
+        "empresas_por_modo": {
+            "local": modos.get(ModoImplantacao.LOCAL, 0),
+            "hibrido": modos.get(ModoImplantacao.HIBRIDO, 0),
+            "nuvem_agente": modos.get(ModoImplantacao.NUVEM_AGENTE, 0),
+        },
+    }
+
+
 def _servidor_local_payload(request):
     empresas = Empresa.objects.prefetch_related("filiais").order_by("nome_fantasia")
     modos = {
@@ -1190,22 +1464,28 @@ def _servidor_local_payload(request):
         for modo in ModoImplantacao.values
     }
     servico_windows = {
+        "contrato": "local_windows_service_v1",
         "nome": "MercaFlowServidorLocal",
-        "status": "especificado",
-        "tipo": "Windows Service",
-        "usuario_recomendado": "Conta local dedicada, sem permissao de administrador diario",
+        "status": "instalador_preparado",
+        "tipo": "Windows Service via WinSW",
+        "usuario_recomendado": "Conta de servico local dedicada e com acesso minimo aos arquivos do ERP",
         "comando_producao": r".\.venv\Scripts\python.exe -m waitress --listen=0.0.0.0:8000 config.wsgi:application",
-        "fallback_operacional": "scripts/run_local_server.ps1 -Bind 0.0.0.0 -Port 8000",
+        "instalador": "scripts/install_local_server_service.ps1",
+        "desinstalador": "scripts/uninstall_local_server_service.ps1",
+        "diagnostico": "scripts/test_local_server_service.ps1",
+        "template": "server_local/windows/MercaFlowServidorLocal.xml.template",
+        "wrapper": "WinSW fornecido pelo administrador e validado por SHA-256 antes da instalacao",
+        "fallback_operacional": "scripts/register_local_server_task.ps1 -Bind 0.0.0.0 -Port 8000 -AtStartup",
         "healthcheck": "/login/",
-        "restart": "Reiniciar automaticamente em falha e iniciar com o Windows",
-        "logs": ["logs/django.log", "logs/servidor-local.log"],
-        "observacao": "Contrato preparado para instalador/servico real; a tarefa agendada continua como fallback ate o empacotamento assinado.",
+        "restart": "Inicio automatico com o Windows e reinicio 10 segundos apos falha",
+        "logs": [r"%ProgramData%\MercaFlow\ServidorLocal\logs", "logs/django.log"],
+        "observacao": "Scripts e contrato do servico estao preparados; a conclusao depende de instalar o WinSW verificado e homologar em uma maquina Windows da loja.",
     }
     pendencias = [
         {
             "titulo": "Servico Windows/Linux",
-            "status": "especificado",
-            "descricao": "Contrato de servico Windows definido com nome, comando WSGI, healthcheck, restart e logs; scripts/register_local_server_task.ps1 continua como fallback operacional ate o instalador assinado.",
+            "status": "iniciado",
+            "descricao": "Servico Windows preparado com WinSW, Waitress, inicio automatico, reinicio em falha, logs rotativos, healthcheck e scripts de instalacao, diagnostico e remocao. A tarefa agendada permanece como fallback; falta homologar o servico em Windows de loja e definir a conta dedicada.",
         },
         {
             "titulo": "Backup local automático",
@@ -1223,10 +1503,26 @@ def _servidor_local_payload(request):
             "descricao": "Reusar filas existentes para lojas híbridas, com scripts/register_sync_task.ps1 agendando a rotina recorrente e mantendo operação local quando a internet cair.",
         },
     ]
+    scripts = {
+        "subir_servidor": "scripts/run_local_server.ps1",
+        "registrar_servidor": "scripts/register_local_server_task.ps1",
+        "instalar_servico": "scripts/install_local_server_service.ps1",
+        "diagnosticar_servico": "scripts/test_local_server_service.ps1",
+        "remover_servico": "scripts/uninstall_local_server_service.ps1",
+        "template_servico": "server_local/windows/MercaFlowServidorLocal.xml.template",
+        "backup_local": "scripts/backup_local.ps1",
+        "registrar_backup": "scripts/register_backup_task.ps1",
+        "registrar_sincronizacao": "scripts/register_sync_task.ps1",
+        "guia": "docs/IMPLANTACAO_SERVIDOR_LOCAL.md",
+        "backup_criptografia_env": "BACKUP_ENCRYPTION_PASSPHRASE",
+        "backup_criptografia_flag": "-RemoverOriginalCriptografado",
+    }
+    prontidao = _servidor_local_prontidao(Path(settings.BASE_DIR), scripts, pendencias, modos)
     return {
         "status": "ok",
         "contrato": "erp_local_admin_v1",
         "recomendacao": "Servidor local administrativo com acesso via navegador; app desktop completo apenas para PDV.",
+        "prontidao": prontidao,
         "acesso": {
             "admin_local_url": request.build_absolute_uri("/configuracoes/"),
             "usa_navegador": True,
@@ -1234,16 +1530,7 @@ def _servidor_local_payload(request):
             "pdv_desktop_separado": True,
         },
         "servico_windows": servico_windows,
-        "scripts": {
-            "subir_servidor": "scripts/run_local_server.ps1",
-            "registrar_servidor": "scripts/register_local_server_task.ps1",
-            "backup_local": "scripts/backup_local.ps1",
-            "registrar_backup": "scripts/register_backup_task.ps1",
-            "registrar_sincronizacao": "scripts/register_sync_task.ps1",
-            "guia": "docs/IMPLANTACAO_SERVIDOR_LOCAL.md",
-            "backup_criptografia_env": "BACKUP_ENCRYPTION_PASSPHRASE",
-            "backup_criptografia_flag": "-RemoverOriginalCriptografado",
-        },
+        "scripts": scripts,
         "modos_implantacao": {
             "local": {
                 "codigo": ModoImplantacao.LOCAL,
@@ -1298,6 +1585,7 @@ def servidor_local(request):
             "empresas": payload["empresas"],
             "modos": payload["modos_implantacao"],
             "pendencias": payload["pendencias"],
+            "prontidao": payload["prontidao"],
         },
     )
 
@@ -1366,11 +1654,105 @@ def terminais_pdv(request):
     )
 
 
+
+def _eventos_dispositivo_filtrados(request):
+    eventos = EventoDispositivoTerminal.objects.select_related(
+        "terminal",
+        "terminal__filial",
+        "terminal__filial__empresa",
+    ).order_by("-recebido_em")
+    filtros = {
+        "q": request.GET.get("q", "").strip(),
+        "terminal": request.GET.get("terminal", "").strip(),
+        "tipo": request.GET.get("tipo", "").strip(),
+        "status": request.GET.get("status", "").strip(),
+        "inicio": request.GET.get("inicio", "").strip(),
+        "fim": request.GET.get("fim", "").strip(),
+    }
+    if filtros["q"]:
+        eventos = eventos.filter(
+            Q(terminal__nome__icontains=filtros["q"])
+            | Q(terminal__filial__nome__icontains=filtros["q"])
+            | Q(terminal__filial__empresa__nome_fantasia__icontains=filtros["q"])
+            | Q(tipo__icontains=filtros["q"])
+            | Q(status__icontains=filtros["q"])
+            | Q(mensagem__icontains=filtros["q"])
+        )
+    if filtros["terminal"].isdigit():
+        eventos = eventos.filter(terminal_id=filtros["terminal"])
+    if filtros["tipo"]:
+        eventos = eventos.filter(tipo=filtros["tipo"])
+    if filtros["status"]:
+        eventos = eventos.filter(status=filtros["status"])
+    inicio = parse_date(filtros["inicio"])
+    fim = parse_date(filtros["fim"])
+    if inicio:
+        eventos = eventos.filter(recebido_em__date__gte=inicio)
+    if fim:
+        eventos = eventos.filter(recebido_em__date__lte=fim)
+    return eventos, filtros
+
+
+@login_required
+@role_required(*SISTEMA)
+def terminais_pdv_diagnosticos(request):
+    eventos, filtros = _eventos_dispositivo_filtrados(request)
+    resumo = eventos.values("tipo", "status").annotate(total=Count("id")).order_by("tipo", "status")
+    pagina = Paginator(eventos, 50).get_page(request.GET.get("page"))
+    query = request.GET.copy()
+    query.pop("page", None)
+    return render(
+        request,
+        "configuracoes/terminais_pdv_diagnosticos.html",
+        {
+            "pagina": pagina,
+            "filtros": filtros,
+            "query_sem_pagina": query.urlencode(),
+            "terminais": TerminalPdv.objects.select_related("filial").order_by("filial__nome", "nome"),
+            "tipos": EventoDispositivoTerminal.objects.exclude(tipo="").values_list("tipo", flat=True).distinct().order_by("tipo"),
+            "status_opcoes": EventoDispositivoTerminal.objects.exclude(status="").values_list("status", flat=True).distinct().order_by("status"),
+            "resumo": resumo,
+            "total": eventos.count(),
+        },
+    )
+
+
+@login_required
+@role_required(*SISTEMA)
+def terminais_pdv_diagnosticos_csv(request):
+    eventos, _ = _eventos_dispositivo_filtrados(request)
+    response = HttpResponse(content_type="text/csv; charset=utf-8")
+    response["Content-Disposition"] = 'attachment; filename="diagnosticos_terminais_pdv.csv"'
+    response.write("\ufeff")
+    writer = csv.writer(response, delimiter=";")
+    writer.writerow(["Recebido", "Ocorrido no caixa", "Empresa", "Filial", "Terminal", "Identificador", "Tipo", "Status", "Mensagem"])
+    for evento in eventos:
+        writer.writerow([
+            timezone.localtime(evento.recebido_em).strftime("%d/%m/%Y %H:%M:%S"),
+            timezone.localtime(evento.ocorrido_em).strftime("%d/%m/%Y %H:%M:%S") if evento.ocorrido_em else "",
+            evento.terminal.filial.empresa.nome_fantasia,
+            evento.terminal.filial.nome,
+            evento.terminal.nome,
+            evento.terminal.identificador,
+            evento.tipo,
+            evento.status,
+            evento.mensagem,
+        ])
+    return response
+
+
 @login_required
 @role_required(*SISTEMA)
 def terminal_pdv_form(request, pk=None):
     terminal = get_object_or_404(TerminalPdv, pk=pk) if pk else None
+    politica_anterior = (
+        terminal.canal_atualizacao,
+        terminal.bloquear_atualizacoes,
+    ) if terminal else None
     form = TerminalPdvForm(request.POST or None, instance=terminal)
+    if not _usuario_admin_master(request.user):
+        form.fields["canal_atualizacao"].disabled = True
+        form.fields["bloquear_atualizacoes"].disabled = True
     if request.method == "POST" and form.is_valid():
         terminal_anterior = terminal
         terminal = form.save(commit=False)
@@ -1380,6 +1762,8 @@ def terminal_pdv_form(request, pk=None):
                 terminal.licenca_liberada_em = terminal_anterior.licenca_liberada_em
                 terminal.licenca_liberada_por = terminal_anterior.licenca_liberada_por
                 terminal.observacao_licenca = terminal_anterior.observacao_licenca
+                terminal.canal_atualizacao = politica_anterior[0]
+                terminal.bloquear_atualizacoes = politica_anterior[1]
             else:
                 terminal.status_licenca = StatusLicencaTerminal.PENDENTE
                 terminal.observacao_licenca = "Aguardando liberacao do admin master."
@@ -1390,6 +1774,21 @@ def terminal_pdv_form(request, pk=None):
         if not terminal.chave_api_hash:
             chave_nova = terminal.gerar_chave_api()
         terminal.save()
+        politica_atual = (terminal.canal_atualizacao, terminal.bloquear_atualizacoes)
+        if politica_anterior != politica_atual and _usuario_admin_master(request.user):
+            LogAuditoria.objects.create(
+                usuario=request.user,
+                modulo="configuracoes",
+                acao="POLITICA_ATUALIZACAO_TERMINAL_PDV",
+                descricao=(
+                    f"Politica de atualizacao do terminal {terminal.nome}: "
+                    f"canal {terminal.get_canal_atualizacao_display()}, "
+                    f"congelada {'sim' if terminal.bloquear_atualizacoes else 'nao'}."
+                ),
+                objeto_tipo="TerminalPdv",
+                objeto_id=str(terminal.pk),
+                ip=request.META.get("REMOTE_ADDR"),
+            )
         if chave_nova:
             request.session["terminal_pdv_chave_nova"] = {
                 "terminal": terminal.nome,
@@ -1624,6 +2023,15 @@ def impressoes_desktop(request):
         "filial_id",
         "tipo_documento",
     )
+    resumo = {
+        "total": configuracoes.count(),
+        "com_impressora": 0,
+        "sem_impressora": 0,
+        "etiquetas": 0,
+        "etiquetas_com_linguagem_nativa": 0,
+        "modelos_profissionais": 0,
+    }
+    alertas = []
     payload = []
     for config in configuracoes:
         impressora_padrao = (config.impressora_padrao or "").strip()
@@ -1634,6 +2042,20 @@ def impressoes_desktop(request):
                 f"{config.get_tipo_documento_display()} sem impressora padrão definida. "
                 "Configure a impressora da máquina antes de usar impressão direta no app desktop."
             )
+        modelos_ativos = [modelo for modelo in config.modelos_etiqueta.all() if modelo.is_active]
+        resumo["com_impressora" if impressora_configurada else "sem_impressora"] += 1
+        if mensagem_impressora:
+            alertas.append(mensagem_impressora)
+        if config.tipo_documento == TipoDocumentoImpressao.ETIQUETA:
+            resumo["etiquetas"] += 1
+            if config.linguagem_impressora:
+                resumo["etiquetas_com_linguagem_nativa"] += 1
+            else:
+                alertas.append("Configuracao de etiqueta sem linguagem nativa de impressora.")
+            if modelos_ativos:
+                resumo["modelos_profissionais"] += len(modelos_ativos)
+            else:
+                alertas.append("Configuracao de etiqueta sem modelo profissional ativo.")
         payload.append(
             {
                 "id": config.id,
@@ -1674,8 +2096,7 @@ def impressoes_desktop(request):
                             "orientacao": modelo.orientacao,
                             "padrao": modelo.padrao,
                         }
-                        for modelo in config.modelos_etiqueta.all()
-                        if modelo.is_active
+                        for modelo in modelos_ativos
                     ],
                 },
                 "gaveta": {
@@ -1686,10 +2107,29 @@ def impressoes_desktop(request):
                 },
             }
         )
+    alertas_unicos = list(dict.fromkeys(alertas))
+    if resumo["sem_impressora"]:
+        status_prontidao = "Atencao"
+        percentual = 75
+    elif alertas_unicos:
+        status_prontidao = "Pronta com ressalvas"
+        percentual = 88
+    else:
+        status_prontidao = "Pronta"
+        percentual = 100
+    prontidao = {
+        "contrato": "print_readiness_v1",
+        "status": status_prontidao,
+        "percentual": percentual,
+        "alertas": alertas_unicos,
+        "resumo": resumo,
+        "proximo_passo": alertas_unicos[0] if alertas_unicos else "Impressoes preparadas para o app desktop local.",
+    }
     return JsonResponse(
         {
             "status": "ok",
             "mensagem": "Configuracoes preparadas para sincronizacao com o app desktop local.",
+            "prontidao": prontidao,
             "configuracoes": payload,
         }
     )

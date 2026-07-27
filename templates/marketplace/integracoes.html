@@ -1,31 +1,32 @@
 {% extends "base.html" %}
-{% block title %}Integracoes de marketplace{% endblock %}
+{% block title %}Integrações de marketplace{% endblock %}
 {% block content %}
 <header class="page-header">
-  <div><h1>Integracoes de marketplace</h1><p>Chaves para recebimento seguro, idempotente e rastreavel de pedidos externos.</p></div>
+  <div><h1>Integrações de marketplace</h1><p>Chaves para recebimento seguro, idempotente e rastreável de pedidos externos.</p></div>
   <div class="actions">
-    <a class="secondary-button" href="{% url 'marketplace:integracoes_diagnostico' %}"><i class="fa-solid fa-code"></i> Diagnostico JSON</a>
+    <a class="secondary-button" href="{% url 'marketplace:integracoes_diagnostico' %}"><i class="fa-solid fa-code"></i> Diagnóstico JSON</a>
     <a class="secondary-button" href="{% url 'marketplace:pedidos' %}">Pedidos</a>
-    <a class="primary-button" href="{% url 'marketplace:nova_integracao' %}"><i class="fa-solid fa-plus"></i> Nova integracao</a>
+    <a class="primary-button" href="{% url 'marketplace:nova_integracao' %}"><i class="fa-solid fa-plus"></i> Nova integração</a>
   </div>
 </header>
 {% if novo_token %}
-<section class="panel"><div class="panel-title">Nova chave: guarde agora</div><p>Este valor nao sera exibido novamente.</p><input type="text" value="{{ novo_token }}" readonly onclick="this.select()"></section>
+<section class="panel"><div class="panel-title">Nova chave: guarde agora</div><p>Este valor nao será exibido novamente.</p><input type="text" value="{{ novo_token }}" readonly onclick="this.select()"></section>
 {% endif %}
 
 <section class="metrics-grid">
-  <article class="metric"><span>Integracoes</span><strong>{{ diagnostico.resumo.integracoes }}</strong><small>{{ diagnostico.resumo.ativas }} ativa(s)</small></article>
+  <article class="metric"><span>Integrações</span><strong>{{ diagnostico.resumo.integracoes }}</strong><small>{{ diagnostico.resumo.ativas }} ativa(s)</small></article>
   <article class="metric"><span>Pedidos recebidos</span><strong>{{ diagnostico.resumo.pedidos_recebidos }}</strong><small>via API/parceiros</small></article>
-  <article class="metric"><span>Pedidos abertos</span><strong>{{ diagnostico.resumo.pedidos_abertos }}</strong><small>em separacao ou entrega</small></article>
-  <article class="metric"><span>Pagamentos pendentes</span><strong>{{ diagnostico.resumo.pagamentos_pendentes }}</strong><small>exigem conferencia</small></article>
+  <article class="metric"><span>Pedidos abertos</span><strong>{{ diagnostico.resumo.pedidos_abertos }}</strong><small>em separação ou entrega</small></article>
+  <article class="metric"><span>Pagamentos pendentes</span><strong>{{ diagnostico.resumo.pagamentos_pendentes }}</strong><small>exigem conferência</small></article>
   <article class="metric"><span>Alertas</span><strong>{{ diagnostico.resumo.alertas }}</strong><small>operacionais</small></article>
+  <article class="metric"><span>Prontas para homologação</span><strong>{{ diagnostico.resumo.prontas_homologacao }}</strong><small>{{ diagnostico.resumo.com_bloqueio }} bloqueada(s)</small></article>
 </section>
 
 {% if diagnostico.alertas %}
 <section class="operation-notice operation-notice-warning">
   <i class="fa-solid fa-triangle-exclamation"></i>
   <div>
-    <strong>Existem alertas nas integracoes.</strong>
+    <strong>Existem alertas nas integrações.</strong>
     <span>Revise chaves nunca usadas, canais inativos e pedidos com pagamento pendente antes de homologar novos parceiros.</span>
   </div>
 </section>
@@ -35,11 +36,11 @@
   <div class="panel-heading">
     <div>
       <h2>Canais conectados</h2>
-      <p>Monitore uso, pedidos e pendencias antes de liberar uma plataforma em producao.</p>
+      <p>Monitore uso, pedidos e pendências antes de liberar uma plataforma em produção.</p>
     </div>
   </div>
   <table>
-    <thead><tr><th>Nome</th><th>Filial</th><th>Prefixo</th><th>Ultimo uso</th><th>Pedidos</th><th>Pendencias</th><th>Status</th><th></th></tr></thead>
+    <thead><tr><th>Nome</th><th>Filial</th><th>Prefixo</th><th>Último uso</th><th>Pedidos</th><th>Pendencias</th><th>Status</th><th></th></tr></thead>
     <tbody>
       {% for integracao in integracoes %}
         <tr>
@@ -48,6 +49,10 @@
           <td>{{ integracao.token_prefixo }}...</td>
           <td>{{ integracao.ultimo_uso_em|date:"d/m/Y H:i"|default:"Nunca" }}</td>
           <td>{{ integracao.total_pedidos }} total / {{ integracao.pedidos_abertos }} aberto(s)</td>
+          <td>
+            <span class="status {% if integracao.prontidao_operacional.status == 'Pronta para homologação' %}status-success{% elif integracao.prontidao_operacional.status == 'Bloqueada' %}status-danger{% else %}status-warning{% endif %}">{{ integracao.prontidao_operacional.status }}</span>
+            <br><small>{{ integracao.prontidao_operacional.percentual }}% - {{ integracao.prontidao_operacional.proximo_passo }}</small>
+          </td>
           <td>
             {% if integracao.alertas_operacionais %}
               {% for alerta in integracao.alertas_operacionais %}
@@ -61,7 +66,7 @@
           <td><form method="post" action="{% url 'marketplace:renovar_token' integracao.pk %}" class="form-confirm" data-msg="Renovar a chave e invalidar a anterior?">{% csrf_token %}<button class="secondary-button" type="submit"><i class="fa-solid fa-rotate"></i> Renovar</button></form></td>
         </tr>
       {% empty %}
-        <tr><td colspan="8" class="empty">Nenhuma integracao cadastrada.</td></tr>
+        <tr><td colspan="9" class="empty">Nenhuma integração cadastrada.</td></tr>
       {% endfor %}
     </tbody>
   </table>

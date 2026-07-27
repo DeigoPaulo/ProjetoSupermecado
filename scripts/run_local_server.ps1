@@ -2,7 +2,8 @@ param(
     [string]$Bind = "127.0.0.1",
     [int]$Port = 8000,
     [switch]$CollectStatic,
-    [switch]$NoMigrate
+    [switch]$NoMigrate,
+    [switch]$Development
 )
 
 $ErrorActionPreference = "Stop"
@@ -35,4 +36,9 @@ $Listen = "$Bind`:$Port"
 Write-Host "Servidor local administrativo em http://$Listen/"
 Write-Host "Use 127.0.0.1 para uso na propria maquina ou o IP da rede interna para outros computadores."
 
-& $Python $Manage runserver $Listen
+if ($Development) {
+    Write-Warning "Modo de desenvolvimento ativo. Nao use o runserver em uma loja real."
+    & $Python $Manage runserver $Listen
+} else {
+    & $Python -m waitress --listen=$Listen config.wsgi:application
+}

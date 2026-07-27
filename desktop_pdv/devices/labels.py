@@ -38,12 +38,31 @@ def _preco(valor: object) -> str:
 def _validar_payload(payload: dict) -> tuple[dict, list[dict], int]:
     if not isinstance(payload, dict):
         raise ErroImpressao("Payload de etiquetas invalido.")
+    if payload.get("contrato") != "label_print_v1":
+        raise ErroImpressao("Contrato de etiquetas ausente ou incompatível.")
     modelo = payload.get("modelo") or {}
     itens = payload.get("itens") or []
     if not isinstance(modelo, dict) or not isinstance(itens, list) or not itens:
         raise ErroImpressao("Informe modelo e ao menos um item para imprimir etiquetas.")
+    if len(itens) > 500:
+        raise ErroImpressao("O lote excede o limite de 500 produtos.")
+    total_copias = 0
+    for item in itens:
+        if not isinstance(item, dict):
+            raise ErroImpressao("Item de etiqueta invalido.")
+        if not _ascii(item.get("codigo"), 40):
+            raise ErroImpressao("Todo item deve possuir codigo de barras ou SKU.")
+        try:
+            copias = int(item.get("copias") or 1)
+        except (TypeError, ValueError) as erro:
+            raise ErroImpressao("Quantidade de copias invalida.") from erro
+        if copias < 1 or copias > 100:
+            raise ErroImpressao("Cada produto permite entre 1 e 100 copias por lote.")
+        total_copias += copias
+    if total_copias > 2000:
+        raise ErroImpressao("O lote excede o limite operacional de 2.000 etiquetas.")
     dpi = _inteiro(payload.get("dpi"), 203, 100, 1200)
-    return modelo, itens[:500], dpi
+    return modelo, itens, dpi
 
 
 def montar_etiquetas_zpl(payload: dict) -> bytes:

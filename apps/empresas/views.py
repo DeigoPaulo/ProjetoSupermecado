@@ -20,9 +20,11 @@ from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.http import require_GET, require_POST
 
 from apps.accounts.permissions import CLIENTES, COMPRAS, ESTOQUE, PDV, RELATORIOS, SISTEMA, role_required
+from apps.auditoria.models import LogAuditoria
 
 from .forms import EmpresaForm, FilialForm
-from .models import DocumentoFiscalSincronizado, Empresa, EventoEntradaSincronizacao, EventoSincronizacao, Filial, PoliticaConflitoSincronizacao, StatusEventoEntrada, StatusSincronizacao, VendaSincronizada
+from .models import DocumentoFiscalSincronizado, Empresa, EventoEntradaSincronizacao, EventoSincronizacao, Filial, ModoImplantacao, PoliticaConflitoSincronizacao, StatusEventoEntrada, StatusSincronizacao, VendaSincronizada
+from .services_snapshots import gerar_carga_inicial_sincronizacao
 
 
 def _apenas_digitos(valor):
@@ -378,6 +380,84 @@ def consulta_cadastro_placeholder(request):
     )
 
 
+@login_required
+@role_required(*SISTEMA)
+def consulta_cadastro_diagnostico(request):
+    provider_cnpj = getattr(settings, "CADASTRO_CNPJ_PROVIDER_URL", "")
+    provider_cep = getattr(settings, "CADASTRO_CEP_PROVIDER_URL", "")
+    timeout = getattr(settings, "CADASTRO_LOOKUP_TIMEOUT_SEGUNDOS", 5)
+    cnpj_configurado = bool(provider_cnpj)
+    cep_configurado = bool(provider_cep)
+    alertas = []
+    if not cnpj_configurado:
+        alertas.append("CNPJ opera em validação formal e fallback local até configurar um provedor externo homologado.")
+    if not cep_configurado:
+        alertas.append("CEP opera em fallback local/manual até configurar um provedor externo homologado.")
+
+    provedores_configurados = int(cnpj_configurado) + int(cep_configurado)
+    if provedores_configurados == 2:
+        prontidao_status = "ready_for_provider_homologation"
+        prontidao_resumo = "CNPJ e CEP possuem provedores configurados e mantêm fallback local."
+        recomendacoes = [
+            "Homologar disponibilidade, limites, formato das respostas e tratamento de falhas dos provedores configurados.",
+        ]
+    elif provedores_configurados == 1:
+        prontidao_status = "partially_configured"
+        prontidao_resumo = "Somente uma das consultas possui provedor externo; a outra continua em fallback local/manual."
+        recomendacoes = [
+            "Configurar e homologar o provedor que ainda está pendente.",
+            "Manter o fallback local para indisponibilidade do serviço externo.",
+        ]
+    else:
+        prontidao_status = "local_fallback_only"
+        prontidao_resumo = "As consultas funcionam com validação e dados locais, sem preenchimento público externo."
+        recomendacoes = [
+            "Escolher provedores de produção para CNPJ e CEP.",
+            "Homologar disponibilidade, limites, formato das respostas e tratamento de falhas.",
+        ]
+
+    payload = {
+        "contrato": "cadastro_lookup_v1",
+        "status": "ready_with_external_provider" if cnpj_configurado and cep_configurado else "ready_with_local_fallback",
+        "prontidao": {
+            "contrato": "cadastro_lookup_readiness_v1",
+            "status": prontidao_status,
+            "provedores_configurados": provedores_configurados,
+            "provedores_necessarios": 2,
+            "fallback_local_disponivel": True,
+            "resumo": prontidao_resumo,
+            "recomendacoes": recomendacoes,
+        },
+        "provedores": {
+            "cnpj_configurado": cnpj_configurado,
+            "cep_configurado": cep_configurado,
+            "timeout_segundos": timeout,
+            "modo_operacao": "externo_com_fallback_local" if cnpj_configurado or cep_configurado else "local_offline",
+        },
+        "fallback_local": True,
+        "consultas": {
+            "cnpj": {
+                "validacao": "calculo_digitos_verificadores",
+                "mascara": "00.000.000/0000-00",
+                "provedor_configurado": cnpj_configurado,
+            },
+            "cep": {
+                "validacao": "8_digitos",
+                "mascara": "00000-000",
+                "provedor_configurado": cep_configurado,
+            },
+        },
+        "base_local": {
+            "empresas_com_cnpj": Empresa.objects.exclude(cnpj="").count(),
+            "filiais_com_cnpj": Filial.objects.exclude(cnpj="").count(),
+            "empresas_com_endereco": Empresa.objects.exclude(endereco="").count(),
+            "filiais_com_endereco": Filial.objects.exclude(endereco="").count(),
+        },
+        "alertas": alertas,
+    }
+    return JsonResponse(payload)
+
+
 def _sincronizacao_querysets(request):
     q = request.GET.get("q", "").strip()
     empresa_id = request.GET.get("empresa", "").strip()
@@ -438,6 +518,72 @@ def _sincronizacao_querysets(request):
     }
 
 
+def _prontidao_sincronizacao_payload(empresas_qs, saida, entrada, esgotados_saida):
+    empresas_sync = empresas_qs.exclude(modo_implantacao=ModoImplantacao.LOCAL)
+    empresas_sync_automaticas = empresas_sync.filter(sincronizacao_automatica=True)
+    empresas_sync_sem_url = empresas_sync_automaticas.filter(url_sincronizacao="").count()
+    empresas_sync_url_insegura = sum(
+        1 for url in empresas_sync_automaticas.exclude(url_sincronizacao="").values_list("url_sincronizacao", flat=True) if not url.lower().startswith("https://")
+    )
+    pendencias_saida = saida.get(StatusSincronizacao.PENDENTE, 0) + saida.get(StatusSincronizacao.ERRO, 0)
+    pendencias_entrada = entrada.get(StatusEventoEntrada.RECEBIDO, 0) + entrada.get(StatusEventoEntrada.ERRO, 0) + entrada.get(StatusEventoEntrada.CONFLITO, 0)
+    conflitos = entrada.get(StatusEventoEntrada.CONFLITO, 0)
+    token_configurado = bool(settings.SINCRONIZACAO_API_TOKEN)
+    bloqueios = []
+    recomendacoes = []
+    if empresas_sync_automaticas.exists() and not token_configurado:
+        bloqueios.append("Configure SINCRONIZACAO_API_TOKEN no servidor que processa a fila.")
+    if empresas_sync_sem_url:
+        bloqueios.append(f"{empresas_sync_sem_url} empresa(s) hibrida/nuvem estao sem URL de sincronizacao.")
+    if empresas_sync_url_insegura:
+        bloqueios.append(f"{empresas_sync_url_insegura} empresa(s) estao com URL de sincronizacao sem HTTPS.")
+    if esgotados_saida:
+        bloqueios.append(f"{esgotados_saida} evento(s) de saida esgotaram tentativas automaticas.")
+    if conflitos:
+        recomendacoes.append(f"Resolver {conflitos} conflito(s) de entrada antes de considerar a loja sincronizada.")
+    if pendencias_saida or pendencias_entrada:
+        recomendacoes.append("Manter o processador processar_sincronizacao_completa agendado no servidor local.")
+    if not empresas_sync.exists():
+        status = "Local puro"
+        percentual = 100
+        proximo_passo = "Operacao local liberada; sincronizacao com nuvem nao esta habilitada para as empresas filtradas."
+    elif bloqueios:
+        status = "Bloqueada"
+        percentual = 45
+        proximo_passo = bloqueios[0]
+    elif recomendacoes:
+        status = "Atencao"
+        percentual = 80
+        proximo_passo = recomendacoes[0]
+    else:
+        status = "Pronta"
+        percentual = 100
+        proximo_passo = "Sincronizacao pronta para operacao assistida local/nuvem."
+    return {
+        "contrato": "sync_readiness_v1",
+        "status": status,
+        "percentual": percentual,
+        "token_configurado": token_configurado,
+        "empresas": {
+            "local": empresas_qs.filter(modo_implantacao=ModoImplantacao.LOCAL).count(),
+            "hibrido": empresas_qs.filter(modo_implantacao=ModoImplantacao.HIBRIDO).count(),
+            "nuvem_agente": empresas_qs.filter(modo_implantacao=ModoImplantacao.NUVEM_AGENTE).count(),
+            "sincronizacao_automatica": empresas_sync_automaticas.count(),
+            "sem_url": empresas_sync_sem_url,
+            "url_insegura": empresas_sync_url_insegura,
+        },
+        "filas": {
+            "saida_pendente_ou_erro": pendencias_saida,
+            "entrada_pendente_erro_ou_conflito": pendencias_entrada,
+            "conflitos": conflitos,
+            "saida_esgotada": esgotados_saida,
+        },
+        "bloqueios": bloqueios,
+        "recomendacoes": recomendacoes,
+        "proximo_passo": proximo_passo,
+    }
+
+
 def _sincronizacao_diagnostico_payload(request):
     dados = _sincronizacao_querysets(request)
     eventos_qs = dados["eventos_qs"]
@@ -485,6 +631,7 @@ def _sincronizacao_diagnostico_payload(request):
 
     proxima_saida = eventos_qs.filter(status__in=[StatusSincronizacao.PENDENTE, StatusSincronizacao.ERRO]).order_by("proxima_tentativa_em", "criado_em").first()
     proxima_entrada = eventos_entrada_qs.filter(status__in=[StatusEventoEntrada.RECEBIDO, StatusEventoEntrada.ERRO, StatusEventoEntrada.CONFLITO]).order_by("recebido_em").first()
+    prontidao = _prontidao_sincronizacao_payload(empresas_ativas_qs, saida, entrada, esgotados_saida)
     return {
         "status": "ok",
         "gerado_em": timezone.localtime().isoformat(),
@@ -529,6 +676,7 @@ def _sincronizacao_diagnostico_payload(request):
             "alertas": alertas,
             "pronto": not alertas,
         },
+        "prontidao": prontidao,
     }
 
 
@@ -563,6 +711,16 @@ def sincronizacao(request):
         "documentos_fiscais_sincronizados": documentos_fiscais,
         "empresas_opcoes": Empresa.objects.filter(is_active=True).order_by("nome_fantasia"),
         "filiais_opcoes": Filial.objects.filter(is_active=True).select_related("empresa").order_by("empresa__nome_fantasia", "nome"),
+        "empresas_carga_opcoes": Empresa.objects.filter(is_active=True, sincronizacao_automatica=True).exclude(
+            modo_implantacao=ModoImplantacao.LOCAL
+        ).order_by("nome_fantasia"),
+        "filiais_carga_opcoes": Filial.objects.filter(
+            is_active=True,
+            empresa__is_active=True,
+            empresa__sincronizacao_automatica=True,
+        ).exclude(empresa__modo_implantacao=ModoImplantacao.LOCAL).select_related("empresa").order_by(
+            "empresa__nome_fantasia", "nome"
+        ),
         "status_entrada_opcoes": StatusEventoEntrada.choices,
         "filtros": dados["filtros"],
         "pendentes": contagens.get(StatusSincronizacao.PENDENTE, 0),
@@ -585,6 +743,55 @@ def sincronizacao(request):
     return render(request, "empresas/sincronizacao.html", context)
 
 
+@login_required
+@role_required(*SISTEMA)
+@require_POST
+def sincronizacao_carga_inicial(request):
+    empresa_id = request.POST.get("empresa", "").strip()
+    if not empresa_id.isdigit():
+        messages.error(request, "Selecione uma empresa valida.")
+        return redirect("empresas:sincronizacao")
+    empresa = get_object_or_404(Empresa, pk=empresa_id)
+    filial_id = request.POST.get("filial", "").strip()
+    filial = None
+    if filial_id:
+        if not filial_id.isdigit():
+            messages.error(request, "Selecione uma filial valida.")
+            return redirect("empresas:sincronizacao")
+        filial = get_object_or_404(Filial, pk=filial_id, empresa=empresa)
+
+    try:
+        resultado = gerar_carga_inicial_sincronizacao(
+            empresa=empresa,
+            filial=filial,
+            limite=request.POST.get("limite", 5000),
+        )
+    except ValueError as exc:
+        messages.error(request, str(exc))
+        return redirect("empresas:sincronizacao")
+
+    destino = f"filial {filial.nome}" if filial else "todas as filiais"
+    LogAuditoria.objects.create(
+        usuario=request.user,
+        modulo="sincronizacao",
+        acao="GERA_CARGA_INICIAL_SINCRONIZACAO",
+        descricao=(
+            f"Carga inicial de {empresa.nome_fantasia} para {destino}: "
+            f"{resultado['estoques_processados']} saldos processados, "
+            f"{resultado['produtos_criados']} produtos e "
+            f"{resultado['saldos_criados']} saldos novos na fila."
+        ),
+        objeto_tipo="Filial" if filial else "Empresa",
+        objeto_id=str(filial.pk if filial else empresa.pk),
+        ip=request.META.get("REMOTE_ADDR"),
+    )
+    messages.success(
+        request,
+        "Carga inicial processada: "
+        f"{resultado['produtos_criados']} produto(s) e "
+        f"{resultado['saldos_criados']} saldo(s) novo(s) na fila.",
+    )
+    return redirect("empresas:sincronizacao")
 @login_required
 @role_required(*SISTEMA)
 def sincronizacao_diagnostico(request):
@@ -810,6 +1017,15 @@ def sincronizacao_entrada_resolver_conflito(request, pk):
             evento.resolvido_por = request.user
             evento.resolvido_em = timezone.now()
             evento.save(update_fields=["status", "resolucao_conflito", "resolvido_por", "resolvido_em", "atualizado_em"])
+            LogAuditoria.objects.create(
+                usuario=request.user,
+                modulo="sincronizacao",
+                acao="RESOLVE_CONFLITO_SINCRONIZACAO",
+                descricao=f"Conflito do evento de entrada {evento.identificador} resolvido: {resolucao}",
+                objeto_tipo="EventoEntradaSincronizacao",
+                objeto_id=str(evento.pk),
+                ip=request.META.get("REMOTE_ADDR"),
+            )
             messages.success(request, "Conflito marcado como resolvido manualmente.")
     return redirect("empresas:evento_entrada_sincronizacao_detalhe", pk=pk)
 
@@ -824,6 +1040,15 @@ def sincronizacao_reprocessar(request, pk):
         evento.proxima_tentativa_em = None
         evento.ultimo_erro = ""
         evento.save(update_fields=["status", "tentativas", "proxima_tentativa_em", "ultimo_erro", "atualizado_em"])
+        LogAuditoria.objects.create(
+            usuario=request.user,
+            modulo="sincronizacao",
+            acao="REPROCESSA_SINCRONIZACAO_SAIDA",
+            descricao=f"Evento de saida {evento.identificador} devolvido para a fila.",
+            objeto_tipo="EventoSincronizacao",
+            objeto_id=str(evento.pk),
+            ip=request.META.get("REMOTE_ADDR"),
+        )
         messages.success(request, "Evento devolvido para a fila de sincronizacao.")
     return redirect("empresas:sincronizacao")
 
@@ -838,6 +1063,15 @@ def sincronizacao_entrada_reprocessar(request, pk):
             evento.ultimo_erro = ""
             evento.processado_em = None
             evento.save(update_fields=["status", "ultimo_erro", "processado_em", "atualizado_em"])
+            LogAuditoria.objects.create(
+                usuario=request.user,
+                modulo="sincronizacao",
+                acao="REPROCESSA_SINCRONIZACAO_ENTRADA",
+                descricao=f"Evento de entrada {evento.identificador} devolvido para processamento.",
+                objeto_tipo="EventoEntradaSincronizacao",
+                objeto_id=str(evento.pk),
+                ip=request.META.get("REMOTE_ADDR"),
+            )
             messages.success(request, "Evento de entrada devolvido para processamento.")
         else:
             messages.warning(request, "Apenas eventos de entrada com erro ou conflito podem ser reprocessados.")

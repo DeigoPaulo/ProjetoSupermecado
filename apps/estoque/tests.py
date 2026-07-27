@@ -44,9 +44,10 @@ from apps.estoque.services import (
     confirmar_desmembramento_multidestino,
     confirmar_desmembramento_simples,
     confirmar_producao_composicao,
+    simular_desmembramento_multidestino,
     simular_desmembramento_simples,
 )
-from apps.produtos.models import Categoria, Produto
+from apps.produtos.models import Categoria, Produto, UnidadeMedida
 
 
 class EstoqueViewsTests(TestCase):
@@ -1248,8 +1249,131 @@ class EstoqueViewsTests(TestCase):
         self.assertTrue(previa["estoque_suficiente"])
         self.assertEqual(previa["saldo_origem_apos"], Decimal("1.000"))
         self.assertEqual(previa["custo_unitario_destino"], Decimal("0.10"))
+        self.assertFalse(previa["conservacao_massa_aplicada"])
         self.assertEqual(DesmembramentoProduto.objects.count(), 0)
         self.assertEqual(MovimentacaoEstoque.objects.count(), 0)
+
+    def test_desmembramento_acougue_em_kg_bloqueia_destinos_acima_da_origem(self):
+        self.produto.unidade = UnidadeMedida.QUILO
+        self.produto.save(update_fields=["unidade"])
+        destino_a = Produto.objects.create(
+            codigo_barras="7894545454501",
+            nome="Corte bovino A",
+            categoria=self.categoria,
+            unidade=UnidadeMedida.QUILO,
+            preco_custo="0.00",
+            preco_venda="20.00",
+        )
+        destino_b = Produto.objects.create(
+            codigo_barras="7894545454502",
+            nome="Corte bovino B",
+            categoria=self.categoria,
+            unidade=UnidadeMedida.QUILO,
+            preco_custo="0.00",
+            preco_venda="15.00",
+        )
+        Estoque.objects.create(produto=self.produto, filial=self.filial, quantidade_atual=Decimal("10.000"))
+        destinos = [
+            {"produto": destino_a, "quantidade": Decimal("3.500")},
+            {"produto": destino_b, "quantidade": Decimal("1.501")},
+        ]
+
+        previa = simular_desmembramento_multidestino(
+            filial=self.filial,
+            produto_origem=self.produto,
+            quantidade_origem=Decimal("5.000"),
+            destinos=destinos,
+            tipo=TipoDesmembramentoProduto.ACOUGUE,
+        )
+
+        self.assertTrue(previa["conservacao_massa_aplicada"])
+        self.assertFalse(previa["conservacao_massa_valida"])
+        self.assertEqual(previa["excesso_quantidade"], Decimal("0.001"))
+        self.assertEqual(previa["rendimento_total"], Decimal("100.02"))
+        with self.assertRaisesMessage(ValidationError, "Conservacao de massa invalida"):
+            confirmar_desmembramento_multidestino(
+                filial=self.filial,
+                produto_origem=self.produto,
+                quantidade_origem=Decimal("5.000"),
+                destinos=destinos,
+                usuario=self.user,
+                motivo="Teste de massa",
+                tipo=TipoDesmembramentoProduto.ACOUGUE,
+            )
+
+        self.assertEqual(DesmembramentoProduto.objects.count(), 0)
+        self.assertEqual(MovimentacaoEstoque.objects.count(), 0)
+        self.assertEqual(
+            Estoque.objects.get(produto=self.produto, filial=self.filial).quantidade_atual,
+            Decimal("10.000"),
+        )
+
+    def test_desmembramento_em_kg_exige_classificar_diferenca_como_perda(self):
+        self.produto.unidade = UnidadeMedida.QUILO
+        self.produto.save(update_fields=["unidade"])
+        destino = Produto.objects.create(
+            codigo_barras="7894545454503",
+            nome="Corte aproveitavel",
+            categoria=self.categoria,
+            unidade=UnidadeMedida.QUILO,
+            preco_custo="0.00",
+            preco_venda="25.00",
+        )
+        descarte = Produto.objects.create(
+            codigo_barras="7894545454504",
+            nome="Apara para descarte",
+            categoria=self.categoria,
+            unidade=UnidadeMedida.QUILO,
+            preco_custo="0.00",
+            preco_venda="0.00",
+        )
+        Estoque.objects.create(produto=self.produto, filial=self.filial, quantidade_atual=Decimal("10.000"))
+        destino_vendavel = {"produto": destino, "quantidade": Decimal("4.500")}
+
+        previa = simular_desmembramento_multidestino(
+            filial=self.filial,
+            produto_origem=self.produto,
+            quantidade_origem=Decimal("5.000"),
+            destinos=[destino_vendavel],
+            tipo=TipoDesmembramentoProduto.HORTIFRUTI,
+        )
+
+        self.assertFalse(previa["conservacao_massa_valida"])
+        self.assertEqual(previa["quantidade_nao_classificada"], Decimal("0.500"))
+        with self.assertRaisesMessage(ValidationError, "Quantidade nao classificada: 0.500 KG"):
+            confirmar_desmembramento_multidestino(
+                filial=self.filial,
+                produto_origem=self.produto,
+                quantidade_origem=Decimal("5.000"),
+                destinos=[destino_vendavel],
+                usuario=self.user,
+                motivo="Teste sem perda classificada",
+                tipo=TipoDesmembramentoProduto.HORTIFRUTI,
+            )
+
+        desmembramento = confirmar_desmembramento_multidestino(
+            filial=self.filial,
+            produto_origem=self.produto,
+            quantidade_origem=Decimal("5.000"),
+            destinos=[
+                destino_vendavel,
+                {
+                    "produto": descarte,
+                    "quantidade": Decimal("0.500"),
+                    "tipo_saida": TipoSaidaDesmembramento.PERDA,
+                },
+            ],
+            usuario=self.user,
+            motivo="Teste com perda classificada",
+            tipo=TipoDesmembramentoProduto.HORTIFRUTI,
+        )
+
+        self.assertEqual(desmembramento.itens.count(), 2)
+        self.assertEqual(desmembramento.itens.filter(tipo_saida=TipoSaidaDesmembramento.PERDA).count(), 1)
+        self.assertEqual(PerdaEstoque.objects.filter(desmembramento_item__desmembramento=desmembramento).count(), 1)
+        self.assertEqual(Estoque.objects.get(produto=destino, filial=self.filial).quantidade_atual, Decimal("4.500"))
+        self.assertFalse(Estoque.objects.filter(produto=descarte, filial=self.filial).exists())
+        self.assertEqual(Estoque.objects.get(produto=self.produto, filial=self.filial).quantidade_atual, Decimal("5.000"))
 
     def test_cancelar_desmembramento_reverte_saldos_e_audita(self):
         destino = Produto.objects.create(
@@ -1411,6 +1535,7 @@ class EstoqueViewsTests(TestCase):
             codigo_barras="7896767676701",
             nome="Corte simulado A",
             categoria=self.categoria,
+            unidade=UnidadeMedida.QUILO,
             preco_custo="0.00",
             preco_venda="12.00",
         )
@@ -1418,9 +1543,12 @@ class EstoqueViewsTests(TestCase):
             codigo_barras="7896767676702",
             nome="Apara simulada",
             categoria=self.categoria,
+            unidade=UnidadeMedida.QUILO,
             preco_custo="0.00",
             preco_venda="4.00",
         )
+        self.produto.unidade = UnidadeMedida.QUILO
+        self.produto.save(update_fields=["unidade"])
         Estoque.objects.create(produto=self.produto, filial=self.filial, quantidade_atual=Decimal("3.000"))
 
         response = self.client.post(
@@ -1453,6 +1581,8 @@ class EstoqueViewsTests(TestCase):
 
         self.assertEqual(response.status_code, 200)
         self.assertContains(response, "Corte simulado A")
+        self.assertContains(response, "Rendimento total")
+        self.assertContains(response, "Conservação de massa conferida")
         self.assertContains(response, "Apara simulada")
         self.assertContains(response, "SUBPRODUTO")
         self.assertContains(response, "LOTE-SIM-A")

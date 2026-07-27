@@ -1,0 +1,18 @@
+<service>
+  <id>MercaFlowServidorLocal</id>
+  <name>MercaFlow Servidor Local</name>
+  <description>Servidor administrativo local do MercaFlow ERP.</description>
+  <executable>__PYTHON__</executable>
+  <arguments>-m waitress --listen=__BIND__:__PORT__ config.wsgi:application</arguments>
+  <workingdirectory>__PROJECT_ROOT__</workingdirectory>
+  <startmode>Automatic</startmode>
+  <stoptimeout>30 sec</stoptimeout>
+  <onfailure action="restart" delay="10 sec" />
+  <resetfailure>1 hour</resetfailure>
+  <hidewindow>true</hidewindow>
+  <logpath>__LOG_PATH__</logpath>
+  <log mode="roll-by-size">
+    <sizeThreshold>10240</sizeThreshold>
+    <keepFiles>14</keepFiles>
+  </log>
+</service>

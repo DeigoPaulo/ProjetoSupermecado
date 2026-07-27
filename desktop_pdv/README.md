@@ -7,15 +7,11 @@ balança e TEF.
 A ponte `window.SupermercadoDesktop.printSale(payload)` imprime venda,
 `window.SupermercadoDesktop.printLabels(payload)` gera etiquetas ZPL, EPL, PPLA
 ou PPLB e envia o lote diretamente ao spooler Windows em modo RAW. A homologacao
-fisica por modelo de impressora continua obrigatoria antes de ativar em producao.
+fisica por modelo de impressora continua obrigatoria antes de ativar em producao. O agente exige o contrato `label_print_v1`, impressora configurada, código de barras ou SKU em todos os itens e limita cada lote a 500 produtos, 100 cópias por produto e 2.000 etiquetas. Sucesso e falha geram evento local `etiquetas` com impressora, linguagem, itens, cópias e bytes para diagnóstico central, sem copiar o conteúdo comercial completo para o log.
 
-A ponte `window.SupermercadoDesktop.processPayment(payload)` representa o TEF. Se
-o terminal não tiver provedor configurado, ela retorna erro para o operador. Se
-houver provedor configurado, o app usa um simulador rastreável durante o
-desenvolvimento, devolvendo transação, NSU e autorização antes de liberar a
-finalização da venda. Cada tentativa de TEF grava um evento local `tef` em
-`devices.log.jsonl`, permitindo que a central do ERP enxergue aprovações, falhas
-e terminais sem maquininha configurada quando o app sincronizar os diagnósticos.
+A ponte `window.SupermercadoDesktop.processPayment(payload)` usa um contrato unico para TEF. O adaptador local configurado em `config.json` recebe pagamento, consulta e estorno, independentemente de o provedor ser SiTef, Cielo, Stone, Getnet, PagBank, Rede ou outro. O driver deve devolver estado, transacao, NSU e autorizacao completos; resposta incompleta ou driver ausente falha de forma fechada e nunca libera a venda.
+
+O adaptador `SIMULADOR` existe somente para desenvolvimento. Ele funciona apenas quando o servidor publica `simulador_permitido=true`, controlado por `PDV_TEF_SIMULATOR_ENABLED`; em producao essa variavel deve permanecer falsa. PIX retorna QR Code pendente e exige consultas ate a confirmacao. Cada tentativa grava eventos locais `tef` ou `tef_estorno` em `devices.log.jsonl`. Drivers reais sao pacotes locais homologados e selecionados no formato `pacote.modulo:fabrica`; credenciais e parametros do fornecedor ficam somente na configuracao protegida da maquina.
 
 A gaveta usa o contrato `pdv_cash_drawer_v1` recebido no bootstrap. A ponte
 `window.SupermercadoDesktop.openCashDrawer(payload)` envia o pulso ESC/POS pela
@@ -34,8 +30,16 @@ Para homologar a tela sem equipamento, use
 gravados em `devices.log.jsonl` na pasta local do terminal e podem ser
 consultados pela ponte `window.SupermercadoDesktop.deviceLogs()`. Na inicialização,
 o app tenta enviar os eventos ainda não sincronizados para
-`/pdv/api/terminal/device-events/`; se o servidor estiver indisponível, o PDV abre
-normalmente e tenta novamente depois.
+`/pdv/api/terminal/device-events/`; se o servidor estiver indisponível, os eventos
+permanecem locais e são reenviados depois da reconexão.
+
+A fila usa o contrato `pdv_device_event_queue_v1`. Cada evento possui ID, os
+lotes seguem do mais antigo ao mais novo e o cursor só avança após confirmação
+integral do servidor. Reenvios são deduplicados por terminal. Quando o histórico
+cresce, a compactação mantém uma janela dos confirmados e todos os pendentes.
+A sincronização continua durante todo o turno em uma thread exclusiva. O intervalo
+padrão é 60 segundos e pode ser ajustado em `diagnostico_sync_interval_seconds`
+entre 15 e 3.600 segundos. A thread para junto com a janela do PDV.
 
 A Central do App expõe `window.SupermercadoDesktop.runDeviceDiagnostics(opcoes)`
 com o contrato `pdv_device_homologation_v1`. O roteiro consolida impressoras,
@@ -53,18 +57,66 @@ confirmação do operador.
 O app valida a licença em `/pdv/api/terminal/bootstrap/` antes de abrir o PDV.
 A ativação é validada antes de ser salva. No Windows, a configuração fica em
 `%LOCALAPPDATA%\SupermercadoPDV\config.json`; para reconfigurar, execute o app
-com `--configurar`. A chave fica apenas na máquina do caixa e não e versionada.
+com `--configurar`. A chave fica apenas na máquina do caixa, protegida pelo DPAPI
+do usuário do Windows, e não é versionada. Configurações antigas com chave em texto
+são migradas automaticamente na primeira abertura; copiar somente o arquivo para outro
+usuário não permite recuperar a credencial. Os parâmetros locais do adaptador TEF em`r`n`tef.configuracao` recebem a mesma proteção e existem em texto apenas na memória do app.
+
+O app mantém uma única instância por identidade de terminal na sessão do Windows.
+Uma segunda abertura do mesmo caixa é bloqueada por mutex nomeado; terminais diferentes
+podem operar na mesma máquina para suporte/homologação e o bloqueio é liberado ao fechar. O modo `--configurar` também respeita o bloqueio da identidade atual.
+### Contingência de conexão
+
+Depois de uma validação online, o app mantém em `bootstrap_cache.json` somente a
+configuração operacional recebida do servidor. Se a rede interna cair, ele não
+abre uma página quebrada e não inicia venda com dados antigos: mostra uma tela
+local de contingência com o terminal identificado e mantém vendas, pagamentos e
+estoque bloqueados. `F5` ou `Enter` tenta validar novamente terminal, licença e
+servidor; somente a resposta aprovada redireciona para `/pdv/`.
+
+O cache autorizado vale 24 horas por padrão. O limite pode ser reduzido ou
+ampliado entre 1 e 168 horas com `offline_cache_max_hours` em `config.json`.
+Cache vencido, ausente ou sem permissão de modo offline bloqueia a inicialização.
+Uma recusa explícita do servidor nunca usa o cache como alternativa.
 
 ## Build Windows
 
+O build usa Python 3.12 para manter compatibilidade com o PyInstaller fixado. Para gerar MSI, a máquina de build precisa também do .NET SDK 8 e do WiX Toolset 4 (dotnet tool install --global wix --version 4.0.6). Esses componentes são necessários somente na máquina que compila, não nos caixas que instalam o aplicativo.
+
 Execute `powershell -ExecutionPolicy Bypass -File .\build_windows.ps1`. O
-executavel sera criado em `dist\SupermercadoPDV.exe`. Assinatura digital e
-geração do instalador MSI ainda fazem parte da etapa de distribuição.
+executavel sera criado em `dist\SupermercadoPDV.exe`.
 
-Depois do build e da assinatura, execute
-`powershell -ExecutionPolicy Bypass -File .\publish_windows.ps1 -Version 0.1.0`.
-O script confere o SHA-256 e publica o arquivo de forma atômica em `artifacts`,
-de onde a central do ERP passa a disponibiliza-lo ao admin master.
+O instalador MSI usa WiX Toolset v4. Para gerar um pacote de desenvolvimento:
 
+```powershell
+.\build_msi.ps1 -Version 0.1.1
+```
+
+Para producao, assine primeiro o executavel e exija a assinatura durante o
+empacotamento. O MSI tambem pode ser assinado no mesmo comando:
+
+```powershell
+.\build_msi.ps1 -Version 0.1.1 `
+  -RequireSignedExecutable `
+  -CertificateThumbprint "CERTIFICADO_SHA1"
+```
+
+O MSI instala por maquina em `Program Files`, cria atalhos no menu Iniciar e na
+area de trabalho, permite upgrade de versao e remove os atalhos na
+desinstalacao. O build grava um arquivo `.version.json` com versao, tamanho,
+SHA-256 e situacao das assinaturas. A homologacao final ainda exige certificado
+real e teste em uma maquina Windows limpa.
+
+Depois do build e da assinatura, publique o MSI:
+
+```powershell
+.\publish_windows.ps1 -Version 0.1.1 -RequireSignature
+```
+
+O script prioriza o MSI da versao informada, confere o SHA-256 e publica o
+arquivo de forma atomica em `artifacts\SupermercadoPDV.msi`, caminho padrao
+usado pelo ERP. O parametro `-Source` permite publicar um artefato especifico e
+`PDV_DESKTOP_INSTALLER_PATH` permite alterar o caminho no ambiente quando
+necessario.
 O empacotamento Windows sera feito a partir deste projeto separado. O ERP web
 continua sendo a fonte unica da interface, dos atalhos e das regras de venda.
