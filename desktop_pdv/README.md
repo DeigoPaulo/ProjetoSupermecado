@@ -56,7 +56,7 @@ confirmação do operador.
 
 O app valida a licença em `/pdv/api/terminal/bootstrap/` antes de abrir o PDV.
 A ativação é validada antes de ser salva. No Windows, a configuração fica em
-`%LOCALAPPDATA%\SupermercadoPDV\config.json`; para reconfigurar, execute o app
+`%LOCALAPPDATA%\DeigoPDV\config.json` (a configuracao legada em `%LOCALAPPDATA%\SupermercadoPDV` e migrada automaticamente); para reconfigurar, execute o app
 com `--configurar`. A chave fica apenas na máquina do caixa, protegida pelo DPAPI
 do usuário do Windows, e não é versionada. Configurações antigas com chave em texto
 são migradas automaticamente na primeira abertura; copiar somente o arquivo para outro
@@ -84,19 +84,19 @@ Uma recusa explícita do servidor nunca usa o cache como alternativa.
 O build usa Python 3.12 para manter compatibilidade com o PyInstaller fixado. Para gerar MSI, a máquina de build precisa também do .NET SDK 8 e do WiX Toolset 4 (dotnet tool install --global wix --version 4.0.6). Esses componentes são necessários somente na máquina que compila, não nos caixas que instalam o aplicativo.
 
 Execute `powershell -ExecutionPolicy Bypass -File .\build_windows.ps1`. O
-executavel sera criado em `dist\SupermercadoPDV.exe`.
+executavel sera criado em `dist\DeigoPDV.exe`.
 
 O instalador MSI usa WiX Toolset v4. Para gerar um pacote de desenvolvimento:
 
 ```powershell
-.\build_msi.ps1 -Version 0.1.1
+.\build_msi.ps1 -Version 0.1.3
 ```
 
 Para producao, assine primeiro o executavel e exija a assinatura durante o
 empacotamento. O MSI tambem pode ser assinado no mesmo comando:
 
 ```powershell
-.\build_msi.ps1 -Version 0.1.1 `
+.\build_msi.ps1 -Version 0.1.3 `
   -RequireSignedExecutable `
   -CertificateThumbprint "CERTIFICADO_SHA1"
 ```
@@ -110,11 +110,11 @@ real e teste em uma maquina Windows limpa.
 Depois do build e da assinatura, publique o MSI:
 
 ```powershell
-.\publish_windows.ps1 -Version 0.1.1 -RequireSignature
+.\publish_windows.ps1 -Version 0.1.3 -RequireSignature
 ```
 
 O script prioriza o MSI da versao informada, confere o SHA-256 e publica o
-arquivo de forma atomica em `artifacts\SupermercadoPDV.msi`, caminho padrao
+arquivo de forma atomica em `artifacts\DeigoPDV.msi`, caminho padrao
 usado pelo ERP. O parametro `-Source` permite publicar um artefato especifico e
 `PDV_DESKTOP_INSTALLER_PATH` permite alterar o caminho no ambiente quando
 necessario.

@@ -1,0 +1,23 @@
+{% extends "base.html" %}
+{% block title %}Liberação emergencial offline{% endblock %}
+{% block content %}
+<header class="page-header">
+  <div><h1>Liberação emergencial offline</h1><p>Emita uma autorização temporária para um servidor local sem internet, sem compartilhar sua senha.</p></div>
+  <div class="actions"><a class="secondary-button" href="{% url 'licenciamento:central' %}"><i class="fa-solid fa-arrow-left"></i> Voltar</a></div>
+</header>
+<section class="panel emergency-license-panel">
+  <div class="notice warning"><i class="fa-solid fa-shield-halved"></i><div><strong>Autorização de contingência</strong><p>O código vale somente para a instalação e o desafio informados. Toda emissão e utilização será auditada e reconciliada quando a conexão retornar.</p></div></div>
+  {% if codigo_liberacao %}
+    <div class="license-code-result">
+      <span>Empresa e instalação</span><strong>{{ autorizacao.instalacao }}</strong>
+      <span>Válida até</span><strong>{{ autorizacao.valida_ate|date:"d/m/Y H:i" }}</strong>
+      <label for="codigo-liberacao">Código de liberação</label>
+      <textarea id="codigo-liberacao" rows="8" readonly>{{ codigo_liberacao }}</textarea>
+      <button class="primary-button" type="button" data-copy-target="codigo-liberacao"><i class="fa-solid fa-copy"></i> Copiar código</button>
+    </div>
+  {% else %}
+    <form method="post" class="form-grid">{% csrf_token %}{{ form.as_p }}<div class="actions"><button class="primary-button" type="submit"><i class="fa-solid fa-key"></i> Emitir autorização</button></div></form>
+  {% endif %}
+</section>
+<script>document.querySelectorAll('[data-copy-target]').forEach(function(button){button.addEventListener('click',function(){var field=document.getElementById(button.dataset.copyTarget);field.select();navigator.clipboard.writeText(field.value);button.textContent='Código copiado';});});</script>
+{% endblock %}

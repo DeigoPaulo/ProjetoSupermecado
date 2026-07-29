@@ -30,13 +30,13 @@ Para servidor local da loja, use o script operacional:
 .\scripts\backup_local.ps1
 ```
 
-Ele gera um pacote `.zip` com `dados.json`, banco SQLite quando existir, pasta `media/`, manifesto e checksum SHA-256. Para incluir logs:
+Primeiro execute `.\scripts\backup_local.ps1 -ValidarSomente`. O diagnóstico informa as fontes efetivas sem gerar arquivos. Quando o WinSW estiver instalado, o script lê seu XML para usar o banco, a mídia e os logs de `%ProgramData%`; sem o serviço, usa a configuração do Django. O contrato `erp_local_backup_v2` gera `.zip` com `dados.json`, pasta `media/`, manifesto e checksum SHA-256. Para SQLite inclui snapshot consistente; para PostgreSQL inclui `database.dump` custom criado por `pg_dump`. Para incluir logs:
 
 ```powershell
 .\scripts\backup_local.ps1 -IncluirLogs
 ```
 
-Para automatizar no Windows, registre a tarefa diaria:
+O destino padrão é `%ProgramData%\DeigoVarejo\Backups`; configure `LOCAL_BACKUP_DIR` para outro volume protegido. Para automatizar no Windows como `SYSTEM`, sem depender de usuário conectado, registre a tarefa diária:
 
 ```powershell
 .\scripts\register_backup_task.ps1 -Horario 02:30 -RetencaoDias 15
@@ -72,6 +72,14 @@ O fluxo recomendado e:
 4. Conferir login, empresas, produtos, estoque, vendas, caixa e relatorios.
 5. Fazer uma copia atual de producao.
 6. Planejar uma janela de restauracao.
+
+Para o backup operacional completo, valide primeiro:
+
+```powershell
+.\scripts\restore_local_backup.ps1 -BackupPath "C:\Backups\backup.zip" -ValidarSomente
+```
+
+Na janela aprovada, execute como administrador com `-ConfirmarRestauracao`. O script recusa motores diferentes, usa snapshot no SQLite ou `pg_restore --single-transaction` no PostgreSQL, preserva um backup anterior e faz rollback se migrations ou healthcheck falharem.
 
 Para carregar um backup JSON em ambiente limpo:
 

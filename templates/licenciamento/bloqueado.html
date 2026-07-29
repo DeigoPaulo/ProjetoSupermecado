@@ -1,0 +1,3 @@
+{% extends "base.html" %}
+{% block title %}Licença suspensa{% endblock %}
+{% block content %}<section class="blocked-license"><i class="fa-solid fa-lock"></i><h1>Licença temporariamente suspensa</h1><p>{{ estado_licenca.mensagem_operacional }}</p><p>Peça ao administrador da empresa para regularizar a mensalidade com a Deigo Tecnologia.</p><form action="{% url 'logout' %}" method="post">{% csrf_token %}<button class="secondary-button" type="submit">Sair</button></form></section>{% endblock %}

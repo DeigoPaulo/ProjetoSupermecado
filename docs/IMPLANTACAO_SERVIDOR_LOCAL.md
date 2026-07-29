@@ -33,7 +33,7 @@ O `runserver` fica restrito a desenvolvimento explícito:
 
 ## Serviço Windows
 
-O serviço `MercaFlowServidorLocal` usa WinSW para executar Waitress, iniciar automaticamente com o Windows, reiniciar após falha e manter logs rotativos em `%ProgramData%\MercaFlow\ServidorLocal\logs`.
+O serviço `DeigoVarejoServidorLocal` usa WinSW para executar Waitress, iniciar automaticamente com o Windows, reiniciar após falha e manter logs rotativos em `%ProgramData%\DeigoVarejo\ServidorLocal\logs`.
 
 1. Baixe o WinSW somente da publicação oficial e confira o SHA-256 divulgado pela fonte ou pelo processo de distribuição interno.
 2. Abra o PowerShell como administrador.
@@ -44,10 +44,13 @@ O serviço `MercaFlowServidorLocal` usa WinSW para executar Waitress, iniciar au
   -WinSWPath "C:\Instaladores\WinSW-x64.exe" `
   -ExpectedSha256 "COLOQUE_AQUI_64_CARACTERES_HEXADECIMAIS" `
   -Bind 0.0.0.0 `
-  -Port 8000
+  -Port 8000 `
+  -DatabaseEngine PostgreSQL
 ```
 
-O instalador valida o hash antes de copiar o wrapper, executa `check`, migrations e `collectstatic`, instala/inicia o serviço e só conclui após o healthcheck em `/login/`.
+O instalador usa PostgreSQL por padrão e recusa concluir quando o `.env` aponta para outro motor ou quando `pg_dump`/`pg_restore` não estão disponíveis. Ele valida o hash antes de copiar o wrapper, executa `check`, migrations e `collectstatic`, instala/inicia o serviço e só conclui após o healthcheck em `/login/`. A conta virtual `NT SERVICE\DeigoVarejoServidorLocal` não possui senha armazenada; código fica somente leitura, enquanto `media`, estáticos e logs em `%ProgramData%\DeigoVarejo\Dados` recebem modificação.
+
+Para uma instalação deliberadamente SQLite de desenvolvimento, use `-DatabaseEngine SQLite -ImportExistingSqlite`. SQLite não é a escolha para o servidor de produção com vários caixas.
 
 Diagnóstico operacional:
 
@@ -75,12 +78,20 @@ Se o serviço ainda não estiver homologado, a tarefa agendada pode ser usada te
 
 ## Backup local
 
+Antes do primeiro backup, valide as fontes sem criar arquivos:
+
+```powershell
+.\scripts\backup_local.ps1 -ValidarSomente
+```
+
+Quando o serviço WinSW estiver instalado, o script lê `DeigoVarejoServidorLocal.xml` e usa os mesmos `SQLITE_PATH`, `MEDIA_ROOT` e `LOG_DIR` da aplicação. Sem o serviço, usa a configuração efetiva do Django. O destino padrão é `%ProgramData%\DeigoVarejo\Backups` e pode ser alterado por `LOCAL_BACKUP_DIR` ou `-Destino`.
+
 ```powershell
 .\scripts\backup_local.ps1
 .\scripts\backup_local.ps1 -IncluirLogs
 ```
 
-O script gera `.zip` e `.sha256`. Em produção, defina `BACKUP_ENCRYPTION_PASSPHRASE` fora do repositório para gerar também `.zip.aes`.
+O contrato `erp_local_backup_v2` contém dump lógico, mídia, manifesto e SHA-256. Em SQLite, inclui snapshot consistente pela API nativa. Em PostgreSQL, inclui `database.dump` no formato custom de `pg_dump`, sem senha na linha de comando. Em produção, defina `BACKUP_ENCRYPTION_PASSPHRASE` fora do repositório para gerar também `.zip.aes`.
 
 Agendamento diário:
 
@@ -88,6 +99,77 @@ Agendamento diário:
 .\scripts\register_backup_task.ps1 -Horario 02:30 -RetencaoDias 15
 ```
 
+A tarefa valida as fontes antes de ser registrada e roda como `SYSTEM`, sem depender de usuário conectado. A conta precisa ter leitura do código e acesso ao diretório de dados e ao destino dos backups.
+
+## Pacote de distribuição
+
+O pacote do servidor é gerado somente a partir de um commit Git limpo e rastreável:
+
+```powershell
+.\scripts\package_local_server.ps1 -Version 1.0.0
+```
+
+O resultado contém o ZIP sem banco, mídia ou `.env`, um manifesto `local_server_package_v1` e um arquivo SHA-256. Em produção, use `-RequireSignedCommit` para aceitar somente commit Git com assinatura válida. A assinatura de código do artefato definitivo continua sendo uma etapa separada do pipeline comercial.
+Depois da revisão, promova a versão para a Central do servidor local:
+
+```powershell
+.\scripts\publish_local_server.ps1 -Version 1.0.0 -RequireSignedCommit
+```
+
+O publicador confere contrato, versão, nome, tamanho, SHA-256, ausência de dados do cliente e exigência de commit assinado. O ZIP é copiado para `LOCAL_SERVER_PACKAGE_PATH` e o manifesto é promovido por último; assim, um upload parcial permanece bloqueado. A Central libera o download somente ao admin master, registra a entrega em auditoria e volta a bloquear o pacote se qualquer byte for alterado. Configure `LOCAL_SERVER_VERSION`, `LOCAL_SERVER_PACKAGE_PATH` e `LOCAL_SERVER_REQUIRE_SIGNED_COMMIT` por ambiente.
+## Atualização controlada e rollback
+
+Baixe o ZIP e o manifesto publicado para a mesma pasta. Antes da janela de manutenção, valide o pacote sem tocar no serviço:
+
+```powershell
+.\scripts\update_local_server.ps1 `
+  -PackagePath "C:\Instaladores\DeigoVarejoServidorLocal.zip" `
+  -RequireSignedCommit `
+  -ValidarSomente
+```
+
+Na janela aprovada, abra o PowerShell como administrador e execute o mesmo comando sem `-ValidarSomente`. O atualizador:
+
+1. confere contrato, versão, commit, tamanho, SHA-256 e ausência de dados do cliente;
+2. rejeita caminhos inseguros, pacote excessivo ou estrutura incompleta;
+3. preserva `.env`, banco, mídia, ambiente virtual e configuração do serviço;
+4. cria cópia do código e snapshot SQLite consistente em `%ProgramData%\DeigoVarejo\Atualizacoes`;
+5. para o serviço, aplica código, dependências, migrations e arquivos estáticos;
+6. inicia o serviço e exige healthcheck em `/login/`;
+7. restaura automaticamente código e SQLite se qualquer etapa falhar.
+
+O histórico usa o contrato `local_server_update_history_v1`, e o ponto de retorno usa `local_server_rollback_v1`. Não apague a pasta de rollback antes da conferência operacional. A automação de rollback desta versão é exclusiva para SQLite. Instalações PostgreSQL exigem backup nativo, plano de reversão de migrations e execução assistida por DBA.
+## Restauração validada
+
+Sempre teste a integridade antes da janela, sem alterar o serviço ou os dados:
+
+```powershell
+.\scripts\restore_local_backup.ps1 `
+  -BackupPath "C:\Backups\supermercado-local-20260728-020000.zip" `
+  -ValidarSomente
+```
+
+Para arquivo criptografado, informe `BACKUP_ENCRYPTION_PASSPHRASE` no ambiente ou use `-SenhaCriptografia`. O arquivo `.sha256` correspondente é obrigatório. A validação confere SHA-256, descriptografia, segurança do ZIP, contrato `erp_local_backup_v2`, dump lógico, snapshot SQLite e mídia declarada.
+
+Na janela aprovada, abra o PowerShell como administrador:
+
+```powershell
+.\scripts\restore_local_backup.ps1 `
+  -BackupPath "C:\Backups\supermercado-local-20260728-020000.zip" `
+  -ConfirmarRestauracao
+```
+
+Antes de substituir qualquer dado, o script cria outro backup em `%ProgramData%\DeigoVarejo\Restauracoes`. Depois para o serviço, confirma que o motor do backup coincide com o servidor, restaura SQLite por snapshot ou PostgreSQL por `pg_restore --single-transaction`, restaura a mídia, executa migrations e `manage.py check`, inicia o serviço e exige healthcheck em `/login/`. Se alguma etapa falhar, banco e mídia anteriores são recolocados automaticamente. O resultado usa `local_restore_history_v1` e a validação usa `local_restore_validation_v1`.
+
+Para PostgreSQL, instale as ferramentas cliente oficiais e mantenha `pg_dump` e `pg_restore` da mesma versão principal do servidor. Quando não estiverem no `PATH`, configure `POSTGRES_PG_DUMP_PATH` e `POSTGRES_PG_RESTORE_PATH`. A senha é obtida da configuração Django e permanece somente no ambiente do subprocesso, nunca nos argumentos. A primeira restauração de produção ainda deve ser homologada em uma base separada e acompanhada por DBA.
+
+## Política operacional por modo
+
+- **Local:** vendas, estoque e cadastros não são enviados à nuvem. Novos eventos remotos são rejeitados e eventos pendentes ficam pausados, sem descarte.
+- **Híbrido ou nuvem com agente:** exige sincronização automática habilitada e URL HTTPS. Ao reativar essa política, os eventos pausados voltam às filas.
+- **Licenciamento:** a consulta comercial à central é independente dessa política operacional e continua seguindo tolerância, cache e liberação emergencial definidos no módulo de licenciamento.
+
+A troca de modo deve ser feita pelo administrador da empresa. O diagnóstico em `Sistema > Sincronização` mostra separadamente eventos pendentes, com erro e pausados.
 ## Sincronização loja-nuvem
 
 No modo híbrido ou nuvem com agente:
@@ -101,6 +183,6 @@ Antes da produção, confirme URL e token da API no `.env` e homologue conflitos
 ## Pendências de homologação
 
 - Instalar o serviço com um binário WinSW verificado em uma máquina Windows limpa.
-- Definir ACLs e conta de serviço dedicada.
+- Homologar a conta virtual dedicada e as ACLs em uma máquina Windows limpa.
 - Validar atualização com rollback e janela fora do expediente.
 - Homologar backup restaurável, sincronização e transmissão fiscal no ambiente real.

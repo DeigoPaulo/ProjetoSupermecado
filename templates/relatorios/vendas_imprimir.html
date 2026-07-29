@@ -27,7 +27,7 @@
 </head>
 <body>
   <header>
-    <div><h1>Relatorio de vendas</h1><p>Supermercado - periodo de {{ data_inicio|date:"d/m/Y" }} a {{ data_fim|date:"d/m/Y" }}</p></div>
+    <div><h1>Relatório de vendas</h1><p>Supermercado - período de {{ data_inicio|date:"d/m/Y" }} a {{ data_fim|date:"d/m/Y" }}{% if filial_selecionada %} · Filial: {{ filial_selecionada }}{% else %} · Todas as filiais permitidas{% endif %}</p></div>
     <p>Gerado em {{ gerado_em|date:"d/m/Y H:i" }}</p>
   </header>
   <div class="actions"><button type="button" onclick="window.print()">Imprimir / Salvar como PDF</button></div>
@@ -40,12 +40,12 @@
     <thead><tr><th>ID</th><th>Data</th><th>Filial</th><th>Cliente</th><th>Operador</th><th>Subtotal</th><th>Desconto</th><th>Total</th></tr></thead>
     <tbody>
       {% for venda in vendas %}
-        <tr><td>{{ venda.id }}</td><td>{{ venda.data|date:"d/m/Y H:i" }}</td><td>{{ venda.filial }}</td><td>{{ venda.cliente|default:"Cliente avulso" }}</td><td>{{ venda.usuario }}</td><td>R$ {{ venda.subtotal|floatformat:2 }}</td><td>R$ {{ venda.desconto|floatformat:2 }}</td><td>R$ {{ venda.total_liquido|floatformat:2 }}</td></tr>
+        <tr><td>{{ venda.id }}</td><td>{{ venda.data|date:"d/m/Y H:i" }}</td><td>{{ venda.filial }}</td><td>{{ venda.cliente|default:"Cliente avulso" }}</td><td>{{ venda.usuario }}</td><td>R$ {{ venda.total_bruto|floatformat:2 }}</td><td>R$ {{ venda.desconto|floatformat:2 }}</td><td>R$ {{ venda.total_liquido|floatformat:2 }}</td></tr>
       {% empty %}
         <tr><td colspan="8">Nenhuma venda finalizada no periodo.</td></tr>
       {% endfor %}
     </tbody>
   </table>
-  <footer>Sistema Supermercado</footer>
+  <footer>Deigo Varejo · Deigo Tecnologia</footer>
 </body>
 </html>

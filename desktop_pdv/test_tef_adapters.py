@@ -3,6 +3,7 @@ import types
 import unittest
 
 import app
+from devices.tef import RespostaTefInvalida, capacidades_adaptador_tef, validar_resposta_documento_pinpad
 
 
 class AdaptadorFake:
@@ -147,6 +148,21 @@ class AdaptadoresTefTests(unittest.TestCase):
         self.assertEqual(resultado["status"], "erro")
         self.assertFalse(resultado["aprovado"])
         self.assertIn("falhou ao inicializar", resultado["mensagem"])
+
+
+    def test_capacidade_opcional_nao_quebra_driver_legado(self):
+        adaptador = AdaptadorFake(provedor="STONE", modo="DESKTOP_BRIDGE", configuracao={})
+        capacidades = capacidades_adaptador_tef(adaptador)
+        self.assertFalse(capacidades["captura_documento_consumidor"])
+        self.assertEqual(capacidades["contrato"], "pdv_tef_capabilities_v1")
+
+    def test_valida_documento_recebido_do_pinpad(self):
+        cpf = validar_resposta_documento_pinpad({"status": "ok", "documento": "529.982.247-25", "tipo": "CPF"})
+        cnpj = validar_resposta_documento_pinpad({"status": "ok", "documento": "11.222.333/0001-81", "tipo": "CNPJ"})
+        self.assertEqual(cpf["documento"], "52998224725")
+        self.assertEqual(cnpj["documento"], "11222333000181")
+        with self.assertRaises(RespostaTefInvalida):
+            validar_resposta_documento_pinpad({"status": "ok", "documento": "52998224724", "tipo": "CPF"})
 
 
 if __name__ == "__main__":

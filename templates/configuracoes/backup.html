@@ -36,7 +36,9 @@
     <h2>Protecao dos dados</h2>
     <p>O arquivo pode conter dados comerciais, clientes, vendas, estoque, logs e usuarios tecnicos do sistema. Nao envie esse backup por canais abertos.</p>
     <p>A restauracao direta pela tela fica desativada de proposito: supermercado nao pode correr o risco de sobrescrever uma base real por engano.</p>
-    <p>Em producao, use <code>{{ backup_local_script }}</code> com <code>{{ backup_criptografia_env }}</code> para gerar tambem o pacote <code>.zip.aes</code>. Use <code>{{ backup_criptografia_flag }}</code> quando a politica exigir apagar o <code>.zip</code> aberto.</p>
+    <p>Antes da primeira execucao, use <code>{{ backup_local_script }} {{ backup_validacao_flag }}</code> para conferir banco, midia, logs e destino sem gerar arquivos.</p>
+    <p>O destino pode ser definido por <code>{{ backup_destino_env }}</code>. A tarefa automatica usa a conta <code>{{ backup_conta_tarefa }}</code> e nao depende de usuario conectado.</p>
+    <p>Em producao, configure <code>{{ backup_criptografia_env }}</code> para gerar o pacote <code>.zip.aes</code>. Use <code>{{ backup_criptografia_flag }}</code> quando a politica exigir apagar o <code>.zip</code> aberto.</p>
   </article>
 </section>
 

@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% load static %}
 
 {% block title %}PDV{% endblock %}
 {% block body_class %}pdv-mode{% endblock %}
@@ -40,7 +41,14 @@
       <div class="pdv-total-stat"><span>Total da venda</span><strong>R$ {{ total|floatformat:2 }}</strong></div>
     </div>
     <div class="actions pdv-actions">
-      <a class="secondary-button" id="pdv-menu-link" href="{% url 'relatorios:dashboard' %}"><i class="fa-solid fa-bars"></i> <span><kbd>Shift+M</kbd> Menu</span></a>
+      {% if access.supervisao %}
+        <a class="secondary-button" id="pdv-menu-link" href="{% url 'relatorios:dashboard' %}"><i class="fa-solid fa-bars"></i> <span><kbd>Shift+M</kbd> Menu</span></a>
+      {% else %}
+        <form action="{% url 'logout' %}" method="post" class="pdv-logout-form" id="pdv-logout-form">
+          {% csrf_token %}
+          <button class="secondary-button" id="pdv-exit-button" type="submit"><i class="fa-solid fa-right-from-bracket"></i> <span><kbd>Shift+S</kbd> Sair</span></button>
+        </form>
+      {% endif %}
       {% if not caixa_aberto %}
         <a class="primary-button" href="{% url 'pdv:abrir_caixa' %}"><i class="fa-solid fa-lock-open"></i> Abrir caixa</a>
       {% endif %}
@@ -178,7 +186,12 @@
               </label>
               <label class="form-field">
                 <span>Documento</span>
-                {{ finish_form.documento_consumidor }}
+                <span class="pdv-document-capture">
+                  {{ finish_form.documento_consumidor }}
+                  <button type="button" id="pdv-capture-document" title="Ler CPF/CNPJ no pinpad" aria-label="Ler CPF/CNPJ no pinpad" hidden>
+                    <i class="fa-solid fa-credit-card"></i><kbd>Shift+F4</kbd>
+                  </button>
+                </span>
               </label>
             </div>
             <div class="pdv-payment-adjustments">
@@ -201,9 +214,11 @@
                 <strong>Tipo de pagamento</strong>
                 <span>Escolha a forma eletronica confirmada no caixa</span>
               </div>
-              <button type="button" data-pdv-electronic-payment="credito"><kbd>F1</kbd> Credito</button>
-              <button type="button" data-pdv-electronic-payment="debito"><kbd>F2</kbd> Debito</button>
-              <button type="button" data-pdv-electronic-payment="pix"><kbd>F3</kbd> PIX</button>
+              <button type="button" data-pdv-electronic-payment="CREDITO"><kbd>F1</kbd> Crédito</button>
+              <button type="button" data-pdv-electronic-payment="DEBITO"><kbd>F2</kbd> Débito</button>
+              <button type="button" data-pdv-electronic-payment="PIX"><kbd>F3</kbd> PIX</button>
+              <button type="button" data-pdv-electronic-payment="VALE_ALIMENTACAO"><kbd>F4</kbd> Vale-alimentação</button>
+              <button type="button" data-pdv-electronic-payment="VALE_REFEICAO"><kbd>F5</kbd> Vale-refeição</button>
             </div>
             <div class="pdv-pix-panel" id="pdv-pix-panel" hidden aria-live="polite">
               <div class="pdv-pix-copy">
@@ -276,6 +291,9 @@
         </div>
         <button class="secondary-button" type="submit" {% if not items %}disabled{% endif %}><i class="fa-regular fa-file-lines"></i> Salvar DAV</button>
       </form>
+      <div class="pdv-manufacturer" aria-label="Desenvolvido por Deigo Tecnologia">
+        <img src="{% static 'img/brand/deigo-tecnologia.png' %}" alt="Deigo Tecnologia - Deigo PDV">
+      </div>
     </aside>
   </div>
 

@@ -1,5 +1,6 @@
 import csv
 import os
+import re
 from decimal import Decimal
 from io import StringIO
 from pathlib import Path
@@ -22,15 +23,17 @@ from django.utils import timezone
 from django.utils.dateparse import parse_date
 
 from apps.accounts.models import PerfilUsuario, TipoPerfil
-from apps.accounts.permissions import SISTEMA, role_required
+from apps.accounts.permissions import ADMINISTRACAO, SISTEMA, role_required
 from apps.auditoria.models import LogAuditoria
 from apps.empresas.models import Empresa, EventoEntradaSincronizacao, EventoSincronizacao, Filial, ModoImplantacao, StatusEventoEntrada, StatusSincronizacao
 from apps.fiscal.models import ConfiguracaoFiscal
+from apps.financeiro.models import ContaMovimentoFinanceiro
 from apps.pdv.models import AcessoPdvNuvem, CanalAtualizacaoPdv, EventoDispositivoTerminal, StatusAcessoPdvNuvem, StatusLicencaTerminal, TerminalPdv
-from apps.vendas.models import FormaPagamento, PagamentoVenda, StatusPagamento
+from apps.vendas.models import FormaPagamento, FormaPagamentoFilial, PagamentoVenda, StatusPagamento
+from apps.vendas.services import inicializar_formas_pagamento_filial
 
-from .artifacts import artefato_pdv_desktop
-from .forms import ConfiguracaoImpressaoForm, FormaPagamentoForm, ModeloEtiquetaForm, TerminalPdvForm
+from .artifacts import artefato_pdv_desktop, artefato_servidor_local
+from .forms import ConfiguracaoImpressaoForm, FormaPagamentoFilialForm, FormaPagamentoForm, ModeloEtiquetaForm, TerminalPdvForm
 from .models import ConfiguracaoImpressao, ModeloEtiqueta, TipoDocumentoImpressao
 from .services import configuracao_impressao_para, criar_configuracoes_padrao
 
@@ -43,9 +46,13 @@ CHECKLIST_GRUPOS = [
             ("Projeto Django com apps modulares", "done", "Estrutura separada por accounts, produtos, estoque, compras, PDV, vendas e relatórios."),
             ("Settings, timezone e ambiente local", "done", "Configuracao por ambiente via .env, segurança de produção, logs e caminhos ajustáveis definidos."),
             ("Modelagem inicial e migrations", "done", "Modelos principais criados para usuários, produtos, estoque, compras, PDV, vendas e auditoria."),
-            ("Permissoes por perfil no backend", "done", "Perfis e bloqueios por módulo implementados com tela 403 amigavel."),
-            ("Cadastro próprio de empresas e filiais", "done", "Sistema possui telas internas para empresa e filiais, incluindo município, UF e código IBGE fiscal, sem depender do admin padrao."),
-            ("Auditoria de ações críticas", "done", "Logs sensíveis possuem tela de consulta com filtros por período, módulo, acao, usuario e exportacao CSV."),
+            ("Permissoes por perfil no backend", "done", "Perfis e bloqueios por módulo implementados com tela 403 amigável. O super admin mantém visão global; administradores de cada cliente listam, criam e editam somente usuários obrigatoriamente vinculados à própria matriz ou filiais, não acessam equipes de outras empresas e não podem conceder acesso ao admin Django. Gerentes não acessam cadastro de usuários, auditoria administrativa nem o painel administrativo geral; checklist técnico, backup global, sincronização central, distribuição desktop e painel master ficam ocultos e protegidos por rota para uso exclusivo do super admin."),
+            ("Cadastro próprio de empresas e filiais", "done", "Sistema possui telas internas para empresa e filiais, incluindo município, UF e código IBGE fiscal, sem depender do admin padrão. Como matriz e cada filial representam unidades comerciais licenciadas, somente o super admin do software pode criá-las; toda criação gera auditoria. O administrador da empresa consulta e atualiza apenas a própria matriz e suas filiais, sem enxergar estruturas de outros clientes."),
+            ("Licenciamento comercial e cobrança central", "partial", "Módulo separado do financeiro operacional criado com planos por matriz, filial e terminal, contratos, faturas mensais idempotentes, instalações locais com token individual protegido por hash, concessão assinada de 24 horas, renovação automática no sincronizador, aviso pré-vencimento, tolerância configurável, bloqueio gradual e tela de regularização para o administrador. A central exclusiva do super admin gera cobrança Pix/boleto pelo Asaas, recebe webhook autenticado e idempotente e reativa o contrato após confirmação. O servidor local inicia somente conexão HTTPS de saída, preserva a última concessão em falha de internet e não expõe banco ou porta administrativa. A contingência presencial agora usa desafio local de uso único por 30 minutos e autorização Ed25519 emitida exclusivamente pelo super admin, vinculada à empresa e instalação, com validade máxima de 7 dias, rejeição de adulteração/reuso, auditoria local/central e reconciliação automática quando a internet retorna; a senha master nunca é digitada no cliente. As concessões automáticas regulares também usam envelope Ed25519; em produção a ausência da chave privada falha de forma segura e o fallback compartilhado permanece permitido somente por configuração explícita de transição. O diagnóstico protegido licensing_readiness_v1 mostra chave, Asaas, webhook, fallback e script de automação. A rotina diária idempotente agora gera cobranças, tenta publicá-las no Asaas e recalcula aviso, tolerância e suspensão; o script scripts/register_licensing_billing_task.ps1 registra a tarefa no Windows Server, inclusive com conta de serviço sem login interativo. Documentação em docs/LICENCIAMENTO_CENTRAL_ASAAS.md. A central exclusiva do super admin agora pagina contratos, servidores credenciados e liberações emergenciais de forma independente em blocos de 50, preserva os demais filtros ao navegar, mantém métricas com os totais reais e deixou de carregar todas as faturas dos contratos sem necessidade. Faltam credenciais reais, registrar a tarefa no servidor definitivo e homologar sandbox/produção do Asaas e o webhook externo."),
+            ("Proteção do código e distribuição endurecida", "partial", "A implantação comercial não deve entregar repositório Git, ambiente de desenvolvimento, testes, segredos ou código-fonte aberto ao cliente. O empacotamento atual exige commit limpo e rastreável, gera manifesto e SHA-256, pode exigir commit assinado, publica o artefato pela Central e mantém dados, mídia, logs e segredos fora do pacote. Licenciamento Ed25519, conta de serviço com ACL mínima e atualização validada reduzem cópia e adulteração. A política está documentada no manual de instalação. Ainda faltam compilar ou empacotar os módulos sensíveis, assinar executável, MSI e pacote do servidor com certificado definitivo, validar resistência a adulteração, homologar em Windows limpo e concluir os termos jurídicos de licença e confidencialidade."),
+            ("Identidade Deigo Varejo e Deigo PDV", "partial", "A marca provisória foi alterada para Deigo Varejo na plataforma e Deigo PDV no aplicativo, sempre com Deigo Tecnologia identificada como fabricante. Foram criados símbolo próprio, favicon, assinatura discreta no PDV, ícone multirresolução para Windows e integração do ícone no EXE, MSI e atalhos. Serviços, pacotes, caminhos e documentação deixaram a marca anterior, enquanto o app preserva migração da configuração legada. Falta realizar busca formal por classe no INPI, validar domínio e redes sociais, aprovar a identidade final e depositar o pedido de registro antes do lançamento comercial."),
+            ("Liberação emergencial offline", "done", "Contingência comercial concluída com desafio local de uso único válido por 30 minutos, autorização Ed25519 emitida somente pelo super admin, vínculo obrigatório com CNPJ e instalação, validade limitada a 24 horas, 3 dias ou 7 dias, rejeição de código adulterado ou reutilizado, chave privada restrita à central, chave pública nos clientes, auditoria em ambos os lados, histórico operacional e reconciliação automática na primeira renovação após o retorno da internet. A senha do super admin nunca é informada no servidor do supermercado."),
+            ("Auditoria de ações críticas", "done", "Logs sensíveis possuem tela de consulta com filtros por período, módulo, acao e usuario, exportacao CSV, isolamento pela empresa do administrador e paginação real de 50 registros. Gerentes não acessam a auditoria administrativa e o super admin preserva a visão global."),
             ("Testes automatizados", "done", "Suíte formal cobre venda com baixa de estoque, pagamento dividido, backup e configuracoes de impressao."),
         ],
     },
@@ -53,9 +60,10 @@ CHECKLIST_GRUPOS = [
         "titulo": "PDV e caixa",
         "descricao": "Fluxo operacional do caixa de supermercado.",
         "itens": [
-            ("Tela PDV em layout de operador", "done", "PDV sem sidebar, cabendo em 100% de zoom no desktop testado. Após a venda, uma camada de tela cheia informa CAIXA LIVRE e aceita Enter, Escape ou o início da leitura do próximo código de barras para liberar imediatamente a nova compra."),
+            ("Tela PDV em layout de operador", "done", "PDV sem sidebar, cabendo em 100% de zoom no desktop testado. Após a venda, uma camada de tela cheia informa CAIXA LIVRE e aceita Enter, Escape ou o início da leitura do próximo código de barras para liberar imediatamente a nova compra. A tela principal isola filial, caixas, vendas recentes, DAV de origem, última venda e terminal pela empresa autenticada; o operador finaliza somente no próprio caixa aberto e um identificador de terminal de outra empresa é recusado pelo escopo do backend."),
             ("Venda com carrinho e baixa de estoque", "done", "Venda finaliza com itens, pagamentos e baixa automatica."),
-            ("Pagamento dividido", "done", "Popup aceita múltiplas formas e calcula restante/troco. Atalhos F1/F2/F3/F4 preenchem a linha atual e só criam nova forma quando ainda existe saldo restante; se o pagamento já cobre o total, o PDV avisa o operador em vez de duplicar parcelas automaticamente. Para dois cartões, PIX + cartão ou outra divisão real, o operador informa o valor parcial e adiciona a próxima forma, ficando cada parcela registrada na venda."),
+            ("Pagamento dividido", "done", "Popup aceita múltiplas formas e calcula restante/troco. Atalhos F1/F2/F3/F4 preenchem a linha atual e só criam nova forma quando ainda existe saldo restante; se o pagamento já cobre o total, o PDV avisa o operador em vez de duplicar parcelas automaticamente. Para dois cartões, PIX + cartão ou outra divisão real, o operador informa o valor parcial e adiciona a próxima forma, ficando cada parcela registrada na venda. Vale alimentacao e vale refeicao sao modalidades voucher separadas do debito, exigem confirmacao TEF e usam os codigos fiscais 10 e 11."),
+            ("Formas de pagamento por filial", "done", "O super admin mantem apenas o catalogo tecnico global. Cada administrador configura, para as proprias filiais, quais formas ficam disponiveis no PDV e a conta financeira de destino. A migration preenche filiais existentes e o servico inicializa novos itens globais automaticamente. O backend rejeita forma inativa ou de outra filial mesmo em POST forjado, o lancamento financeiro usa a conta especifica da filial e toda alteracao fica na auditoria."),
             ("Desconto supervisionado no PDV", "done", "Todo desconto informado no pagamento exige usuário e senha de supervisor ou administrador. A venda é bloqueada sem credencial válida e a autorização registra desconto, venda, operador, supervisor e IP no log de auditoria."),
             ("PIX no pagamento do PDV", "done", "Forma PIX disponível dentro da escolha eletrônica do F3. O app desktop gera e exibe QR Code com valor destacado, mantém a parcela pendente e consulta o terminal até receber confirmação; somente o retorno aprovado libera a finalização. O QR do simulador é identificado como teste e o adaptador real poderá usar a tela do PDV, o pinpad compatível ou ambos."),
             ("Campos monetarios no PDV", "done", "Pagamento, fechamento, sangria e suprimento exibem prefixo R$ e valor de pagamento ganhou campo maior."),
@@ -65,11 +73,11 @@ CHECKLIST_GRUPOS = [
             ("Abertura e fechamento de caixa", "done", "Operador abre/fecha; supervisor/admin confere depois. Modal de caixas no PDV possui atalhos de teclado: F2 abre caixa ou foca suprimento, F5 foca fechamento, setas selecionam caixas da lista, Enter abre o caixa selecionado e Ctrl+Enter confirma o formulário ativo."),
             ("Sangria e suprimento", "done", "Exigem senha de supervisor/admin e geram lançamentos automáticos de saída/entrada no livro financeiro da conta Caixa PDV. No modal de caixas, F2 foca suprimento, F3 foca sangria e Ctrl+Enter registra o movimento com os campos preenchidos."),
             ("Estorno no PDV", "done", "PDV possui atalho F6 para cancelamento total de venda recente com motivo e senha de supervisor/admin; devolucao parcial segue pela tela da venda."),
-            ("Operacao principal por teclado", "done", "Enter inclui produto; F2-F9 acessam funções; no carrinho, setas selecionam o produto mesmo quando o foco esta em outro campo, Del reduz uma unidade do item selecionado e remove a linha apenas quando zerar, e Ctrl+Del limpa a venda com confirmacao; no pagamento, Shift+ adiciona forma, Del remove forma e Enter confirma; Shift+M retorna ao menu."),
+            ("Operacao principal por teclado", "done", "Enter inclui produto; F2-F9 acessam funções; no carrinho, setas selecionam o produto mesmo quando o foco esta em outro campo, Del reduz uma unidade do item selecionado e remove a linha apenas quando zerar, e Ctrl+Del limpa a venda com confirmacao; no pagamento, Shift+ adiciona forma, Del remove forma e Enter confirma; supervisores/admin usam Shift+M para o menu, enquanto operador usa Shift+S para sair com confirmação."),
             ("Bip e retorno automático de foco", "done", "Leitor envia Enter, inclui o produto, soma repetições e devolve o foco ao campo após o recarregamento."),
             ("Alertas rapidos no PDV", "done", "Mensagens simples viram toasts temporarios; operações críticas continuam exigindo confirmacao ou supervisor."),
             ("Autorizacao do PDV em nuvem", "done", "Operador comum fica bloqueado em ambiente de nuvem, tentativa gera solicitacao, admin/gerente recebe alerta visual no topo/menu e decide pelo painel de aprovacao."),
-            ("Arquitetura PDV desktop local", "partial", "PDV dos caixas deve ser um aplicativo instalado na máquina do operador, fiel ao layout, atalhos e fluxo de venda do PDV web já validado, para que o operador use a mesma experiência nos dois ambientes. O desktop acrescenta integrações locais com impressora, balanca, gaveta e TEF, operacao resiliente e acesso somente ao necessário para venda, pagamento, caixa, consulta e estorno autorizado, sem telas administrativas completas. O app se comunica com o servidor local da loja pela rede interna; esse servidor local conversa com os dispositivos e o banco operacional da filial. Cadastro por filial, chave individual protegida por hash e bootstrap com registro de conexao implementados. O bootstrap diario devolve a configuracao vigente de licenca, TEF, fiscal e balanca para o app instalado se atualizar sem novo pacote. A nuvem/sede sincroniza por API segura, filas e eventos, sem acessar diretamente o banco local do supermercado. Download/ativacao do app desktop exige autorizacao do admin master, pois cada máquina instalada pode representar uma licenca comercial cobrada por terminal; pacote de ativacao so e entregue para terminal com licenca liberada. A Central do App oferece pré-homologação consolidada pelo contrato pdv_device_homologation_v1: inspeciona impressoras, balança, gaveta e TEF, não imprime nem cria cobrança no modo padrão, exige seleção e confirmação para leitura/pulso físico e grava a evidência em devices.log.jsonl para sincronização central. A fila local agora segue o contrato pdv_device_event_queue_v1: cada evento recebe ID estável, lotes são enviados do mais antigo ao mais novo a partir de cursor confirmado, reenvios são deduplicados por terminal no servidor e a compactação atômica remove somente registros já confirmados, preservando todos os pendentes. Durante o turno, uma thread exclusiva sincroniza periodicamente em intervalo local configurável de 15 a 3.600 segundos e é encerrada de forma limpa junto com a WebView, sem depender de reiniciar o caixa. O bootstrap agora publica o pacote vigente e o canal de atualização autenticado aceita somente terminal ativo com licença liberada pelo admin master; o rollout pdv_update_rollout_v1 permite promover uma versão primeiro em caixas piloto e depois no canal estável, congelar atualizações opcionais por máquina e sobrepor o congelamento quando a versão instalada ficar abaixo do mínimo de segurança. O app baixa para arquivo temporário, valida SHA-256, descarta pacote divergente, registra diagnóstico e mantém a instalação manual, sem atualização silenciosa. A contingência de conexão agora usa bootstrap local autorizado com validade padrão de 24 horas: em queda do servidor mostra uma tela local identificando o caixa, bloqueia venda, pagamento e estoque e permite reconectar por F5/Enter; somente uma nova validação de terminal e licença abre o PDV, enquanto cache vencido ou terminal recusado permanece bloqueado. A chave de ativação e os parâmetros sensíveis do adaptador TEF deixaram de permanecer em texto no config.json: o agente usa o contrato pdv_local_secret_v1 e DPAPI vinculado ao usuário do Windows, restaura os valores somente em memória, migra automaticamente instalações legadas, bloqueia conteúdo corrompido ou copiado para outro usuário e expõe ao diagnóstico somente o estado da proteção. O contrato pdv_single_instance_v1 usa mutex nomeado por hash da identidade do terminal para impedir duas janelas do mesmo caixa na sessão do Windows, sem expor o identificador e liberando o bloqueio ao encerrar. A reconfiguração também reserva primeiro a identidade atual, impedindo troca de ativação enquanto aquele caixa estiver em execução. Ainda faltam drivers/adaptadores reais e homologação presencial dos equipamentos."),
+            ("Arquitetura PDV desktop local", "partial", "PDV dos caixas deve ser um aplicativo instalado na máquina do operador, fiel ao layout, atalhos e fluxo de venda do PDV web já validado, para que o operador use a mesma experiência nos dois ambientes. O desktop acrescenta integrações locais com impressora, balanca, gaveta e TEF, operacao resiliente e acesso somente ao necessário para venda, pagamento, caixa, consulta e estorno autorizado, sem telas administrativas completas. O app se comunica com o servidor local da loja pela rede interna; esse servidor local conversa com os dispositivos e o banco operacional da filial. Cadastro por filial, chave individual protegida por hash e bootstrap com registro de conexao implementados. O bootstrap diario devolve a configuracao vigente de licenca, TEF, fiscal e balanca para o app instalado se atualizar sem novo pacote. A nuvem/sede sincroniza por API segura, filas e eventos, sem acessar diretamente o banco local do supermercado. Download/ativacao do app desktop exige autorizacao do admin master, pois cada máquina instalada pode representar uma licenca comercial cobrada por terminal; pacote de ativacao so e entregue para terminal com licenca liberada. A Central do App oferece pré-homologação consolidada pelo contrato pdv_device_homologation_v1: inspeciona impressoras, balança, gaveta e TEF, não imprime nem cria cobrança no modo padrão, exige seleção e confirmação para leitura/pulso físico e grava a evidência em devices.log.jsonl para sincronização central. A fila local agora segue o contrato pdv_device_event_queue_v1: cada evento recebe ID estável, lotes são enviados do mais antigo ao mais novo a partir de cursor confirmado, reenvios são deduplicados por terminal no servidor e a compactação atômica remove somente registros já confirmados, preservando todos os pendentes. Durante o turno, uma thread exclusiva sincroniza periodicamente em intervalo local configurável de 15 a 3.600 segundos e é encerrada de forma limpa junto com a WebView, sem depender de reiniciar o caixa. O bootstrap agora publica o pacote vigente e o canal de atualização autenticado aceita somente terminal ativo com licença liberada pelo admin master; o rollout pdv_update_rollout_v1 permite promover uma versão primeiro em caixas piloto e depois no canal estável, congelar atualizações opcionais por máquina e sobrepor o congelamento quando a versão instalada ficar abaixo do mínimo de segurança. O app baixa para arquivo temporário, valida SHA-256, descarta pacote divergente, registra diagnóstico e mantém a instalação manual, sem atualização silenciosa. A contingência de conexão agora usa bootstrap local autorizado com validade padrão de 24 horas: em queda do servidor mostra uma tela local identificando o caixa, bloqueia venda, pagamento e estoque e permite reconectar por F5/Enter e sair com botão dedicado ou Ctrl+Q; somente uma nova validação de terminal e licença abre o PDV, enquanto cache vencido ou terminal recusado permanece bloqueado. A chave de ativação e os parâmetros sensíveis do adaptador TEF deixaram de permanecer em texto no config.json: o agente usa o contrato pdv_local_secret_v1 e DPAPI vinculado ao usuário do Windows, restaura os valores somente em memória, migra automaticamente instalações legadas, bloqueia conteúdo corrompido ou copiado para outro usuário e expõe ao diagnóstico somente o estado da proteção. O contrato pdv_single_instance_v1 usa mutex nomeado por hash da identidade do terminal para impedir duas janelas do mesmo caixa na sessão do Windows, sem expor o identificador e liberando o bloqueio ao encerrar. A reconfiguração também reserva primeiro a identidade atual, impedindo troca de ativação enquanto aquele caixa estiver em execução. Ainda faltam drivers/adaptadores reais e homologação presencial dos equipamentos."),
             ("Balanca integrada no PDV", "partial", "Produtos já possuem marcacao de produto pesavel. Terminal PDV agora permite configurar balanca por caixa com protocolo, porta/endereco e modelo; manifesto, pacote JSON e bootstrap do app desktop entregam essa configuracao por máquina usando o contrato pdv_scale_v1, com leitura automatica, unidade KG, precisao de 3 casas, timeout e fallback manual quando a balanca estiver ausente ou falhar. O app desktop já possui ponte local para expor a configuracao da balanca e retornar leitura estruturada com peso simulado para homologacao. A tela do PDV já chama a ponte local pelo botão Peso e atalho F12, preenchendo a quantidade quando recebe o peso ou orientando digitacao manual no navegador comum. Falhas e retornos manuais da balanca ficam registrados no log local devices.log.jsonl da máquina do caixa e podem ser consultados pela ponte deviceLogs; a Central do App PDV desktop já possui leitura visual desse diagnóstico quando aberta dentro do aplicativo instalado. O servidor já possui endpoint autenticado por terminal para receber lotes de diagnósticos locais e armazenar EventoDispositivoTerminal por caixa, e o app desktop tenta enviar automaticamente os eventos ainda não sincronizados na inicializacao sem bloquear a abertura do PDV. A Central do App PDV desktop exibe histórico consolidado dos eventos recebidos pelo servidor, e uma tela operacional própria oferece resumo, filtros por máquina/tipo/status/período, paginação e exportação CSV. A pré-homologação consolidada permite solicitar explicitamente uma leitura com peso conhecido e inclui protocolo, porta, modelo, peso e resultado na evidência sincronizável. O agente agora possui driver genérico real para Serial RS-232/USB via pyserial, TCP/IP e arquivo texto local, com timeout limitado, leitura máxima controlada, parser decimal, fator de conversão e rejeição de peso instável, zero, valor negativo e sobrecarga. O cadastro valida TCP/IP no formato endereço:porta e exige identificação do modelo para adaptadores proprietários. Falta validar parâmetros e comandos do fabricante escolhido, conectar a balança física e homologar precisão, estabilidade e timeout para ler peso automaticamente no PDV real."),
             ("TEF/API de maquininha", "partial", "Pagamentos possuem estados controlados, ID externo, NSU e autorizacao; venda rejeita transacao pendente, recusada ou estornada. Terminais PDV agora configuram provedor TEF e modo de integracao por adaptador, permitindo PagBank, Cielo, Stone, Getnet, Rede, SiTef ou outro fornecedor sem prender o sistema a uma operadora. O bootstrap do app desktop expõe o contrato pdv_tef_v1 com tipos crédito, débito e PIX dinâmico e retorno esperado. No PDV, pagamento eletrônico chama a ponte processPayment do app desktop, aguarda resposta da maquininha/simulador, grava transacao, NSU e autorizacao na linha de pagamento e bloqueia a finalizacao se não houver retorno confirmado; terminal sem TEF configurado retorna aviso ao operador. O app desktop possui simulador TEF rastreável para desenvolvimento enquanto o adaptador real da adquirente não estiver conectado, incluindo pagamento e refundPayment para estorno autorizado pela maquininha, e grava eventos locais tef em devices.log.jsonl, além de tef_estorno, para diagnóstico central de aprovações, falhas e terminais sem maquininha configurada. Antes de chamar o adaptador, a ponte valida modalidade liberada pelo bootstrap, valor monetário positivo e precisão máxima de centavos tanto no pagamento quanto no estorno. O front envia chave idempotente por tentativa e o bridge reutiliza a autorização ou estorno já aprovado quando a mesma solicitação for repetida na sessão, rejeitando a chave caso os dados mudem. Para PIX, o contrato também expõe checkPayment: primeiro retorna QR Code e estado pendente, depois consulta a transação até a adquirente confirmar, sem tratar a mera geração do QR como pagamento. A camada local agora possui contrato único de adaptadores para processar, consultar e estornar; o driver é escolhido na configuração protegida da máquina e respostas incompletas são rejeitadas sem aprovar a venda. O simulador deixou de ser implícito: depende de autorização explícita do servidor por PDV_TEF_SIMULATOR_ENABLED e fica bloqueado em produção, enquanto provedor configurado sem driver instalado falha de forma segura. Falta conectar e homologar o pacote real do provedor escolhido em equipamento físico, que também deverá honrar a chave idempotente."),
             ("Reversão de pagamento misto", "done", "Cancelamento total estorna parcelas locais e mantém PIX/TEF com transação externa em fila supervisionada até a confirmação da adquirente. Devoluções parciais rateiam o valor entre todos os pagamentos confirmados: a parcela local gera saída financeira imediata, enquanto cada fração eletrônica recebe solicitação própria, valor, motivo, vínculo com a devolução, estado e chave idempotente. O diagnóstico protegido payment_refund_readiness_v1 reúne estornos totais e parciais por antiguidade; a tela permite seleção por teclado e processamento com F10 ou Ctrl+Enter. A supervisão pode confirmar o estorno eletrônico aprovado pela operadora. A fila processa diretamente a parcela selecionada, aguarda a resposta da maquininha e, no navegador, exige evidência informada da adquirente. No app desktop, refundPayment chama o adaptador da maquininha com o valor proporcional e a transação original; somente a resposta aprovada cria o lançamento financeiro inverso, registra autorização, ID externo, usuário e auditoria. Reenvios confirmados são bloqueados, solicitações iguais do mesmo pagamento permanecem independentes e uma venda que já teve devolução parcial não aceita cancelamento total posterior, evitando duplicidade de estoque e reembolso. A conexão e homologação física de cada adquirente continuam controladas no item TEF/API de maquininha."),
@@ -97,12 +105,12 @@ CHECKLIST_GRUPOS = [
         "descricao": "Visão administrativa para acompanhamento da operacao.",
         "itens": [
             ("Dashboard", "done", "Indicadores principais e atalhos por perfil."),
-            ("Relatórios de vendas", "done", "Periodo, faturamento, descontos, devoluções e produtos vendidos."),
-            ("Curva ABC e reposição", "done", "Analises para decisão de compra e estoque."),
-            ("Relatórios de caixas", "done", 'Abertos, aguardando conferência, conferidos, declarado e conferido. Relatório de caixas/PDV por funcionário possui filtro por operador, resumo por operador com caixas, vendas, total vendido, sangrias, suprimentos, saldo operacional, valores inicial/declarado/conferido, diferença de conferência por caixa e por operador, formas de pagamento no relatório impresso/PDF, exportação Excel/CSV com valores monetários em duas casas e impressão/PDF preservando o filtro.'),
-            ("Relatórios de perdas/devoluções/compras", "done", "Telas especificas criadas por período."),
-            ("Exportacoes", "done", "Relatórios operacionais e gerenciais exportam CSV compativel com Excel e possuem versao para PDF."),
-            ("Gráficos de pizza no dashboard", "done", "Dashboard usa Chart.js para composição por forma de pagamento, categorias e status dos caixas."),
+            ("Relatórios de vendas", "done", "Período, faturamento, descontos, devoluções e produtos vendidos. Painel, CSV e PDF respeitam o escopo empresarial: gerente consulta sua filial, administrador consolida ou filtra matriz/filial da própria empresa e filial externa é recusada pelo backend."),
+            ("Curva ABC e reposição", "done", "Análises para decisão de compra e estoque com isolamento empresarial em painel, CSV e PDF. A reposição calcula vendas e devoluções por produto e filial, sem misturar a demanda entre lojas."),
+            ("Relatórios de caixas", "done", 'Abertos, aguardando conferência, conferidos, declarado e conferido. Relatório de caixas/PDV por funcionário possui filtro por operador, resumo por operador com caixas, vendas, total vendido, sangrias, suprimentos, saldo operacional, valores inicial/declarado/conferido, diferença de conferência por caixa e por operador, formas de pagamento no relatório impresso/PDF, exportação Excel/CSV com valores monetários em duas casas e impressão/PDF preservando o filtro. O resumo agora permite abrir o detalhe de cada funcionário, mostra entradas líquidas por forma de pagamento, exclui pagamentos integralmente estornados e abate estornos parciais confirmados. O escopo foi endurecido: gerente e financeiro consultam somente a filial vinculada, administrador consolida matriz e filiais da própria empresa e apenas o super admin possui visão global. O filtro de filial alterna entre consolidado, matriz e loja específica, restringe a lista de operadores e é preservado no CSV e PDF; operador ou filial externa são recusados em todos os formatos.'),
+            ("Relatórios de perdas/devoluções/compras", "done", "Telas específicas por período com filtro de filial e isolamento empresarial no painel, CSV e PDF. Gerente e financeiro ficam na filial vinculada, administrador consolida ou seleciona uma filial da própria empresa e filial externa é recusada pelo backend."),
+            ("Exportacoes", "done", "Relatórios operacionais e gerenciais exportam CSV compatível com Excel e possuem versão para PDF. Vendas, Curva ABC, estoque baixo, reposição, movimentações, perdas, devoluções, compras e caixas preservam o filtro de filial e aplicam o mesmo escopo empresarial em todas as saídas."),
+            ("Gráficos de pizza no dashboard", "done", "Dashboard usa Chart.js para composição por forma de pagamento, categorias e status dos caixas. Indicadores, gráficos e caixas recentes agora respeitam o escopo empresarial e o filtro de filial: gerente e financeiro ficam na filial vinculada, administrador consolida ou seleciona matriz/filial da própria empresa e super admin mantém visão global. Produtos são contabilizados pelos estoques das filiais selecionadas, pagamentos representam entradas líquidas e filial externa é recusada pelo backend."),
         ],
     },
     {
@@ -110,9 +118,16 @@ CHECKLIST_GRUPOS = [
         "descricao": "Requisitos acrescentados pelo documento de usabilidade, cadastros e entrega.",
         "itens": [
             ("Login sem caixa alta", "done", "Usuario, e-mail e senha preservam a digitacao original na tela de acesso."),
+            ("Paginação e proteção de grandes listagens", "done", "Auditoria, usuários, clientes, fornecedores, produtos, compras, financeiro, fiscal, relatórios, marketplace, Kardex, estoque avançado, filas visuais de PDV e sincronização usam paginação de até 50 registros por página. Totais gerenciais continuam calculados sobre o filtro completo; autocompletes, dashboards, exportações e lotes técnicos mantêm limites próprios adequados ao contrato."),
             ("Busca inteligente/autocomplete", "done", "PDV possui buscas locais por teclado; Select2 aplicado em filial, produto, fornecedor, cliente, categoria e marca nos formulários mais extensos. A busca remota por API foi ativada no Select2, com endpoints JSON para produtos, clientes, fornecedores, filiais, categorias e marcas, uso em compras, financeiro, marketplace, produtos, etiquetas e configuracoes, filtro para produtos vendidos no marketplace e permissões coerentes com os módulos operacionais."),
             ("Consulta de CNPJ e CEP", "partial", "Formularios de empresa e filial possuem mascaras, avisos, campo auxiliar de CEP, botao de consulta CNPJ/CEP, contrato JSON cadastro_lookup_v1, validacao formal de CNPJ, validacao de CEP, reaproveitamento de dados locais de empresas/filiais por CNPJ ou CEP e preenchimento automatico dos campos vazios quando houver cadastro local correspondente. O endpoint aceita provedores HTTP externos configurados por CADASTRO_CNPJ_PROVIDER_URL, CADASTRO_CEP_PROVIDER_URL e CADASTRO_LOOKUP_TIMEOUT_SEGUNDOS, normaliza respostas de CNPJ/CEP, expõe diagnóstico JSON com status dos provedores, timeout, modo local/offline, volume reaproveitável da base local e prontidão cadastro_lookup_readiness_v1 para distinguir fallback local, configuração parcial e provedores prontos para homologação, preserva fallback local/offline e retorna erro controlado quando o servico externo falhar. O front aplica tanto retorno local quanto retorno externo. Falta escolher e homologar a API oficial de producao para CNPJ e CEP."),
             ("Cadastros complementares padronizados", "done", "Clientes, fornecedores, produtos e usuários possuem formulários organizados por seções operacionais, com textos de apoio para PDV, compras e etapas futuras."),
+            ("Clientes isolados por empresa", "done", "Cliente agora possui vínculo explícito com a empresa. Lista, edição, busca Select2, PDV, DAV, marketplace e financeiro filtram pelo perfil autenticado; IDs forjados são rejeitados no formulário e os serviços bloqueiam venda, pedido ou conta com cliente de outra empresa. A migration atribui legados somente quando existe evidência unívoca por venda, DAV, conta ou pedido, preservando casos ambíguos para revisão."),
+            ("Fornecedores isolados por empresa", "done", "Fornecedor possui vínculo explícito com a empresa. Cadastro, edição, listagem, busca Select2, cotação, pedido, entrada, financeiro e importação de NF-e respeitam a empresa; combinações entre fornecedor e filial de empresas diferentes são rejeitadas. A migração atribui legados apenas com evidência unívoca e os testes cobrem acesso cruzado."),
+            ("Fluxos de compras isolados por empresa", "done", "Listagens, indicadores, detalhes, formulários, propostas, exportações CSV, impressões e ações diretas de cotações, pedidos e entradas usam o escopo da empresa autenticada. Alterar IDs na URL retorna 404 antes de abrir, enviar, converter, finalizar, cancelar ou excluir documentos de outra empresa; o super admin preserva a visão global."),
+            ("Pedidos do marketplace isolados por empresa", "done", "Pedidos, separação, pagamentos, preparação fiscal, integrações, diagnósticos, renovação de chaves, políticas e simulações de entrega respeitam a empresa autenticada. URLs cruzadas retornam 404, formulários rejeitam filiais externas e a API continua isolada pela chave do parceiro, inclusive quando existe uma sessão web de outra empresa."),
+            ("Documentos fiscais isolados por empresa", "done", "Configurações, séries, documentos, vendas pendentes, contingência, diagnósticos, XML, impressão, transmissão e cancelamento agora respeitam a empresa do perfil autenticado. IDs de outra empresa retornam 404, formulários rejeitam filiais externas e o super admin preserva a visão global; testes cobrem consultas, exportações e ações forjadas."),
+            ("Estoque e produção isolados por empresa", "done", "Estoque, lotes, reconciliação, inventários, perdas, desmembramentos, receitas, composições, produções, ordens e SLA respeitam a empresa autenticada nas listagens, indicadores, relatórios, CSV, JSON, formulários e ações por ID. Filiais, empresas, receitas, composições, responsáveis e credenciais de supervisor externos são rejeitados, enquanto o super admin preserva a visão global."),
             ("Imagens de produto", "done", "Foto principal e galeria adicional com legenda, ordenacao e remoção integradas ao cadastro e preparadas para exibicao no marketplace."),
             ("Políticas de entrega por filial", "partial", "Raio, faixas por distancia, pedido mínimo, frete grátis, bairros e horarios configuraveis implementados. O cálculo de entrega agora valida bairros atendidos e bloqueados, exigindo bairro quando a filial possui area atendida restrita. A tela de politicas permite simular subtotal, distancia manual, endereco para geocodificacao e bairro por filial usando a mesma regra do pedido real. O diagnóstico JSON informa os contratos delivery_geocode_v1 e delivery_policy_readiness_v1, valida ausência, lacunas, sobreposição e cobertura das faixas, classifica prontidão por filial, informa se MARKETPLACE_GEOCODING_PROVIDER_URL está configurado, timeout e fallback manual de distancia. O endpoint de status do parceiro marketplace_partner_v1 agora expõe a politica delivery_policy_v1 da filial, com retirada, entrega, raio, pedido minimo, frete gratis, bairros, faixas, geocoding e alertas antes do pedido real. Falta escolher e homologar provedor de mapa/rota de produção."),
             ("Certificado digital protegido", "done", "Configuracao fiscal aceita upload A1 .pfx/.p12, criptografa arquivo e senha, lê validade e mostra alertas de vencimento."),
@@ -145,18 +160,19 @@ CHECKLIST_GRUPOS = [
         "titulo": "Próximas fases",
         "descricao": "Itens previstos na documentacao, ainda fora do MVP atual.",
         "itens": [
-            ("Fiscal/NFC-e e NF-e", "partial", "Fila fiscal mostra vendas prontas, pendencias antes da acao e ultima tentativa automatica auditada; tela de produtos fiscais antecipa correcoes de NCM, CEST, origem, CST/CSOSN e alíquota. XML local usa UF e código IBGE da filial. A NFC-e segue a regra de ocorrer somente após pagamento confirmado: por padrao a venda tenta preparar a NFC-e automaticamente, mas o admin pode desativar essa tentativa por terminal PDV quando a empresa decidir operar aquele caixa sem comunicacao fiscal automatica. O PDV exibe no topo se o terminal identificado esta com fiscal automático ligado ou desligado. A venda presencial agora aceita CPF opcional na nota sem cadastro de cliente, pergunta o documento dentro do popup de pagamento, grava o dado na venda e inclui o CPF no XML local da NFC-e; CNPJ solicitado no caixa é bloqueado para NFC-e automática e orientado para NF-e modelo 55. Pedidos online/marketplace agora possuem documento do destinatário e podem preparar NF-e modelo 55 local, com série e natureza fiscal próprias, vinculada ao pedido. Painel fiscal agora traz prontidão por filial, certificado, séries, vendas aguardando documento, produtos com pendência e diagnóstico JSON fiscal_readiness_v1 para suporte. O diagnóstico também separa homologação simulada de produção real pelo contrato fiscal_production_readiness_v1, alertando quando existe filial em produção sem adaptador oficial SEFAZ configurado. Se faltar cadastro fiscal, a venda não trava e a pendencia fica auditada para correção. Transmissao simulada em homologacao gera chave, protocolo e auditoria, mas ainda faltam assinatura, schema oficial, transmissão SEFAZ real, captura de CPF/CNPJ pelo pinpad quando o TEF permitir e contingência quando a SEFAZ estiver indisponivel. Exportacao operacional de contingencia JSON agora gera pacote fiscal_contingencia_v1 com documentos prontos, rejeitados ou cancelados, XML, origem, filial, valores e auditoria, sem substituir assinatura ou autorizacao oficial da SEFAZ."),
-            ("Financeiro completo", "partial", "Contas a pagar/receber, baixas, cancelamentos, categorias, fluxo de caixa, conciliacao PDV x financeiro, contas de movimento, vendas a vista do PDV no livro, transferencias entre contas, livro financeiro imutavel, estornos por lancamento inverso, resultado por receitas/despesas, cards gerenciais e exportacoes criadas. Resultado financeiro agora inclui visao por origem, categoria, conta de movimento, saldos por filial, balancete gerencial com saldo anterior, entradas, saidas e saldo final por conta, conciliação bancária imutável por lançamento com referência, responsável, filtros, paginação, CSV e auditoria, indicadores de cobertura conciliada por quantidade, valor e conta no fechamento gerencial e pacote contábil JSON, DRE gerencial com receita operacional, despesas, resultado e margem operacional, CSV gerencial para Excel e pacote contábil JSON financial_accounting_package_v1 para conferência interna com contador. A proxima evolucao inclui integracao final com fiscal/contábilidade e relatórios contábeis oficiais."),
-            ("Entradas, saídas e livro contábil", "partial", "Contas de movimento por filial para caixa físico, banco, PIX e outras foram criadas com saldo inicial e saldo atual. Baixas geram entrada ou saída no livro imutavel, vendas a vista do PDV geram entradas automaticas por forma de pagamento, sangria e suprimento geram saída/entrada automatica no Caixa PDV, transferencias geram lançamentos espelhados, atômicos e auditados entre contas da mesma empresa, e estornos rastreáveis criam lancamento inverso sem alterar o original. O livro possui origem, usuario, data, filtros, exportacao CSV, validacao de saldo e conciliação bancária separada e imutável com referência de extrato, responsável e auditoria, relatório de receitas, despesas e resultado que ignora transferencias internas, e balancete gerencial que considera transferencias para refletir o saldo real das contas. Ainda faltam integracao automatica de origens fiscais/contábeis avancadas e relatórios contábeis oficiais. Referencia funcional identificada no ProjetoLimpoGitHub para migracao adaptada, sem alterar o projeto original."),
-            ("Marketplace / pedido online", "partial", "Fluxo operacional completo, API segura com chave por plataforma, validacao de itens, idempotencia e acompanhamento visual de separacao/pagamento na listagem implementados. Pedidos agora guardam CPF, CNPJ ou documento estrangeiro do destinatário, inclusive pela API do parceiro, e o detalhe do pedido permite preparar NF-e modelo 55 local vinculada ao pedido online. A central de integracoes agora mostra saude operacional por canal, pedidos recebidos, pedidos abertos, pagamentos pendentes, alertas de homologacao e prontidão marketplace_partner_readiness_v1 por parceiro, com diagnostico JSON para suporte sem expor a chave completa. API de parceiros tambem possui endpoint autenticado marketplace_partner_v1 para validar chave, filial, recursos, idempotencia, politica de entrega e prontidão antes de enviar pedido real. Adaptadores especificos de cada parceiro e transmissão SEFAZ real seguem pendentes."),
-            ("Impressao personalizada", "done", "Configuracoes de papel, margens, fonte, rodape, vias e impressão automatica aplicadas aos recibos. No app desktop, o botão pos-venda usa o payload autenticado existente, monta cupom operacional sem imagens e envia diretamente ao spooler Windows em RAW/ESC-POS, com até três vias, corte de papel e pulso opcional da gaveta, sem abrir pré-visualizacao."),
+            ("Fiscal/NFC-e e NF-e", "partial", "Fila fiscal mostra vendas prontas, pendencias antes da acao e ultima tentativa automatica auditada; tela de produtos fiscais antecipa correcoes de NCM, CEST, origem, CST/CSOSN e alíquota. XML local usa UF e código IBGE da filial. A NFC-e segue a regra de ocorrer somente após pagamento confirmado: por padrao a venda tenta preparar a NFC-e automaticamente, mas o admin pode desativar essa tentativa por terminal PDV quando a empresa decidir operar aquele caixa sem comunicacao fiscal automatica. O PDV exibe no topo se o terminal identificado esta com fiscal automático ligado ou desligado. A venda presencial agora aceita CPF opcional na nota sem cadastro de cliente, pergunta o documento dentro do popup de pagamento, grava o dado na venda e inclui o CPF no XML local da NFC-e; CNPJ solicitado no caixa é bloqueado para NFC-e automática e orientado para NF-e modelo 55. Pedidos online/marketplace agora possuem documento do destinatário e podem preparar NF-e modelo 55 local, com série e natureza fiscal próprias, vinculada ao pedido. Painel fiscal agora traz prontidão por filial, certificado, séries, vendas aguardando documento, produtos com pendência e diagnóstico JSON fiscal_readiness_v1 para suporte. O diagnóstico também separa homologação simulada de produção real pelo contrato fiscal_production_readiness_v1, alertando quando existe filial em produção sem adaptador oficial SEFAZ configurado. Se faltar cadastro fiscal, a venda não trava e a pendencia fica auditada para correção. Transmissao simulada em homologacao gera chave, protocolo e auditoria. A contingência offline da NFC-e agora depende de autorização explícita por filial, aceita somente documento pronto e modelo 65, exige justificativa técnica, grava início e prazo de 24 horas, regenera o XML com tpEmis 9, dhCont e xJust, mantém o documento sem protocolo até a regularização e registra toda a decisão em auditoria. A central e o diagnóstico destacam documentos em contingência e prazos vencidos; a exportação fiscal_contingencia_v1 inclui os dados necessários para suporte e posterior transmissão. A transmissão SEFAZ real agora passa pelo contrato único de adaptadores SEFAZ: a classe configurada precisa ser carregável, recebe XML, ambiente e chave idempotente determinística, e somente retornos estritos de autorizado, rejeitado ou pendente alteram o documento. Autorização exige chave de acesso de 44 dígitos e protocolo; falhas, rejeições e pendências preservam evidência e auditoria, e o botão de produção só aparece quando o adaptador é válido, há validação XSD e a assinatura está disponível pelo provedor ou pelo certificado A1 local válido. A preparação agora calcula e persiste a chave de acesso de 44 dígitos com DV módulo 11, usa o mesmo identificador no infNFe, recalcula a chave ao mudar para tpEmis 9 e executa pré-validação de XML, modelo, cDV, assinatura e coerência da chave retornada antes de aceitar autorização. A validação XSD local agora usa lxml com parser sem rede, DTD ou entidades, pacote versionado por diretório, arquivo raiz e SHA-256; a prontidão aceita schema local homologado ou capacidade valida_schema declarada pelo provedor e bloqueia produção quando nenhuma opção está disponível. A assinatura XMLDSig local com certificado A1 está implementada com C14N, referência envelopada, RSA-SHA1 e SHA1 conforme o leiaute NF-e, valida período do certificado, identificador, algoritmos, digest e assinatura antes da transmissão, impede referências duplicadas e registra data e serial sem persistir a chave privada no XML; provedores que declaram assina_xml continuam responsáveis pela assinatura no fluxo alternativo. O comando instalar_schemas_fiscais agora recebe ZIP local ou URL HTTPS restrita ao Portal Nacional, exige SHA-256 aprovado, bloqueia traversal, links e pacotes abusivos, compila o XSD sem rede, promove versões atomicamente e grava manifesto auditável; ele foi validado também contra o pacote oficial 010e v1.01 em área temporária, sem ativação automática. O DANFE NFC-e térmico agora possui layout compacto próprio, valores em R$, chave, protocolo, consumidor e QR Code 3.0 de consulta; as URLs oficiais são configuradas por filial/ambiente, o XML inclui infNFeSupl e a contingência assina os parâmetros com o mesmo certificado A1. Documento não autorizado recebe aviso de sem valor fiscal e não exibe QR; esse QR não pertence ao cupom não fiscal. O pós-venda e a reimpressão do PDV agora priorizam automaticamente a NFC-e emitida ou em contingência: o endpoint entrega o contrato danfe_nfce com chave, série, número, protocolo, consumidor e QR original do XML; o app desktop monta DANFE compacto e QR nativo ESC/POS, envia direto ao spooler sem pré-visualização e informa falhas ao operador. Sem documento fiscal imprimível, permanece o cupom não fiscal explicitamente identificado. A opção central de impressão automática agora é efetivamente respeitada no app desktop ao abrir o pós-venda CAIXA LIVRE; no navegador comum o operador mantém o comando F10. A transmissão automática ganhou a fila fiscal_transmission_queue_v1: comando agendável por lote, habilitação explícita, produção separada da simulação de homologação, limite de tentativas, espera exponencial, lease contra concorrência, diagnóstico visual/JSON e script Windows para execução recorrente; o painel e o JSON respeitam o escopo da empresa, enquanto o serviço central processa todas as filiais autorizadas do servidor; falhas não travam o caixa nem perdem o documento. A Central Fiscal agora permite que gerente ou administrador corrija a origem e recoloque rejeições ou falhas na fila mediante motivo obrigatório: o XML é regenerado, a assinatura anterior é invalidada, as tentativas são reiniciadas e o estado anterior fica registrado em auditoria; documentos autorizados, cancelados ou inutilizados não podem ser reabertos. Ainda faltam selecionar com contador/provedor o conjunto oficial aplicável entre os pacotes e cronogramas vigentes, promovê-lo em homologação e produção, implementar e homologar o provedor SEFAZ escolhido, validar a assinatura no ambiente da UF e homologar o provedor escolhido no ambiente da UF. A captura opcional de CPF/CNPJ pelo pinpad agora negocia capacidade com cada driver TEF, oferece atalho Shift+F4 no pagamento, preserva digitação manual quando indisponível, valida CPF/CNPJ recebido e não grava o documento pessoal no diagnóstico local; falta homologar esse recurso nos pinpads físicos dos provedores selecionados."),
+            ("Financeiro completo", "partial", "Contas a pagar/receber, baixas, cancelamentos, categorias, fluxo de caixa, conciliacao PDV x financeiro, contas de movimento, vendas a vista do PDV no livro, transferencias entre contas, livro financeiro imutavel, estornos por lancamento inverso, resultado por receitas/despesas, cards gerenciais e exportacoes criadas. Resultado financeiro agora inclui visao por origem, categoria, conta de movimento, saldos por filial, balancete gerencial com saldo anterior, entradas, saidas e saldo final por conta, conciliação bancária imutável por lançamento com referência, responsável, filtros, paginação, CSV e auditoria, indicadores de cobertura conciliada por quantidade, valor e conta no fechamento gerencial e pacote contábil JSON, DRE gerencial com receita operacional, despesas, resultado e margem operacional, CSV gerencial para Excel e pacote contábil JSON financial_accounting_package_v1 para conferência interna com contador. A conferência fiscal x financeiro agora compara documentos não cancelados vinculados às vendas com entradas do livro ligadas aos respectivos pagamentos, destaca valores divergentes, vendas sem documento, documentos sem lançamento e expõe o contrato financial_fiscal_reconciliation_v1 na tela, CSV e pacote contábil JSON. O fechamento gerencial agora respeita o escopo empresarial em todos os cálculos, conciliações e exportações: o super admin do software pode selecionar qualquer filial ou consolidar todas; o administrador da empresa pode obter o panorama consolidado da matriz e filiais da própria empresa ou filtrar cada uma; usuários financeiros e gerenciais ficam limitados à filial do perfil. A mesma regra foi aplicada ao Livro de entradas e saídas, contas a pagar/receber, fluxo de caixa, conciliação diária e bancária, com filtros de filial e exportações preservando a seleção. Tentativas de atravessar o escopo permitido são bloqueadas nas telas, ações por URL, CSV e JSON. A ponte com provedores contábeis agora possui o contrato financial_accounting_adapter_readiness_v1, configuração desacoplada por FINANCEIRO_CONTABIL_ADAPTER, diagnóstico JSON, envio administrativo idempotente do fechamento, protocolo, hash do payload, histórico protegido contra exclusão e auditoria por usuário/IP. A próxima evolução inclui escolher e homologar o provedor fiscal/contábil real e implementar relatórios oficiais como SPED, ECD e ECF."),
+            ("Entradas, saídas e livro contábil", "partial", "Contas de movimento por filial para caixa físico, banco, PIX e outras foram criadas com saldo inicial e saldo atual. Baixas geram entrada ou saída no livro imutavel, vendas a vista do PDV geram entradas automaticas por forma de pagamento, sangria e suprimento geram saída/entrada automatica no Caixa PDV, transferencias geram lançamentos espelhados, atômicos e auditados entre contas da mesma empresa, e estornos rastreáveis criam lancamento inverso sem alterar o original. O livro possui origem, usuario, data, filtros, exportacao CSV, validacao de saldo e conciliação bancária separada e imutável com referência de extrato, responsável e auditoria, relatório de receitas, despesas e resultado que ignora transferencias internas, e balancete gerencial que considera transferencias para refletir o saldo real das contas. A origem de vendas do livro já é confrontada com os documentos fiscais correspondentes no fechamento gerencial, sem alterar o livro imutável. A exportação gerencial agora pode ser entregue por adaptador contábil configurável, com idempotência, protocolo, histórico e auditoria; ainda faltam homologar o provedor escolhido e as integrações contábeis oficiais. Referencia funcional identificada no ProjetoLimpoGitHub para migracao adaptada, sem alterar o projeto original."),
+            ("Marketplace / pedido online", "partial", "Fluxo operacional completo, API segura com chave por plataforma, validacao de itens, idempotencia e acompanhamento visual de separacao/pagamento na listagem implementados. Pedidos agora guardam CPF, CNPJ ou documento estrangeiro do destinatário, inclusive pela API do parceiro, e o detalhe do pedido permite preparar NF-e modelo 55 local vinculada ao pedido online. A central de integracoes agora mostra saude operacional por canal, pedidos recebidos, pedidos abertos, pagamentos pendentes, alertas de homologacao e prontidão marketplace_partner_readiness_v1 por parceiro, com diagnostico JSON para suporte sem expor a chave completa. API de parceiros tambem possui endpoint autenticado marketplace_partner_v1 para validar chave, filial, recursos, idempotencia, politica de entrega e prontidão antes de enviar pedido real. A camada marketplace_partner_adapter_v1 agora seleciona o provedor por integração, mantém os caminhos Python exclusivamente no ambiente do servidor, traduz payloads externos antes da transação, preserva idempotência pela referência normalizada, bloqueia com segurança provedores sem driver e publica prontidão na Central e na API do parceiro. O contrato e o roteiro de homologação estão documentados em docs/INTEGRACOES_MARKETPLACE.md. Ainda faltam implementar e homologar os adaptadores reais dos parceiros escolhidos e concluir a transmissão SEFAZ real."),
+            ("Impressao personalizada", "done", "Configuracoes de papel, margens, fonte, rodape, vias e impressão automatica aplicadas aos recibos. No app desktop, o botão pos-venda usa o payload autenticado existente, monta cupom operacional sem imagens e envia diretamente ao spooler Windows em RAW/ESC-POS, com até três vias, corte de papel e pulso opcional da gaveta, sem abrir pré-visualizacao. O cupom não fiscal foi padronizado para bobinas de 58 e 80 mm com fonte compacta, CNPJ, endereço, descrições acentuadas, quantidade total, valores identificados em R$, pagamentos, troco, operador, caixa e aviso explícito de documento sem valor fiscal; o recibo web segue a mesma hierarquia. Quando existe NFC-e autorizada ou em contingência, F10 e a reimpressão usam o DANFE fiscal com QR Code no navegador e no app desktop; o cupom não fiscal é usado somente quando não há documento fiscal imprimível."),
             ("Descoberta de impressoras locais", "done", "Central de impressão possui campo com sugestões e endpoint de configuracao. A ponte do app desktop consulta as impressoras instaladas no Windows sem shell interativo e devolve nome, porta, driver, estado e impressora padrao para a mesma interface do PDV, tratando timeout ou falha sem bloquear a venda."),
             ("Gaveta de dinheiro opcional", "partial", "Central de impressão permite habilitar ou desabilitar gaveta automatica por empresa/filial e documento de caixa. Bootstrap e pacote do terminal entregam o contrato pdv_cash_drawer_v1 com impressora, abertura em dinheiro e movimentos de caixa. O app desktop possui ponte openCashDrawer, envia pulso ESC/POS pela impressora configurada e registra diagnóstico local da gaveta em sucesso, falha ou desabilitado sem bloquear a venda. Venda em dinheiro, sangria, suprimento, abertura e fechamento de caixa agendam abertura somente depois da operacao ser aceita pelo servidor, preservando senha de supervisor/admin quando exigida. A pré-homologação não aciona a gaveta por padrão e só envia o pulso após seleção explícita e confirmação de segurança pelo operador, registrando a evidência consolidada. Falta testar com gavetas físicas reais."),
-            ("Backup/restauracao operacional", "done", "Tela de backup JSON e roteiro de restauracao segura disponíveis em Sistema."),
-            ("Modo local administrativo", "partial", "Para supermercados sem internet ou sem rede estruturada, o produto deve permitir instalação local do servidor administrativo na própria loja, em um computador servidor ou máquina principal, acessado por navegador em localhost ou rede interna. Não é necessário duplicar todo o ERP em um segundo app desktop administrativo; a abordagem profissional é empacotar o servidor local, banco, serviços, backup, atualizações controladas e um atalho/app shell opcional para abrir o painel administrativo. A central Sistema > Servidor local já apresenta arquitetura, requisitos, modos por empresa, riscos pendentes, manifesto JSON erp_local_admin_v1, guia docs/IMPLANTACAO_SERVIDOR_LOCAL.md e scripts scripts/run_local_server.ps1, scripts/install_local_server_service.ps1, scripts/test_local_server_service.ps1, scripts/uninstall_local_server_service.ps1, server_local/windows/MercaFlowServidorLocal.xml.template, scripts/register_local_server_task.ps1, scripts/backup_local.ps1, scripts/register_backup_task.ps1 e scripts/register_sync_task.ps1 para operação local inicial, backup e sincronização recorrente no Windows. O backup local já suporta criptografia opcional AES-256 por BACKUP_ENCRYPTION_PASSPHRASE e remoção do zip aberto com -RemoverOriginalCriptografado. Manifesto e tela do servidor local agora especificam o contrato de servico Windows MercaFlowServidorLocal, comando WSGI via Waitress, healthcheck, restart, logs, fallback operacional e contrato de prontidao local_admin_readiness_v1 validando scripts, guia, backup criptografado e modos de implantacao. O PDV desktop continua separado e restrito ao operador, enquanto gerente/admin acessa o mesmo sistema web local com permissões completas. O servico Windows real agora possui instalador WinSW validado por SHA-256, Waitress, inicio automatico, reinicio em falha, logs, diagnostico e remocao; a tarefa agendada fica como contingencia. Falta homologar em uma maquina Windows limpa, definir a conta dedicada, empacotar a distribuicao assinada e concluir a politica final de sincronizacao opcional com a nuvem."),
+            ("Backup/restauracao operacional", "done", "Tela de backup JSON, backup local erp_local_backup_v2 e restaurador scripts/restore_local_backup.ps1 disponíveis em Sistema. A validação confere SHA-256, AES-256, contrato e ZIP antes da janela; a execução real exige confirmação e privilégio administrativo, cria backup anterior, restaura SQLite ou PostgreSQL e mídia com o serviço parado, aplica migrations, exige healthcheck e faz rollback automático em falha."),
+            ("Modo local administrativo", "partial", "Para supermercados sem internet ou sem rede estruturada, o produto deve permitir instalação local do servidor administrativo na própria loja, em um computador servidor ou máquina principal, acessado por navegador em localhost ou rede interna. Não é necessário duplicar todo o ERP em um segundo app desktop administrativo; a abordagem profissional é empacotar o servidor local, banco, serviços, backup, atualizações controladas e um atalho/app shell opcional para abrir o painel administrativo. A central Sistema > Servidor local já apresenta arquitetura, requisitos, modos por empresa, riscos pendentes, manifesto JSON erp_local_admin_v1, guia docs/IMPLANTACAO_SERVIDOR_LOCAL.md e scripts scripts/run_local_server.ps1, scripts/install_local_server_service.ps1, scripts/test_local_server_service.ps1, scripts/uninstall_local_server_service.ps1, server_local/windows/DeigoVarejoServidorLocal.xml.template, scripts/register_local_server_task.ps1, scripts/backup_local.ps1, scripts/register_backup_task.ps1 e scripts/register_sync_task.ps1 para operação local inicial, backup e sincronização recorrente no Windows. O backup local usa o contrato erp_local_backup_v2, descobre as fontes pela configuração efetiva do Django ou pelo XML WinSW, gera dump lógico, snapshot SQLite consistente, mídia, manifesto e SHA-256; suporta criptografia opcional AES-256 por BACKUP_ENCRYPTION_PASSPHRASE e remoção do zip aberto com -RemoverOriginalCriptografado. O restaurador scripts/restore_local_backup.ps1 valida SHA-256, descriptografa AES-256 quando necessario, rejeita ZIP inseguro e contrato incompativel, exige confirmacao explicita e privilegio administrativo, cria um backup anterior, restaura SQLite ou PostgreSQL e midia com o servico parado, aplica migrations, exige healthcheck e recupera automaticamente os dados anteriores em caso de falha. O agendamento valida primeiro o contrato local_backup_sources_v1 e executa como SYSTEM sem depender de usuário conectado. Manifesto e tela do servidor local agora especificam o contrato de servico Windows DeigoVarejoServidorLocal, comando WSGI via Waitress, healthcheck, restart, logs, fallback operacional e contrato de prontidao local_admin_readiness_v1 validando scripts, guia, backup criptografado e modos de implantacao. O PDV desktop continua separado e restrito ao operador, enquanto gerente/admin acessa o mesmo sistema web local com permissões completas. O servico Windows real agora possui instalador WinSW validado por SHA-256, Waitress, inicio automatico, reinicio em falha, logs, diagnostico e remocao; a tarefa agendada fica como contingencia. A política final de sincronização operacional opcional está aplicada no modelo: modo local força sincronização automática desligada, limpa a URL externa, pausa filas existentes, rejeita novos eventos operacionais da nuvem e retoma os eventos ao voltar para híbrido com URL HTTPS; a consulta de licenciamento comercial permanece independente. O instalador do serviço agora usa por padrão a conta virtual NT SERVICE\\DeigoVarejoServidorLocal, sem senha armazenada, separa banco SQLite, mídia, estáticos e logs em ProgramData e aplica ACL mínima. O script scripts/package_local_server.ps1 gera pacote somente de commit Git limpo, com versão, manifesto, SHA-256 e opção de exigir commit assinado, sem dados ou segredos do cliente. O script scripts/publish_local_server.ps1 promove o ZIP e seu manifesto de forma atômica para a Central, que valida contrato, versão, commit rastreável, integridade, ausência de dados do cliente e exigência de commit assinado antes de liberar download exclusivo ao admin master e registrar auditoria. O atualizador scripts/update_local_server.ps1 valida o pacote antes da janela, rejeita ZIP inseguro, preserva .env e dados, cria snapshot do código e SQLite, para o serviço, aplica dependências, migrations e estáticos, exige healthcheck e restaura automaticamente código e banco em caso de falha, mantendo histórico local auditável. Backup e restauração PostgreSQL usam pg_dump/pg_restore em formato custom com transação e rollback automático; atualização de código com reversão de migrations destrutivas continua exigindo janela assistida e DBA. Falta homologar instalação, atualização, rollback e restauração em uma máquina Windows limpa e assinar o artefato definitivo."),
+            ("Manual completo de instalação no supermercado", "partial", "Primeira versão criada em docs/MANUAL_INSTALACAO_SUPERMERCADO.md. O roteiro cobre responsabilidade técnica, distribuição sem código-fonte, topologia local/híbrida, requisitos, PostgreSQL, variáveis de ambiente, serviço Windows, licenciamento, instalação dos PDVs, dispositivos, fiscal, backup, restauração, sincronização, atualização, rollback, testes de aceite, entrega e registro da implantação. O manual deve evoluir junto com o produto e será parte obrigatória do pacote de prontidão. Faltam acrescentar capturas das telas definitivas, comandos finais do pipeline assinado, modelos de equipamentos homologados e validar o procedimento completo em uma máquina Windows limpa antes da versão 1.0."),
             ("Aplicativo desktop/PDF", "partial", "Endpoints de configuracao e payload de impressão da venda preparados para o app desktop, incluindo dados de pagamento eletrônico, NSU, autorizacao e transacao externa para cupom e comprovante. A interface desktop reutiliza o mesmo design, componentes, atalhos e regras do PDV web em um shell WebView separado, adaptando apenas a camada de integracao com hardware e serviços locais. O esqueleto desktop_pdv possui ativacao guiada na primeira execucao, valida o bootstrap licenciado antes de salvar a credencial em LOCALAPPDATA e abrir /pdv/, permite reconfiguracao e protege a chave de versionamento. O build reproduzivel do executavel Windows com PyInstaller também foi preparado. A Central do App PDV desktop publica o instalador somente quando o artefato configurado existe, apresenta tamanho e SHA-256, restringe o download ao admin master e registra a entrega na auditoria. Um script de publicacao atômica confere integridade, impede arquivo parcial na central e grava metadados de versao; versao e caminho do artefato sao configuraveis por ambiente. O app informa sua versao no bootstrap, recebe versao vigente e minima, avisa atualizacao opcional e bloqueia versao insegura; a instalacao continua exigindo o admin master, sem atualizacao automatica fora do licenciamento. O app desktop agora salva cache local do bootstrap autorizado e, se o servidor estiver indisponivel, abre com esse cache somente quando o terminal permite modo offline, registrando diagnostico local; recusa de licença, chave ou terminal bloqueado nunca usa o cache como atalho. O manifesto JSON do app desktop expõe disponibilidade, integridade, contratos, terminais autorizados e prontidão de distribuição pelo contrato pdv_desktop_readiness_v1, alertando falta de instalador assinado, ausência de terminais e licenças pendentes. Pacote JSON por terminal entrega bootstrap, URL da interface compartilhada, TEF, fiscal, impressão, gaveta, balanca configurada, licenca por máquina e sincronizacao; o bootstrap operacional também devolve a configuracao atual a cada inicializacao. Terminais pendentes, bloqueados ou cancelados não recebem pacote de ativacao nem conseguem inicializar o bootstrap. O aplicativo continua sendo um projeto/artefato separado, baixado por dentro do sistema somente com autorizacao do admin master e configurado com o terminal autorizado. O canal de manutenção por terminal licenciado baixa o artefato publicado pelo ERP, confere SHA-256 antes de promovê-lo na pasta local de updates e nunca instala silenciosamente; pacote adulterado ou incompleto é descartado. A estrutura pdv_windows_installer_v1 usa WiX v4 para MSI por maquina, upgrade, atalhos, desinstalacao, metadados SHA-256, exigencia opcional de executavel assinado e assinatura do MSI via signtool; a publicacao atomica prioriza o MSI da versao. A Central, o download administrativo, o bootstrap e a atualização do terminal compartilham o mesmo validador: exigem manifesto .version.json, versão vigente e SHA-256 correspondente; em produção, PDV_DESKTOP_REQUIRE_SIGNED_INSTALLER também exige as assinaturas válidas declaradas pelo pipeline antes de distribuir. Falta executar o build com certificado real, publicar o MSI assinado, homologar instalacao/upgrade/desinstalacao em Windows limpo, conectar dispositivos locais e implementar sincronizacao resiliente com servidor local/nuvem."),
-            ("Sincronizacao loja-nuvem", "partial", "Empresa escolhe entre servidor local, hibrido e nuvem com agente. Caixa de saída, processador HTTP e caixa de entrada autenticada usam UUID, idempotencia, token fora do banco, timeout, lotes e retentativa exponencial. Eventos recebidos ficam armazenados antes de alterar dados e já passam por processador interno com handlers por tipo, erro controlado para domínios ainda não implementados, handler inicial de produtos, handler de saldo de estoque por filial, espelho de venda finalizada com painel de retaguarda, espelho fiscal sincronizado, detalhe auditável de eventos com payload e diagnóstico, resolução manual de conflitos com responsável, decisão e LogAuditoria, reprocessamento de entrada/saída também auditado, exportacao CSV das filas de saída e entrada, diagnóstico JSON operacional com filas, alertas, próximos eventos, idade da fila mais antiga, eventos de saída com tentativas esgotadas, empresas por modo, contrato de prontidão sync_readiness_v1 e comando sugerido, comando único agendável, roteiro do Agendador de Tarefas do Windows no painel e script scripts/register_sync_task.ps1 para registrar a rotina recorrente. Movimentações locais de venda, compra, inventário, perda, produção e ajustes agora publicam automaticamente primeiro o snapshot do produto e depois o saldo consolidado da filial, pelos contratos produto_snapshot_v1 e estoque_saldo_v1. Revisões usam hash do conteúdo, saldos usam chave idempotente por movimento e atualizações recebidas da nuvem são marcadas para não gerar eco de produto ou estoque. O comando gerar_snapshot_sincronizacao e a acao protegida no painel preparam a carga inicial de catálogo e saldos já existentes por empresa ou filial, podem ser repetidos sem duplicar eventos, bloqueiam empresas que escolheram o modo somente local e registram a operacao web no log de auditoria. Politica automatica opcional de conflito por empresa foi iniciada: manual por padrao, com nuvem prevalecendo apenas para produtos e saldo de estoque quando configurado, mantendo venda e fiscal para decisao auditavel; painel, diagnostico JSON, listagem de empresas e detalhe auditavel do evento exibem a politica aplicada, e o admin tecnico permite filtrar esse campo. Ainda faltam transmissao SEFAZ real e politicas finais para outros tipos de conflito."),
-            ("Super admin personalizado", "done", "Painel próprio centraliza empresas, usuários, fiscal, formas de pagamento, impressoes, backup, auditoria e checklist, sem atalho visual para o admin Django. A tela Sistema > Super admin reúne visão executiva, atalhos críticos, pendências acionáveis, saúde da sincronização, estornos eletrônicos pendentes com quantidade, valor e tela operacional própria, cobertura de telas próprias, atividade recente, atalhos de investigação, diagnóstico de ambiente/segurança, inventário de modelos, inspeção protegida e paginada por modelo, diagnóstico JSON e exportação CSV restritos ao admin master para acompanhar dados avançados sem entrar no admin padrão. Séries fiscais e naturezas de operação já possuem CRUD guiado, validação e auditoria próprios; sincronização e diagnósticos de dispositivos também possuem consultas protegidas, A fila interna de modelos avançados está concluída. Homologações externas e de hardware permanecem acompanhadas nos itens técnicos específicos."),
+            ("Sincronizacao loja-nuvem", "partial", "Empresa escolhe entre servidor local, hibrido e nuvem com agente. Caixa de saída, processador HTTP e caixa de entrada autenticada usam UUID, idempotencia, token fora do banco, timeout, lotes e retentativa exponencial. Eventos recebidos ficam armazenados antes de alterar dados e já passam por processador interno com handlers por tipo, erro controlado para domínios ainda não implementados, handler inicial de produtos, handler de saldo de estoque por filial, espelho de venda finalizada com painel de retaguarda, espelho fiscal sincronizado, detalhe auditável de eventos com payload e diagnóstico, resolução manual de conflitos com responsável, decisão e LogAuditoria, reprocessamento de entrada/saída também auditado, exportacao CSV das filas de saída e entrada, diagnóstico JSON operacional com filas, alertas, próximos eventos, idade da fila mais antiga, eventos de saída com tentativas esgotadas, empresas por modo, contrato de prontidão sync_readiness_v1 e comando sugerido, comando único agendável, roteiro do Agendador de Tarefas do Windows no painel e script scripts/register_sync_task.ps1 para registrar a rotina recorrente. Movimentações locais de venda, compra, inventário, perda, produção e ajustes agora publicam automaticamente primeiro o snapshot do produto e depois o saldo consolidado da filial, pelos contratos produto_snapshot_v1 e estoque_saldo_v1. Revisões usam hash do conteúdo, saldos usam chave idempotente por movimento e atualizações recebidas da nuvem são marcadas para não gerar eco de produto ou estoque. O comando gerar_snapshot_sincronizacao e a acao protegida no painel preparam a carga inicial de catálogo e saldos já existentes por empresa ou filial, podem ser repetidos sem duplicar eventos, bloqueiam empresas que escolheram o modo somente local e registram a operacao web no log de auditoria. Politica automatica opcional de conflito por empresa implementada: manual por padrao, com escolha entre a nuvem ou a loja prevalecer para produtos e saldo de estoque quando o dado local for mais recente; o descarte seguro do evento remoto fica registrado com motivo e horario, enquanto venda e fiscal permanecem manuais por desenho para decisao auditavel. Painel, diagnóstico JSON, listagem de empresas e detalhe do evento exibem a política aplicada, e o admin técnico permite filtrar esse campo. A política operacional agora é centralizada no modelo: empresas locais ou com sincronização desativada pausam entrada e saída sem perder eventos, o receptor rejeita novos eventos, os processadores ignoram filas pausadas e a retomada para modo híbrido reabre as filas; o contrato sync_readiness_v1 contabiliza os eventos pausados. O licenciamento comercial continua consultando a central mesmo quando a sincronização operacional está desligada. Ainda faltam transmissão SEFAZ real e homologação do sincronismo em infraestrutura de produção."),
+            ("Super admin personalizado", "done", "Painel próprio centraliza empresas, usuários, fiscal, formas de pagamento, impressoes, backup, auditoria e checklist, sem atalho visual para o admin Django. O acesso master agora é exclusivo de usuário superuser, representante do dono do software; administradores, gerentes e demais perfis das empresas recebem 403 em todas as rotas HTML, JSON, CSV e inspeção de modelos, e não visualizam o atalho do Super admin. A tela Sistema > Super admin reúne visão executiva, atalhos críticos, pendências acionáveis, saúde da sincronização, estornos eletrônicos pendentes com quantidade, valor e tela operacional própria, cobertura de telas próprias, atividade recente, atalhos de investigação, diagnóstico de ambiente/segurança, inventário de modelos, inspeção protegida e paginada por modelo, diagnóstico JSON e exportação CSV restritos ao admin master para acompanhar dados avançados sem entrar no admin padrão. Séries fiscais e naturezas de operação já possuem CRUD guiado, validação e auditoria próprios; sincronização e diagnósticos de dispositivos também possuem consultas protegidas, A fila interna de modelos avançados está concluída. Homologações externas e de hardware permanecem acompanhadas nos itens técnicos específicos."),
         ],
     },
 ]
@@ -178,18 +194,62 @@ DOCUMENTOS_PROJETO = [
     ("Checklist de desenvolvimento", "docs/protótipos/05_checklist_desenvolvimento_sistema_supermercado.docx"),
     ("Mapa de telas e fluxos", "docs/protótipos/06_mapa_telas_fluxos_sistema_supermercado.docx"),
     ("Backup e restauracao", "docs/PLANO_BACKUP_RESTAURACAO_SUPERMERCADO.md"),
+    ("Manual completo de instalação no supermercado", "docs/MANUAL_INSTALACAO_SUPERMERCADO.md"),
 ]
 PDV_DESKTOP_VERSAO_PLANEJADA = settings.PDV_DESKTOP_VERSION
 
 
 def _usuario_admin_master(user):
-    if user.is_superuser:
-        return True
-    perfil = getattr(user, "perfil_supermercado", None)
-    if perfil and perfil.is_active and perfil.tipo == TipoPerfil.ADMINISTRADOR:
-        return True
-    return False
+    return bool(user.is_authenticated and user.is_superuser)
 
+
+def _empresa_id_administrativa(user):
+    if user.is_superuser:
+        return None
+    perfil = getattr(user, "perfil_supermercado", None)
+    if perfil and perfil.is_active and perfil.filial_id and perfil.tipo == TipoPerfil.ADMINISTRADOR:
+        return perfil.filial.empresa_id
+    return 0
+
+def _empresa_id_operacional(user):
+    if user.is_superuser:
+        return None
+    perfil = getattr(user, "perfil_supermercado", None)
+    if perfil and perfil.is_active and perfil.filial_id:
+        return perfil.filial.empresa_id
+    return 0
+
+
+def _empresas_visiveis(user):
+    empresa_id = _empresa_id_operacional(user)
+    queryset = Empresa.objects.all()
+    return queryset if empresa_id is None else queryset.filter(pk=empresa_id)
+
+
+def _filiais_visiveis(user):
+    empresa_id = _empresa_id_operacional(user)
+    queryset = Filial.objects.select_related("empresa")
+    return queryset if empresa_id is None else queryset.filter(empresa_id=empresa_id)
+
+
+def _terminais_visiveis(user):
+    empresa_id = _empresa_id_operacional(user)
+    queryset = TerminalPdv.objects.select_related("filial", "filial__empresa")
+    return queryset if empresa_id is None else queryset.filter(filial__empresa_id=empresa_id)
+
+
+def _configuracoes_impressao_visiveis(user):
+    empresa_id = _empresa_id_operacional(user)
+    queryset = ConfiguracaoImpressao.objects.select_related("empresa", "filial")
+    return queryset if empresa_id is None else queryset.filter(empresa_id=empresa_id)
+
+
+def _modelos_etiqueta_visiveis(user):
+    empresa_id = _empresa_id_operacional(user)
+    queryset = ModeloEtiqueta.objects.select_related(
+        "configuracao", "configuracao__empresa", "configuracao__filial", "terminal"
+    )
+    return queryset if empresa_id is None else queryset.filter(configuracao__empresa_id=empresa_id)
 
 def _exigir_admin_master(user):
     if _usuario_admin_master(user):
@@ -243,6 +303,24 @@ def _proximas_etapas_checklist(grupos, limite=6):
 def _classificar_etapa_roadmap(grupo, titulo, descricao):
     titulo_texto = titulo.lower()
     texto = f"{grupo} {titulo} {descricao}".lower()
+    if any(chave in titulo_texto for chave in ["financeiro", "contáb", "contabil", "livro contábil"]):
+        return {
+            "trilha": "Financeiro",
+            "prioridade": "Média",
+            "acao": "Consolidar relatórios contábeis e conciliar origem fiscal, PDV e livro financeiro.",
+        }
+    if any(chave in titulo_texto for chave in ["marketplace", "pedido online"]):
+        return {
+            "trilha": "Integracoes",
+            "prioridade": "Média",
+            "acao": "Escolher fornecedor/API, definir contrato e deixar fallback operacional.",
+        }
+    if any(chave in titulo_texto for chave in ["fiscal", "nf-e", "nfc-e"]):
+        return {
+            "trilha": "Fiscal",
+            "prioridade": "Alta",
+            "acao": "Separar homologacao fiscal, certificado, series e contingencia antes da transmissao real.",
+        }
     if any(chave in titulo_texto for chave in ["balanca", "gaveta", "impressora", "etiqueta", "zpl", "epl", "ppla", "pplb"]):
         return {
             "trilha": "Dispositivos",
@@ -267,7 +345,10 @@ def _classificar_etapa_roadmap(grupo, titulo, descricao):
             "prioridade": "Alta",
             "acao": "Separar homologacao fiscal, certificado, series e contingencia antes da transmissao real.",
         }
-    if any(chave in texto for chave in ["maquininha", "tef", "adquirente", "pix dinâmico", "pagbank", "cielo", "stone", "getnet", "rede", "sitef"]):
+    if (
+        any(chave in texto for chave in ["maquininha", "tef", "adquirente", "pix dinâmico", "pagbank", "cielo", "stone", "getnet", "sitef"])
+        or re.search(r"(?<!\w)rede(?!\w)", texto)
+    ):
         return {
             "trilha": "Hardware/TEF",
             "prioridade": "Alta",
@@ -285,7 +366,7 @@ def _classificar_etapa_roadmap(grupo, titulo, descricao):
             "prioridade": "Média",
             "acao": "Consolidar relatórios contabeis e conciliar origem fiscal, PDV e livro financeiro.",
         }
-    if any(chave in texto for chave in ["api externa", "geocodificacao", "marketplace", "adaptadores"]):
+    if any(chave in texto for chave in ["api externa", "geocodificacao", "marketplace", "adaptadores", "smtp", "spf", "dkim", "dmarc"]):
         return {
             "trilha": "Integracoes",
             "prioridade": "Média",
@@ -385,17 +466,33 @@ def _modelos_backup():
 
 
 @login_required
-@role_required(*SISTEMA)
+@role_required(*ADMINISTRACAO)
 def painel_sistema(request):
-    modelos = _modelos_backup()
+    empresa_id = _empresa_id_administrativa(request.user)
+    if empresa_id == 0:
+        raise PermissionDenied("Usuário sem empresa administrativa vinculada.")
+    modelos = _modelos_backup() if request.user.is_superuser else []
     total_registros = sum(item["total"] or 0 for item in modelos)
-    checklist_grupos = [
-        {**grupo, "itens": list(grupo["itens"])}
-        for grupo in CHECKLIST_GRUPOS
-    ]
+    checklist_grupos = [{**grupo, "itens": list(grupo["itens"])} for grupo in CHECKLIST_GRUPOS]
     resumo_checklist = _resumo_checklist(checklist_grupos)
     configuracoes = ConfiguracaoImpressao.objects.all()
     configs_fiscais = ConfiguracaoFiscal.objects.select_related("filial")
+    filiais_painel = Filial.objects.all()
+    usuarios_painel = User.objects.filter(is_active=True)
+    acessos_painel = AcessoPdvNuvem.objects.all()
+    terminais_painel = TerminalPdv.objects.all()
+    eventos_painel = EventoSincronizacao.objects.all()
+    if empresa_id:
+        configuracoes = configuracoes.filter(Q(empresa_id=empresa_id) | Q(filial__empresa_id=empresa_id))
+        configs_fiscais = configs_fiscais.filter(filial__empresa_id=empresa_id)
+        filiais_painel = filiais_painel.filter(empresa_id=empresa_id)
+        usuarios_painel = usuarios_painel.filter(
+            is_superuser=False, perfil_supermercado__is_active=True,
+            perfil_supermercado__filial__empresa_id=empresa_id,
+        )
+        acessos_painel = acessos_painel.filter(filial__empresa_id=empresa_id)
+        terminais_painel = terminais_painel.filter(filial__empresa_id=empresa_id)
+        eventos_painel = eventos_painel.filter(empresa_id=empresa_id)
     atalhos = [
         {
             "titulo": "Formas de pagamento",
@@ -409,14 +506,14 @@ def painel_sistema(request):
             "descricao": "Cadastro das lojas, logo, UF e código IBGE fiscal.",
             "icone": "fa-building",
             "url": "empresas:lista",
-            "status": f"{Filial.objects.count()} filial(is)",
+            "status": f"{filiais_painel.count()} filial(is)",
         },
         {
             "titulo": "Usuarios",
             "descricao": "Perfis, permissoes e vínculo de operador com filial.",
             "icone": "fa-user-gear",
             "url": "accounts:usuarios",
-            "status": f"{User.objects.filter(is_active=True).count()} ativo(s)",
+            "status": f"{usuarios_painel.count()} ativo(s)",
         },
         {
             "titulo": "Fiscal",
@@ -437,14 +534,14 @@ def painel_sistema(request):
             "descricao": "Aprovacao de operadores que tentam acessar o PDV em nuvem.",
             "icone": "fa-user-lock",
             "url": "pdv:acessos_pdv_nuvem",
-            "status": f"{AcessoPdvNuvem.objects.filter(status=StatusAcessoPdvNuvem.PENDENTE).count()} pendente(s)",
+            "status": f"{acessos_painel.filter(status=StatusAcessoPdvNuvem.PENDENTE).count()} pendente(s)",
         },
         {
             "titulo": "Terminais PDV",
             "descricao": "Maquinas de caixa autorizadas por filial para o aplicativo local.",
             "icone": "fa-cash-register",
             "url": "configuracoes:terminais_pdv",
-            "status": f"{TerminalPdv.objects.filter(ativo=True).count()} ativo(s)",
+            "status": f"{terminais_painel.filter(ativo=True).count()} ativo(s)",
         },
         {
             "titulo": "App PDV desktop",
@@ -465,7 +562,7 @@ def painel_sistema(request):
             "descricao": "Fila segura entre servidores locais e nuvem, com idempotencia e tentativas.",
             "icone": "fa-arrows-rotate",
             "url": "empresas:sincronizacao",
-            "status": f"{EventoSincronizacao.objects.filter(status__in=[StatusSincronizacao.PENDENTE, StatusSincronizacao.ERRO]).count()} aguardando",
+            "status": f"{eventos_painel.filter(status__in=[StatusSincronizacao.PENDENTE, StatusSincronizacao.ERRO]).count()} aguardando",
         },
         {
             "titulo": "Backup",
@@ -496,16 +593,23 @@ def painel_sistema(request):
             "status": f"{resumo_checklist['percentual']}%",
         },
     ]
+    if not _usuario_admin_master(request.user):
+        urls_exclusivas_master = {
+            "configuracoes:super_admin", "configuracoes:checklist", "configuracoes:backup",
+            "configuracoes:pdv_desktop", "configuracoes:servidor_local", "empresas:sincronizacao",
+        }
+        atalhos = [item for item in atalhos if item["url"] not in urls_exclusivas_master]
     context = {
         "atalhos": atalhos,
         "resumo_checklist": resumo_checklist,
-        "total_empresas": Empresa.objects.count(),
-        "total_filiais": Filial.objects.count(),
-        "filiais_sem_ibge": Filial.objects.filter(Q(uf="") | Q(codigo_municipio_ibge="")).count(),
-        "usuarios_ativos": User.objects.filter(is_active=True).count(),
+        "total_empresas": Empresa.objects.count() if request.user.is_superuser else 1,
+        "total_filiais": filiais_painel.count(),
+        "filiais_sem_ibge": filiais_painel.filter(Q(uf="") | Q(codigo_municipio_ibge="")).count(),
+        "usuarios_ativos": usuarios_painel.count(),
         "impressoes_sem_impressora": configuracoes.filter(Q(impressora_padrao="") | Q(impressora_padrao__isnull=True), is_active=True).count(),
         "certificados_vencidos": sum(1 for config in configs_fiscais if config.certificado_status in {"vencido", "nao_configurado"}),
         "total_registros": total_registros,
+        "is_admin_master": request.user.is_superuser,
     }
     return render(request, "configuracoes/painel_sistema.html", context)
 
@@ -583,6 +687,7 @@ def _super_admin_payload(request):
             "titulo": "Estrutura e acessos",
             "itens": [
                 ("Empresas e filiais", "empresas:lista", "Cadastro multiempresa, filiais, logo, UF e IBGE."),
+                ("Central de licenças", "licenciamento:central", "Planos, mensalidades, Asaas e servidores locais credenciados."),
                 ("Usuários", "accounts:usuarios", "Perfis, filiais e permissões por função."),
                 ("Auditoria", "auditoria:logs", "Rastreamento de ações críticas."),
             ],
@@ -1003,6 +1108,7 @@ def super_admin_modelo(request, app_label, model_name):
 @login_required
 @role_required(*SISTEMA)
 def checklist_projeto(request):
+    _exigir_admin_master(request.user)
     grupos = [
         {**grupo, "itens": list(grupo["itens"])}
         for grupo in CHECKLIST_GRUPOS
@@ -1053,6 +1159,7 @@ def checklist_projeto(request):
 @login_required
 @role_required(*SISTEMA)
 def checklist_projeto_csv(request):
+    _exigir_admin_master(request.user)
     grupos = [
         {**grupo, "itens": list(grupo["itens"])}
         for grupo in CHECKLIST_GRUPOS
@@ -1158,7 +1265,7 @@ def _pdv_desktop_readiness_payload(instalador, terminais_qs):
 def pdv_desktop(request):
     _exigir_admin_master(request.user)
     instalador = _instalador_pdv_desktop()
-    terminais = TerminalPdv.objects.select_related("filial", "filial__empresa").order_by("filial__nome", "nome")
+    terminais = _terminais_visiveis(request.user).order_by("filial__nome", "nome")
     total_terminais = terminais.count()
     licencas_liberadas = terminais.filter(status_licenca=StatusLicencaTerminal.LIBERADA, ativo=True).count()
     licencas_pendentes = terminais.filter(status_licenca=StatusLicencaTerminal.PENDENTE).count()
@@ -1200,7 +1307,7 @@ def pdv_desktop(request):
 
 
 def _pdv_desktop_manifest_payload(request):
-    terminais = TerminalPdv.objects.select_related("filial", "filial__empresa").order_by("filial__nome", "nome")
+    terminais = _terminais_visiveis(request.user).order_by("filial__nome", "nome")
     instalador = _instalador_pdv_desktop()
     prontidao_desktop = _pdv_desktop_readiness_payload(instalador, terminais)
     return {
@@ -1375,7 +1482,7 @@ def _pdv_desktop_terminal_payload(request, terminal):
             "contrato": "pdv_tef_v1",
             "provedor": terminal.provedor_tef,
             "modo_integracao": terminal.modo_integracao_tef,
-            "tipos_pagamento": ["CREDITO", "DEBITO", "PIX"],
+            "tipos_pagamento": ["CREDITO", "DEBITO", "PIX", "VALE_ALIMENTACAO", "VALE_REFEICAO"],
             "retorno_esperado": ["status", "transacao_externa_id", "nsu", "codigo_autorizacao", "mensagem_processadora"],
         },
         "dispositivos": {
@@ -1395,13 +1502,18 @@ def _servidor_local_prontidao(base_dir, scripts, pendencias, modos):
         "subir_servidor": scripts["subir_servidor"],
         "registrar_servidor": scripts["registrar_servidor"],
         "instalar_servico": scripts["instalar_servico"],
+        "empacotar_servidor": scripts["empacotar_servidor"],
+        "publicar_servidor": scripts["publicar_servidor"],
+        "atualizar_servidor": scripts["atualizar_servidor"],
         "diagnosticar_servico": scripts["diagnosticar_servico"],
         "remover_servico": scripts["remover_servico"],
         "template_servico": scripts["template_servico"],
         "backup_local": scripts["backup_local"],
+        "restaurar_backup": scripts["restaurar_backup"],
         "registrar_backup": scripts["registrar_backup"],
         "registrar_sincronizacao": scripts["registrar_sincronizacao"],
         "guia": scripts["guia"],
+        "manual_instalacao": scripts["manual_instalacao"],
     }
     arquivos = {
         chave: {
@@ -1459,43 +1571,49 @@ def _servidor_local_prontidao(base_dir, scripts, pendencias, modos):
 
 def _servidor_local_payload(request):
     empresas = Empresa.objects.prefetch_related("filiais").order_by("nome_fantasia")
+    pacote_servidor = artefato_servidor_local()
     modos = {
         modo: empresas.filter(modo_implantacao=modo).count()
         for modo in ModoImplantacao.values
     }
     servico_windows = {
         "contrato": "local_windows_service_v1",
-        "nome": "MercaFlowServidorLocal",
+        "nome": "DeigoVarejoServidorLocal",
         "status": "instalador_preparado",
+        "banco_recomendado": "PostgreSQL",
+        "ferramentas_banco": ["pg_dump", "pg_restore"],
+        "sqlite_uso": "Somente desenvolvimento, teste ou instalação explicitamente simplificada.",
         "tipo": "Windows Service via WinSW",
-        "usuario_recomendado": "Conta de servico local dedicada e com acesso minimo aos arquivos do ERP",
+        "usuario_recomendado": r"NT SERVICE\DeigoVarejoServidorLocal (conta virtual sem senha)",
+        "diretorio_dados": r"%ProgramData%\DeigoVarejo\Dados",
+        "permissoes": "Leitura e execucao no codigo; modificacao somente nos diretorios de dados e do wrapper.",
         "comando_producao": r".\.venv\Scripts\python.exe -m waitress --listen=0.0.0.0:8000 config.wsgi:application",
         "instalador": "scripts/install_local_server_service.ps1",
         "desinstalador": "scripts/uninstall_local_server_service.ps1",
         "diagnostico": "scripts/test_local_server_service.ps1",
-        "template": "server_local/windows/MercaFlowServidorLocal.xml.template",
+        "template": "server_local/windows/DeigoVarejoServidorLocal.xml.template",
         "wrapper": "WinSW fornecido pelo administrador e validado por SHA-256 antes da instalacao",
         "fallback_operacional": "scripts/register_local_server_task.ps1 -Bind 0.0.0.0 -Port 8000 -AtStartup",
         "healthcheck": "/login/",
         "restart": "Inicio automatico com o Windows e reinicio 10 segundos apos falha",
-        "logs": [r"%ProgramData%\MercaFlow\ServidorLocal\logs", "logs/django.log"],
+        "logs": [r"%ProgramData%\DeigoVarejo\ServidorLocal\logs", "logs/django.log"],
         "observacao": "Scripts e contrato do servico estao preparados; a conclusao depende de instalar o WinSW verificado e homologar em uma maquina Windows da loja.",
     }
     pendencias = [
         {
             "titulo": "Servico Windows/Linux",
             "status": "iniciado",
-            "descricao": "Servico Windows preparado com WinSW, Waitress, inicio automatico, reinicio em falha, logs rotativos, healthcheck e scripts de instalacao, diagnostico e remocao. A tarefa agendada permanece como fallback; falta homologar o servico em Windows de loja e definir a conta dedicada.",
+            "descricao": "Servico Windows preparado com WinSW, Waitress, inicio automatico, reinicio em falha, logs rotativos, healthcheck e scripts de instalacao, diagnostico e remocao. O instalador configura a conta virtual NT SERVICE\\DeigoVarejoServidorLocal sem senha, separa dados em ProgramData e aplica ACL de leitura no codigo e modificacao somente nas areas gravaveis. A tarefa agendada permanece como fallback; falta homologar o servico em Windows de loja.",
         },
         {
             "titulo": "Backup local automático",
             "status": "iniciado",
-            "descricao": "Script scripts/backup_local.ps1 gera pacote zipado com dados, media, manifesto, checksum e criptografia opcional AES-256 via BACKUP_ENCRYPTION_PASSPHRASE; scripts/register_backup_task.ps1 agenda backup diário.",
+            "descricao": "O backup erp_local_backup_v2 descobre banco, mídia e logs pela configuração efetiva do Django ou pelo XML WinSW, gera dump lógico, snapshot SQLite consistente, manifesto, SHA-256 e criptografia AES-256 opcional. A tarefa diária valida as fontes antes do registro e executa como SYSTEM, sem depender de usuário conectado.",
         },
         {
             "titulo": "Atualização controlada",
-            "status": "planejado",
-            "descricao": "Aplicar pacotes assinados pelo admin master, com rollback e janela fora do expediente.",
+            "status": "iniciado",
+            "descricao": "Empacotamento, publicacao atomica e atualizador controlado preparados. O atualizador valida ZIP e manifesto, limita a extracao, preserva .env e dados, cria snapshot do codigo e SQLite, aplica dependencias/migrations/estaticos com o servico parado, exige healthcheck e executa rollback automatico em falha. PostgreSQL permanece em procedimento assistido com DBA; falta homologar em maquina Windows limpa.",
         },
         {
             "titulo": "Sincronização opcional",
@@ -1507,15 +1625,23 @@ def _servidor_local_payload(request):
         "subir_servidor": "scripts/run_local_server.ps1",
         "registrar_servidor": "scripts/register_local_server_task.ps1",
         "instalar_servico": "scripts/install_local_server_service.ps1",
+        "empacotar_servidor": "scripts/package_local_server.ps1",
+        "publicar_servidor": "scripts/publish_local_server.ps1",
+        "atualizar_servidor": "scripts/update_local_server.ps1",
         "diagnosticar_servico": "scripts/test_local_server_service.ps1",
         "remover_servico": "scripts/uninstall_local_server_service.ps1",
-        "template_servico": "server_local/windows/MercaFlowServidorLocal.xml.template",
+        "template_servico": "server_local/windows/DeigoVarejoServidorLocal.xml.template",
         "backup_local": "scripts/backup_local.ps1",
+        "restaurar_backup": "scripts/restore_local_backup.ps1",
         "registrar_backup": "scripts/register_backup_task.ps1",
         "registrar_sincronizacao": "scripts/register_sync_task.ps1",
         "guia": "docs/IMPLANTACAO_SERVIDOR_LOCAL.md",
+        "manual_instalacao": "docs/MANUAL_INSTALACAO_SUPERMERCADO.md",
         "backup_criptografia_env": "BACKUP_ENCRYPTION_PASSPHRASE",
         "backup_criptografia_flag": "-RemoverOriginalCriptografado",
+        "backup_validacao_flag": "-ValidarSomente",
+        "backup_destino_env": "LOCAL_BACKUP_DIR",
+        "backup_conta_tarefa": "SYSTEM",
     }
     prontidao = _servidor_local_prontidao(Path(settings.BASE_DIR), scripts, pendencias, modos)
     return {
@@ -1523,6 +1649,66 @@ def _servidor_local_payload(request):
         "contrato": "erp_local_admin_v1",
         "recomendacao": "Servidor local administrativo com acesso via navegador; app desktop completo apenas para PDV.",
         "prontidao": prontidao,
+        "distribuicao": {
+            "contrato": "local_server_distribution_v1",
+            "status": "disponivel" if pacote_servidor["publicavel"] else "indisponivel",
+            "versao": settings.LOCAL_SERVER_VERSION,
+            "nome": pacote_servidor["nome"],
+            "tamanho_bytes": pacote_servidor["tamanho"],
+            "sha256": pacote_servidor["sha256"],
+            "integridade_valida": pacote_servidor["integridade_valida"],
+            "tamanho_valido": pacote_servidor["tamanho_valido"],
+            "origem_rastreavel": pacote_servidor["origem_rastreavel"],
+            "sem_dados_cliente": pacote_servidor["sem_dados_cliente"],
+            "commit_assinado_exigido": pacote_servidor["assinatura_commit_exigida"],
+            "commit_assinado_confirmado": pacote_servidor["assinatura_commit_confirmada"],
+            "url": request.build_absolute_uri("/configuracoes/servidor-local/download/") if pacote_servidor["publicavel"] else "",
+            "problemas": pacote_servidor["problemas"],
+        },
+        "atualizacao_local": {
+            "contrato_validacao": "local_server_update_validation_v1",
+            "contrato_rollback": "local_server_rollback_v1",
+            "contrato_historico": "local_server_update_history_v1",
+            "script": "scripts/update_local_server.ps1",
+            "validar_comando": r".\scripts\update_local_server.ps1 -PackagePath pacote.zip -ValidarSomente",
+            "janela_manutencao": True,
+            "healthcheck_obrigatorio": True,
+            "rollback_codigo": True,
+            "rollback_sqlite": True,
+            "preserva_env_dados": True,
+            "postgresql": "Procedimento assistido com backup nativo e DBA.",
+        },
+        "restauracao_local": {
+            "contrato_validacao": "local_restore_validation_v1",
+            "contrato_historico": "local_restore_history_v1",
+            "script": "scripts/restore_local_backup.ps1",
+            "validar_comando": r".\scripts\restore_local_backup.ps1 -BackupPath backup.zip -ValidarSomente",
+            "restaurar_comando": r".\scripts\restore_local_backup.ps1 -BackupPath backup.zip -ConfirmarRestauracao",
+            "confirmacao_explicita": True,
+            "backup_anterior_obrigatorio": True,
+            "healthcheck_obrigatorio": True,
+            "rollback_sqlite_media": True,
+            "suporta_aes256": True,
+            "motores": ["sqlite", "postgresql"],
+            "postgresql_formato": "custom",
+            "postgresql_transacao_unica": True,
+            "postgresql": "Restauracao automatica com pg_restore custom, transacao unica, backup anterior e rollback.",
+        },
+        "backup_local": {
+            "contrato": "erp_local_backup_v2",
+            "fontes_contrato": "local_backup_sources_v1",
+            "fontes": "Configuracao efetiva do Django, priorizando o XML WinSW quando o servico estiver instalado.",
+            "sqlite_snapshot_consistente": True,
+            "postgresql_dump_custom": True,
+            "postgresql_ferramenta": "pg_dump",
+            "inclui_dump_logico": True,
+            "destino_padrao": r"%ProgramData%\DeigoVarejo\Backups",
+            "destino_env": "LOCAL_BACKUP_DIR",
+            "tarefa_conta": "SYSTEM",
+            "depende_usuario_conectado": False,
+            "validar_comando": r".\scripts\backup_local.ps1 -ValidarSomente",
+            "criptografia_opcional": True,
+        },
         "acesso": {
             "admin_local_url": request.build_absolute_uri("/configuracoes/"),
             "usa_navegador": True,
@@ -1596,30 +1782,128 @@ def servidor_local_manifest(request):
     _exigir_admin_master(request.user)
     return JsonResponse(_servidor_local_payload(request))
 
-
 @login_required
 @role_required(*SISTEMA)
+def servidor_local_download(request):
+    _exigir_admin_master(request.user)
+    pacote = artefato_servidor_local()
+    if not pacote["publicavel"]:
+        raise Http404("Pacote do servidor local indisponivel ou reprovado na validacao.")
+    caminho = pacote["caminho"]
+    LogAuditoria.objects.create(
+        usuario=request.user,
+        modulo="configuracoes",
+        acao="DOWNLOAD_SERVIDOR_LOCAL",
+        descricao=f"Download do pacote do servidor local {caminho.name}.",
+        objeto_tipo="LocalServerPackage",
+        objeto_id=settings.LOCAL_SERVER_VERSION,
+        ip=request.META.get("REMOTE_ADDR"),
+    )
+    return FileResponse(caminho.open("rb"), as_attachment=True, filename=caminho.name)
+
+
+@login_required
+@role_required(*ADMINISTRACAO)
 def formas_pagamento(request):
     formas = FormaPagamento.objects.order_by("-ativo", "nome")
-    return render(request, "configuracoes/formas_pagamento.html", {"formas": formas})
+    if request.user.is_superuser:
+        pagina = Paginator(formas, 50).get_page(request.GET.get("page"))
+        return render(request, "configuracoes/formas_pagamento.html", {"formas": pagina, "page_obj": pagina, "catalogo_global": True})
+
+    filiais = list(_filiais_visiveis(request.user).filter(is_active=True).order_by("nome"))
+    for filial in filiais:
+        inicializar_formas_pagamento_filial(filial)
+    configuracoes = {
+        (config.filial_id, config.forma_pagamento_id): config
+        for config in FormaPagamentoFilial.objects.select_related(
+            "filial", "forma_pagamento", "conta_movimento_padrao"
+        ).filter(filial__in=filiais)
+    }
+    linhas = []
+    for filial in filiais:
+        for forma in formas:
+            configuracao = configuracoes.get((filial.id, forma.id))
+            linhas.append({
+                "filial": filial,
+                "forma": forma,
+                "configuracao": configuracao,
+                "ativo": configuracao.ativo if configuracao else forma.ativo,
+                "conta": configuracao.conta_movimento_padrao if configuracao else None,
+            })
+    pagina = Paginator(linhas, 50).get_page(request.GET.get("page"))
+    return render(
+        request,
+        "configuracoes/formas_pagamento.html",
+        {"formas_filiais": pagina, "page_obj": pagina, "catalogo_global": False},
+    )
 
 
 @login_required
-@role_required(*SISTEMA)
+@role_required(*ADMINISTRACAO)
 def forma_pagamento_form(request, pk=None):
-    forma = get_object_or_404(FormaPagamento, pk=pk) if pk else None
-    form = FormaPagamentoForm(request.POST or None, instance=forma)
-    if request.method == "POST" and form.is_valid():
-        form.save()
-        messages.success(request, "Forma de pagamento salva com sucesso.")
-        return redirect("configuracoes:formas_pagamento")
-    return render(request, "configuracoes/forma_pagamento_form.html", {"form": form, "object": forma})
+    if request.user.is_superuser:
+        forma = get_object_or_404(FormaPagamento, pk=pk) if pk else None
+        form = FormaPagamentoForm(request.POST or None, instance=forma)
+        if request.method == "POST" and form.is_valid():
+            form.save()
+            messages.success(request, "Forma de pagamento salva com sucesso.")
+            return redirect("configuracoes:formas_pagamento")
+        return render(
+            request,
+            "configuracoes/forma_pagamento_form.html",
+            {"form": form, "object": forma, "catalogo_global": True},
+        )
 
+    if not pk:
+        raise PermissionDenied("Somente o admin master pode criar itens no catálogo global.")
+    forma = get_object_or_404(FormaPagamento, pk=pk)
+    filiais = _filiais_visiveis(request.user).filter(is_active=True).order_by("nome")
+    filial_id = request.POST.get("filial") or request.GET.get("filial")
+    filial = get_object_or_404(filiais, pk=filial_id) if filial_id else filiais.first()
+    if not filial:
+        raise PermissionDenied("O administrador não possui filial ativa vinculada.")
+    inicializar_formas_pagamento_filial(filial)
+    configuracao = FormaPagamentoFilial.objects.filter(filial=filial, forma_pagamento=forma).first()
+    instance = configuracao or FormaPagamentoFilial(filial=filial, forma_pagamento=forma, ativo=forma.ativo)
+    contas = ContaMovimentoFinanceiro.objects.filter(
+        filial__in=filiais,
+        ativa=True,
+    ).select_related("filial").order_by("filial__nome", "nome")
+    form = FormaPagamentoFilialForm(
+        request.POST or None,
+        instance=instance,
+        filiais_queryset=filiais,
+        contas_queryset=contas,
+    )
+    if request.method == "POST" and form.is_valid():
+        configuracao = form.save(commit=False)
+        configuracao.forma_pagamento = forma
+        configuracao.full_clean()
+        configuracao.save()
+        LogAuditoria.objects.create(
+            usuario=request.user,
+            modulo="configuracoes",
+            acao="CONFIGURAR_FORMA_PAGAMENTO_FILIAL",
+            descricao=(
+                f"Forma {forma.nome} configurada para {configuracao.filial}: "
+                f"{'ativa' if configuracao.ativo else 'inativa'}."
+            ),
+            objeto_tipo="FormaPagamentoFilial",
+            objeto_id=str(configuracao.pk),
+            ip=request.META.get("REMOTE_ADDR"),
+        )
+        messages.success(request, "Configuração da forma de pagamento salva para a filial.")
+        return redirect("configuracoes:formas_pagamento")
+    return render(
+        request,
+        "configuracoes/forma_pagamento_form.html",
+        {"form": form, "object": forma, "catalogo_global": False, "forma_catalogo": forma},
+    )
 
 @login_required
 @role_required(*SISTEMA)
 def terminais_pdv(request):
-    terminais = TerminalPdv.objects.select_related("filial", "filial__empresa").order_by("filial__nome", "nome")
+    terminais = _terminais_visiveis(request.user).order_by("filial__nome", "nome")
     busca = request.GET.get("q", "").strip()
     filtro_licenca = request.GET.get("licenca", "").strip()
     filtro_status = request.GET.get("status", "").strip()
@@ -1639,12 +1923,17 @@ def terminais_pdv(request):
         terminais = terminais.filter(ativo=True)
     elif filtro_status == "inativo":
         terminais = terminais.filter(ativo=False)
+    pagina = Paginator(terminais, 50).get_page(request.GET.get("page"))
+    query = request.GET.copy()
+    query.pop("page", None)
     chave_nova = request.session.pop("terminal_pdv_chave_nova", None)
     return render(
         request,
         "configuracoes/terminais_pdv.html",
         {
-            "terminais": terminais,
+            "terminais": pagina,
+            "pagina": pagina,
+            "query_sem_pagina": query.urlencode(),
             "chave_nova": chave_nova,
             "busca": busca,
             "filtro_licenca": filtro_licenca,
@@ -1660,7 +1949,7 @@ def _eventos_dispositivo_filtrados(request):
         "terminal",
         "terminal__filial",
         "terminal__filial__empresa",
-    ).order_by("-recebido_em")
+    ).filter(terminal__in=_terminais_visiveis(request.user)).order_by("-recebido_em")
     filtros = {
         "q": request.GET.get("q", "").strip(),
         "terminal": request.GET.get("terminal", "").strip(),
@@ -1708,7 +1997,7 @@ def terminais_pdv_diagnosticos(request):
             "pagina": pagina,
             "filtros": filtros,
             "query_sem_pagina": query.urlencode(),
-            "terminais": TerminalPdv.objects.select_related("filial").order_by("filial__nome", "nome"),
+            "terminais": _terminais_visiveis(request.user).order_by("filial__nome", "nome"),
             "tipos": EventoDispositivoTerminal.objects.exclude(tipo="").values_list("tipo", flat=True).distinct().order_by("tipo"),
             "status_opcoes": EventoDispositivoTerminal.objects.exclude(status="").values_list("status", flat=True).distinct().order_by("status"),
             "resumo": resumo,
@@ -1744,12 +2033,12 @@ def terminais_pdv_diagnosticos_csv(request):
 @login_required
 @role_required(*SISTEMA)
 def terminal_pdv_form(request, pk=None):
-    terminal = get_object_or_404(TerminalPdv, pk=pk) if pk else None
+    terminal = get_object_or_404(_terminais_visiveis(request.user), pk=pk) if pk else None
     politica_anterior = (
         terminal.canal_atualizacao,
         terminal.bloquear_atualizacoes,
     ) if terminal else None
-    form = TerminalPdvForm(request.POST or None, instance=terminal)
+    form = TerminalPdvForm(request.POST or None, instance=terminal, filiais_queryset=_filiais_visiveis(request.user))
     if not _usuario_admin_master(request.user):
         form.fields["canal_atualizacao"].disabled = True
         form.fields["bloquear_atualizacoes"].disabled = True
@@ -1806,7 +2095,7 @@ def terminal_pdv_alterar_licenca(request, pk, acao):
     _exigir_admin_master(request.user)
     if request.method != "POST":
         return redirect("configuracoes:terminais_pdv")
-    terminal = get_object_or_404(TerminalPdv, pk=pk)
+    terminal = get_object_or_404(_terminais_visiveis(request.user), pk=pk)
     acoes = {
         "liberar": StatusLicencaTerminal.LIBERADA,
         "bloquear": StatusLicencaTerminal.BLOQUEADA,
@@ -1847,7 +2136,7 @@ def terminal_pdv_alterar_licenca(request, pk, acao):
 def terminal_pdv_regenerar_chave(request, pk):
     if request.method != "POST":
         return redirect("configuracoes:terminais_pdv")
-    terminal = get_object_or_404(TerminalPdv, pk=pk)
+    terminal = get_object_or_404(_terminais_visiveis(request.user), pk=pk)
     chave_nova = terminal.gerar_chave_api()
     terminal.save(update_fields=["chave_api_hash", "chave_api_prefixo", "atualizado_em"])
     request.session["terminal_pdv_chave_nova"] = {
@@ -1862,12 +2151,14 @@ def terminal_pdv_regenerar_chave(request, pk):
 @login_required
 @role_required(*SISTEMA)
 def backup_operacional(request):
+    _exigir_admin_master(request.user)
     modelos = _modelos_backup()
     total_registros = sum(item["total"] or 0 for item in modelos)
     context = {
         "modelos": modelos,
         "total_modelos": len(modelos),
         "total_registros": total_registros,
+        "is_admin_master": request.user.is_superuser,
         "gerado_em": timezone.localtime(),
         "exclusoes": [
             "Permissoes internas do Django",
@@ -1878,6 +2169,9 @@ def backup_operacional(request):
         "backup_local_script": "scripts/backup_local.ps1",
         "backup_criptografia_env": "BACKUP_ENCRYPTION_PASSPHRASE",
         "backup_criptografia_flag": "-RemoverOriginalCriptografado",
+        "backup_validacao_flag": "-ValidarSomente",
+        "backup_destino_env": "LOCAL_BACKUP_DIR",
+        "backup_conta_tarefa": "SYSTEM",
     }
     return render(request, "configuracoes/backup.html", context)
 
@@ -1885,6 +2179,7 @@ def backup_operacional(request):
 @login_required
 @role_required(*SISTEMA)
 def backup_download(request):
+    _exigir_admin_master(request.user)
     agora = timezone.localtime()
     arquivo = f"backup_supermercado_{agora:%Y%m%d_%H%M%S}.json"
     saída = StringIO()
@@ -1902,7 +2197,7 @@ def backup_download(request):
 @login_required
 @role_required(*SISTEMA)
 def impressoes(request):
-    configuracoes = ConfiguracaoImpressao.objects.select_related("empresa", "filial").order_by(
+    configuracoes = _configuracoes_impressao_visiveis(request.user).order_by(
         "empresa__nome_fantasia",
         "filial__nome",
         "tipo_documento",
@@ -1919,16 +2214,20 @@ def impressoes(request):
         for nome in configuracoes.exclude(impressora_padrao="").values_list("impressora_padrao", flat=True).distinct()
         if nome
     ]
+    modelos = _modelos_etiqueta_visiveis(request.user).order_by("configuracao__empresa__nome_fantasia", "nome")
+    pagina_configuracoes = Paginator(configuracoes, 50).get_page(request.GET.get("config_page"))
+    pagina_modelos = Paginator(modelos, 50).get_page(request.GET.get("model_page"))
     return render(
         request,
         "configuracoes/impressoes.html",
         {
-            "configuracoes": configuracoes,
+            "configuracoes": pagina_configuracoes,
+            "pagina_configuracoes": pagina_configuracoes,
+            "pagina_modelos": pagina_modelos,
             "resumo": resumo,
             "impressoras_cadastradas": impressoras_cadastradas,
-            "modelos_etiqueta": ModeloEtiqueta.objects.select_related(
-                "configuracao", "configuracao__empresa", "configuracao__filial", "terminal"
-            ),
+            "modelos_etiqueta": pagina_modelos,
+
         },
     )
 
@@ -1936,9 +2235,9 @@ def impressoes(request):
 @login_required
 @role_required(*SISTEMA)
 def modelo_etiqueta_form(request, pk=None):
-    modelo = get_object_or_404(ModeloEtiqueta, pk=pk) if pk else None
+    modelo = get_object_or_404(_modelos_etiqueta_visiveis(request.user), pk=pk) if pk else None
     if request.method == "POST":
-        form = ModeloEtiquetaForm(request.POST, instance=modelo)
+        form = ModeloEtiquetaForm(request.POST, instance=modelo, configuracoes_queryset=_configuracoes_impressao_visiveis(request.user), terminais_queryset=_terminais_visiveis(request.user))
         if form.is_valid():
             with transaction.atomic():
                 salvo = form.save()
@@ -1947,7 +2246,7 @@ def modelo_etiqueta_form(request, pk=None):
             messages.success(request, "Modelo de etiqueta salvo.")
             return redirect("configuracoes:impressoes")
     else:
-        form = ModeloEtiquetaForm(instance=modelo)
+        form = ModeloEtiquetaForm(instance=modelo, configuracoes_queryset=_configuracoes_impressao_visiveis(request.user), terminais_queryset=_terminais_visiveis(request.user))
     return render(request, "configuracoes/modelo_etiqueta_form.html", {"form": form, "modelo": modelo})
 
 
@@ -1955,7 +2254,7 @@ def modelo_etiqueta_form(request, pk=None):
 @role_required(*SISTEMA)
 def modelo_etiqueta_teste(request, pk):
     modelo = get_object_or_404(
-        ModeloEtiqueta.objects.select_related("configuracao", "terminal"),
+        _modelos_etiqueta_visiveis(request.user).select_related("configuracao", "terminal"),
         pk=pk,
         is_active=True,
         configuracao__is_active=True,
@@ -2000,7 +2299,7 @@ def modelo_etiqueta_teste(request, pk):
 @role_required(*SISTEMA)
 def impressoras_locais(request):
     impressoras_cadastradas = list(
-        ConfiguracaoImpressao.objects.exclude(impressora_padrao="")
+        _configuracoes_impressao_visiveis(request.user).exclude(impressora_padrao="")
         .values_list("impressora_padrao", flat=True)
         .distinct()
     )
@@ -2016,7 +2315,7 @@ def impressoras_locais(request):
 @login_required
 @role_required(*SISTEMA)
 def impressoes_desktop(request):
-    configuracoes = ConfiguracaoImpressao.objects.select_related("empresa", "filial").prefetch_related(
+    configuracoes = _configuracoes_impressao_visiveis(request.user).prefetch_related(
         "modelos_etiqueta", "modelos_etiqueta__terminal"
     ).filter(is_active=True).order_by(
         "empresa_id",
@@ -2140,7 +2439,8 @@ def impressoes_desktop(request):
 def impressoes_padroes(request):
     if request.method != "POST":
         return redirect("configuracoes:impressoes")
-    criadas = criar_configuracoes_padrao()
+    empresa = None if request.user.is_superuser else _empresas_visiveis(request.user).first()
+    criadas = criar_configuracoes_padrao(empresa=empresa)
     if criadas:
         messages.success(request, f"{criadas} configuracao(oes) de impressão criada(s).")
     else:
@@ -2151,18 +2451,18 @@ def impressoes_padroes(request):
 @login_required
 @role_required(*SISTEMA)
 def impressao_form(request, pk=None):
-    configuracao = get_object_or_404(ConfiguracaoImpressao, pk=pk) if pk else None
+    configuracao = get_object_or_404(_configuracoes_impressao_visiveis(request.user), pk=pk) if pk else None
     if request.method == "POST":
-        form = ConfiguracaoImpressaoForm(request.POST, instance=configuracao)
+        form = ConfiguracaoImpressaoForm(request.POST, instance=configuracao, empresas_queryset=_empresas_visiveis(request.user), filiais_queryset=_filiais_visiveis(request.user))
         if form.is_valid():
             form.save()
             messages.success(request, "Configuracao de impressão salva.")
             return redirect("configuracoes:impressoes")
     else:
-        form = ConfiguracaoImpressaoForm(instance=configuracao)
+        form = ConfiguracaoImpressaoForm(instance=configuracao, empresas_queryset=_empresas_visiveis(request.user), filiais_queryset=_filiais_visiveis(request.user))
     impressoras_cadastradas = [
         nome
-        for nome in ConfiguracaoImpressao.objects.exclude(impressora_padrao="")
+        for nome in _configuracoes_impressao_visiveis(request.user).exclude(impressora_padrao="")
         .values_list("impressora_padrao", flat=True)
         .distinct()
         if nome

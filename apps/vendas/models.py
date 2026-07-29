@@ -1,4 +1,5 @@
 from django.conf import settings
+from django.core.exceptions import ValidationError
 from django.db import models
 from django.utils import timezone
 
@@ -55,6 +56,52 @@ class FormaPagamento(models.Model):
 
     def __str__(self):
         return self.nome
+
+
+class FormaPagamentoFilial(models.Model):
+    filial = models.ForeignKey(
+        "empresas.Filial",
+        on_delete=models.CASCADE,
+        related_name="configuracoes_formas_pagamento",
+    )
+    forma_pagamento = models.ForeignKey(
+        FormaPagamento,
+        on_delete=models.CASCADE,
+        related_name="configuracoes_filial",
+    )
+    conta_movimento_padrao = models.ForeignKey(
+        "financeiro.ContaMovimentoFinanceiro",
+        on_delete=models.PROTECT,
+        null=True,
+        blank=True,
+        related_name="configuracoes_formas_pagamento_filial",
+    )
+    ativo = models.BooleanField(default=True)
+    criado_em = models.DateTimeField(auto_now_add=True)
+    atualizado_em = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ["filial__empresa__nome_fantasia", "filial__nome", "forma_pagamento__nome"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["filial", "forma_pagamento"],
+                name="vendas_forma_pagamento_filial_unica",
+            )
+        ]
+
+    def clean(self):
+        super().clean()
+        if (
+            self.conta_movimento_padrao_id
+            and self.filial_id
+            and self.conta_movimento_padrao.filial_id != self.filial_id
+        ):
+            raise ValidationError(
+                {"conta_movimento_padrao": "A conta deve pertencer a esta filial."}
+            )
+
+    def __str__(self):
+        return f"{self.filial} - {self.forma_pagamento}"
 
 class Venda(models.Model):
     filial = models.ForeignKey("empresas.Filial", on_delete=models.PROTECT, related_name="vendas")

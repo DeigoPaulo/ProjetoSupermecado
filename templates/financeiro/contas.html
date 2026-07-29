@@ -9,8 +9,8 @@
     <p>Controle de contas a pagar e receber por vencimento.</p>
   </div>
   <div class="actions">
-    <a class="secondary-button" href="{% url 'financeiro:contas_csv' %}?data_inicio={{ data_inicio|date:'Y-m-d' }}&amp;data_fim={{ data_fim|date:'Y-m-d' }}&amp;tipo={{ tipo }}&amp;status={{ status }}&amp;q={{ q }}"><i class="fa-solid fa-file-csv"></i> Excel/CSV</a>
-    <a class="secondary-button" href="{% url 'financeiro:contas_imprimir' %}?data_inicio={{ data_inicio|date:'Y-m-d' }}&amp;data_fim={{ data_fim|date:'Y-m-d' }}&amp;tipo={{ tipo }}&amp;status={{ status }}&amp;q={{ q }}" target="_blank"><i class="fa-solid fa-file-pdf"></i> PDF</a>
+    <a class="secondary-button" href="{% url 'financeiro:contas_csv' %}?data_inicio={{ data_inicio|date:'Y-m-d' }}&amp;data_fim={{ data_fim|date:'Y-m-d' }}&amp;tipo={{ tipo }}&amp;status={{ status }}&amp;q={{ q }}{% if filial_id %}&amp;filial={{ filial_id }}{% endif %}"><i class="fa-solid fa-file-csv"></i> Excel/CSV</a>
+    <a class="secondary-button" href="{% url 'financeiro:contas_imprimir' %}?data_inicio={{ data_inicio|date:'Y-m-d' }}&amp;data_fim={{ data_fim|date:'Y-m-d' }}&amp;tipo={{ tipo }}&amp;status={{ status }}&amp;q={{ q }}{% if filial_id %}&amp;filial={{ filial_id }}{% endif %}" target="_blank"><i class="fa-solid fa-file-pdf"></i> PDF</a>
     <a class="secondary-button" href="{% url 'financeiro:fluxo_caixa' %}"><i class="fa-solid fa-money-bill-trend-up"></i> Fluxo</a>
     <a class="secondary-button" href="{% url 'financeiro:conciliacao' %}"><i class="fa-solid fa-scale-balanced"></i> Conciliacao</a>
     <a class="secondary-button" href="{% url 'financeiro:resultado' %}"><i class="fa-solid fa-chart-line"></i> Resultado</a>
@@ -39,7 +39,13 @@
     </select>
   </label>
   <label><span>Busca</span><input type="search" name="q" value="{{ q }}" placeholder="Descricao"></label>
-  <button type="submit">Filtrar</button>
+  <label>
+    <span>Filial</span>
+    <select name="filial" class="select2-field">
+      {% if permite_consolidado %}<option value="">Todas as filiais da empresa</option>{% endif %}
+      {% for filial in filiais_opcoes %}<option value="{{ filial.pk }}" {% if filial_id == filial.pk|stringformat:"s" %}selected{% endif %}>{{ filial }}</option>{% endfor %}
+    </select>
+  </label>  <button type="submit">Filtrar</button>
 </form>
 
 <section class="finance-insight-grid">
@@ -107,4 +113,5 @@
     </table>
   </div>
 </section>
+{% include "includes/pagination.html" %}
 {% endblock %}

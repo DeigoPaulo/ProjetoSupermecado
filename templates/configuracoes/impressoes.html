@@ -65,6 +65,13 @@
     </table>
   </div>
   <p id="label-test-feedback" class="labels-print-feedback" aria-live="polite"></p>
+  {% if pagina_modelos.paginator.num_pages > 1 %}
+    <nav class="pagination" aria-label="Paginação dos modelos de etiqueta">
+      {% if pagina_modelos.has_previous %}<a class="secondary-button" href="?model_page={{ pagina_modelos.previous_page_number }}&config_page={{ pagina_configuracoes.number }}">Anterior</a>{% endif %}
+      <span>Página {{ pagina_modelos.number }} de {{ pagina_modelos.paginator.num_pages }}</span>
+      {% if pagina_modelos.has_next %}<a class="secondary-button" href="?model_page={{ pagina_modelos.next_page_number }}&config_page={{ pagina_configuracoes.number }}">Próxima</a>{% endif %}
+    </nav>
+  {% endif %}
 </section>
 
 <section class="operation-notice">
@@ -140,4 +147,11 @@
     </table>
   </div>
 </section>
+{% if pagina_configuracoes.paginator.num_pages > 1 %}
+  <nav class="pagination" aria-label="Paginação das configurações de impressão">
+    {% if pagina_configuracoes.has_previous %}<a class="secondary-button" href="?config_page={{ pagina_configuracoes.previous_page_number }}&model_page={{ pagina_modelos.number }}">Anterior</a>{% endif %}
+    <span>Página {{ pagina_configuracoes.number }} de {{ pagina_configuracoes.paginator.num_pages }}</span>
+    {% if pagina_configuracoes.has_next %}<a class="secondary-button" href="?config_page={{ pagina_configuracoes.next_page_number }}&model_page={{ pagina_modelos.number }}">Próxima</a>{% endif %}
+  </nav>
+{% endif %}
 {% endblock %}

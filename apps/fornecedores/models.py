@@ -2,6 +2,13 @@ from django.db import models
 
 
 class Fornecedor(models.Model):
+    empresa = models.ForeignKey(
+        "empresas.Empresa",
+        on_delete=models.PROTECT,
+        related_name="fornecedores",
+        null=True,
+        blank=True,
+    )
     razao_social = models.CharField(max_length=255)
     nome_fantasia = models.CharField(max_length=255, blank=True)
     cnpj = models.CharField(max_length=18, blank=True)
@@ -16,9 +23,10 @@ class Fornecedor(models.Model):
     deleted_at = models.DateTimeField(null=True, blank=True)
 
     class Meta:
-        ordering = ["razao_social"]
+        ordering = ["empresa_id", "razao_social"]
+        indexes = [
+            models.Index(fields=["empresa", "razao_social"], name="fornec_empresa_razao_idx"),
+        ]
 
     def __str__(self):
         return self.nome_fantasia or self.razao_social
-
-# Create your models here.

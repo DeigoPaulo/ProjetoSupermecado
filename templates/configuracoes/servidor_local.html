@@ -9,7 +9,14 @@
     <p>Implantação para supermercados que operam sem internet, em rede interna ou com sincronização opcional.</p>
   </div>
   <div class="actions">
-    <a class="secondary-button" href="{% url 'configuracoes:servidor_local_manifest' %}"><i class="fa-solid fa-code"></i> Manifesto JSON</a>
+    {% if request.user.is_superuser %}
+      {% if payload.distribuicao.status == "disponivel" %}
+        <a class="primary-button" href="{% url 'configuracoes:servidor_local_download' %}"><i class="fa-solid fa-download"></i> Baixar pacote</a>
+      {% else %}
+        <span class="secondary-button is-disabled" aria-disabled="true"><i class="fa-solid fa-clock"></i> Pacote ainda não publicado</span>
+      {% endif %}
+      <a class="secondary-button" href="{% url 'configuracoes:servidor_local_manifest' %}"><i class="fa-solid fa-code"></i> Manifesto JSON</a>
+    {% endif %}
     <a class="secondary-button" href="{% url 'empresas:lista' %}"><i class="fa-solid fa-building"></i> Empresas</a>
   </div>
 </header>
@@ -31,6 +38,30 @@
   <article class="metric"><span>PDV separado</span><strong>Sim</strong></article>
 </section>
 
+<section class="panel">
+  <div class="panel-heading">
+    <div>
+      <h2>Distribuição do servidor local</h2>
+      <p>Somente pacotes rastreáveis e íntegros ficam disponíveis para o admin master.</p>
+    </div>
+    <span class="status {% if payload.distribuicao.status == 'disponivel' %}status-success{% else %}status-warning{% endif %}">{{ payload.distribuicao.status|title }}</span>
+  </div>
+  <div class="metrics-grid">
+    <article class="metric"><span>Versão</span><strong>{{ payload.distribuicao.versao }}</strong></article>
+    <article class="metric"><span>Integridade</span><strong>{% if payload.distribuicao.integridade_valida %}Validada{% else %}Pendente{% endif %}</strong></article>
+    <article class="metric"><span>Origem Git</span><strong>{% if payload.distribuicao.origem_rastreavel %}Rastreável{% else %}Pendente{% endif %}</strong></article>
+    <article class="metric"><span>Dados de cliente</span><strong>{% if payload.distribuicao.sem_dados_cliente %}Ausentes{% else %}Não confirmado{% endif %}</strong></article>
+  </div>
+  {% if payload.distribuicao.problemas %}
+    <div class="operation-notice operation-notice-warning">
+      <i class="fa-solid fa-triangle-exclamation"></i>
+      <div>
+        <strong>Pacote bloqueado para distribuição</strong>
+        <span>{{ payload.distribuicao.problemas|join:" " }}</span>
+      </div>
+    </div>
+  {% endif %}
+</section>
 <section class="operation-notice {% if prontidao.bloqueios %}operation-notice-warning{% endif %}">
   <i class="fa-solid fa-clipboard-check"></i>
   <div>
@@ -83,7 +114,10 @@
   <dl class="detail-list">
     <dt>Nome do servico</dt><dd><code>{{ payload.servico_windows.nome }}</code></dd>
     <dt>Status</dt><dd>{{ payload.servico_windows.status }}</dd>
+    <dt>Banco recomendado</dt><dd><strong>{{ payload.servico_windows.banco_recomendado }}</strong> com <code>pg_dump</code> e <code>pg_restore</code>.</dd>
     <dt>Usuario recomendado</dt><dd>{{ payload.servico_windows.usuario_recomendado }}</dd>
+    <dt>Diretório de dados</dt><dd><code>{{ payload.servico_windows.diretorio_dados }}</code></dd>
+    <dt>Permissões</dt><dd>{{ payload.servico_windows.permissoes }}</dd>
     <dt>Comando de producao</dt><dd><code>{{ payload.servico_windows.comando_producao }}</code></dd>
     <dt>Fallback atual</dt><dd><code>{{ payload.servico_windows.fallback_operacional }}</code></dd>
     <dt>Healthcheck</dt><dd><code>{{ payload.servico_windows.healthcheck }}</code></dd>
@@ -91,6 +125,54 @@
   </dl>
 </section>
 
+<section class="panel">
+  <div class="panel-heading">
+    <div>
+      <h2>Atualização controlada</h2>
+      <p>O pacote é validado antes da janela e o serviço só permanece atualizado depois do healthcheck.</p>
+    </div>
+    <span class="status status-warning">Homologação pendente</span>
+  </div>
+  <dl class="detail-list">
+    <dt>Validação</dt><dd><code>{{ payload.atualizacao_local.validar_comando }}</code></dd>
+    <dt>Rollback</dt><dd>Código e snapshot SQLite preservados pelo contrato <code>{{ payload.atualizacao_local.contrato_rollback }}</code>.</dd>
+    <dt>Dados da loja</dt><dd><code>.env</code>, banco e mídia não fazem parte da substituição do código.</dd>
+    <dt>Conclusão</dt><dd>Migrations, arquivos estáticos, reinício e healthcheck obrigatórios; qualquer falha inicia a restauração automática.</dd>
+    <dt>PostgreSQL</dt><dd>{{ payload.atualizacao_local.postgresql }}</dd>
+  </dl>
+</section>
+<section class="panel">
+  <div class="panel-heading">
+    <div>
+      <h2>Restauração operacional</h2>
+      <p>Valide o arquivo antes da janela de manutenção; a execução real preserva uma cópia dos dados atuais.</p>
+    </div>
+    <span class="status status-warning">Confirmação obrigatória</span>
+  </div>
+  <dl class="detail-list">
+    <dt>Validar sem alterar</dt><dd><code>{{ payload.restauracao_local.validar_comando }}</code></dd>
+    <dt>Executar restauração</dt><dd><code>{{ payload.restauracao_local.restaurar_comando }}</code></dd>
+    <dt>Proteções</dt><dd>SHA-256, contrato v2, ZIP seguro, backup anterior, serviço parado, migrations e healthcheck.</dd>
+    <dt>Falha</dt><dd>Banco e mídia anteriores são recuperados automaticamente pelo contrato <code>{{ payload.restauracao_local.contrato_historico }}</code>.</dd>
+    <dt>PostgreSQL</dt><dd>{{ payload.restauracao_local.postgresql }}</dd>
+  </dl>
+</section>
+<section class="panel">
+  <div class="panel-heading">
+    <div>
+      <h2>Backup local protegido</h2>
+      <p>As fontes são obtidas da mesma configuração usada pelo serviço, evitando cópias vazias ou do banco errado.</p>
+    </div>
+    <span class="status status-success">Contrato v2</span>
+  </div>
+  <dl class="detail-list">
+    <dt>Fontes</dt><dd>{{ payload.backup_local.fontes }}</dd>
+    <dt>Destino padrão</dt><dd><code>{{ payload.backup_local.destino_padrao }}</code></dd>
+    <dt>Banco</dt><dd>SQLite usa snapshot consistente; PostgreSQL usa <code>pg_dump</code> custom. Ambos incluem dump lógico do Django.</dd>
+    <dt>Agendamento</dt><dd>Conta <code>{{ payload.backup_local.tarefa_conta }}</code>, sem depender de usuário conectado.</dd>
+    <dt>Diagnóstico</dt><dd><code>{{ payload.backup_local.validar_comando }}</code></dd>
+  </dl>
+</section>
 <section class="panel">
   <div class="panel-heading">
     <div>
@@ -105,15 +187,23 @@
         <tr><td>Subir servidor</td><td><code>{{ payload.scripts.subir_servidor }}</code></td></tr>
                 <tr><td>Agendar servidor (contingência)</td><td><code>{{ payload.scripts.registrar_servidor }}</code></td></tr>
         <tr><td>Instalar serviço Windows</td><td><code>{{ payload.scripts.instalar_servico }}</code></td></tr>
+        <tr><td>Empacotar servidor local</td><td><code>{{ payload.scripts.empacotar_servidor }}</code></td></tr>
+        <tr><td>Publicar pacote validado</td><td><code>{{ payload.scripts.publicar_servidor }}</code></td></tr>
+        <tr><td>Atualizar com rollback</td><td><code>{{ payload.scripts.atualizar_servidor }}</code></td></tr>
         <tr><td>Diagnosticar serviço</td><td><code>{{ payload.scripts.diagnosticar_servico }}</code></td></tr>
         <tr><td>Remover serviço</td><td><code>{{ payload.scripts.remover_servico }}</code></td></tr>
         <tr><td>Template WinSW</td><td><code>{{ payload.scripts.template_servico }}</code></td></tr>
         <tr><td>Backup local</td><td><code>{{ payload.scripts.backup_local }}</code></td></tr>
+        <tr><td>Validar/restaurar backup</td><td><code>{{ payload.scripts.restaurar_backup }}</code></td></tr>
         <tr><td>Agendar backup</td><td><code>{{ payload.scripts.registrar_backup }}</code></td></tr>
         <tr><td>Senha do backup criptografado</td><td><code>{{ payload.scripts.backup_criptografia_env }}</code></td></tr>
         <tr><td>Manter somente backup criptografado</td><td><code>{{ payload.scripts.backup_criptografia_flag }}</code></td></tr>
+        <tr><td>Validar fontes sem gerar backup</td><td><code>{{ payload.scripts.backup_validacao_flag }}</code></td></tr>
+        <tr><td>Destino configurável</td><td><code>{{ payload.scripts.backup_destino_env }}</code></td></tr>
+        <tr><td>Conta da tarefa de backup</td><td><code>{{ payload.scripts.backup_conta_tarefa }}</code></td></tr>
         <tr><td>Agendar sincronização</td><td><code>{{ payload.scripts.registrar_sincronizacao }}</code></td></tr>
         <tr><td>Guia operacional</td><td><code>{{ payload.scripts.guia }}</code></td></tr>
+        <tr><td>Manual completo de instalação</td><td><code>{{ payload.scripts.manual_instalacao }}</code></td></tr>
       </tbody>
     </table>
   </div>

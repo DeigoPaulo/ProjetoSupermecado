@@ -20,6 +20,7 @@ class ModoImplantacao(models.TextChoices):
 class PoliticaConflitoSincronizacao(models.TextChoices):
     MANUAL = "MANUAL", "Resolver manualmente"
     REMOTO_PRODUTOS_ESTOQUE = "REMOTO_PRODUTOS_ESTOQUE", "Nuvem prevalece para produtos e estoque"
+    LOCAL_PRODUTOS_ESTOQUE = "LOCAL_PRODUTOS_ESTOQUE", "Loja prevalece para produtos e estoque"
 
 
 class StatusSincronizacao(models.TextChoices):
@@ -27,6 +28,7 @@ class StatusSincronizacao(models.TextChoices):
     PROCESSANDO = "PROCESSANDO", "Processando"
     ENVIADO = "ENVIADO", "Enviado"
     ERRO = "ERRO", "Erro"
+    PAUSADO = "PAUSADO", "Pausado pela política"
 
 
 class StatusEventoEntrada(models.TextChoices):
@@ -35,6 +37,7 @@ class StatusEventoEntrada(models.TextChoices):
     CONFLITO = "CONFLITO", "Conflito"
     ERRO = "ERRO", "Erro"
     RESOLVIDO = "RESOLVIDO", "Resolvido manualmente"
+    PAUSADO = "PAUSADO", "Pausado pela política"
 
 
 class Empresa(models.Model):
@@ -68,6 +71,43 @@ class Empresa(models.Model):
     class Meta:
         ordering = ["nome_fantasia"]
 
+    @property
+    def sincronizacao_operacional_habilitada(self):
+        return bool(
+            self.is_active
+            and self.modo_implantacao != ModoImplantacao.LOCAL
+            and self.sincronizacao_automatica
+            and self.url_sincronizacao
+            and self.url_sincronizacao.lower().startswith("https://")
+        )
+
+    def save(self, *args, **kwargs):
+        if self.modo_implantacao == ModoImplantacao.LOCAL:
+            self.sincronizacao_automatica = False
+            self.url_sincronizacao = ""
+            if kwargs.get("update_fields") is not None:
+                kwargs["update_fields"] = set(kwargs["update_fields"]) | {
+                    "modo_implantacao", "sincronizacao_automatica", "url_sincronizacao"
+                }
+        super().save(*args, **kwargs)
+        if self.sincronizacao_operacional_habilitada:
+            self.eventos_sincronizacao.filter(status=StatusSincronizacao.PAUSADO).update(
+                status=StatusSincronizacao.PENDENTE,
+                ultimo_erro="",
+                proxima_tentativa_em=None,
+            )
+            self.eventos_entrada_sincronizacao.filter(status=StatusEventoEntrada.PAUSADO).update(
+                status=StatusEventoEntrada.RECEBIDO,
+                ultimo_erro="",
+            )
+        else:
+            motivo = "Pausado pela política de implantação local ou sincronização desativada."
+            self.eventos_sincronizacao.filter(
+                status__in=[StatusSincronizacao.PENDENTE, StatusSincronizacao.ERRO]
+            ).update(status=StatusSincronizacao.PAUSADO, ultimo_erro=motivo, proxima_tentativa_em=None)
+            self.eventos_entrada_sincronizacao.filter(
+                status__in=[StatusEventoEntrada.RECEBIDO, StatusEventoEntrada.ERRO]
+            ).update(status=StatusEventoEntrada.PAUSADO, ultimo_erro=motivo)
     def __str__(self):
         return self.nome_fantasia
 

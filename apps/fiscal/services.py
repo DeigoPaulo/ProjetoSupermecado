@@ -1,4 +1,5 @@
 import re
+from datetime import timedelta
 from decimal import Decimal
 from xml.etree import ElementTree as ET
 
@@ -9,6 +10,10 @@ from django.utils import timezone
 from apps.auditoria.models import LogAuditoria
 from apps.vendas.models import TipoDocumentoConsumidor
 
+from .adapters import SefazAdapterError, carregar_adaptador_sefaz, normalizar_retorno_transmissao
+from .assinaturas import assinar_xml_documento, verificar_assinatura_xml
+from .validacoes import validar_xml_pre_transmissao
+from .qrcode_nfce import gerar_url_qrcode_nfce
 from .models import (
     ConfiguracaoFiscal,
     DocumentoFiscal,
@@ -56,6 +61,27 @@ def _somente_digitos(valor):
     return re.sub(r"\D", "", valor or "")
 
 
+def _digito_verificador_chave(chave_sem_dv):
+    pesos = [2, 3, 4, 5, 6, 7, 8, 9]
+    soma = sum(int(digito) * pesos[indice % len(pesos)] for indice, digito in enumerate(reversed(chave_sem_dv)))
+    resultado = 11 - (soma % 11)
+    return "0" if resultado >= 10 else str(resultado)
+
+
+def _chave_acesso_documento(documento, filial, modelo, tipo_emissao):
+    cnpj = _somente_digitos(filial.cnpj or filial.empresa.cnpj)
+    if len(cnpj) != 14:
+        raise ValidationError("CNPJ do emitente deve possuir 14 digitos para gerar a chave fiscal.")
+    codigo_uf = CODIGOS_UF_IBGE.get(filial.uf)
+    if not codigo_uf:
+        raise ValidationError("UF do emitente invalida para gerar a chave fiscal.")
+    data = timezone.localtime(documento.criado_em).strftime("%y%m")
+    serie = f"{documento.serie:03d}"
+    numero = f"{documento.numero:09d}"
+    codigo_numerico = f"{documento.pk:08d}"[-8:]
+    base = f"{codigo_uf}{data}{cnpj}{modelo}{serie}{numero}{tipo_emissao}{codigo_numerico}"
+    return f"{base}{_digito_verificador_chave(base)}", codigo_numerico
+
 def _valor(valor, casas=2):
     quantizador = Decimal("1." + ("0" * casas))
     return str((valor or Decimal("0")).quantize(quantizador))
@@ -75,6 +101,10 @@ def _codigo_pagamento(tipo):
         return "03"
     if "DEBITO" in tipo or "CARTAO_DEBITO" in tipo:
         return "04"
+    if "VALE_ALIMENTACAO" in tipo:
+        return "10"
+    if "VALE_REFEICAO" in tipo:
+        return "11"
     if "CREDIARIO" in tipo or "CONVENIO" in tipo:
         return "05"
     if "PIX" in tipo:
@@ -145,13 +175,17 @@ def gerar_xml_nfce(documento):
     empresa = venda.filial.empresa
     cnpj_emitente = _somente_digitos(venda.filial.cnpj or empresa.cnpj)
     data_emissao = timezone.localtime(documento.criado_em).replace(microsecond=0).isoformat()
+    em_contingencia = documento.status == StatusDocumentoFiscal.CONTINGENCIA
+    tipo_emissao = "9" if em_contingencia else "1"
+    chave_acesso, codigo_numerico = _chave_acesso_documento(documento, venda.filial, "65", tipo_emissao)
+    documento.chave_acesso = chave_acesso
 
     nfe = ET.Element(f"{{{NFE_NS}}}NFe")
-    inf_nfe = ET.SubElement(nfe, f"{{{NFE_NS}}}infNFe", {"versao": "4.00", "Id": f"NFeLOCAL{documento.pk:044d}"})
+    inf_nfe = ET.SubElement(nfe, f"{{{NFE_NS}}}infNFe", {"versao": "4.00", "Id": f"NFe{chave_acesso}"})
 
     ide = ET.SubElement(inf_nfe, f"{{{NFE_NS}}}ide")
     _texto(ide, "cUF", CODIGOS_UF_IBGE.get(venda.filial.uf, "00"))
-    _texto(ide, "cNF", f"{documento.pk:08d}"[-8:])
+    _texto(ide, "cNF", codigo_numerico)
     _texto(ide, "natOp", natureza.descricao[:60])
     _texto(ide, "mod", "65")
     _texto(ide, "serie", documento.serie)
@@ -161,14 +195,17 @@ def gerar_xml_nfce(documento):
     _texto(ide, "idDest", "1")
     _texto(ide, "cMunFG", venda.filial.codigo_municipio_ibge)
     _texto(ide, "tpImp", "4")
-    _texto(ide, "tpEmis", "1")
-    _texto(ide, "cDV", "0")
+    _texto(ide, "tpEmis", tipo_emissao)
+    _texto(ide, "cDV", chave_acesso[-1])
     _texto(ide, "tpAmb", "2" if configuracao.ambiente == "HOMOLOGACAO" else "1")
     _texto(ide, "finNFe", "1")
     _texto(ide, "indFinal", "1")
     _texto(ide, "indPres", "1")
     _texto(ide, "procEmi", "0")
     _texto(ide, "verProc", "SupermercadoERP-0.1")
+    if em_contingencia:
+        _texto(ide, "dhCont", timezone.localtime(documento.contingencia_iniciada_em).replace(microsecond=0).isoformat())
+        _texto(ide, "xJust", documento.contingencia_justificativa)
 
     emit = ET.SubElement(inf_nfe, f"{{{NFE_NS}}}emit")
     _texto(emit, "CNPJ", cnpj_emitente)
@@ -246,6 +283,10 @@ def gerar_xml_nfce(documento):
     inf_adic = ET.SubElement(inf_nfe, f"{{{NFE_NS}}}infAdic")
     _texto(inf_adic, "infCpl", "XML local de preparacao. Assinatura e transmissao SEFAZ pendentes.")
 
+    inf_supl = ET.SubElement(nfe, f"{{{NFE_NS}}}infNFeSupl")
+    _texto(inf_supl, "qrCode", gerar_url_qrcode_nfce(documento, configuracao))
+    _texto(inf_supl, "urlChave", configuracao.url_consulta_nfce.strip())
+
     return ET.tostring(nfe, encoding="unicode", xml_declaration=True)
 
 
@@ -274,12 +315,14 @@ def gerar_xml_nfe_pedido_online(documento):
     cnpj_emitente = _somente_digitos(pedido.filial.cnpj or empresa.cnpj)
     data_emissao = timezone.localtime(documento.criado_em).replace(microsecond=0).isoformat()
     doc_tag, doc_valor = _documento_destinatario_pedido(pedido)
+    chave_acesso, codigo_numerico = _chave_acesso_documento(documento, pedido.filial, "55", "1")
+    documento.chave_acesso = chave_acesso
 
     nfe = ET.Element(f"{{{NFE_NS}}}NFe")
-    inf_nfe = ET.SubElement(nfe, f"{{{NFE_NS}}}infNFe", {"versao": "4.00", "Id": f"NFeLOCAL{documento.pk:044d}"})
+    inf_nfe = ET.SubElement(nfe, f"{{{NFE_NS}}}infNFe", {"versao": "4.00", "Id": f"NFe{chave_acesso}"})
     ide = ET.SubElement(inf_nfe, f"{{{NFE_NS}}}ide")
     _texto(ide, "cUF", CODIGOS_UF_IBGE.get(pedido.filial.uf, "00"))
-    _texto(ide, "cNF", f"{documento.pk:08d}"[-8:])
+    _texto(ide, "cNF", codigo_numerico)
     _texto(ide, "natOp", natureza.descricao[:60])
     _texto(ide, "mod", "55")
     _texto(ide, "serie", documento.serie)
@@ -290,7 +333,7 @@ def gerar_xml_nfe_pedido_online(documento):
     _texto(ide, "cMunFG", pedido.filial.codigo_municipio_ibge)
     _texto(ide, "tpImp", "1")
     _texto(ide, "tpEmis", "1")
-    _texto(ide, "cDV", "0")
+    _texto(ide, "cDV", chave_acesso[-1])
     _texto(ide, "tpAmb", "2" if configuracao.ambiente == "HOMOLOGACAO" else "1")
     _texto(ide, "finNFe", "1")
     _texto(ide, "indFinal", "1")
@@ -353,7 +396,7 @@ def gerar_xml_nfe_pedido_online(documento):
 def salvar_xml_documento(documento):
     documento.xml_conteudo = gerar_xml_nfe_pedido_online(documento) if documento.tipo_documento == TipoDocumentoFiscal.NFE else gerar_xml_nfce(documento)
     documento.xml_gerado_em = timezone.now()
-    documento.save(update_fields=["xml_conteudo", "xml_gerado_em", "atualizado_em"])
+    documento.save(update_fields=["chave_acesso", "xml_conteudo", "xml_gerado_em", "atualizado_em"])
     return documento.xml_conteudo
 
 
@@ -363,8 +406,8 @@ def pendencias_preparacao_fiscal(venda, configuracao, natureza):
         erros.append("Informe a inscricao estadual da filial.")
     if not configuracao.regime_tributario.strip():
         erros.append("Informe o regime tributario da filial.")
-    if not configuracao.csc_id.strip() or not configuracao.csc_token.strip():
-        erros.append("Informe o ID e o token CSC da NFC-e.")
+    if not configuracao.url_qrcode_nfce.strip() or not configuracao.url_consulta_nfce.strip():
+        erros.append("Informe as URLs oficiais do QR Code e da consulta NFC-e para a UF e o ambiente.")
     if not venda.filial.uf or venda.filial.uf not in CODIGOS_UF_IBGE:
         erros.append("Informe a UF da filial para emissao fiscal.")
     if not re.fullmatch(r"\d{7}", venda.filial.codigo_municipio_ibge or ""):
@@ -508,6 +551,7 @@ def preparar_documento_venda(venda, usuario, natureza_operacao=None, ip=None):
     return documento
 
 
+
 @transaction.atomic
 def preparar_documento_pedido_online(pedido, usuario, natureza_operacao=None, ip=None):
     documento_existente = pedido.documentos_fiscais.exclude(status=StatusDocumentoFiscal.CANCELADO).first()
@@ -558,6 +602,7 @@ def preparar_documento_pedido_online(pedido, usuario, natureza_operacao=None, ip
     return documento
 
 
+
 def tentar_preparar_documento_pos_venda(venda, usuario, ip=None):
     documento_existente = venda.documentos_fiscais.exclude(status=StatusDocumentoFiscal.CANCELADO).first()
     if documento_existente:
@@ -578,34 +623,184 @@ def tentar_preparar_documento_pos_venda(venda, usuario, ip=None):
 
 
 @transaction.atomic
+def ativar_contingencia_offline(documento, usuario, justificativa, ip=None):
+    documento = DocumentoFiscal.objects.select_for_update().select_related("filial").get(pk=documento.pk)
+    if documento.tipo_documento != TipoDocumentoFiscal.NFCE:
+        raise ValidationError("Contingencia offline nesta etapa e exclusiva para NFC-e modelo 65.")
+    if documento.status != StatusDocumentoFiscal.PRONTO:
+        raise ValidationError("Somente documento pronto pode entrar em contingencia offline.")
+    try:
+        configuracao = documento.filial.configuracao_fiscal
+    except ConfiguracaoFiscal.DoesNotExist as exc:
+        raise ValidationError("Configure os dados fiscais da filial antes de usar contingencia.") from exc
+    if not configuracao.ativo or not configuracao.permite_contingencia_offline:
+        raise ValidationError("Contingencia offline nao esta autorizada na configuracao fiscal desta filial.")
+    justificativa = (justificativa or "").strip()
+    if not 15 <= len(justificativa) <= 256:
+        raise ValidationError("A justificativa da contingencia deve ter entre 15 e 256 caracteres.")
+
+    agora = timezone.now()
+    documento.status = StatusDocumentoFiscal.CONTINGENCIA
+    documento.contingencia_iniciada_em = agora
+    documento.contingencia_justificativa = justificativa
+    documento.transmissao_limite_em = agora + timedelta(hours=24)
+    documento.mensagem_retorno = (
+        "NFC-e emitida em contingencia offline, ainda sem autorizacao da SEFAZ. "
+        "Transmitir assim que a comunicacao for restabelecida."
+    )
+    documento.save(
+        update_fields=[
+            "status",
+            "contingencia_iniciada_em",
+            "contingencia_justificativa",
+            "transmissao_limite_em",
+            "mensagem_retorno",
+            "atualizado_em",
+        ]
+    )
+    salvar_xml_documento(documento)
+    LogAuditoria.objects.create(
+        usuario=usuario,
+        modulo="fiscal",
+        acao="ATIVA_CONTINGENCIA_OFFLINE",
+        descricao=(
+            f"Documento fiscal {documento.id} entrou em contingencia offline. "
+            f"Prazo de transmissao: {timezone.localtime(documento.transmissao_limite_em):%d/%m/%Y %H:%M}. "
+            f"Justificativa: {justificativa}"
+        ),
+        objeto_tipo="DocumentoFiscal",
+        objeto_id=str(documento.id),
+        ip=ip,
+    )
+    return documento
+
+
+
+@transaction.atomic
 def transmitir_documento_simulado(documento, usuario, ip=None):
     documento = DocumentoFiscal.objects.select_for_update().get(pk=documento.pk)
-    if documento.status != StatusDocumentoFiscal.PRONTO:
+    status_origem = documento.status
+    if status_origem not in {StatusDocumentoFiscal.PRONTO, StatusDocumentoFiscal.CONTINGENCIA}:
         raise ValidationError("Somente documentos prontos podem ser transmitidos.")
     if documento.ambiente != "HOMOLOGACAO":
         raise ValidationError("Transmissao simulada permitida somente em homologacao. Em producao, configure o adaptador SEFAZ oficial.")
     if not documento.xml_conteudo:
         salvar_xml_documento(documento)
 
-    uf = CODIGOS_UF_IBGE.get(documento.filial.uf, "00")
-    data = timezone.localdate().strftime("%y%m")
-    cnpj = _somente_digitos(documento.filial.cnpj or documento.filial.empresa.cnpj).zfill(14)[-14:]
-    modelo = "65"
-    serie = f"{documento.serie:03d}"[-3:]
-    numero = f"{documento.numero or documento.pk:09d}"[-9:]
-    forma = "1"
-    codigo = f"{documento.pk:08d}"[-8:]
-    chave_base = f"{uf}{data}{cnpj}{modelo}{serie}{numero}{forma}{codigo}"
-    documento.chave_acesso = f"{chave_base}0"
+    if len(documento.chave_acesso) != 44 or not documento.chave_acesso.isdigit():
+        raise ValidationError("Documento sem chave de acesso fiscal valida.")
     documento.protocolo = f"HOM{timezone.now():%Y%m%d%H%M%S}{documento.pk:06d}"
     documento.status = StatusDocumentoFiscal.EMITIDO
+    documento.tentativas_transmissao += 1
+    documento.ultima_tentativa_em = timezone.now()
     documento.mensagem_retorno = "Transmissao simulada em homologacao. Substituir pelo adaptador oficial da SEFAZ em producao."
-    documento.save(update_fields=["chave_acesso", "protocolo", "status", "mensagem_retorno", "atualizado_em"])
+    documento.save(update_fields=["chave_acesso", "protocolo", "status", "tentativas_transmissao", "ultima_tentativa_em", "mensagem_retorno", "atualizado_em"])
     LogAuditoria.objects.create(
         usuario=usuario,
         modulo="fiscal",
         acao="TRANSMISSAO_SIMULADA",
         descricao=f"Documento fiscal {documento.id} transmitido em homologacao simulada. Protocolo: {documento.protocolo}.",
+        objeto_tipo="DocumentoFiscal",
+        objeto_id=str(documento.id),
+        ip=ip,
+    )
+    return documento
+
+
+
+def transmitir_documento_sefaz(documento, usuario, ip=None):
+    with transaction.atomic():
+        documento = (
+            DocumentoFiscal.objects.select_for_update()
+            .select_related("filial__empresa")
+            .get(pk=documento.pk)
+        )
+        status_origem = documento.status
+        if status_origem not in {StatusDocumentoFiscal.PRONTO, StatusDocumentoFiscal.CONTINGENCIA}:
+            raise ValidationError("Somente documentos prontos ou em contingencia podem ser transmitidos.")
+        if not documento.xml_conteudo:
+            salvar_xml_documento(documento)
+        documento.tentativas_transmissao += 1
+        documento.ultima_tentativa_em = timezone.now()
+        documento.save(update_fields=["tentativas_transmissao", "ultima_tentativa_em", "atualizado_em"])
+        idempotency_key = (
+            f"fiscal:{documento.pk}:{documento.numero or 0}:"
+            f"{documento.xml_gerado_em.isoformat() if documento.xml_gerado_em else 'sem-xml'}"
+        )
+
+    try:
+        adapter = carregar_adaptador_sefaz()
+        if not bool(getattr(adapter, "assina_xml", False)):
+            assinar_xml_documento(documento)
+            verificar_assinatura_xml(documento.xml_conteudo)
+        validar_xml_pre_transmissao(documento, adapter)
+        retorno = adapter.transmitir(
+            documento=documento,
+            xml=documento.xml_conteudo,
+            idempotency_key=idempotency_key,
+            ambiente=documento.ambiente,
+        )
+        resultado = normalizar_retorno_transmissao(retorno)
+        if resultado.status == "AUTORIZADO" and resultado.chave_acesso != documento.chave_acesso:
+            raise SefazAdapterError("A SEFAZ autorizou uma chave diferente do documento transmitido.")
+    except Exception as exc:
+        mensagem = (
+            str(exc)
+            if isinstance(exc, (SefazAdapterError, ValidationError))
+            else "Falha na comunicacao com o adaptador SEFAZ."
+        )
+        DocumentoFiscal.objects.filter(pk=documento.pk).update(
+            mensagem_retorno=mensagem,
+            atualizado_em=timezone.now(),
+        )
+        LogAuditoria.objects.create(
+            usuario=usuario,
+            modulo="fiscal",
+            acao="TRANSMISSAO_SEFAZ_FALHA",
+            descricao=f"Falha ao transmitir documento fiscal {documento.id}: {mensagem}",
+            objeto_tipo="DocumentoFiscal",
+            objeto_id=str(documento.id),
+            ip=ip,
+        )
+        raise ValidationError(mensagem) from exc
+
+    with transaction.atomic():
+        documento = DocumentoFiscal.objects.select_for_update().get(pk=documento.pk)
+        if documento.status == StatusDocumentoFiscal.EMITIDO:
+            return documento
+
+        documento.mensagem_retorno = resultado.mensagem
+        if resultado.status == "AUTORIZADO":
+            documento.status = StatusDocumentoFiscal.EMITIDO
+            documento.chave_acesso = resultado.chave_acesso
+            documento.protocolo = resultado.protocolo
+        elif resultado.status == "REJEITADO":
+            documento.status = StatusDocumentoFiscal.REJEITADO
+        else:
+            documento.status = status_origem
+        documento.save(
+            update_fields=[
+                "status",
+                "chave_acesso",
+                "protocolo",
+                "mensagem_retorno",
+                "atualizado_em",
+            ]
+        )
+
+    acao = {
+        "AUTORIZADO": "TRANSMISSAO_SEFAZ_AUTORIZADA",
+        "REJEITADO": "TRANSMISSAO_SEFAZ_REJEITADA",
+        "PENDENTE": "TRANSMISSAO_SEFAZ_PENDENTE",
+    }[resultado.status]
+    LogAuditoria.objects.create(
+        usuario=usuario,
+        modulo="fiscal",
+        acao=acao,
+        descricao=(
+            f"Transmissao SEFAZ do documento fiscal {documento.id}: {resultado.status}. "
+            f"Protocolo: {resultado.protocolo or '-'}."
+        ),
         objeto_tipo="DocumentoFiscal",
         objeto_id=str(documento.id),
         ip=ip,

@@ -89,8 +89,6 @@
       </tbody>
     </table>
   </div>
-  {% if total_logs > 300 %}
-    <div class="message warning">Mostrando os primeiros 300 registros. Use filtros ou exporte CSV para conferir o periodo completo.</div>
-  {% endif %}
+  {% include "includes/pagination.html" with page_obj=pagina %}
 </section>
 {% endblock %}

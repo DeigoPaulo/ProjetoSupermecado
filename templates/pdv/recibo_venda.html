@@ -18,9 +18,9 @@
       margin: 0;
       background: #f4f6f8;
       color: #111827;
-      font-family: Arial, Helvetica, sans-serif;
-      font-size: {{ estilos_impressao.fonte }}px;
-      line-height: 1.35;
+      font-family: "Courier New", Courier, monospace;
+      font-size: min({{ estilos_impressao.fonte }}px, 9px);
+      line-height: 1.2;
     }
 
     .toolbar {
@@ -46,7 +46,7 @@
       width: {{ estilos_impressao.largura }};
       min-height: 100vh;
       margin: 0 auto 24px;
-      padding: 8px;
+      padding: 3mm;
       background: #ffffff;
     }
 
@@ -56,7 +56,7 @@
 
     .title {
       margin: 0;
-      font-size: 14px;
+      font-size: 11px;
       text-transform: uppercase;
     }
 
@@ -73,7 +73,7 @@
 
     .line {
       border-top: 1px dashed #9ca3af;
-      margin: 8px 0;
+      margin: 5px 0;
     }
 
     table {
@@ -83,14 +83,14 @@
 
     th,
     td {
-      padding: 3px 0;
+      padding: 2px 0;
       vertical-align: top;
     }
 
     th {
       border-bottom: 1px solid #d1d5db;
       text-align: left;
-      font-size: 10px;
+      font-size: 8px;
     }
 
     .right {
@@ -102,7 +102,7 @@
     }
 
     .grand-total {
-      font-size: 13px;
+      font-size: 11px;
       font-weight: 700;
     }
 
@@ -143,16 +143,17 @@
 
     <div class="line"></div>
     <section class="center">
-      <strong>CUPOM NAO FISCAL</strong>
-      <div class="muted">Venda {{ venda.id }} - {{ venda.status }}</div>
-      <div>{{ venda.data|date:"d/m/Y H:i:s" }}</div>
+      <strong>CUPOM NÃO FISCAL - USO INTERNO</strong>
+
+
     </section>
 
     <div class="line"></div>
     <section>
-      <div>Operador: {{ venda.usuario }}</div>
-      <div>Caixa: {{ venda.caixa.id }}</div>
-      <div>Cliente: {{ venda.cliente|default:"Cliente avulso" }}</div>
+      <div>Data: {{ venda.data|date:"d/m/Y H:i:s" }}</div>
+      <div>Operador: {{ venda.usuario }} | Caixa: #{{ venda.caixa.id }}</div>
+
+      <div>Documento: {{ venda.id }} | Cliente: {{ venda.cliente|default:"Cliente avulso" }}</div>
       {% if venda.documento_consumidor %}
         <div>{{ venda.get_documento_consumidor_tipo_display }} na nota: {{ venda.documento_consumidor }}</div>
       {% endif %}
@@ -162,7 +163,7 @@
     <table>
       <thead>
         <tr>
-          <th>Item</th>
+          <th>Cód. / Descrição</th>
           <th class="right">Qtd</th>
           <th class="right">Unit</th>
           <th class="right">Total</th>
@@ -172,12 +173,12 @@
         {% for item in venda.itens.all %}
           <tr>
             <td>
-              {{ item.produto.nome }}<br>
-              <span class="muted">{{ item.produto.codigo_barras }}</span>
+              {{ item.produto.codigo_barras|default:forloop.counter }}<br>
+              {{ item.produto.nome }}
             </td>
             <td class="right">{{ item.quantidade|quantidade_br }}</td>
-            <td class="right">{{ item.preco_unitario_venda|floatformat:2 }}</td>
-            <td class="right">{{ item.total|floatformat:2 }}</td>
+            <td class="right">R$ {{ item.preco_unitario_venda|floatformat:2 }}</td>
+            <td class="right">R$ {{ item.total|floatformat:2 }}</td>
           </tr>
         {% endfor %}
       </tbody>
@@ -186,6 +187,7 @@
     <div class="line"></div>
     <table class="totals">
       <tbody>
+        <tr><td>Qtd. total de itens</td><td class="right">{{ quantidade_total|quantidade_br }}</td></tr>
         <tr><td>Subtotal</td><td class="right">R$ {{ venda.total_bruto|floatformat:2 }}</td></tr>
         <tr><td>Desconto</td><td class="right">R$ {{ venda.desconto|floatformat:2 }}</td></tr>
         <tr class="grand-total"><td>Total</td><td class="right">R$ {{ venda.total_liquido|floatformat:2 }}</td></tr>
@@ -214,6 +216,12 @@
           {% endfor %}
         </tbody>
       </table>
+      <table class="totals">
+        <tbody>
+          <tr><td>Valor recebido</td><td class="right">R$ {{ total_pago|floatformat:2 }}</td></tr>
+          <tr><td>Troco</td><td class="right">R$ {{ troco|floatformat:2 }}</td></tr>
+        </tbody>
+      </table>
     </section>
 
     <div class="line"></div>
@@ -222,8 +230,9 @@
         <div>{{ impressao.mensagem_rodape|linebreaksbr }}</div>
       {% else %}
         <div>Documento sem valor fiscal.</div>
-        <div>Obrigado pela preferencia.</div>
+        <div>Obrigado pela preferência.</div>
       {% endif %}
+      <div><strong>NÃO É DOCUMENTO FISCAL</strong></div>
     </section>
   </main>
   {% if impressao.impressao_automatica %}

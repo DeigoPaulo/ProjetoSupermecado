@@ -1,6 +1,7 @@
 from decimal import Decimal
 
 from django.conf import settings
+from django.core.exceptions import ValidationError
 from django.core.validators import MinValueValidator
 from django.db import models
 
@@ -77,6 +78,10 @@ class RespostaCotacaoFornecedor(models.Model):
             models.UniqueConstraint(fields=["cotacao", "fornecedor"], name="compras_cotacao_fornecedor_unico"),
         ]
 
+    def clean(self):
+        if self.fornecedor_id and self.fornecedor.empresa_id and self.cotacao_id and self.fornecedor.empresa_id != self.cotacao.filial.empresa_id:
+            raise ValidationError({"fornecedor": "Fornecedor informado pertence a outra empresa."})
+
     @property
     def total_proposto(self):
         return sum(
@@ -146,9 +151,12 @@ class PedidoCompra(models.Model):
     class Meta:
         ordering = ["-created_at"]
 
+    def clean(self):
+        if self.fornecedor_id and self.fornecedor.empresa_id and self.filial_id and self.fornecedor.empresa_id != self.filial.empresa_id:
+            raise ValidationError({"fornecedor": "Fornecedor informado pertence a outra empresa."})
+
     def __str__(self):
         return f"Pedido {self.id} - {self.fornecedor}"
-
 
 class ItemPedidoCompra(models.Model):
     pedido = models.ForeignKey(PedidoCompra, on_delete=models.CASCADE, related_name="itens")
@@ -203,9 +211,12 @@ class EntradaCompra(models.Model):
     class Meta:
         ordering = ["-data_recebimento"]
 
+    def clean(self):
+        if self.fornecedor_id and self.fornecedor.empresa_id and self.filial_id and self.fornecedor.empresa_id != self.filial.empresa_id:
+            raise ValidationError({"fornecedor": "Fornecedor informado pertence a outra empresa."})
+
     def __str__(self):
         return f"Entrada {self.id} - {self.fornecedor}"
-
 
 class ItemEntradaCompra(models.Model):
     entrada = models.ForeignKey(EntradaCompra, on_delete=models.CASCADE, related_name="itens")

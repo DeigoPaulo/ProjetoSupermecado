@@ -98,6 +98,7 @@
             <td><span class="status-badge {% if terminal.ativo %}success{% else %}muted{% endif %}">{% if terminal.ativo %}Ativo{% else %}Inativo{% endif %}</span></td>
             <td>
               <a class="icon-button" href="{% url 'configuracoes:terminal_pdv_editar' terminal.pk %}" title="Editar terminal"><i class="fa-solid fa-pen"></i></a>
+              {% if user.is_superuser %}
               {% if terminal.licenca_liberada %}
                 <form method="post" action="{% url 'configuracoes:terminal_pdv_alterar_licenca' terminal.pk 'bloquear' %}" class="inline-form" onsubmit="return confirm('Bloquear a licenca deste terminal? O pacote de ativacao deixara de ser liberado.');">
                   {% csrf_token %}
@@ -115,6 +116,7 @@
                   <button class="icon-button" type="submit" title="Cancelar licenca"><i class="fa-solid fa-circle-xmark"></i></button>
                 </form>
               {% endif %}
+              {% endif %}
               <form method="post" action="{% url 'configuracoes:terminal_pdv_regenerar_chave' terminal.pk %}" class="inline-form" onsubmit="return confirm('Renovar a chave? O aplicativo atual deixara de conectar ate ser reconfigurado.');">
                 {% csrf_token %}
                 <button class="icon-button" type="submit" title="Renovar chave"><i class="fa-solid fa-rotate"></i></button>
@@ -128,4 +130,11 @@
     </table>
   </div>
 </section>
+{% if pagina.paginator.num_pages > 1 %}
+  <nav class="pagination" aria-label="Paginação dos terminais PDV">
+    {% if pagina.has_previous %}<a class="secondary-button" href="?{% if query_sem_pagina %}{{ query_sem_pagina }}&{% endif %}page={{ pagina.previous_page_number }}">Anterior</a>{% endif %}
+    <span>Página {{ pagina.number }} de {{ pagina.paginator.num_pages }}</span>
+    {% if pagina.has_next %}<a class="secondary-button" href="?{% if query_sem_pagina %}{{ query_sem_pagina }}&{% endif %}page={{ pagina.next_page_number }}">Próxima</a>{% endif %}
+  </nav>
+{% endif %}
 {% endblock %}

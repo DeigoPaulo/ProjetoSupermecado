@@ -14,9 +14,9 @@ from apps.configuracoes.models import ConfiguracaoImpressao, TipoDocumentoImpres
 from apps.empresas.models import Empresa, Filial
 from apps.estoque.models import Estoque
 from apps.financeiro.models import ContaMovimentoFinanceiro, LancamentoFinanceiro, TipoContaMovimento, TipoLancamentoFinanceiro
-from apps.fiscal.models import AmbienteFiscal, ConfiguracaoFiscal, DocumentoFiscal, NaturezaOperacao, SerieFiscal, TipoDocumentoFiscal
+from apps.fiscal.models import AmbienteFiscal, ConfiguracaoFiscal, DocumentoFiscal, NaturezaOperacao, SerieFiscal, StatusDocumentoFiscal, TipoDocumentoFiscal
 from apps.produtos.models import Categoria, Produto
-from apps.vendas.models import EstornoParcialPagamento, FormaPagamento, StatusEstornoParcial, StatusPagamento, StatusVenda, Venda
+from apps.vendas.models import EstornoParcialPagamento, FormaPagamento, PreVenda, StatusEstornoParcial, StatusPagamento, StatusVenda, Venda
 from apps.vendas.services import cancelar_venda, finalizar_venda, registrar_devolucao_venda
 
 from .models import AcessoPdvNuvem, Caixa, CanalAtualizacaoPdv, EventoDispositivoTerminal, ModoIntegracaoTef, ProtocoloBalanca, ProvedorTef, Sangria, StatusAcessoPdvNuvem, StatusCaixa, StatusLicencaTerminal, Suprimento, TerminalPdv
@@ -46,6 +46,36 @@ class AcessoPdvNuvemTests(TestCase):
         self.admin = User.objects.create_user(username="admin", password="senha")
         PerfilUsuario.objects.create(usuario=self.admin, filial=self.filial, tipo=TipoPerfil.ADMINISTRADOR)
 
+    def test_pdv_exibe_identidade_deigo_sem_substituir_logo_da_loja(self):
+        self.client.force_login(self.admin)
+
+        resposta = self.client.get("/pdv/")
+
+        self.assertEqual(resposta.status_code, 200)
+        self.assertContains(resposta, "Deigo Tecnologia")
+        self.assertContains(resposta, "Deigo PDV")
+        self.assertContains(resposta, "img/brand/deigo-tecnologia.png")
+        self.assertContains(resposta, self.filial.empresa.nome_fantasia)
+    def test_supervisor_ve_menu_no_pdv(self):
+        self.client.force_login(self.admin)
+
+        resposta = self.client.get("/pdv/")
+
+        self.assertEqual(resposta.status_code, 200)
+        self.assertContains(resposta, 'id="pdv-menu-link"')
+        self.assertNotContains(resposta, 'id="pdv-exit-button"')
+
+    @override_settings(PDV_NUVEM_REQUER_APROVACAO=False)
+    def test_operador_ve_saida_em_vez_do_menu(self):
+        self.client.force_login(self.operador)
+
+        resposta = self.client.get("/pdv/")
+
+        self.assertEqual(resposta.status_code, 200)
+        self.assertContains(resposta, 'id="pdv-exit-button"')
+        self.assertContains(resposta, "Shift+S")
+        self.assertContains(resposta, 'action="/logout/"')
+        self.assertNotContains(resposta, 'id="pdv-menu-link"')
     def test_terminal_autenticado_inicializa_e_registra_conexao(self):
         terminal = TerminalPdv(
             filial=self.filial,
@@ -108,6 +138,8 @@ class AcessoPdvNuvemTests(TestCase):
         self.assertEqual(resposta.json()["tef"]["contrato"], "pdv_tef_v1")
         self.assertTrue(resposta.json()["tef"]["simulador_permitido"])
         self.assertIn("PIX", resposta.json()["tef"]["tipos_pagamento"])
+        self.assertIn("captura_documento_consumidor", resposta.json()["tef"]["recursos_opcionais"])
+        self.assertEqual(resposta.json()["tef"]["captura_documento_consumidor"], "NEGOCIADA_NO_DESKTOP")
         self.assertIsNone(resposta.json()["aplicativo"]["versao_cliente"])
         self.assertFalse(resposta.json()["aplicativo"]["atualizacao_disponivel"])
         self.assertTrue(resposta.json()["aplicativo"]["atualizacao_requer_admin_master"])
@@ -539,6 +571,8 @@ class AcessoPdvNuvemTests(TestCase):
         resposta = self.client.get("/pdv/")
 
         self.assertEqual(resposta.status_code, 200)
+        self.assertContains(resposta, 'id="pdv-capture-document"')
+        self.assertContains(resposta, "Shift+F4")
 
     def test_finalizar_venda_volta_ao_pdv_limpa_carrinho_e_mostra_popup(self):
         categoria = Categoria.objects.create(nome="Mercearia")
@@ -986,7 +1020,7 @@ class AcessoPdvNuvemTests(TestCase):
         self.assertContains(resposta, "Aguardando conferencia")
         self.assertContains(resposta, "Conferir")
 
-    def test_pdv_exibe_pagamento_eletronico_e_menu_superior_sem_menu_inferior_duplicado(self):
+    def test_pdv_exibe_pagamento_eletronico_e_saida_superior_sem_menu_inferior_duplicado(self):
         FormaPagamento.objects.create(nome="Pix", tipo="PIX")
         self.client.force_login(self.operador)
 
@@ -1005,7 +1039,8 @@ class AcessoPdvNuvemTests(TestCase):
         self.assertContains(resposta, 'name="pagamento_codigo_autorizacao"')
         self.assertContains(resposta, "data-pdv-read-scale")
         self.assertContains(resposta, "<kbd>F12</kbd>", html=True)
-        self.assertContains(resposta, "<kbd>Shift+M</kbd> Menu", count=1, html=True)
+        self.assertContains(resposta, "<kbd>Shift+S</kbd> Sair", count=1, html=True)
+        self.assertNotContains(resposta, "<kbd>Shift+M</kbd> Menu", html=True)
         self.assertContains(resposta, "Navegador")
 
     def test_pdv_exibe_status_fiscal_do_terminal_identificado(self):
@@ -1199,6 +1234,64 @@ class AcessoPdvNuvemTests(TestCase):
         self.client.get(f"/pdv/vendas/{venda.id}/recibo/?reimpressao=1")
         self.assertEqual(LogAuditoria.objects.filter(acao="REIMPRESSAO_CUPOM", objeto_id=str(venda.id)).count(), 2)
 
+    def test_payload_desktop_prioriza_danfe_nfce_emitida_com_qrcode(self):
+        caixa = Caixa.objects.create(filial=self.filial, usuario_abertura=self.operador, valor_inicial=Decimal("100"))
+        venda = Venda.objects.create(
+            filial=self.filial,
+            caixa=caixa,
+            usuario=self.operador,
+            status=StatusVenda.FINALIZADA,
+            total_bruto=Decimal("25.90"),
+            total_liquido=Decimal("25.90"),
+        )
+        ConfiguracaoImpressao.objects.create(
+            empresa=self.filial.empresa,
+            filial=self.filial,
+            tipo_documento=TipoDocumentoImpressao.CUPOM_FISCAL,
+            impressora_padrao="EPSON TM-T20",
+        )
+        chave = "35260712345678000190650010000001001123456780"
+        qrcode_url = f"https://nfce.example.com/qrcode?p={chave}|3|2"
+        xml = (
+            '<NFe xmlns="http://www.portalfiscal.inf.br/nfe">'
+            f'<infNFe versao="4.00" Id="NFe{chave}" />'
+            f'<infNFeSupl><qrCode>{qrcode_url}</qrCode></infNFeSupl>'
+            '</NFe>'
+        )
+        documento = DocumentoFiscal.objects.create(
+            filial=self.filial,
+            venda=venda,
+            usuario=self.operador,
+            tipo_documento=TipoDocumentoFiscal.NFCE,
+            ambiente=AmbienteFiscal.HOMOLOGACAO,
+            status=StatusDocumentoFiscal.EMITIDO,
+            serie=1,
+            numero=100,
+            chave_acesso=chave,
+            protocolo="135260000000001",
+            valor_total=venda.total_liquido,
+            xml_conteudo=xml,
+        )
+        self.client.force_login(self.operador)
+
+        response = self.client.get(f"/pdv/vendas/{venda.id}/impressao-desktop.json")
+        fallback = self.client.get(f"/pdv/vendas/{venda.id}/recibo/")
+        reimpressao = self.client.get(f"/pdv/vendas/{venda.id}/impressao-desktop.json?reimpressao=1")
+
+        payload = response.json()
+        self.assertEqual(payload["tipo"], "danfe_nfce")
+        self.assertEqual(payload["operacao"], "impressao_danfe_nfce")
+        self.assertEqual(payload["impressao"]["impressora_padrao"], "EPSON TM-T20")
+        self.assertEqual(payload["fiscal"]["documento_id"], documento.id)
+        self.assertEqual(payload["fiscal"]["chave_acesso"], chave)
+        self.assertEqual(payload["fiscal"]["qrcode_url"], qrcode_url)
+        self.assertTrue(payload["impressao"]["documento_pronto"])
+        self.assertEqual(fallback.status_code, 200)
+        self.assertContains(fallback, "DOCUMENTO AUXILIAR DA NOTA FISCAL")
+        self.assertContains(fallback, "data:image/png;base64,")
+        self.assertEqual(reimpressao.json()["operacao"], "reimpressao_danfe_nfce")
+        self.assertTrue(LogAuditoria.objects.filter(acao="REIMPRESSAO_DANFE_NFCE", objeto_id=str(venda.id)).exists())
+
     def test_recibo_e_payload_desktop_exibem_autorizacao_eletronica(self):
         categoria = Categoria.objects.create(nome="Bebidas")
         produto = Produto.objects.create(codigo_barras="789100000004", nome="Suco", categoria=categoria, preco_custo=Decimal("3"), preco_venda=Decimal("8.50"))
@@ -1240,3 +1333,181 @@ class AcessoPdvNuvemTests(TestCase):
         self.assertEqual(payload["pagamentos"][0]["nsu"], pagamento.nsu)
         self.assertEqual(payload["pagamentos"][0]["codigo_autorizacao"], pagamento.codigo_autorizacao)
         self.assertIn("simulador TEF do app desktop", payload["pagamentos"][0]["mensagem_processadora"])
+
+class AcessoPdvNuvemEscopoEmpresaTests(TestCase):
+    def setUp(self):
+        User = get_user_model()
+        empresa = Empresa.objects.create(razao_social="Empresa PDV Um", nome_fantasia="Empresa PDV Um", cnpj="70123456000110")
+        self.filial = Filial.objects.create(empresa=empresa, nome="Matriz PDV Um")
+        outra = Empresa.objects.create(razao_social="Empresa PDV Dois", nome_fantasia="Empresa PDV Dois", cnpj="80123456000110")
+        outra_filial = Filial.objects.create(empresa=outra, nome="Matriz PDV Dois")
+        self.admin = User.objects.create_user("admin_pdv_um", password="123")
+        PerfilUsuario.objects.create(usuario=self.admin, filial=self.filial, tipo=TipoPerfil.ADMINISTRADOR)
+        self.outro_operador = User.objects.create_user("operador_pdv_dois", password="123")
+        PerfilUsuario.objects.create(usuario=self.outro_operador, filial=outra_filial, tipo=TipoPerfil.OPERADOR_CAIXA)
+        self.acesso_estrangeiro = AcessoPdvNuvem.objects.create(usuario=self.outro_operador, filial=outra_filial)
+        for indice in range(51):
+            operador = User.objects.create_user(f"operador_pdv_um_{indice}", password="123")
+            PerfilUsuario.objects.create(usuario=operador, filial=self.filial, tipo=TipoPerfil.OPERADOR_CAIXA)
+            AcessoPdvNuvem.objects.create(usuario=operador, filial=self.filial)
+
+    def test_admin_ve_apenas_sua_empresa_com_cinquenta_por_pagina(self):
+        self.client.force_login(self.admin)
+        response = self.client.get("/pdv/acessos-nuvem/")
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.context["pendentes"].paginator.count, 51)
+        self.assertEqual(len(response.context["pendentes"]), 50)
+        self.assertNotContains(response, "operador_pdv_dois")
+
+    def test_admin_nao_decide_solicitacao_de_outra_empresa(self):
+        self.client.force_login(self.admin)
+        response = self.client.post(f"/pdv/acessos-nuvem/{self.acesso_estrangeiro.pk}/decidir/", {"acao": "aprovar"})
+        self.assertEqual(response.status_code, 404)
+        self.acesso_estrangeiro.refresh_from_db()
+        self.assertEqual(self.acesso_estrangeiro.status, StatusAcessoPdvNuvem.PENDENTE)
+@override_settings(PDV_NUVEM_REQUER_APROVACAO=False)
+class PdvTelaEscopoEmpresaTests(TestCase):
+    def setUp(self):
+        User = get_user_model()
+        empresa = Empresa.objects.create(
+            razao_social="Empresa Caixa Um",
+            nome_fantasia="Empresa Caixa Um",
+            cnpj="91123456000110",
+        )
+        self.filial = Filial.objects.create(empresa=empresa, nome="Matriz Caixa Um")
+        outra_empresa = Empresa.objects.create(
+            razao_social="Empresa Caixa Dois",
+            nome_fantasia="Empresa Caixa Dois",
+            cnpj="92123456000110",
+        )
+        self.outra_filial = Filial.objects.create(empresa=outra_empresa, nome="Matriz Caixa Dois")
+        self.operador = User.objects.create_user("operador_escopo_um", password="123")
+        PerfilUsuario.objects.create(usuario=self.operador, filial=self.filial, tipo=TipoPerfil.OPERADOR_CAIXA)
+        self.colega = User.objects.create_user("colega_escopo_um", password="123")
+        PerfilUsuario.objects.create(usuario=self.colega, filial=self.filial, tipo=TipoPerfil.OPERADOR_CAIXA)
+        self.estrangeiro = User.objects.create_user("operador_escopo_dois", password="123")
+        PerfilUsuario.objects.create(usuario=self.estrangeiro, filial=self.outra_filial, tipo=TipoPerfil.OPERADOR_CAIXA)
+        self.caixa = Caixa.objects.create(
+            filial=self.filial,
+            usuario_abertura=self.operador,
+            valor_inicial=Decimal("100"),
+        )
+        self.caixa_colega = Caixa.objects.create(
+            filial=self.filial,
+            usuario_abertura=self.colega,
+            valor_inicial=Decimal("100"),
+        )
+        self.caixa_estrangeiro = Caixa.objects.create(
+            filial=self.outra_filial,
+            usuario_abertura=self.estrangeiro,
+            valor_inicial=Decimal("100"),
+        )
+        self.venda = Venda.objects.create(
+            filial=self.filial,
+            caixa=self.caixa,
+            usuario=self.operador,
+            total_bruto=Decimal("10"),
+            total_liquido=Decimal("10"),
+            status=StatusVenda.FINALIZADA,
+        )
+        self.venda_estrangeira = Venda.objects.create(
+            filial=self.outra_filial,
+            caixa=self.caixa_estrangeiro,
+            usuario=self.estrangeiro,
+            total_bruto=Decimal("20"),
+            total_liquido=Decimal("20"),
+            status=StatusVenda.FINALIZADA,
+        )
+        self.terminal_estrangeiro = TerminalPdv.objects.create(
+            filial=self.outra_filial,
+            nome="Terminal estrangeiro",
+            status_licenca=StatusLicencaTerminal.LIBERADA,
+        )
+        self.pre_venda = PreVenda.objects.create(
+            filial=self.filial,
+            usuario=self.operador,
+            total_bruto=Decimal("10"),
+            total_liquido=Decimal("10"),
+        )
+        self.pre_venda_estrangeira = PreVenda.objects.create(
+            filial=self.outra_filial,
+            usuario=self.estrangeiro,
+            total_bruto=Decimal("20"),
+            total_liquido=Decimal("20"),
+        )
+
+    def test_tela_pdv_isola_caixas_vendas_terminal_e_filial_por_empresa(self):
+        self.client.force_login(self.operador)
+        response = self.client.get(
+            "/pdv/",
+            HTTP_X_TERMINAL_ID=str(self.terminal_estrangeiro.identificador),
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.context["caixa_aberto"], self.caixa)
+        self.assertEqual(response.context["filial_visual"], self.filial)
+        self.assertIsNone(response.context["terminal_requisicao"])
+        self.assertIn(self.caixa, response.context["caixas_recentes"])
+        self.assertIn(self.caixa_colega, response.context["caixas_recentes"])
+        self.assertNotIn(self.caixa_estrangeiro, response.context["caixas_recentes"])
+        self.assertIn(self.venda, response.context["vendas_recentes"])
+        self.assertNotIn(self.venda_estrangeira, response.context["vendas_recentes"])
+
+    def test_operador_nao_acessa_recibo_ou_payload_de_venda_de_outra_empresa(self):
+        self.client.force_login(self.operador)
+
+        recibo = self.client.get(f"/pdv/vendas/{self.venda_estrangeira.id}/recibo/")
+        payload = self.client.get(f"/pdv/vendas/{self.venda_estrangeira.id}/impressao-desktop.json")
+
+        self.assertEqual(recibo.status_code, 404)
+        self.assertEqual(payload.status_code, 404)
+    def test_listagens_nao_exibem_dav_ou_caixa_de_outra_empresa(self):
+        self.client.force_login(self.operador)
+
+        davs = self.client.get("/pdv/pre-vendas/")
+        caixas = self.client.get("/pdv/caixas/")
+
+        self.assertEqual(davs.status_code, 200)
+        self.assertIn(self.pre_venda, davs.context["pre_vendas"])
+        self.assertNotIn(self.pre_venda_estrangeira, davs.context["pre_vendas"])
+        self.assertEqual(caixas.status_code, 200)
+        self.assertIn(self.caixa, caixas.context["caixas"])
+        self.assertNotIn(self.caixa_estrangeiro, caixas.context["caixas"])
+
+    def test_operador_nao_acessa_objetos_de_outra_empresa_por_id(self):
+        self.client.force_login(self.operador)
+        urls = [
+            f"/pdv/pre-vendas/{self.pre_venda_estrangeira.id}/",
+            f"/pdv/pre-vendas/{self.pre_venda_estrangeira.id}/recibo/",
+            f"/pdv/pre-vendas/{self.pre_venda_estrangeira.id}/carregar/",
+            f"/pdv/pre-vendas/{self.pre_venda_estrangeira.id}/cancelar/",
+            f"/pdv/vendas/{self.venda_estrangeira.id}/",
+            f"/pdv/vendas/{self.venda_estrangeira.id}/devolver/",
+            f"/pdv/vendas/{self.venda_estrangeira.id}/cancelar/",
+            f"/pdv/caixas/{self.caixa_estrangeiro.id}/",
+        ]
+
+        for url in urls:
+            with self.subTest(url=url):
+                self.assertEqual(self.client.get(url).status_code, 404)
+
+    def test_operador_nao_movimenta_caixa_de_outra_empresa(self):
+        self.client.force_login(self.operador)
+        urls = [
+            f"/pdv/caixas/{self.caixa_estrangeiro.id}/sangria/",
+            f"/pdv/caixas/{self.caixa_estrangeiro.id}/suprimento/",
+            f"/pdv/caixas/{self.caixa_estrangeiro.id}/fechar/",
+        ]
+
+        for url in urls:
+            with self.subTest(url=url):
+                self.assertEqual(self.client.post(url, {}).status_code, 404)
+
+    def test_operador_finaliza_somente_no_proprio_caixa_aberto(self):
+        self.client.force_login(self.operador)
+        response = self.client.get("/pdv/")
+
+        caixas = response.context["finish_form"].fields["caixa"].queryset
+        self.assertIn(self.caixa, caixas)
+        self.assertNotIn(self.caixa_colega, caixas)
+        self.assertNotIn(self.caixa_estrangeiro, caixas)

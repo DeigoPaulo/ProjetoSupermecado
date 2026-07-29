@@ -19,6 +19,7 @@ from apps.estoque.models import (
     HistoricoEtapaOrdemProducaoComposicao,
     InventarioEstoque,
     ItemComposicaoProduto,
+    ItemDesmembramentoProduto,
     ItemInventarioEstoque,
     LoteEstoque,
     MovimentacaoEstoque,
@@ -2239,3 +2240,512 @@ class RastreioLoteEstoqueTests(TestCase):
 
         origem = Estoque.objects.get(produto=self.produto, filial=self.filial)
         self.assertEqual(origem.quantidade_atual, Decimal("2.000"))
+
+
+class EstoqueCoreMultiempresaTests(TestCase):
+    def setUp(self):
+        self.empresa_a = Empresa.objects.create(
+            razao_social="Estoque Empresa A",
+            nome_fantasia="Estoque A",
+            cnpj="71.111.111/0001-11",
+        )
+        self.empresa_b = Empresa.objects.create(
+            razao_social="Estoque Empresa B",
+            nome_fantasia="Estoque B",
+            cnpj="72.222.222/0001-22",
+        )
+        self.filial_a = Filial.objects.create(empresa=self.empresa_a, nome="Matriz A", cnpj=self.empresa_a.cnpj)
+        self.filial_b = Filial.objects.create(empresa=self.empresa_b, nome="Matriz B", cnpj=self.empresa_b.cnpj)
+        self.usuario_a = get_user_model().objects.create_user("estoque_a", password="123")
+        PerfilUsuario.objects.create(
+            usuario=self.usuario_a,
+            filial=self.filial_a,
+            tipo=TipoPerfil.ESTOQUISTA,
+        )
+        self.usuario_b = get_user_model().objects.create_user("estoque_b", password="123")
+        PerfilUsuario.objects.create(
+            usuario=self.usuario_b,
+            filial=self.filial_b,
+            tipo=TipoPerfil.ADMINISTRADOR,
+        )
+        self.categoria = Categoria.all_objects.create(nome="Categoria multiempresa estoque")
+        self.produto = Produto.objects.create(
+            codigo_barras="7897111111111",
+            nome="Produto multiempresa estoque",
+            categoria=self.categoria,
+            preco_custo=Decimal("4.00"),
+            preco_venda=Decimal("7.00"),
+        )
+        self.estoque_a = Estoque.objects.create(
+            produto=self.produto,
+            filial=self.filial_a,
+            quantidade_atual=Decimal("5.000"),
+        )
+        self.estoque_b = Estoque.objects.create(
+            produto=self.produto,
+            filial=self.filial_b,
+            quantidade_atual=Decimal("8.000"),
+        )
+        self.lote_a = LoteEstoque.objects.create(
+            produto=self.produto,
+            filial=self.filial_a,
+            codigo="LOTE-A",
+            quantidade_inicial=Decimal("2.000"),
+            quantidade_atual=Decimal("2.000"),
+            custo_unitario=Decimal("4.00"),
+        )
+        self.lote_b = LoteEstoque.objects.create(
+            produto=self.produto,
+            filial=self.filial_b,
+            codigo="LOTE-B",
+            quantidade_inicial=Decimal("3.000"),
+            quantidade_atual=Decimal("3.000"),
+            custo_unitario=Decimal("4.00"),
+        )
+        self.inventario_a = InventarioEstoque.objects.create(
+            filial=self.filial_a,
+            usuario=self.usuario_a,
+            descricao="Inventario A",
+        )
+        self.inventario_b = InventarioEstoque.objects.create(
+            filial=self.filial_b,
+            usuario=self.usuario_b,
+            descricao="Inventario B",
+        )
+        self.perda_a = PerdaEstoque.objects.create(
+            produto=self.produto,
+            filial=self.filial_a,
+            usuario=self.usuario_a,
+            tipo="AVARIA",
+            quantidade=Decimal("1.000"),
+            motivo="Perda A",
+            custo_unitario_no_momento=Decimal("4.00"),
+            preco_venda_no_momento=Decimal("7.00"),
+            valor_custo_estimado=Decimal("4.00"),
+            valor_venda_estimado=Decimal("7.00"),
+        )
+        self.perda_b = PerdaEstoque.objects.create(
+            produto=self.produto,
+            filial=self.filial_b,
+            usuario=self.usuario_b,
+            tipo="AVARIA",
+            quantidade=Decimal("1.000"),
+            motivo="Perda B",
+            custo_unitario_no_momento=Decimal("4.00"),
+            preco_venda_no_momento=Decimal("7.00"),
+            valor_custo_estimado=Decimal("4.00"),
+            valor_venda_estimado=Decimal("7.00"),
+        )
+        self.destino = Produto.objects.create(
+            codigo_barras="7897222222222",
+            nome="Destino multiempresa estoque",
+            categoria=self.categoria,
+            preco_custo=Decimal("2.00"),
+            preco_venda=Decimal("5.00"),
+        )
+        self.receita_a = ReceitaDesmembramento.objects.create(
+            empresa=self.empresa_a,
+            filial=self.filial_a,
+            produto_origem=self.produto,
+            quantidade_origem=Decimal("1.000"),
+            produto_destino=self.destino,
+            quantidade_destino=Decimal("2.000"),
+            observacao="Receita empresa A",
+        )
+        self.receita_b = ReceitaDesmembramento.objects.create(
+            empresa=self.empresa_b,
+            filial=self.filial_b,
+            produto_origem=self.produto,
+            quantidade_origem=Decimal("1.000"),
+            produto_destino=self.destino,
+            quantidade_destino=Decimal("3.000"),
+            observacao="Receita empresa B",
+        )
+        self.desmembramento_a = DesmembramentoProduto.objects.create(
+            empresa=self.empresa_a,
+            filial=self.filial_a,
+            produto_origem=self.produto,
+            quantidade_origem=Decimal("1.000"),
+            custo_total_origem=Decimal("4.00"),
+            usuario=self.usuario_a,
+            motivo="Desmembramento empresa A",
+        )
+        self.desmembramento_b = DesmembramentoProduto.objects.create(
+            empresa=self.empresa_b,
+            filial=self.filial_b,
+            produto_origem=self.produto,
+            quantidade_origem=Decimal("1.000"),
+            custo_total_origem=Decimal("4.00"),
+            usuario=self.usuario_b,
+            motivo="Desmembramento empresa B",
+        )
+        ItemDesmembramentoProduto.objects.create(
+            desmembramento=self.desmembramento_a,
+            produto_destino=self.destino,
+            quantidade_gerada=Decimal("2.000"),
+            unidade="UN",
+            custo_unitario_calculado=Decimal("2.00"),
+            custo_total=Decimal("4.00"),
+            percentual_rendimento=Decimal("100.00"),
+        )
+        ItemDesmembramentoProduto.objects.create(
+            desmembramento=self.desmembramento_b,
+            produto_destino=self.destino,
+            quantidade_gerada=Decimal("3.000"),
+            unidade="UN",
+            custo_unitario_calculado=Decimal("1.33"),
+            custo_total=Decimal("4.00"),
+            percentual_rendimento=Decimal("100.00"),
+        )
+        self.client.force_login(self.usuario_a)
+
+    def test_listagens_do_nucleo_mostram_apenas_a_empresa_do_usuario(self):
+        estoque = self.client.get("/estoque/")
+        lotes = self.client.get("/estoque/lotes/")
+        inventarios = self.client.get("/estoque/inventarios/")
+        perdas = self.client.get("/estoque/perdas/")
+        reconciliacao = self.client.get("/estoque/lotes/reconciliacao/")
+
+        self.assertEqual({item.pk for item in estoque.context["estoques"]}, {self.estoque_a.pk})
+        self.assertEqual({item.pk for item in lotes.context["lotes"]}, {self.lote_a.pk})
+        self.assertEqual({item.pk for item in inventarios.context["inventarios"]}, {self.inventario_a.pk})
+        self.assertEqual({item.pk for item in perdas.context["perdas"]}, {self.perda_a.pk})
+        self.assertContains(reconciliacao, "Matriz A")
+        self.assertNotContains(reconciliacao, "Matriz B")
+        self.assertEqual(lotes.context["resumo_lotes"]["com_saldo"], 1)
+
+    def test_ids_de_outra_empresa_nao_abrem_nem_alteram_inventario_ou_reconciliacao(self):
+        self.assertEqual(self.client.get(f"/estoque/inventarios/{self.inventario_b.pk}/").status_code, 404)
+        self.assertEqual(
+            self.client.post(f"/estoque/inventarios/{self.inventario_b.pk}/itens/novo/").status_code,
+            404,
+        )
+        self.assertEqual(
+            self.client.post(f"/estoque/inventarios/{self.inventario_b.pk}/aplicar/").status_code,
+            404,
+        )
+        self.assertEqual(
+            self.client.get(f"/estoque/lotes/reconciliacao/{self.estoque_b.pk}/atribuir/").status_code,
+            404,
+        )
+        self.inventario_b.refresh_from_db()
+        self.assertEqual(self.inventario_b.status, StatusInventario.ABERTO)
+
+    def test_formularios_rejeitam_filial_de_outra_empresa(self):
+        inventario = self.client.post(
+            "/estoque/inventarios/novo/",
+            {"filial": self.filial_b.pk, "descricao": "Inventario forjado"},
+        )
+        movimentacao = self.client.post(
+            "/estoque/movimentar/",
+            {
+                "produto": self.produto.pk,
+                "filial": self.filial_b.pk,
+                "tipo": TipoMovimentacaoEstoque.ENTRADA,
+                "quantidade": "2.000",
+                "motivo": "Movimento forjado",
+            },
+        )
+        perda = self.client.post(
+            "/estoque/perdas/nova/",
+            {
+                "produto": self.produto.pk,
+                "filial": self.filial_b.pk,
+                "tipo": "AVARIA",
+                "quantidade": "1.000",
+                "motivo": "Perda forjada",
+            },
+        )
+
+        self.assertIn("filial", inventario.context["form"].errors)
+        self.assertIn("filial", movimentacao.context["form"].errors)
+        self.assertIn("filial", perda.context["form"].errors)
+        self.assertFalse(InventarioEstoque.objects.filter(descricao="Inventario forjado").exists())
+        self.assertFalse(MovimentacaoEstoque.objects.filter(motivo="Movimento forjado").exists())
+        self.assertFalse(PerdaEstoque.objects.filter(motivo="Perda forjada").exists())
+
+    def test_supervisor_de_outra_empresa_nao_autoriza_movimentacao(self):
+        resposta = self.client.post(
+            "/estoque/movimentar/",
+            {
+                "produto": self.produto.pk,
+                "filial": self.filial_a.pk,
+                "tipo": TipoMovimentacaoEstoque.ENTRADA,
+                "quantidade": "2.000",
+                "motivo": "Autorizacao cruzada",
+                "supervisor_usuario": self.usuario_b.username,
+                "supervisor_senha": "123",
+            },
+        )
+
+        self.assertEqual(resposta.status_code, 200)
+        self.assertContains(resposta, "mesma empresa do operador")
+        self.assertFalse(MovimentacaoEstoque.objects.filter(motivo="Autorizacao cruzada").exists())
+
+    def test_desmembramentos_receitas_relatorios_e_csv_respeitam_empresa(self):
+        desmembramentos = self.client.get("/estoque/desmembramentos/")
+        receitas = self.client.get("/estoque/receitas-desmembramento/")
+        relatorio = self.client.get("/estoque/desmembramentos/relatorio/")
+        csv_lista = self.client.get("/estoque/desmembramentos/exportar.csv").content.decode("utf-8-sig")
+        csv_relatorio = self.client.get("/estoque/desmembramentos/relatorio/exportar.csv").content.decode("utf-8-sig")
+
+        self.assertEqual(
+            {item.pk for item in desmembramentos.context["desmembramentos"]},
+            {self.desmembramento_a.pk},
+        )
+        self.assertEqual({item.pk for item in receitas.context["receitas"]}, {self.receita_a.pk})
+        self.assertEqual(
+            {item.desmembramento_id for item in relatorio.context["itens"]},
+            {self.desmembramento_a.pk},
+        )
+        self.assertEqual({filial.pk for filial in relatorio.context["filiais"]}, {self.filial_a.pk})
+        self.assertIn("Desmembramento empresa A", csv_lista)
+        self.assertNotIn("Desmembramento empresa B", csv_lista)
+        self.assertIn(self.filial_a.nome, csv_relatorio)
+        self.assertNotIn(self.filial_b.nome, csv_relatorio)
+
+    def test_ids_de_receita_e_desmembramento_externos_retornam_404(self):
+        self.assertEqual(
+            self.client.get(f"/estoque/receitas-desmembramento/{self.receita_b.pk}.json").status_code,
+            404,
+        )
+        self.assertEqual(
+            self.client.get(f"/estoque/receitas-desmembramento/{self.receita_b.pk}/editar/").status_code,
+            404,
+        )
+        self.assertEqual(
+            self.client.get(f"/estoque/desmembramentos/{self.desmembramento_b.pk}/").status_code,
+            404,
+        )
+        self.assertEqual(
+            self.client.post(f"/estoque/desmembramentos/{self.desmembramento_b.pk}/cancelar/").status_code,
+            404,
+        )
+
+    def test_formularios_de_receita_e_desmembramento_rejeitam_empresa_externa(self):
+        receita = self.client.post(
+            "/estoque/receitas-desmembramento/nova/",
+            {
+                "empresa": self.empresa_b.pk,
+                "filial": self.filial_b.pk,
+                "produto_origem": self.produto.pk,
+                "quantidade_origem": "1.000",
+                "produto_destino": self.destino.pk,
+                "quantidade_destino": "2.000",
+                "tipo": TipoDesmembramentoProduto.SIMPLES,
+                "tipo_saida": TipoSaidaDesmembramento.VENDAVEL,
+                "is_active": "on",
+            },
+        )
+        desmembramento = self.client.post(
+            "/estoque/desmembramentos/novo/",
+            {
+                "receita": self.receita_b.pk,
+                "filial": self.filial_b.pk,
+                "produto_origem": self.produto.pk,
+                "quantidade_origem": "1.000",
+                "tipo": TipoDesmembramentoProduto.SIMPLES,
+                "motivo": "Desmembramento forjado",
+                "destinos-TOTAL_FORMS": "1",
+                "destinos-INITIAL_FORMS": "0",
+                "destinos-MIN_NUM_FORMS": "1",
+                "destinos-MAX_NUM_FORMS": "1000",
+                "destinos-0-produto_destino": self.destino.pk,
+                "destinos-0-quantidade_destino": "2.000",
+                "destinos-0-tipo_saida_destino": TipoSaidaDesmembramento.VENDAVEL,
+            },
+        )
+
+        self.assertIn("empresa", receita.context["form"].errors)
+        self.assertIn("filial", receita.context["form"].errors)
+        self.assertIn("receita", desmembramento.context["form"].errors)
+        self.assertIn("filial", desmembramento.context["form"].errors)
+        self.assertFalse(DesmembramentoProduto.objects.filter(motivo="Desmembramento forjado").exists())
+    def _dados_producao_multiempresa(self):
+        composicao_a = ComposicaoProduto.objects.create(
+            empresa=self.empresa_a,
+            filial=self.filial_a,
+            produto_final=self.destino,
+            quantidade_final=Decimal("1.000"),
+            observacao="Composicao empresa A",
+        )
+        composicao_b = ComposicaoProduto.objects.create(
+            empresa=self.empresa_b,
+            filial=self.filial_b,
+            produto_final=self.destino,
+            quantidade_final=Decimal("1.000"),
+            observacao="Composicao empresa B",
+        )
+        ItemComposicaoProduto.objects.create(
+            composicao=composicao_a, produto_componente=self.produto, quantidade=Decimal("1.000")
+        )
+        ItemComposicaoProduto.objects.create(
+            composicao=composicao_b, produto_componente=self.produto, quantidade=Decimal("1.000")
+        )
+        producao_a = ProducaoComposicaoProduto.objects.create(
+            composicao=composicao_a,
+            empresa=self.empresa_a,
+            filial=self.filial_a,
+            produto_final=self.destino,
+            quantidade_final=Decimal("1.000"),
+            custo_total=Decimal("4.00"),
+            usuario=self.usuario_a,
+            motivo="Producao empresa A",
+        )
+        producao_b = ProducaoComposicaoProduto.objects.create(
+            composicao=composicao_b,
+            empresa=self.empresa_b,
+            filial=self.filial_b,
+            produto_final=self.destino,
+            quantidade_final=Decimal("1.000"),
+            custo_total=Decimal("4.00"),
+            usuario=self.usuario_b,
+            motivo="Producao empresa B",
+        )
+        ordem_a = OrdemProducaoComposicao.objects.create(
+            composicao=composicao_a,
+            empresa=self.empresa_a,
+            filial=self.filial_a,
+            produto_final=self.destino,
+            quantidade_planejada=Decimal("2.000"),
+            data_programada=timezone.localdate(),
+            setor_responsavel="Setor empresa A",
+            usuario=self.usuario_a,
+            responsavel_operacional=self.usuario_a,
+            motivo="Ordem empresa A",
+        )
+        ordem_b = OrdemProducaoComposicao.objects.create(
+            composicao=composicao_b,
+            empresa=self.empresa_b,
+            filial=self.filial_b,
+            produto_final=self.destino,
+            quantidade_planejada=Decimal("3.000"),
+            data_programada=timezone.localdate(),
+            setor_responsavel="Setor empresa B",
+            usuario=self.usuario_b,
+            responsavel_operacional=self.usuario_b,
+            motivo="Ordem empresa B",
+        )
+        sla_a = ConfiguracaoSLASetorProducao.objects.create(
+            empresa=self.empresa_a, filial=self.filial_a, setor="Setor empresa A", meta_minutos=60
+        )
+        sla_b = ConfiguracaoSLASetorProducao.objects.create(
+            empresa=self.empresa_b, filial=self.filial_b, setor="Setor empresa B", meta_minutos=90
+        )
+        alerta_b = AlertaSLAOrdemProducao.objects.create(
+            ordem=ordem_b,
+            usuario=self.usuario_a,
+            papel="RESPONSAVEL",
+            mensagem="Alerta externo empresa B",
+        )
+        return composicao_a, composicao_b, producao_a, producao_b, ordem_a, ordem_b, sla_a, sla_b, alerta_b
+
+    def test_composicoes_producoes_ordens_sla_e_exportacoes_respeitam_empresa(self):
+        composicao_a, _, producao_a, _, ordem_a, _, sla_a, _, _ = self._dados_producao_multiempresa()
+
+        composicoes = self.client.get("/estoque/composicoes/")
+        relatorio = self.client.get("/estoque/composicoes/producoes/relatorio/")
+        ordens = self.client.get("/estoque/composicoes/ordens/")
+        fila = self.client.get("/estoque/composicoes/ordens/fila/")
+        slas = self.client.get("/estoque/composicoes/slas-setor/")
+        csv_composicoes = self.client.get("/estoque/composicoes/exportar.csv").content.decode("utf-8-sig")
+        csv_producoes = self.client.get("/estoque/composicoes/producoes/relatorio/exportar.csv").content.decode("utf-8-sig")
+        csv_ordens = self.client.get("/estoque/composicoes/ordens/exportar.csv").content.decode("utf-8-sig")
+
+        self.assertEqual({item.pk for item in composicoes.context["composicoes"]}, {composicao_a.pk})
+        self.assertEqual({item.pk for item in relatorio.context["producoes"]}, {producao_a.pk})
+        self.assertEqual({item.pk for item in ordens.context["ordens"]}, {ordem_a.pk})
+        self.assertContains(fila, "Setor empresa A")
+        self.assertNotContains(fila, "Setor empresa B")
+        self.assertEqual({item.pk for item in slas.context["configuracoes"]}, {sla_a.pk})
+        self.assertIn("Estoque A", csv_composicoes)
+        self.assertNotIn("Estoque B", csv_composicoes)
+        self.assertIn("Producao empresa A", csv_producoes)
+        self.assertNotIn("Producao empresa B", csv_producoes)
+        self.assertIn("Ordem empresa A", csv_ordens)
+        self.assertNotIn("Ordem empresa B", csv_ordens)
+
+    def test_ids_externos_de_producao_ordem_sla_e_alerta_retornam_404(self):
+        _, composicao_b, _, producao_b, _, ordem_b, _, sla_b, alerta_b = self._dados_producao_multiempresa()
+
+        verificacoes = [
+            self.client.get(f"/estoque/composicoes/{composicao_b.pk}/"),
+            self.client.get(f"/estoque/composicoes/{composicao_b.pk}/editar/"),
+            self.client.post(f"/estoque/composicoes/{composicao_b.pk}/produzir/"),
+            self.client.post(f"/estoque/composicoes/producoes/{producao_b.pk}/cancelar/"),
+            self.client.get(f"/estoque/composicoes/ordens/{ordem_b.pk}/imprimir/"),
+            self.client.post(f"/estoque/composicoes/ordens/{ordem_b.pk}/etapa/", {"etapa_operacional": "SEPARACAO"}),
+            self.client.post(f"/estoque/composicoes/ordens/{ordem_b.pk}/confirmar/"),
+            self.client.post(f"/estoque/composicoes/ordens/{ordem_b.pk}/cancelar/"),
+            self.client.get(f"/estoque/composicoes/slas-setor/{sla_b.pk}/editar/"),
+            self.client.post(f"/estoque/composicoes/alertas-sla/{alerta_b.pk}/visualizar/"),
+        ]
+
+        self.assertTrue(all(resposta.status_code == 404 for resposta in verificacoes))
+        ordem_b.refresh_from_db()
+        producao_b.refresh_from_db()
+        self.assertEqual(ordem_b.status, StatusOrdemProducaoComposicao.PLANEJADA)
+        self.assertEqual(producao_b.status, StatusProducaoComposicao.CONFIRMADO)
+
+    def test_formularios_de_producao_rejeitam_empresa_filial_e_responsavel_externos(self):
+        _, composicao_b, _, _, _, _, _, _, _ = self._dados_producao_multiempresa()
+
+        ordem = self.client.post(
+            "/estoque/composicoes/ordens/nova/",
+            {
+                "composicao": composicao_b.pk,
+                "filial": self.filial_b.pk,
+                "quantidade_planejada": "1.000",
+                "data_programada": timezone.localdate().isoformat(),
+                "prioridade": "NORMAL",
+                "etapa_operacional": "AGUARDANDO",
+                "responsavel_operacional": self.usuario_b.pk,
+                "motivo": "Ordem forjada",
+            },
+        )
+        sla = self.client.post(
+            "/estoque/composicoes/slas-setor/nova/",
+            {
+                "empresa": self.empresa_b.pk,
+                "filial": self.filial_b.pk,
+                "setor": "SLA forjado",
+                "meta_minutos": 30,
+                "is_active": "on",
+            },
+        )
+        composicao = self.client.post(
+            "/estoque/composicoes/nova/",
+            {
+                "empresa": self.empresa_b.pk,
+                "filial": self.filial_b.pk,
+                "produto_final": self.destino.pk,
+                "quantidade_final": "1.000",
+                "tipo": TipoDesmembramentoProduto.KIT,
+                "is_active": "on",
+                "componentes-TOTAL_FORMS": "1",
+                "componentes-INITIAL_FORMS": "0",
+                "componentes-MIN_NUM_FORMS": "1",
+                "componentes-MAX_NUM_FORMS": "1000",
+                "componentes-0-produto_componente": self.produto.pk,
+                "componentes-0-quantidade": "1.000",
+            },
+        )
+
+        self.assertIn("composicao", ordem.context["form"].errors)
+        self.assertIn("filial", ordem.context["form"].errors)
+        self.assertIn("responsavel_operacional", ordem.context["form"].errors)
+        self.assertIn("empresa", sla.context["form"].errors)
+        self.assertIn("filial", sla.context["form"].errors)
+        self.assertIn("empresa", composicao.context["form"].errors)
+        self.assertIn("filial", composicao.context["form"].errors)
+        self.assertFalse(OrdemProducaoComposicao.objects.filter(motivo="Ordem forjada").exists())
+        self.assertFalse(ConfiguracaoSLASetorProducao.objects.filter(setor="SLA forjado").exists())
+    def test_superadmin_mantem_visao_global(self):
+        superadmin = get_user_model().objects.create_superuser("estoque_master", "master@example.com", "123")
+        self.client.force_login(superadmin)
+
+        estoque = self.client.get("/estoque/")
+        detalhe = self.client.get(f"/estoque/inventarios/{self.inventario_b.pk}/")
+
+        self.assertEqual({item.pk for item in estoque.context["estoques"]}, {self.estoque_a.pk, self.estoque_b.pk})
+        self.assertEqual(detalhe.status_code, 200)

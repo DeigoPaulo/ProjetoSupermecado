@@ -99,10 +99,8 @@ def enfileirar_snapshot_estoque(*, estoque, movimentacao=None):
 def gerar_carga_inicial_sincronizacao(*, empresa, filial=None, limite=5000):
     from apps.estoque.models import Estoque
 
-    from .models import ModoImplantacao
-
-    if empresa.modo_implantacao == ModoImplantacao.LOCAL or not empresa.sincronizacao_automatica:
-        raise ValueError("A empresa deve estar em modo hibrido/agente com sincronizacao automatica ativa.")
+    if not empresa.sincronizacao_operacional_habilitada:
+        raise ValueError("A empresa deve estar em modo hibrido/agente, com sincronizacao automatica e URL HTTPS ativa.")
     if filial and filial.empresa_id != empresa.pk:
         raise ValueError("Filial nao encontrada para a empresa informada.")
 

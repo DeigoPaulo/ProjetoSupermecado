@@ -11,6 +11,8 @@ from urllib.request import Request, urlopen
 from django.conf import settings
 from django.contrib import messages
 from django.contrib.auth.decorators import login_required
+from django.core.exceptions import PermissionDenied
+from django.core.paginator import Paginator
 from django.db import IntegrityError, transaction
 from django.db.models import Count, Q, Sum
 from django.http import HttpResponse, JsonResponse
@@ -19,7 +21,7 @@ from django.utils import timezone
 from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.http import require_GET, require_POST
 
-from apps.accounts.permissions import CLIENTES, COMPRAS, ESTOQUE, PDV, RELATORIOS, SISTEMA, role_required
+from apps.accounts.permissions import ADMINISTRACAO, CLIENTES, COMPRAS, ESTOQUE, PDV, RELATORIOS, SISTEMA, role_required
 from apps.auditoria.models import LogAuditoria
 
 from .forms import EmpresaForm, FilialForm
@@ -156,7 +158,7 @@ def _normalizar_payload_provider(tipo, valor, dados):
 def _consultar_provider_cadastro(provider_url, tipo, valor):
     url = _montar_url_provider(provider_url, tipo, valor)
     timeout = getattr(settings, "CADASTRO_LOOKUP_TIMEOUT_SEGUNDOS", 5)
-    requisicao = Request(url, headers={"Accept": "application/json", "User-Agent": "MercaFlowERP/cadastro_lookup_v1"})
+    requisicao = Request(url, headers={"Accept": "application/json", "User-Agent": "DeigoVarejoERP/cadastro_lookup_v1"})
     try:
         resposta = urlopen(requisicao, timeout=timeout)
         try:
@@ -189,6 +191,44 @@ def _consultar_provider_cadastro(provider_url, tipo, valor):
 
 
 BUSCA_FILIAIS_ROLES = SISTEMA | CLIENTES | ESTOQUE | COMPRAS | RELATORIOS | PDV
+
+
+def _empresa_id_do_usuario(user):
+    if user.is_superuser:
+        return None
+    perfil = getattr(user, "perfil_supermercado", None)
+    return perfil.filial.empresa_id if perfil and perfil.is_active and perfil.filial_id else 0
+
+
+def _empresas_visiveis(user):
+    empresas_qs = Empresa.objects.all()
+    if user.is_superuser:
+        return empresas_qs
+    return empresas_qs.filter(pk=_empresa_id_do_usuario(user))
+
+
+def _filiais_visiveis(user):
+    filiais_qs = Filial.objects.all()
+    if user.is_superuser:
+        return filiais_qs
+    return filiais_qs.filter(empresa_id=_empresa_id_do_usuario(user))
+
+
+def _exigir_super_admin(user):
+    if not user.is_superuser:
+        raise PermissionDenied("Somente o super admin do software pode criar matrizes e filiais licenciadas.")
+
+
+def _registrar_cadastro_licenciado(request, objeto, acao):
+    LogAuditoria.objects.create(
+        usuario=request.user,
+        modulo="empresas",
+        acao=acao,
+        descricao=f"{objeto} cadastrado pelo super admin como nova unidade licenciada.",
+        objeto_tipo=objeto._meta.label,
+        objeto_id=str(objeto.pk),
+        ip=request.META.get("REMOTE_ADDR"),
+    )
 
 
 def _erro_api(mensagem, status):
@@ -224,6 +264,8 @@ def receber_evento_sincronizacao(request):
         if existente.identificador == identificador and existente.chave_idempotencia == chave:
             return JsonResponse({"status": "duplicado", "id": str(existente.identificador)}, status=200)
         return _erro_api("Conflito entre identificador e chave idempotente.", 409)
+    if not empresa.sincronizacao_operacional_habilitada:
+        return _erro_api("A empresa não permite sincronização operacional com a nuvem.", 409)
     try:
         with transaction.atomic():
             evento = EventoEntradaSincronizacao.objects.create(
@@ -239,10 +281,10 @@ def receber_evento_sincronizacao(request):
 
 
 @login_required
-@role_required(*SISTEMA)
+@role_required(*ADMINISTRACAO)
 def empresas(request):
-    empresas_lista = Empresa.objects.prefetch_related("filiais").order_by("nome_fantasia")
-    filiais = Filial.objects.select_related("empresa").order_by("empresa__nome_fantasia", "nome")
+    empresas_lista = _empresas_visiveis(request.user).prefetch_related("filiais").order_by("nome_fantasia")
+    filiais = _filiais_visiveis(request.user).select_related("empresa").order_by("empresa__nome_fantasia", "nome")
     context = {
         "empresas": empresas_lista,
         "filiais": filiais,
@@ -262,7 +304,7 @@ def filiais_busca(request):
     if not termo:
         return JsonResponse({"results": []})
     filiais = (
-        Filial.objects.select_related("empresa")
+        _filiais_visiveis(request.user).select_related("empresa")
         .filter(
             Q(nome__icontains=termo)
             | Q(empresa__nome_fantasia__icontains=termo)
@@ -292,31 +334,40 @@ def filiais_busca(request):
 
 
 @login_required
-@role_required(*SISTEMA)
+@role_required(*ADMINISTRACAO)
 def empresa_form(request, pk=None):
-    empresa = get_object_or_404(Empresa, pk=pk) if pk else None
+    if pk is None:
+        _exigir_super_admin(request.user)
+    empresa = get_object_or_404(_empresas_visiveis(request.user), pk=pk) if pk else None
     form = EmpresaForm(request.POST or None, request.FILES or None, instance=empresa)
     if request.method == "POST" and form.is_valid():
-        form.save()
+        empresa_salva = form.save()
+        if empresa is None:
+            _registrar_cadastro_licenciado(request, empresa_salva, "empresa_licenciada_criada")
         messages.success(request, "Empresa salva com sucesso.")
         return redirect("empresas:lista")
     return render(request, "empresas/empresa_form.html", {"form": form, "empresa": empresa})
 
 
 @login_required
-@role_required(*SISTEMA)
+@role_required(*ADMINISTRACAO)
 def filial_form(request, pk=None):
-    filial = get_object_or_404(Filial, pk=pk) if pk else None
+    if pk is None:
+        _exigir_super_admin(request.user)
+    filial = get_object_or_404(_filiais_visiveis(request.user), pk=pk) if pk else None
     form = FilialForm(request.POST or None, instance=filial)
+    form.fields["empresa"].queryset = _empresas_visiveis(request.user).order_by("nome_fantasia")
     if request.method == "POST" and form.is_valid():
-        form.save()
+        filial_salva = form.save()
+        if filial is None:
+            _registrar_cadastro_licenciado(request, filial_salva, "filial_licenciada_criada")
         messages.success(request, "Filial salva com sucesso.")
         return redirect("empresas:lista")
     return render(request, "empresas/filial_form.html", {"form": form, "filial": filial})
 
 
 @login_required
-@role_required(*SISTEMA)
+@role_required(*ADMINISTRACAO)
 def consulta_cadastro_placeholder(request):
     cnpj = request.GET.get("cnpj", "").strip()
     cep = request.GET.get("cep", "").strip()
@@ -381,7 +432,7 @@ def consulta_cadastro_placeholder(request):
 
 
 @login_required
-@role_required(*SISTEMA)
+@role_required(*ADMINISTRACAO)
 def consulta_cadastro_diagnostico(request):
     provider_cnpj = getattr(settings, "CADASTRO_CNPJ_PROVIDER_URL", "")
     provider_cep = getattr(settings, "CADASTRO_CEP_PROVIDER_URL", "")
@@ -458,6 +509,21 @@ def consulta_cadastro_diagnostico(request):
     return JsonResponse(payload)
 
 
+def _pagina_nomeada(request, queryset, parametro):
+    pagina = Paginator(queryset, 50).get_page(request.GET.get(parametro))
+    params = request.GET.copy()
+    if pagina.has_previous():
+        params[parametro] = pagina.previous_page_number()
+        pagina.previous_url = f"?{params.urlencode()}"
+    else:
+        pagina.previous_url = ""
+    if pagina.has_next():
+        params[parametro] = pagina.next_page_number()
+        pagina.next_url = f"?{params.urlencode()}"
+    else:
+        pagina.next_url = ""
+    return pagina
+
 def _sincronizacao_querysets(request):
     q = request.GET.get("q", "").strip()
     empresa_id = request.GET.get("empresa", "").strip()
@@ -527,6 +593,8 @@ def _prontidao_sincronizacao_payload(empresas_qs, saida, entrada, esgotados_said
     )
     pendencias_saida = saida.get(StatusSincronizacao.PENDENTE, 0) + saida.get(StatusSincronizacao.ERRO, 0)
     pendencias_entrada = entrada.get(StatusEventoEntrada.RECEBIDO, 0) + entrada.get(StatusEventoEntrada.ERRO, 0) + entrada.get(StatusEventoEntrada.CONFLITO, 0)
+    pausados_saida = saida.get(StatusSincronizacao.PAUSADO, 0)
+    pausados_entrada = entrada.get(StatusEventoEntrada.PAUSADO, 0)
     conflitos = entrada.get(StatusEventoEntrada.CONFLITO, 0)
     token_configurado = bool(settings.SINCRONIZACAO_API_TOKEN)
     bloqueios = []
@@ -543,6 +611,11 @@ def _prontidao_sincronizacao_payload(empresas_qs, saida, entrada, esgotados_said
         recomendacoes.append(f"Resolver {conflitos} conflito(s) de entrada antes de considerar a loja sincronizada.")
     if pendencias_saida or pendencias_entrada:
         recomendacoes.append("Manter o processador processar_sincronizacao_completa agendado no servidor local.")
+    if pausados_saida or pausados_entrada:
+        recomendacoes.append(
+            f"{pausados_saida + pausados_entrada} evento(s) estão pausados pela política de implantação; "
+            "serão retomados ao habilitar o modo híbrido com URL HTTPS."
+        )
     if not empresas_sync.exists():
         status = "Local puro"
         percentual = 100
@@ -575,6 +648,8 @@ def _prontidao_sincronizacao_payload(empresas_qs, saida, entrada, esgotados_said
         "filas": {
             "saida_pendente_ou_erro": pendencias_saida,
             "entrada_pendente_erro_ou_conflito": pendencias_entrada,
+            "saida_pausada": pausados_saida,
+            "entrada_pausada": pausados_entrada,
             "conflitos": conflitos,
             "saida_esgotada": esgotados_saida,
         },
@@ -599,11 +674,14 @@ def _sincronizacao_diagnostico_payload(request):
     politicas_conflito = dict(empresas_ativas_qs.values_list("politica_conflito_sincronizacao").annotate(total=Count("id")))
     politica_manual = politicas_conflito.get(PoliticaConflitoSincronizacao.MANUAL, 0)
     politica_remoto_produtos_estoque = politicas_conflito.get(PoliticaConflitoSincronizacao.REMOTO_PRODUTOS_ESTOQUE, 0)
+    politica_local_produtos_estoque = politicas_conflito.get(PoliticaConflitoSincronizacao.LOCAL_PRODUTOS_ESTOQUE, 0)
     pendentes_saida = saida.get(StatusSincronizacao.PENDENTE, 0)
+    pausados_saida = saida.get(StatusSincronizacao.PAUSADO, 0)
     erros_saida = saida.get(StatusSincronizacao.ERRO, 0)
     conflitos_entrada = entrada.get(StatusEventoEntrada.CONFLITO, 0)
     erros_entrada = entrada.get(StatusEventoEntrada.ERRO, 0)
     recebidos_entrada = entrada.get(StatusEventoEntrada.RECEBIDO, 0)
+    pausados_entrada = entrada.get(StatusEventoEntrada.PAUSADO, 0)
     agora = timezone.now()
     evento_saida_antigo = eventos_qs.filter(status__in=[StatusSincronizacao.PENDENTE, StatusSincronizacao.ERRO]).order_by("criado_em").first()
     evento_entrada_antigo = eventos_entrada_qs.filter(
@@ -626,6 +704,8 @@ def _sincronizacao_diagnostico_payload(request):
         alertas.append(f"{conflitos_entrada} conflito(s) de entrada exigem decisão manual.")
     if pendentes_saida or recebidos_entrada:
         alertas.append("Fila possui eventos aguardando o comando processar_sincronizacao_completa.")
+    if pausados_saida or pausados_entrada:
+        alertas.append(f"{pausados_saida + pausados_entrada} evento(s) estão pausados pela política de implantação.")
     if Empresa.objects.filter(is_active=True, sincronizacao_automatica=True, url_sincronizacao="").exists():
         alertas.append("Existe empresa com sincronizacao automatica sem URL configurada.")
 
@@ -639,6 +719,7 @@ def _sincronizacao_diagnostico_payload(request):
         "filas": {
             "saida": {
                 "pendentes": pendentes_saida,
+                "pausados": pausados_saida,
                 "processando": saida.get(StatusSincronizacao.PROCESSANDO, 0),
                 "enviados": saida.get(StatusSincronizacao.ENVIADO, 0),
                 "erros": erros_saida,
@@ -649,6 +730,7 @@ def _sincronizacao_diagnostico_payload(request):
             },
             "entrada": {
                 "recebidos": recebidos_entrada,
+                "pausados": pausados_entrada,
                 "processados": entrada.get(StatusEventoEntrada.PROCESSADO, 0),
                 "conflitos": conflitos_entrada,
                 "erros": erros_entrada,
@@ -668,6 +750,7 @@ def _sincronizacao_diagnostico_payload(request):
             "politicas_conflito": politicas_conflito,
             "politica_manual": politica_manual,
             "politica_remoto_produtos_estoque": politica_remoto_produtos_estoque,
+            "politica_local_produtos_estoque": politica_local_produtos_estoque,
             "sincronizacao_automatica": empresas_ativas_qs.filter(sincronizacao_automatica=True).count(),
         },
         "operacao": {
@@ -683,15 +766,16 @@ def _sincronizacao_diagnostico_payload(request):
 @login_required
 @role_required(*SISTEMA)
 def sincronizacao(request):
+    _exigir_super_admin(request.user)
     dados = _sincronizacao_querysets(request)
     eventos_qs = dados["eventos_qs"]
     eventos_entrada_qs = dados["eventos_entrada_qs"]
     vendas_qs = dados["vendas_qs"]
     documentos_fiscais_qs = dados["documentos_fiscais_qs"]
-    eventos = eventos_qs.order_by("-criado_em")[:200]
-    eventos_entrada = eventos_entrada_qs.order_by("-recebido_em")[:80]
-    vendas_sincronizadas = vendas_qs.order_by("-realizada_em", "-recebida_em")[:50]
-    documentos_fiscais = documentos_fiscais_qs.order_by("-emitido_em", "-recebido_em")[:50]
+    eventos = _pagina_nomeada(request, eventos_qs.order_by("-criado_em"), "saida_page")
+    eventos_entrada = _pagina_nomeada(request, eventos_entrada_qs.order_by("-recebido_em"), "entrada_page")
+    vendas_sincronizadas = _pagina_nomeada(request, vendas_qs.order_by("-realizada_em", "-recebida_em"), "vendas_page")
+    documentos_fiscais = _pagina_nomeada(request, documentos_fiscais_qs.order_by("-emitido_em", "-recebido_em"), "fiscais_page")
     contagens = dict(eventos_qs.values_list("status").annotate(total=Count("id")))
     contagens_entrada = dict(eventos_entrada_qs.values_list("status").annotate(total=Count("id")))
     total_vendas_sync = vendas_qs.aggregate(total=Sum("total_liquido"))["total"] or 0
@@ -747,6 +831,7 @@ def sincronizacao(request):
 @role_required(*SISTEMA)
 @require_POST
 def sincronizacao_carga_inicial(request):
+    _exigir_super_admin(request.user)
     empresa_id = request.POST.get("empresa", "").strip()
     if not empresa_id.isdigit():
         messages.error(request, "Selecione uma empresa valida.")
@@ -795,12 +880,14 @@ def sincronizacao_carga_inicial(request):
 @login_required
 @role_required(*SISTEMA)
 def sincronizacao_diagnostico(request):
+    _exigir_super_admin(request.user)
     return JsonResponse(_sincronizacao_diagnostico_payload(request))
 
 
 @login_required
 @role_required(*SISTEMA)
 def vendas_sincronizadas_csv(request):
+    _exigir_super_admin(request.user)
     vendas_qs = _sincronizacao_querysets(request)["vendas_qs"].select_related("empresa", "filial")
     response = HttpResponse(content_type="text/csv; charset=utf-8")
     response["Content-Disposition"] = 'attachment; filename="vendas_sincronizadas.csv"'
@@ -828,6 +915,7 @@ def vendas_sincronizadas_csv(request):
 @login_required
 @role_required(*SISTEMA)
 def documentos_fiscais_sincronizados_csv(request):
+    _exigir_super_admin(request.user)
     documentos_qs = _sincronizacao_querysets(request)["documentos_fiscais_qs"].select_related("empresa", "filial")
     response = HttpResponse(content_type="text/csv; charset=utf-8")
     response["Content-Disposition"] = 'attachment; filename="documentos_fiscais_sincronizados.csv"'
@@ -872,6 +960,7 @@ def documentos_fiscais_sincronizados_csv(request):
 @login_required
 @role_required(*SISTEMA)
 def eventos_sincronizacao_csv(request):
+    _exigir_super_admin(request.user)
     eventos_qs = _sincronizacao_querysets(request)["eventos_qs"].select_related("empresa", "filial")
     response = HttpResponse(content_type="text/csv; charset=utf-8")
     response["Content-Disposition"] = 'attachment; filename="eventos_sincronizacao_saida.csv"'
@@ -898,6 +987,7 @@ def eventos_sincronizacao_csv(request):
 @login_required
 @role_required(*SISTEMA)
 def eventos_entrada_sincronizacao_csv(request):
+    _exigir_super_admin(request.user)
     eventos_qs = _sincronizacao_querysets(request)["eventos_entrada_qs"].select_related("empresa", "resolvido_por")
     response = HttpResponse(content_type="text/csv; charset=utf-8")
     response["Content-Disposition"] = 'attachment; filename="eventos_sincronizacao_entrada.csv"'
@@ -924,6 +1014,7 @@ def eventos_entrada_sincronizacao_csv(request):
 @login_required
 @role_required(*SISTEMA)
 def venda_sincronizada_detalhe(request, pk):
+    _exigir_super_admin(request.user)
     venda = get_object_or_404(
         VendaSincronizada.objects.select_related("empresa", "filial", "evento"),
         pk=pk,
@@ -958,6 +1049,7 @@ def venda_sincronizada_detalhe(request, pk):
 @login_required
 @role_required(*SISTEMA)
 def documento_fiscal_sincronizado_detalhe(request, pk):
+    _exigir_super_admin(request.user)
     documento = get_object_or_404(
         DocumentoFiscalSincronizado.objects.select_related("empresa", "filial", "evento"),
         pk=pk,
@@ -973,6 +1065,7 @@ def documento_fiscal_sincronizado_detalhe(request, pk):
 @login_required
 @role_required(*SISTEMA)
 def evento_sincronizacao_detalhe(request, pk):
+    _exigir_super_admin(request.user)
     evento = get_object_or_404(
         EventoSincronizacao.objects.select_related("empresa", "filial"),
         pk=pk,
@@ -988,6 +1081,7 @@ def evento_sincronizacao_detalhe(request, pk):
 @login_required
 @role_required(*SISTEMA)
 def evento_entrada_sincronizacao_detalhe(request, pk):
+    _exigir_super_admin(request.user)
     evento = get_object_or_404(
         EventoEntradaSincronizacao.objects.select_related("empresa"),
         pk=pk,
@@ -1003,6 +1097,7 @@ def evento_entrada_sincronizacao_detalhe(request, pk):
 @login_required
 @role_required(*SISTEMA)
 def sincronizacao_entrada_resolver_conflito(request, pk):
+    _exigir_super_admin(request.user)
     if request.method == "POST":
         evento = get_object_or_404(EventoEntradaSincronizacao, pk=pk)
         resolucao = request.POST.get("resolucao_conflito", "").strip()
@@ -1033,32 +1128,48 @@ def sincronizacao_entrada_resolver_conflito(request, pk):
 @login_required
 @role_required(*SISTEMA)
 def sincronizacao_reprocessar(request, pk):
+    _exigir_super_admin(request.user)
     if request.method == "POST":
         evento = get_object_or_404(EventoSincronizacao, pk=pk)
-        evento.status = StatusSincronizacao.PENDENTE
-        evento.tentativas = 0
-        evento.proxima_tentativa_em = None
-        evento.ultimo_erro = ""
-        evento.save(update_fields=["status", "tentativas", "proxima_tentativa_em", "ultimo_erro", "atualizado_em"])
-        LogAuditoria.objects.create(
-            usuario=request.user,
-            modulo="sincronizacao",
-            acao="REPROCESSA_SINCRONIZACAO_SAIDA",
-            descricao=f"Evento de saida {evento.identificador} devolvido para a fila.",
-            objeto_tipo="EventoSincronizacao",
-            objeto_id=str(evento.pk),
-            ip=request.META.get("REMOTE_ADDR"),
-        )
-        messages.success(request, "Evento devolvido para a fila de sincronizacao.")
+        if not evento.empresa.sincronizacao_operacional_habilitada:
+            if evento.status != StatusSincronizacao.PAUSADO:
+                evento.status = StatusSincronizacao.PAUSADO
+                evento.proxima_tentativa_em = None
+                evento.ultimo_erro = "Pausado pela política de implantação ou sincronização desativada."
+                evento.save(update_fields=["status", "proxima_tentativa_em", "ultimo_erro", "atualizado_em"])
+            messages.warning(request, "Ative o modo híbrido com sincronização automática e URL HTTPS antes de reprocessar.")
+        else:
+            evento.status = StatusSincronizacao.PENDENTE
+            evento.tentativas = 0
+            evento.proxima_tentativa_em = None
+            evento.ultimo_erro = ""
+            evento.save(update_fields=["status", "tentativas", "proxima_tentativa_em", "ultimo_erro", "atualizado_em"])
+            LogAuditoria.objects.create(
+                usuario=request.user,
+                modulo="sincronizacao",
+                acao="REPROCESSA_SINCRONIZACAO_SAIDA",
+                descricao=f"Evento de saida {evento.identificador} devolvido para a fila.",
+                objeto_tipo="EventoSincronizacao",
+                objeto_id=str(evento.pk),
+                ip=request.META.get("REMOTE_ADDR"),
+            )
+            messages.success(request, "Evento devolvido para a fila de sincronizacao.")
     return redirect("empresas:sincronizacao")
 
 
 @login_required
 @role_required(*SISTEMA)
 def sincronizacao_entrada_reprocessar(request, pk):
+    _exigir_super_admin(request.user)
     if request.method == "POST":
         evento = get_object_or_404(EventoEntradaSincronizacao, pk=pk)
-        if evento.status in {StatusEventoEntrada.ERRO, StatusEventoEntrada.CONFLITO}:
+        if not evento.empresa.sincronizacao_operacional_habilitada:
+            if evento.status != StatusEventoEntrada.PAUSADO:
+                evento.status = StatusEventoEntrada.PAUSADO
+                evento.ultimo_erro = "Pausado pela política de implantação ou sincronização desativada."
+                evento.save(update_fields=["status", "ultimo_erro", "atualizado_em"])
+            messages.warning(request, "Ative o modo híbrido com sincronização automática e URL HTTPS antes de reprocessar.")
+        elif evento.status in {StatusEventoEntrada.ERRO, StatusEventoEntrada.CONFLITO}:
             evento.status = StatusEventoEntrada.RECEBIDO
             evento.ultimo_erro = ""
             evento.processado_em = None

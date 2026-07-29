@@ -20,6 +20,19 @@
     <a class="secondary-button" href="{% url 'relatorios:caixas' %}">Caixas</a>
   </div>
 </header>
+<form method="get" class="toolbar report-filter">
+  <label>
+    <span>Filial</span>
+    <select name="filial">
+      {% if permite_consolidado %}<option value="">Todas as filiais</option>{% endif %}
+      {% for filial in filiais %}
+        <option value="{{ filial.pk }}" {% if filial_id == filial.pk|stringformat:"s" %}selected{% endif %}>{{ filial }}</option>
+      {% endfor %}
+    </select>
+  </label>
+  <button type="submit">Aplicar</button>
+</form>
+
 
 <section class="metrics-grid">
   <article class="metric"><span>Produtos ativos</span><strong>{{ produtos_ativos }}</strong></article>

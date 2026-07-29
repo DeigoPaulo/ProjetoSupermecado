@@ -20,6 +20,7 @@
       <h2>Plataforma</h2>
       <div class="form-grid form-grid-inner">
         <label class="form-field"><span>{{ form.nome.label }}</span>{{ form.nome }}{{ form.nome.errors }}<small>Exemplo: iFood, WhatsApp, site proprio ou parceiro local.</small></label>
+        <label class="form-field"><span>{{ form.provedor.label }}</span>{{ form.provedor }}{{ form.provedor.errors }}<small>Use contrato padrao quando o parceiro já enviar o formato nativo.</small></label>
         <label class="form-field"><span>{{ form.filial.label }}</span>{{ form.filial }}{{ form.filial.errors }}</label>
         <label class="toggle-field">{{ form.is_active }} <span>{{ form.is_active.label }}</span>{{ form.is_active.errors }}</label>
       </div>

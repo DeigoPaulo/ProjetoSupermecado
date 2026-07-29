@@ -3,18 +3,61 @@ from decimal import Decimal
 
 from django.contrib.auth import get_user_model
 from django.contrib.auth.decorators import login_required
+from django.core.exceptions import PermissionDenied
+from django.core.paginator import Paginator
 from django.db.models import Count, DecimalField, ExpressionWrapper, F, Sum
 from django.http import HttpResponse
 from django.shortcuts import redirect, render
 from django.utils import timezone
 from django.utils.dateparse import parse_date
 
+from apps.accounts.models import PerfilUsuario, TipoPerfil
 from apps.accounts.permissions import CADASTROS, COMPRAS, ESTOQUE, PDV, RELATORIOS, has_role, role_required
 from apps.compras.models import EntradaCompra, StatusEntradaCompra
+from apps.empresas.models import Filial
 from apps.estoque.models import Estoque, MovimentacaoEstoque, PerdaEstoque, TipoMovimentacaoEstoque
 from apps.pdv.models import Caixa, Sangria, StatusCaixa, Suprimento
 from apps.produtos.models import Produto
-from apps.vendas.models import DevolucaoVenda, ItemDevolucaoVenda, ItemVenda, PagamentoVenda, StatusVenda, Venda
+from apps.vendas.models import (
+    DevolucaoVenda,
+    EstornoParcialPagamento,
+    ItemDevolucaoVenda,
+    ItemVenda,
+    PagamentoVenda,
+    StatusEstornoParcial,
+    StatusPagamento,
+    StatusVenda,
+    Venda,
+)
+
+
+def _paginar(request, itens):
+    return Paginator(itens, 50).get_page(request.GET.get("page"))
+
+
+def _filiais_relatorio(request):
+    filiais, permite_consolidado = _escopo_filiais_caixa(request.user)
+    filial_id = (request.GET.get("filial") or "").strip()
+    if filial_id:
+        if not filial_id.isdigit() or not filiais.filter(pk=filial_id).exists():
+            raise PermissionDenied("Filial fora do escopo permitido.")
+        selecionadas = filiais.filter(pk=int(filial_id))
+    elif permite_consolidado:
+        selecionadas = filiais
+    else:
+        filial_id = str(filiais.values_list("pk", flat=True).first() or "")
+        selecionadas = filiais
+    return filiais, selecionadas, filial_id, permite_consolidado
+
+
+def _escopo_relatorio_contexto(request):
+    filiais, selecionadas, filial_id, permite_consolidado = _filiais_relatorio(request)
+    return selecionadas, {
+        "filiais": filiais,
+        "filial_id": filial_id,
+        "permite_consolidado": permite_consolidado,
+        "filial_selecionada": filiais.filter(pk=filial_id).first() if filial_id else None,
+    }
 
 
 @login_required
@@ -30,22 +73,32 @@ def dashboard(request):
             return redirect("produtos:lista")
         return redirect("login")
 
-    vendas_finalizadas = Venda.objects.filter(status=StatusVenda.FINALIZADA)
-    devolucoes_total = DevolucaoVenda.objects.all()
-    devolucoes_hoje = DevolucaoVenda.objects.filter(data__date=timezone.localdate())
+    filiais, filiais_selecionadas, filial_id, permite_consolidado = _filiais_relatorio(request)
+    vendas_finalizadas = Venda.objects.filter(
+        filial__in=filiais_selecionadas,
+        status=StatusVenda.FINALIZADA,
+    )
+    devolucoes_total = DevolucaoVenda.objects.filter(venda__filial__in=filiais_selecionadas)
+    devolucoes_hoje = devolucoes_total.filter(data__date=timezone.localdate())
+    estoques = Estoque.objects.filter(filial__in=filiais_selecionadas)
+    caixas = Caixa.objects.filter(filial__in=filiais_selecionadas)
     faturamento_bruto = vendas_finalizadas.aggregate(total=Sum("total_liquido"))["total"] or 0
     valor_devolucoes_total = devolucoes_total.aggregate(total=Sum("valor_total"))["total"] or 0
     valor_devolucoes_hoje = devolucoes_hoje.aggregate(total=Sum("valor_total"))["total"] or 0
     produtos_por_categoria = list(
-        Produto.objects.values("categoria__nome").annotate(total=Count("id")).order_by("-total")[:6]
-    )
-    pagamentos_por_forma = list(
-        PagamentoVenda.objects.filter(venda__status=StatusVenda.FINALIZADA)
-        .values("forma_pagamento__nome")
-        .annotate(total=Sum("valor"))
+        Produto.objects.filter(estoques__in=estoques)
+        .values("categoria__nome")
+        .annotate(total=Count("id", distinct=True))
         .order_by("-total")[:6]
     )
-    caixas_por_status = list(Caixa.objects.values("status").annotate(total=Count("id")).order_by("status"))
+    pagamentos_por_forma = sorted(
+        _entradas_caixa_por_forma(caixas),
+        key=lambda item: item["total"],
+        reverse=True,
+    )[:6]
+    caixas_por_status = list(
+        caixas.values("status").annotate(total=Count("id")).order_by("status")
+    )
     status_caixa_labels = dict(StatusCaixa.choices)
     dashboard_charts = {
         "pagamentos": {
@@ -62,16 +115,23 @@ def dashboard(request):
         },
     }
     context = {
-        "total_produtos": Produto.all_objects.count(),
-        "produtos_ativos": Produto.objects.count(),
-        "estoque_baixo": Estoque.objects.filter(quantidade_atual__lte=F("produto__estoque_minimo")).count(),
-        "caixas_abertos": Caixa.objects.filter(status=StatusCaixa.ABERTO).count(),
+        "filiais": filiais,
+        "filial_id": filial_id,
+        "permite_consolidado": permite_consolidado,
+        "total_produtos": Produto.all_objects.filter(estoques__in=estoques).distinct().count(),
+        "produtos_ativos": Produto.objects.filter(estoques__in=estoques).distinct().count(),
+        "estoque_baixo": estoques.filter(
+            quantidade_atual__lte=F("produto__estoque_minimo")
+        ).count(),
+        "caixas_abertos": caixas.filter(status=StatusCaixa.ABERTO).count(),
         "total_vendas": vendas_finalizadas.count(),
         "faturamento": faturamento_bruto,
         "faturamento_liquido": faturamento_bruto - valor_devolucoes_total,
         "total_devolucoes_hoje": devolucoes_hoje.count(),
         "valor_devolucoes_hoje": valor_devolucoes_hoje,
-        "ultimos_caixas": Caixa.objects.select_related("filial", "usuario_abertura").order_by("-data_abertura")[:5],
+        "ultimos_caixas": caixas.select_related(
+            "filial", "usuario_abertura"
+        ).order_by("-data_abertura")[:5],
         "produtos_por_categoria": produtos_por_categoria,
         "dashboard_charts": dashboard_charts,
     }
@@ -89,8 +149,9 @@ def _dias_periodo(data_inicio, data_fim):
     return max((data_fim - data_inicio).days + 1, 1)
 
 
-def _vendas_periodo(data_inicio, data_fim):
+def _vendas_periodo(data_inicio, data_fim, filiais):
     return Venda.objects.filter(
+        filial__in=filiais,
         status=StatusVenda.FINALIZADA,
         data__date__gte=data_inicio,
         data__date__lte=data_fim,
@@ -110,8 +171,37 @@ def _csv_money(value):
     return f"{Decimal(value or 0):.2f}".replace(".", ",")
 
 
-def _caixas_periodo(data_inicio, data_fim):
-    return Caixa.objects.filter(
+def _csv_filtro_filial(writer, escopo):
+    filial = escopo.get("filial_selecionada")
+    if filial:
+        writer.writerow(["Filtro filial", _csv_safe(filial)])
+
+
+def _escopo_filiais_caixa(user):
+    filiais = Filial.objects.select_related("empresa").order_by(
+        "empresa__nome_fantasia", "nome"
+    )
+    if user.is_superuser:
+        return filiais, True
+    perfil = PerfilUsuario.objects.select_related("filial", "filial__empresa").filter(
+        usuario=user,
+        is_active=True,
+        filial__isnull=False,
+    ).first()
+    if not perfil:
+        raise PermissionDenied("Usuario sem filial vinculada para consultar caixas.")
+    if perfil.tipo == TipoPerfil.ADMINISTRADOR:
+        return filiais.filter(empresa_id=perfil.filial.empresa_id), True
+    return filiais.filter(pk=perfil.filial_id), False
+
+
+def _caixas_para_usuario(user):
+    filiais, _ = _escopo_filiais_caixa(user)
+    return Caixa.objects.filter(filial__in=filiais)
+
+
+def _caixas_periodo(user, data_inicio, data_fim):
+    return _caixas_para_usuario(user).filter(
         data_abertura__date__gte=data_inicio,
         data_abertura__date__lte=data_fim,
     ).select_related("filial", "usuario_abertura", "usuario_fechamento", "usuario_conferencia")
@@ -120,15 +210,33 @@ def _caixas_periodo(data_inicio, data_fim):
 def _caixas_filtrados(request):
     data_inicio, data_fim = _periodo_from_request(request)
     operador_id = (request.GET.get("operador") or "").strip()
-    caixas_qs = _caixas_periodo(data_inicio, data_fim)
-    if operador_id.isdigit():
-        caixas_qs = caixas_qs.filter(usuario_abertura_id=int(operador_id))
-    return data_inicio, data_fim, operador_id, caixas_qs
+    filial_id = (request.GET.get("filial") or "").strip()
+    filiais, permite_consolidado = _escopo_filiais_caixa(request.user)
+    caixas_qs = _caixas_periodo(request.user, data_inicio, data_fim)
+    if filial_id:
+        if not filial_id.isdigit() or not filiais.filter(pk=filial_id).exists():
+            raise PermissionDenied("Filial fora do escopo permitido.")
+        caixas_qs = caixas_qs.filter(filial_id=int(filial_id))
+    elif not permite_consolidado:
+        filial_id = str(filiais.values_list("pk", flat=True).first() or "")
+    if operador_id:
+        if not operador_id.isdigit():
+            raise PermissionDenied("Operador fora do escopo permitido.")
+        operador_pk = int(operador_id)
+        if not _operadores_caixa(request.user, filial_id).filter(pk=operador_pk).exists():
+            raise PermissionDenied("Operador fora do escopo permitido.")
+        caixas_qs = caixas_qs.filter(usuario_abertura_id=operador_pk)
+    return data_inicio, data_fim, operador_id, filial_id, caixas_qs
 
 
-def _operadores_caixa():
+def _operadores_caixa(user, filial_id=""):
     User = get_user_model()
-    return User.objects.filter(caixas_abertos__isnull=False).distinct().order_by("username")
+    caixas = _caixas_para_usuario(user)
+    if filial_id:
+        caixas = caixas.filter(filial_id=filial_id)
+    return User.objects.filter(
+        caixas_abertos__in=caixas
+    ).distinct().order_by("username")
 
 
 def _resumo_caixas_por_operador(caixas_qs):
@@ -177,6 +285,32 @@ def _resumo_caixas_por_operador(caixas_qs):
     return resumo
 
 
+def _entradas_caixa_por_forma(caixas_qs):
+    pagamentos = PagamentoVenda.objects.filter(
+        venda__caixa__in=caixas_qs,
+        venda__status=StatusVenda.FINALIZADA,
+        status=StatusPagamento.CONFIRMADO,
+    )
+    estornos_por_forma = {
+        item["pagamento__forma_pagamento_id"]: item["total"] or Decimal("0.00")
+        for item in EstornoParcialPagamento.objects.filter(
+            pagamento__in=pagamentos,
+            status=StatusEstornoParcial.CONFIRMADO,
+        )
+        .values("pagamento__forma_pagamento_id")
+        .annotate(total=Sum("valor"))
+    }
+    entradas = []
+    for item in pagamentos.values(
+        "forma_pagamento_id", "forma_pagamento__nome"
+    ).annotate(total=Sum("valor")).order_by("forma_pagamento__nome"):
+        estornos = estornos_por_forma.get(item["forma_pagamento_id"], Decimal("0.00"))
+        item["estornos"] = estornos
+        item["total"] = (item["total"] or Decimal("0.00")) - estornos
+        entradas.append(item)
+    return entradas
+
+
 def _preparar_caixas_conferencia(caixas_qs):
     caixas = list(caixas_qs)
     total_diferenca = Decimal("0.00")
@@ -189,36 +323,41 @@ def _preparar_caixas_conferencia(caixas_qs):
     return caixas, total_diferenca
 
 
-def _compras_periodo(data_inicio, data_fim):
+def _compras_periodo(data_inicio, data_fim, filiais):
     return EntradaCompra.objects.filter(
+        filial__in=filiais,
         status=StatusEntradaCompra.FINALIZADA,
         data_recebimento__date__gte=data_inicio,
         data_recebimento__date__lte=data_fim,
     ).select_related("fornecedor", "filial", "usuario")
 
 
-def _perdas_periodo(data_inicio, data_fim):
+def _perdas_periodo(data_inicio, data_fim, filiais):
     return PerdaEstoque.objects.filter(
+        filial__in=filiais,
         data__date__gte=data_inicio,
         data__date__lte=data_fim,
     ).select_related("produto", "produto__categoria", "filial", "usuario")
 
 
-def _devolucoes_periodo(data_inicio, data_fim):
+def _devolucoes_periodo(data_inicio, data_fim, filiais):
     return DevolucaoVenda.objects.filter(
+        venda__filial__in=filiais,
         data__date__gte=data_inicio,
         data__date__lte=data_fim,
     ).select_related("venda", "venda__filial", "venda__cliente", "usuario").prefetch_related("itens__produto")
 
 
-def _estoques_baixos():
+def _estoques_baixos(filiais):
     return Estoque.objects.select_related("produto", "filial", "produto__categoria").filter(
+        filial__in=filiais,
         quantidade_atual__lte=F("produto__estoque_minimo"), produto__is_active=True,
     ).order_by("produto__nome", "filial__nome")
 
 
-def _movimentacoes_periodo(data_inicio, data_fim, tipo=""):
+def _movimentacoes_periodo(data_inicio, data_fim, filiais, tipo=""):
     movimentacoes = MovimentacaoEstoque.objects.filter(
+        filial__in=filiais,
         data__date__gte=data_inicio, data__date__lte=data_fim,
     ).select_related("produto", "filial", "usuario").order_by("-data")
     return movimentacoes.filter(tipo=tipo) if tipo else movimentacoes
@@ -228,7 +367,8 @@ def _movimentacoes_periodo(data_inicio, data_fim, tipo=""):
 @role_required(*RELATORIOS)
 def vendas(request):
     data_inicio, data_fim = _periodo_from_request(request)
-    vendas_qs = _vendas_periodo(data_inicio, data_fim)
+    filiais, selecionadas, filial_id, permite_consolidado = _filiais_relatorio(request)
+    vendas_qs = _vendas_periodo(data_inicio, data_fim, selecionadas)
 
     itens_qs = ItemVenda.objects.filter(venda__in=vendas_qs).select_related("produto")
     devolucoes_qs = DevolucaoVenda.objects.filter(
@@ -246,7 +386,10 @@ def vendas(request):
     context = {
         "data_inicio": data_inicio,
         "data_fim": data_fim,
-        "vendas": vendas_qs[:100],
+        "filiais": filiais,
+        "filial_id": filial_id,
+        "permite_consolidado": permite_consolidado,
+        "vendas": _paginar(request, vendas_qs),
         "total_vendas": vendas_qs.count(),
         "faturamento": faturamento_bruto,
         "valor_devolucoes": valor_devolucoes,
@@ -265,21 +408,24 @@ def vendas(request):
 @role_required(*RELATORIOS)
 def vendas_csv(request):
     data_inicio, data_fim = _periodo_from_request(request)
+    filiais, selecionadas, filial_id, _ = _filiais_relatorio(request)
     response = HttpResponse(content_type="text/csv; charset=utf-8")
     response["Content-Disposition"] = f'attachment; filename="vendas_{data_inicio}_{data_fim}.csv"'
     response.write("\ufeff")
     writer = csv.writer(response, delimiter=";")
+    if filial_id:
+        writer.writerow(["Filtro filial", _csv_safe(filiais.get(pk=filial_id))])
     writer.writerow(["Venda", "Data", "Filial", "Cliente", "Operador", "Subtotal", "Desconto", "Total"])
-    for venda in _vendas_periodo(data_inicio, data_fim).iterator():
+    for venda in _vendas_periodo(data_inicio, data_fim, selecionadas).iterator():
         writer.writerow([
             venda.id,
             timezone.localtime(venda.data).strftime("%d/%m/%Y %H:%M"),
             _csv_safe(venda.filial),
             _csv_safe(venda.cliente) if venda.cliente else "Cliente avulso",
             _csv_safe(venda.usuario),
-            str(venda.subtotal).replace(".", ","),
-            str(venda.desconto).replace(".", ","),
-            str(venda.total_liquido).replace(".", ","),
+            _csv_money(venda.total_bruto),
+            _csv_money(venda.desconto),
+            _csv_money(venda.total_liquido),
         ])
     return response
 
@@ -288,10 +434,12 @@ def vendas_csv(request):
 @role_required(*RELATORIOS)
 def vendas_imprimir(request):
     data_inicio, data_fim = _periodo_from_request(request)
-    vendas_qs = _vendas_periodo(data_inicio, data_fim)
+    filiais, selecionadas, filial_id, _ = _filiais_relatorio(request)
+    vendas_qs = _vendas_periodo(data_inicio, data_fim, selecionadas)
     context = {
         "data_inicio": data_inicio,
         "data_fim": data_fim,
+        "filial_selecionada": filiais.filter(pk=filial_id).first() if filial_id else None,
         "vendas": vendas_qs,
         "total_vendas": vendas_qs.count(),
         "faturamento": vendas_qs.aggregate(total=Sum("total_liquido"))["total"] or 0,
@@ -300,14 +448,15 @@ def vendas_imprimir(request):
     }
     return render(request, "relatorios/vendas_imprimir.html", context)
 
-
 @login_required
 @role_required(*RELATORIOS)
 def curva_abc(request):
     data_inicio, data_fim = _periodo_from_request(request)
-    linhas, total_liquido = _calcular_curva_abc(data_inicio, data_fim)
+    selecionadas, escopo = _escopo_relatorio_contexto(request)
+    linhas, total_liquido = _calcular_curva_abc(data_inicio, data_fim, selecionadas)
     context = {
-        "data_inicio": data_inicio, "data_fim": data_fim, "linhas": linhas[:200],
+        **escopo,
+        "data_inicio": data_inicio, "data_fim": data_fim, "linhas": _paginar(request, linhas),
         "total_liquido": total_liquido, "total_produtos": len(linhas),
         "classe_a": sum(1 for item in linhas if item["classe"] == "A"),
         "classe_b": sum(1 for item in linhas if item["classe"] == "B"),
@@ -316,8 +465,9 @@ def curva_abc(request):
     return render(request, "relatorios/curva_abc.html", context)
 
 
-def _calcular_curva_abc(data_inicio, data_fim):
+def _calcular_curva_abc(data_inicio, data_fim, filiais):
     vendas_qs = Venda.objects.filter(
+        filial__in=filiais,
         status=StatusVenda.FINALIZADA,
         data__date__gte=data_inicio,
         data__date__lte=data_fim,
@@ -380,11 +530,13 @@ def _calcular_curva_abc(data_inicio, data_fim):
 @role_required(*RELATORIOS)
 def curva_abc_csv(request):
     data_inicio, data_fim = _periodo_from_request(request)
-    linhas, _ = _calcular_curva_abc(data_inicio, data_fim)
+    selecionadas, escopo = _escopo_relatorio_contexto(request)
+    linhas, _ = _calcular_curva_abc(data_inicio, data_fim, selecionadas)
     response = HttpResponse(content_type="text/csv; charset=utf-8")
     response["Content-Disposition"] = f'attachment; filename="curva_abc_{data_inicio}_{data_fim}.csv"'
     response.write("\ufeff")
     writer = csv.writer(response, delimiter=";")
+    _csv_filtro_filial(writer, escopo)
     writer.writerow(["Classe", "Produto", "Codigo", "Quantidade liquida", "Devolucoes", "Valor liquido", "Participacao %", "Acumulado %"])
     for item in linhas:
         writer.writerow([item["classe"], _csv_safe(item["produto"]), _csv_safe(item["codigo"]),
@@ -398,11 +550,13 @@ def curva_abc_csv(request):
 @role_required(*RELATORIOS)
 def curva_abc_imprimir(request):
     data_inicio, data_fim = _periodo_from_request(request)
-    dados, total_liquido = _calcular_curva_abc(data_inicio, data_fim)
+    selecionadas, escopo = _escopo_relatorio_contexto(request)
+    dados, total_liquido = _calcular_curva_abc(data_inicio, data_fim, selecionadas)
     linhas = [[item["classe"], item["produto"], item["codigo"], f'{item["quantidade"]:.3f}',
                f'R$ {item["devolvido"]:.2f}', f'R$ {item["valor"]:.2f}',
                f'{item["participacao"]:.2f}%', f'{item["acumulado"]:.2f}%'] for item in dados]
     return render(request, "relatorios/exportacao_imprimir.html", {
+        **escopo,
         "titulo": "Curva ABC", "subtitulo": "Classificacao de produtos por faturamento liquido",
         "data_inicio": data_inicio, "data_fim": data_fim, "gerado_em": timezone.localtime(),
         "cabecalhos": ["Classe", "Produto", "Codigo", "Qtd liquida", "Devolucoes", "Valor liquido", "%", "% acum."],
@@ -413,18 +567,24 @@ def curva_abc_imprimir(request):
 @login_required
 @role_required(*RELATORIOS)
 def estoque_baixo(request):
-    return render(request, "relatorios/estoque_baixo.html", {"estoques": _estoques_baixos()})
+    selecionadas, escopo = _escopo_relatorio_contexto(request)
+    pagina = _paginar(request, _estoques_baixos(selecionadas))
+    return render(request, "relatorios/estoque_baixo.html", {
+        **escopo, "estoques": pagina, "page_obj": pagina,
+    })
 
 
 @login_required
 @role_required(*RELATORIOS)
 def estoque_baixo_csv(request):
+    selecionadas, escopo = _escopo_relatorio_contexto(request)
     response = HttpResponse(content_type="text/csv; charset=utf-8")
     response["Content-Disposition"] = f'attachment; filename="estoque_baixo_{timezone.localdate()}.csv"'
     response.write("\ufeff")
     writer = csv.writer(response, delimiter=";")
+    _csv_filtro_filial(writer, escopo)
     writer.writerow(["Produto", "Categoria", "Filial", "Atual", "Reservado", "Disponivel", "Minimo", "Deficit"])
-    for estoque in _estoques_baixos().iterator():
+    for estoque in _estoques_baixos(selecionadas).iterator():
         deficit = max(estoque.produto.estoque_minimo - estoque.quantidade_disponivel, Decimal("0.000"))
         writer.writerow([
             _csv_safe(estoque.produto), _csv_safe(estoque.produto.categoria), _csv_safe(estoque.filial),
@@ -438,13 +598,15 @@ def estoque_baixo_csv(request):
 @login_required
 @role_required(*RELATORIOS)
 def estoque_baixo_imprimir(request):
+    selecionadas, escopo = _escopo_relatorio_contexto(request)
     linhas = []
-    for estoque in _estoques_baixos():
+    for estoque in _estoques_baixos(selecionadas):
         deficit = max(estoque.produto.estoque_minimo - estoque.quantidade_disponivel, Decimal("0.000"))
         linhas.append([estoque.produto, estoque.produto.categoria, estoque.filial, estoque.quantidade_atual,
                        estoque.quantidade_reservada, estoque.quantidade_disponivel, estoque.produto.estoque_minimo, deficit])
     hoje = timezone.localdate()
     return render(request, "relatorios/exportacao_imprimir.html", {
+        **escopo,
         "titulo": "Relatorio de estoque baixo", "subtitulo": "Produtos que exigem atencao para reposicao",
         "data_inicio": hoje, "data_fim": hoje, "gerado_em": timezone.localtime(),
         "cabecalhos": ["Produto", "Categoria", "Filial", "Atual", "Reservado", "Disponivel", "Minimo", "Deficit"],
@@ -456,49 +618,55 @@ def estoque_baixo_imprimir(request):
 @role_required(*RELATORIOS)
 def sugestao_reposicao(request):
     data_inicio, data_fim = _periodo_from_request(request)
+    selecionadas, escopo = _escopo_relatorio_contexto(request)
     try:
         dias_cobertura = int(request.GET.get("dias_cobertura") or 7)
     except ValueError:
         dias_cobertura = 7
     dias_cobertura = min(max(dias_cobertura, 1), 90)
-    linhas = _calcular_reposicao(data_inicio, data_fim, dias_cobertura)
+    linhas = _calcular_reposicao(data_inicio, data_fim, dias_cobertura, selecionadas)
     context = {
+        **escopo,
         "data_inicio": data_inicio, "data_fim": data_fim, "dias_cobertura": dias_cobertura,
-        "linhas": linhas[:200], "total_produtos": len(linhas),
+        "linhas": _paginar(request, linhas), "total_produtos": len(linhas),
         "quantidade_sugerida": sum((item["sugestao"] for item in linhas), Decimal("0.000")),
     }
     return render(request, "relatorios/sugestao_reposicao.html", context)
 
 
-def _calcular_reposicao(data_inicio, data_fim, dias_cobertura):
+def _calcular_reposicao(data_inicio, data_fim, dias_cobertura, filiais):
     dias_periodo = Decimal(str(_dias_periodo(data_inicio, data_fim)))
     vendas_qs = Venda.objects.filter(
+        filial__in=filiais,
         status=StatusVenda.FINALIZADA,
         data__date__gte=data_inicio,
         data__date__lte=data_fim,
     )
     vendas_por_produto = {
-        item["produto_id"]: item["quantidade"] or Decimal("0.000")
+        (item["produto_id"], item["venda__filial_id"]): item["quantidade"] or Decimal("0.000")
         for item in ItemVenda.objects.filter(venda__in=vendas_qs)
-        .values("produto_id")
+        .values("produto_id", "venda__filial_id")
         .annotate(quantidade=Sum("quantidade"))
     }
     devolucoes_por_produto = {
-        item["produto_id"]: item["quantidade"] or Decimal("0.000")
+        (item["produto_id"], item["devolucao__venda__filial_id"]): item["quantidade"] or Decimal("0.000")
         for item in ItemDevolucaoVenda.objects.filter(
             devolucao__venda__in=vendas_qs,
             devolucao__data__date__gte=data_inicio,
             devolucao__data__date__lte=data_fim,
         )
-        .values("produto_id")
+        .values("produto_id", "devolucao__venda__filial_id")
         .annotate(quantidade=Sum("quantidade"))
     }
 
     linhas = []
-    estoques = Estoque.objects.select_related("produto", "produto__categoria", "filial").filter(produto__is_active=True)
+    estoques = Estoque.objects.select_related("produto", "produto__categoria", "filial").filter(
+        filial__in=filiais, produto__is_active=True,
+    )
     for estoque in estoques:
-        vendido = vendas_por_produto.get(estoque.produto_id, Decimal("0.000"))
-        devolvido = devolucoes_por_produto.get(estoque.produto_id, Decimal("0.000"))
+        chave = (estoque.produto_id, estoque.filial_id)
+        vendido = vendas_por_produto.get(chave, Decimal("0.000"))
+        devolvido = devolucoes_por_produto.get(chave, Decimal("0.000"))
         venda_liquida = max(vendido - devolvido, Decimal("0.000"))
         media_dia = venda_liquida / dias_periodo
         disponivel = estoque.quantidade_disponivel
@@ -527,16 +695,18 @@ def _calcular_reposicao(data_inicio, data_fim, dias_cobertura):
 @role_required(*RELATORIOS)
 def sugestao_reposicao_csv(request):
     data_inicio, data_fim = _periodo_from_request(request)
+    selecionadas, escopo = _escopo_relatorio_contexto(request)
     try:
         dias_cobertura = int(request.GET.get("dias_cobertura") or 7)
     except ValueError:
         dias_cobertura = 7
     dias_cobertura = min(max(dias_cobertura, 1), 90)
-    linhas = _calcular_reposicao(data_inicio, data_fim, dias_cobertura)
+    linhas = _calcular_reposicao(data_inicio, data_fim, dias_cobertura, selecionadas)
     response = HttpResponse(content_type="text/csv; charset=utf-8")
     response["Content-Disposition"] = f'attachment; filename="reposicao_{data_inicio}_{data_fim}.csv"'
     response.write("\ufeff")
     writer = csv.writer(response, delimiter=";")
+    _csv_filtro_filial(writer, escopo)
     writer.writerow(["Produto", "Categoria", "Filial", "Disponivel", "Minimo", "Venda no periodo", "Media por dia", "Dias cobertura", "Quantidade sugerida"])
     for item in linhas:
         writer.writerow([_csv_safe(item["produto"].nome), _csv_safe(item["produto"].categoria), _csv_safe(item["filial"]),
@@ -550,17 +720,19 @@ def sugestao_reposicao_csv(request):
 @role_required(*RELATORIOS)
 def sugestao_reposicao_imprimir(request):
     data_inicio, data_fim = _periodo_from_request(request)
+    selecionadas, escopo = _escopo_relatorio_contexto(request)
     try:
         dias_cobertura = int(request.GET.get("dias_cobertura") or 7)
     except ValueError:
         dias_cobertura = 7
     dias_cobertura = min(max(dias_cobertura, 1), 90)
-    dados = _calcular_reposicao(data_inicio, data_fim, dias_cobertura)
+    dados = _calcular_reposicao(data_inicio, data_fim, dias_cobertura, selecionadas)
     linhas = [[item["produto"].nome, item["produto"].categoria, item["filial"], item["disponivel"],
                item["estoque_minimo"], item["venda_liquida"], f'{item["media_dia"]:.3f}', item["sugestao"]]
               for item in dados]
     quantidade = sum((item["sugestao"] for item in dados), Decimal("0.000"))
     return render(request, "relatorios/exportacao_imprimir.html", {
+        **escopo,
         "titulo": "Sugestao de reposicao", "subtitulo": f"Necessidade calculada para {dias_cobertura} dias de cobertura",
         "data_inicio": data_inicio, "data_fim": data_fim, "gerado_em": timezone.localtime(),
         "cabecalhos": ["Produto", "Categoria", "Filial", "Disponivel", "Minimo", "Venda periodo", "Media/dia", "Sugerido"],
@@ -572,15 +744,17 @@ def sugestao_reposicao_imprimir(request):
 @role_required(*RELATORIOS)
 def movimentacoes_estoque(request):
     data_inicio, data_fim = _periodo_from_request(request)
+    selecionadas, escopo = _escopo_relatorio_contexto(request)
     tipo = request.GET.get("tipo") or ""
-    movimentacoes = _movimentacoes_periodo(data_inicio, data_fim, tipo)
+    movimentacoes = _movimentacoes_periodo(data_inicio, data_fim, selecionadas, tipo)
 
     context = {
+        **escopo,
         "data_inicio": data_inicio,
         "data_fim": data_fim,
         "tipo": tipo,
         "tipos": TipoMovimentacaoEstoque.choices,
-        "movimentacoes": movimentacoes[:200],
+        "movimentacoes": _paginar(request, movimentacoes),
         "total_movimentacoes": movimentacoes.count(),
         "quantidade_total": movimentacoes.aggregate(total=Sum("quantidade"))["total"] or 0,
     }
@@ -591,13 +765,15 @@ def movimentacoes_estoque(request):
 @role_required(*RELATORIOS)
 def movimentacoes_estoque_csv(request):
     data_inicio, data_fim = _periodo_from_request(request)
+    selecionadas, escopo = _escopo_relatorio_contexto(request)
     tipo = request.GET.get("tipo") or ""
     response = HttpResponse(content_type="text/csv; charset=utf-8")
     response["Content-Disposition"] = f'attachment; filename="movimentacoes_estoque_{data_inicio}_{data_fim}.csv"'
     response.write("\ufeff")
     writer = csv.writer(response, delimiter=";")
+    _csv_filtro_filial(writer, escopo)
     writer.writerow(["Data", "Produto", "Filial", "Tipo", "Quantidade", "Custo unitario", "Custo total", "Referencia", "Responsavel", "Motivo"])
-    for mov in _movimentacoes_periodo(data_inicio, data_fim, tipo).iterator():
+    for mov in _movimentacoes_periodo(data_inicio, data_fim, selecionadas, tipo).iterator():
         writer.writerow([
             timezone.localtime(mov.data).strftime("%d/%m/%Y %H:%M"), _csv_safe(mov.produto), _csv_safe(mov.filial),
             mov.get_tipo_display(), str(mov.quantidade).replace(".", ","),
@@ -612,12 +788,14 @@ def movimentacoes_estoque_csv(request):
 @role_required(*RELATORIOS)
 def movimentacoes_estoque_imprimir(request):
     data_inicio, data_fim = _periodo_from_request(request)
+    selecionadas, escopo = _escopo_relatorio_contexto(request)
     tipo = request.GET.get("tipo") or ""
-    movimentacoes = _movimentacoes_periodo(data_inicio, data_fim, tipo)
+    movimentacoes = _movimentacoes_periodo(data_inicio, data_fim, selecionadas, tipo)
     linhas = [[timezone.localtime(mov.data).strftime("%d/%m/%Y %H:%M"), mov.produto, mov.filial,
                mov.get_tipo_display(), mov.quantidade, mov.referencia or "-", mov.usuario or "-", mov.motivo or "-"]
               for mov in movimentacoes]
     return render(request, "relatorios/exportacao_imprimir.html", {
+        **escopo,
         "titulo": "Movimentacoes de estoque", "subtitulo": "Entradas, saidas, vendas, devolucoes, reservas e ajustes",
         "data_inicio": data_inicio, "data_fim": data_fim, "gerado_em": timezone.localtime(),
         "cabecalhos": ["Data", "Produto", "Filial", "Tipo", "Quantidade", "Referencia", "Responsavel", "Motivo"],
@@ -629,12 +807,14 @@ def movimentacoes_estoque_imprimir(request):
 @role_required(*RELATORIOS)
 def perdas(request):
     data_inicio, data_fim = _periodo_from_request(request)
-    perdas_qs = _perdas_periodo(data_inicio, data_fim)
+    selecionadas, escopo = _escopo_relatorio_contexto(request)
+    perdas_qs = _perdas_periodo(data_inicio, data_fim, selecionadas)
 
     context = {
+        **escopo,
         "data_inicio": data_inicio,
         "data_fim": data_fim,
-        "perdas": perdas_qs[:200],
+        "perdas": _paginar(request, perdas_qs),
         "total_perdas": perdas_qs.count(),
         "valor_custo_total": perdas_qs.aggregate(total=Sum("valor_custo_estimado"))["total"] or 0,
         "valor_venda_total": perdas_qs.aggregate(total=Sum("valor_venda_estimado"))["total"] or 0,
@@ -651,12 +831,14 @@ def perdas(request):
 @role_required(*RELATORIOS)
 def perdas_csv(request):
     data_inicio, data_fim = _periodo_from_request(request)
+    selecionadas, escopo = _escopo_relatorio_contexto(request)
     response = HttpResponse(content_type="text/csv; charset=utf-8")
     response["Content-Disposition"] = f'attachment; filename="perdas_{data_inicio}_{data_fim}.csv"'
     response.write("\ufeff")
     writer = csv.writer(response, delimiter=";")
+    _csv_filtro_filial(writer, escopo)
     writer.writerow(["Data", "Produto", "Filial", "Tipo", "Motivo", "Quantidade", "Responsavel", "Custo estimado", "Venda estimada"])
-    for perda in _perdas_periodo(data_inicio, data_fim).iterator():
+    for perda in _perdas_periodo(data_inicio, data_fim, selecionadas).iterator():
         writer.writerow([
             timezone.localtime(perda.data).strftime("%d/%m/%Y %H:%M"), _csv_safe(perda.produto), _csv_safe(perda.filial),
             perda.get_tipo_display(), _csv_safe(perda.motivo), str(perda.quantidade).replace(".", ","),
@@ -670,13 +852,15 @@ def perdas_csv(request):
 @role_required(*RELATORIOS)
 def perdas_imprimir(request):
     data_inicio, data_fim = _periodo_from_request(request)
-    perdas_qs = _perdas_periodo(data_inicio, data_fim)
+    selecionadas, escopo = _escopo_relatorio_contexto(request)
+    perdas_qs = _perdas_periodo(data_inicio, data_fim, selecionadas)
     linhas = [[
         timezone.localtime(perda.data).strftime("%d/%m/%Y %H:%M"), str(perda.produto), str(perda.filial),
         perda.get_tipo_display(), perda.motivo, perda.quantidade, perda.usuario,
         f"R$ {perda.valor_custo_estimado:.2f}", f"R$ {perda.valor_venda_estimado:.2f}",
     ] for perda in perdas_qs]
     return render(request, "relatorios/exportacao_imprimir.html", {
+        **escopo,
         "titulo": "Relatorio de perdas", "subtitulo": "Perdas registradas no estoque",
         "data_inicio": data_inicio, "data_fim": data_fim, "gerado_em": timezone.localtime(),
         "cabecalhos": ["Data", "Produto", "Filial", "Tipo", "Motivo", "Qtd", "Responsavel", "Custo", "Venda estimada"],
@@ -689,13 +873,15 @@ def perdas_imprimir(request):
 @role_required(*RELATORIOS)
 def devolucoes(request):
     data_inicio, data_fim = _periodo_from_request(request)
-    devolucoes_qs = _devolucoes_periodo(data_inicio, data_fim)
+    selecionadas, escopo = _escopo_relatorio_contexto(request)
+    devolucoes_qs = _devolucoes_periodo(data_inicio, data_fim, selecionadas)
     itens_qs = ItemDevolucaoVenda.objects.filter(devolucao__in=devolucoes_qs).select_related("produto")
 
     context = {
+        **escopo,
         "data_inicio": data_inicio,
         "data_fim": data_fim,
-        "devolucoes": devolucoes_qs[:200],
+        "devolucoes": _paginar(request, devolucoes_qs),
         "total_devolucoes": devolucoes_qs.count(),
         "valor_total": devolucoes_qs.aggregate(total=Sum("valor_total"))["total"] or 0,
         "quantidade_itens": itens_qs.aggregate(total=Sum("quantidade"))["total"] or 0,
@@ -707,8 +893,8 @@ def devolucoes(request):
     return render(request, "relatorios/devolucoes.html", context)
 
 
-def _linhas_devolucoes(data_inicio, data_fim):
-    for devolucao in _devolucoes_periodo(data_inicio, data_fim):
+def _linhas_devolucoes(data_inicio, data_fim, filiais):
+    for devolucao in _devolucoes_periodo(data_inicio, data_fim, filiais):
         cliente = str(devolucao.venda.cliente) if devolucao.venda.cliente else "Cliente avulso"
         for item in devolucao.itens.all():
             yield [
@@ -721,12 +907,14 @@ def _linhas_devolucoes(data_inicio, data_fim):
 @role_required(*RELATORIOS)
 def devolucoes_csv(request):
     data_inicio, data_fim = _periodo_from_request(request)
+    selecionadas, escopo = _escopo_relatorio_contexto(request)
     response = HttpResponse(content_type="text/csv; charset=utf-8")
     response["Content-Disposition"] = f'attachment; filename="devolucoes_{data_inicio}_{data_fim}.csv"'
     response.write("\ufeff")
     writer = csv.writer(response, delimiter=";")
+    _csv_filtro_filial(writer, escopo)
     writer.writerow(["Data", "Devolucao", "Venda", "Cliente", "Produto", "Quantidade", "Valor", "Motivo", "Responsavel"])
-    for linha in _linhas_devolucoes(data_inicio, data_fim):
+    for linha in _linhas_devolucoes(data_inicio, data_fim, selecionadas):
         linha[3] = _csv_safe(linha[3])
         linha[4] = _csv_safe(linha[4])
         linha[5] = str(linha[5]).replace(".", ",")
@@ -741,11 +929,13 @@ def devolucoes_csv(request):
 @role_required(*RELATORIOS)
 def devolucoes_imprimir(request):
     data_inicio, data_fim = _periodo_from_request(request)
-    devolucoes_qs = _devolucoes_periodo(data_inicio, data_fim)
-    linhas = list(_linhas_devolucoes(data_inicio, data_fim))
+    selecionadas, escopo = _escopo_relatorio_contexto(request)
+    devolucoes_qs = _devolucoes_periodo(data_inicio, data_fim, selecionadas)
+    linhas = list(_linhas_devolucoes(data_inicio, data_fim, selecionadas))
     for linha in linhas:
         linha[6] = f"R$ {linha[6]:.2f}"
     return render(request, "relatorios/exportacao_imprimir.html", {
+        **escopo,
         "titulo": "Relatorio de devolucoes", "subtitulo": "Itens devolvidos e impacto nas vendas",
         "data_inicio": data_inicio, "data_fim": data_fim, "gerado_em": timezone.localtime(),
         "cabecalhos": ["Data", "Devolucao", "Venda", "Cliente", "Produto", "Qtd", "Valor", "Motivo", "Responsavel"],
@@ -758,12 +948,14 @@ def devolucoes_imprimir(request):
 @role_required(*RELATORIOS)
 def compras(request):
     data_inicio, data_fim = _periodo_from_request(request)
-    entradas = _compras_periodo(data_inicio, data_fim)
+    selecionadas, escopo = _escopo_relatorio_contexto(request)
+    entradas = _compras_periodo(data_inicio, data_fim, selecionadas)
 
     context = {
+        **escopo,
         "data_inicio": data_inicio,
         "data_fim": data_fim,
-        "entradas": entradas[:100],
+        "entradas": _paginar(request, entradas),
         "total_entradas": entradas.count(),
         "total_compras": entradas.aggregate(total=Sum("total_produtos"))["total"] or 0,
         "compras_por_fornecedor": entradas.values("fornecedor__razao_social").annotate(
@@ -778,12 +970,14 @@ def compras(request):
 @role_required(*RELATORIOS)
 def compras_csv(request):
     data_inicio, data_fim = _periodo_from_request(request)
+    selecionadas, escopo = _escopo_relatorio_contexto(request)
     response = HttpResponse(content_type="text/csv; charset=utf-8")
     response["Content-Disposition"] = f'attachment; filename="compras_{data_inicio}_{data_fim}.csv"'
     response.write("\ufeff")
     writer = csv.writer(response, delimiter=";")
+    _csv_filtro_filial(writer, escopo)
     writer.writerow(["Entrada", "Documento", "Emissao", "Recebimento", "Fornecedor", "Filial", "Responsavel", "Total"])
-    for entrada in _compras_periodo(data_inicio, data_fim).iterator():
+    for entrada in _compras_periodo(data_inicio, data_fim, selecionadas).iterator():
         writer.writerow([
             entrada.id,
             _csv_safe(entrada.numero_documento),
@@ -801,8 +995,10 @@ def compras_csv(request):
 @role_required(*RELATORIOS)
 def compras_imprimir(request):
     data_inicio, data_fim = _periodo_from_request(request)
-    entradas = _compras_periodo(data_inicio, data_fim)
+    selecionadas, escopo = _escopo_relatorio_contexto(request)
+    entradas = _compras_periodo(data_inicio, data_fim, selecionadas)
     context = {
+        **escopo,
         "data_inicio": data_inicio,
         "data_fim": data_fim,
         "entradas": entradas,
@@ -816,19 +1012,30 @@ def compras_imprimir(request):
 @login_required
 @role_required(*RELATORIOS)
 def caixas(request):
-    data_inicio, data_fim, operador_id, caixas_qs = _caixas_filtrados(request)
+    data_inicio, data_fim, operador_id, filial_id, caixas_qs = _caixas_filtrados(request)
     query_params = request.GET.copy()
     query_params["data_inicio"] = data_inicio.isoformat()
     query_params["data_fim"] = data_fim.isoformat()
-    caixas_lista, diferenca_total = _preparar_caixas_conferencia(caixas_qs[:100])
+    pagina = _paginar(request, caixas_qs)
+    caixas_lista, _ = _preparar_caixas_conferencia(pagina.object_list)
+    totais_conferencia = caixas_qs.filter(valor_final__isnull=False, valor_conferido__isnull=False).aggregate(
+        declarado=Sum("valor_final"), conferido=Sum("valor_conferido"),
+    )
+    diferenca_total = (totais_conferencia["conferido"] or 0) - (totais_conferencia["declarado"] or 0)
+    entradas_por_forma = _entradas_caixa_por_forma(caixas_qs)
+    filiais, permite_consolidado = _escopo_filiais_caixa(request.user)
 
     context = {
         "data_inicio": data_inicio,
         "data_fim": data_fim,
         "operador_id": operador_id,
-        "operadores": _operadores_caixa(),
+        "filial_id": filial_id,
+        "filiais": filiais,
+        "permite_consolidado": permite_consolidado,
+        "operadores": _operadores_caixa(request.user, filial_id),
         "caixas_query": query_params.urlencode(),
         "caixas": caixas_lista,
+        "page_obj": pagina,
         "caixas_abertos": caixas_qs.filter(status=StatusCaixa.ABERTO).count(),
         "caixas_fechados": caixas_qs.filter(status=StatusCaixa.FECHADO).count(),
         "caixas_conferidos": caixas_qs.filter(status=StatusCaixa.CONFERIDO).count(),
@@ -839,10 +1046,10 @@ def caixas(request):
         "total_suprimentos": Suprimento.objects.filter(caixa__in=caixas_qs).aggregate(total=Sum("valor"))["total"] or 0,
         "diferenca_total": diferenca_total,
         "resumo_por_operador": _resumo_caixas_por_operador(caixas_qs),
-        "pagamentos_por_forma": PagamentoVenda.objects.filter(
-            venda__caixa__in=caixas_qs,
-            venda__status=StatusVenda.FINALIZADA,
-        ).values("forma_pagamento__nome").annotate(total=Sum("valor")).order_by("forma_pagamento__nome"),
+        "total_entradas_pagamentos": sum(
+            (item["total"] for item in entradas_por_forma), Decimal("0.00")
+        ),
+        "pagamentos_por_forma": entradas_por_forma,
     }
     return render(request, "relatorios/caixas.html", context)
 
@@ -850,11 +1057,14 @@ def caixas(request):
 @login_required
 @role_required(*RELATORIOS)
 def caixas_csv(request):
-    data_inicio, data_fim, operador_id, caixas_qs = _caixas_filtrados(request)
+    data_inicio, data_fim, operador_id, filial_id, caixas_qs = _caixas_filtrados(request)
     response = HttpResponse(content_type="text/csv; charset=utf-8")
     response["Content-Disposition"] = f'attachment; filename="caixas_{data_inicio}_{data_fim}.csv"'
     response.write("\ufeff")
     writer = csv.writer(response, delimiter=";")
+    if filial_id:
+        filial = _escopo_filiais_caixa(request.user)[0].filter(pk=filial_id).first()
+        writer.writerow(["Filtro filial", _csv_safe(filial or filial_id)])
     if operador_id:
         operador = _csv_safe(get_user_model().objects.filter(pk=operador_id).values_list("username", flat=True).first() or operador_id)
         writer.writerow(["Filtro operador", operador])
@@ -896,18 +1106,33 @@ def caixas_csv(request):
             _csv_money(item["valor_conferido"]),
             _csv_money(item["diferenca"]),
         ])
+    writer.writerow([])
+    writer.writerow(["Entradas liquidas por forma de pagamento"])
+    writer.writerow(["Forma", "Entradas", "Estornos parciais", "Liquido"])
+    for item in _entradas_caixa_por_forma(caixas_qs):
+        writer.writerow([
+            _csv_safe(item["forma_pagamento__nome"] or "Sem forma"),
+            _csv_money(item["total"] + item["estornos"]),
+            _csv_money(item["estornos"]),
+            _csv_money(item["total"]),
+        ])
     return response
 
 
 @login_required
 @role_required(*RELATORIOS)
 def caixas_imprimir(request):
-    data_inicio, data_fim, operador_id, caixas_qs = _caixas_filtrados(request)
+    data_inicio, data_fim, operador_id, filial_id, caixas_qs = _caixas_filtrados(request)
     caixas_lista, diferenca_total = _preparar_caixas_conferencia(caixas_qs)
+    entradas_por_forma = _entradas_caixa_por_forma(caixas_qs)
     context = {
         "data_inicio": data_inicio,
         "data_fim": data_fim,
         "operador_id": operador_id,
+        "filial_id": filial_id,
+        "filial_selecionada": _escopo_filiais_caixa(request.user)[0].filter(
+            pk=filial_id
+        ).first() if filial_id else None,
         "operador_selecionado": get_user_model().objects.filter(pk=operador_id).first() if operador_id.isdigit() else None,
         "caixas": caixas_lista,
         "total_caixas": caixas_qs.count(),
@@ -918,10 +1143,10 @@ def caixas_imprimir(request):
         "total_suprimentos": Suprimento.objects.filter(caixa__in=caixas_qs).aggregate(total=Sum("valor"))["total"] or 0,
         "diferenca_total": diferenca_total,
         "resumo_por_operador": _resumo_caixas_por_operador(caixas_qs),
-        "pagamentos_por_forma": PagamentoVenda.objects.filter(
-            venda__caixa__in=caixas_qs,
-            venda__status=StatusVenda.FINALIZADA,
-        ).values("forma_pagamento__nome").annotate(total=Sum("valor")).order_by("forma_pagamento__nome"),
+        "total_entradas_pagamentos": sum(
+            (item["total"] for item in entradas_por_forma), Decimal("0.00")
+        ),
+        "pagamentos_por_forma": entradas_por_forma,
         "gerado_em": timezone.localtime(),
     }
     return render(request, "relatorios/caixas_imprimir.html", context)

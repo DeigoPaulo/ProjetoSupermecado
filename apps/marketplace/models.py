@@ -43,8 +43,22 @@ class FormaPagamentoPedido(models.TextChoices):
     OUTRO = "OUTRO", "Outro"
 
 
+class ProvedorIntegracaoMarketplace(models.TextChoices):
+    PADRAO = "PADRAO", "Contrato padrao"
+    IFOOD = "IFOOD", "iFood"
+    RAPPI = "RAPPI", "Rappi"
+    MERCADO_LIVRE = "MERCADO_LIVRE", "Mercado Livre"
+    SITE_PROPRIO = "SITE_PROPRIO", "Site proprio"
+    OUTRO = "OUTRO", "Outro parceiro"
+
+
 class IntegracaoMarketplace(models.Model):
     nome = models.CharField(max_length=120)
+    provedor = models.CharField(
+        max_length=30,
+        choices=ProvedorIntegracaoMarketplace.choices,
+        default=ProvedorIntegracaoMarketplace.PADRAO,
+    )
     filial = models.ForeignKey("empresas.Filial", on_delete=models.PROTECT, related_name="integracoes_marketplace")
     token_prefixo = models.CharField(max_length=12, db_index=True)
     token_hash = models.CharField(max_length=255)
@@ -147,6 +161,10 @@ class PedidoOnline(models.Model):
         ]
 
     def clean(self):
+        if self.integracao_id and self.filial_id and self.integracao.filial_id != self.filial_id:
+            raise ValidationError({"integracao": "Integracao informada pertence a outra filial."})
+        if self.cliente_id and self.filial_id and self.cliente.empresa_id != self.filial.empresa_id:
+            raise ValidationError({"cliente": "Cliente informado pertence a outra empresa."})
         if self.tipo_entrega == TipoEntrega.ENTREGA and not self.endereco_entrega.strip():
             raise ValidationError({"endereco_entrega": "Informe o endereco para pedidos com entrega."})
         if self.desconto < 0 or self.taxa_entrega < 0:

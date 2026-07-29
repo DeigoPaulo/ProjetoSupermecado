@@ -1,0 +1,10 @@
+{% extends "base.html" %}
+{% block title %}Desafio de liberação offline{% endblock %}
+{% block content %}
+<header class="page-header"><div><h1>Desafio de liberação offline</h1><p>Envie este código à Deigo Tecnologia para receber uma autorização temporária.</p></div><div class="actions"><a class="secondary-button" href="{% url 'licenciamento:minha_licenca' %}"><i class="fa-solid fa-arrow-left"></i> Voltar</a></div></header>
+<section class="panel emergency-license-panel">
+  <div class="notice warning"><i class="fa-solid fa-clock"></i><div><strong>Válido por 30 minutos</strong><p>O desafio é de uso único e está vinculado à {{ empresa.nome_fantasia }} e a este servidor.</p></div></div>
+  <div class="license-code-result"><label for="codigo-desafio">Código de desafio</label><textarea id="codigo-desafio" rows="8" readonly>{{ codigo_desafio }}</textarea><button class="primary-button" type="button" data-copy-target="codigo-desafio"><i class="fa-solid fa-copy"></i> Copiar desafio</button></div>
+</section>
+<script>document.querySelectorAll('[data-copy-target]').forEach(function(button){button.addEventListener('click',function(){var field=document.getElementById(button.dataset.copyTarget);field.select();navigator.clipboard.writeText(field.value);button.textContent='Desafio copiado';});});</script>
+{% endblock %}

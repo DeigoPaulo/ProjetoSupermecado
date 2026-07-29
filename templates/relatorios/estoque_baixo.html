@@ -9,8 +9,8 @@
     <p>Produtos com saldo fisico igual ou abaixo do minimo configurado.</p>
   </div>
   <div class="actions">
-    <a class="secondary-button" href="{% url 'relatorios:estoque_baixo_csv' %}"><i class="fa-solid fa-file-csv"></i> Excel/CSV</a>
-    <a class="secondary-button" href="{% url 'relatorios:estoque_baixo_imprimir' %}" target="_blank"><i class="fa-solid fa-file-pdf"></i> PDF</a>
+    <a class="secondary-button" href="{% url 'relatorios:estoque_baixo_csv' %}{% if filial_id %}?filial={{ filial_id }}{% endif %}"><i class="fa-solid fa-file-csv"></i> Excel/CSV</a>
+    <a class="secondary-button" href="{% url 'relatorios:estoque_baixo_imprimir' %}{% if filial_id %}?filial={{ filial_id }}{% endif %}" target="_blank"><i class="fa-solid fa-file-pdf"></i> PDF</a>
     <a class="secondary-button" href="{% url 'relatorios:vendas' %}">Vendas</a>
     <a class="secondary-button" href="{% url 'relatorios:sugestao_reposicao' %}">Reposicao</a>
     <a class="secondary-button" href="{% url 'relatorios:movimentacoes_estoque' %}">Movimentações</a>
@@ -18,6 +18,19 @@
     <a class="primary-button" href="{% url 'compras:nova' %}">Nova entrada</a>
   </div>
 </header>
+
+<form method="get" class="toolbar report-filter">
+  <label>
+    <span>Filial</span>
+    <select name="filial">
+      {% if permite_consolidado %}<option value="">Todas as filiais</option>{% endif %}
+      {% for filial in filiais %}
+        <option value="{{ filial.pk }}" {% if filial_id == filial.pk|stringformat:"s" %}selected{% endif %}>{{ filial }}</option>
+      {% endfor %}
+    </select>
+  </label>
+  <button type="submit">Filtrar</button>
+</form>
 
 <div class="panel">
   <table>
@@ -39,4 +52,5 @@
     </tbody>
   </table>
 </div>
+{% include "includes/pagination.html" %}
 {% endblock %}

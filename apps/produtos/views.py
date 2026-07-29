@@ -2,6 +2,7 @@ from django.contrib import messages
 from django.contrib.auth.decorators import login_required
 from django.contrib.auth.mixins import LoginRequiredMixin
 from django.core.exceptions import ValidationError
+from django.core.paginator import Paginator
 from django.db import transaction
 from django.db.models import Q, Sum
 from django.http import JsonResponse
@@ -369,7 +370,8 @@ def kardex(request, pk):
         "produtos/kardex.html",
         {
             "produto": produto,
-            "movimentacoes": movimentacoes[:200],
+            "movimentacoes": pagina,
+            "page_obj": pagina,
             "estoques": estoques,
             "entradas": entradas,
             "saidas": saidas,

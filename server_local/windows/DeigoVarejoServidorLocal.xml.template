@@ -1,16 +1,20 @@
 <service>
-  <id>MercaFlowServidorLocal</id>
-  <name>MercaFlow Servidor Local</name>
-  <description>Servidor administrativo local do MercaFlow ERP.</description>
+  <id>DeigoVarejoServidorLocal</id>
+  <name>Deigo Varejo Servidor Local</name>
+  <description>Servidor administrativo local do Deigo Varejo.</description>
   <executable>__PYTHON__</executable>
   <arguments>-m waitress --listen=__BIND__:__PORT__ config.wsgi:application</arguments>
   <workingdirectory>__PROJECT_ROOT__</workingdirectory>
+  <env name="SQLITE_PATH" value="__SQLITE_PATH__" />
+  <env name="MEDIA_ROOT" value="__MEDIA_ROOT__" />
+  <env name="STATIC_ROOT" value="__STATIC_ROOT__" />
+  <env name="LOG_DIR" value="__DJANGO_LOG_DIR__" />
   <startmode>Automatic</startmode>
   <stoptimeout>30 sec</stoptimeout>
   <onfailure action="restart" delay="10 sec" />
   <resetfailure>1 hour</resetfailure>
   <hidewindow>true</hidewindow>
-  <logpath>__LOG_PATH__</logpath>
+  <logpath>__WRAPPER_LOG_PATH__</logpath>
   <log mode="roll-by-size">
     <sizeThreshold>10240</sizeThreshold>
     <keepFiles>14</keepFiles>

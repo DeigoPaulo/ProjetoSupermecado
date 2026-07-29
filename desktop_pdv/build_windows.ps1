@@ -8,7 +8,8 @@ $ErrorActionPreference = "Stop"
 $Root = Split-Path -Parent $MyInvocation.MyCommand.Path
 $Venv = Join-Path $Root ".venv-build"
 $Python = Join-Path $Venv "Scripts\python.exe"
-$Output = Join-Path $Root "dist\SupermercadoPDV.exe"
+$Output = Join-Path $Root "dist\DeigoPDV.exe"
+$Icon = Join-Path $Root "assets\deigo-pdv.ico"
 
 function Assert-LastExitCode {
     param([string]$Step)
@@ -42,7 +43,9 @@ Assert-LastExitCode "Instalacao das dependencias de build"
     --clean `
     --onefile `
     --windowed `
-    --name "SupermercadoPDV" `
+    --icon $Icon `
+    --add-data "$Icon;assets" `
+    --name "DeigoPDV" `
     --distpath (Join-Path $Root "dist") `
     --workpath (Join-Path $Root "build") `
     (Join-Path $Root "app.py")

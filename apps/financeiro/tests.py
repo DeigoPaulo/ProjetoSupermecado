@@ -2,17 +2,32 @@ from decimal import Decimal
 
 from django.contrib.auth import get_user_model
 from django.core.exceptions import ValidationError
-from django.test import Client, TestCase
+from django.test import Client, TestCase, override_settings
 from django.utils import timezone
 
+from apps.accounts.models import PerfilUsuario, TipoPerfil
 from apps.auditoria.models import LogAuditoria
 from apps.empresas.models import Empresa, Filial
+from apps.fiscal.models import AmbienteFiscal, DocumentoFiscal, StatusDocumentoFiscal, TipoDocumentoFiscal
 from apps.pdv.models import Caixa
 from apps.vendas.models import FormaPagamento, PagamentoVenda, StatusVenda, Venda
 
-from .models import CategoriaFinanceira, ConciliacaoLancamentoFinanceiro, ContaFinanceira, ContaMovimentoFinanceiro, LancamentoFinanceiro, StatusContaFinanceira, TipoContaFinanceira, TipoContaMovimento, TipoLancamentoFinanceiro, TransferenciaFinanceira
+from .models import CategoriaFinanceira, ConciliacaoLancamentoFinanceiro, ContaFinanceira, ContaMovimentoFinanceiro, ExportacaoContabil, LancamentoFinanceiro, StatusContaFinanceira, StatusExportacaoContabil, TipoContaFinanceira, TipoContaMovimento, TipoLancamentoFinanceiro, TransferenciaFinanceira
 from .services import baixar_conta, cancelar_conta, conciliar_lancamento, estornar_lancamento, realizar_transferencia
 
+
+
+class FakeContabilAdapter:
+    nome = "Contabilidade Teste"
+    chamadas = 0
+    ultimo_payload = None
+    ultima_chave = ""
+
+    def exportar(self, *, payload, chave_idempotencia):
+        type(self).chamadas += 1
+        type(self).ultimo_payload = payload
+        type(self).ultima_chave = chave_idempotencia
+        return {"status": "ENVIADO", "protocolo": "CONT-2026-0001", "mensagem": "Recebido"}
 
 class FinanceiroTests(TestCase):
     def setUp(self):
@@ -281,6 +296,249 @@ class FinanceiroTests(TestCase):
         self.assertIn("Matriz;Banco resultado;Conta bancaria;0,00;50,00;0,00;50,00", csv_texto)
         self.assertNotIn("TRANSFERENCIA", csv_texto)
 
+    def test_resultado_concilia_documento_fiscal_com_livro_da_venda(self):
+        caixa = Caixa.objects.create(filial=self.filial, usuario_abertura=self.user, valor_inicial=Decimal("100.00"))
+        conta_caixa = ContaMovimentoFinanceiro.objects.create(
+            filial=self.filial, nome="Caixa fiscal", tipo=TipoContaMovimento.CAIXA,
+        )
+        forma = FormaPagamento.objects.create(nome="Dinheiro fiscal", tipo="DINHEIRO", permite_troco=True)
+        venda = Venda.objects.create(
+            filial=self.filial, caixa=caixa, usuario=self.user,
+            total_bruto=Decimal("100.00"), total_liquido=Decimal("100.00"), status=StatusVenda.FINALIZADA,
+        )
+        pagamento = PagamentoVenda.objects.create(venda=venda, forma_pagamento=forma, valor=Decimal("100.00"))
+        LancamentoFinanceiro.objects.create(
+            conta=conta_caixa, tipo=TipoLancamentoFinanceiro.ENTRADA, origem="VENDA_PDV",
+            descricao=f"Venda #{venda.pk}", valor=Decimal("100.00"), data=timezone.localdate(),
+            pagamento_venda=pagamento, usuario=self.user,
+        )
+        DocumentoFiscal.objects.create(
+            filial=self.filial, venda=venda, tipo_documento=TipoDocumentoFiscal.NFCE,
+            ambiente=AmbienteFiscal.HOMOLOGACAO, serie=1, numero=1,
+            status=StatusDocumentoFiscal.EMITIDO, valor_total=Decimal("95.00"), usuario=self.user,
+        )
+
+        venda_sem_documento = Venda.objects.create(
+            filial=self.filial, caixa=caixa, usuario=self.user,
+            total_bruto=Decimal("30.00"), total_liquido=Decimal("30.00"), status=StatusVenda.FINALIZADA,
+        )
+        pagamento_sem_documento = PagamentoVenda.objects.create(
+            venda=venda_sem_documento, forma_pagamento=forma, valor=Decimal("30.00"),
+        )
+        LancamentoFinanceiro.objects.create(
+            conta=conta_caixa, tipo=TipoLancamentoFinanceiro.ENTRADA, origem="VENDA_PDV",
+            descricao=f"Venda #{venda_sem_documento.pk}", valor=Decimal("30.00"), data=timezone.localdate(),
+            pagamento_venda=pagamento_sem_documento, usuario=self.user,
+        )
+
+        tela = self.client.get("/financeiro/resultado/")
+        csv_response = self.client.get("/financeiro/resultado/exportar.csv")
+        pacote = self.client.get("/financeiro/resultado/pacote-contabil.json").json()
+
+        self.assertContains(tela, "Conferência fiscal x financeiro")
+        self.assertContains(tela, "Valores divergentes")
+        self.assertContains(tela, "Sem documento fiscal")
+        self.assertIn("Conferencia fiscal x financeiro", csv_response.content.decode("utf-8-sig"))
+        self.assertEqual(pacote["integracao_fiscal"]["contrato"], "financial_fiscal_reconciliation_v1")
+        self.assertEqual(pacote["integracao_fiscal"]["total_divergencias"], 2)
+        self.assertEqual(pacote["integracao_fiscal"]["vendas_sem_documento"], 1)
+        por_situacao = {item["situacao"]: item for item in pacote["integracao_fiscal"]["divergencias"]}
+        self.assertEqual(por_situacao["Valores divergentes"]["diferenca"], "5.00")
+        self.assertEqual(por_situacao["Sem documento fiscal"]["valor_financeiro"], "30.00")
+
+    def test_administrador_da_empresa_consolida_e_filtra_somente_suas_filiais(self):
+        filial_loja = Filial.objects.create(
+            empresa=self.empresa,
+            nome="Loja bairro",
+            cnpj="33.333.333/0002-14",
+        )
+        empresa_externa = Empresa.objects.create(
+            razao_social="Concorrente Teste Ltda",
+            nome_fantasia="Concorrente",
+            cnpj="55.555.555/0001-55",
+        )
+        filial_externa = Filial.objects.create(
+            empresa=empresa_externa,
+            nome="Matriz externa",
+            cnpj=empresa_externa.cnpj,
+        )
+        conta_matriz = ContaMovimentoFinanceiro.objects.create(
+            filial=self.filial, nome="Caixa matriz empresa", tipo=TipoContaMovimento.CAIXA,
+        )
+        conta_loja = ContaMovimentoFinanceiro.objects.create(
+            filial=filial_loja, nome="Caixa filial empresa", tipo=TipoContaMovimento.CAIXA,
+        )
+        conta_externa = ContaMovimentoFinanceiro.objects.create(
+            filial=filial_externa, nome="Caixa outra empresa", tipo=TipoContaMovimento.CAIXA,
+        )
+        for conta, valor in (
+            (conta_matriz, Decimal("100.00")),
+            (conta_loja, Decimal("200.00")),
+            (conta_externa, Decimal("900.00")),
+        ):
+            LancamentoFinanceiro.objects.create(
+                conta=conta,
+                tipo=TipoLancamentoFinanceiro.ENTRADA,
+                origem="AJUSTE",
+                descricao=f"Receita {conta.nome}",
+                valor=valor,
+                data=timezone.localdate(),
+                usuario=self.user,
+            )
+        ContaFinanceira.objects.create(
+            tipo=TipoContaFinanceira.PAGAR,
+            descricao="Despesa da filial da empresa",
+            filial=filial_loja,
+            valor=Decimal("40.00"),
+            vencimento=timezone.localdate(),
+            usuario=self.user,
+        )
+        ContaFinanceira.objects.create(
+            tipo=TipoContaFinanceira.PAGAR,
+            descricao="Despesa sigilosa externa",
+            filial=filial_externa,
+            valor=Decimal("900.00"),
+            vencimento=timezone.localdate(),
+            usuario=self.user,
+        )
+
+        administrador = get_user_model().objects.create_user(
+            "administrador_empresa", "admin.empresa@example.com", "123"
+        )
+        PerfilUsuario.objects.create(
+            usuario=administrador,
+            filial=self.filial,
+            tipo=TipoPerfil.ADMINISTRADOR,
+        )
+        self.client.force_login(administrador)
+
+        consolidado = self.client.get("/financeiro/resultado/")
+        pacote_consolidado = self.client.get(
+            "/financeiro/resultado/pacote-contabil.json"
+        ).json()
+        pacote_filial = self.client.get(
+            "/financeiro/resultado/pacote-contabil.json", {"filial": filial_loja.pk}
+        ).json()
+        filial_externa_negada = self.client.get(
+            "/financeiro/resultado/", {"filial": filial_externa.pk}
+        )
+        livro = self.client.get("/financeiro/livro/")
+        livro_csv = self.client.get("/financeiro/livro/exportar.csv")
+        conciliacao = self.client.get("/financeiro/conciliacao-bancaria/")
+        livro_externo_negado = self.client.get(
+            "/financeiro/livro/", {"filial": filial_externa.pk}
+        )
+        conciliacao_externa_negada = self.client.get(
+            "/financeiro/conciliacao-bancaria/", {"filial": filial_externa.pk}
+        )
+        contas = self.client.get("/financeiro/")
+        fluxo = self.client.get("/financeiro/fluxo-caixa/")
+        fluxo_filial = self.client.get("/financeiro/fluxo-caixa/", {"filial": filial_loja.pk})
+        contas_externas_negadas = self.client.get("/financeiro/", {"filial": filial_externa.pk})
+        fluxo_externo_negado = self.client.get(
+            "/financeiro/fluxo-caixa/", {"filial": filial_externa.pk}
+        )
+        conciliacao_diaria_externa_negada = self.client.get(
+            "/financeiro/conciliacao/", {"filial": filial_externa.pk}
+        )
+
+        self.assertEqual(consolidado.status_code, 200)
+        self.assertContains(consolidado, "Todas as filiais da empresa")
+        self.assertContains(consolidado, "Caixa matriz empresa")
+        self.assertContains(consolidado, "Caixa filial empresa")
+        self.assertNotContains(consolidado, "Caixa outra empresa")
+        self.assertIsNone(pacote_consolidado["filial"])
+        self.assertEqual(pacote_consolidado["resumo"]["receitas"], "300.00")
+        self.assertEqual(pacote_filial["filial"]["id"], filial_loja.pk)
+        self.assertEqual(pacote_filial["resumo"]["receitas"], "200.00")
+        self.assertContains(livro, "Caixa matriz empresa")
+        self.assertContains(livro, "Caixa filial empresa")
+        self.assertNotContains(livro, "Caixa outra empresa")
+        self.assertContains(conciliacao, "Caixa matriz empresa")
+        self.assertContains(conciliacao, "Caixa filial empresa")
+        self.assertNotContains(conciliacao, "Caixa outra empresa")
+        livro_csv_texto = livro_csv.content.decode("utf-8-sig")
+        self.assertIn("Caixa matriz empresa", livro_csv_texto)
+        self.assertIn("Caixa filial empresa", livro_csv_texto)
+        self.assertNotIn("Caixa outra empresa", livro_csv_texto)
+        self.assertEqual(filial_externa_negada.status_code, 403)
+        self.assertEqual(livro_externo_negado.status_code, 403)
+        self.assertEqual(conciliacao_externa_negada.status_code, 403)
+        self.assertContains(contas, "Compra de mercadorias")
+        self.assertContains(contas, "Despesa da filial da empresa")
+        self.assertNotContains(contas, "Despesa sigilosa externa")
+        self.assertEqual(fluxo.context["total_previsto_pagar"], Decimal("190.00"))
+        self.assertEqual(fluxo_filial.context["total_previsto_pagar"], Decimal("40.00"))
+        self.assertEqual(contas_externas_negadas.status_code, 403)
+        self.assertEqual(fluxo_externo_negado.status_code, 403)
+        self.assertEqual(conciliacao_diaria_externa_negada.status_code, 403)
+    def test_resultado_financeiro_isola_filial_e_bloqueia_acesso_fora_do_perfil(self):
+        outra_empresa = Empresa.objects.create(
+            razao_social="Mercado Outra Empresa",
+            nome_fantasia="Mercado Outra",
+            cnpj="44.444.444/0001-44",
+        )
+        outra_filial = Filial.objects.create(
+            empresa=outra_empresa,
+            nome="Filial externa",
+            cnpj=outra_empresa.cnpj,
+        )
+        conta_matriz = ContaMovimentoFinanceiro.objects.create(
+            filial=self.filial, nome="Caixa matriz isolado", tipo=TipoContaMovimento.CAIXA,
+        )
+        conta_externa = ContaMovimentoFinanceiro.objects.create(
+            filial=outra_filial, nome="Caixa externo sigiloso", tipo=TipoContaMovimento.CAIXA,
+        )
+        LancamentoFinanceiro.objects.create(
+            conta=conta_matriz, tipo=TipoLancamentoFinanceiro.ENTRADA,
+            origem="AJUSTE", descricao="Receita matriz", valor=Decimal("100.00"),
+            data=timezone.localdate(), usuario=self.user,
+        )
+        LancamentoFinanceiro.objects.create(
+            conta=conta_externa, tipo=TipoLancamentoFinanceiro.ENTRADA,
+            origem="AJUSTE", descricao="Receita externa", valor=Decimal("900.00"),
+            data=timezone.localdate(), usuario=self.user,
+        )
+
+        tela = self.client.get("/financeiro/resultado/", {"filial": self.filial.pk})
+        csv_response = self.client.get("/financeiro/resultado/exportar.csv", {"filial": self.filial.pk})
+        pacote = self.client.get(
+            "/financeiro/resultado/pacote-contabil.json", {"filial": self.filial.pk}
+        ).json()
+
+        self.assertEqual(tela.status_code, 200)
+        self.assertContains(tela, "Caixa matriz isolado")
+        self.assertNotContains(tela, "Caixa externo sigiloso")
+        csv_texto = csv_response.content.decode("utf-8-sig")
+        self.assertIn("Caixa matriz isolado", csv_texto)
+        self.assertNotIn("Caixa externo sigiloso", csv_texto)
+        self.assertEqual(pacote["filial"]["id"], self.filial.pk)
+        self.assertEqual(pacote["resumo"]["receitas"], "100.00")
+
+        usuario_financeiro = get_user_model().objects.create_user(
+            "financeiro", "financeiro@example.com", "123"
+        )
+        PerfilUsuario.objects.create(
+            usuario=usuario_financeiro,
+            filial=self.filial,
+            tipo=TipoPerfil.FINANCEIRO,
+        )
+        self.client.force_login(usuario_financeiro)
+        permitido = self.client.get("/financeiro/resultado/")
+        negado = self.client.get("/financeiro/resultado/", {"filial": outra_filial.pk})
+        csv_negado = self.client.get(
+            "/financeiro/resultado/exportar.csv", {"filial": outra_filial.pk}
+        )
+        json_negado = self.client.get(
+            "/financeiro/resultado/pacote-contabil.json", {"filial": outra_filial.pk}
+        )
+
+        self.assertEqual(permitido.status_code, 200)
+        self.assertContains(permitido, "Caixa matriz isolado")
+        self.assertNotContains(permitido, "Caixa externo sigiloso")
+        self.assertEqual(negado.status_code, 403)
+        self.assertEqual(csv_negado.status_code, 403)
+        self.assertEqual(json_negado.status_code, 403)
     def test_baixa_em_conta_movimento_registra_livro_imutavel(self):
         conta_pix = ContaMovimentoFinanceiro.objects.create(
             filial=self.filial,
@@ -553,3 +811,58 @@ class FinanceiroTests(TestCase):
             conciliacao.save()
         lancamento.refresh_from_db()
         self.assertEqual(lancamento.valor, Decimal("210.00"))
+    def test_diagnostico_contabil_informa_quando_adaptador_nao_esta_configurado(self):
+        response = self.client.get("/financeiro/resultado/integracao-contabil.json")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()["contrato"], "financial_accounting_adapter_readiness_v1")
+        self.assertFalse(response.json()["configurado"])
+        self.assertTrue(response.json()["envio_permitido"])
+        tela = self.client.get("/financeiro/resultado/")
+        self.assertContains(tela, "Integração ainda não configurada")
+        self.assertContains(tela, "Histórico de integração contábil")
+
+    @override_settings(FINANCEIRO_CONTABIL_ADAPTER="apps.financeiro.tests.FakeContabilAdapter")
+    def test_envio_contabil_e_idempotente_e_auditado(self):
+        FakeContabilAdapter.chamadas = 0
+        data = timezone.localdate()
+        url = (
+            f"/financeiro/resultado/enviar-contabilidade/?data_inicio={data.isoformat()}"
+            f"&data_fim={data.isoformat()}&filial={self.filial.pk}"
+        )
+
+        primeira = self.client.post(url, REMOTE_ADDR="127.0.0.31", follow=True)
+        segunda = self.client.post(url, REMOTE_ADDR="127.0.0.31", follow=True)
+
+        self.assertContains(primeira, "Pacote contábil enviado")
+        self.assertContains(segunda, "já foi enviado")
+        self.assertEqual(FakeContabilAdapter.chamadas, 1)
+        exportacao = ExportacaoContabil.objects.get()
+        self.assertEqual(exportacao.empresa, self.empresa)
+        self.assertEqual(exportacao.filial, self.filial)
+        self.assertEqual(exportacao.status, StatusExportacaoContabil.ENVIADO)
+        self.assertEqual(exportacao.protocolo, "CONT-2026-0001")
+        self.assertEqual(len(exportacao.chave_idempotencia), 64)
+        self.assertEqual(FakeContabilAdapter.ultimo_payload["empresa"]["id"], self.empresa.pk)
+        self.assertEqual(FakeContabilAdapter.ultimo_payload["filial"]["id"], self.filial.pk)
+        self.assertEqual(FakeContabilAdapter.ultima_chave, exportacao.chave_idempotencia)
+        log = LogAuditoria.objects.get(acao="EXPORTACAO_CONTABIL", objeto_id=str(exportacao.pk))
+        self.assertEqual(log.usuario, self.user)
+        self.assertEqual(log.ip, "127.0.0.31")
+
+    @override_settings(FINANCEIRO_CONTABIL_ADAPTER="apps.financeiro.tests.FakeContabilAdapter")
+    def test_usuario_financeiro_consulta_mas_nao_envia_pacote_contabil(self):
+        usuario = get_user_model().objects.create_user("financeiro", password="123")
+        PerfilUsuario.objects.create(usuario=usuario, filial=self.filial, tipo=TipoPerfil.FINANCEIRO)
+        self.client.force_login(usuario)
+        data = timezone.localdate().isoformat()
+
+        diagnostico = self.client.get("/financeiro/resultado/integracao-contabil.json")
+        envio = self.client.post(
+            f"/financeiro/resultado/enviar-contabilidade/?data_inicio={data}&data_fim={data}&filial={self.filial.pk}"
+        )
+
+        self.assertEqual(diagnostico.status_code, 200)
+        self.assertFalse(diagnostico.json()["envio_permitido"])
+        self.assertEqual(envio.status_code, 403)
+        self.assertFalse(ExportacaoContabil.objects.exists())

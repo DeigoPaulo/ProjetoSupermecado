@@ -4,7 +4,7 @@ from django.db import transaction
 from django.utils.dateparse import parse_datetime
 from django.utils import timezone
 
-from .models import EventoEntradaSincronizacao, PoliticaConflitoSincronizacao, StatusEventoEntrada
+from .models import EventoEntradaSincronizacao, ModoImplantacao, PoliticaConflitoSincronizacao, StatusEventoEntrada
 
 
 class ManipuladorEventoNaoEncontrado(Exception):
@@ -317,9 +317,31 @@ def _resolver_conflito_com_remoto(evento):
     evento.resolvido_em = timezone.now()
 
 
+def _pode_resolver_conflito_com_local(evento, erro):
+    if evento.empresa.politica_conflito_sincronizacao != PoliticaConflitoSincronizacao.LOCAL_PRODUTOS_ESTOQUE:
+        return False
+    if evento.tipo not in {"produto.criado", "produto.atualizado", "estoque.saldo_atualizado"}:
+        return False
+    return "foi alterado depois do evento remoto" in str(erro)
+
+
+def _resolver_conflito_com_local(evento):
+    evento.resolucao_conflito = (
+        "Resolvido automaticamente pela politica da empresa: loja prevalece para produtos e estoque; "
+        "evento remoto descartado sem alterar o dado local."
+    )
+    evento.resolvido_em = timezone.now()
+
+
 def processar_entrada_sincronizacao(*, limite=50):
     candidatos = list(
-        EventoEntradaSincronizacao.objects.filter(status=StatusEventoEntrada.RECEBIDO)
+        EventoEntradaSincronizacao.objects.filter(
+            status=StatusEventoEntrada.RECEBIDO,
+            empresa__is_active=True,
+            empresa__sincronizacao_automatica=True,
+        )
+        .exclude(empresa__modo_implantacao=ModoImplantacao.LOCAL)
+        .exclude(empresa__url_sincronizacao="")
         .order_by("recebido_em")
         .values_list("pk", flat=True)[:limite]
     )
@@ -328,6 +350,11 @@ def processar_entrada_sincronizacao(*, limite=50):
         with transaction.atomic():
             evento = EventoEntradaSincronizacao.objects.select_for_update().get(pk=pk)
             if evento.status != StatusEventoEntrada.RECEBIDO:
+                continue
+            if not evento.empresa.sincronizacao_operacional_habilitada:
+                evento.status = StatusEventoEntrada.PAUSADO
+                evento.ultimo_erro = "Pausado pela política de implantação."
+                evento.save(update_fields=["status", "ultimo_erro", "atualizado_em"])
                 continue
             try:
                 processar_evento_entrada(evento)
@@ -346,6 +373,22 @@ def processar_entrada_sincronizacao(*, limite=50):
                         evento.processado_em = timezone.now()
                         evento.save(update_fields=["payload", "status", "ultimo_erro", "resolucao_conflito", "resolvido_em", "processado_em", "atualizado_em"])
                         resultado["processados"] += 1
+                elif _pode_resolver_conflito_com_local(evento, exc):
+                    _resolver_conflito_com_local(evento)
+                    evento.status = StatusEventoEntrada.PROCESSADO
+                    evento.ultimo_erro = ""
+                    evento.processado_em = timezone.now()
+                    evento.save(
+                        update_fields=[
+                            "status",
+                            "ultimo_erro",
+                            "resolucao_conflito",
+                            "resolvido_em",
+                            "processado_em",
+                            "atualizado_em",
+                        ]
+                    )
+                    resultado["processados"] += 1
                 else:
                     evento.status = StatusEventoEntrada.CONFLITO
                     evento.ultimo_erro = str(exc)[:2000]

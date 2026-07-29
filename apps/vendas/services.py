@@ -9,7 +9,7 @@ from apps.auditoria.models import LogAuditoria
 from apps.estoque.models import TipoMovimentacaoEstoque, movimentar_estoque
 from apps.promocoes.services import preco_atual_produto
 
-from .models import DevolucaoVenda, EstornoParcialPagamento, ItemDevolucaoVenda, ItemPreVenda, ItemVenda, PagamentoVenda, PreVenda, StatusEstornoParcial, StatusPagamento, StatusPreVenda, StatusVenda, TipoDocumentoConsumidor, Venda
+from .models import DevolucaoVenda, EstornoParcialPagamento, FormaPagamento, FormaPagamentoFilial, ItemDevolucaoVenda, ItemPreVenda, ItemVenda, PagamentoVenda, PreVenda, StatusEstornoParcial, StatusPagamento, StatusPreVenda, StatusVenda, TipoDocumentoConsumidor, Venda
 
 
 def calcular_item(produto, quantidade):
@@ -28,16 +28,63 @@ TIPO_CONTA_POR_FORMA = {
     "CARTAO": "BANCO",
     "DEBITO": "BANCO",
     "CREDITO": "BANCO",
+    "VALE_ALIMENTACAO": "OUTRA",
+    "VALE_REFEICAO": "OUTRA",
     "VALE": "OUTRA",
     "CONVENIO": "OUTRA",
     "OUTRO": "OUTRA",
 }
-FORMAS_ELETRONICAS = {"PIX", "CARTAO", "DEBITO", "CREDITO"}
+FORMAS_ELETRONICAS = {
+    "PIX",
+    "CARTAO",
+    "DEBITO",
+    "CREDITO",
+    "VALE_ALIMENTACAO",
+    "VALE_REFEICAO",
+}
 
+
+def inicializar_formas_pagamento_filial(filial):
+    formas_ids = FormaPagamento.objects.values_list("id", flat=True)
+    existentes = set(
+        FormaPagamentoFilial.objects.filter(filial=filial).values_list("forma_pagamento_id", flat=True)
+    )
+    FormaPagamentoFilial.objects.bulk_create(
+        [
+            FormaPagamentoFilial(filial=filial, forma_pagamento_id=forma_id, ativo=True)
+            for forma_id in formas_ids
+            if forma_id not in existentes
+        ],
+        ignore_conflicts=True,
+    )
+
+
+def formas_pagamento_disponiveis(filial):
+    if not filial:
+        return FormaPagamento.objects.none()
+    inicializar_formas_pagamento_filial(filial)
+    return FormaPagamento.objects.filter(
+        ativo=True,
+        configuracoes_filial__filial=filial,
+        configuracoes_filial__ativo=True,
+    ).distinct()
+
+def forma_pagamento_disponivel(filial, forma_pagamento_id):
+    return formas_pagamento_disponiveis(filial).filter(pk=forma_pagamento_id).first()
 
 def finalizar_venda(*, caixa, usuario, itens, forma_pagamento=None, desconto=Decimal("0.00"), cliente=None, pagamentos=None, vencimento_financeiro=None, preparar_fiscal=True, documento_consumidor_tipo=TipoDocumentoConsumidor.NAO_IDENTIFICADO, documento_consumidor=""):
     if not itens:
         raise ValidationError("Inclua ao menos um item na venda.")
+    if cliente and cliente.empresa_id != caixa.filial.empresa_id:
+        raise ValidationError("Cliente informado pertence a outra empresa.")
+    formas_informadas = [
+        item.get("forma_pagamento") for item in (pagamentos or []) if item.get("forma_pagamento")
+    ]
+    if forma_pagamento:
+        formas_informadas.append(forma_pagamento)
+    formas_permitidas = set(formas_pagamento_disponiveis(caixa.filial).values_list("id", flat=True))
+    if any(forma.id not in formas_permitidas for forma in formas_informadas):
+        raise ValidationError("Forma de pagamento nao habilitada para esta filial.")
     documento_consumidor_tipo, documento_consumidor, observacao_fiscal_consumidor = _normalizar_documento_consumidor(
         documento_consumidor_tipo,
         documento_consumidor,
@@ -186,6 +233,13 @@ def _normalizar_documento_consumidor(tipo, documento, *, preparar_fiscal):
 def _conta_movimento_para_pagamento(filial, forma_pagamento):
     from apps.financeiro.models import ContaMovimentoFinanceiro, TipoContaMovimento
 
+    configuracao = (
+        FormaPagamentoFilial.objects.select_related("conta_movimento_padrao")
+        .filter(filial=filial, forma_pagamento=forma_pagamento, ativo=True)
+        .first()
+    )
+    if configuracao and configuracao.conta_movimento_padrao_id:
+        return configuracao.conta_movimento_padrao
     if forma_pagamento.conta_movimento_padrao_id and forma_pagamento.conta_movimento_padrao.filial_id == filial.id:
         return forma_pagamento.conta_movimento_padrao
 
@@ -276,6 +330,8 @@ def _criar_conta_receber_venda(venda, valor, vencimento_financeiro=None):
 def criar_pre_venda(*, filial, usuario, itens, desconto=Decimal("0.00"), cliente=None, observacao="", validade=None):
     if not itens:
         raise ValidationError("Inclua ao menos um item na pre-venda.")
+    if cliente and cliente.empresa_id != filial.empresa_id:
+        raise ValidationError("Cliente informado pertence a outra empresa.")
 
     with transaction.atomic():
         pre_venda = PreVenda.objects.create(

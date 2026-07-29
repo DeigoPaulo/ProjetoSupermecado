@@ -9,8 +9,9 @@
     <p>Receitas, despesas e resultado realizados pelo livro financeiro.</p>
   </div>
   <div class="actions">
-    <a class="secondary-button" href="{% url 'financeiro:resultado_csv' %}?data_inicio={{ data_inicio|date:'Y-m-d' }}&amp;data_fim={{ data_fim|date:'Y-m-d' }}"><i class="fa-solid fa-file-csv"></i> Excel/CSV</a>
-    <a class="secondary-button" href="{% url 'financeiro:resultado_pacote_contabil_json' %}?data_inicio={{ data_inicio|date:'Y-m-d' }}&amp;data_fim={{ data_fim|date:'Y-m-d' }}"><i class="fa-solid fa-code"></i> Pacote contábil JSON</a>
+    <a class="secondary-button" href="{% url 'financeiro:resultado_csv' %}?data_inicio={{ data_inicio|date:'Y-m-d' }}&amp;data_fim={{ data_fim|date:'Y-m-d' }}{% if filial_id %}&amp;filial={{ filial_id }}{% endif %}"><i class="fa-solid fa-file-csv"></i> Excel/CSV</a>
+    <a class="secondary-button" href="{% url 'financeiro:resultado_pacote_contabil_json' %}?data_inicio={{ data_inicio|date:'Y-m-d' }}&amp;data_fim={{ data_fim|date:'Y-m-d' }}{% if filial_id %}&amp;filial={{ filial_id }}{% endif %}"><i class="fa-solid fa-code"></i> Pacote contábil JSON</a>
+    <a class="secondary-button" href="{% url 'financeiro:diagnostico_contabil_json' %}"><i class="fa-solid fa-stethoscope"></i> Diagnóstico contábil</a>
     <a class="secondary-button" href="{% url 'financeiro:livro' %}">Livro</a>
     <a class="secondary-button" href="{% url 'financeiro:contas' %}">Contas</a>
   </div>
@@ -19,6 +20,15 @@
 <form method="get" class="toolbar report-filter">
   <label><span>Inicio</span><input type="date" name="data_inicio" value="{{ data_inicio|date:'Y-m-d' }}"></label>
   <label><span>Fim</span><input type="date" name="data_fim" value="{{ data_fim|date:'Y-m-d' }}"></label>
+  <label>
+    <span>Filial</span>
+    <select name="filial" class="select2-field">
+      {% if permite_consolidado %}<option value="">Todas as filiais da empresa</option>{% endif %}
+      {% for filial in filiais %}
+        <option value="{{ filial.pk }}"{% if filial.pk == filial_id %} selected{% endif %}>{{ filial.empresa.nome_fantasia }} - {{ filial.nome }}</option>
+      {% endfor %}
+    </select>
+  </label>
   <button type="submit">Filtrar</button>
 </form>
 
@@ -163,6 +173,41 @@
 
 
 <section class="panel table-panel">
+  <div class="panel-title">Integração com a contabilidade</div>
+  {% if adaptador_contabil.carregavel %}
+    <div class="notice notice-success"><strong>{{ adaptador_contabil.provedor }}</strong><span>Adaptador carregado e pronto para homologação com o provedor.</span></div>
+  {% elif adaptador_contabil.configurado %}
+    <div class="notice notice-warning"><strong>Adaptador indisponível</strong><span>{{ adaptador_contabil.erro }}</span></div>
+  {% else %}
+    <div class="notice notice-info"><strong>Integração ainda não configurada</strong><span>Defina FINANCEIRO_CONTABIL_ADAPTER no servidor após escolher e homologar o provedor contábil.</span></div>
+  {% endif %}
+  {% if pode_enviar_contabil %}
+    <form method="post" action="{% url 'financeiro:enviar_pacote_contabil' %}?data_inicio={{ data_inicio|date:'Y-m-d' }}&amp;data_fim={{ data_fim|date:'Y-m-d' }}{% if filial_id %}&amp;filial={{ filial_id }}{% endif %}" class="toolbar">
+      {% csrf_token %}
+      <button type="submit"{% if not adaptador_contabil.carregavel %} disabled{% endif %}><i class="fa-solid fa-paper-plane"></i> Enviar fechamento ao contador</button>
+      <span class="muted">O mesmo conteúdo não é reenviado quando já existe protocolo confirmado.</span>
+    </form>
+  {% endif %}
+  <div class="panel-title mt-2">Histórico de integração contábil</div>
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>Período</th><th>Escopo</th><th>Provedor</th><th>Status</th><th>Protocolo</th><th>Responsável</th></tr></thead>
+      <tbody>
+        {% for exportacao in exportacoes_contabeis %}
+          <tr>
+            <td>{{ exportacao.data_inicio|date:"d/m/Y" }} a {{ exportacao.data_fim|date:"d/m/Y" }}</td>
+            <td>{% if exportacao.filial %}{{ exportacao.filial.nome }}{% else %}Empresa consolidada{% endif %}</td>
+            <td>{{ exportacao.provedor }}</td>
+            <td><strong>{{ exportacao.get_status_display }}</strong>{% if exportacao.mensagem %}<br><small>{{ exportacao.mensagem }}</small>{% endif %}</td>
+            <td>{{ exportacao.protocolo|default:"-" }}</td>
+            <td>{{ exportacao.usuario.username }}</td>
+          </tr>
+        {% empty %}<tr><td colspan="6" class="empty">Nenhum fechamento enviado neste escopo.</td></tr>{% endfor %}
+      </tbody>
+    </table>
+  </div>
+</section>
+<section class="panel table-panel">
   <div class="panel-title">Pacote contábil gerencial</div>
   <p class="muted">Resumo de conferência para fechamento interno e envio preliminar ao contador. Não substitui SPED, ECD, ECF ou obrigações oficiais.</p>
   <div class="metrics-grid">
@@ -202,6 +247,32 @@
   </div>
 </section>
 
+<section class="panel table-panel">
+  <div class="panel-title">Conferência fiscal x financeiro</div>
+  <p class="muted">Compara documentos fiscais não cancelados com as entradas do livro vinculadas aos pagamentos das mesmas vendas.</p>
+  <div class="metrics-grid">
+    <article class="metric"><span>Documentos fiscais</span><strong>{{ integracao_fiscal.documentos }}</strong><small>R$ {{ integracao_fiscal.valor_fiscal|floatformat:2 }}</small></article>
+    <article class="metric"><span>Vendas conciliadas</span><strong>{{ integracao_fiscal.vendas_conciliadas }}</strong></article>
+    <article class="metric"><span>Sem documento fiscal</span><strong>{{ integracao_fiscal.vendas_sem_documento }}</strong></article>
+    <article class="metric"><span>Divergências</span><strong>{{ integracao_fiscal.total_divergencias }}</strong></article>
+  </div>
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>Venda</th><th>Filial</th><th>Fiscal</th><th>Financeiro</th><th>Diferença</th><th>Situação</th></tr></thead>
+      <tbody>
+        {% for linha in integracao_fiscal.divergencias %}
+          <tr>
+            <td>#{{ linha.venda_id }}</td><td>{{ linha.filial }}</td>
+            <td>R$ {{ linha.valor_fiscal|floatformat:2 }}</td><td>R$ {{ linha.valor_financeiro|floatformat:2 }}</td>
+            <td><strong>R$ {{ linha.diferenca|floatformat:2 }}</strong></td><td>{{ linha.situacao }}</td>
+          </tr>
+        {% empty %}
+          <tr><td colspan="6" class="empty">Nenhuma divergência fiscal-financeira no período.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</section>
 <section class="panel table-panel">
   <div class="panel-title">Balancete gerencial</div>
   <p class="muted">Conferencia do saldo anterior, entradas, saidas e saldo final de cada conta no periodo. Transferencias internas entram aqui porque alteram o saldo real de caixa, banco ou PIX.</p>

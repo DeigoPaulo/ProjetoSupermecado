@@ -8,6 +8,7 @@ from django.views.generic import CreateView, ListView, UpdateView
 
 from apps.accounts.permissions import CLIENTES, RoleRequiredMixin, role_required
 
+from .escopo import clientes_para_usuario, empresa_id_do_usuario
 from .forms import ClienteForm
 from .models import Cliente
 
@@ -20,14 +21,27 @@ class ClienteListView(LoginRequiredMixin, RoleRequiredMixin, ListView):
     paginate_by = 30
 
     def get_queryset(self):
-        queryset = Cliente.objects.order_by("nome")
+        queryset = clientes_para_usuario(self.request.user, Cliente.objects.select_related("empresa")).order_by("nome")
         termo = self.request.GET.get("q")
         if termo:
-            queryset = queryset.filter(nome__icontains=termo) | queryset.filter(cpf_cnpj__icontains=termo)
+            queryset = queryset.filter(Q(nome__icontains=termo) | Q(cpf_cnpj__icontains=termo))
         return queryset
 
 
-class ClienteCreateView(LoginRequiredMixin, RoleRequiredMixin, CreateView):
+class ClienteFormMixin:
+    def get_form_kwargs(self):
+        kwargs = super().get_form_kwargs()
+        kwargs["user"] = self.request.user
+        return kwargs
+
+    def form_valid(self, form):
+        empresa_id = empresa_id_do_usuario(self.request.user)
+        if empresa_id is not None:
+            form.instance.empresa_id = empresa_id
+        return super().form_valid(form)
+
+
+class ClienteCreateView(ClienteFormMixin, LoginRequiredMixin, RoleRequiredMixin, CreateView):
     required_roles = CLIENTES
     model = Cliente
     form_class = ClienteForm
@@ -39,12 +53,15 @@ class ClienteCreateView(LoginRequiredMixin, RoleRequiredMixin, CreateView):
         return super().form_valid(form)
 
 
-class ClienteUpdateView(LoginRequiredMixin, RoleRequiredMixin, UpdateView):
+class ClienteUpdateView(ClienteFormMixin, LoginRequiredMixin, RoleRequiredMixin, UpdateView):
     required_roles = CLIENTES
     model = Cliente
     form_class = ClienteForm
     template_name = "clientes/cliente_form.html"
     success_url = reverse_lazy("clientes:lista")
+
+    def get_queryset(self):
+        return clientes_para_usuario(self.request.user, Cliente.objects.all())
 
     def form_valid(self, form):
         messages.success(self.request, "Cliente atualizado com sucesso.")
@@ -58,7 +75,12 @@ def clientes_busca(request):
     if not termo:
         return JsonResponse({"results": []})
     clientes = (
-        Cliente.objects.filter(Q(nome__icontains=termo) | Q(cpf_cnpj__icontains=termo) | Q(telefone__icontains=termo))
+        clientes_para_usuario(
+            request.user,
+            Cliente.objects.filter(
+                Q(nome__icontains=termo) | Q(cpf_cnpj__icontains=termo) | Q(telefone__icontains=termo)
+            ),
+        )
         .order_by("nome")[:20]
     )
     return JsonResponse(
@@ -75,5 +97,3 @@ def clientes_busca(request):
             ]
         }
     )
-
-# Create your views here.

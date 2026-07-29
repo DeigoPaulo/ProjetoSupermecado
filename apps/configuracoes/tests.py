@@ -4,6 +4,7 @@ import tempfile
 from decimal import Decimal
 from pathlib import Path
 
+from django.conf import settings
 from django.contrib.auth import get_user_model
 from django.test import Client, SimpleTestCase, TestCase, override_settings
 
@@ -12,13 +13,15 @@ from apps.auditoria.models import LogAuditoria
 from apps.empresas.models import Empresa, Filial, ModoImplantacao
 from apps.financeiro.models import ContaMovimentoFinanceiro, TipoContaMovimento
 from apps.pdv.models import Caixa, CanalAtualizacaoPdv, EventoDispositivoTerminal, ModoIntegracaoTef, ProtocoloBalanca, ProvedorTef, StatusLicencaTerminal, TerminalPdv
-from apps.vendas.models import FormaPagamento, PagamentoVenda, StatusPagamento, Venda
+from apps.vendas.models import FormaPagamento, FormaPagamentoFilial, PagamentoVenda, StatusPagamento, Venda
 
 from .models import ConfiguracaoImpressao, ModeloEtiqueta, ModeloPapel, TipoDocumentoImpressao
 from .services import configuracao_impressao_para, criar_configuracoes_padrao, estilos_impressao
 from .templatetags.formatadores import quantidade_br
+from .views import _classificar_etapa_roadmap
 
-def criar_artefato_pdv_teste(caminho, conteudo, versao="0.1.0", assinado=False):
+def criar_artefato_pdv_teste(caminho, conteudo, versao=None, assinado=False):
+    versao = versao or settings.PDV_DESKTOP_VERSION
     caminho.write_bytes(conteudo)
     assinatura = "Valid" if assinado else "NotSigned"
     metadados = {
@@ -32,12 +35,69 @@ def criar_artefato_pdv_teste(caminho, conteudo, versao="0.1.0", assinado=False):
     caminho.with_name(caminho.name + ".version.json").write_text(json.dumps(metadados), encoding="utf-8")
 
 
+def criar_pacote_servidor_teste(
+    caminho,
+    conteudo,
+    versao=None,
+    commit_assinado=True,
+    contem_dados_cliente=False,
+):
+    versao = versao or settings.LOCAL_SERVER_VERSION
+    caminho.write_bytes(conteudo)
+    metadados = {
+        "contrato": "local_server_package_v1",
+        "versao": versao,
+        "commit": "a" * 40,
+        "commit_assinado_exigido": commit_assinado,
+        "arquivo": caminho.name,
+        "tamanho_bytes": len(conteudo),
+        "sha256": hashlib.sha256(conteudo).hexdigest(),
+        "contem_dados_cliente": contem_dados_cliente,
+    }
+    caminho.with_suffix(".manifest.json").write_text(json.dumps(metadados), encoding="utf-8")
+
 class FormatadoresTemplateTests(SimpleTestCase):
     def test_quantidade_br_remove_zeros_de_unidade_e_mantem_fracao_brasileira(self):
         self.assertEqual(quantidade_br("20.000"), "20")
         self.assertEqual(quantidade_br("1.000"), "1")
         self.assertEqual(quantidade_br("1.250"), "1,250")
 
+class ClassificadorRoadmapTests(SimpleTestCase):
+    def test_credenciais_smtp_nao_sao_confundidas_com_adquirente_rede(self):
+        resultado = _classificar_etapa_roadmap(
+            "Escopo original",
+            "Recuperação de senha",
+            "Credenciais SMTP, SPF, DKIM e DMARC pendentes de homologação.",
+        )
+
+        self.assertEqual(resultado["trilha"], "Integracoes")
+
+    def test_rede_como_marca_de_pagamento_permanece_na_trilha_tef(self):
+        resultado = _classificar_etapa_roadmap(
+            "Pagamentos",
+            "Integração de cartões",
+            "Conectar a Rede para processar cartões.",
+        )
+
+        self.assertEqual(resultado["trilha"], "Hardware/TEF")
+
+    def test_titulo_financeiro_tem_precedencia_sobre_citacao_fiscal(self):
+        resultado = _classificar_etapa_roadmap(
+            "Próximas fases",
+            "Financeiro completo",
+            "Falta integração final com fiscal e contabilidade.",
+        )
+
+        self.assertEqual(resultado["trilha"], "Financeiro")
+
+    def test_titulo_marketplace_tem_precedencia_sobre_nota_fiscal(self):
+        resultado = _classificar_etapa_roadmap(
+            "Próximas fases",
+            "Marketplace / pedido online",
+            "O pedido permite preparar NF-e modelo 55.",
+        )
+
+        self.assertEqual(resultado["trilha"], "Integracoes")
 
 class ConfiguracoesOperacionaisTests(TestCase):
     def setUp(self):
@@ -80,6 +140,9 @@ class ConfiguracoesOperacionaisTests(TestCase):
         self.assertContains(impressoes, "Ver ponto de integração")
         self.assertContains(impressoes, "Configurações do desktop")
         self.assertContains(backup_pagina, "BACKUP_ENCRYPTION_PASSPHRASE")
+        self.assertContains(backup_pagina, "-ValidarSomente")
+        self.assertContains(backup_pagina, "LOCAL_BACKUP_DIR")
+        self.assertContains(backup_pagina, "SYSTEM")
         self.assertContains(backup_pagina, ".zip.aes")
         self.assertContains(backup_pagina, "-RemoverOriginalCriptografado")
         self.assertEqual(backup.status_code, 200)
@@ -558,6 +621,29 @@ class ConfiguracoesOperacionaisTests(TestCase):
         self.assertEqual(diagnostico.status_code, 403)
         self.assertEqual(csv_response.status_code, 403)
 
+    def test_administrador_da_empresa_nao_acessa_nem_visualiza_super_admin(self):
+        administrador = get_user_model().objects.create_user(
+            "admin_empresa_sem_master", "admin_empresa_sem_master@example.com", "123"
+        )
+        PerfilUsuario.objects.create(
+            usuario=administrador,
+            filial=self.filial,
+            tipo=TipoPerfil.ADMINISTRADOR,
+        )
+        self.client.force_login(administrador)
+
+        painel = self.client.get("/configuracoes/")
+        pagina = self.client.get("/configuracoes/super-admin/")
+        diagnostico = self.client.get("/configuracoes/super-admin/diagnostico.json")
+        csv_response = self.client.get("/configuracoes/super-admin/diagnostico.csv")
+        inspecao = self.client.get("/configuracoes/super-admin/modelos/auth/user/")
+
+        self.assertEqual(painel.status_code, 200)
+        self.assertNotContains(painel, "Super admin")
+        self.assertEqual(pagina.status_code, 403)
+        self.assertEqual(diagnostico.status_code, 403)
+        self.assertEqual(csv_response.status_code, 403)
+        self.assertEqual(inspecao.status_code, 403)
     def test_servidor_local_admin_prepara_manifesto_de_implantacao(self):
         self.empresa.modo_implantacao = ModoImplantacao.HIBRIDO
         self.empresa.sincronizacao_automatica = True
@@ -575,15 +661,25 @@ class ConfiguracoesOperacionaisTests(TestCase):
         self.assertContains(response, "scripts/run_local_server.ps1")
         self.assertContains(response, "scripts/register_local_server_task.ps1")
         self.assertContains(response, "scripts/install_local_server_service.ps1")
+        self.assertContains(response, "scripts/package_local_server.ps1")
+        self.assertContains(response, "scripts/publish_local_server.ps1")
+        self.assertContains(response, "scripts/update_local_server.ps1")
+        self.assertContains(response, "Atualização controlada")
         self.assertContains(response, "scripts/test_local_server_service.ps1")
         self.assertContains(response, "scripts/uninstall_local_server_service.ps1")
-        self.assertContains(response, "server_local/windows/MercaFlowServidorLocal.xml.template")
+        self.assertContains(response, "server_local/windows/DeigoVarejoServidorLocal.xml.template")
         self.assertContains(response, "scripts/backup_local.ps1")
+        self.assertContains(response, "scripts/restore_local_backup.ps1")
         self.assertContains(response, "scripts/register_backup_task.ps1")
         self.assertContains(response, "BACKUP_ENCRYPTION_PASSPHRASE")
         self.assertContains(response, "-RemoverOriginalCriptografado")
+        self.assertContains(response, "-ValidarSomente")
+        self.assertContains(response, "LOCAL_BACKUP_DIR")
+        self.assertContains(response, "Backup local protegido")
+        self.assertContains(response, "Restauração operacional")
         self.assertContains(response, "scripts/register_sync_task.ps1")
         self.assertContains(response, "docs/IMPLANTACAO_SERVIDOR_LOCAL.md")
+        self.assertContains(response, "docs/MANUAL_INSTALACAO_SUPERMERCADO.md")
         self.assertContains(response, "Supermercado Modelo")
         self.assertContains(response, "Servidor local com sincronizacao em nuvem")
         self.assertContains(response, "Prontidao do servidor local")
@@ -594,29 +690,107 @@ class ConfiguracoesOperacionaisTests(TestCase):
         self.assertEqual(payload["prontidao"]["contrato"], "local_admin_readiness_v1")
         self.assertIn(payload["prontidao"]["status"], ["Homologacao parcial", "Pronta com ressalvas", "Pronta"])
         self.assertTrue(payload["prontidao"]["arquivos"]["backup_local"]["existe"])
+        self.assertTrue(payload["prontidao"]["arquivos"]["restaurar_backup"]["existe"])
+        self.assertTrue(payload["prontidao"]["arquivos"]["manual_instalacao"]["existe"])
         self.assertTrue(payload["acesso"]["usa_navegador"])
         self.assertTrue(payload["acesso"]["pdv_desktop_separado"])
-        self.assertEqual(payload["servico_windows"]["nome"], "MercaFlowServidorLocal")
+        self.assertEqual(payload["servico_windows"]["nome"], "DeigoVarejoServidorLocal")
         self.assertEqual(payload["servico_windows"]["status"], "instalador_preparado")
+        self.assertEqual(payload["servico_windows"]["banco_recomendado"], "PostgreSQL")
+        self.assertIn("pg_restore", payload["servico_windows"]["ferramentas_banco"])
         self.assertIn("waitress", payload["servico_windows"]["comando_producao"])
         self.assertEqual(payload["servico_windows"]["healthcheck"], "/login/")
         self.assertEqual(payload["scripts"]["subir_servidor"], "scripts/run_local_server.ps1")
         self.assertEqual(payload["scripts"]["registrar_servidor"], "scripts/register_local_server_task.ps1")
         self.assertEqual(payload["scripts"]["instalar_servico"], "scripts/install_local_server_service.ps1")
+        self.assertEqual(payload["scripts"]["empacotar_servidor"], "scripts/package_local_server.ps1")
+        self.assertEqual(payload["scripts"]["publicar_servidor"], "scripts/publish_local_server.ps1")
+        self.assertEqual(payload["scripts"]["atualizar_servidor"], "scripts/update_local_server.ps1")
         self.assertEqual(payload["scripts"]["diagnosticar_servico"], "scripts/test_local_server_service.ps1")
         self.assertEqual(payload["scripts"]["remover_servico"], "scripts/uninstall_local_server_service.ps1")
-        self.assertEqual(payload["scripts"]["template_servico"], "server_local/windows/MercaFlowServidorLocal.xml.template")
+        self.assertEqual(payload["scripts"]["template_servico"], "server_local/windows/DeigoVarejoServidorLocal.xml.template")
         self.assertTrue(payload["prontidao"]["arquivos"]["instalar_servico"]["existe"])
+        self.assertTrue(payload["prontidao"]["arquivos"]["empacotar_servidor"]["existe"])
+        self.assertTrue(payload["prontidao"]["arquivos"]["publicar_servidor"]["existe"])
+        self.assertTrue(payload["prontidao"]["arquivos"]["atualizar_servidor"]["existe"])
+        self.assertEqual(payload["atualizacao_local"]["contrato_validacao"], "local_server_update_validation_v1")
+        self.assertEqual(payload["atualizacao_local"]["contrato_rollback"], "local_server_rollback_v1")
+        self.assertTrue(payload["atualizacao_local"]["healthcheck_obrigatorio"])
+        self.assertTrue(payload["atualizacao_local"]["preserva_env_dados"])
+        self.assertIn("NT SERVICE", payload["servico_windows"]["usuario_recomendado"])
+        self.assertEqual(payload["servico_windows"]["diretorio_dados"], r"%ProgramData%\DeigoVarejo\Dados")
         self.assertEqual(payload["servico_windows"]["contrato"], "local_windows_service_v1")
         self.assertIn("SHA-256", payload["servico_windows"]["wrapper"])
         self.assertEqual(payload["scripts"]["backup_local"], "scripts/backup_local.ps1")
+        self.assertEqual(payload["scripts"]["restaurar_backup"], "scripts/restore_local_backup.ps1")
         self.assertEqual(payload["scripts"]["registrar_backup"], "scripts/register_backup_task.ps1")
         self.assertEqual(payload["scripts"]["backup_criptografia_env"], "BACKUP_ENCRYPTION_PASSPHRASE")
         self.assertEqual(payload["scripts"]["backup_criptografia_flag"], "-RemoverOriginalCriptografado")
+        self.assertEqual(payload["scripts"]["backup_validacao_flag"], "-ValidarSomente")
+        self.assertEqual(payload["scripts"]["backup_destino_env"], "LOCAL_BACKUP_DIR")
+        self.assertEqual(payload["scripts"]["backup_conta_tarefa"], "SYSTEM")
+        self.assertEqual(payload["backup_local"]["contrato"], "erp_local_backup_v2")
+        self.assertEqual(payload["backup_local"]["fontes_contrato"], "local_backup_sources_v1")
+        self.assertTrue(payload["backup_local"]["sqlite_snapshot_consistente"])
+        self.assertTrue(payload["backup_local"]["postgresql_dump_custom"])
+        self.assertEqual(payload["backup_local"]["postgresql_ferramenta"], "pg_dump")
+        self.assertFalse(payload["backup_local"]["depende_usuario_conectado"])
+        self.assertEqual(payload["restauracao_local"]["contrato_validacao"], "local_restore_validation_v1")
+        self.assertEqual(payload["restauracao_local"]["contrato_historico"], "local_restore_history_v1")
+        self.assertTrue(payload["restauracao_local"]["confirmacao_explicita"])
+        self.assertTrue(payload["restauracao_local"]["rollback_sqlite_media"])
+        self.assertIn("postgresql", payload["restauracao_local"]["motores"])
+        self.assertTrue(payload["restauracao_local"]["postgresql_transacao_unica"])
         self.assertEqual(payload["scripts"]["registrar_sincronizacao"], "scripts/register_sync_task.ps1")
+        self.assertEqual(payload["scripts"]["manual_instalacao"], "docs/MANUAL_INSTALACAO_SUPERMERCADO.md")
         self.assertEqual(payload["modos_implantacao"]["hibrido"]["empresas"], 1)
         self.assertEqual(payload["empresas"][0]["modo_implantacao"], ModoImplantacao.HIBRIDO)
         self.assertTrue(payload["empresas"][0]["sincronizacao_automatica"])
+        instalador_texto = (Path(settings.BASE_DIR) / payload["scripts"]["instalar_servico"]).read_text(encoding="utf-8")
+        empacotador_texto = (Path(settings.BASE_DIR) / payload["scripts"]["empacotar_servidor"]).read_text(encoding="utf-8")
+        publicador_texto = (Path(settings.BASE_DIR) / payload["scripts"]["publicar_servidor"]).read_text(encoding="utf-8")
+        atualizador_texto = (Path(settings.BASE_DIR) / payload["scripts"]["atualizar_servidor"]).read_text(encoding="utf-8")
+        diagnostico_texto = (Path(settings.BASE_DIR) / payload["scripts"]["diagnosticar_servico"]).read_text(encoding="utf-8")
+        backup_texto = (Path(settings.BASE_DIR) / payload["scripts"]["backup_local"]).read_text(encoding="utf-8")
+        restaurador_texto = (Path(settings.BASE_DIR) / payload["scripts"]["restaurar_backup"]).read_text(encoding="utf-8")
+        agendador_backup_texto = (Path(settings.BASE_DIR) / payload["scripts"]["registrar_backup"]).read_text(encoding="utf-8")
+        self.assertIn(r"NT SERVICE\DeigoVarejoServidorLocal", instalador_texto)
+        self.assertIn("SQLITE_PATH", instalador_texto)
+        self.assertIn("icacls.exe", instalador_texto)
+        self.assertIn('[string]$DatabaseEngine = "PostgreSQL"', instalador_texto)
+        self.assertIn("POSTGRES_PG_DUMP_PATH", instalador_texto)
+        self.assertIn("POSTGRES_PG_RESTORE_PATH", instalador_texto)
+        self.assertIn("git status --porcelain", empacotador_texto)
+        self.assertIn("local_server_package_v1", empacotador_texto)
+        self.assertIn("contem_dados_cliente = $false", empacotador_texto)
+        self.assertIn("local_server_package_v1", publicador_texto)
+        self.assertIn(".uploading", publicador_texto)
+        self.assertIn("Get-FileHash", publicador_texto)
+        self.assertIn("local_server_update_validation_v1", atualizador_texto)
+        self.assertIn("local_server_rollback_v1", atualizador_texto)
+        self.assertIn("source.backup(target)", atualizador_texto)
+        self.assertIn("Wait-Health", atualizador_texto)
+        self.assertIn("Replace-CodeLayout", atualizador_texto)
+        self.assertIn("Atualizacao cancelada e rollback concluido", atualizador_texto)
+        self.assertIn("identidade_dedicada", diagnostico_texto)
+        self.assertIn("local_backup_sources_v1", backup_texto)
+        self.assertIn("erp_local_backup_v2", backup_texto)
+        self.assertIn("source.backup(target)", backup_texto)
+        self.assertIn("pg_dump", backup_texto)
+        self.assertIn("--format=custom", backup_texto)
+        self.assertIn("PGPASSWORD", backup_texto)
+        self.assertIn("DeigoVarejoServidorLocal.xml", backup_texto)
+        self.assertIn("local_restore_validation_v1", restaurador_texto)
+        self.assertIn("pg_restore", restaurador_texto)
+        self.assertIn("--single-transaction", restaurador_texto)
+        self.assertIn("Restauracao cruzada foi recusada", restaurador_texto)
+        self.assertIn("erp_local_backup_v2", restaurador_texto)
+        self.assertIn("ConfirmarRestauracao", restaurador_texto)
+        self.assertIn("backup_local.ps1", restaurador_texto)
+        self.assertIn("Wait-Health", restaurador_texto)
+        self.assertIn("Restauracao cancelada e dados anteriores recuperados", restaurador_texto)
+        self.assertIn("-LogonType ServiceAccount", agendador_backup_texto)
+        self.assertIn('"SYSTEM"', agendador_backup_texto)
 
     def test_manifesto_servidor_local_exige_admin_master(self):
         gerente = get_user_model().objects.create_user("gerente_local", "gerente_local@example.com", "123")
@@ -627,6 +801,95 @@ class ConfiguracoesOperacionaisTests(TestCase):
 
         self.assertEqual(response.status_code, 403)
 
+    def test_admin_master_baixa_pacote_servidor_local_validado_com_auditoria(self):
+        conteudo = b"pacote-servidor-local-teste"
+        with tempfile.TemporaryDirectory() as pasta:
+            caminho = Path(pasta) / "DeigoVarejoServidorLocal.zip"
+            with override_settings(
+                LOCAL_SERVER_PACKAGE_PATH=caminho,
+                LOCAL_SERVER_VERSION="1.2.3",
+                LOCAL_SERVER_REQUIRE_SIGNED_COMMIT=True,
+            ):
+                criar_pacote_servidor_teste(caminho, conteudo, versao="1.2.3", commit_assinado=True)
+                central = self.client.get("/configuracoes/servidor-local/")
+                manifest = self.client.get("/configuracoes/servidor-local/manifest.json")
+                download = self.client.get("/configuracoes/servidor-local/download/")
+                baixado = b"".join(download.streaming_content)
+
+        distribuicao = manifest.json()["distribuicao"]
+        self.assertContains(central, "Baixar pacote")
+        self.assertEqual(distribuicao["contrato"], "local_server_distribution_v1")
+        self.assertEqual(distribuicao["status"], "disponivel")
+        self.assertEqual(distribuicao["tamanho_bytes"], len(conteudo))
+        self.assertEqual(distribuicao["sha256"], hashlib.sha256(conteudo).hexdigest())
+        self.assertTrue(distribuicao["integridade_valida"])
+        self.assertTrue(distribuicao["tamanho_valido"])
+        self.assertTrue(distribuicao["origem_rastreavel"])
+        self.assertTrue(distribuicao["sem_dados_cliente"])
+        self.assertTrue(distribuicao["commit_assinado_confirmado"])
+        self.assertEqual(download.status_code, 200)
+        self.assertEqual(baixado, conteudo)
+        self.assertTrue(LogAuditoria.objects.filter(acao="DOWNLOAD_SERVIDOR_LOCAL", usuario=self.user).exists())
+
+    def test_pacote_servidor_local_adulterado_e_bloqueado(self):
+        conteudo = b"pacote-original"
+        with tempfile.TemporaryDirectory() as pasta:
+            caminho = Path(pasta) / "DeigoVarejoServidorLocal.zip"
+            with override_settings(
+                LOCAL_SERVER_PACKAGE_PATH=caminho,
+                LOCAL_SERVER_VERSION="1.2.3",
+                LOCAL_SERVER_REQUIRE_SIGNED_COMMIT=False,
+            ):
+                criar_pacote_servidor_teste(caminho, conteudo, versao="1.2.3")
+                caminho.write_bytes(conteudo + b"-alterado")
+                manifest = self.client.get("/configuracoes/servidor-local/manifest.json")
+                download = self.client.get("/configuracoes/servidor-local/download/")
+
+        distribuicao = manifest.json()["distribuicao"]
+        self.assertEqual(distribuicao["status"], "indisponivel")
+        self.assertFalse(distribuicao["integridade_valida"])
+        self.assertIn("SHA-256", distribuicao["problemas"][0])
+        self.assertEqual(download.status_code, 404)
+        self.assertFalse(LogAuditoria.objects.filter(acao="DOWNLOAD_SERVIDOR_LOCAL").exists())
+
+    def test_pacote_servidor_local_com_dados_de_cliente_e_bloqueado(self):
+        with tempfile.TemporaryDirectory() as pasta:
+            caminho = Path(pasta) / "DeigoVarejoServidorLocal.zip"
+            with override_settings(
+                LOCAL_SERVER_PACKAGE_PATH=caminho,
+                LOCAL_SERVER_VERSION="1.2.3",
+                LOCAL_SERVER_REQUIRE_SIGNED_COMMIT=False,
+            ):
+                criar_pacote_servidor_teste(
+                    caminho,
+                    b"pacote-com-dados",
+                    versao="1.2.3",
+                    contem_dados_cliente=True,
+                )
+                manifest = self.client.get("/configuracoes/servidor-local/manifest.json")
+                download = self.client.get("/configuracoes/servidor-local/download/")
+
+        distribuicao = manifest.json()["distribuicao"]
+        self.assertFalse(distribuicao["sem_dados_cliente"])
+        self.assertIn("ausencia de dados do cliente", " ".join(distribuicao["problemas"]))
+        self.assertEqual(download.status_code, 404)
+
+    def test_gerente_nao_baixa_pacote_servidor_local(self):
+        gerente = get_user_model().objects.create_user("gerente_download_local", password="123")
+        PerfilUsuario.objects.create(usuario=gerente, filial=self.filial, tipo=TipoPerfil.GERENTE)
+        self.client.force_login(gerente)
+        with tempfile.TemporaryDirectory() as pasta:
+            caminho = Path(pasta) / "DeigoVarejoServidorLocal.zip"
+            with override_settings(
+                LOCAL_SERVER_PACKAGE_PATH=caminho,
+                LOCAL_SERVER_VERSION="1.2.3",
+                LOCAL_SERVER_REQUIRE_SIGNED_COMMIT=False,
+            ):
+                criar_pacote_servidor_teste(caminho, b"pacote-valido", versao="1.2.3")
+                response = self.client.get("/configuracoes/servidor-local/download/")
+
+        self.assertEqual(response.status_code, 403)
+        self.assertFalse(LogAuditoria.objects.filter(acao="DOWNLOAD_SERVIDOR_LOCAL", usuario=gerente).exists())
     def test_cadastra_e_edita_forma_pagamento_no_painel_próprio(self):
         conta_pix = ContaMovimentoFinanceiro.objects.create(
             filial=self.filial,
@@ -821,6 +1084,7 @@ class ConfiguracoesOperacionaisTests(TestCase):
         self.assertIn("Driver da balanca indisponivel", csv_texto)
         self.assertNotIn("Falha de outro terminal", csv_texto)
 
+    @override_settings(PDV_DESKTOP_INSTALLER_PATH=Path("__teste_instalador_inexistente__.msi"))
     def test_central_app_pdv_desktop_mostra_arquitetura_e_terminais(self):
         terminal = TerminalPdv.objects.create(
             filial=self.filial,
@@ -1018,7 +1282,7 @@ class ConfiguracoesOperacionaisTests(TestCase):
 
     def test_central_informa_quando_instalador_ainda_nao_foi_publicado(self):
         with tempfile.TemporaryDirectory() as pasta:
-            caminho = Path(pasta) / "SupermercadoPDV.exe"
+            caminho = Path(pasta) / "DeigoPDV.exe"
             with override_settings(PDV_DESKTOP_INSTALLER_PATH=caminho):
                 central = self.client.get("/configuracoes/pdv-desktop/")
                 manifest = self.client.get("/configuracoes/pdv-desktop/manifest.json")
@@ -1031,7 +1295,7 @@ class ConfiguracoesOperacionaisTests(TestCase):
     def test_admin_master_baixa_instalador_publicado_com_integridade_e_auditoria(self):
         conteudo = b"executavel-pdv-teste"
         with tempfile.TemporaryDirectory() as pasta:
-            caminho = Path(pasta) / "SupermercadoPDV.exe"
+            caminho = Path(pasta) / "DeigoPDV.exe"
             criar_artefato_pdv_teste(caminho, conteudo)
             with override_settings(PDV_DESKTOP_INSTALLER_PATH=caminho, PDV_DESKTOP_REQUIRE_SIGNED_INSTALLER=False):
                 central = self.client.get("/configuracoes/pdv-desktop/")
@@ -1040,7 +1304,7 @@ class ConfiguracoesOperacionaisTests(TestCase):
                 baixado = b"".join(download.streaming_content)
 
         artefato = manifest.json()["artefatos"]["windows_x64"]
-        self.assertContains(central, "Baixar Windows")
+        self.assertContains(central, "Baixar instalador Windows")
         self.assertEqual(artefato["status"], "disponivel")
         self.assertEqual(artefato["tamanho_bytes"], len(conteudo))
         self.assertEqual(artefato["sha256"], hashlib.sha256(conteudo).hexdigest())
@@ -1054,7 +1318,7 @@ class ConfiguracoesOperacionaisTests(TestCase):
     def test_instalador_alterado_apos_publicacao_e_bloqueado(self):
         conteudo = b"msi-original"
         with tempfile.TemporaryDirectory() as pasta:
-            caminho = Path(pasta) / "SupermercadoPDV.msi"
+            caminho = Path(pasta) / "DeigoPDV.msi"
             criar_artefato_pdv_teste(caminho, conteudo)
             caminho.write_bytes(conteudo + b"-alterado")
             with override_settings(
@@ -1076,7 +1340,7 @@ class ConfiguracoesOperacionaisTests(TestCase):
     def test_producao_exige_assinaturas_validas_do_executavel_e_msi(self):
         conteudo = b"msi-sem-assinatura"
         with tempfile.TemporaryDirectory() as pasta:
-            caminho = Path(pasta) / "SupermercadoPDV.msi"
+            caminho = Path(pasta) / "DeigoPDV.msi"
             criar_artefato_pdv_teste(caminho, conteudo, assinado=False)
             with override_settings(
                 PDV_DESKTOP_INSTALLER_PATH=caminho,
@@ -1095,7 +1359,7 @@ class ConfiguracoesOperacionaisTests(TestCase):
         PerfilUsuario.objects.create(usuario=gerente, filial=self.filial, tipo=TipoPerfil.GERENTE)
         self.client.force_login(gerente)
         with tempfile.TemporaryDirectory() as pasta:
-            caminho = Path(pasta) / "SupermercadoPDV.exe"
+            caminho = Path(pasta) / "DeigoPDV.exe"
             caminho.write_bytes(b"arquivo")
             with override_settings(PDV_DESKTOP_INSTALLER_PATH=caminho):
                 response = self.client.get("/configuracoes/pdv-desktop/download/windows/")
@@ -1464,3 +1728,256 @@ class ConfiguracoesOperacionaisTests(TestCase):
         self.assertNotIn("pre?o", etiqueta_teste["itens"][0])
 
 # Create your tests here.
+
+class GovernancaPainelEmpresaTests(TestCase):
+    def setUp(self):
+        User = get_user_model()
+        empresa = Empresa.objects.create(razao_social="Empresa Painel", nome_fantasia="Empresa Painel", cnpj="60123456000110")
+        filial = Filial.objects.create(empresa=empresa, nome="Matriz Painel")
+        self.admin = User.objects.create_user("admin_painel_empresa", password="123")
+        PerfilUsuario.objects.create(usuario=self.admin, filial=filial, tipo=TipoPerfil.ADMINISTRADOR)
+        self.gerente = User.objects.create_user("gerente_painel_empresa", password="123")
+        PerfilUsuario.objects.create(usuario=self.gerente, filial=filial, tipo=TipoPerfil.GERENTE)
+
+    def test_admin_empresa_nao_ve_nem_acessa_recursos_master(self):
+        self.client.force_login(self.admin)
+        painel = self.client.get("/configuracoes/")
+        self.assertEqual(painel.status_code, 200)
+        for texto in ("Super admin", "Checklist do projeto", "Registros backup", "App PDV desktop", "Servidor local/admin"):
+            self.assertNotContains(painel, texto)
+        for url in ("/configuracoes/super-admin/", "/configuracoes/checklist/", "/configuracoes/backup/", "/empresas/sincronizacao/"):
+            self.assertEqual(self.client.get(url).status_code, 403)
+
+    def test_gerente_nao_acessa_painel_de_administracao(self):
+        self.client.force_login(self.gerente)
+        self.assertEqual(self.client.get("/configuracoes/").status_code, 403)
+class EscopoConfiguracoesOperacionaisTests(TestCase):
+    def setUp(self):
+        self.client = Client(HTTP_HOST="localhost")
+        self.empresa = Empresa.objects.create(
+            razao_social="Empresa Alfa Ltda",
+            nome_fantasia="Empresa Alfa",
+            cnpj="71.111.111/0001-71",
+        )
+        self.filial = Filial.objects.create(empresa=self.empresa, nome="Matriz Alfa", cnpj=self.empresa.cnpj)
+        self.outra_empresa = Empresa.objects.create(
+            razao_social="Empresa Beta Ltda",
+            nome_fantasia="Empresa Beta",
+            cnpj="72.222.222/0001-72",
+        )
+        self.outra_filial = Filial.objects.create(
+            empresa=self.outra_empresa,
+            nome="Matriz Beta",
+            cnpj=self.outra_empresa.cnpj,
+        )
+        self.admin = get_user_model().objects.create_user("admin_alfa", password="123")
+        PerfilUsuario.objects.create(
+            usuario=self.admin,
+            filial=self.filial,
+            tipo=TipoPerfil.ADMINISTRADOR,
+        )
+        self.client.force_login(self.admin)
+        self.terminal = TerminalPdv.objects.create(filial=self.filial, nome="Caixa Alfa")
+        self.outro_terminal = TerminalPdv.objects.create(filial=self.outra_filial, nome="Caixa Beta")
+        self.configuracao = ConfiguracaoImpressao.objects.create(
+            empresa=self.empresa,
+            filial=self.filial,
+            tipo_documento=TipoDocumentoImpressao.CUPOM_NAO_FISCAL,
+            impressora_padrao="Impressora Alfa",
+        )
+        self.outra_configuracao = ConfiguracaoImpressao.objects.create(
+            empresa=self.outra_empresa,
+            filial=self.outra_filial,
+            tipo_documento=TipoDocumentoImpressao.CUPOM_NAO_FISCAL,
+            impressora_padrao="Impressora Beta",
+        )
+        self.modelo = ModeloEtiqueta.objects.create(configuracao=self.configuracao, nome="Etiqueta Alfa")
+        self.outro_modelo = ModeloEtiqueta.objects.create(configuracao=self.outra_configuracao, nome="Etiqueta Beta")
+        EventoDispositivoTerminal.objects.create(
+            terminal=self.terminal,
+            tipo="impressora",
+            status="ok",
+            mensagem="Evento Alfa",
+        )
+        EventoDispositivoTerminal.objects.create(
+            terminal=self.outro_terminal,
+            tipo="impressora",
+            status="erro",
+            mensagem="Evento Beta",
+        )
+
+    def test_admin_visualiza_somente_terminais_eventos_e_impressoes_da_empresa(self):
+        terminais = self.client.get("/configuracoes/terminais-pdv/")
+        diagnosticos = self.client.get("/configuracoes/terminais-pdv/diagnosticos/")
+        diagnosticos_csv = self.client.get("/configuracoes/terminais-pdv/diagnosticos/exportar.csv")
+        impressoes = self.client.get("/configuracoes/impressoes/")
+        impressoras = self.client.get("/configuracoes/impressoes/impressoras-locais.json").json()
+        desktop = self.client.get("/configuracoes/impressoes/desktop.json").json()
+
+        self.assertContains(terminais, "Caixa Alfa")
+        self.assertNotContains(terminais, "Caixa Beta")
+        self.assertNotContains(terminais, "Liberar licenca")
+        self.assertContains(diagnosticos, "Evento Alfa")
+        self.assertNotContains(diagnosticos, "Evento Beta")
+        self.assertIn("Evento Alfa", diagnosticos_csv.content.decode("utf-8-sig"))
+        self.assertNotIn("Evento Beta", diagnosticos_csv.content.decode("utf-8-sig"))
+        self.assertContains(impressoes, "Impressora Alfa")
+        self.assertNotContains(impressoes, "Impressora Beta")
+        self.assertContains(impressoes, "Etiqueta Alfa")
+        self.assertNotContains(impressoes, "Etiqueta Beta")
+        self.assertEqual(impressoras["impressoras_cadastradas"], ["Impressora Alfa"])
+        self.assertEqual([item["empresa_id"] for item in desktop["configuracoes"]], [self.empresa.pk])
+
+    def test_admin_nao_acessa_nem_referencia_objetos_de_outra_empresa(self):
+        urls_protegidas = [
+            f"/configuracoes/terminais-pdv/{self.outro_terminal.pk}/editar/",
+            f"/configuracoes/impressoes/{self.outra_configuracao.pk}/editar/",
+            f"/configuracoes/impressoes/modelos-etiqueta/{self.outro_modelo.pk}/editar/",
+            f"/configuracoes/impressoes/modelos-etiqueta/{self.outro_modelo.pk}/teste.json",
+        ]
+        for url in urls_protegidas:
+            with self.subTest(url=url):
+                self.assertEqual(self.client.get(url).status_code, 404)
+        self.assertEqual(
+            self.client.post(f"/configuracoes/terminais-pdv/{self.outro_terminal.pk}/regenerar-chave/").status_code,
+            404,
+        )
+
+        terminal_form = self.client.get("/configuracoes/terminais-pdv/novo/").context["form"]
+        impressao_form = self.client.get("/configuracoes/impressoes/nova/").context["form"]
+        modelo_form = self.client.get("/configuracoes/impressoes/modelos-etiqueta/novo/").context["form"]
+        self.assertQuerySetEqual(terminal_form.fields["filial"].queryset, [self.filial])
+        self.assertQuerySetEqual(impressao_form.fields["empresa"].queryset, [self.empresa])
+        self.assertQuerySetEqual(impressao_form.fields["filial"].queryset, [self.filial])
+        self.assertNotIn(self.outra_configuracao, modelo_form.fields["configuracao"].queryset)
+        self.assertNotIn(self.outro_terminal, modelo_form.fields["terminal"].queryset)
+
+        tentativa = self.client.post(
+            "/configuracoes/terminais-pdv/novo/",
+            {"filial": self.outra_filial.pk, "nome": "Caixa invasor", "ativo": "on"},
+        )
+        self.assertEqual(tentativa.status_code, 200)
+        self.assertFalse(TerminalPdv.objects.filter(nome="Caixa invasor").exists())
+
+    def test_lista_de_terminais_limita_cinquenta_por_pagina(self):
+        TerminalPdv.objects.bulk_create(
+            [TerminalPdv(filial=self.filial, nome=f"Caixa paginado {indice:02d}") for indice in range(51)]
+        )
+        primeira = self.client.get("/configuracoes/terminais-pdv/")
+        segunda = self.client.get("/configuracoes/terminais-pdv/?page=2")
+
+        self.assertEqual(len(primeira.context["pagina"]), 50)
+        self.assertEqual(primeira.context["pagina"].paginator.num_pages, 2)
+        self.assertEqual(segunda.context["pagina"].number, 2)
+        self.assertNotContains(primeira, "Caixa Beta")
+class EscopoFormasPagamentoFilialTests(TestCase):
+    def setUp(self):
+        self.empresa = Empresa.objects.create(
+            razao_social="Empresa Pagamentos Alfa",
+            nome_fantasia="Pagamentos Alfa",
+            cnpj="81.111.111/0001-81",
+        )
+        self.filial = Filial.objects.create(empresa=self.empresa, nome="Matriz Alfa")
+        self.outra_empresa = Empresa.objects.create(
+            razao_social="Empresa Pagamentos Beta",
+            nome_fantasia="Pagamentos Beta",
+            cnpj="82.222.222/0001-82",
+        )
+        self.outra_filial = Filial.objects.create(empresa=self.outra_empresa, nome="Matriz Beta")
+        self.admin = get_user_model().objects.create_user("admin_pagamentos_alfa", password="123")
+        PerfilUsuario.objects.create(
+            usuario=self.admin,
+            filial=self.filial,
+            tipo=TipoPerfil.ADMINISTRADOR,
+        )
+        self.gerente = get_user_model().objects.create_user("gerente_pagamentos_alfa", password="123")
+        PerfilUsuario.objects.create(
+            usuario=self.gerente,
+            filial=self.filial,
+            tipo=TipoPerfil.GERENTE,
+        )
+        self.pix = FormaPagamento.objects.create(nome="PIX empresarial", tipo="PIX")
+        self.dinheiro = FormaPagamento.objects.create(
+            nome="Dinheiro empresarial",
+            tipo="DINHEIRO",
+            permite_troco=True,
+        )
+        self.conta = ContaMovimentoFinanceiro.objects.create(
+            filial=self.filial,
+            nome="PIX Matriz Alfa",
+            tipo=TipoContaMovimento.PIX,
+        )
+        self.outra_conta = ContaMovimentoFinanceiro.objects.create(
+            filial=self.outra_filial,
+            nome="PIX Matriz Beta",
+            tipo=TipoContaMovimento.PIX,
+        )
+
+    def test_admin_configura_somente_filial_e_conta_da_propria_empresa(self):
+        self.client.force_login(self.admin)
+        lista = self.client.get("/configuracoes/formas-pagamento/")
+
+        self.assertContains(lista, "Matriz Alfa")
+        self.assertNotContains(lista, "Matriz Beta")
+        self.assertNotContains(lista, "Nova forma")
+        self.assertEqual(
+            FormaPagamentoFilial.objects.filter(filial=self.filial).count(),
+            FormaPagamento.objects.count(),
+        )
+        self.assertFalse(FormaPagamentoFilial.objects.filter(filial=self.outra_filial).exists())
+
+        formulario = self.client.get(
+            f"/configuracoes/formas-pagamento/{self.pix.pk}/editar/?filial={self.filial.pk}"
+        ).context["form"]
+        self.assertQuerySetEqual(formulario.fields["filial"].queryset, [self.filial])
+        self.assertIn(self.conta, formulario.fields["conta_movimento_padrao"].queryset)
+        self.assertNotIn(self.outra_conta, formulario.fields["conta_movimento_padrao"].queryset)
+
+        resposta = self.client.post(
+            f"/configuracoes/formas-pagamento/{self.pix.pk}/editar/",
+            {
+                "filial": self.filial.pk,
+                "conta_movimento_padrao": self.conta.pk,
+                "ativo": "on",
+            },
+        )
+        self.assertRedirects(resposta, "/configuracoes/formas-pagamento/")
+        configuracao = FormaPagamentoFilial.objects.get(filial=self.filial, forma_pagamento=self.pix)
+        self.assertEqual(configuracao.conta_movimento_padrao, self.conta)
+        self.assertTrue(
+            LogAuditoria.objects.filter(
+                acao="CONFIGURAR_FORMA_PAGAMENTO_FILIAL",
+                objeto_id=str(configuracao.pk),
+            ).exists()
+        )
+
+    def test_admin_nao_forja_filial_ou_conta_de_outra_empresa(self):
+        self.client.force_login(self.admin)
+        self.assertEqual(
+            self.client.get(
+                f"/configuracoes/formas-pagamento/{self.pix.pk}/editar/?filial={self.outra_filial.pk}"
+            ).status_code,
+            404,
+        )
+        resposta = self.client.post(
+            f"/configuracoes/formas-pagamento/{self.pix.pk}/editar/",
+            {
+                "filial": self.filial.pk,
+                "conta_movimento_padrao": self.outra_conta.pk,
+                "ativo": "on",
+            },
+        )
+        self.assertEqual(resposta.status_code, 200)
+        self.assertContains(resposta, "escolha válida")
+        self.assertIsNone(
+            FormaPagamentoFilial.objects.get(
+                filial=self.filial,
+                forma_pagamento=self.pix,
+            ).conta_movimento_padrao
+        )
+
+    def test_gerente_nao_administra_formas_e_admin_nao_cria_catalogo(self):
+        self.client.force_login(self.gerente)
+        self.assertEqual(self.client.get("/configuracoes/formas-pagamento/").status_code, 403)
+        self.client.force_login(self.admin)
+        self.assertEqual(self.client.get("/configuracoes/formas-pagamento/nova/").status_code, 403)

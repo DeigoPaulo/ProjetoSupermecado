@@ -31,6 +31,11 @@ class AdaptadorTef(ABC):
     def estornar(self, payload: dict) -> dict:
         raise NotImplementedError
 
+    def capturar_documento(self, payload: dict) -> dict:
+        raise AdaptadorTefIndisponivel(
+            "O driver TEF instalado nao permite capturar CPF/CNPJ pelo pinpad."
+        )
+
 
 class SimuladorTef(AdaptadorTef):
     def __init__(self, provedor: str, modo: str):
@@ -58,7 +63,7 @@ class SimuladorTef(AdaptadorTef):
         if tipo != "PIX":
             return aprovado
 
-        pix = f"MERCaflow-SIMULACAO|TXID={referencia[:25]}|VALOR={valor}"
+        pix = f"DEIGO-PDV-SIMULACAO|TXID={referencia[:25]}|VALOR={valor}"
         pendente = {
             "status": "pending",
             "aprovado": False,
@@ -102,6 +107,19 @@ class SimuladorTef(AdaptadorTef):
             "nsu": referencia[16:28],
             "codigo_autorizacao": referencia[28:34],
             "mensagem_processadora": "Estorno aprovado pelo simulador TEF do app desktop.",
+        }
+
+    def capturar_documento(self, payload: dict) -> dict:
+        tipo_solicitado = str(payload.get("tipo") or "AUTO").strip().upper()
+        tipo = "CNPJ" if tipo_solicitado == "CNPJ" else "CPF"
+        documento = "11222333000181" if tipo == "CNPJ" else "52998224725"
+        return {
+            "status": "ok",
+            "tipo": tipo,
+            "documento": documento,
+            "origem": "pinpad",
+            "simulado": True,
+            "mensagem": "Documento recebido pelo simulador do pinpad.",
         }
 
 
@@ -183,4 +201,70 @@ def validar_resposta_tef(resultado: dict, operacao: str) -> dict:
     if status not in {"ok", "pending"}:
         normalizado.setdefault("aprovado", False)
         normalizado.setdefault("estornado", False)
+    return normalizado
+
+def capacidades_adaptador_tef(adaptador) -> dict:
+    metodo = getattr(adaptador, "capturar_documento", None)
+    implementado = callable(metodo)
+    if isinstance(adaptador, AdaptadorTef):
+        implementado = implementado and type(adaptador).capturar_documento is not AdaptadorTef.capturar_documento
+    return {
+        "contrato": "pdv_tef_capabilities_v1",
+        "captura_documento_consumidor": bool(implementado),
+    }
+
+
+def _documento_valido(documento: str) -> bool:
+    tamanho = len(documento)
+    if tamanho not in {11, 14} or documento == documento[0] * tamanho:
+        return False
+    base = documento[:-2]
+    digitos = documento[-2:]
+    if tamanho == 11:
+        pesos = list(range(10, 1, -1))
+        calculados = []
+        numeros = [int(valor) for valor in base]
+        for _ in range(2):
+            soma = sum(valor * peso for valor, peso in zip(numeros, pesos))
+            resto = (soma * 10) % 11
+            calculado = 0 if resto == 10 else resto
+            calculados.append(calculado)
+            numeros.append(calculado)
+            pesos = list(range(11, 1, -1))
+    else:
+        calculados = []
+        numeros = [int(valor) for valor in base]
+        for pesos in (
+            [5, 4, 3, 2, 9, 8, 7, 6, 5, 4, 3, 2],
+            [6, 5, 4, 3, 2, 9, 8, 7, 6, 5, 4, 3, 2],
+        ):
+            soma = sum(valor * peso for valor, peso in zip(numeros, pesos))
+            resto = soma % 11
+            calculado = 0 if resto < 2 else 11 - resto
+            calculados.append(calculado)
+            numeros.append(calculado)
+    return digitos == "".join(str(valor) for valor in calculados)
+
+
+def validar_resposta_documento_pinpad(resultado: dict) -> dict:
+    if not isinstance(resultado, dict):
+        raise RespostaTefInvalida("O driver do pinpad devolveu uma resposta invalida.")
+    status = str(resultado.get("status") or "").strip().lower()
+    if status not in {"ok", "erro", "cancelado"}:
+        raise RespostaTefInvalida("O driver do pinpad devolveu um status desconhecido.")
+    normalizado = dict(resultado)
+    normalizado["status"] = status
+    if status != "ok":
+        normalizado.pop("documento", None)
+        return normalizado
+    documento = "".join(valor for valor in str(resultado.get("documento") or "") if valor.isdigit())
+    if not _documento_valido(documento):
+        raise RespostaTefInvalida("O pinpad devolveu um CPF/CNPJ invalido.")
+    tipo = str(resultado.get("tipo") or "").strip().upper()
+    tipo_esperado = "CPF" if len(documento) == 11 else "CNPJ"
+    if tipo and tipo != tipo_esperado:
+        raise RespostaTefInvalida("O tipo do documento devolvido pelo pinpad e inconsistente.")
+    normalizado["tipo"] = tipo_esperado
+    normalizado["documento"] = documento
+    normalizado.setdefault("origem", "pinpad")
     return normalizado

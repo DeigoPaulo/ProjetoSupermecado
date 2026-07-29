@@ -9,8 +9,8 @@
     <p>Produtos que precisam de compra/reposicao com base em estoque minimo e venda media.</p>
   </div>
   <div class="actions">
-    <a class="secondary-button" href="{% url 'relatorios:sugestao_reposicao_csv' %}?data_inicio={{ data_inicio|date:'Y-m-d' }}&amp;data_fim={{ data_fim|date:'Y-m-d' }}&amp;dias_cobertura={{ dias_cobertura }}"><i class="fa-solid fa-file-csv"></i> Excel/CSV</a>
-    <a class="secondary-button" href="{% url 'relatorios:sugestao_reposicao_imprimir' %}?data_inicio={{ data_inicio|date:'Y-m-d' }}&amp;data_fim={{ data_fim|date:'Y-m-d' }}&amp;dias_cobertura={{ dias_cobertura }}" target="_blank"><i class="fa-solid fa-file-pdf"></i> PDF</a>
+    <a class="secondary-button" href="{% url 'relatorios:sugestao_reposicao_csv' %}?data_inicio={{ data_inicio|date:'Y-m-d' }}&amp;data_fim={{ data_fim|date:'Y-m-d' }}&amp;dias_cobertura={{ dias_cobertura }}{% if filial_id %}&amp;filial={{ filial_id }}{% endif %}"><i class="fa-solid fa-file-csv"></i> Excel/CSV</a>
+    <a class="secondary-button" href="{% url 'relatorios:sugestao_reposicao_imprimir' %}?data_inicio={{ data_inicio|date:'Y-m-d' }}&amp;data_fim={{ data_fim|date:'Y-m-d' }}&amp;dias_cobertura={{ dias_cobertura }}{% if filial_id %}&amp;filial={{ filial_id }}{% endif %}" target="_blank"><i class="fa-solid fa-file-pdf"></i> PDF</a>
     <a class="secondary-button" href="{% url 'relatorios:estoque_baixo' %}">Estoque baixo</a>
     <a class="secondary-button" href="{% url 'relatorios:curva_abc' %}">Curva ABC</a>
     <a class="primary-button" href="{% url 'compras:nova' %}">Nova entrada</a>
@@ -29,6 +29,15 @@
   <label>
     <span>Dias cobertura</span>
     <input type="number" name="dias_cobertura" min="1" max="90" value="{{ dias_cobertura }}">
+  </label>
+  <label>
+    <span>Filial</span>
+    <select name="filial">
+      {% if permite_consolidado %}<option value="">Todas as filiais</option>{% endif %}
+      {% for filial in filiais %}
+        <option value="{{ filial.pk }}" {% if filial_id == filial.pk|stringformat:"s" %}selected{% endif %}>{{ filial }}</option>
+      {% endfor %}
+    </select>
   </label>
   <button type="submit">Calcular</button>
 </form>
@@ -73,4 +82,5 @@
     </tbody>
   </table>
 </div>
+{% include "includes/pagination.html" with page_obj=linhas %}
 {% endblock %}

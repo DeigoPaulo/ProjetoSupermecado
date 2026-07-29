@@ -1,5 +1,5 @@
 param(
-    [string]$TaskName = "MercaFlow ERP - Sincronizacao",
+    [string]$TaskName = "Deigo Varejo - Sincronizacao",
     [int]$IntervaloMinutos = 1,
     [int]$LimiteSaida = 50,
     [int]$LimiteEntrada = 50,
@@ -46,7 +46,7 @@ Register-ScheduledTask `
     -Trigger $Trigger `
     -Settings $Settings `
     -Principal $Principal `
-    -Description "Processa filas de saida e entrada da sincronizacao loja-nuvem do MercaFlow ERP."
+    -Description "Processa filas de saida e entrada da sincronizacao loja-nuvem do Deigo Varejo."
 
 Write-Host "Tarefa registrada: $TaskName"
 Write-Host "Intervalo: a cada $IntervaloMinutos minuto(s)"

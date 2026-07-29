@@ -1,8 +1,10 @@
 from django import forms
 from django.forms import formset_factory, inlineformset_factory
 
+from apps.clientes.escopo import empresa_id_do_usuario
 from apps.core_forms import aplicar_select2
 
+from .escopo import usuarios_para_usuario
 from .models import (
     ComposicaoProduto,
     ConfiguracaoSLASetorProducao,
@@ -30,13 +32,16 @@ class MovimentacaoEstoqueForm(forms.Form):
     fabricacao = forms.DateField(required=False, widget=forms.DateInput(attrs={"type": "date"}))
     validade = forms.DateField(required=False, widget=forms.DateInput(attrs={"type": "date"}))
 
-    def __init__(self, *args, **kwargs):
+    def __init__(self, *args, user=None, **kwargs):
         super().__init__(*args, **kwargs)
         from apps.empresas.models import Filial
         from apps.produtos.models import Produto
 
+        empresa_id = empresa_id_do_usuario(user) if user else None
         self.fields["produto"].queryset = Produto.objects.all()
         self.fields["filial"].queryset = Filial.objects.filter(is_active=True)
+        if empresa_id is not None:
+            self.fields["filial"].queryset = self.fields["filial"].queryset.filter(empresa_id=empresa_id)
         aplicar_select2(self, ["produto", "filial"])
 
     def clean(self):
@@ -46,18 +51,13 @@ class MovimentacaoEstoqueForm(forms.Form):
         validade = cleaned_data.get("validade")
         produto = cleaned_data.get("produto")
         tipo = cleaned_data.get("tipo")
-        if (
-            produto
-            and produto.exige_lote
-            and tipo == TipoMovimentacaoEstoque.ENTRADA
-            and not codigo_lote
-        ):
+        if produto and produto.exige_lote and tipo == TipoMovimentacaoEstoque.ENTRADA and not codigo_lote:
             self.add_error("codigo_lote", "Este produto exige lote nas novas entradas.")
         if (fabricacao or validade) and not codigo_lote:
             self.add_error("codigo_lote", "Informe o lote ao preencher fabricacao ou validade.")
         if fabricacao and validade and fabricacao > validade:
             self.add_error("validade", "A validade nao pode ser anterior a fabricacao.")
-        if codigo_lote and cleaned_data.get("tipo") not in {
+        if codigo_lote and tipo not in {
             TipoMovimentacaoEstoque.ENTRADA,
             TipoMovimentacaoEstoque.DEVOLUCAO,
             TipoMovimentacaoEstoque.AJUSTE,
@@ -67,7 +67,6 @@ class MovimentacaoEstoqueForm(forms.Form):
         }:
             self.add_error("codigo_lote", "Este tipo de movimento nao aceita lote.")
         return cleaned_data
-
 
 class AtribuirSaldoLoteForm(forms.Form):
     codigo = forms.CharField(max_length=60, label="Codigo do lote")
@@ -91,10 +90,12 @@ class InventarioEstoqueForm(forms.ModelForm):
         model = InventarioEstoque
         fields = ["filial", "descricao"]
 
-    def __init__(self, *args, **kwargs):
+    def __init__(self, *args, user=None, **kwargs):
         super().__init__(*args, **kwargs)
+        empresa_id = empresa_id_do_usuario(user) if user else None
+        if empresa_id is not None:
+            self.fields["filial"].queryset = self.fields["filial"].queryset.filter(empresa_id=empresa_id)
         aplicar_select2(self, ["filial"])
-
 
 class ItemInventarioEstoqueForm(forms.ModelForm):
     class Meta:
@@ -114,15 +115,17 @@ class PerdaEstoqueForm(forms.ModelForm):
         model = PerdaEstoque
         fields = ["produto", "filial", "tipo", "quantidade", "motivo"]
 
-    def __init__(self, *args, **kwargs):
+    def __init__(self, *args, user=None, **kwargs):
         super().__init__(*args, **kwargs)
         from apps.empresas.models import Filial
         from apps.produtos.models import Produto
 
+        empresa_id = empresa_id_do_usuario(user) if user else None
         self.fields["produto"].queryset = Produto.objects.all()
         self.fields["filial"].queryset = Filial.objects.filter(is_active=True)
+        if empresa_id is not None:
+            self.fields["filial"].queryset = self.fields["filial"].queryset.filter(empresa_id=empresa_id)
         aplicar_select2(self, ["produto", "filial"])
-
 
 class DesmembramentoProdutoForm(forms.Form):
     receita = forms.ModelChoiceField(queryset=None, required=False, label="Receita padrao")
@@ -133,15 +136,19 @@ class DesmembramentoProdutoForm(forms.Form):
     motivo = forms.CharField(max_length=255)
     observacao = forms.CharField(widget=forms.Textarea(attrs={"rows": 3}), required=False)
 
-    def __init__(self, *args, **kwargs):
+    def __init__(self, *args, user=None, **kwargs):
         super().__init__(*args, **kwargs)
         from apps.empresas.models import Filial
         from apps.produtos.models import Produto
 
+        empresa_id = empresa_id_do_usuario(user) if user else None
         self.fields["receita"].queryset = ReceitaDesmembramento.objects.filter(is_active=True).select_related(
             "produto_origem", "produto_destino"
         )
         self.fields["filial"].queryset = Filial.objects.filter(is_active=True)
+        if empresa_id is not None:
+            self.fields["receita"].queryset = self.fields["receita"].queryset.filter(empresa_id=empresa_id)
+            self.fields["filial"].queryset = self.fields["filial"].queryset.filter(empresa_id=empresa_id)
         self.fields["produto_origem"].queryset = Produto.objects.all()
         self.fields["produto_origem"].widget.attrs["data-ajax-url"] = "/estoque/produtos/busca.json"
         self.fields["receita"].widget.attrs["data-recipe-select"] = "true"
@@ -166,7 +173,6 @@ class DesmembramentoProdutoForm(forms.Form):
                     "observacao": receita.observacao,
                 }
             )
-
 
 class DesmembramentoDestinoForm(forms.Form):
     produto_destino = forms.ModelChoiceField(queryset=None, label="Produto destino")
@@ -210,48 +216,46 @@ class ReceitaDesmembramentoForm(forms.ModelForm):
     class Meta:
         model = ReceitaDesmembramento
         fields = [
-            "empresa",
-            "filial",
-            "produto_origem",
-            "quantidade_origem",
-            "produto_destino",
-            "quantidade_destino",
-            "tipo",
-            "tipo_saida",
-            "observacao",
-            "is_active",
+            "empresa", "filial", "produto_origem", "quantidade_origem", "produto_destino",
+            "quantidade_destino", "tipo", "tipo_saida", "observacao", "is_active",
         ]
 
-    def __init__(self, *args, **kwargs):
+    def __init__(self, *args, user=None, **kwargs):
         super().__init__(*args, **kwargs)
         from apps.empresas.models import Empresa, Filial
         from apps.produtos.models import Produto
 
+        empresa_id = empresa_id_do_usuario(user) if user else None
         self.fields["empresa"].queryset = Empresa.objects.filter(is_active=True)
         self.fields["filial"].queryset = Filial.objects.filter(is_active=True)
+        if empresa_id is not None:
+            self.fields["empresa"].queryset = self.fields["empresa"].queryset.filter(pk=empresa_id)
+            self.fields["filial"].queryset = self.fields["filial"].queryset.filter(empresa_id=empresa_id)
         self.fields["produto_origem"].queryset = Produto.objects.all()
         self.fields["produto_destino"].queryset = Produto.objects.all()
         self.fields["produto_origem"].widget.attrs["data-ajax-url"] = "/estoque/produtos/busca.json"
         self.fields["produto_destino"].widget.attrs["data-ajax-url"] = "/estoque/produtos/busca.json"
         aplicar_select2(self, ["empresa", "filial", "produto_origem", "produto_destino"])
 
-
 class ComposicaoProdutoForm(forms.ModelForm):
     class Meta:
         model = ComposicaoProduto
         fields = ["empresa", "filial", "produto_final", "quantidade_final", "tipo", "observacao", "is_active"]
 
-    def __init__(self, *args, **kwargs):
+    def __init__(self, *args, user=None, **kwargs):
         super().__init__(*args, **kwargs)
         from apps.empresas.models import Empresa, Filial
         from apps.produtos.models import Produto
 
+        empresa_id = empresa_id_do_usuario(user) if user else None
         self.fields["empresa"].queryset = Empresa.objects.filter(is_active=True)
         self.fields["filial"].queryset = Filial.objects.filter(is_active=True)
+        if empresa_id is not None:
+            self.fields["empresa"].queryset = self.fields["empresa"].queryset.filter(pk=empresa_id)
+            self.fields["filial"].queryset = self.fields["filial"].queryset.filter(empresa_id=empresa_id)
         self.fields["produto_final"].queryset = Produto.objects.all()
         self.fields["produto_final"].widget.attrs["data-ajax-url"] = "/estoque/produtos/busca.json"
         aplicar_select2(self, ["empresa", "filial", "produto_final"])
-
 
 class ItemComposicaoProdutoForm(forms.ModelForm):
     class Meta:
@@ -288,12 +292,15 @@ class ProducaoComposicaoForm(forms.Form):
     fabricacao = forms.DateField(required=False, widget=forms.DateInput(attrs={"type": "date"}))
     validade = forms.DateField(required=False, widget=forms.DateInput(attrs={"type": "date"}))
 
-    def __init__(self, *args, composicao=None, **kwargs):
+    def __init__(self, *args, composicao=None, user=None, **kwargs):
         self._composicao = composicao
         super().__init__(*args, **kwargs)
         from apps.empresas.models import Filial
 
+        empresa_id = empresa_id_do_usuario(user) if user else None
         self.fields["filial"].queryset = Filial.objects.filter(is_active=True)
+        if empresa_id is not None:
+            self.fields["filial"].queryset = self.fields["filial"].queryset.filter(empresa_id=empresa_id)
         if composicao and composicao.filial_id:
             self.fields["filial"].queryset = self.fields["filial"].queryset.filter(pk=composicao.filial_id)
             self.initial.setdefault("filial", composicao.filial)
@@ -317,53 +324,31 @@ class ProducaoComposicaoForm(forms.Form):
     def composicao(self):
         return getattr(self, "_composicao", None)
 
-
 class OrdemProducaoComposicaoForm(forms.ModelForm):
     class Meta:
         model = OrdemProducaoComposicao
         fields = [
-            "composicao",
-            "filial",
-            "quantidade_planejada",
-            "data_programada",
-            "prioridade",
-            "setor_responsavel",
-            "etapa_operacional",
-            "responsavel_operacional",
-            "motivo",
-            "observacao",
+            "composicao", "filial", "quantidade_planejada", "data_programada", "prioridade",
+            "setor_responsavel", "etapa_operacional", "responsavel_operacional", "motivo", "observacao",
         ]
-        widgets = {
-            "data_programada": forms.DateInput(attrs={"type": "date"}),
-            "observacao": forms.Textarea(attrs={"rows": 3}),
-        }
+        widgets = {"data_programada": forms.DateInput(attrs={"type": "date"}), "observacao": forms.Textarea(attrs={"rows": 3})}
 
-    def __init__(self, *args, **kwargs):
+    def __init__(self, *args, user=None, **kwargs):
         super().__init__(*args, **kwargs)
         from django.contrib.auth import get_user_model
         from apps.empresas.models import Filial
 
+        empresa_id = empresa_id_do_usuario(user) if user else None
         self.fields["composicao"].queryset = ComposicaoProduto.objects.filter(is_active=True).select_related("produto_final", "filial")
         self.fields["filial"].queryset = Filial.objects.filter(is_active=True)
-        self.fields["responsavel_operacional"].queryset = get_user_model().objects.filter(is_active=True).order_by("username")
+        if empresa_id is not None:
+            self.fields["composicao"].queryset = self.fields["composicao"].queryset.filter(empresa_id=empresa_id)
+            self.fields["filial"].queryset = self.fields["filial"].queryset.filter(empresa_id=empresa_id)
+        usuarios = get_user_model().objects.filter(is_active=True)
+        self.fields["responsavel_operacional"].queryset = (
+            usuarios_para_usuario(user, usuarios).order_by("username") if user else usuarios.order_by("username")
+        )
         aplicar_select2(self, ["composicao", "filial", "responsavel_operacional"])
-
-
-class ConfiguracaoSLASetorProducaoForm(forms.ModelForm):
-    class Meta:
-        model = ConfiguracaoSLASetorProducao
-        fields = ["empresa", "filial", "setor", "meta_minutos", "observacao", "is_active"]
-
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
-        from apps.empresas.models import Empresa, Filial
-
-        self.fields["empresa"].queryset = Empresa.objects.filter(is_active=True)
-        self.fields["filial"].queryset = Filial.objects.filter(is_active=True)
-        self.fields["filial"].required = False
-        self.fields["setor"].widget.attrs["placeholder"] = "Ex.: Padaria, Acougue, Hortifruti"
-        self.fields["meta_minutos"].widget.attrs["min"] = 1
-        aplicar_select2(self, ["empresa", "filial"])
 
     def clean(self):
         cleaned = super().clean()
@@ -371,4 +356,32 @@ class ConfiguracaoSLASetorProducaoForm(forms.ModelForm):
         filial = cleaned.get("filial")
         if composicao and filial and composicao.filial_id and composicao.filial_id != filial.id:
             self.add_error("filial", "A filial deve ser a mesma vinculada à composição.")
+        return cleaned
+
+class ConfiguracaoSLASetorProducaoForm(forms.ModelForm):
+    class Meta:
+        model = ConfiguracaoSLASetorProducao
+        fields = ["empresa", "filial", "setor", "meta_minutos", "observacao", "is_active"]
+
+    def __init__(self, *args, user=None, **kwargs):
+        super().__init__(*args, **kwargs)
+        from apps.empresas.models import Empresa, Filial
+
+        empresa_id = empresa_id_do_usuario(user) if user else None
+        self.fields["empresa"].queryset = Empresa.objects.filter(is_active=True)
+        self.fields["filial"].queryset = Filial.objects.filter(is_active=True)
+        if empresa_id is not None:
+            self.fields["empresa"].queryset = self.fields["empresa"].queryset.filter(pk=empresa_id)
+            self.fields["filial"].queryset = self.fields["filial"].queryset.filter(empresa_id=empresa_id)
+        self.fields["filial"].required = False
+        self.fields["setor"].widget.attrs["placeholder"] = "Ex.: Padaria, Acougue, Hortifruti"
+        self.fields["meta_minutos"].widget.attrs["min"] = 1
+        aplicar_select2(self, ["empresa", "filial"])
+
+    def clean(self):
+        cleaned = super().clean()
+        empresa = cleaned.get("empresa")
+        filial = cleaned.get("filial")
+        if empresa and filial and filial.empresa_id != empresa.id:
+            self.add_error("filial", "A filial deve pertencer à empresa informada.")
         return cleaned

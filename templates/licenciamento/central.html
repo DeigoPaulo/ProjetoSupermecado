@@ -1,0 +1,66 @@
+{% extends "base.html" %}
+{% block title %}Central de licenças{% endblock %}
+{% block content %}
+<header class="page-header">
+  <div>
+    <h1>Central de licenças</h1>
+    <p>Contratos, cobranças e instalações locais administrados pela Deigo Tecnologia.</p>
+  </div>
+  <div class="actions">
+    <a class="secondary-button" href="{% url 'licenciamento:central_diagnostico' %}" target="_blank" rel="noopener"><i class="fa-solid fa-stethoscope"></i> Diagnóstico</a>
+    <a class="secondary-button" href="{% url 'licenciamento:emitir_emergencial' %}"><i class="fa-solid fa-unlock-keyhole"></i> Liberação offline</a>
+    <a class="secondary-button" href="{% url 'licenciamento:plano_novo' %}">Novo plano</a>
+    <a class="secondary-button" href="{% url 'licenciamento:instalacao_nova' %}">Credenciar servidor</a>
+    <a class="primary-button" href="{% url 'licenciamento:contrato_novo' %}">Novo contrato</a>
+  </div>
+</header>
+
+<section class="metrics-grid">
+  <article class="metric"><span>Planos</span><strong>{{ planos_total }}</strong></article>
+  <article class="metric"><span>Contratos</span><strong>{{ contratos_total }}</strong></article>
+  <article class="metric"><span>Instalações</span><strong>{{ instalacoes_total }}</strong></article>
+  <article class="metric"><span>Faturas pendentes</span><strong>{{ faturas_pendentes }}</strong></article>
+</section>
+
+<section class="panel">
+  <div class="section-heading">
+    <div><h2>Prontidão da central</h2><p>Valida segurança, cobrança e automação antes da homologação.</p></div>
+    <span class="status {% if readiness.pronto_homologacao %}status-success{% else %}status-warning{% endif %}">{% if readiness.pronto_homologacao %}Pronta para homologação{% else %}Configuração pendente{% endif %}</span>
+  </div>
+  <div class="readiness-grid">
+    <div><span>Assinatura Ed25519</span><strong>{% if readiness.chave_privada_ed25519 %}Configurada{% else %}Pendente{% endif %}</strong></div>
+    <div><span>Asaas</span><strong>{% if readiness.asaas_configurado %}{% if readiness.asaas_sandbox %}Sandbox{% else %}Produção{% endif %}{% else %}Pendente{% endif %}</strong></div>
+    <div><span>Webhook</span><strong>{% if readiness.webhook_configurado %}Configurado{% else %}Pendente{% endif %}</strong></div>
+    <div><span>Rotina diária</span><strong>{% if readiness.script_agendamento_disponivel %}Script disponível{% else %}Pendente{% endif %}</strong></div>
+  </div>
+  {% if readiness.alertas %}<div class="notice warning"><i class="fa-solid fa-triangle-exclamation"></i><div><strong>Pendências de implantação</strong><ul>{% for alerta in readiness.alertas %}<li>{{ alerta }}</li>{% endfor %}</ul></div></div>{% endif %}
+  <div class="command-box"><code>{{ readiness.comando_agendamento }}</code></div>
+</section>
+
+<section class="panel">
+  <h2>Contratos por empresa</h2>
+  <div class="table-wrapper"><table><thead><tr><th>Empresa</th><th>Plano</th><th>Mensalidade</th><th>Status</th><th>Asaas</th><th></th></tr></thead><tbody>
+    {% for contrato in contratos %}<tr><td><strong>{{ contrato.empresa.nome_fantasia }}</strong><br><small>{{ contrato.empresa.cnpj }}</small></td><td>{{ contrato.plano }}</td><td>R$ {{ contrato.valor_mensal|floatformat:2 }}</td><td><span class="status {% if contrato.operacional %}status-success{% else %}status-danger{% endif %}">{{ contrato.get_status_display }}</span></td><td>{% if contrato.asaas_customer_id %}<span class="status status-success">Integrado</span>{% else %}<span class="status status-warning">Pendente</span>{% endif %}</td><td><form method="post" action="{% url 'licenciamento:gerar_fatura' contrato.pk %}">{% csrf_token %}<button class="secondary-button" type="submit"><i class="fa-solid fa-barcode"></i> Gerar fatura</button></form></td></tr>
+    {% empty %}<tr><td colspan="6" class="empty">Nenhum contrato cadastrado.</td></tr>{% endfor %}
+  </tbody></table></div>
+  {% include "includes/pagination_named.html" with page_obj=contratos %}
+</section>
+
+<section class="panel">
+  <h2>Servidores credenciados</h2>
+  <div class="table-wrapper"><table><thead><tr><th>Empresa</th><th>Instalação</th><th>Última consulta</th><th>Versão</th><th>Status</th></tr></thead><tbody>
+    {% for item in instalacoes %}<tr><td>{{ item.empresa }}</td><td>{{ item.nome }}<br><small>{{ item.identificador }}</small></td><td>{{ item.ultima_consulta_em|date:"d/m/Y H:i"|default:"Nunca" }}</td><td>{{ item.versao_sistema|default:"-" }}</td><td>{% if item.ativa %}<span class="status status-success">Ativa</span>{% else %}<span class="status status-danger">Bloqueada</span>{% endif %}</td></tr>
+    {% empty %}<tr><td colspan="5" class="empty">Nenhum servidor credenciado.</td></tr>{% endfor %}
+  </tbody></table></div>
+  {% include "includes/pagination_named.html" with page_obj=instalacoes %}
+</section>
+
+<section class="panel">
+  <h2>Liberações emergenciais recentes</h2>
+  <div class="table-wrapper"><table><thead><tr><th>Empresa</th><th>Instalação</th><th>Emitida por</th><th>Validade</th><th>Utilização</th></tr></thead><tbody>
+    {% for item in autorizacoes_emergenciais %}<tr><td>{{ item.instalacao.empresa.nome_fantasia }}</td><td>{{ item.instalacao.nome }}</td><td>{{ item.emitida_por.username }}</td><td>{{ item.valida_ate|date:"d/m/Y H:i" }}</td><td>{% if item.reconciliada_em %}<span class="status status-success">Reconciliada em {{ item.reconciliada_em|date:"d/m/Y H:i" }}</span>{% elif item.usada_em %}<span class="status status-warning">Usada, aguardando reconciliação</span>{% else %}<span class="status">Emitida</span>{% endif %}</td></tr>
+    {% empty %}<tr><td colspan="5" class="empty">Nenhuma liberação emergencial emitida.</td></tr>{% endfor %}
+  </tbody></table></div>
+  {% include "includes/pagination_named.html" with page_obj=autorizacoes_emergenciais %}
+</section>
+{% endblock %}

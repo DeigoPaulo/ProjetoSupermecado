@@ -190,3 +190,131 @@ class RecuperacaoSenhaTests(TestCase):
 
         reutilizacao = self.client.get(url, follow=True)
         self.assertContains(reutilizacao, "Link inválido ou expirado")
+
+class UsuariosEscopoEmpresaTests(TestCase):
+    def setUp(self):
+        self.client = Client(HTTP_HOST="localhost")
+        self.empresa = Empresa.objects.create(
+            razao_social="Empresa Um Ltda",
+            nome_fantasia="Empresa Um",
+            cnpj="11.111.111/0001-11",
+        )
+        self.filial = Filial.objects.create(empresa=self.empresa, nome="Matriz Um", cnpj=self.empresa.cnpj)
+        self.outra_empresa = Empresa.objects.create(
+            razao_social="Empresa Dois Ltda",
+            nome_fantasia="Empresa Dois",
+            cnpj="22.222.222/0001-22",
+        )
+        self.outra_filial = Filial.objects.create(
+            empresa=self.outra_empresa,
+            nome="Matriz Dois",
+            cnpj=self.outra_empresa.cnpj,
+        )
+        self.admin_empresa = get_user_model().objects.create_user("admin_empresa", password="123")
+        PerfilUsuario.objects.create(
+            usuario=self.admin_empresa,
+            filial=self.filial,
+            tipo=TipoPerfil.ADMINISTRADOR,
+        )
+        self.usuario_proprio = get_user_model().objects.create_user("caixa_empresa_um", password="123")
+        PerfilUsuario.objects.create(
+            usuario=self.usuario_proprio,
+            filial=self.filial,
+            tipo=TipoPerfil.OPERADOR_CAIXA,
+        )
+        self.usuario_estrangeiro = get_user_model().objects.create_user("caixa_empresa_dois", password="123")
+        PerfilUsuario.objects.create(
+            usuario=self.usuario_estrangeiro,
+            filial=self.outra_filial,
+            tipo=TipoPerfil.OPERADOR_CAIXA,
+        )
+        self.super_admin = get_user_model().objects.create_superuser("software_owner", password="123")
+        self.client.force_login(self.admin_empresa)
+
+    def test_admin_empresa_lista_e_edita_somente_sua_equipe(self):
+        response = self.client.get("/usuarios/")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "caixa_empresa_um")
+        self.assertNotContains(response, "caixa_empresa_dois")
+        self.assertNotContains(response, "software_owner")
+        self.assertEqual(self.client.get(f"/usuarios/{self.usuario_proprio.pk}/editar/").status_code, 200)
+        self.assertEqual(self.client.get(f"/usuarios/{self.usuario_estrangeiro.pk}/editar/").status_code, 404)
+        self.assertEqual(self.client.get(f"/usuarios/{self.super_admin.pk}/editar/").status_code, 404)
+
+    def test_admin_empresa_so_pode_vincular_usuario_a_filial_propria(self):
+        form = self.client.get("/usuarios/novo/")
+        self.assertContains(form, "Matriz Um")
+        self.assertNotContains(form, "Matriz Dois")
+        self.assertNotContains(form, 'name="is_staff"')
+
+        response = self.client.post(
+            "/usuarios/novo/",
+            {
+                "username": "tentativa_outra_empresa",
+                "password": "Senha-segura-123",
+                "tipo": TipoPerfil.OPERADOR_CAIXA,
+                "filial": self.outra_filial.pk,
+                "is_active": "on",
+                "is_staff": "on",
+            },
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "Faça uma escolha válida")
+        self.assertFalse(get_user_model().objects.filter(username="tentativa_outra_empresa").exists())
+
+    def test_admin_empresa_cria_usuario_proprio_sem_acesso_staff(self):
+        response = self.client.post(
+            "/usuarios/novo/",
+            {
+                "username": "novo_caixa_local",
+                "password": "Senha-segura-123",
+                "tipo": TipoPerfil.OPERADOR_CAIXA,
+                "filial": self.filial.pk,
+                "is_active": "on",
+                "is_staff": "on",
+            },
+        )
+
+        self.assertEqual(response.status_code, 302)
+        usuario = get_user_model().objects.get(username="novo_caixa_local")
+        self.assertEqual(usuario.perfil_supermercado.filial, self.filial)
+        self.assertFalse(usuario.is_staff)
+
+    def test_super_admin_mantem_visao_global(self):
+        self.client.force_login(self.super_admin)
+
+        lista = self.client.get("/usuarios/")
+        form = self.client.get("/usuarios/novo/")
+
+        self.assertContains(lista, "caixa_empresa_um")
+        self.assertContains(lista, "caixa_empresa_dois")
+        self.assertContains(form, "Matriz Um")
+        self.assertContains(form, "Matriz Dois")
+        self.assertContains(form, 'name="is_staff"')
+
+class GovernancaCadastroUsuarioTests(TestCase):
+    def setUp(self):
+        User = get_user_model()
+        empresa = Empresa.objects.create(razao_social="Empresa Governada", nome_fantasia="Empresa Governada", cnpj="50123456000110")
+        self.filial = Filial.objects.create(empresa=empresa, nome="Matriz Governada")
+        self.admin = User.objects.create_user("admin_governanca", password="123")
+        PerfilUsuario.objects.create(usuario=self.admin, filial=self.filial, tipo=TipoPerfil.ADMINISTRADOR)
+        self.gerente = User.objects.create_user("gerente_governanca", password="123")
+        PerfilUsuario.objects.create(usuario=self.gerente, filial=self.filial, tipo=TipoPerfil.GERENTE)
+
+    def test_admin_nao_cria_usuario_sem_filial(self):
+        self.client.force_login(self.admin)
+        response = self.client.post("/usuarios/novo/", {
+            "username": "usuario_sem_filial", "password": "Senha-123-forte",
+            "tipo": TipoPerfil.OPERADOR_CAIXA, "is_active": "on",
+        })
+        self.assertEqual(response.status_code, 200)
+        self.assertFalse(get_user_model().objects.filter(username="usuario_sem_filial").exists())
+        self.assertIn("filial", response.context["form"].errors)
+
+    def test_gerente_nao_gerencia_usuarios(self):
+        self.client.force_login(self.gerente)
+        self.assertEqual(self.client.get("/usuarios/").status_code, 403)
+        self.assertEqual(self.client.get("/usuarios/novo/").status_code, 403)

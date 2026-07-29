@@ -22,12 +22,15 @@ class UsuarioPerfilForm(forms.Form):
     is_active = forms.BooleanField(label="Ativo", required=False, initial=True)
     is_staff = forms.BooleanField(label="Acesso ao admin Django", required=False)
 
-    def __init__(self, *args, instance=None, **kwargs):
+    def __init__(self, *args, instance=None, filiais_queryset=None, permite_staff=True, exige_filial=False, **kwargs):
         super().__init__(*args, **kwargs)
         from apps.empresas.models import Filial
 
         self.instance = instance
-        self.fields["filial"].queryset = Filial.objects.filter(is_active=True)
+        self.fields["filial"].queryset = filiais_queryset if filiais_queryset is not None else Filial.objects.filter(is_active=True)
+        self.fields["filial"].required = exige_filial
+        if not permite_staff:
+            self.fields.pop("is_staff")
 
         if instance:
             perfil = getattr(instance, "perfil_supermercado", None)
@@ -65,7 +68,8 @@ class UsuarioPerfilForm(forms.Form):
         user.last_name = self.cleaned_data["last_name"]
         user.email = self.cleaned_data["email"]
         user.is_active = self.cleaned_data["is_active"]
-        user.is_staff = self.cleaned_data["is_staff"]
+        if "is_staff" in self.cleaned_data:
+            user.is_staff = self.cleaned_data["is_staff"]
         if self.cleaned_data["password"]:
             user.set_password(self.cleaned_data["password"])
         user.save()

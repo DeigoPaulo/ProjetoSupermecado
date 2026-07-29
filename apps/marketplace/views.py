@@ -1,7 +1,8 @@
 from django.contrib import messages
 from django.conf import settings
-from django.core.exceptions import ValidationError
+from django.core.exceptions import ImproperlyConfigured, ValidationError
 from django.db import transaction
+from django.core.paginator import Paginator
 from django.db.models import Count, Max, Q, Sum
 from django.http import JsonResponse
 from django.shortcuts import get_object_or_404, redirect, render
@@ -18,6 +19,8 @@ from apps.configuracoes.models import TipoDocumentoImpressao
 from apps.configuracoes.services import configuracao_impressao_para, estilos_impressao
 from apps.fiscal.services import preparar_documento_pedido_online
 
+from .adapters import MarketplaceAdapterError, diagnosticar_adaptador_marketplace, normalizar_payload_marketplace
+from .escopo import integracoes_para_usuario, pedidos_para_usuario, politicas_para_usuario
 from .forms import CalcularEntregaForm, FaixaTaxaEntregaFormSet, IntegracaoMarketplaceForm, ItemPedidoOnlineForm, PagamentoPedidoForm, PedidoOnlineForm, PoliticaEntregaForm
 from .models import CanalPedido, IntegracaoMarketplace, ItemPedidoOnline, PedidoOnline, PoliticaEntrega, StatusPagamentoPedido, StatusPedido, TipoEntrega
 from .services import alterar_status_pedido, calcular_entrega_pedido, calcular_taxa_entrega, cancelar_pedido, gerar_token_integracao, registrar_pagamento, reservar_pedido
@@ -26,7 +29,7 @@ from apps.produtos.models import Produto
 
 @role_required(*CADASTROS)
 def pedidos(request):
-    base_queryset = PedidoOnline.objects.select_related("filial", "cliente", "usuario")
+    base_queryset = pedidos_para_usuario(request.user).select_related("filial", "cliente", "usuario")
     queryset = base_queryset
     termo = request.GET.get("q", "").strip()
     status = request.GET.get("status", "").strip()
@@ -44,7 +47,8 @@ def pedidos(request):
         "pronto": base_queryset.filter(status=StatusPedido.PRONTO).count(),
         "entrega": base_queryset.filter(status=StatusPedido.SAIU_ENTREGA).count(),
     }
-    pedidos_lista = list(queryset.prefetch_related("itens")[:100])
+    pagina = Paginator(queryset.prefetch_related("itens"), 50).get_page(request.GET.get("page"))
+    pedidos_lista = list(pagina.object_list)
     for pedido in pedidos_lista:
         total_pedido = sum((item.quantidade for item in pedido.itens.all()), Decimal("0"))
         total_separado = sum((item.quantidade_separada for item in pedido.itens.all()), Decimal("0"))
@@ -56,6 +60,7 @@ def pedidos(request):
         "marketplace/pedidos.html",
         {
             "pedidos": pedidos_lista,
+            "page_obj": pagina,
             "status_opcoes": StatusPedido.choices,
             "valor_total": resumo["valor"] or 0,
             "painel": painel,
@@ -65,7 +70,7 @@ def pedidos(request):
 
 @role_required(*CADASTROS)
 def novo_pedido(request):
-    form = PedidoOnlineForm(request.POST or None)
+    form = PedidoOnlineForm(request.POST or None, user=request.user)
     if request.method == "POST" and form.is_valid():
         pedido = form.save(commit=False)
         pedido.usuario = request.user
@@ -77,7 +82,7 @@ def novo_pedido(request):
 
 @role_required(*CADASTROS)
 def detalhe(request, pk):
-    pedido = get_object_or_404(PedidoOnline.objects.select_related("filial", "cliente", "usuario").prefetch_related("itens__produto"), pk=pk)
+    pedido = get_object_or_404(pedidos_para_usuario(request.user).select_related("filial", "cliente", "usuario").prefetch_related("itens__produto"), pk=pk)
     form_item = ItemPedidoOnlineForm(request.POST or None)
     if request.method == "POST" and request.POST.get("acao") == "item" and pedido.status == StatusPedido.RASCUNHO and form_item.is_valid():
         item = form_item.save(commit=False)
@@ -114,14 +119,14 @@ def detalhe(request, pk):
 
 @role_required(*CADASTROS)
 def imprimir_separacao(request, pk):
-    pedido = get_object_or_404(PedidoOnline.objects.select_related("filial__empresa", "cliente", "usuario").prefetch_related("itens__produto"), pk=pk)
+    pedido = get_object_or_404(pedidos_para_usuario(request.user).select_related("filial__empresa", "cliente", "usuario").prefetch_related("itens__produto"), pk=pk)
     impressao = configuracao_impressao_para(pedido.filial, TipoDocumentoImpressao.PEDIDO_SEPARACAO)
     return render(request, "marketplace/pedido_separacao_imprimir.html", {"pedido": pedido, "impressao": impressao, "estilos_impressao": estilos_impressao(impressao)})
 
 
 @role_required(*CADASTROS)
 def remover_item(request, pk, item_id):
-    pedido = get_object_or_404(PedidoOnline, pk=pk, status=StatusPedido.RASCUNHO)
+    pedido = get_object_or_404(pedidos_para_usuario(request.user), pk=pk, status=StatusPedido.RASCUNHO)
     if request.method == "POST":
         item = get_object_or_404(pedido.itens, pk=item_id)
         item.delete()
@@ -132,7 +137,7 @@ def remover_item(request, pk, item_id):
 
 @role_required(*CADASTROS)
 def acao_pedido(request, pk):
-    pedido = get_object_or_404(PedidoOnline, pk=pk)
+    pedido = get_object_or_404(pedidos_para_usuario(request.user), pk=pk)
     if request.method != "POST":
         return redirect("marketplace:detalhe", pk=pk)
     acao = request.POST.get("acao")
@@ -175,7 +180,7 @@ def acao_pedido(request, pk):
 
 @role_required(*SISTEMA)
 def integracoes(request):
-    diagnostico = _diagnostico_integracoes_marketplace()
+    diagnostico = _diagnostico_integracoes_marketplace(request.user)
     return render(
         request,
         "marketplace/integracoes.html",
@@ -191,6 +196,9 @@ def integracoes(request):
 def _prontidao_integracao_marketplace(integracao, alertas, politica_entrega):
     bloqueios = []
     recomendacoes = []
+    adaptador = diagnosticar_adaptador_marketplace(integracao.provedor)
+    if not adaptador["carregavel"]:
+        bloqueios.append(adaptador["erro"] or "Adaptador do parceiro indisponivel.")
     if not integracao.is_active:
         bloqueios.append("Integração inativa.")
     if not politica_entrega.get("ativa") and not politica_entrega.get("permite_retirada"):
@@ -218,12 +226,13 @@ def _prontidao_integracao_marketplace(integracao, alertas, politica_entrega):
         "percentual": percentual,
         "bloqueios": bloqueios,
         "recomendacoes": recomendacoes,
+        "adaptador": adaptador,
         "proximo_passo": bloqueios[0] if bloqueios else (recomendacoes[0] if recomendacoes else "Enviar pedido piloto com idempotência e acompanhar separação, pagamento e fiscal."),
     }
 
-def _diagnostico_integracoes_marketplace():
+def _diagnostico_integracoes_marketplace(user=None):
     integracoes = list(
-        IntegracaoMarketplace.objects.select_related("filial__empresa", "usuario")
+        integracoes_para_usuario(user).select_related("filial__empresa", "usuario")
         .annotate(
             total_pedidos=Count("pedidos", distinct=True),
             pedidos_abertos=Count("pedidos", filter=~Q(pedidos__status__in=[StatusPedido.CONCLUIDO, StatusPedido.CANCELADO]), distinct=True),
@@ -240,6 +249,9 @@ def _diagnostico_integracoes_marketplace():
     payload_integracoes = []
     for integracao in integracoes:
         alerta_integracao = []
+        diagnostico_adaptador = diagnosticar_adaptador_marketplace(integracao.provedor)
+        if not diagnostico_adaptador["carregavel"]:
+            alerta_integracao.append(diagnostico_adaptador["erro"] or "Adaptador do parceiro indisponivel.")
         if not integracao.is_active:
             alerta_integracao.append("Integracao inativa.")
         if not integracao.ultimo_uso_em:
@@ -259,6 +271,7 @@ def _diagnostico_integracoes_marketplace():
             {
                 "id": integracao.pk,
                 "nome": integracao.nome,
+                "provedor": integracao.provedor,
                 "filial": str(integracao.filial),
                 "ativa": integracao.is_active,
                 "token_prefixo": integracao.token_prefixo,
@@ -287,7 +300,7 @@ def _diagnostico_integracoes_marketplace():
 
 @role_required(*SISTEMA)
 def integracoes_diagnostico(request):
-    diagnostico = _diagnostico_integracoes_marketplace()
+    diagnostico = _diagnostico_integracoes_marketplace(request.user)
     return JsonResponse(
         {
             "gerado_em": diagnostico["gerado_em"].isoformat(),
@@ -300,7 +313,7 @@ def integracoes_diagnostico(request):
 
 @role_required(*SISTEMA)
 def nova_integracao(request):
-    form = IntegracaoMarketplaceForm(request.POST or None)
+    form = IntegracaoMarketplaceForm(request.POST or None, user=request.user)
     if request.method == "POST" and form.is_valid():
         integracao = form.save(commit=False)
         integracao.usuario = request.user
@@ -315,7 +328,7 @@ def nova_integracao(request):
 
 @role_required(*SISTEMA)
 def renovar_token(request, pk):
-    integracao = get_object_or_404(IntegracaoMarketplace, pk=pk)
+    integracao = get_object_or_404(integracoes_para_usuario(request.user), pk=pk)
     if request.method == "POST":
         request.session["marketplace_novo_token"] = gerar_token_integracao(integracao)
         messages.success(request, "Chave renovada. A chave anterior deixou de funcionar.")
@@ -324,7 +337,7 @@ def renovar_token(request, pk):
 
 @role_required(*SISTEMA)
 def politicas_entrega(request):
-    politicas = PoliticaEntrega.objects.select_related("filial__empresa").prefetch_related("faixas")
+    politicas = politicas_para_usuario(request.user).select_related("filial__empresa").prefetch_related("faixas")
     simulacao = None
     if request.GET.get("simular") == "1":
         simulacao = _simular_politica_entrega(request)
@@ -338,8 +351,8 @@ def politicas_entrega(request):
     )
 
 
-def _politicas_entrega_diagnostico():
-    politicas = PoliticaEntrega.objects.select_related("filial__empresa").prefetch_related("faixas")
+def _politicas_entrega_diagnostico(user=None):
+    politicas = politicas_para_usuario(user).select_related("filial__empresa").prefetch_related("faixas")
     provider_configurado = bool(getattr(settings, "MARKETPLACE_GEOCODING_PROVIDER_URL", ""))
     itens = []
     resumo = {"politicas": 0, "ativas": 0, "sem_faixas": 0, "com_alerta": 0}
@@ -523,7 +536,7 @@ def _consultar_distancia_entrega(*, politica, endereco):
         return {"status": "manual_required", "mensagem": "Geocodificacao nao configurada. Informe a distancia manualmente."}
     url = _montar_url_geocoding(provider_url, politica=politica, endereco=endereco)
     timeout = getattr(settings, "MARKETPLACE_GEOCODING_TIMEOUT_SEGUNDOS", 5)
-    requisicao = Request(url, headers={"Accept": "application/json", "User-Agent": "MercaFlowERP/delivery_geocode_v1"})
+    requisicao = Request(url, headers={"Accept": "application/json", "User-Agent": "DeigoVarejoERP/delivery_geocode_v1"})
     try:
         resposta = urlopen(requisicao, timeout=timeout)
         try:
@@ -564,7 +577,7 @@ def _simular_politica_entrega(request):
         endereco = request.GET.get("endereco", "").strip()
     except (TypeError, ValueError, InvalidOperation):
         return {"erro": "Informe politica, subtotal e distancia validos."}
-    politica = PoliticaEntrega.objects.filter(pk=politica_id, is_active=True).prefetch_related("faixas").first()
+    politica = politicas_para_usuario(request.user).filter(pk=politica_id, is_active=True).prefetch_related("faixas").first()
     if not politica:
         return {"erro": "Politica ativa nao encontrada."}
     geocodificacao = None
@@ -595,13 +608,13 @@ def _simular_politica_entrega(request):
 
 @role_required(*SISTEMA)
 def politicas_entrega_diagnostico(request):
-    return JsonResponse(_politicas_entrega_diagnostico())
+    return JsonResponse(_politicas_entrega_diagnostico(request.user))
 
 
 @role_required(*SISTEMA)
 def politica_entrega_form(request, pk=None):
-    politica = get_object_or_404(PoliticaEntrega, pk=pk) if pk else None
-    form = PoliticaEntregaForm(request.POST or None, instance=politica)
+    politica = get_object_or_404(politicas_para_usuario(request.user), pk=pk) if pk else None
+    form = PoliticaEntregaForm(request.POST or None, instance=politica, user=request.user)
     formset = FaixaTaxaEntregaFormSet(request.POST or None, instance=politica)
     if request.method == "POST" and form.is_valid() and formset.is_valid():
         with transaction.atomic():
@@ -657,6 +670,7 @@ def api_status_integracao(request):
             "integracao": {
                 "id": integracao.id,
                 "nome": integracao.nome,
+                "provedor": integracao.provedor,
                 "token_prefixo": integracao.token_prefixo,
                 "ativa": integracao.is_active,
             },
@@ -695,18 +709,27 @@ def api_receber_pedido(request):
     if len(request.body) > 1024 * 1024:
         return JsonResponse({"erro": "Conteudo excede o limite de 1 MB."}, status=413)
     try:
-        dados = json.loads(request.body)
+        payload_recebido = json.loads(request.body)
+    except json.JSONDecodeError:
+        return JsonResponse({"erro": "JSON invalido ou campos obrigatorios ausentes."}, status=400)
+    try:
+        dados = normalizar_payload_marketplace(integracao, payload_recebido)
+    except ImproperlyConfigured as exc:
+        return JsonResponse({"erro": str(exc), "contrato": "marketplace_partner_adapter_v1"}, status=503)
+    except MarketplaceAdapterError as exc:
+        return JsonResponse({"erro": str(exc), "contrato": "marketplace_partner_adapter_v1"}, status=400)
+    try:
         referencia = str(dados["referencia_externa"]).strip()
         nome_cliente = str(dados["nome_cliente"]).strip()
         itens = dados["itens"]
         tipo_entrega = dados.get("tipo_entrega", TipoEntrega.RETIRADA)
         taxa_entrega = Decimal(str(dados.get("taxa_entrega", 0)))
         desconto = Decimal(str(dados.get("desconto", 0)))
-    except (json.JSONDecodeError, KeyError, TypeError, InvalidOperation):
-        return JsonResponse({"erro": "JSON invalido ou campos obrigatorios ausentes."}, status=400)
+    except (KeyError, TypeError, InvalidOperation):
+        return JsonResponse({"erro": "Pedido normalizado sem os campos obrigatorios."}, status=400)
     if not referencia or not nome_cliente or not isinstance(itens, list) or not itens:
         return JsonResponse({"erro": "Informe referencia_externa, nome_cliente e ao menos um item."}, status=400)
-    existente = PedidoOnline.objects.filter(integracao=integracao, referencia_externa=referencia).first()
+    existente = integracao.pedidos.filter(referencia_externa=referencia).first()
     if existente:
         return JsonResponse({"pedido_id": existente.pk, "status": existente.status, "duplicado": True}, status=200)
     try:

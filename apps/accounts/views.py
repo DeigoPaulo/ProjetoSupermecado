@@ -3,46 +3,85 @@ from django.contrib import messages
 from django.contrib.auth.decorators import login_required
 from django.contrib.auth.mixins import LoginRequiredMixin
 from django.contrib.auth.models import User
+from django.db.models import Q
 from django.http import JsonResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.views.generic import ListView
 
+from apps.empresas.models import Filial
+
 from .forms import UsuarioPerfilForm
+from .models import TipoPerfil
 from .permissions import SISTEMA, RoleRequiredMixin, role_required
 
 
+def _empresa_id_do_usuario(user):
+    if user.is_superuser:
+        return None
+    perfil = getattr(user, "perfil_supermercado", None)
+    return perfil.filial.empresa_id if perfil and perfil.is_active and perfil.filial_id else 0
+
+
+def _usuarios_visiveis(user):
+    queryset = User.objects.all()
+    if user.is_superuser:
+        return queryset
+    return queryset.filter(
+        is_superuser=False,
+        perfil_supermercado__is_active=True,
+        perfil_supermercado__filial__empresa_id=_empresa_id_do_usuario(user),
+    )
+
+
+def _filiais_permitidas(user):
+    queryset = Filial.objects.filter(is_active=True)
+    if user.is_superuser:
+        return queryset
+    return queryset.filter(empresa_id=_empresa_id_do_usuario(user))
+
+
 class UsuarioListView(LoginRequiredMixin, RoleRequiredMixin, ListView):
-    required_roles = SISTEMA
+    required_roles = {TipoPerfil.ADMINISTRADOR}
     model = User
     template_name = "accounts/usuario_list.html"
     context_object_name = "usuarios"
-    paginate_by = 30
+    paginate_by = 50
 
     def get_queryset(self):
-        queryset = User.objects.select_related("perfil_supermercado", "perfil_supermercado__filial").order_by("username")
-        termo = self.request.GET.get("q")
+        queryset = _usuarios_visiveis(self.request.user).select_related(
+            "perfil_supermercado", "perfil_supermercado__filial", "perfil_supermercado__filial__empresa"
+        ).order_by("username")
+        termo = (self.request.GET.get("q") or "").strip()
         if termo:
-            queryset = queryset.filter(username__icontains=termo) | queryset.filter(first_name__icontains=termo) | queryset.filter(email__icontains=termo)
+            queryset = queryset.filter(
+                Q(username__icontains=termo) | Q(first_name__icontains=termo) | Q(email__icontains=termo)
+            )
         return queryset
 
 
 @login_required
-@role_required(*SISTEMA)
+@role_required(TipoPerfil.ADMINISTRADOR)
 def usuario_form(request, pk=None):
-    usuario = get_object_or_404(User, pk=pk) if pk else None
+    usuario = get_object_or_404(_usuarios_visiveis(request.user), pk=pk) if pk else None
+    parametros_form = {
+        "instance": usuario,
+        "filiais_queryset": _filiais_permitidas(request.user).order_by("empresa__nome_fantasia", "nome"),
+        "permite_staff": request.user.is_superuser,
+        "exige_filial": not request.user.is_superuser,
+    }
     if request.method == "POST":
-        form = UsuarioPerfilForm(request.POST, instance=usuario)
+        form = UsuarioPerfilForm(request.POST, **parametros_form)
         if form.is_valid():
             user = form.save()
             messages.success(request, "Usuario salvo com sucesso.")
             return redirect("accounts:usuario_editar", pk=user.pk)
     else:
-        form = UsuarioPerfilForm(instance=usuario)
+        form = UsuarioPerfilForm(**parametros_form)
 
     return render(request, "accounts/usuario_form.html", {"form": form, "usuario_obj": usuario})
 
 @login_required
-@role_required(*SISTEMA)
+@role_required(TipoPerfil.ADMINISTRADOR)
 def recuperacao_senha_diagnostico(request):
     backend = getattr(settings, "EMAIL_BACKEND", "")
     smtp_backend = backend.endswith("smtp.EmailBackend")

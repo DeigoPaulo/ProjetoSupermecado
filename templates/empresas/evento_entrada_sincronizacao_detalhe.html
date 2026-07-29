@@ -46,7 +46,7 @@
     {% if evento.status == "CONFLITO" %}
       <div class="form-note form-note-warning">
         <strong>Conflito aguardando decisao.</strong>
-        <span>Venda e fiscal permanecem manuais por seguranca; produto e estoque so sao resolvidos automaticamente quando a empresa usa a politica de nuvem prevalecendo.</span>
+        <span>Venda e fiscal permanecem manuais por seguranca. Para produto e estoque, a empresa pode escolher manter o dado mais recente da loja ou aceitar o dado da nuvem.</span>
       </div>
       <form method="post" action="{% url 'empresas:sincronizacao_entrada_resolver_conflito' evento.pk %}" class="stacked-form">
         {% csrf_token %}

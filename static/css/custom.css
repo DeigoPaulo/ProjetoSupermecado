@@ -78,6 +78,13 @@ textarea {
   font-weight: 700;
 }
 
+.brand-mark img {
+  width: 100%;
+  height: 100%;
+  border-radius: 8px;
+  object-fit: cover;
+}
+
 .brand strong,
 .brand small {
   display: block;
@@ -1691,7 +1698,30 @@ input[type="checkbox"] {
 }
 
 .pdv-finish {
+  display: flex;
+  flex-direction: column;
   overflow: hidden;
+}
+
+.pdv-logout-form {
+  display: contents;
+}
+
+.pdv-manufacturer {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin: auto 12px 12px;
+  border-top: 1px solid var(--border);
+  padding: 10px 4px 0;
+  min-height: 64px;
+}
+
+.pdv-manufacturer img {
+  display: block;
+  width: min(190px, 88%);
+  height: 54px;
+  object-fit: contain;
 }
 
 .pdv-inline-button {
@@ -2061,6 +2091,24 @@ input[type="checkbox"] {
   background: #f8fbff;
   padding: 12px 16px;
 }
+
+.pdv-document-capture {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 8px;
+}
+
+.pdv-document-capture button {
+  min-width: 92px;
+  border: 1px solid #b8c8ef;
+  border-radius: 7px;
+  background: #edf4ff;
+  color: #003b91;
+  font-weight: 800;
+}
+
+.pdv-document-capture button[hidden] { display: none; }
+.pdv-document-capture kbd { margin-left: 5px; font-size: 9px; }
 
 .pdv-discount-authorization,
 .pdv-pix-panel {
@@ -3610,3 +3658,34 @@ button:disabled,
   outline: 2px solid #0b5ed7;
   outline-offset: -2px;
 }
+
+.license-alert { display: flex; align-items: center; justify-content: space-between; gap: 16px; margin: 0 24px 16px; padding: 12px 14px; border: 1px solid #e3a008; background: #fff8e1; color: #553700; }
+.license-alert > div { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.license-alert-suspenso, .license-alert-cancelado { border-color: #dc2626; background: #fff1f2; color: #7f1d1d; }
+.license-summary { display: grid; grid-template-columns: 1fr auto; gap: 24px; align-items: center; padding: 18px; margin-bottom: 18px; border: 1px solid #cbd5e1; background: #fff; }
+.license-summary > div { display: grid; gap: 6px; }
+.license-summary strong { font-size: 24px; }
+.license-suspenso, .license-cancelado { border-color: #dc2626; background: #fff1f2; }
+.license-token { display: block; padding: 12px; overflow-wrap: anywhere; background: #f1f5f9; }
+.blocked-license { max-width: 640px; margin: 10vh auto; padding: 32px; text-align: center; background: #fff; border: 1px solid #dc2626; }
+.blocked-license > i { font-size: 40px; color: #dc2626; }
+@media (max-width: 800px) { .license-alert, .license-summary { grid-template-columns: 1fr; align-items: stretch; } .license-alert { margin: 0 12px 12px; flex-direction: column; } }
+.emergency-license-panel .notice { display: flex; gap: 12px; align-items: flex-start; margin-bottom: 18px; padding: 14px; border: 1px solid #e5b75b; background: #fff8e8; color: #533b08; }
+.emergency-license-panel .notice p { margin: 4px 0 0; }
+.emergency-license-actions { display: grid; grid-template-columns: minmax(190px, 0.35fr) minmax(320px, 1fr); gap: 20px; align-items: start; }
+.emergency-license-apply p { margin-top: 0; }
+.emergency-license-apply textarea, .license-code-result textarea { width: 100%; resize: vertical; overflow-wrap: anywhere; font-family: Consolas, monospace; font-size: 12px; }
+.license-code-result { display: grid; gap: 10px; max-width: 920px; }
+.license-code-result > span { color: var(--muted-text, #596579); font-size: 13px; }
+.license-code-result .primary-button { justify-self: start; }
+@media (max-width: 860px) { .emergency-license-actions { grid-template-columns: 1fr; } }
+.readiness-grid { display: grid; grid-template-columns: repeat(4, minmax(140px, 1fr)); gap: 10px; margin: 14px 0; }
+.readiness-grid > div { border: 1px solid #d7e0ee; background: #f8fafc; padding: 12px; border-radius: 6px; }
+.readiness-grid span { display: block; color: #596579; font-size: 12px; margin-bottom: 4px; }
+.readiness-grid strong { font-size: 14px; color: #102a56; }
+.panel > .notice.warning { display: flex; gap: 12px; align-items: flex-start; margin: 12px 0; padding: 12px; border: 1px solid #e5b75b; background: #fff8e8; color: #533b08; }
+.panel > .notice.warning ul { margin: 6px 0 0; padding-left: 18px; }
+.command-box { overflow-x: auto; border: 1px solid #d7e0ee; background: #f3f6fa; padding: 10px 12px; border-radius: 6px; }
+.command-box code { white-space: nowrap; color: #17376d; }
+@media (max-width: 900px) { .readiness-grid { grid-template-columns: repeat(2, minmax(140px, 1fr)); } }
+@media (max-width: 560px) { .readiness-grid { grid-template-columns: 1fr; } }

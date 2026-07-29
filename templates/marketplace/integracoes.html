@@ -40,11 +40,12 @@
     </div>
   </div>
   <table>
-    <thead><tr><th>Nome</th><th>Filial</th><th>Prefixo</th><th>Último uso</th><th>Pedidos</th><th>Pendencias</th><th>Status</th><th></th></tr></thead>
+    <thead><tr><th>Nome</th><th>Provedor</th><th>Filial</th><th>Prefixo</th><th>Último uso</th><th>Pedidos</th><th>Pendencias</th><th>Status</th><th></th></tr></thead>
     <tbody>
       {% for integracao in integracoes %}
         <tr>
           <td><strong>{{ integracao.nome }}</strong></td>
+          <td>{{ integracao.get_provedor_display }}</td>
           <td>{{ integracao.filial }}</td>
           <td>{{ integracao.token_prefixo }}...</td>
           <td>{{ integracao.ultimo_uso_em|date:"d/m/Y H:i"|default:"Nunca" }}</td>

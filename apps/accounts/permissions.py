@@ -6,7 +6,8 @@ from django.core.exceptions import PermissionDenied, ValidationError
 from .models import TipoPerfil
 
 
-SUPERVISAO = {TipoPerfil.ADMINISTRADOR, TipoPerfil.GERENTE}
+ADMINISTRACAO = {TipoPerfil.ADMINISTRADOR}
+SUPERVISAO = ADMINISTRACAO | {TipoPerfil.GERENTE}
 PDV = SUPERVISAO | {TipoPerfil.OPERADOR_CAIXA}
 CADASTROS = SUPERVISAO | {TipoPerfil.ESTOQUISTA, TipoPerfil.COMPRAS}
 CLIENTES = PDV | CADASTROS
@@ -40,13 +41,29 @@ def supervisor_from_request(request):
     usuario = authenticate(request, username=username, password=password)
     if not usuario or not usuario.is_active:
         raise ValidationError("Credenciais de supervisor invalidas.")
-    if has_role(usuario, SUPERVISAO):
-        return usuario
-    raise ValidationError("Usuario informado nao tem permissao de supervisor.")
+    if not has_role(usuario, SUPERVISAO):
+        raise ValidationError("Usuario informado nao tem permissao de supervisor.")
+    if not request.user.is_superuser and not usuario.is_superuser:
+        perfil_operador = getattr(request.user, "perfil_supermercado", None)
+        perfil_supervisor = getattr(usuario, "perfil_supermercado", None)
+        empresa_operador_id = (
+            perfil_operador.filial.empresa_id
+            if perfil_operador and perfil_operador.is_active and perfil_operador.filial_id
+            else None
+        )
+        empresa_supervisor_id = (
+            perfil_supervisor.filial.empresa_id
+            if perfil_supervisor and perfil_supervisor.is_active and perfil_supervisor.filial_id
+            else None
+        )
+        if not empresa_operador_id or empresa_operador_id != empresa_supervisor_id:
+            raise ValidationError("O supervisor deve pertencer a mesma empresa do operador.")
+    return usuario
 
 
 def access_flags(user):
     return {
+        "administracao": has_role(user, ADMINISTRACAO),
         "supervisao": has_role(user, SUPERVISAO),
         "pdv": has_role(user, PDV),
         "cadastros": has_role(user, CADASTROS),

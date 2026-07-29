@@ -1,0 +1,18 @@
+{% extends "base.html" %}
+{% block title %}Licença e mensalidades{% endblock %}
+{% block content %}
+<header class="page-header"><div><h1>Licença e mensalidades</h1><p>Acompanhe o contrato da {{ empresa.nome_fantasia }} com a Deigo Tecnologia.</p></div></header>
+{% if estado %}<section class="license-summary license-{{ estado.status|lower }}"><div><span>Situação atual</span><strong>{{ estado.get_status_display }}</strong><p>{{ estado.mensagem_operacional }}</p></div><div><span>Valor pendente</span><strong>R$ {{ estado.valor_pendente|floatformat:2 }}</strong>{% if estado.url_pagamento %}<a class="primary-button" href="{{ estado.url_pagamento }}" target="_blank" rel="noopener">Pagar com Pix ou boleto</a>{% endif %}</div></section>{% endif %}
+{% if contrato %}<section class="metrics-grid"><article class="metric"><span>Plano</span><strong>{{ contrato.plano }}</strong></article><article class="metric"><span>Mensalidade</span><strong>R$ {{ contrato.valor_mensal|floatformat:2 }}</strong></article><article class="metric"><span>Dia de vencimento</span><strong>{{ contrato.dia_vencimento }}</strong></article><article class="metric"><span>Status do contrato</span><strong>{{ contrato.get_status_display }}</strong></article></section>{% endif %}
+{% if pode_contingencia %}
+<section class="panel emergency-license-panel">
+  <div class="section-heading"><div><h2>Contingência offline</h2><p>Use somente quando este servidor não conseguir renovar a licença pela internet.</p></div>{% if estado.liberacao_emergencial_ate %}<span class="status {% if estado.bloqueado %}status-danger{% else %}status-success{% endif %}">Até {{ estado.liberacao_emergencial_ate|date:"d/m/Y H:i" }}</span>{% endif %}</div>
+  <div class="emergency-license-actions">
+    <form method="post" action="{% url 'licenciamento:gerar_desafio_emergencial' %}">{% csrf_token %}<button class="secondary-button" type="submit"><i class="fa-solid fa-fingerprint"></i> Gerar desafio local</button></form>
+    <form method="post" action="{% url 'licenciamento:aplicar_emergencial' %}" class="emergency-license-apply">{% csrf_token %}{{ form_liberacao.as_p }}<button class="primary-button" type="submit"><i class="fa-solid fa-unlock-keyhole"></i> Validar e liberar</button></form>
+  </div>
+  {% if liberacoes %}<div class="table-wrapper"><table><thead><tr><th>Aplicada em</th><th>Válida até</th><th>Motivo</th><th>Central</th></tr></thead><tbody>{% for item in liberacoes %}<tr><td>{{ item.aplicada_em|date:"d/m/Y H:i" }}</td><td>{{ item.valida_ate|date:"d/m/Y H:i" }}</td><td>{{ item.motivo }}</td><td>{% if item.sincronizada_em %}<span class="status status-success">Reconciliada</span>{% else %}<span class="status status-warning">Aguardando conexão</span>{% endif %}</td></tr>{% endfor %}</tbody></table></div>{% endif %}
+</section>
+{% endif %}
+<section class="panel"><h2>Faturas</h2><div class="table-wrapper"><table><thead><tr><th>Competência</th><th>Vencimento</th><th>Valor</th><th>Status</th><th></th></tr></thead><tbody>{% for fatura in faturas %}<tr><td>{{ fatura.competencia|date:"m/Y" }}</td><td>{{ fatura.vencimento|date:"d/m/Y" }}</td><td>R$ {{ fatura.valor|floatformat:2 }}</td><td>{{ fatura.get_status_display }}</td><td>{% if fatura.invoice_url %}<a class="secondary-button" href="{{ fatura.invoice_url }}" target="_blank" rel="noopener">Abrir fatura</a>{% else %}-{% endif %}</td></tr>{% empty %}<tr><td colspan="5" class="empty">Nenhuma fatura disponível.</td></tr>{% endfor %}</tbody></table></div></section>
+{% endblock %}

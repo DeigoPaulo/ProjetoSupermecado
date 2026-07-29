@@ -12,7 +12,7 @@ from unittest.mock import MagicMock, patch
 import app
 from devices.printers import ErroDescobertaImpressoras, listar_impressoras_windows
 from devices.labels import montar_etiquetas_epl, montar_etiquetas_nativas, montar_etiquetas_ppla, montar_etiquetas_zpl
-from devices.printing import ErroImpressao, montar_cupom_escpos, montar_pulso_gaveta_escpos, montar_texto_cupom
+from devices.printing import ErroImpressao, montar_cupom_escpos, montar_pulso_gaveta_escpos, montar_texto_cupom, montar_texto_danfe_nfce
 from devices.scales import ErroBalanca, extrair_peso_resposta, ler_peso_balanca, normalizar_configuracao_balanca
 
 
@@ -59,6 +59,20 @@ class AppDesktopTests(unittest.TestCase):
             self.assertEqual(carregada["servidor_base_url"], "http://servidor.local")
             self.assertEqual(carregada["terminal_chave"], "segredo")
 
+    def test_migra_configuracao_legada_para_deigo_pdv(self):
+        with tempfile.TemporaryDirectory() as pasta:
+            local_app_data = Path(pasta)
+            legado = local_app_data / "SupermercadoPDV" / "config.json"
+            legado.parent.mkdir(parents=True)
+            legado.write_text('{"terminal_id": "caixa-legado"}', encoding="utf-8")
+            ambiente = {"LOCALAPPDATA": str(local_app_data), "DEIGO_PDV_CONFIG": "", "SUPERMERCADO_PDV_CONFIG": ""}
+
+            with patch.dict(os.environ, ambiente):
+                caminho = app.caminho_configuracao()
+
+            self.assertEqual(caminho, local_app_data / "DeigoPDV" / "config.json")
+            self.assertTrue(caminho.exists())
+            self.assertEqual(json.loads(caminho.read_text(encoding="utf-8"))["terminal_id"], "caixa-legado")
     def test_bootstrap_envia_identidade_e_chave_do_terminal(self):
         config = {
             "servidor_base_url": "http://servidor.local",
@@ -142,7 +156,11 @@ class AppDesktopTests(unittest.TestCase):
         self.assertIn("Caixa &lt;01&gt;", pagina)
         self.assertIn("F5", pagina)
         self.assertIn("reconnect", pagina)
+        self.assertIn("Sair do aplicativo", pagina)
+        self.assertIn("Ctrl+Q", pagina)
+        self.assertIn("closeApplication", pagina)
         self.assertIn("vendas, pagamentos e alteracoes de estoque permanecem bloqueados", pagina)
+        self.assertNotIn("`n", pagina)
         self.assertNotIn("segredo-nao-pode-aparecer", pagina)
 
     def test_ponte_reconecta_somente_apos_servidor_validar_terminal(self):
@@ -239,7 +257,7 @@ class AppDesktopTests(unittest.TestCase):
                 "atualizacao_disponivel": True,
                 "pacote": {
                     "disponivel": True,
-                    "nome": "SupermercadoPDV.exe",
+                    "nome": "DeigoPDV.exe",
                     "sha256": sha256,
                     "url": "http://servidor.local/pdv/api/terminal/update/",
                 },
@@ -267,7 +285,7 @@ class AppDesktopTests(unittest.TestCase):
                 "atualizacao_disponivel": True,
                 "pacote": {
                     "disponivel": True,
-                    "nome": "SupermercadoPDV.exe",
+                    "nome": "DeigoPDV.exe",
                     "sha256": "0" * 64,
                     "url": "http://servidor.local/pdv/api/terminal/update/",
                 },
@@ -280,8 +298,8 @@ class AppDesktopTests(unittest.TestCase):
                 with patch("app.urlopen", return_value=RespostaBinaria(b"pacote-adulterado")):
                     with self.assertRaisesRegex(RuntimeError, "SHA-256"):
                         app.preparar_atualizacao(config, app.verificar_versao(bootstrap))
-                self.assertFalse((config_path.parent / "updates" / "SupermercadoPDV.exe").exists())
-                self.assertFalse((config_path.parent / "updates" / "SupermercadoPDV.exe.part").exists())
+                self.assertFalse((config_path.parent / "updates" / "DeigoPDV.exe").exists())
+                self.assertFalse((config_path.parent / "updates" / "DeigoPDV.exe.part").exists())
     def test_atualizacao_obrigatoria_preparada_bloqueia_abertura_do_pdv(self):
         messagebox = MagicMock()
         messagebox.askyesno.return_value = True
@@ -294,7 +312,7 @@ class AppDesktopTests(unittest.TestCase):
             "pacote_disponivel": True,
         }
         with patch.dict("sys.modules", {"tkinter": modulo_tkinter}):
-            with patch("app.preparar_atualizacao", return_value={"arquivo": "C:/update/SupermercadoPDV.exe"}):
+            with patch("app.preparar_atualizacao", return_value={"arquivo": "C:/update/DeigoPDV.exe"}):
                 with self.assertRaisesRegex(RuntimeError, "instale o pacote"):
                     app.avisar_atualizacao(situacao, {"terminal_id": "1"})
 
@@ -578,6 +596,25 @@ class AppDesktopTests(unittest.TestCase):
         self.assertEqual(diagnostico["eventos"][1]["payload"]["status"], "ok")
         self.assertEqual(diagnostico["eventos"][2]["payload"]["status"], "erro")
 
+    def test_tef_processa_vale_alimentacao_como_voucher_proprio(self):
+        ponte = app.PonteLocal(
+            {
+                "tef": {
+                    "provedor": "STONE",
+                    "modo_integracao": "DESKTOP_BRIDGE",
+                    "simulador_permitido": True,
+                    "tipos_pagamento": ["VALE_ALIMENTACAO", "VALE_REFEICAO"],
+                }
+            }
+        )
+
+        resultado = ponte.processPayment({"tipo": "VALE_ALIMENTACAO", "valor": "32.90"})
+
+        self.assertEqual(resultado["status"], "ok")
+        self.assertTrue(resultado["aprovado"])
+        self.assertEqual(resultado["tipo"], "VALE_ALIMENTACAO")
+        self.assertTrue(resultado["nsu"])
+        self.assertTrue(resultado["codigo_autorizacao"])
     def test_tef_valida_valor_e_modalidade_antes_de_processar(self):
         with tempfile.TemporaryDirectory() as pasta:
             caminho = Path(pasta) / "terminal" / "config.json"
@@ -771,14 +808,20 @@ class AppDesktopTests(unittest.TestCase):
                 "id": 27,
                 "empresa": "Supermercado Modelo",
                 "filial": "Loja Matriz",
+                "cnpj": "00.000.000/0001-00",
+                "endereco": "Rua Exemplo, 123 - Centro",
                 "data": "2026-07-08T10:00:00",
                 "operador": "CAIXA01",
                 "cliente": "Cliente avulso",
+                "caixa": 1,
+                "quantidade_total": "2",
                 "total_bruto": "12,50",
                 "desconto": "0,50",
                 "total_liquido": "12,00",
+                "total_pago": "20,00",
+                "troco": "8,00",
             },
-            "itens": [{"sequencia": 1, "produto": "Cafe 500g", "quantidade": "1", "preco_unitario": "12,50", "total": "12,50"}],
+            "itens": [{"sequencia": 1, "produto": "MAÇÃ", "codigo_barras": "123", "quantidade": "2", "preco_unitario": "6,25", "total": "12,50"}],
             "pagamentos": [{"forma": "Dinheiro", "valor": "12,00"}],
             "impressao": {"mensagem_rodape": "Obrigado pela preferencia"},
             "gaveta": {"abrir": True},
@@ -788,12 +831,62 @@ class AppDesktopTests(unittest.TestCase):
         dados = montar_cupom_escpos(payload)
 
         self.assertIn("Supermercado Modelo", texto)
-        self.assertIn("Cafe 500g", texto)
-        self.assertIn("TOTAL", texto)
+        self.assertIn("MAÇÃ", texto)
+        self.assertIn("CUPOM NÃO FISCAL", texto)
+        self.assertIn("R$ 6,25", texto)
+        self.assertIn("TROCO:", texto)
+        self.assertIn("R$ 8,00", texto)
+        self.assertIn("NÃO É DOCUMENTO FISCAL", texto)
         self.assertNotIn("logo_url", texto)
         self.assertTrue(dados.startswith(b"\x1b@"))
+        self.assertIn("MAÇÃ".encode("cp850"), dados)
         self.assertIn(b"\x1bp\x00\x19\xfa", dados)
         self.assertTrue(dados.endswith(b"\x1dV\x42\x00"))
+
+    def test_monta_danfe_nfce_com_qrcode_nativo_e_sem_marca_nao_fiscal(self):
+        chave = "35260712345678000190650010000001001123456780"
+        qrcode_url = f"https://nfce.example.com/qrcode?p={chave}|3|2"
+        payload = {
+            "tipo": "danfe_nfce",
+            "venda": {
+                "id": 30,
+                "empresa": "Supermercado Modelo",
+                "filial": "Matriz",
+                "cnpj": "12.345.678/0001-90",
+                "data": "2026-07-29T10:00:00",
+                "quantidade_total": "1",
+                "total_bruto": "25,90",
+                "desconto": "0,00",
+                "total_liquido": "25,90",
+            },
+            "itens": [{"sequencia": 1, "produto": "ARROZ 5KG", "quantidade": "1", "preco_unitario": "25,90", "total": "25,90"}],
+            "pagamentos": [{"forma": "PIX", "valor": "25,90"}],
+            "fiscal": {
+                "status": "EMITIDO",
+                "serie": 1,
+                "numero": 100,
+                "chave_acesso": chave,
+                "protocolo": "135260000000001",
+                "qrcode_url": qrcode_url,
+                "url_consulta": "https://nfce.example.com/consulta",
+                "emitido_em": "2026-07-29T10:00:00",
+            },
+            "impressao": {"modelo_papel": "80MM"},
+        }
+
+        texto = montar_texto_danfe_nfce(payload)
+        dados = montar_cupom_escpos(payload)
+
+        self.assertIn("DOCUMENTO AUXILIAR DA NOTA FISCAL", texto)
+        self.assertIn("R$ 25,90", texto)
+        self.assertIn("CHAVE DE ACESSO", texto)
+        self.assertNotIn("NAO E DOCUMENTO FISCAL", texto)
+        self.assertIn(qrcode_url.encode("utf-8"), dados)
+        self.assertIn(b"\x1d(k", dados)
+        self.assertTrue(dados.endswith(b"\x1dV\x42\x00"))
+        payload["fiscal"]["qrcode_url"] = ""
+        with self.assertRaisesRegex(ErroImpressao, "QR Code oficial"):
+            montar_cupom_escpos(payload)
 
     def test_ponte_aciona_gaveta_e_registra_diagnostico_local(self):
         with tempfile.TemporaryDirectory() as pasta:
@@ -1039,5 +1132,16 @@ class AppDesktopTests(unittest.TestCase):
         self.assertEqual(imprimir_mock.call_count, 1)
 
 
+    def test_pinpad_simulado_expoe_capacidade_sem_gravar_documento_no_log(self):
+        ponte = app.PonteLocal({"tef": {"provedor": "STONE", "modo_integracao": "DESKTOP_BRIDGE", "simulador_permitido": True}})
+        with patch("app.registrar_evento_dispositivo") as registrar:
+            capacidades = ponte.tefCapabilities()
+            resultado = ponte.captureConsumerDocument({"tipo": "CPF"})
+        self.assertTrue(capacidades["captura_documento_consumidor"])
+        self.assertEqual(resultado["status"], "ok")
+        self.assertEqual(resultado["documento"], "52998224725")
+        evidencia = registrar.call_args.args[1]
+        self.assertNotIn("documento", evidencia)
+        self.assertNotIn("52998224725", json.dumps(evidencia))
 if __name__ == "__main__":
     unittest.main()

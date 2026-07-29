@@ -24,7 +24,7 @@
   <label>
     <span>Filial</span>
     <select name="filial">
-      <option value="">Todas</option>
+      {% if permite_consolidado %}<option value="">Todas as filiais da empresa</option>{% endif %}
       {% for filial in filiais_opcoes %}<option value="{{ filial.pk }}" {% if filial_id == filial.pk|stringformat:"s" %}selected{% endif %}>{{ filial }}</option>{% endfor %}
     </select>
   </label>
@@ -94,4 +94,5 @@
     </table>
   </div>
 </section>
+{% include "includes/pagination.html" %}
 {% endblock %}

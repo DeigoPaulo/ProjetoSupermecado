@@ -8,6 +8,7 @@ import hmac
 import html
 import json
 import os
+import shutil
 import sys
 import threading
 
@@ -30,11 +31,18 @@ from devices.runtime import instancia_unica_terminal
 from devices.events import EventLog
 from devices.tef import (
     AdaptadorTefIndisponivel,
+    capacidades_adaptador_tef,
     criar_adaptador_tef,
+    validar_resposta_documento_pinpad,
     validar_resposta_tef,
 )
 
 APP_DIR = Path(__file__).resolve().parent
+
+
+def caminho_recurso(relativo: str) -> Path:
+    base = Path(getattr(sys, "_MEIPASS", APP_DIR))
+    return base / relativo
 
 _SYNC_EVENTOS_LOCK = threading.Lock()
 
@@ -93,14 +101,22 @@ def gerar_qr_code_data_url(conteudo: str) -> str:
 
 
 def caminho_configuracao() -> Path:
-    caminho_informado = os.environ.get("SUPERMERCADO_PDV_CONFIG", "").strip()
+    caminho_informado = (
+        os.environ.get("DEIGO_PDV_CONFIG", "").strip()
+        or os.environ.get("SUPERMERCADO_PDV_CONFIG", "").strip()
+    )
     if caminho_informado:
         return Path(caminho_informado).expanduser().resolve()
     config_desenvolvimento = APP_DIR / "config.json"
     if config_desenvolvimento.exists():
         return config_desenvolvimento
-    pasta_local = Path(os.environ.get("LOCALAPPDATA", Path.home())) / "SupermercadoPDV"
-    return pasta_local / "config.json"
+    local_app_data = Path(os.environ.get("LOCALAPPDATA", Path.home()))
+    novo = local_app_data / "DeigoPDV" / "config.json"
+    legado = local_app_data / "SupermercadoPDV" / "config.json"
+    if legado.exists() and not novo.exists():
+        novo.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(legado, novo)
+    return novo
 
 
 def carregar_configuracao() -> dict:
@@ -256,12 +272,14 @@ def montar_pagina_contingencia(bootstrap: dict) -> str:
     .terminal {{ margin: 0; color: #bcd2ff; font-size: 18px; font-weight: 700; }}
     .message {{ margin: 28px auto 0; max-width: 620px; color: #e7efff; font-size: 17px; line-height: 1.55; }}
     .safety {{ margin: 18px auto 0; max-width: 620px; padding-top: 18px; border-top: 1px solid rgba(255,255,255,.22); color: #bcd2ff; line-height: 1.5; }}
-    button {{ margin-top: 30px; min-width: 260px; min-height: 50px; border: 0; border-radius: 7px; color: #063179; background: #fff; font-size: 16px; font-weight: 800; cursor: pointer; }}
+    .actions {{ display: flex; justify-content: center; gap: 12px; margin-top: 30px; }}
+    button {{ min-width: 240px; min-height: 50px; border: 0; border-radius: 7px; color: #063179; background: #fff; font-size: 16px; font-weight: 800; cursor: pointer; }}
+    button.secondary {{ border: 1px solid rgba(255,255,255,.55); color: #fff; background: rgba(255,255,255,.08); }}
     button:disabled {{ opacity: .62; cursor: wait; }}
     kbd {{ margin-left: 8px; padding: 3px 6px; border: 1px solid #b7c8e8; border-radius: 4px; background: #edf3ff; font: inherit; font-size: 12px; }}
     .detail {{ min-height: 22px; margin-top: 15px; color: #ffe2a6; font-size: 13px; font-weight: 700; }}
     footer {{ margin-top: 34px; color: #91addf; font-size: 12px; }}
-    @media (max-width: 600px) {{ h1 {{ font-size: 34px; }} main {{ width: min(100% - 28px, 760px); }} }}
+    @media (max-width: 600px) {{ h1 {{ font-size: 34px; }} main {{ width: min(100% - 28px, 760px); }} .actions {{ flex-direction: column; }} button {{ width: 100%; }} }}
   </style>
 </head>
 <body>
@@ -271,12 +289,16 @@ def montar_pagina_contingencia(bootstrap: dict) -> str:
     <p class="terminal">{nome_terminal}</p>
     <p class="message">A conexao com o servidor da loja foi interrompida. Verifique a rede interna ou o computador servidor e tente novamente.</p>
     <p class="safety">Por seguranca, novas vendas, pagamentos e alteracoes de estoque permanecem bloqueados ate a licenca e os dados operacionais serem validados novamente.</p>
-    <button id="retry" type="button">Tentar novamente <kbd>F5</kbd></button>
+    <div class="actions">
+      <button id="retry" type="button">Tentar novamente <kbd>F5</kbd></button>
+      <button class="secondary" id="exit" type="button">Sair do aplicativo <kbd>Ctrl+Q</kbd></button>
+    </div>
     <p class="detail" id="detail">{mensagem}</p>
     <footer>Ultima configuracao autorizada: {cache_salvo_em}</footer>
   </main>
   <script>
     const button = document.getElementById('retry');
+    const exitButton = document.getElementById('exit');
     const detail = document.getElementById('detail');
     async function reconnect() {{
       if (!window.SupermercadoDesktop || !window.SupermercadoDesktop.reconnect) {{ detail.textContent = 'A ponte local ainda esta iniciando. Tente novamente.'; return; }}
@@ -290,8 +312,20 @@ def montar_pagina_contingencia(bootstrap: dict) -> str:
       button.disabled = false;
       button.focus();
     }}
+    async function exitApplication() {{
+      if (!window.SupermercadoDesktop || !window.SupermercadoDesktop.closeApplication) {{ detail.textContent = 'A ponte local ainda esta iniciando. Tente novamente.'; return; }}
+      if (!window.confirm('Fechar o aplicativo PDV?')) return;
+      exitButton.disabled = true;
+      detail.textContent = 'Encerrando o aplicativo...';
+      try {{ await window.SupermercadoDesktop.closeApplication(); }}
+      catch (error) {{ exitButton.disabled = false; detail.textContent = 'Nao foi possivel fechar o aplicativo.'; }}
+    }}
     button.addEventListener('click', reconnect);
-    document.addEventListener('keydown', function (event) {{ if (event.key === 'F5' || event.key === 'Enter') {{ event.preventDefault(); reconnect(); }} }});
+    exitButton.addEventListener('click', exitApplication);
+    document.addEventListener('keydown', function (event) {{
+      if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'q') {{ event.preventDefault(); exitApplication(); return; }}
+      if (event.key === 'F5' || (event.key === 'Enter' && document.activeElement !== exitButton)) {{ event.preventDefault(); reconnect(); }}
+    }});
     button.focus();
   </script>
 </body>
@@ -485,7 +519,7 @@ def verificar_versao(bootstrap: dict) -> dict:
 def preparar_atualizacao(config: dict, situacao: dict) -> dict:
     if not situacao.get("pacote_disponivel"):
         raise RuntimeError("O pacote de atualizacao ainda nao foi publicado.")
-    nome = situacao.get("pacote_nome") or "SupermercadoPDV.exe"
+    nome = situacao.get("pacote_nome") or "DeigoPDV.exe"
     sha_esperado = situacao.get("pacote_sha256", "")
     if len(sha_esperado) != 64:
         raise RuntimeError("O pacote publicado nao possui SHA-256 valido.")
@@ -563,13 +597,16 @@ def ativar_terminal(config_atual: dict | None = None) -> dict:
 
     resultado: dict = {}
     raiz = tk.Tk()
-    raiz.title("Ativar PDV Supermercado")
+    raiz.title("Ativar Deigo PDV")
     raiz.geometry("520x330")
     raiz.resizable(False, False)
+    icone = caminho_recurso("assets/deigo-pdv.ico")
+    if icone.exists():
+        raiz.iconbitmap(default=str(icone))
 
     corpo = ttk.Frame(raiz, padding=24)
     corpo.pack(fill="both", expand=True)
-    ttk.Label(corpo, text="Ativacao do terminal", font=("Segoe UI", 16, "bold")).pack(anchor="w")
+    ttk.Label(corpo, text="Ativacao do Deigo PDV", font=("Segoe UI", 16, "bold")).pack(anchor="w")
     ttk.Label(corpo, text="Informe a credencial gerada pelo admin master no ERP.").pack(anchor="w", pady=(2, 18))
 
     campos = [
@@ -1066,6 +1103,47 @@ class PonteLocal:
         evidencia.setdefault("valor", str((payload or {}).get("valor") or "").strip())
         registrar_evento_dispositivo(evento, evidencia)
 
+    def tefCapabilities(self) -> dict:
+        provedor = str(self.configuracao_tef().get("provedor") or "NAO_CONFIGURADO").upper()
+        try:
+            capacidades = capacidades_adaptador_tef(self._obter_adaptador_tef())
+            return {"status": "ok", "provedor": provedor, **capacidades}
+        except Exception as exc:
+            return {
+                "status": "erro",
+                "provedor": provedor,
+                "contrato": "pdv_tef_capabilities_v1",
+                "captura_documento_consumidor": False,
+                "mensagem": str(exc),
+            }
+
+    def captureConsumerDocument(self, payload: dict | None = None) -> dict:
+        payload = dict(payload or {})
+        tipo = str(payload.get("tipo") or "AUTO").strip().upper()
+        if tipo not in {"AUTO", "CPF", "CNPJ"}:
+            return {"status": "erro", "mensagem": "Tipo de documento invalido."}
+        try:
+            adaptador = self._obter_adaptador_tef()
+            if not capacidades_adaptador_tef(adaptador)["captura_documento_consumidor"]:
+                raise AdaptadorTefIndisponivel(
+                    "O pinpad configurado nao oferece captura de CPF/CNPJ. Digite o documento manualmente."
+                )
+            resultado = validar_resposta_documento_pinpad(
+                adaptador.capturar_documento({"tipo": tipo})
+            )
+        except Exception as exc:
+            resultado = {"status": "erro", "mensagem": str(exc)}
+        # Documento pessoal nunca e persistido no diagnostico local do equipamento.
+        registrar_evento_dispositivo(
+            "tef_documento_consumidor",
+            {
+                "status": resultado.get("status", "erro"),
+                "tipo": resultado.get("tipo", tipo),
+                "origem": resultado.get("origem", "pinpad"),
+                "simulado": bool(resultado.get("simulado")),
+            },
+        )
+        return resultado
     def processPayment(self, payload: dict) -> dict:
         payload = dict(payload or {})
         tef = self.configuracao_tef()
@@ -1073,7 +1151,7 @@ class PonteLocal:
         tipo = str(payload.get("tipo") or "").strip().upper()
         tipos_permitidos = {
             str(item).strip().upper()
-            for item in (tef.get("tipos_pagamento") or ["CREDITO", "DEBITO", "PIX"])
+            for item in (tef.get("tipos_pagamento") or ["CREDITO", "DEBITO", "PIX", "VALE_ALIMENTACAO", "VALE_REFEICAO"])
             if str(item).strip()
         }
         try:
@@ -1250,7 +1328,7 @@ def _executar_interface_pdv(config: dict) -> None:
     ponte = PonteLocal(bootstrap, config)
     conteudo = {"html": montar_pagina_contingencia(bootstrap)} if bootstrap.get("status_conexao") == "offline" else {"url": url_pdv}
     janela = webview.create_window(
-        "PDV Supermercado",
+        "Deigo PDV",
         js_api=ponte,
         fullscreen=bool(config.get("tela_cheia", True)),
         resizable=bool(config.get("permitir_redimensionar", False)),
@@ -1265,6 +1343,8 @@ def _executar_interface_pdv(config: dict) -> None:
         "processPayment: function(payload) { return window.pywebview.api.processPayment(payload); },"
         "checkPayment: function(payload) { return window.pywebview.api.checkPayment(payload); },"
         "refundPayment: function(payload) { return window.pywebview.api.refundPayment(payload); },"
+        "tefCapabilities: function() { return window.pywebview.api.tefCapabilities(); },"
+        "captureConsumerDocument: function(payload) { return window.pywebview.api.captureConsumerDocument(payload); },"
         "readScale: function() { return window.pywebview.api.readScale(); },"
         "scaleConfig: function() { return window.pywebview.api.scaleConfig(); },"
         "deviceLogs: function(limite) { return window.pywebview.api.deviceLogs(limite); },"
@@ -1289,7 +1369,7 @@ def _executar_interface_pdv(config: dict) -> None:
 
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="PDV Desktop Supermercado")
+    parser = argparse.ArgumentParser(description="Deigo PDV Desktop")
     parser.add_argument("--configurar", action="store_true", help="Abre novamente a ativacao deste terminal.")
     argumentos = parser.parse_args()
     try:

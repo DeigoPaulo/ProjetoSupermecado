@@ -9,6 +9,7 @@ from django.utils import timezone
 
 from apps.auditoria.models import LogAuditoria
 from apps.empresas.models import Filial
+from apps.clientes.escopo import empresa_id_do_usuario
 from apps.fornecedores.models import Fornecedor
 from apps.produtos.models import Produto
 
@@ -244,12 +245,10 @@ def _localizar_produto(item):
 
 def importar_xml_entrada(conteudo, *, usuario, gerar_conta_financeira=True, ip=None):
     dados = ler_xml_nfe(conteudo)
-    fornecedor = _registro_unico_por_cnpj(
-        Fornecedor.objects.filter(is_active=True),
-        dados["emitente_cnpj"],
-        "fornecedor",
-    )
     filiais = Filial.objects.filter(is_active=True).select_related("empresa")
+    empresa_id = empresa_id_do_usuario(usuario)
+    if empresa_id is not None:
+        filiais = filiais.filter(empresa_id=empresa_id)
     filiais_compativeis = [
         filial
         for filial in filiais
@@ -260,6 +259,17 @@ def importar_xml_entrada(conteudo, *, usuario, gerar_conta_financeira=True, ip=N
     if len(filiais_compativeis) > 1:
         raise ValidationError("Ha mais de uma filial ativa para o CNPJ destinatario; corrija o cadastro.")
     filial = filiais_compativeis[0]
+    fornecedores = Fornecedor.objects.filter(is_active=True, empresa_id=filial.empresa_id)
+    if empresa_id is None:
+        fornecedores = Fornecedor.objects.filter(
+            Q(empresa_id=filial.empresa_id) | Q(empresa__isnull=True),
+            is_active=True,
+        )
+    fornecedor = _registro_unico_por_cnpj(
+        fornecedores,
+        dados["emitente_cnpj"],
+        "fornecedor",
+    )
 
     itens_resolvidos = []
     nao_encontrados = []

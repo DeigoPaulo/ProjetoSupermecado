@@ -1,5 +1,5 @@
 param(
-    [string]$TaskName = "MercaFlow ERP - Servidor Local",
+    [string]$TaskName = "Deigo Varejo - Servidor Local",
     [string]$Bind = "127.0.0.1",
     [int]$Port = 8000,
     [switch]$AtStartup,
@@ -41,7 +41,7 @@ Register-ScheduledTask `
     -Trigger $Trigger `
     -Settings $Settings `
     -Principal $Principal `
-    -Description "Inicia o servidor local administrativo do MercaFlow ERP."
+    -Description "Inicia o servidor local administrativo do Deigo Varejo."
 
 Write-Host "Tarefa registrada: $TaskName"
 Write-Host "Servidor: http://$Bind`:$Port/"

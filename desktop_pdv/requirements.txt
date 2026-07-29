@@ -1,3 +1,4 @@
 pywebview==5.4
 pyserial==3.5
 qrcode==8.2
+pillow==11.3.0

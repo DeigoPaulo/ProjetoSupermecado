@@ -1,0 +1,3 @@
+{% extends "base.html" %}
+{% block title %}Credencial da instalação{% endblock %}
+{% block content %}<header class="page-header"><div><h1>Servidor local credenciado</h1><p>A credencial abaixo será exibida somente agora.</p></div></header><section class="panel"><h2>{{ instalacao }}</h2><p>Configure no servidor local:</p><dl class="diagnostic-list"><dt>LICENCIAMENTO_INSTALACAO_ID</dt><dd><code>{{ instalacao.identificador }}</code></dd><dt>LICENCIAMENTO_API_TOKEN</dt><dd><code class="license-token">{{ token }}</code></dd></dl><div class="form-actions"><a class="primary-button" href="{% url 'licenciamento:central' %}">Concluir</a></div></section>{% endblock %}

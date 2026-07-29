@@ -28,6 +28,13 @@ class TipoLancamentoFinanceiro(models.TextChoices):
     SAIDA = "SAIDA", "Saida"
 
 
+class StatusExportacaoContabil(models.TextChoices):
+    PENDENTE = "PENDENTE", "Pendente"
+    ENVIADO = "ENVIADO", "Enviado"
+    REJEITADO = "REJEITADO", "Rejeitado"
+    ERRO = "ERRO", "Erro"
+
+
 class CategoriaFinanceira(models.Model):
     nome = models.CharField(max_length=120, unique=True)
     tipo = models.CharField(max_length=20, choices=TipoContaFinanceira.choices)
@@ -89,6 +96,11 @@ class ContaFinanceira(models.Model):
     class Meta:
         ordering = ["status", "vencimento", "descricao"]
 
+    def clean(self):
+        if self.cliente_id and self.filial_id and self.cliente.empresa_id != self.filial.empresa_id:
+            raise ValidationError({"cliente": "Cliente informado pertence a outra empresa."})
+        if self.fornecedor_id and self.fornecedor.empresa_id and self.filial_id and self.fornecedor.empresa_id != self.filial.empresa_id:
+            raise ValidationError({"fornecedor": "Fornecedor informado pertence a outra empresa."})
     @property
     def esta_vencida(self):
         return self.status == StatusContaFinanceira.ABERTA and self.vencimento < timezone.localdate()
@@ -194,3 +206,37 @@ class ConciliacaoLancamentoFinanceiro(models.Model):
 
     def __str__(self):
         return f"Conciliacao do lancamento #{self.lancamento_id} - {self.referencia_externa}"
+
+class ExportacaoContabil(models.Model):
+    empresa = models.ForeignKey("empresas.Empresa", on_delete=models.PROTECT, related_name="exportacoes_contabeis")
+    filial = models.ForeignKey(
+        "empresas.Filial", on_delete=models.PROTECT, null=True, blank=True, related_name="exportacoes_contabeis"
+    )
+    data_inicio = models.DateField()
+    data_fim = models.DateField()
+    contrato = models.CharField(max_length=80, default="financial_accounting_package_v1")
+    chave_idempotencia = models.CharField(max_length=64, unique=True)
+    payload_sha256 = models.CharField(max_length=64)
+    provedor = models.CharField(max_length=120)
+    status = models.CharField(
+        max_length=20, choices=StatusExportacaoContabil.choices, default=StatusExportacaoContabil.PENDENTE
+    )
+    protocolo = models.CharField(max_length=120, blank=True)
+    mensagem = models.TextField(blank=True)
+    usuario = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.PROTECT, related_name="exportacoes_contabeis"
+    )
+    criado_em = models.DateTimeField(auto_now_add=True)
+    atualizado_em = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ["-criado_em"]
+        indexes = [
+            models.Index(fields=["empresa", "data_inicio", "data_fim"], name="fin_exp_empresa_periodo_idx"),
+        ]
+
+    def delete(self, *args, **kwargs):
+        raise ValidationError("Exportações contábeis não podem ser excluídas.")
+
+    def __str__(self):
+        return f"Exportação contábil #{self.pk} - {self.get_status_display()}"

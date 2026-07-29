@@ -49,6 +49,8 @@ def gerar_pedido_da_resposta(resposta, *, usuario, ip=None):
             .get(pk=resposta.pk)
         )
         cotacao = resposta.cotacao.__class__.objects.select_for_update().get(pk=resposta.cotacao_id)
+        if resposta.fornecedor.empresa_id and resposta.fornecedor.empresa_id != cotacao.filial.empresa_id:
+            raise ValidationError("Fornecedor informado pertence a outra empresa.")
         if cotacao.status != StatusCotacaoCompra.ABERTA:
             raise ValidationError("Apenas cotacoes abertas podem gerar pedido.")
         if PedidoCompra.objects.filter(cotacao_origem=cotacao).exists():
@@ -181,6 +183,8 @@ def cancelar_pedido_compra(pedido, *, usuario, motivo, ip=None):
 def converter_pedido_em_entrada(pedido, *, usuario, ip=None):
     with transaction.atomic():
         pedido = PedidoCompra.objects.select_for_update().select_related("fornecedor", "filial").get(pk=pedido.pk)
+        if pedido.fornecedor.empresa_id and pedido.fornecedor.empresa_id != pedido.filial.empresa_id:
+            raise ValidationError("Fornecedor informado pertence a outra empresa.")
         if pedido.status != StatusPedidoCompra.ENVIADO:
             raise ValidationError("Apenas pedidos enviados podem gerar uma entrada.")
         if EntradaCompra.objects.filter(pedido_origem=pedido).exists():
@@ -233,6 +237,8 @@ def converter_pedido_em_entrada(pedido, *, usuario, ip=None):
 
 
 def finalizar_entrada_compra(entrada, *, supervisor=None, ip=None):
+    if entrada.fornecedor.empresa_id and entrada.fornecedor.empresa_id != entrada.filial.empresa_id:
+        raise ValidationError("Fornecedor informado pertence a outra empresa.")
     if entrada.status != StatusEntradaCompra.RASCUNHO:
         raise ValidationError("Apenas entradas em rascunho podem ser finalizadas.")
 

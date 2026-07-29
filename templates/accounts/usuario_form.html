@@ -20,7 +20,7 @@
       <label class="form-field"><span>{{ form.username.label }}</span>{{ form.username }}{{ form.username.errors }}</label>
       <label class="form-field"><span>{{ form.password.label }}</span>{{ form.password }}{{ form.password.errors }}{% if form.password.help_text %}<small>{{ form.password.help_text }}</small>{% endif %}</label>
       <label class="toggle-field">{{ form.is_active }} <span>{{ form.is_active.label }}</span>{{ form.is_active.errors }}</label>
-      <label class="toggle-field">{{ form.is_staff }} <span>{{ form.is_staff.label }}</span>{{ form.is_staff.errors }}</label>
+      {% if form.is_staff %}<label class="toggle-field">{{ form.is_staff }} <span>{{ form.is_staff.label }}</span>{{ form.is_staff.errors }}</label>{% endif %}
     </div>
   </section>
 

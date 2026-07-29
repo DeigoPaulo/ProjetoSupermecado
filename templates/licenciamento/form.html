@@ -1,0 +1,3 @@
+{% extends "base.html" %}
+{% block title %}{{ titulo }}{% endblock %}
+{% block content %}<header class="page-header"><div><h1>{{ titulo }}</h1><p>Configuração comercial exclusiva do super admin.</p></div></header><form method="post" class="form-grid panel">{% csrf_token %}{{ form.as_p }}<div class="form-actions"><a class="secondary-button" href="{% url 'licenciamento:central' %}">Voltar</a><button class="primary-button" type="submit">Salvar</button></div></form>{% endblock %}

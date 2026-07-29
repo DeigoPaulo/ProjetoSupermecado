@@ -6,31 +6,50 @@
 <header class="page-header">
   <div>
     <h1>Formas de pagamento</h1>
-    <p>Configure os meios oferecidos no PDV sem alterar o historico das vendas.</p>
+    {% if catalogo_global %}
+      <p>Catálogo técnico global mantido pelo admin master.</p>
+    {% else %}
+      <p>Defina os meios aceitos e a conta financeira de cada filial da sua empresa.</p>
+    {% endif %}
   </div>
-  <a class="primary-button" href="{% url 'configuracoes:forma_pagamento_nova' %}"><i class="fa-solid fa-plus"></i> Nova forma</a>
+  {% if catalogo_global %}<a class="primary-button" href="{% url 'configuracoes:forma_pagamento_nova' %}"><i class="fa-solid fa-plus"></i> Nova forma</a>{% endif %}
 </header>
 
 <section class="panel table-panel">
   <div class="table-wrap">
     <table>
-      <thead><tr><th>Nome</th><th>Tipo</th><th>Conta padrao</th><th>Troco</th><th>Autorizacao</th><th>Status</th><th></th></tr></thead>
-      <tbody>
-        {% for forma in formas %}
-          <tr>
-            <td><strong>{{ forma.nome }}</strong></td>
-            <td>{{ forma.tipo }}</td>
-            <td>{{ forma.conta_movimento_padrao|default:"Automatica por tipo" }}</td>
-            <td>{% if forma.permite_troco %}Sim{% else %}Nao{% endif %}</td>
-            <td>{% if forma.exige_autorizacao %}Eletronica / supervisor{% else %}Direta{% endif %}</td>
-            <td><span class="status-badge {% if forma.ativo %}success{% else %}muted{% endif %}">{% if forma.ativo %}Ativa{% else %}Inativa{% endif %}</span></td>
-            <td><a class="icon-button" href="{% url 'configuracoes:forma_pagamento_editar' forma.pk %}" title="Editar forma de pagamento"><i class="fa-solid fa-pen"></i></a></td>
-          </tr>
-        {% empty %}
-          <tr><td colspan="7" class="empty">Nenhuma forma de pagamento cadastrada.</td></tr>
-        {% endfor %}
-      </tbody>
+      {% if catalogo_global %}
+        <thead><tr><th>Nome</th><th>Tipo</th><th>Conta legada</th><th>Troco</th><th>Autorização</th><th>Status</th><th></th></tr></thead>
+        <tbody>
+          {% for forma in formas %}
+            <tr>
+              <td><strong>{{ forma.nome }}</strong></td>
+              <td>{{ forma.tipo }}</td>
+              <td>{{ forma.conta_movimento_padrao|default:"Automática por tipo" }}</td>
+              <td>{% if forma.permite_troco %}Sim{% else %}Não{% endif %}</td>
+              <td>{% if forma.exige_autorizacao %}Eletrônica / supervisor{% else %}Direta{% endif %}</td>
+              <td><span class="status-badge {% if forma.ativo %}success{% else %}muted{% endif %}">{% if forma.ativo %}Ativa{% else %}Inativa{% endif %}</span></td>
+              <td><a class="icon-button" href="{% url 'configuracoes:forma_pagamento_editar' forma.pk %}" title="Editar item do catálogo"><i class="fa-solid fa-pen"></i></a></td>
+            </tr>
+          {% empty %}<tr><td colspan="7" class="empty">Nenhuma forma cadastrada.</td></tr>{% endfor %}
+        </tbody>
+      {% else %}
+        <thead><tr><th>Filial</th><th>Forma</th><th>Tipo</th><th>Conta da filial</th><th>Status no PDV</th><th></th></tr></thead>
+        <tbody>
+          {% for linha in formas_filiais %}
+            <tr>
+              <td><strong>{{ linha.filial.nome }}</strong></td>
+              <td>{{ linha.forma.nome }}</td>
+              <td>{{ linha.forma.tipo }}</td>
+              <td>{{ linha.conta|default:"Automática por tipo" }}</td>
+              <td><span class="status-badge {% if linha.ativo %}success{% else %}muted{% endif %}">{% if linha.ativo %}Disponível{% else %}Indisponível{% endif %}</span></td>
+              <td><a class="icon-button" href="{% url 'configuracoes:forma_pagamento_editar' linha.forma.pk %}?filial={{ linha.filial.pk }}" title="Configurar nesta filial"><i class="fa-solid fa-sliders"></i></a></td>
+            </tr>
+          {% empty %}<tr><td colspan="6" class="empty">Nenhuma filial ativa ou forma de pagamento cadastrada.</td></tr>{% endfor %}
+        </tbody>
+      {% endif %}
     </table>
   </div>
 </section>
+{% include "includes/pagination.html" with page_obj=page_obj %}
 {% endblock %}

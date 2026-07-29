@@ -1,25 +1,32 @@
 import csv
+import hashlib
+import json
 from collections import OrderedDict
 from datetime import timedelta
 from decimal import Decimal
 
 from django.contrib import messages
 from django.contrib.auth.decorators import login_required
-from django.core.exceptions import ValidationError
+from django.core.exceptions import PermissionDenied, ValidationError
 from django.core.paginator import Paginator
-from django.db.models import Q, Sum
+from django.core.serializers.json import DjangoJSONEncoder
+from django.db.models import Count, Q, Sum
 from django.http import HttpResponse, JsonResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.utils import timezone
 from django.utils.dateparse import parse_date
 from django.utils.http import url_has_allowed_host_and_scheme
 
-from apps.accounts.permissions import RELATORIOS, SISTEMA, role_required
-from apps.empresas.models import Filial
+from apps.accounts.models import PerfilUsuario, TipoPerfil
+from apps.accounts.permissions import RELATORIOS, SISTEMA, has_role, role_required
+from apps.auditoria.models import LogAuditoria
+from apps.empresas.models import Empresa, Filial
+from apps.fiscal.models import DocumentoFiscal, StatusDocumentoFiscal
 from apps.vendas.models import PagamentoVenda, StatusVenda
 
 from .forms import BaixaContaForm, CategoriaFinanceiraForm, ContaFinanceiraForm, ContaMovimentoFinanceiroForm, TransferenciaFinanceiraForm
-from .models import CategoriaFinanceira, ConciliacaoLancamentoFinanceiro, ContaFinanceira, ContaMovimentoFinanceiro, LancamentoFinanceiro, StatusContaFinanceira, TipoContaFinanceira, TipoLancamentoFinanceiro, TransferenciaFinanceira
+from .adapters import carregar_adaptador_contabil, diagnosticar_adaptador_contabil, normalizar_retorno_exportacao
+from .models import CategoriaFinanceira, ConciliacaoLancamentoFinanceiro, ContaFinanceira, ContaMovimentoFinanceiro, ExportacaoContabil, LancamentoFinanceiro, StatusContaFinanceira, StatusExportacaoContabil, TipoContaFinanceira, TipoLancamentoFinanceiro, TransferenciaFinanceira
 from .services import baixar_conta, cancelar_conta, conciliar_lancamento, estornar_lancamento, realizar_transferencia
 
 
@@ -29,6 +36,34 @@ def _periodo_from_request(request):
     data_fim = parse_date(request.GET.get("data_fim") or "") or hoje
     return data_inicio, data_fim
 
+
+def _escopo_filiais_financeiro(request):
+    filiais = Filial.objects.select_related("empresa").order_by("empresa__nome_fantasia", "nome")
+    permite_consolidado = request.user.is_superuser
+    empresa_id = None
+    if not request.user.is_superuser:
+        perfil = PerfilUsuario.objects.select_related("filial", "filial__empresa").filter(
+            usuario=request.user, is_active=True, filial__isnull=False,
+        ).first()
+        if not perfil:
+            raise PermissionDenied("Usuario sem filial financeira vinculada.")
+        if perfil.tipo == TipoPerfil.ADMINISTRADOR:
+            filiais = filiais.filter(empresa_id=perfil.filial.empresa_id)
+            permite_consolidado = True
+            empresa_id = perfil.filial.empresa_id
+        else:
+            filiais = filiais.filter(pk=perfil.filial_id)
+
+    filial_parametro = (request.GET.get("filial") or "").strip()
+    if filial_parametro:
+        if not filial_parametro.isdigit() or not filiais.filter(pk=filial_parametro).exists():
+            raise PermissionDenied("Filial fora do escopo permitido para este usuario.")
+        filial_id = int(filial_parametro)
+    elif permite_consolidado:
+        filial_id = None
+    else:
+        filial_id = filiais.values_list("id", flat=True).first()
+    return filiais, filial_id, permite_consolidado, empresa_id
 
 def _next_seguro(request, default="financeiro:contas"):
     destino = request.POST.get("next") or request.GET.get("next") or ""
@@ -42,18 +77,30 @@ def _contas_filtradas(request):
     tipo = request.GET.get("tipo", "")
     status = request.GET.get("status", "")
     q = request.GET.get("q", "").strip()
-    contas_qs = ContaFinanceira.objects.select_related("categoria", "filial", "fornecedor", "cliente").filter(
-        vencimento__gte=data_inicio,
-        vencimento__lte=data_fim,
-    )
+    filiais, filial_id, permite_consolidado, empresa_id = _escopo_filiais_financeiro(request)
+    contas_qs = ContaFinanceira.objects.select_related(
+        "categoria", "filial", "fornecedor", "cliente"
+    ).filter(vencimento__gte=data_inicio, vencimento__lte=data_fim)
+    if filial_id:
+        contas_qs = contas_qs.filter(filial_id=filial_id)
+    elif empresa_id:
+        contas_qs = contas_qs.filter(filial__empresa_id=empresa_id)
     if tipo:
         contas_qs = contas_qs.filter(tipo=tipo)
     if status:
         contas_qs = contas_qs.filter(status=status)
     if q:
         contas_qs = contas_qs.filter(descricao__icontains=q)
-    return contas_qs, {"data_inicio": data_inicio, "data_fim": data_fim, "tipo": tipo, "status": status, "q": q}
-
+    return contas_qs, {
+        "data_inicio": data_inicio,
+        "data_fim": data_fim,
+        "tipo": tipo,
+        "status": status,
+        "q": q,
+        "filial_id": str(filial_id or ""),
+        "filiais_opcoes": filiais,
+        "permite_consolidado": permite_consolidado,
+    }
 
 def _resumo_contas(contas_qs):
     resumo_abertas = contas_qs.filter(status=StatusContaFinanceira.ABERTA)
@@ -75,8 +122,12 @@ def _parceiro(conta):
     return conta.fornecedor or conta.cliente or ""
 
 
-def _fluxo_caixa_periodo(data_inicio, data_fim):
+def _fluxo_caixa_periodo(data_inicio, data_fim, filial_id=None, empresa_id=None):
     contas_qs = ContaFinanceira.objects.filter(vencimento__gte=data_inicio, vencimento__lte=data_fim)
+    if filial_id:
+        contas_qs = contas_qs.filter(filial_id=filial_id)
+    elif empresa_id:
+        contas_qs = contas_qs.filter(filial__empresa_id=empresa_id)
     fluxo = OrderedDict()
     dia = data_inicio
     while dia <= data_fim:
@@ -111,7 +162,7 @@ def _fluxo_caixa_periodo(data_inicio, data_fim):
     return list(fluxo.values())
 
 
-def _conciliacao_periodo(data_inicio, data_fim):
+def _conciliacao_periodo(data_inicio, data_fim, filial_id=None, empresa_id=None):
     formas_prazo = {"CREDIARIO", "FIADO", "PRAZO"}
     linhas = OrderedDict()
     dia = data_inicio
@@ -130,6 +181,10 @@ def _conciliacao_periodo(data_inicio, data_fim):
         data__date__gte=data_inicio,
         data__date__lte=data_fim,
     )
+    if filial_id:
+        pagamentos_pdv = pagamentos_pdv.filter(venda__filial_id=filial_id)
+    elif empresa_id:
+        pagamentos_pdv = pagamentos_pdv.filter(venda__filial__empresa_id=empresa_id)
     for pagamento in pagamentos_pdv:
         if pagamento.forma_pagamento.tipo in formas_prazo:
             continue
@@ -142,6 +197,10 @@ def _conciliacao_periodo(data_inicio, data_fim):
         data_pagamento__gte=data_inicio,
         data_pagamento__lte=data_fim,
     )
+    if filial_id:
+        contas_baixadas = contas_baixadas.filter(filial_id=filial_id)
+    elif empresa_id:
+        contas_baixadas = contas_baixadas.filter(filial__empresa_id=empresa_id)
     for conta in contas_baixadas:
         if conta.data_pagamento not in linhas:
             continue
@@ -178,12 +237,16 @@ def _conciliacao_bancaria_json(resumo):
         "valor_pendente": _valor_monetario_json(resumo["valor_pendente"]),
         "por_conta": por_conta,
     }
-def _resultado_financeiro_periodo(data_inicio, data_fim):
+def _resultado_financeiro_periodo(data_inicio, data_fim, filial_id=None, empresa_id=None):
     lancamentos = (
         LancamentoFinanceiro.objects.select_related("conta", "conta__filial", "conta_financeira", "conta_financeira__categoria")
         .filter(data__gte=data_inicio, data__lte=data_fim)
         .exclude(origem="TRANSFERENCIA")
     )
+    if filial_id:
+        lancamentos = lancamentos.filter(conta__filial_id=filial_id)
+    elif empresa_id:
+        lancamentos = lancamentos.filter(conta__filial__empresa_id=empresa_id)
     receitas = lancamentos.filter(tipo=TipoLancamentoFinanceiro.ENTRADA).aggregate(total=Sum("valor"))["total"] or Decimal("0.00")
     despesas = lancamentos.filter(tipo=TipoLancamentoFinanceiro.SAIDA).aggregate(total=Sum("valor"))["total"] or Decimal("0.00")
     por_origem = []
@@ -235,7 +298,12 @@ def _resultado_financeiro_periodo(data_inicio, data_fim):
         por_categoria.append(linha)
 
     saldos_contas = []
-    for conta in ContaMovimentoFinanceiro.objects.select_related("filial", "filial__empresa").filter(ativa=True):
+    contas_movimento = ContaMovimentoFinanceiro.objects.select_related("filial", "filial__empresa").filter(ativa=True)
+    if filial_id:
+        contas_movimento = contas_movimento.filter(filial_id=filial_id)
+    elif empresa_id:
+        contas_movimento = contas_movimento.filter(filial__empresa_id=empresa_id)
+    for conta in contas_movimento:
         entradas_periodo = lancamentos.filter(conta=conta, tipo=TipoLancamentoFinanceiro.ENTRADA).aggregate(total=Sum("valor"))["total"] or Decimal("0.00")
         saidas_periodo = lancamentos.filter(conta=conta, tipo=TipoLancamentoFinanceiro.SAIDA).aggregate(total=Sum("valor"))["total"] or Decimal("0.00")
         saldos_contas.append(
@@ -250,7 +318,8 @@ def _resultado_financeiro_periodo(data_inicio, data_fim):
             }
         )
 
-    conciliacao_bancaria = _resumo_conciliacao_periodo(data_inicio, data_fim)
+    conciliacao_bancaria = _resumo_conciliacao_periodo(data_inicio, data_fim, filial_id, empresa_id)
+    integracao_fiscal = _resumo_integracao_fiscal(data_inicio, data_fim, filial_id, empresa_id)
     return {
         "receitas": receitas,
         "despesas": despesas,
@@ -259,10 +328,11 @@ def _resultado_financeiro_periodo(data_inicio, data_fim):
         "por_conta": por_conta,
         "por_categoria": por_categoria,
         "saldos_contas": saldos_contas,
-        "balancete_contas": _balancete_contas_periodo(data_inicio, data_fim),
+        "balancete_contas": _balancete_contas_periodo(data_inicio, data_fim, filial_id, empresa_id),
         "dre_gerencial": _dre_gerencial(receitas, despesas, por_categoria),
         "conciliacao_bancaria": conciliacao_bancaria,
-        "pacote_contabil": _pacote_contabil_gerencial(data_inicio, data_fim, receitas, despesas, conciliacao_bancaria),
+        "integracao_fiscal": integracao_fiscal,
+        "pacote_contabil": _pacote_contabil_gerencial(data_inicio, data_fim, receitas, despesas, conciliacao_bancaria, filial_id, empresa_id),
     }
 
 
@@ -298,9 +368,13 @@ def _dre_gerencial(receitas, despesas, por_categoria):
     }
 
 
-def _balancete_contas_periodo(data_inicio, data_fim):
+def _balancete_contas_periodo(data_inicio, data_fim, filial_id=None, empresa_id=None):
     linhas = []
     contas = ContaMovimentoFinanceiro.objects.select_related("filial", "filial__empresa").filter(ativa=True)
+    if filial_id:
+        contas = contas.filter(filial_id=filial_id)
+    elif empresa_id:
+        contas = contas.filter(filial__empresa_id=empresa_id)
     for conta in contas:
         anteriores = conta.lancamentos.filter(data__lt=data_inicio).values("tipo").annotate(total=Sum("valor"))
         anteriores_por_tipo = {item["tipo"]: item["total"] for item in anteriores}
@@ -328,8 +402,12 @@ def _balancete_contas_periodo(data_inicio, data_fim):
 
 
 
-def _resumo_conciliacao_periodo(data_inicio, data_fim):
+def _resumo_conciliacao_periodo(data_inicio, data_fim, filial_id=None, empresa_id=None):
     lancamentos = LancamentoFinanceiro.objects.filter(data__range=(data_inicio, data_fim))
+    if filial_id:
+        lancamentos = lancamentos.filter(conta__filial_id=filial_id)
+    elif empresa_id:
+        lancamentos = lancamentos.filter(conta__filial__empresa_id=empresa_id)
     total_lancamentos = lancamentos.count()
     total_valor = lancamentos.aggregate(total=Sum("valor"))["total"] or Decimal("0.00")
     conciliados_qs = lancamentos.filter(conciliacao_bancaria__isnull=False)
@@ -339,7 +417,14 @@ def _resumo_conciliacao_periodo(data_inicio, data_fim):
     if total_lancamentos:
         percentual = (Decimal(conciliados) / Decimal(total_lancamentos) * Decimal("100.00")).quantize(Decimal("0.01"))
     por_conta = []
-    for conta in ContaMovimentoFinanceiro.objects.select_related("filial").filter(lancamentos__data__range=(data_inicio, data_fim)).distinct():
+    contas_conciliacao = ContaMovimentoFinanceiro.objects.select_related("filial").filter(
+        lancamentos__data__range=(data_inicio, data_fim)
+    ).distinct()
+    if filial_id:
+        contas_conciliacao = contas_conciliacao.filter(filial_id=filial_id)
+    elif empresa_id:
+        contas_conciliacao = contas_conciliacao.filter(filial__empresa_id=empresa_id)
+    for conta in contas_conciliacao:
         movimentos = lancamentos.filter(conta=conta)
         movimentos_conciliados = movimentos.filter(conciliacao_bancaria__isnull=False)
         conta_total = movimentos.count()
@@ -365,8 +450,101 @@ def _resumo_conciliacao_periodo(data_inicio, data_fim):
     }
 
 
-def _pacote_contabil_gerencial(data_inicio, data_fim, receitas, despesas, conciliacao_bancaria):
+def _resumo_integracao_fiscal(data_inicio, data_fim, filial_id=None, empresa_id=None):
+    documentos = (
+        DocumentoFiscal.objects.select_related("filial", "venda", "pedido_online")
+        .filter(criado_em__date__range=(data_inicio, data_fim))
+        .exclude(status=StatusDocumentoFiscal.CANCELADO)
+    )
+    if filial_id:
+        documentos = documentos.filter(filial_id=filial_id)
+    elif empresa_id:
+        documentos = documentos.filter(filial__empresa_id=empresa_id)
+    documentos_venda = documentos.filter(venda__isnull=False)
+    vendas_documentadas = {
+        item["venda_id"]: item
+        for item in documentos_venda.values("venda_id", "filial__nome")
+        .annotate(valor_fiscal=Sum("valor_total"), documentos=Count("id"))
+    }
+    entradas_qs = LancamentoFinanceiro.objects.filter(
+        data__range=(data_inicio, data_fim), tipo=TipoLancamentoFinanceiro.ENTRADA,
+        pagamento_venda__venda_id__isnull=False,
+    )
+    if filial_id:
+        entradas_qs = entradas_qs.filter(conta__filial_id=filial_id)
+    elif empresa_id:
+        entradas_qs = entradas_qs.filter(conta__filial__empresa_id=empresa_id)
+    entradas_venda = {
+        item["pagamento_venda__venda_id"]: item
+        for item in entradas_qs.values(
+            "pagamento_venda__venda_id", "pagamento_venda__venda__filial__nome"
+        ).annotate(valor_financeiro=Sum("valor"))
+    }
+    divergencias = []
+    conciliadas = 0
+    for venda_id, fiscal in vendas_documentadas.items():
+        valor_fiscal = fiscal["valor_fiscal"] or Decimal("0.00")
+        entrada = entradas_venda.get(venda_id)
+        valor_financeiro = entrada["valor_financeiro"] if entrada else Decimal("0.00")
+        diferenca = valor_financeiro - valor_fiscal
+        if abs(diferenca) <= Decimal("0.01"):
+            conciliadas += 1
+            continue
+        divergencias.append({
+            "venda_id": venda_id, "filial": fiscal["filial__nome"],
+            "valor_fiscal": valor_fiscal, "valor_financeiro": valor_financeiro,
+            "diferenca": diferenca,
+            "situacao": "Sem lancamento financeiro" if not valor_financeiro else "Valores divergentes",
+        })
+    vendas_sem_documento = sorted(set(entradas_venda) - set(vendas_documentadas))
+    for venda_id in vendas_sem_documento:
+        entrada = entradas_venda[venda_id]
+        divergencias.append({
+            "venda_id": venda_id,
+            "filial": entrada["pagamento_venda__venda__filial__nome"],
+            "valor_fiscal": Decimal("0.00"),
+            "valor_financeiro": entrada["valor_financeiro"],
+            "diferenca": entrada["valor_financeiro"],
+            "situacao": "Sem documento fiscal",
+        })
+    status = {
+        item["status"]: {"quantidade": item["quantidade"], "valor": item["valor"] or Decimal("0.00")}
+        for item in documentos.values("status").annotate(quantidade=Count("id"), valor=Sum("valor_total"))
+    }
+    return {
+        "contrato": "financial_fiscal_reconciliation_v1",
+        "documentos": documentos.count(), "documentos_venda": documentos_venda.count(),
+        "documentos_pedido_online": documentos.filter(pedido_online__isnull=False).count(),
+        "valor_fiscal": documentos.aggregate(total=Sum("valor_total"))["total"] or Decimal("0.00"),
+        "vendas_com_lancamento": len(entradas_venda), "vendas_conciliadas": conciliadas,
+        "vendas_sem_documento": len(vendas_sem_documento),
+        "vendas_sem_documento_ids": vendas_sem_documento[:100],
+        "divergencias": divergencias[:100], "total_divergencias": len(divergencias), "status": status,
+    }
+
+
+def _integracao_fiscal_json(resumo):
+    return {
+        **resumo,
+        "valor_fiscal": _valor_monetario_json(resumo["valor_fiscal"]),
+        "status": {
+            chave: {"quantidade": valor["quantidade"], "valor": _valor_monetario_json(valor["valor"])}
+            for chave, valor in resumo["status"].items()
+        },
+        "divergencias": [
+            {**linha, "valor_fiscal": _valor_monetario_json(linha["valor_fiscal"]),
+             "valor_financeiro": _valor_monetario_json(linha["valor_financeiro"]),
+             "diferenca": _valor_monetario_json(linha["diferenca"])}
+            for linha in resumo["divergencias"]
+        ],
+    }
+
+def _pacote_contabil_gerencial(data_inicio, data_fim, receitas, despesas, conciliacao_bancaria, filial_id=None, empresa_id=None):
     lancamentos_periodo = LancamentoFinanceiro.objects.filter(data__gte=data_inicio, data__lte=data_fim)
+    if filial_id:
+        lancamentos_periodo = lancamentos_periodo.filter(conta__filial_id=filial_id)
+    elif empresa_id:
+        lancamentos_periodo = lancamentos_periodo.filter(conta__filial__empresa_id=empresa_id)
     transferencias = lancamentos_periodo.filter(origem="TRANSFERENCIA")
     estornos = lancamentos_periodo.filter(estorno_de__isnull=False)
     total_entradas_livro = lancamentos_periodo.filter(tipo=TipoLancamentoFinanceiro.ENTRADA).aggregate(total=Sum("valor"))["total"] or Decimal("0.00")
@@ -417,12 +595,14 @@ def _pacote_contabil_gerencial(data_inicio, data_fim, receitas, despesas, concil
 @role_required(*RELATORIOS)
 def contas(request):
     contas_qs, filtros = _contas_filtradas(request)
+    pagina = Paginator(contas_qs, 50).get_page(request.GET.get("page"))
     context = {
         **filtros,
         **_resumo_contas(contas_qs),
         "tipos": TipoContaFinanceira.choices,
         "status_choices": StatusContaFinanceira.choices,
-        "contas": contas_qs[:200],
+        "contas": pagina,
+        "page_obj": pagina,
     }
     return render(request, "financeiro/contas.html", context)
 
@@ -470,10 +650,14 @@ def contas_imprimir(request):
 @role_required(*RELATORIOS)
 def fluxo_caixa(request):
     data_inicio, data_fim = _periodo_from_request(request)
-    linhas = _fluxo_caixa_periodo(data_inicio, data_fim)
+    filiais, filial_id, permite_consolidado, empresa_id = _escopo_filiais_financeiro(request)
+    linhas = _fluxo_caixa_periodo(data_inicio, data_fim, filial_id, empresa_id)
     context = {
         "data_inicio": data_inicio,
         "data_fim": data_fim,
+        "filiais_opcoes": filiais,
+        "filial_id": str(filial_id or ""),
+        "permite_consolidado": permite_consolidado,
         "linhas": linhas,
         "total_previsto_receber": sum((linha["previsto_receber"] for linha in linhas), Decimal("0.00")),
         "total_previsto_pagar": sum((linha["previsto_pagar"] for linha in linhas), Decimal("0.00")),
@@ -489,7 +673,8 @@ def fluxo_caixa(request):
 @role_required(*RELATORIOS)
 def fluxo_caixa_csv(request):
     data_inicio, data_fim = _periodo_from_request(request)
-    linhas = _fluxo_caixa_periodo(data_inicio, data_fim)
+    _, filial_id, _, empresa_id = _escopo_filiais_financeiro(request)
+    linhas = _fluxo_caixa_periodo(data_inicio, data_fim, filial_id, empresa_id)
     response = HttpResponse(content_type="text/csv; charset=utf-8")
     response["Content-Disposition"] = f'attachment; filename="fluxo_caixa_{data_inicio}_{data_fim}.csv"'
     response.write("\ufeff")
@@ -512,10 +697,14 @@ def fluxo_caixa_csv(request):
 @role_required(*RELATORIOS)
 def conciliacao(request):
     data_inicio, data_fim = _periodo_from_request(request)
-    linhas = _conciliacao_periodo(data_inicio, data_fim)
+    filiais, filial_id, permite_consolidado, empresa_id = _escopo_filiais_financeiro(request)
+    linhas = _conciliacao_periodo(data_inicio, data_fim, filial_id, empresa_id)
     context = {
         "data_inicio": data_inicio,
         "data_fim": data_fim,
+        "filiais_opcoes": filiais,
+        "filial_id": str(filial_id or ""),
+        "permite_consolidado": permite_consolidado,
         "linhas": linhas,
         "total_entradas_pdv": sum((linha["entradas_pdv"] for linha in linhas), Decimal("0.00")),
         "total_recebimentos_financeiros": sum((linha["recebimentos_financeiros"] for linha in linhas), Decimal("0.00")),
@@ -529,7 +718,8 @@ def conciliacao(request):
 @role_required(*RELATORIOS)
 def conciliacao_csv(request):
     data_inicio, data_fim = _periodo_from_request(request)
-    linhas = _conciliacao_periodo(data_inicio, data_fim)
+    _, filial_id, _, empresa_id = _escopo_filiais_financeiro(request)
+    linhas = _conciliacao_periodo(data_inicio, data_fim, filial_id, empresa_id)
     response = HttpResponse(content_type="text/csv; charset=utf-8")
     response["Content-Disposition"] = f'attachment; filename="conciliacao_{data_inicio}_{data_fim}.csv"'
     response.write("\ufeff")
@@ -550,19 +740,34 @@ def conciliacao_csv(request):
 @role_required(*RELATORIOS)
 def resultado_financeiro(request):
     data_inicio, data_fim = _periodo_from_request(request)
-    resultado = _resultado_financeiro_periodo(data_inicio, data_fim)
+    filiais, filial_id, permite_consolidado, empresa_id = _escopo_filiais_financeiro(request)
+    resultado = _resultado_financeiro_periodo(data_inicio, data_fim, filial_id, empresa_id)
+    exportacoes = ExportacaoContabil.objects.select_related("empresa", "filial", "usuario")
+    if filial_id:
+        exportacoes = exportacoes.filter(filial_id=filial_id)
+    elif empresa_id:
+        exportacoes = exportacoes.filter(empresa_id=empresa_id)
+    elif not request.user.is_superuser:
+        exportacoes = exportacoes.none()
     return render(request, "financeiro/resultado.html", {
         "data_inicio": data_inicio,
         "data_fim": data_fim,
+        "filiais": filiais,
+        "filial_id": filial_id,
+        "permite_consolidado": permite_consolidado,
+        "adaptador_contabil": diagnosticar_adaptador_contabil(),
+        "pode_enviar_contabil": has_role(request.user, SISTEMA),
+        "exportacoes_contabeis": exportacoes[:10],
         **resultado,
     })
-
 
 @login_required
 @role_required(*RELATORIOS)
 def resultado_financeiro_csv(request):
     data_inicio, data_fim = _periodo_from_request(request)
-    resultado = _resultado_financeiro_periodo(data_inicio, data_fim)
+    filiais, filial_id, permite_consolidado, empresa_id = _escopo_filiais_financeiro(request)
+    resultado = _resultado_financeiro_periodo(data_inicio, data_fim, filial_id, empresa_id)
+    filial = filiais.filter(pk=filial_id).first() if filial_id else None
     def valor_csv(valor):
         return f"{valor:.2f}".replace(".", ",")
 
@@ -570,6 +775,8 @@ def resultado_financeiro_csv(request):
     response["Content-Disposition"] = f'attachment; filename="resultado_financeiro_{data_inicio}_{data_fim}.csv"'
     response.write("\ufeff")
     writer = csv.writer(response, delimiter=";")
+    writer.writerow(["Filial", filial.nome if filial else "Todas as filiais permitidas"])
+    writer.writerow([])
     writer.writerow(["Resumo", "Receitas", "Despesas", "Resultado"])
     writer.writerow([
         "Periodo",
@@ -626,6 +833,17 @@ def resultado_financeiro_csv(request):
     writer.writerow(["Valor conciliado", valor_csv(conciliacao["valor_conciliado"]), f"Pendente {valor_csv(conciliacao['valor_pendente'])}"])
     for alerta in resultado["pacote_contabil"]["alertas"]:
         writer.writerow(["Alerta", "", alerta])
+    fiscal = resultado["integracao_fiscal"]
+    writer.writerow([])
+    writer.writerow(["Conferencia fiscal x financeiro"])
+    writer.writerow(["Contrato", fiscal["contrato"]])
+    writer.writerow(["Documentos fiscais", fiscal["documentos"], valor_csv(fiscal["valor_fiscal"])])
+    writer.writerow(["Vendas conciliadas", fiscal["vendas_conciliadas"]])
+    writer.writerow(["Vendas sem documento fiscal", fiscal["vendas_sem_documento"]])
+    writer.writerow(["Divergencias fiscais", fiscal["total_divergencias"]])
+    writer.writerow(["Venda", "Filial", "Valor fiscal", "Valor financeiro", "Diferenca", "Situacao"])
+    for linha in fiscal["divergencias"]:
+        writer.writerow([linha["venda_id"], linha["filial"], valor_csv(linha["valor_fiscal"]), valor_csv(linha["valor_financeiro"]), valor_csv(linha["diferenca"]), linha["situacao"]])
     writer.writerow([])
     writer.writerow(["Balancete gerencial por conta"])
     writer.writerow(["Filial", "Conta movimento", "Tipo", "Saldo anterior", "Entradas", "Saidas", "Saldo final"])
@@ -642,15 +860,15 @@ def resultado_financeiro_csv(request):
     return response
 
 
-@login_required
-@role_required(*RELATORIOS)
-def resultado_pacote_contabil_json(request):
-    data_inicio, data_fim = _periodo_from_request(request)
-    resultado = _resultado_financeiro_periodo(data_inicio, data_fim)
+def _payload_pacote_contabil(data_inicio, data_fim, filiais, filial_id, empresa_id, resultado):
+    filial = filiais.filter(pk=filial_id).first() if filial_id else None
+    empresa = filial.empresa if filial else Empresa.objects.filter(pk=empresa_id).first()
     pacote = resultado["pacote_contabil"]
-    payload = {
+    return {
         "contrato": "financial_accounting_package_v1",
         "periodo": {"inicio": data_inicio.isoformat(), "fim": data_fim.isoformat()},
+        "empresa": {"id": empresa.pk, "razao_social": empresa.razao_social, "cnpj": empresa.cnpj} if empresa else None,
+        "filial": {"id": filial.pk, "nome": filial.nome, "cnpj": filial.cnpj} if filial else None,
         "resumo": {
             "receitas": _valor_monetario_json(resultado["receitas"]),
             "despesas": _valor_monetario_json(resultado["despesas"]),
@@ -663,51 +881,139 @@ def resultado_pacote_contabil_json(request):
         "dre_gerencial": resultado["dre_gerencial"],
         "balancete_contas": resultado["balancete_contas"],
         "conciliacao_bancaria": _conciliacao_bancaria_json(resultado["conciliacao_bancaria"]),
+        "integracao_fiscal": _integracao_fiscal_json(resultado["integracao_fiscal"]),
         "pacote_contabil": pacote,
         "alertas": pacote["alertas"],
         "observacao": "Pacote gerencial de conferencia interna; nao substitui SPED, ECD, ECF ou obrigacoes oficiais.",
     }
-    return JsonResponse(payload)
 
 
+@login_required
+@role_required(*RELATORIOS)
+def resultado_pacote_contabil_json(request):
+    data_inicio, data_fim = _periodo_from_request(request)
+    filiais, filial_id, _, empresa_id = _escopo_filiais_financeiro(request)
+    resultado = _resultado_financeiro_periodo(data_inicio, data_fim, filial_id, empresa_id)
+    return JsonResponse(_payload_pacote_contabil(data_inicio, data_fim, filiais, filial_id, empresa_id, resultado))
+
+
+@login_required
+@role_required(*RELATORIOS)
+def diagnostico_contabil_json(request):
+    diagnostico = diagnosticar_adaptador_contabil()
+    diagnostico["envio_permitido"] = has_role(request.user, SISTEMA)
+    return JsonResponse(diagnostico)
+
+
+@login_required
+@role_required(*SISTEMA)
+def enviar_pacote_contabil(request):
+    if request.method != "POST":
+        raise PermissionDenied("O envio contábil exige confirmação administrativa.")
+    data_inicio, data_fim = _periodo_from_request(request)
+    filiais, filial_id, _, empresa_id = _escopo_filiais_financeiro(request)
+    filial = filiais.filter(pk=filial_id).select_related("empresa").first() if filial_id else None
+    empresa = filial.empresa if filial else Empresa.objects.filter(pk=empresa_id).first()
+    destino = f"/financeiro/resultado/?data_inicio={data_inicio}&data_fim={data_fim}" + (f"&filial={filial_id}" if filial_id else "")
+    if not empresa:
+        messages.error(request, "Selecione uma filial antes de enviar; não é permitido misturar empresas no mesmo pacote contábil.")
+        return redirect(destino)
+
+    resultado = _resultado_financeiro_periodo(data_inicio, data_fim, filial_id, empresa.pk)
+    payload = _payload_pacote_contabil(data_inicio, data_fim, filiais, filial_id, empresa.pk, resultado)
+    payload_bytes = json.dumps(payload, cls=DjangoJSONEncoder, sort_keys=True, ensure_ascii=False).encode("utf-8")
+    payload_sha256 = hashlib.sha256(payload_bytes).hexdigest()
+    chave = hashlib.sha256(
+        f"{empresa.pk}:{filial_id or 'consolidado'}:{data_inicio}:{data_fim}:{payload_sha256}".encode("utf-8")
+    ).hexdigest()
+    diagnostico = diagnosticar_adaptador_contabil()
+    if not diagnostico["carregavel"]:
+        messages.error(request, diagnostico["erro"] or "Configure e homologue um adaptador contábil antes do envio.")
+        return redirect(destino)
+
+    exportacao, criada = ExportacaoContabil.objects.get_or_create(
+        chave_idempotencia=chave,
+        defaults={
+            "empresa": empresa,
+            "filial": filial,
+            "data_inicio": data_inicio,
+            "data_fim": data_fim,
+            "payload_sha256": payload_sha256,
+            "provedor": diagnostico["provedor"],
+            "usuario": request.user,
+        },
+    )
+    if not criada and exportacao.status == StatusExportacaoContabil.ENVIADO:
+        messages.info(request, f"Este fechamento já foi enviado. Protocolo: {exportacao.protocolo}.")
+        return redirect(destino)
+
+    try:
+        retorno = carregar_adaptador_contabil().exportar(payload=payload, chave_idempotencia=chave)
+        normalizado = normalizar_retorno_exportacao(retorno)
+        exportacao.status = normalizado.status
+        exportacao.protocolo = normalizado.protocolo
+        exportacao.mensagem = normalizado.mensagem
+    except Exception as exc:
+        exportacao.status = StatusExportacaoContabil.ERRO
+        exportacao.mensagem = str(exc)[:2000]
+    exportacao.usuario = request.user
+    exportacao.save(update_fields=["status", "protocolo", "mensagem", "usuario", "atualizado_em"])
+    LogAuditoria.objects.create(
+        usuario=request.user,
+        modulo="financeiro",
+        acao="EXPORTACAO_CONTABIL",
+        descricao=f"Exportação contábil #{exportacao.pk}: {exportacao.status}. Período {data_inicio} a {data_fim}.",
+        objeto_tipo="ExportacaoContabil",
+        objeto_id=str(exportacao.pk),
+        ip=request.META.get("REMOTE_ADDR"),
+    )
+    if exportacao.status == StatusExportacaoContabil.ENVIADO:
+        messages.success(request, f"Pacote contábil enviado. Protocolo: {exportacao.protocolo}.")
+    elif exportacao.status == StatusExportacaoContabil.PENDENTE:
+        messages.warning(request, "O provedor recebeu o pacote e deixou o processamento pendente.")
+    else:
+        messages.error(request, exportacao.mensagem or "O provedor não aceitou o pacote contábil.")
+    return redirect(destino)
 
 def _lancamentos_filtrados(request):
     data_inicio, data_fim = _periodo_from_request(request)
     conta_id = request.GET.get("conta", "").strip()
     tipo = request.GET.get("tipo", "").strip()
-    filial_id = request.GET.get("filial", "").strip()
-    lancamentos = LancamentoFinanceiro.objects.select_related("conta", "conta__filial", "conta_financeira", "usuario", "estorno_de", "pagamento_venda", "sangria", "suprimento").filter(
-        data__gte=data_inicio,
-        data__lte=data_fim,
-    )
+    filiais, filial_id, permite_consolidado, empresa_id = _escopo_filiais_financeiro(request)
+    lancamentos = LancamentoFinanceiro.objects.select_related(
+        "conta", "conta__filial", "conta_financeira", "usuario", "estorno_de",
+        "pagamento_venda", "sangria", "suprimento",
+    ).filter(data__gte=data_inicio, data__lte=data_fim)
+    if filial_id:
+        lancamentos = lancamentos.filter(conta__filial_id=filial_id)
+    elif empresa_id:
+        lancamentos = lancamentos.filter(conta__filial__empresa_id=empresa_id)
     if conta_id.isdigit():
         lancamentos = lancamentos.filter(conta_id=conta_id)
-    if filial_id.isdigit():
-        lancamentos = lancamentos.filter(conta__filial_id=filial_id)
     if tipo:
         lancamentos = lancamentos.filter(tipo=tipo)
     return lancamentos, {
-        "data_inicio": data_inicio,
-        "data_fim": data_fim,
-        "conta_id": conta_id,
-        "filial_id": filial_id,
-        "tipo": tipo,
-    }
-
+        "data_inicio": data_inicio, "data_fim": data_fim, "conta_id": conta_id,
+        "filial_id": str(filial_id or ""), "tipo": tipo,
+    }, filiais, permite_consolidado
 
 
 def _lancamentos_conciliacao_filtrados(request):
     data_inicio, data_fim = _periodo_from_request(request)
+    filiais, filial_id, permite_consolidado, empresa_id = _escopo_filiais_financeiro(request)
     filtros = {
-        "data_inicio": data_inicio,
-        "data_fim": data_fim,
+        "data_inicio": data_inicio, "data_fim": data_fim, "filial_id": str(filial_id or ""),
         "conta": request.GET.get("conta", "").strip(),
-        "status": request.GET.get("status", "").strip(),
-        "q": request.GET.get("q", "").strip(),
+        "status": request.GET.get("status", "").strip(), "q": request.GET.get("q", "").strip(),
     }
     lancamentos = LancamentoFinanceiro.objects.select_related(
-        "conta", "conta__filial", "conta__filial__empresa", "usuario", "conciliacao_bancaria", "conciliacao_bancaria__usuario"
+        "conta", "conta__filial", "conta__filial__empresa", "usuario",
+        "conciliacao_bancaria", "conciliacao_bancaria__usuario",
     ).filter(data__range=(data_inicio, data_fim))
+    if filial_id:
+        lancamentos = lancamentos.filter(conta__filial_id=filial_id)
+    elif empresa_id:
+        lancamentos = lancamentos.filter(conta__filial__empresa_id=empresa_id)
     if filtros["conta"].isdigit():
         lancamentos = lancamentos.filter(conta_id=filtros["conta"])
     if filtros["status"] == "conciliado":
@@ -720,13 +1026,12 @@ def _lancamentos_conciliacao_filtrados(request):
             | Q(origem__icontains=filtros["q"])
             | Q(conciliacao_bancaria__referencia_externa__icontains=filtros["q"])
         )
-    return lancamentos, filtros
-
+    return lancamentos, filtros, filiais, permite_consolidado
 
 @login_required
 @role_required(*RELATORIOS)
 def conciliacao_bancaria(request):
-    lancamentos, filtros = _lancamentos_conciliacao_filtrados(request)
+    lancamentos, filtros, filiais, permite_consolidado = _lancamentos_conciliacao_filtrados(request)
     total = lancamentos.count()
     conciliados = lancamentos.filter(conciliacao_bancaria__isnull=False).count()
     pagina = Paginator(lancamentos, 50).get_page(request.GET.get("page"))
@@ -736,7 +1041,9 @@ def conciliacao_bancaria(request):
         **filtros,
         "pagina": pagina,
         "query_sem_pagina": query.urlencode(),
-        "contas_opcoes": ContaMovimentoFinanceiro.objects.filter(ativa=True).select_related("filial"),
+        "filiais_opcoes": filiais,
+        "permite_consolidado": permite_consolidado,
+        "contas_opcoes": ContaMovimentoFinanceiro.objects.filter(ativa=True, filial__in=filiais).select_related("filial"),
         "total": total,
         "conciliados": conciliados,
         "pendentes": total - conciliados,
@@ -746,7 +1053,8 @@ def conciliacao_bancaria(request):
 @login_required
 @role_required(*SISTEMA)
 def conciliar_lancamento_view(request, pk):
-    lancamento = get_object_or_404(LancamentoFinanceiro, pk=pk)
+    filiais, _, _, _ = _escopo_filiais_financeiro(request)
+    lancamento = get_object_or_404(LancamentoFinanceiro.objects.filter(conta__filial__in=filiais), pk=pk)
     if request.method == "POST":
         data_conciliacao = parse_date(request.POST.get("data_conciliacao", "")) or timezone.localdate()
         try:
@@ -768,7 +1076,7 @@ def conciliar_lancamento_view(request, pk):
 @login_required
 @role_required(*RELATORIOS)
 def conciliacao_bancaria_csv(request):
-    lancamentos, filtros = _lancamentos_conciliacao_filtrados(request)
+    lancamentos, filtros, filiais, permite_consolidado = _lancamentos_conciliacao_filtrados(request)
     response = HttpResponse(content_type="text/csv; charset=utf-8")
     response["Content-Disposition"] = f'attachment; filename="conciliacao_bancaria_{filtros["data_inicio"]}_{filtros["data_fim"]}.csv"'
     response.write("\ufeff")
@@ -839,14 +1147,17 @@ def transferencia_form(request):
 @login_required
 @role_required(*RELATORIOS)
 def livro_financeiro(request):
-    lancamentos, filtros = _lancamentos_filtrados(request)
+    lancamentos, filtros, filiais, permite_consolidado = _lancamentos_filtrados(request)
     total_entradas = lancamentos.filter(tipo=TipoLancamentoFinanceiro.ENTRADA).aggregate(total=Sum("valor"))["total"] or 0
     total_saidas = lancamentos.filter(tipo=TipoLancamentoFinanceiro.SAIDA).aggregate(total=Sum("valor"))["total"] or 0
+    pagina = Paginator(lancamentos, 50).get_page(request.GET.get("page"))
     return render(request, "financeiro/livro.html", {
         **filtros,
-        "lancamentos": lancamentos[:300],
-        "contas_opcoes": ContaMovimentoFinanceiro.objects.filter(ativa=True).select_related("filial"),
-        "filiais_opcoes": Filial.objects.filter(is_active=True).select_related("empresa"),
+        "lancamentos": pagina,
+        "page_obj": pagina,
+        "contas_opcoes": ContaMovimentoFinanceiro.objects.filter(ativa=True, filial__in=filiais).select_related("filial"),
+        "filiais_opcoes": filiais.filter(is_active=True),
+        "permite_consolidado": permite_consolidado,
         "tipos_lancamento": TipoLancamentoFinanceiro.choices,
         "total_entradas": total_entradas,
         "total_saidas": total_saidas,
@@ -857,7 +1168,7 @@ def livro_financeiro(request):
 @login_required
 @role_required(*RELATORIOS)
 def livro_financeiro_csv(request):
-    lancamentos, filtros = _lancamentos_filtrados(request)
+    lancamentos, filtros, filiais, permite_consolidado = _lancamentos_filtrados(request)
     response = HttpResponse(content_type="text/csv; charset=utf-8")
     response["Content-Disposition"] = f'attachment; filename="livro_financeiro_{filtros["data_inicio"]}_{filtros["data_fim"]}.csv"'
     response.write("\ufeff")
@@ -908,7 +1219,7 @@ def estornar_livro(request, pk):
 def conta_form(request, pk=None):
     conta = get_object_or_404(ContaFinanceira, pk=pk) if pk else None
     if request.method == "POST":
-        form = ContaFinanceiraForm(request.POST, instance=conta)
+        form = ContaFinanceiraForm(request.POST, instance=conta, user=request.user)
         if form.is_valid():
             nova_conta = form.save(commit=False)
             if not nova_conta.pk:
@@ -917,7 +1228,7 @@ def conta_form(request, pk=None):
             messages.success(request, "Conta financeira salva.")
             return redirect("financeiro:contas")
     else:
-        form = ContaFinanceiraForm(instance=conta)
+        form = ContaFinanceiraForm(instance=conta, user=request.user)
     return render(request, "financeiro/conta_form.html", {"form": form, "conta": conta})
 
 

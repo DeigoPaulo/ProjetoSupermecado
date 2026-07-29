@@ -1,4 +1,7 @@
+import hashlib
+import tempfile
 from datetime import datetime, timedelta, timezone
+from pathlib import Path
 from decimal import Decimal
 
 from django.contrib.auth import get_user_model
@@ -12,6 +15,7 @@ from cryptography.hazmat.primitives.asymmetric import rsa
 from cryptography.hazmat.primitives.serialization import pkcs12
 from cryptography.x509.oid import NameOID
 
+from apps.accounts.models import PerfilUsuario, TipoPerfil
 from apps.auditoria.models import LogAuditoria
 from apps.empresas.models import Empresa, Filial
 from apps.pdv.models import Caixa
@@ -28,7 +32,10 @@ from .models import (
     TipoDocumentoFiscal,
 )
 from .certificados import abrir_certificado_a1, salvar_certificado_a1
-from .services import cancelar_documento, preparar_documento_venda, transmitir_documento_simulado
+from .assinaturas import assinar_xml_documento, verificar_assinatura_xml
+from .validacoes import diagnosticar_schemas_fiscais, validar_xml_schema
+from .fila import diagnostico_fila_fiscal, processar_fila_fiscal
+from .services import (_codigo_pagamento, ativar_contingencia_offline, cancelar_documento, preparar_documento_venda, transmitir_documento_sefaz, transmitir_documento_simulado)
 
 
 def _certificado_teste(nome="certificado-teste.pfx", senha="123456", dias_validade=365):
@@ -60,6 +67,86 @@ def _certificado_teste(nome="certificado-teste.pfx", senha="123456", dias_valida
     )
     return SimpleUploadedFile(nome, conteudo, content_type="application/x-pkcs12")
 
+
+class FakeSefazAdapter:
+    assina_xml = True
+    valida_schema = True
+    last_request = None
+
+    def transmitir(self, **kwargs):
+        type(self).last_request = kwargs
+        return {
+            "status": "AUTORIZADO",
+            "chave_acesso": kwargs["documento"].chave_acesso,
+            "protocolo": "135260000000001",
+            "mensagem": "Autorizado o uso da NF-e.",
+        }
+
+
+class FakeSefazRejectedAdapter:
+    assina_xml = True
+    valida_schema = True
+
+    def transmitir(self, **kwargs):
+        return {"status": "REJEITADO", "mensagem": "Rejeicao: cadastro do emitente invalido."}
+
+
+class FakeUnsignedSefazAdapter:
+    valida_schema = True
+
+    def transmitir(self, **kwargs):
+        return {"status": "PENDENTE", "mensagem": "Lote recebido."}
+
+
+class FakeFailingSefazAdapter:
+    assina_xml = True
+    valida_schema = True
+
+    def transmitir(self, **kwargs):
+        raise RuntimeError("SEFAZ temporariamente indisponivel")
+
+
+class FakeWrongKeySefazAdapter:
+    assina_xml = True
+    valida_schema = True
+
+    def transmitir(self, **kwargs):
+        return {
+            "status": "AUTORIZADO",
+            "chave_acesso": "35" * 22,
+            "protocolo": "135260000000002",
+            "mensagem": "Autorizado o uso da NF-e.",
+        }
+
+
+class FakeLocalSchemaAdapter:
+    assina_xml = True
+    valida_schema = False
+
+    def transmitir(self, **kwargs):
+        return {"status": "PENDENTE", "mensagem": "Lote recebido e aguardando processamento."}
+
+
+XSD_NFE_MINIMO = """<?xml version="1.0" encoding="UTF-8"?>
+<xs:schema xmlns:xs="http://www.w3.org/2001/XMLSchema"
+           targetNamespace="http://www.portalfiscal.inf.br/nfe"
+           xmlns="http://www.portalfiscal.inf.br/nfe"
+           elementFormDefault="qualified">
+  <xs:element name="NFe">
+    <xs:complexType>
+      <xs:sequence>
+        <xs:any minOccurs="1" maxOccurs="unbounded" processContents="skip"/>
+      </xs:sequence>
+    </xs:complexType>
+  </xs:element>
+</xs:schema>
+"""
+
+class CodigoPagamentoFiscalTests(TestCase):
+    def test_vales_possuem_codigos_fiscais_proprios(self):
+        self.assertEqual(_codigo_pagamento("VALE_ALIMENTACAO"), "10")
+        self.assertEqual(_codigo_pagamento("VALE_REFEICAO"), "11")
+        self.assertEqual(_codigo_pagamento("DEBITO"), "04")
 
 class FiscalTests(TestCase):
     def setUp(self):
@@ -112,6 +199,8 @@ class FiscalTests(TestCase):
             inscricao_estadual="123456789",
             csc_id="1",
             csc_token="token-homologacao",
+            url_qrcode_nfce="https://nfce-homologacao.example.com/qrcode",
+            url_consulta_nfce="https://nfce-homologacao.example.com/consulta",
             regime_tributario="Regime normal",
         )
         salvar_certificado_a1(self.configuracao, _certificado_teste(), "123456")
@@ -136,6 +225,7 @@ class FiscalTests(TestCase):
         self.assertContains(response, "Prontidão fiscal")
         self.assertContains(response, "Prontidão por filial")
         self.assertContains(response, "Diagnóstico JSON")
+        self.assertContains(response, "fiscal_transmission_queue_v1")
 
     def test_diagnostico_json_fiscal_resume_prontidao_por_filial(self):
         response = self.client.get("/fiscal/diagnostico.json")
@@ -152,6 +242,8 @@ class FiscalTests(TestCase):
         self.assertEqual(payload["producao"]["filiais_em_producao"], 0)
         self.assertFalse(payload["producao"]["transmissao_real_disponivel"])
         self.assertTrue(payload["producao"]["homologacao_simulada_disponivel"])
+        self.assertEqual(payload["fila_transmissao"]["contrato"], "fiscal_transmission_queue_v1")
+        self.assertFalse(payload["fila_transmissao"]["habilitada"])
 
 
     def test_diagnostico_json_fiscal_alerta_producao_sem_adaptador_sefaz(self):
@@ -167,7 +259,7 @@ class FiscalTests(TestCase):
         self.assertFalse(payload["producao"]["transmissao_real_disponivel"])
         self.assertIn("adaptador SEFAZ oficial", " ".join(payload["producao"]["alertas"]))
 
-    @override_settings(FISCAL_SEFAZ_ADAPTER="sefaz.oficial.Adapter")
+    @override_settings(FISCAL_SEFAZ_ADAPTER="apps.fiscal.tests.FakeSefazAdapter")
     def test_diagnostico_json_fiscal_marca_producao_pronta_com_adaptador(self):
         self.configuracao.ambiente = AmbienteFiscal.PRODUCAO
         self.configuracao.save(update_fields=["ambiente"])
@@ -177,9 +269,37 @@ class FiscalTests(TestCase):
         self.assertEqual(response.status_code, 200)
         payload = response.json()
         self.assertTrue(payload["producao"]["sefaz_adapter_configurado"])
+        self.assertTrue(payload["producao"]["sefaz_adapter_carregavel"])
+        self.assertTrue(payload["producao"]["sefaz_adapter_assina_xml"])
+        self.assertTrue(payload["producao"]["sefaz_adapter_valida_schema"])
         self.assertTrue(payload["producao"]["transmissao_real_disponivel"])
         self.assertEqual(payload["producao"]["alertas"], [])
 
+    @override_settings(FISCAL_SEFAZ_ADAPTER="apps.fiscal.tests.FakeUnsignedSefazAdapter")
+    def test_diagnostico_producao_aceita_assinatura_local_a1(self):
+        self.configuracao.ambiente = AmbienteFiscal.PRODUCAO
+        self.configuracao.save(update_fields=["ambiente"])
+
+        payload = self.client.get("/fiscal/diagnostico.json").json()
+
+        self.assertFalse(payload["producao"]["sefaz_adapter_assina_xml"])
+        self.assertTrue(payload["producao"]["assinatura_local_pronta"])
+        self.assertTrue(payload["producao"]["assinatura_xml_disponivel"])
+        self.assertTrue(payload["producao"]["transmissao_real_disponivel"])
+        self.assertEqual(payload["producao"]["alertas"], [])
+    @override_settings(FISCAL_SEFAZ_ADAPTER="integracao.inexistente.Adapter")
+    def test_diagnostico_rejeita_adaptador_sefaz_inexistente(self):
+        self.configuracao.ambiente = AmbienteFiscal.PRODUCAO
+        self.configuracao.save(update_fields=["ambiente"])
+
+        payload = self.client.get("/fiscal/diagnostico.json").json()
+
+        self.assertTrue(payload["producao"]["sefaz_adapter_configurado"])
+        self.assertFalse(payload["producao"]["sefaz_adapter_carregavel"])
+        self.assertFalse(payload["producao"]["sefaz_adapter_assina_xml"])
+        self.assertFalse(payload["producao"]["sefaz_adapter_valida_schema"])
+        self.assertFalse(payload["producao"]["transmissao_real_disponivel"])
+        self.assertIn("não pôde ser carregado", " ".join(payload["producao"]["alertas"]))
     def test_contingencia_json_exporta_documentos_prontos_com_xml_e_auditoria(self):
         documento = preparar_documento_venda(self.venda, self.user)
 
@@ -227,6 +347,15 @@ class FiscalTests(TestCase):
         self.assertIn("<cUF>35</cUF>", documento.xml_conteudo)
         self.assertIn("<cMunFG>3550308</cMunFG>", documento.xml_conteudo)
         self.assertIn("<mod>65</mod>", documento.xml_conteudo)
+        self.assertEqual(len(documento.chave_acesso), 44)
+        self.assertTrue(documento.chave_acesso.isdigit())
+        self.assertIn(f'Id="NFe{documento.chave_acesso}"', documento.xml_conteudo)
+        self.assertIn(f"<cDV>{documento.chave_acesso[-1]}</cDV>", documento.xml_conteudo)
+        self.assertEqual(documento.chave_acesso[34], "1")
+        self.assertNotIn("NFeLOCAL", documento.xml_conteudo)
+        self.assertIn("<tpEmis>1</tpEmis>", documento.xml_conteudo)
+        self.assertNotIn("<dhCont>", documento.xml_conteudo)
+        self.assertNotIn("<xJust>", documento.xml_conteudo)
         self.assertIn("<xProd>Arroz Branco 5kg</xProd>", documento.xml_conteudo)
         self.assertIsNotNone(documento.xml_gerado_em)
         self.assertTrue(LogAuditoria.objects.filter(modulo="fiscal", acao="PREPARA_DOCUMENTO").exists())
@@ -318,6 +447,363 @@ class FiscalTests(TestCase):
         self.assertEqual(response.status_code, 302)
         self.assertTrue(DocumentoFiscal.objects.filter(venda=self.venda, status=StatusDocumentoFiscal.PRONTO).exists())
 
+    @override_settings(FISCAL_AUTO_TRANSMIT_ENABLED=False)
+    def test_fila_fiscal_desligada_nao_transmite_documento(self):
+        documento = preparar_documento_venda(self.venda, self.user)
+
+        resumo = processar_fila_fiscal()
+
+        documento.refresh_from_db()
+        self.assertEqual(resumo["processados"], 0)
+        self.assertIn("desabilitada", resumo["motivo"])
+        self.assertEqual(documento.status, StatusDocumentoFiscal.PRONTO)
+        self.assertEqual(documento.tentativas_transmissao, 0)
+
+    @override_settings(FISCAL_AUTO_TRANSMIT_ENABLED=True, FISCAL_SEFAZ_ADAPTER="")
+    def test_fila_fiscal_so_simula_homologacao_quando_solicitado(self):
+        documento = preparar_documento_venda(self.venda, self.user)
+
+        ignorado = processar_fila_fiscal()
+        documento.refresh_from_db()
+
+        self.assertEqual(ignorado["processados"], 0)
+        self.assertEqual(documento.status, StatusDocumentoFiscal.PRONTO)
+        self.assertEqual(documento.tentativas_transmissao, 0)
+
+        simulado = processar_fila_fiscal(simular_homologacao=True)
+        documento.refresh_from_db()
+
+        self.assertEqual(simulado["emitidos"], 1)
+        self.assertEqual(documento.status, StatusDocumentoFiscal.EMITIDO)
+        self.assertEqual(documento.tentativas_transmissao, 1)
+
+    @override_settings(
+        FISCAL_AUTO_TRANSMIT_ENABLED=True,
+        FISCAL_SEFAZ_ADAPTER="apps.fiscal.tests.FakeSefazAdapter",
+    )
+    def test_fila_fiscal_transmite_producao_com_lease(self):
+        self.configuracao.ambiente = AmbienteFiscal.PRODUCAO
+        self.configuracao.save(update_fields=["ambiente"])
+        documento = preparar_documento_venda(self.venda, self.user)
+
+        resumo = processar_fila_fiscal()
+
+        documento.refresh_from_db()
+        self.assertEqual(resumo["emitidos"], 1)
+        self.assertEqual(documento.status, StatusDocumentoFiscal.EMITIDO)
+        self.assertEqual(documento.tentativas_transmissao, 1)
+        self.assertIsNone(documento.transmissao_reservada_em)
+        self.assertIsNone(documento.proxima_tentativa_em)
+
+    @override_settings(
+        FISCAL_AUTO_TRANSMIT_ENABLED=True,
+        FISCAL_SEFAZ_ADAPTER="apps.fiscal.tests.FakeSefazAdapter",
+    )
+    def test_fila_fiscal_ignora_documento_com_lease_ativo(self):
+        self.configuracao.ambiente = AmbienteFiscal.PRODUCAO
+        self.configuracao.save(update_fields=["ambiente"])
+        documento = preparar_documento_venda(self.venda, self.user)
+        documento.transmissao_reservada_em = django_timezone.now()
+        documento.save(update_fields=["transmissao_reservada_em"])
+
+        resumo = processar_fila_fiscal()
+
+        documento.refresh_from_db()
+        self.assertEqual(resumo["processados"], 0)
+        self.assertEqual(documento.status, StatusDocumentoFiscal.PRONTO)
+        self.assertEqual(documento.tentativas_transmissao, 0)
+
+    @override_settings(
+        FISCAL_AUTO_TRANSMIT_ENABLED=True,
+        FISCAL_AUTO_TRANSMIT_RETRY_BASE_SECONDS=60,
+        FISCAL_SEFAZ_ADAPTER="apps.fiscal.tests.FakeFailingSefazAdapter",
+    )
+    def test_fila_fiscal_reagenda_falha_e_libera_lease(self):
+        self.configuracao.ambiente = AmbienteFiscal.PRODUCAO
+        self.configuracao.save(update_fields=["ambiente"])
+        documento = preparar_documento_venda(self.venda, self.user)
+        inicio = django_timezone.now()
+
+        resumo = processar_fila_fiscal()
+
+        documento.refresh_from_db()
+        self.assertEqual(resumo["reagendados"], 1)
+        self.assertEqual(len(resumo["erros"]), 1)
+        self.assertEqual(documento.status, StatusDocumentoFiscal.PRONTO)
+        self.assertEqual(documento.tentativas_transmissao, 1)
+        self.assertIsNone(documento.transmissao_reservada_em)
+        self.assertGreaterEqual(documento.proxima_tentativa_em, inicio + timedelta(seconds=60))
+        diagnostico = diagnostico_fila_fiscal()
+        self.assertEqual(diagnostico["contrato"], "fiscal_transmission_queue_v1")
+        self.assertTrue(diagnostico["habilitada"])
+
+    def test_reprocessamento_manual_regenera_xml_reinicia_fila_e_audita(self):
+        documento = preparar_documento_venda(self.venda, self.user)
+        documento.status = StatusDocumentoFiscal.REJEITADO
+        documento.tentativas_transmissao = 8
+        documento.proxima_tentativa_em = django_timezone.now() + timedelta(hours=2)
+        documento.transmissao_reservada_em = django_timezone.now()
+        documento.xml_assinado_em = django_timezone.now()
+        documento.certificado_serial_assinatura = "SERIAL-ANTERIOR"
+        documento.mensagem_retorno = "Rejeicao fiscal de teste"
+        documento.save(
+            update_fields=[
+                "status",
+                "tentativas_transmissao",
+                "proxima_tentativa_em",
+                "transmissao_reservada_em",
+                "xml_assinado_em",
+                "certificado_serial_assinatura",
+                "mensagem_retorno",
+            ]
+        )
+        gerado_antes = documento.xml_gerado_em
+        detalhe_antes = self.client.get(f"/fiscal/documentos/{documento.pk}/")
+        self.assertContains(detalhe_antes, "Reprocessamento fiscal controlado")
+        self.assertContains(detalhe_antes, "Recolocar na fila")
+
+        resposta = self.client.post(
+            f"/fiscal/documentos/{documento.pk}/reagendar/",
+            {"motivo": "Cadastro tributario do produto corrigido."},
+        )
+
+        documento.refresh_from_db()
+        self.assertEqual(resposta.status_code, 302)
+        self.assertEqual(documento.status, StatusDocumentoFiscal.PRONTO)
+        self.assertEqual(documento.tentativas_transmissao, 0)
+        self.assertIsNone(documento.transmissao_reservada_em)
+        self.assertIsNone(documento.xml_assinado_em)
+        self.assertEqual(documento.certificado_serial_assinatura, "")
+        self.assertLessEqual(documento.proxima_tentativa_em, django_timezone.now())
+        self.assertGreaterEqual(documento.xml_gerado_em, gerado_antes)
+        auditoria = LogAuditoria.objects.get(acao="REAGENDA_TRANSMISSAO_FISCAL")
+        self.assertIn("tentativas anteriores: 8", auditoria.descricao)
+        self.assertIn("Cadastro tributario", auditoria.descricao)
+        detalhe_depois = self.client.get(f"/fiscal/documentos/{documento.pk}/")
+        self.assertNotContains(detalhe_depois, "Reprocessamento fiscal controlado")
+
+    def test_reprocessamento_manual_recusa_documento_ja_emitido(self):
+        documento = preparar_documento_venda(self.venda, self.user)
+        documento.status = StatusDocumentoFiscal.EMITIDO
+        documento.protocolo = "PROTOCOLO-AUTORIZADO"
+        documento.save(update_fields=["status", "protocolo"])
+
+        resposta = self.client.post(
+            f"/fiscal/documentos/{documento.pk}/reagendar/",
+            {"motivo": "Tentativa indevida de reabrir documento."},
+        )
+
+        documento.refresh_from_db()
+        self.assertEqual(resposta.status_code, 302)
+        self.assertEqual(documento.status, StatusDocumentoFiscal.EMITIDO)
+        self.assertEqual(documento.protocolo, "PROTOCOLO-AUTORIZADO")
+        self.assertFalse(LogAuditoria.objects.filter(acao="REAGENDA_TRANSMISSAO_FISCAL").exists())
+
+    def test_contingencia_offline_exige_autorizacao_da_filial(self):
+        documento = preparar_documento_venda(self.venda, self.user)
+
+        with self.assertRaisesMessage(ValidationError, "nao esta autorizada"):
+            ativar_contingencia_offline(
+                documento, self.user, "Indisponibilidade de comunicacao com a SEFAZ."
+            )
+
+        documento.refresh_from_db()
+        self.assertEqual(documento.status, StatusDocumentoFiscal.PRONTO)
+        self.assertFalse(documento.contingencia_iniciada_em)
+
+    def test_contingencia_offline_gera_xml_prazo_auditoria_e_fila(self):
+        self.configuracao.permite_contingencia_offline = True
+        self.configuracao.save(update_fields=["permite_contingencia_offline"])
+        documento = preparar_documento_venda(self.venda, self.user)
+        chave_normal = documento.chave_acesso
+        justificativa = "Indisponibilidade de comunicacao com a SEFAZ."
+        inicio = django_timezone.now()
+
+        ativado = ativar_contingencia_offline(documento, self.user, justificativa)
+
+        self.assertEqual(ativado.status, StatusDocumentoFiscal.CONTINGENCIA)
+        self.assertNotEqual(ativado.chave_acesso, chave_normal)
+        self.assertEqual(ativado.chave_acesso[34], "9")
+        self.assertIn(f'Id="NFe{ativado.chave_acesso}"', ativado.xml_conteudo)
+        self.assertEqual(ativado.contingencia_justificativa, justificativa)
+        self.assertFalse(ativado.protocolo)
+        self.assertGreaterEqual(ativado.transmissao_limite_em, inicio + timedelta(hours=24))
+        self.assertLess(ativado.transmissao_limite_em, inicio + timedelta(hours=24, seconds=5))
+        self.assertIn("<tpEmis>9</tpEmis>", ativado.xml_conteudo)
+        self.assertIn("<dhCont>", ativado.xml_conteudo)
+        self.assertIn(f"<xJust>{justificativa}</xJust>", ativado.xml_conteudo)
+        self.assertTrue(LogAuditoria.objects.filter(modulo="fiscal", acao="ATIVA_CONTINGENCIA_OFFLINE").exists())
+
+        detalhe = self.client.get(f"/fiscal/documentos/{ativado.pk}/")
+        fila = self.client.get("/fiscal/contingencia.json", {"status": StatusDocumentoFiscal.CONTINGENCIA})
+        diagnostico = self.client.get("/fiscal/diagnostico.json").json()
+        payload = fila.json()
+
+        self.assertContains(detalhe, "Documento sem autorizacao da SEFAZ")
+        self.assertContains(detalhe, justificativa)
+        self.assertEqual(payload["total"], 1)
+        self.assertEqual(diagnostico["resumo"]["documentos_em_contingencia"], 1)
+        self.assertEqual(diagnostico["resumo"]["contingencias_com_prazo_vencido"], 0)
+        self.assertEqual(payload["documentos"][0]["contingencia"]["justificativa"], justificativa)
+        self.assertIsNotNone(payload["documentos"][0]["contingencia"]["transmissao_limite_em"])
+
+    def test_contingencia_offline_regulariza_em_homologacao(self):
+        self.configuracao.permite_contingencia_offline = True
+        self.configuracao.save(update_fields=["permite_contingencia_offline"])
+        documento = preparar_documento_venda(self.venda, self.user)
+        ativar_contingencia_offline(
+            documento, self.user, "Falha temporaria de acesso ao autorizador da SEFAZ."
+        )
+
+        transmitido = transmitir_documento_simulado(documento, self.user)
+
+        self.assertEqual(transmitido.status, StatusDocumentoFiscal.EMITIDO)
+        self.assertEqual(transmitido.tentativas_transmissao, 1)
+        self.assertIsNotNone(transmitido.ultima_tentativa_em)
+        self.assertTrue(transmitido.protocolo.startswith("HOM"))
+        self.assertIn("<tpEmis>9</tpEmis>", transmitido.xml_conteudo)
+
+    @override_settings(FISCAL_SEFAZ_ADAPTER="apps.fiscal.tests.FakeSefazAdapter")
+    def test_adaptador_sefaz_autoriza_com_idempotencia_e_auditoria(self):
+        self.configuracao.ambiente = AmbienteFiscal.PRODUCAO
+        self.configuracao.save(update_fields=["ambiente"])
+        documento = preparar_documento_venda(self.venda, self.user)
+        FakeSefazAdapter.last_request = None
+
+        transmitido = transmitir_documento_sefaz(documento, self.user)
+
+        self.assertEqual(transmitido.status, StatusDocumentoFiscal.EMITIDO)
+        self.assertEqual(transmitido.chave_acesso, documento.chave_acesso)
+        self.assertEqual(transmitido.protocolo, "135260000000001")
+        self.assertEqual(transmitido.tentativas_transmissao, 1)
+        self.assertTrue(FakeSefazAdapter.last_request["idempotency_key"].startswith(f"fiscal:{documento.pk}:"))
+        self.assertEqual(FakeSefazAdapter.last_request["ambiente"], AmbienteFiscal.PRODUCAO)
+        self.assertNotIn("token-homologacao", str(FakeSefazAdapter.last_request))
+        self.assertTrue(LogAuditoria.objects.filter(acao="TRANSMISSAO_SEFAZ_AUTORIZADA").exists())
+
+    @override_settings(FISCAL_SEFAZ_ADAPTER="apps.fiscal.tests.FakeSefazRejectedAdapter")
+    def test_adaptador_sefaz_preserva_rejeicao_e_motivo(self):
+        documento = preparar_documento_venda(self.venda, self.user)
+
+        transmitido = transmitir_documento_sefaz(documento, self.user)
+
+        self.assertEqual(transmitido.status, StatusDocumentoFiscal.REJEITADO)
+        self.assertIn("cadastro do emitente", transmitido.mensagem_retorno)
+        self.assertFalse(transmitido.protocolo)
+        self.assertTrue(LogAuditoria.objects.filter(acao="TRANSMISSAO_SEFAZ_REJEITADA").exists())
+
+    @override_settings(FISCAL_SEFAZ_ADAPTER="")
+    def test_transmissao_real_sem_adaptador_falha_sem_autorizar(self):
+        documento = preparar_documento_venda(self.venda, self.user)
+
+        with self.assertRaisesMessage(ValidationError, "Falha na comunicacao"):
+            transmitir_documento_sefaz(documento, self.user)
+
+        documento.refresh_from_db()
+        self.assertEqual(documento.status, StatusDocumentoFiscal.PRONTO)
+        self.assertEqual(documento.tentativas_transmissao, 1)
+        self.assertFalse(documento.protocolo)
+        self.assertTrue(LogAuditoria.objects.filter(acao="TRANSMISSAO_SEFAZ_FALHA").exists())
+
+    @override_settings(
+        FISCAL_SEFAZ_ADAPTER="apps.fiscal.tests.FakeUnsignedSefazAdapter",
+        FISCAL_LOCAL_XML_SIGNATURE_ENABLED=False,
+    )
+    def test_pre_transmissao_bloqueia_xml_sem_assinatura(self):
+        documento = preparar_documento_venda(self.venda, self.user)
+
+        with self.assertRaisesMessage(ValidationError, "nao esta assinado"):
+            transmitir_documento_sefaz(documento, self.user)
+
+        documento.refresh_from_db()
+        self.assertEqual(documento.status, StatusDocumentoFiscal.PRONTO)
+        self.assertFalse(documento.protocolo)
+        self.assertTrue(LogAuditoria.objects.filter(acao="TRANSMISSAO_SEFAZ_FALHA").exists())
+
+    @override_settings(FISCAL_SEFAZ_ADAPTER="apps.fiscal.tests.FakeUnsignedSefazAdapter")
+    def test_transmissao_assina_xml_localmente_quando_adaptador_nao_assina(self):
+        documento = preparar_documento_venda(self.venda, self.user)
+
+        transmitido = transmitir_documento_sefaz(documento, self.user)
+
+        transmitido.refresh_from_db()
+        verificacao = verificar_assinatura_xml(transmitido.xml_conteudo)
+        self.assertEqual(transmitido.status, StatusDocumentoFiscal.PRONTO)
+        self.assertIsNotNone(transmitido.xml_assinado_em)
+        self.assertTrue(transmitido.certificado_serial_assinatura)
+        self.assertEqual(verificacao["certificado_serial"], transmitido.certificado_serial_assinatura)
+        self.assertEqual(verificacao["referencia"], f"#NFe{transmitido.chave_acesso}")
+        self.assertIn("Signature", transmitido.xml_conteudo)
+        self.assertNotIn("PRIVATE KEY", transmitido.xml_conteudo)
+
+    def test_verificacao_rejeita_xml_alterado_depois_da_assinatura(self):
+        documento = preparar_documento_venda(self.venda, self.user)
+        assinar_xml_documento(documento)
+        xml_adulterado = documento.xml_conteudo.replace("Arroz Branco 5kg", "Arroz adulterado", 1)
+
+        with self.assertRaisesMessage(ValidationError, "Digest da assinatura fiscal invalido"):
+            verificar_assinatura_xml(xml_adulterado)
+
+    @override_settings(FISCAL_SEFAZ_ADAPTER="apps.fiscal.tests.FakeWrongKeySefazAdapter")
+    def test_pre_transmissao_rejeita_autorizacao_de_outra_chave(self):
+        documento = preparar_documento_venda(self.venda, self.user)
+
+        with self.assertRaisesMessage(ValidationError, "chave diferente"):
+            transmitir_documento_sefaz(documento, self.user)
+
+        documento.refresh_from_db()
+        self.assertEqual(documento.status, StatusDocumentoFiscal.PRONTO)
+        self.assertEqual(documento.chave_acesso[34], "1")
+        self.assertFalse(documento.protocolo)
+    def test_schema_local_valido_libera_pre_transmissao(self):
+        documento = preparar_documento_venda(self.venda, self.user)
+        with tempfile.TemporaryDirectory() as diretorio:
+            arquivo = Path(diretorio) / "nfe_v4.00.xsd"
+            arquivo.write_text(XSD_NFE_MINIMO, encoding="utf-8")
+            sha256 = hashlib.sha256(arquivo.read_bytes()).hexdigest()
+            with override_settings(
+                FISCAL_SEFAZ_ADAPTER="apps.fiscal.tests.FakeLocalSchemaAdapter",
+                FISCAL_SCHEMA_DIR=diretorio,
+                FISCAL_NFE_SCHEMA_FILE=arquivo.name,
+                FISCAL_SCHEMA_SHA256=sha256,
+            ):
+                diagnostico = diagnosticar_schemas_fiscais()
+                validacao = validar_xml_schema(documento)
+                transmitido = transmitir_documento_sefaz(documento, self.user)
+
+        self.assertTrue(diagnostico["pronto"])
+        self.assertEqual(validacao["sha256"], sha256)
+        self.assertEqual(transmitido.status, StatusDocumentoFiscal.PRONTO)
+        self.assertEqual(transmitido.tentativas_transmissao, 1)
+        self.assertIn("aguardando processamento", transmitido.mensagem_retorno)
+        self.assertTrue(LogAuditoria.objects.filter(acao="TRANSMISSAO_SEFAZ_PENDENTE").exists())
+
+    def test_schema_local_com_hash_divergente_bloqueia_prontidao(self):
+        with tempfile.TemporaryDirectory() as diretorio:
+            arquivo = Path(diretorio) / "nfe_v4.00.xsd"
+            arquivo.write_text(XSD_NFE_MINIMO, encoding="utf-8")
+            with override_settings(
+                FISCAL_SCHEMA_DIR=diretorio,
+                FISCAL_NFE_SCHEMA_FILE=arquivo.name,
+                FISCAL_SCHEMA_SHA256="0" * 64,
+            ):
+                diagnostico = diagnosticar_schemas_fiscais()
+
+        self.assertTrue(diagnostico["configurado"])
+        self.assertFalse(diagnostico["pronto"])
+        self.assertIn("SHA-256", diagnostico["erro"])
+    @override_settings(FISCAL_SEFAZ_ADAPTER="apps.fiscal.tests.FakeSefazAdapter")
+    def test_detalhe_de_producao_exibe_transmissao_sefaz(self):
+        self.configuracao.ambiente = AmbienteFiscal.PRODUCAO
+        self.configuracao.save(update_fields=["ambiente"])
+        documento = preparar_documento_venda(self.venda, self.user)
+
+        response = self.client.get(f"/fiscal/documentos/{documento.pk}/")
+
+        self.assertContains(response, "Transmitir SEFAZ")
+        self.assertContains(response, f"/fiscal/documentos/{documento.pk}/transmitir-sefaz/")
+
+
     def test_transmissao_simulada_em_homologacao_emite_com_protocolo(self):
         documento = preparar_documento_venda(self.venda, self.user)
 
@@ -372,6 +858,27 @@ class FiscalTests(TestCase):
         self.assertEqual(response_xml["Content-Type"], "application/xml; charset=utf-8")
         self.assertIn(b"<NFe", response_xml.content)
         self.assertIn(b"<tPag>01</tPag>", response_xml.content)
+        self.assertIn(b"<infNFeSupl>", response_xml.content)
+        self.assertIn(b"<qrCode>https://nfce-homologacao.example.com/qrcode?p=", response_xml.content)
+        self.assertIn(b"|3|2", response_xml.content)
+        self.assertIn(b"<urlChave>https://nfce-homologacao.example.com/consulta</urlChave>", response_xml.content)
+        self.assertContains(response_print, "DOCUMENTO NAO AUTORIZADO")
+        self.assertNotContains(response_print, "data:image/png;base64,")
+
+    def test_danfe_nfce_emitida_exibe_qrcode_oficial(self):
+        documento = preparar_documento_venda(self.venda, self.user)
+        transmitir_documento_simulado(documento, self.user)
+        self.configuracao.url_qrcode_nfce = ""
+        self.configuracao.save(update_fields=["url_qrcode_nfce", "atualizado_em"])
+
+        response = self.client.get(f"/fiscal/documentos/{documento.pk}/imprimir/")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "DOCUMENTO AUXILIAR DA NOTA FISCAL")
+        self.assertContains(response, "data:image/png;base64,")
+        self.assertContains(response, documento.chave_acesso)
+        self.assertContains(response, "R$ 82,70")
+        self.assertNotContains(response, "DOCUMENTO NAO AUTORIZADO")
 
     def test_upload_certificado_a1_criptografa_e_le_validade(self):
         nova_filial = Filial.objects.create(
@@ -500,3 +1007,150 @@ class FiscalTests(TestCase):
         mensagem = " ".join(contexto.exception.messages)
         self.assertIn("UF da filial", mensagem)
         self.assertIn("codigo IBGE", mensagem)
+
+
+class FiscalMultiempresaTests(TestCase):
+    def setUp(self):
+        self.empresa_a = Empresa.objects.create(
+            razao_social="Empresa Fiscal A",
+            nome_fantasia="Fiscal A",
+            cnpj="11.111.111/0001-11",
+        )
+        self.empresa_b = Empresa.objects.create(
+            razao_social="Empresa Fiscal B",
+            nome_fantasia="Fiscal B",
+            cnpj="22.222.222/0001-22",
+        )
+        self.filial_a = Filial.objects.create(empresa=self.empresa_a, nome="Matriz A", cnpj=self.empresa_a.cnpj)
+        self.filial_a_sem_config = Filial.objects.create(
+            empresa=self.empresa_a,
+            nome="Loja A2",
+            cnpj="11.111.111/0002-00",
+        )
+        self.filial_b = Filial.objects.create(empresa=self.empresa_b, nome="Matriz B", cnpj=self.empresa_b.cnpj)
+        self.usuario_a = get_user_model().objects.create_user("fiscal_a", password="123")
+        PerfilUsuario.objects.create(
+            usuario=self.usuario_a,
+            filial=self.filial_a,
+            tipo=TipoPerfil.ADMINISTRADOR,
+        )
+        self.usuario_b = get_user_model().objects.create_user("fiscal_b", password="123")
+        PerfilUsuario.objects.create(
+            usuario=self.usuario_b,
+            filial=self.filial_b,
+            tipo=TipoPerfil.ADMINISTRADOR,
+        )
+        self.config_a = ConfiguracaoFiscal.objects.create(filial=self.filial_a, inscricao_estadual="IE-A")
+        self.config_b = ConfiguracaoFiscal.objects.create(filial=self.filial_b, inscricao_estadual="IE-B")
+        self.serie_a = SerieFiscal.objects.create(filial=self.filial_a, serie=1)
+        self.serie_b = SerieFiscal.objects.create(filial=self.filial_b, serie=2)
+        self.documento_a = DocumentoFiscal.objects.create(
+            filial=self.filial_a,
+            usuario=self.usuario_a,
+            status=StatusDocumentoFiscal.PRONTO,
+            numero=101,
+            xml_conteudo="<NFe>EMPRESA-A</NFe>",
+        )
+        self.documento_b = DocumentoFiscal.objects.create(
+            filial=self.filial_b,
+            usuario=self.usuario_b,
+            status=StatusDocumentoFiscal.PRONTO,
+            numero=202,
+            xml_conteudo="<NFe>EMPRESA-B</NFe>",
+        )
+        self.caixa_b = Caixa.objects.create(
+            filial=self.filial_b,
+            usuario_abertura=self.usuario_b,
+            valor_inicial=Decimal("0.00"),
+        )
+        self.venda_b = Venda.objects.create(
+            filial=self.filial_b,
+            caixa=self.caixa_b,
+            usuario=self.usuario_b,
+            total_bruto=Decimal("10.00"),
+            total_liquido=Decimal("10.00"),
+            status=StatusVenda.FINALIZADA,
+        )
+        self.client.force_login(self.usuario_a)
+
+    def test_listagem_diagnostico_e_contingencia_mostram_apenas_empresa_do_usuario(self):
+        pagina = self.client.get("/fiscal/")
+        diagnostico = self.client.get("/fiscal/diagnostico.json").json()
+        contingencia = self.client.get("/fiscal/contingencia.json").json()
+
+        self.assertEqual(pagina.status_code, 200)
+        self.assertContains(pagina, "Matriz A")
+        self.assertNotContains(pagina, "Matriz B")
+        self.assertEqual(diagnostico["resumo"]["filiais"], 2)
+        self.assertEqual({item["id"] for item in diagnostico["filiais"]}, {self.filial_a.id, self.filial_a_sem_config.id})
+        self.assertEqual(diagnostico["fila_transmissao"]["pendentes"], 1)
+        self.assertEqual(contingencia["total"], 1)
+        self.assertEqual(contingencia["documentos"][0]["id"], self.documento_a.id)
+
+    def test_documento_de_outra_empresa_nao_pode_ser_consultado_exportado_ou_alterado(self):
+        rotas_get = [
+            f"/fiscal/documentos/{self.documento_b.pk}/",
+            f"/fiscal/documentos/{self.documento_b.pk}/imprimir/",
+            f"/fiscal/documentos/{self.documento_b.pk}/xml/",
+        ]
+        rotas_post = [
+            f"/fiscal/documentos/{self.documento_b.pk}/reagendar/",
+            f"/fiscal/documentos/{self.documento_b.pk}/transmitir-simulado/",
+            f"/fiscal/documentos/{self.documento_b.pk}/transmitir-sefaz/",
+            f"/fiscal/documentos/{self.documento_b.pk}/contingencia/",
+            f"/fiscal/documentos/{self.documento_b.pk}/cancelar/",
+        ]
+
+        for rota in rotas_get:
+            with self.subTest(rota=rota):
+                self.assertEqual(self.client.get(rota).status_code, 404)
+        for rota in rotas_post:
+            with self.subTest(rota=rota):
+                self.assertEqual(self.client.post(rota).status_code, 404)
+        self.documento_b.refresh_from_db()
+        self.assertEqual(self.documento_b.status, StatusDocumentoFiscal.PRONTO)
+
+    def test_configuracao_serie_e_venda_de_outra_empresa_nao_podem_ser_acessadas(self):
+        self.assertEqual(self.client.get(f"/fiscal/configuracoes/{self.config_b.pk}/editar/").status_code, 404)
+        self.assertEqual(self.client.get(f"/fiscal/series/{self.serie_b.pk}/editar/").status_code, 404)
+        self.assertEqual(self.client.post(f"/fiscal/vendas/{self.venda_b.pk}/preparar/").status_code, 404)
+        self.assertFalse(DocumentoFiscal.objects.filter(venda=self.venda_b).exists())
+
+    def test_formularios_rejeitam_filial_de_outra_empresa(self):
+        resposta_config = self.client.post(
+            "/fiscal/configuracoes/nova/",
+            {
+                "filial": self.filial_b.pk,
+                "ambiente": AmbienteFiscal.HOMOLOGACAO,
+                "regime_tributario": "Simples Nacional",
+                "inscricao_estadual": "FORJADA",
+                "ativo": "on",
+            },
+        )
+        resposta_serie = self.client.post(
+            "/fiscal/series/nova/",
+            {
+                "filial": self.filial_b.pk,
+                "tipo_documento": TipoDocumentoFiscal.NFCE,
+                "serie": 99,
+                "proximo_numero": 1,
+                "ativo": "on",
+            },
+        )
+
+        self.assertEqual(resposta_config.status_code, 200)
+        self.assertIn("filial", resposta_config.context["form"].errors)
+        self.assertEqual(resposta_serie.status_code, 200)
+        self.assertIn("filial", resposta_serie.context["form"].errors)
+        self.assertFalse(ConfiguracaoFiscal.objects.filter(filial=self.filial_a_sem_config).exists())
+        self.assertFalse(SerieFiscal.objects.filter(filial=self.filial_b, serie=99).exists())
+
+    def test_superadmin_mantem_visao_global(self):
+        superadmin = get_user_model().objects.create_superuser("fiscal_master", "master@example.com", "123")
+        self.client.force_login(superadmin)
+
+        diagnostico = self.client.get("/fiscal/diagnostico.json").json()
+        detalhe = self.client.get(f"/fiscal/documentos/{self.documento_b.pk}/")
+
+        self.assertEqual(diagnostico["resumo"]["filiais"], 3)
+        self.assertEqual(detalhe.status_code, 200)

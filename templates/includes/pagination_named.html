@@ -1,0 +1,7 @@
+{% if page_obj and page_obj.paginator.num_pages > 1 %}
+<nav class="pagination" aria-label="Paginacao">
+  {% if page_obj.previous_url %}<a class="secondary-button" href="{{ page_obj.previous_url }}"><i class="fa-solid fa-chevron-left"></i> Anterior</a>{% else %}<span class="secondary-button disabled">Anterior</span>{% endif %}
+  <strong>Pagina {{ page_obj.number }} de {{ page_obj.paginator.num_pages }}</strong>
+  {% if page_obj.next_url %}<a class="secondary-button" href="{{ page_obj.next_url }}">Proxima <i class="fa-solid fa-chevron-right"></i></a>{% else %}<span class="secondary-button disabled">Proxima</span>{% endif %}
+</nav>
+{% endif %}

@@ -29,6 +29,22 @@ class AbrirCaixaForm(forms.ModelForm):
         model = Caixa
         fields = ["filial", "valor_inicial"]
 
+    def __init__(self, *args, user=None, **kwargs):
+        super().__init__(*args, **kwargs)
+        from apps.accounts.permissions import ADMINISTRACAO, has_role
+        from apps.empresas.models import Filial
+
+        filiais = Filial.objects.filter(is_active=True)
+        if user and not user.is_superuser:
+            perfil = getattr(user, "perfil_supermercado", None)
+            if not perfil or not perfil.is_active or not perfil.filial_id:
+                filiais = filiais.none()
+            elif has_role(user, ADMINISTRACAO):
+                filiais = filiais.filter(empresa_id=perfil.filial.empresa_id)
+            else:
+                filiais = filiais.filter(id=perfil.filial_id)
+        self.fields["filial"].queryset = filiais
+
 
 class FinalizarVendaForm(forms.Form):
     caixa = forms.ModelChoiceField(label="Caixa", queryset=Caixa.objects.none())
@@ -60,16 +76,26 @@ class FinalizarVendaForm(forms.Form):
         widget=forms.NumberInput(attrs={"step": "0.01", "inputmode": "decimal"}),
     )
 
-    def __init__(self, *args, **kwargs):
+    def __init__(self, *args, user=None, **kwargs):
         super().__init__(*args, **kwargs)
+        from apps.clientes.escopo import clientes_para_usuario
         from apps.clientes.models import Cliente
         from apps.vendas.models import FormaPagamento
 
         self.fields["caixa"].queryset = Caixa.objects.filter(status="ABERTO")
+        if user and not user.is_superuser:
+            perfil = getattr(user, "perfil_supermercado", None)
+            if perfil and perfil.is_active and perfil.filial_id:
+                self.fields["caixa"].queryset = self.fields["caixa"].queryset.filter(
+                    filial__empresa_id=perfil.filial.empresa_id,
+                    usuario_abertura=user,
+                )
+            else:
+                self.fields["caixa"].queryset = self.fields["caixa"].queryset.none()
         primeiro_caixa = self.fields["caixa"].queryset.first()
         if primeiro_caixa:
             self.fields["caixa"].initial = primeiro_caixa
-        self.fields["cliente"].queryset = Cliente.objects.filter(is_active=True)
+        self.fields["cliente"].queryset = clientes_para_usuario(user, Cliente.objects.filter(is_active=True))
         self.fields["vencimento_financeiro"].initial = timezone.localdate() + timedelta(days=30)
 
 
@@ -80,16 +106,21 @@ class PreVendaForm(forms.Form):
     validade = forms.DateField(label="Validade", required=False, widget=forms.DateInput(attrs={"type": "date"}))
     observacao = forms.CharField(label="Observacao", required=False, widget=forms.Textarea(attrs={"rows": 3}))
 
-    def __init__(self, *args, **kwargs):
+    def __init__(self, *args, user=None, **kwargs):
         super().__init__(*args, **kwargs)
+        from apps.clientes.escopo import clientes_para_usuario
         from apps.clientes.models import Cliente
         from apps.empresas.models import Filial
 
         self.fields["filial"].queryset = Filial.objects.filter(is_active=True)
+        if user and not user.is_superuser:
+            perfil = getattr(user, "perfil_supermercado", None)
+            if perfil and perfil.filial_id:
+                self.fields["filial"].queryset = self.fields["filial"].queryset.filter(empresa_id=perfil.filial.empresa_id)
         primeira_filial = self.fields["filial"].queryset.first()
         if primeira_filial:
             self.fields["filial"].initial = primeira_filial
-        self.fields["cliente"].queryset = Cliente.objects.filter(is_active=True)
+        self.fields["cliente"].queryset = clientes_para_usuario(user, Cliente.objects.filter(is_active=True))
         self.fields["validade"].initial = timezone.localdate() + timedelta(days=7)
 
 

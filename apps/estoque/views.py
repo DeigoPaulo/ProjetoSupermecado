@@ -8,6 +8,7 @@ from django.contrib.auth.decorators import login_required
 from django.contrib.auth import get_user_model
 from django.contrib.auth.mixins import LoginRequiredMixin
 from django.core.exceptions import ValidationError
+from django.core.paginator import Paginator
 from django.db.models import Case, Count, F, IntegerField, Q, Sum, Value, When
 from django.http import HttpResponse, JsonResponse
 from django.shortcuts import get_object_or_404, redirect, render
@@ -21,6 +22,22 @@ from apps.accounts.permissions import ESTOQUE, RoleRequiredMixin, role_required,
 from apps.auditoria.models import LogAuditoria
 from apps.produtos.models import Produto
 
+from .escopo import (
+    alertas_sla_para_usuario,
+    composicoes_para_usuario,
+    configuracoes_sla_para_usuario,
+    desmembramentos_para_usuario,
+    estoques_para_usuario,
+    filiais_para_usuario,
+    inventarios_para_usuario,
+    itens_desmembramento_para_usuario,
+    lotes_para_usuario,
+    ordens_producao_para_usuario,
+    perdas_para_usuario,
+    producoes_composicao_para_usuario,
+    receitas_desmembramento_para_usuario,
+    usuarios_para_usuario,
+)
 from .forms import (
     ComposicaoProdutoForm,
     ConfiguracaoSLASetorProducaoForm,
@@ -186,7 +203,10 @@ class EstoqueListView(LoginRequiredMixin, RoleRequiredMixin, ListView):
     paginate_by = 30
 
     def get_queryset(self):
-        queryset = Estoque.objects.select_related("produto", "filial", "filial__empresa").order_by("produto__nome")
+        queryset = estoques_para_usuario(
+            self.request.user,
+            Estoque.objects.select_related("produto", "filial", "filial__empresa"),
+        ).order_by("produto__nome")
         termo = self.request.GET.get("q")
         if termo:
             queryset = queryset.filter(produto__nome__icontains=termo) | queryset.filter(produto__codigo_barras__icontains=termo)
@@ -201,7 +221,10 @@ class LoteEstoqueListView(LoginRequiredMixin, RoleRequiredMixin, ListView):
     paginate_by = 40
 
     def get_queryset(self):
-        queryset = LoteEstoque.objects.select_related("produto", "filial", "filial__empresa")
+        queryset = lotes_para_usuario(
+            self.request.user,
+            LoteEstoque.objects.select_related("produto", "filial", "filial__empresa"),
+        )
         termo = (self.request.GET.get("q") or "").strip()
         if termo:
             queryset = queryset.filter(
@@ -226,7 +249,7 @@ class LoteEstoqueListView(LoginRequiredMixin, RoleRequiredMixin, ListView):
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
         hoje = timezone.localdate()
-        base = LoteEstoque.objects.filter(quantidade_atual__gt=0)
+        base = lotes_para_usuario(self.request.user, LoteEstoque.objects.filter(quantidade_atual__gt=0))
         context["resumo_lotes"] = {
             "com_saldo": base.count(),
             "vencidos": base.filter(validade__lt=hoje).count(),
@@ -240,9 +263,10 @@ class LoteEstoqueListView(LoginRequiredMixin, RoleRequiredMixin, ListView):
 @role_required(*ESTOQUE)
 def reconciliacao_lotes(request):
     estoques = list(
-        Estoque.objects.select_related("produto", "filial", "filial__empresa").order_by(
-            "produto__nome", "filial__nome"
-        )
+        estoques_para_usuario(
+            request.user,
+            Estoque.objects.select_related("produto", "filial", "filial__empresa"),
+        ).order_by("produto__nome", "filial__nome")
     )
     termo = (request.GET.get("q") or "").strip()
     if termo:
@@ -267,7 +291,9 @@ def reconciliacao_lotes(request):
 @role_required(*ESTOQUE)
 def atribuir_saldo_lote(request, pk):
     estoque = get_object_or_404(
-        Estoque.objects.select_related("produto", "filial", "filial__empresa"),
+        estoques_para_usuario(
+            request.user, Estoque.objects.select_related("produto", "filial", "filial__empresa")
+        ),
         pk=pk,
     )
     rastreado = saldo_rastreado_lotes(produto=estoque.produto, filial=estoque.filial)
@@ -308,7 +334,7 @@ def atribuir_saldo_lote(request, pk):
 @role_required(*ESTOQUE)
 def movimentar(request):
     if request.method == "POST":
-        form = MovimentacaoEstoqueForm(request.POST)
+        form = MovimentacaoEstoqueForm(request.POST, user=request.user)
         if form.is_valid():
             try:
                 supervisor = supervisor_from_request(request)
@@ -332,7 +358,7 @@ def movimentar(request):
                 messages.success(request, "Movimentacao registrada com sucesso.")
                 return redirect("estoque:lista")
     else:
-        form = MovimentacaoEstoqueForm()
+        form = MovimentacaoEstoqueForm(user=request.user)
 
     return render(request, "estoque/movimentacao_form.html", {"form": form})
 
@@ -345,7 +371,9 @@ class InventarioListView(LoginRequiredMixin, RoleRequiredMixin, ListView):
     paginate_by = 25
 
     def get_queryset(self):
-        return InventarioEstoque.objects.select_related("filial", "usuario").order_by("-criado_em")
+        return inventarios_para_usuario(
+            self.request.user, InventarioEstoque.objects.select_related("filial", "usuario")
+        ).order_by("-criado_em")
 
 
 class CriarInventarioView(LoginRequiredMixin, RoleRequiredMixin, CreateView):
@@ -353,6 +381,11 @@ class CriarInventarioView(LoginRequiredMixin, RoleRequiredMixin, CreateView):
     model = InventarioEstoque
     form_class = InventarioEstoqueForm
     template_name = "estoque/inventario_form.html"
+
+    def get_form_kwargs(self):
+        kwargs = super().get_form_kwargs()
+        kwargs["user"] = self.request.user
+        return kwargs
 
     def form_valid(self, form):
         form.instance.usuario = self.request.user
@@ -367,7 +400,10 @@ class CriarInventarioView(LoginRequiredMixin, RoleRequiredMixin, CreateView):
 @role_required(*ESTOQUE)
 def inventario_detalhe(request, pk):
     inventario = get_object_or_404(
-        InventarioEstoque.objects.select_related("filial", "usuario").prefetch_related("itens__produto"),
+        inventarios_para_usuario(
+            request.user,
+            InventarioEstoque.objects.select_related("filial", "usuario").prefetch_related("itens__produto"),
+        ),
         pk=pk,
     )
     return render(request, "estoque/inventario_detalhe.html", {"inventario": inventario})
@@ -376,7 +412,7 @@ def inventario_detalhe(request, pk):
 @login_required
 @role_required(*ESTOQUE)
 def adicionar_item_inventario(request, pk):
-    inventario = get_object_or_404(InventarioEstoque, pk=pk)
+    inventario = get_object_or_404(inventarios_para_usuario(request.user), pk=pk)
     if inventario.status != StatusInventario.ABERTO:
         messages.error(request, "Nao e possivel editar inventario aplicado ou cancelado.")
         return redirect("estoque:inventario_detalhe", pk=inventario.pk)
@@ -401,7 +437,7 @@ def adicionar_item_inventario(request, pk):
 @login_required
 @role_required(*ESTOQUE)
 def aplicar_inventario_view(request, pk):
-    inventario = get_object_or_404(InventarioEstoque, pk=pk)
+    inventario = get_object_or_404(inventarios_para_usuario(request.user), pk=pk)
     if request.method != "POST":
         return redirect("estoque:inventario_detalhe", pk=inventario.pk)
     try:
@@ -422,14 +458,16 @@ class PerdaEstoqueListView(LoginRequiredMixin, RoleRequiredMixin, ListView):
     paginate_by = 30
 
     def get_queryset(self):
-        return PerdaEstoque.objects.select_related("produto", "filial", "usuario").order_by("-data")
+        return perdas_para_usuario(
+            self.request.user, PerdaEstoque.objects.select_related("produto", "filial", "usuario")
+        ).order_by("-data")
 
 
 @login_required
 @role_required(*ESTOQUE)
 def registrar_perda(request):
     if request.method == "POST":
-        form = PerdaEstoqueForm(request.POST)
+        form = PerdaEstoqueForm(request.POST, user=request.user)
         if form.is_valid():
             try:
                 supervisor = supervisor_from_request(request)
@@ -440,7 +478,7 @@ def registrar_perda(request):
                 messages.success(request, "Perda registrada e estoque baixado.")
                 return redirect("estoque:perdas")
     else:
-        form = PerdaEstoqueForm()
+        form = PerdaEstoqueForm(user=request.user)
     return render(request, "estoque/perda_form.html", {"form": form})
 
 
@@ -456,9 +494,12 @@ class DesmembramentoProdutoListView(LoginRequiredMixin, RoleRequiredMixin, ListV
 
 
 def _desmembramentos_filtrados(request):
-    queryset = DesmembramentoProduto.objects.select_related(
-        "filial", "empresa", "produto_origem", "usuario"
-    ).prefetch_related("itens__produto_destino")
+    queryset = desmembramentos_para_usuario(
+        request.user,
+        DesmembramentoProduto.objects.select_related(
+            "filial", "empresa", "produto_origem", "usuario"
+        ).prefetch_related("itens__produto_destino"),
+    )
     termo = (request.GET.get("q") or "").strip()
     if termo:
         queryset = queryset.filter(
@@ -480,8 +521,11 @@ class ReceitaDesmembramentoListView(LoginRequiredMixin, RoleRequiredMixin, ListV
     paginate_by = 30
 
     def get_queryset(self):
-        queryset = ReceitaDesmembramento.objects.select_related(
-            "empresa", "filial", "produto_origem", "produto_destino"
+        queryset = receitas_desmembramento_para_usuario(
+            self.request.user,
+            ReceitaDesmembramento.objects.select_related(
+                "empresa", "filial", "produto_origem", "produto_destino"
+            ),
         )
         termo = (self.request.GET.get("q") or "").strip()
         if termo:
@@ -503,6 +547,11 @@ class ReceitaDesmembramentoCreateView(LoginRequiredMixin, RoleRequiredMixin, Cre
     template_name = "estoque/receita_desmembramento_form.html"
     success_url = reverse_lazy("estoque:receitas_desmembramento")
 
+    def get_form_kwargs(self):
+        kwargs = super().get_form_kwargs()
+        kwargs["user"] = self.request.user
+        return kwargs
+
     def form_valid(self, form):
         messages.success(self.request, "Receita de desmembramento cadastrada.")
         return super().form_valid(form)
@@ -514,6 +563,14 @@ class ReceitaDesmembramentoUpdateView(LoginRequiredMixin, RoleRequiredMixin, Upd
     form_class = ReceitaDesmembramentoForm
     template_name = "estoque/receita_desmembramento_form.html"
     success_url = reverse_lazy("estoque:receitas_desmembramento")
+
+    def get_queryset(self):
+        return receitas_desmembramento_para_usuario(self.request.user)
+
+    def get_form_kwargs(self):
+        kwargs = super().get_form_kwargs()
+        kwargs["user"] = self.request.user
+        return kwargs
 
     def form_valid(self, form):
         messages.success(self.request, "Receita de desmembramento atualizada.")
@@ -531,6 +588,7 @@ class ComposicaoProdutoListView(LoginRequiredMixin, RoleRequiredMixin, ListView)
         queryset = ComposicaoProduto.objects.select_related("empresa", "filial", "produto_final").prefetch_related(
             "itens__produto_componente"
         )
+        queryset = composicoes_para_usuario(self.request.user, queryset)
         termo = (self.request.GET.get("q") or "").strip()
         if termo:
             queryset = queryset.filter(
@@ -585,8 +643,11 @@ class ComposicaoProdutoListView(LoginRequiredMixin, RoleRequiredMixin, ListView)
 
 
 def _composicoes_filtradas(request):
-    queryset = ComposicaoProduto.objects.select_related("empresa", "filial", "produto_final").prefetch_related(
-        "itens__produto_componente"
+    queryset = composicoes_para_usuario(
+        request.user,
+        ComposicaoProduto.objects.select_related("empresa", "filial", "produto_final").prefetch_related(
+            "itens__produto_componente"
+        ),
     )
     termo = (request.GET.get("q") or "").strip()
     if termo:
@@ -698,13 +759,16 @@ def composicoes_programar_sugestoes(request):
 
 
 def _producoes_composicao_filtradas(request):
-    queryset = ProducaoComposicaoProduto.objects.select_related(
-        "empresa",
-        "filial",
-        "produto_final",
-        "composicao",
-        "usuario",
-    ).prefetch_related("itens__produto_componente")
+    queryset = producoes_composicao_para_usuario(
+        request.user,
+        ProducaoComposicaoProduto.objects.select_related(
+            "empresa",
+            "filial",
+            "produto_final",
+            "composicao",
+            "usuario",
+        ).prefetch_related("itens__produto_componente"),
+    )
     termo = (request.GET.get("q") or "").strip()
     data_inicio = request.GET.get("inicio")
     data_fim = request.GET.get("fim")
@@ -735,12 +799,15 @@ def _ordens_producao_composicao_relatorio(request):
     data_fim = request.GET.get("fim")
     filial_id = request.GET.get("filial")
     status = request.GET.get("status")
-    queryset = OrdemProducaoComposicao.objects.select_related(
-        "filial",
-        "produto_final",
-        "responsavel_operacional",
-        "usuario",
-    ).prefetch_related("historico_etapas")
+    queryset = ordens_producao_para_usuario(
+        request.user,
+        OrdemProducaoComposicao.objects.select_related(
+            "filial",
+            "produto_final",
+            "responsavel_operacional",
+            "usuario",
+        ).prefetch_related("historico_etapas"),
+    )
     if termo:
         queryset = queryset.filter(
             Q(produto_final__nome__icontains=termo)
@@ -934,7 +1001,7 @@ def composicao_producoes_relatorio(request):
         request,
         "estoque/composicao_producoes_relatorio.html",
         {
-            "producoes": producoes[:200],
+            "producoes": Paginator(producoes, 50).get_page(request.GET.get("page")),
             "total_operacoes": totais["operacoes"] or 0,
             "total_quantidade": totais["quantidade"] or 0,
             "total_custo": totais["custo"] or 0,
@@ -942,7 +1009,7 @@ def composicao_producoes_relatorio(request):
             "graficos_producao": graficos,
             "duracao_etapas": duracao_etapas,
             "sla_setores": sla_setores,
-            "filiais": Filial.objects.filter(is_active=True).order_by("nome"),
+            "filiais": filiais_para_usuario(request.user, Filial.objects.filter(is_active=True)).order_by("nome"),
             "status_opcoes": StatusProducaoComposicao.choices,
         },
     )
@@ -1069,7 +1136,9 @@ class OrdemProducaoComposicaoListView(LoginRequiredMixin, RoleRequiredMixin, Lis
         context["status_opcoes"] = StatusOrdemProducaoComposicao.choices
         context["prioridade_opcoes"] = OrdemProducaoComposicao._meta.get_field("prioridade").choices
         context["etapa_opcoes"] = OrdemProducaoComposicao._meta.get_field("etapa_operacional").choices
-        context["responsaveis_opcoes"] = get_user_model().objects.filter(is_active=True).order_by("username")
+        context["responsaveis_opcoes"] = usuarios_para_usuario(
+            self.request.user, get_user_model().objects.filter(is_active=True)
+        ).order_by("username")
         return context
 
 
@@ -1082,7 +1151,10 @@ class ConfiguracaoSLASetorProducaoListView(LoginRequiredMixin, RoleRequiredMixin
 
     def get_queryset(self):
         termo = (self.request.GET.get("q") or "").strip()
-        queryset = ConfiguracaoSLASetorProducao.objects.select_related("empresa", "filial")
+        queryset = configuracoes_sla_para_usuario(
+            self.request.user,
+            ConfiguracaoSLASetorProducao.objects.select_related("empresa", "filial"),
+        )
         if termo:
             queryset = queryset.filter(
                 Q(setor__icontains=termo)
@@ -1100,6 +1172,11 @@ class ConfiguracaoSLASetorProducaoCreateView(LoginRequiredMixin, RoleRequiredMix
     template_name = "estoque/sla_setor_producao_form.html"
     success_url = reverse_lazy("estoque:slas_setor_producao")
 
+    def get_form_kwargs(self):
+        kwargs = super().get_form_kwargs()
+        kwargs["user"] = self.request.user
+        return kwargs
+
 
 class ConfiguracaoSLASetorProducaoUpdateView(LoginRequiredMixin, RoleRequiredMixin, UpdateView):
     required_roles = ESTOQUE
@@ -1108,23 +1185,34 @@ class ConfiguracaoSLASetorProducaoUpdateView(LoginRequiredMixin, RoleRequiredMix
     template_name = "estoque/sla_setor_producao_form.html"
     success_url = reverse_lazy("estoque:slas_setor_producao")
 
+    def get_queryset(self):
+        return configuracoes_sla_para_usuario(self.request.user)
+
+    def get_form_kwargs(self):
+        kwargs = super().get_form_kwargs()
+        kwargs["user"] = self.request.user
+        return kwargs
+
 
 @login_required
 @role_required(*ESTOQUE)
 def alertas_sla_producao(request):
     filtro = request.GET.get("status") or "abertos"
-    alertas = AlertaSLAOrdemProducao.objects.select_related(
-        "ordem",
-        "ordem__produto_final",
-        "ordem__filial",
-        "usuario",
+    alertas = alertas_sla_para_usuario(
+        request.user,
+        AlertaSLAOrdemProducao.objects.select_related(
+            "ordem",
+            "ordem__produto_final",
+            "ordem__filial",
+            "usuario",
+        ),
     ).filter(usuario=request.user)
     if filtro == "visualizados":
         alertas = alertas.filter(visualizado_em__isnull=False)
     elif filtro != "todos":
         filtro = "abertos"
         alertas = alertas.filter(visualizado_em__isnull=True)
-    resumo_base = AlertaSLAOrdemProducao.objects.filter(usuario=request.user)
+    resumo_base = alertas_sla_para_usuario(request.user).filter(usuario=request.user)
     resumo = {
         "abertos": resumo_base.filter(visualizado_em__isnull=True).count(),
         "visualizados": resumo_base.filter(visualizado_em__isnull=False).count(),
@@ -1134,7 +1222,7 @@ def alertas_sla_producao(request):
         request,
         "estoque/alertas_sla_producao.html",
         {
-            "alertas": alertas.order_by("-criado_em")[:100],
+            "alertas": Paginator(alertas.order_by("-criado_em"), 50).get_page(request.GET.get("page")),
             "filtro": filtro,
             "resumo": resumo,
         },
@@ -1145,7 +1233,7 @@ def alertas_sla_producao(request):
 @role_required(*ESTOQUE)
 @require_POST
 def alerta_sla_producao_visualizar(request, pk):
-    alerta = get_object_or_404(AlertaSLAOrdemProducao, pk=pk, usuario=request.user)
+    alerta = get_object_or_404(alertas_sla_para_usuario(request.user), pk=pk, usuario=request.user)
     if alerta.visualizado_em is None:
         alerta.visualizado_em = timezone.now()
         alerta.save(update_fields=["visualizado_em"])
@@ -1163,14 +1251,17 @@ def alerta_sla_producao_visualizar(request, pk):
 
 
 def _ordens_producao_composicao_filtradas(request):
-    queryset = OrdemProducaoComposicao.objects.select_related(
-        "composicao",
-        "filial",
-        "produto_final",
-        "usuario",
-        "responsavel_operacional",
-        "producao_gerada",
-    ).prefetch_related("historico_etapas")
+    queryset = ordens_producao_para_usuario(
+        request.user,
+        OrdemProducaoComposicao.objects.select_related(
+            "composicao",
+            "filial",
+            "produto_final",
+            "usuario",
+            "responsavel_operacional",
+            "producao_gerada",
+        ).prefetch_related("historico_etapas"),
+    )
     termo = (request.GET.get("q") or "").strip()
     status = request.GET.get("status")
     prioridade = request.GET.get("prioridade")
@@ -1354,12 +1445,15 @@ def ordens_producao_composicao_fila(request):
     etapa = request.GET.get("etapa")
     responsavel = request.GET.get("responsavel")
     sla = request.GET.get("sla")
-    queryset = OrdemProducaoComposicao.objects.select_related(
-        "filial",
-        "produto_final",
-        "usuario",
-        "responsavel_operacional",
-    ).prefetch_related("historico_etapas").filter(status=StatusOrdemProducaoComposicao.PLANEJADA)
+    queryset = ordens_producao_para_usuario(
+        request.user,
+        OrdemProducaoComposicao.objects.select_related(
+            "filial",
+            "produto_final",
+            "usuario",
+            "responsavel_operacional",
+        ).prefetch_related("historico_etapas").filter(status=StatusOrdemProducaoComposicao.PLANEJADA),
+    )
     if modo == "dia":
         queryset = queryset.filter(data_programada__lte=hoje)
     if setor:
@@ -1484,7 +1578,9 @@ def ordens_producao_composicao_fila(request):
             "responsavel": responsavel,
             "sla": sla,
             "etapa_opcoes": OrdemProducaoComposicao._meta.get_field("etapa_operacional").choices,
-            "responsaveis_opcoes": get_user_model().objects.filter(is_active=True).order_by("username"),
+            "responsaveis_opcoes": usuarios_para_usuario(
+                request.user, get_user_model().objects.filter(is_active=True)
+            ).order_by("username"),
         },
     )
 
@@ -1493,15 +1589,18 @@ def ordens_producao_composicao_fila(request):
 @role_required(*ESTOQUE)
 def ordem_producao_composicao_imprimir(request, pk):
     ordem = get_object_or_404(
-        OrdemProducaoComposicao.objects.select_related(
-            "composicao",
-            "empresa",
-            "filial",
-            "produto_final",
-            "usuario",
-            "responsavel_operacional",
-            "producao_gerada",
-        ).prefetch_related("composicao__itens", "composicao__itens__produto_componente"),
+        ordens_producao_para_usuario(
+            request.user,
+            OrdemProducaoComposicao.objects.select_related(
+                "composicao",
+                "empresa",
+                "filial",
+                "produto_final",
+                "usuario",
+                "responsavel_operacional",
+                "producao_gerada",
+            ).prefetch_related("composicao__itens", "composicao__itens__produto_componente"),
+        ),
         pk=pk,
     )
     fator = ordem.quantidade_planejada / ordem.composicao.quantidade_final
@@ -1526,7 +1625,7 @@ def ordem_producao_composicao_imprimir(request, pk):
 @login_required
 @role_required(*ESTOQUE)
 def ordem_producao_composicao_etapa(request, pk):
-    ordem = get_object_or_404(OrdemProducaoComposicao, pk=pk)
+    ordem = get_object_or_404(ordens_producao_para_usuario(request.user), pk=pk)
     if request.method != "POST":
         return redirect("estoque:ordens_producao_composicao")
     etapa = request.POST.get("etapa_operacional")
@@ -1571,12 +1670,14 @@ def ordem_producao_composicao_nova(request):
     quantidade = request.GET.get("quantidade")
     if composicao_id:
         initial["composicao"] = composicao_id
-        composicao = ComposicaoProduto.objects.filter(pk=composicao_id).select_related("filial").first()
+        composicao = composicoes_para_usuario(
+            request.user, ComposicaoProduto.objects.select_related("filial")
+        ).filter(pk=composicao_id).first()
         if composicao and composicao.filial_id:
             initial["filial"] = composicao.filial_id
     if quantidade:
         initial["quantidade_planejada"] = quantidade
-    form = OrdemProducaoComposicaoForm(request.POST or None, initial=initial)
+    form = OrdemProducaoComposicaoForm(request.POST or None, initial=initial, user=request.user)
     if request.method == "POST" and form.is_valid():
         ordem = form.save(commit=False)
         ordem.empresa = ordem.filial.empresa
@@ -1601,7 +1702,7 @@ def ordem_producao_composicao_nova(request):
 @login_required
 @role_required(*ESTOQUE)
 def ordem_producao_composicao_confirmar(request, pk):
-    ordem = get_object_or_404(OrdemProducaoComposicao, pk=pk)
+    ordem = get_object_or_404(ordens_producao_para_usuario(request.user), pk=pk)
     if request.method != "POST":
         return redirect("estoque:ordens_producao_composicao")
     try:
@@ -1625,7 +1726,7 @@ def ordem_producao_composicao_confirmar(request, pk):
 @login_required
 @role_required(*ESTOQUE)
 def ordem_producao_composicao_cancelar(request, pk):
-    ordem = get_object_or_404(OrdemProducaoComposicao, pk=pk)
+    ordem = get_object_or_404(ordens_producao_para_usuario(request.user), pk=pk)
     if request.method != "POST":
         return redirect("estoque:ordens_producao_composicao")
     try:
@@ -1645,7 +1746,7 @@ def ordem_producao_composicao_cancelar(request, pk):
 
 
 def _salvar_composicao_com_itens(request, composicao=None):
-    form = ComposicaoProdutoForm(request.POST or None, instance=composicao)
+    form = ComposicaoProdutoForm(request.POST or None, instance=composicao, user=request.user)
     formset = ItemComposicaoProdutoFormSet(request.POST or None, instance=composicao, prefix="componentes")
     if request.method == "POST" and form.is_valid() and formset.is_valid():
         composicao = form.save()
@@ -1668,7 +1769,7 @@ def composicao_nova(request):
 @login_required
 @role_required(*ESTOQUE)
 def composicao_editar(request, pk):
-    objeto = get_object_or_404(ComposicaoProduto, pk=pk)
+    objeto = get_object_or_404(composicoes_para_usuario(request.user), pk=pk)
     composicao, form, formset = _salvar_composicao_com_itens(request, objeto)
     if composicao:
         return redirect("estoque:composicao_detalhe", pk=composicao.pk)
@@ -1679,10 +1780,13 @@ def composicao_editar(request, pk):
 @role_required(*ESTOQUE)
 def composicao_detalhe(request, pk):
     composicao = get_object_or_404(
-        ComposicaoProduto.objects.select_related("empresa", "filial", "produto_final").prefetch_related(
-            "itens__produto_componente",
-            "producoes__filial",
-            "producoes__usuario",
+        composicoes_para_usuario(
+            request.user,
+            ComposicaoProduto.objects.select_related("empresa", "filial", "produto_final").prefetch_related(
+                "itens__produto_componente",
+                "producoes__filial",
+                "producoes__usuario",
+            ),
         ),
         pk=pk,
     )
@@ -1701,7 +1805,7 @@ def composicao_detalhe(request, pk):
                 inicial_producao["motivo"] = "Reposição até estoque mínimo"
             else:
                 inicial_producao["motivo"] = "Produção pela capacidade disponível"
-    producao_form = ProducaoComposicaoForm(initial=inicial_producao, composicao=composicao)
+    producao_form = ProducaoComposicaoForm(initial=inicial_producao, composicao=composicao, user=request.user)
     producoes = composicao.producoes.select_related("filial", "usuario").order_by("-criado_em")[:20]
     return render(
         request,
@@ -1718,10 +1822,10 @@ def composicao_detalhe(request, pk):
 @login_required
 @role_required(*ESTOQUE)
 def composicao_produzir(request, pk):
-    composicao = get_object_or_404(ComposicaoProduto, pk=pk)
+    composicao = get_object_or_404(composicoes_para_usuario(request.user), pk=pk)
     if request.method != "POST":
         return redirect("estoque:composicao_detalhe", pk=composicao.pk)
-    form = ProducaoComposicaoForm(request.POST, composicao=composicao)
+    form = ProducaoComposicaoForm(request.POST, composicao=composicao, user=request.user)
     if form.is_valid():
         try:
             supervisor = supervisor_from_request(request)
@@ -1744,7 +1848,12 @@ def composicao_produzir(request, pk):
 @login_required
 @role_required(*ESTOQUE)
 def composicao_cancelar_producao(request, pk):
-    producao = get_object_or_404(ProducaoComposicaoProduto.objects.select_related("composicao"), pk=pk)
+    producao = get_object_or_404(
+        producoes_composicao_para_usuario(
+            request.user, ProducaoComposicaoProduto.objects.select_related("composicao")
+        ),
+        pk=pk,
+    )
     if request.method != "POST":
         return redirect("estoque:composicao_detalhe", pk=producao.composicao_id)
     try:
@@ -1826,13 +1935,16 @@ def desmembramentos_csv(request):
 
 
 def _itens_desmembramento_relatorio(request):
-    queryset = ItemDesmembramentoProduto.objects.select_related(
-        "desmembramento",
-        "desmembramento__filial",
-        "desmembramento__empresa",
-        "desmembramento__produto_origem",
-        "desmembramento__usuario",
-        "produto_destino",
+    queryset = itens_desmembramento_para_usuario(
+        request.user,
+        ItemDesmembramentoProduto.objects.select_related(
+            "desmembramento",
+            "desmembramento__filial",
+            "desmembramento__empresa",
+            "desmembramento__produto_origem",
+            "desmembramento__usuario",
+            "produto_destino",
+        ),
     )
     termo = (request.GET.get("q") or "").strip()
     data_inicio = (request.GET.get("inicio") or "").strip()
@@ -1916,13 +2028,13 @@ def desmembramento_relatorio(request):
         },
     }
     context = {
-        "itens": itens[:200],
+        "itens": Paginator(itens, 50).get_page(request.GET.get("page")),
         "total_quantidade": totais["quantidade_gerada"] or 0,
         "total_custo": totais["custo_total"] or 0,
         "total_operacoes": totais["operacoes"] or 0,
         "total_alertas": total_alertas,
         "graficos_rendimento": graficos,
-        "filiais": Filial.objects.filter(is_active=True).order_by("nome"),
+        "filiais": filiais_para_usuario(request.user, Filial.objects.filter(is_active=True)).order_by("nome"),
         "tipos": TipoDesmembramentoProduto.choices,
         "tipos_saida": TipoSaidaDesmembramento.choices,
     }
@@ -2044,18 +2156,21 @@ def produtos_busca(request):
 @require_GET
 def receita_desmembramento_json(request, pk):
     receita = get_object_or_404(
-        ReceitaDesmembramento.objects.select_related("empresa", "filial", "produto_origem", "produto_destino"),
+        receitas_desmembramento_para_usuario(
+            request.user,
+            ReceitaDesmembramento.objects.select_related("empresa", "filial", "produto_origem", "produto_destino"),
+        ),
         pk=pk,
         is_active=True,
     )
     return JsonResponse({"status": "ok", "receita": _receita_payload(receita)})
 
 
-def _destino_formset_initial(receita_id=None):
+def _destino_formset_initial(user, receita_id=None):
     if not receita_id:
         return [{"tipo_saida_destino": "VENDAVEL"}]
     try:
-        receita = ReceitaDesmembramento.objects.get(pk=receita_id, is_active=True)
+        receita = receitas_desmembramento_para_usuario(user).get(pk=receita_id, is_active=True)
     except (ReceitaDesmembramento.DoesNotExist, ValueError, TypeError):
         return [{"tipo_saida_destino": "VENDAVEL"}]
     return [
@@ -2095,7 +2210,7 @@ def _destinos_from_formset(formset, produto_origem):
 def desmembramento_novo(request):
     previa = None
     if request.method == "POST":
-        form = DesmembramentoProdutoForm(request.POST)
+        form = DesmembramentoProdutoForm(request.POST, user=request.user)
         destino_formset = DesmembramentoDestinoFormSet(request.POST, prefix="destinos")
         if form.is_valid() and destino_formset.is_valid():
             dados = form.cleaned_data.copy()
@@ -2121,8 +2236,8 @@ def desmembramento_novo(request):
                     return redirect("estoque:desmembramentos")
     else:
         receita_id = request.GET.get("receita")
-        form = DesmembramentoProdutoForm(initial={"receita": receita_id})
-        destino_formset = DesmembramentoDestinoFormSet(initial=_destino_formset_initial(receita_id), prefix="destinos")
+        form = DesmembramentoProdutoForm(initial={"receita": receita_id}, user=request.user)
+        destino_formset = DesmembramentoDestinoFormSet(initial=_destino_formset_initial(request.user, receita_id), prefix="destinos")
     return render(
         request,
         "estoque/desmembramento_form.html",
@@ -2134,8 +2249,11 @@ def desmembramento_novo(request):
 @role_required(*ESTOQUE)
 def desmembramento_detalhe(request, pk):
     desmembramento = get_object_or_404(
-        DesmembramentoProduto.objects.select_related("filial", "empresa", "produto_origem", "usuario").prefetch_related(
-            "itens__produto_destino"
+        desmembramentos_para_usuario(
+            request.user,
+            DesmembramentoProduto.objects.select_related("filial", "empresa", "produto_origem", "usuario").prefetch_related(
+                "itens__produto_destino"
+            ),
         ),
         pk=pk,
     )
@@ -2145,7 +2263,7 @@ def desmembramento_detalhe(request, pk):
 @login_required
 @role_required(*ESTOQUE)
 def desmembramento_cancelar(request, pk):
-    desmembramento = get_object_or_404(DesmembramentoProduto, pk=pk)
+    desmembramento = get_object_or_404(desmembramentos_para_usuario(request.user), pk=pk)
     if request.method != "POST":
         return redirect("estoque:desmembramento_detalhe", pk=desmembramento.pk)
     try:

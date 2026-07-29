@@ -20,6 +20,7 @@ urlpatterns = [
     path("pdv-desktop/terminais/<int:pk>/pacote.json", views.pdv_desktop_terminal_pacote, name="pdv_desktop_terminal_pacote"),
     path("servidor-local/", views.servidor_local, name="servidor_local"),
     path("servidor-local/manifest.json", views.servidor_local_manifest, name="servidor_local_manifest"),
+    path("servidor-local/download/", views.servidor_local_download, name="servidor_local_download"),
     path("formas-pagamento/", views.formas_pagamento, name="formas_pagamento"),
     path("formas-pagamento/nova/", views.forma_pagamento_form, name="forma_pagamento_nova"),
     path("formas-pagamento/<int:pk>/editar/", views.forma_pagamento_form, name="forma_pagamento_editar"),

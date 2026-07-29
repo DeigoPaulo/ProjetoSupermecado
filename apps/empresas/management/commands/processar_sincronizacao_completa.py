@@ -1,11 +1,13 @@
 from django.core.management.base import BaseCommand
 
+from apps.empresas.models import Empresa
 from apps.empresas.services_eventos_entrada import processar_entrada_sincronizacao
 from apps.empresas.services_sincronizacao import processar_fila
+from apps.licenciamento.services import sincronizar_licenca_local
 
 
 class Command(BaseCommand):
-    help = "Processa saida e entrada da sincronizacao em uma unica execucao agendavel."
+    help = "Processa sincronização operacional e renova a licença local em uma única execução agendável."
 
     def add_arguments(self, parser):
         parser.add_argument("--limite-saida", type=int, default=50)
@@ -26,10 +28,14 @@ class Command(BaseCommand):
             saida = processar_fila(limite=limite_saida)
             entrada = processar_entrada_sincronizacao(limite=limite_entrada)
 
+        licencas = [sincronizar_licenca_local(empresa) for empresa in Empresa.objects.filter(is_active=True)]
+        renovadas = sum(1 for item in licencas if item["status"] == "sincronizado")
+        erros_licenca = sum(1 for item in licencas if item["status"] == "erro")
         self.stdout.write(
             self.style.SUCCESS(
                 "Sincronizacao completa: "
                 f"{saida['enviados']} enviado(s), {saida['erros']} erro(s) de saida; "
-                f"{entrada['processados']} entrada(s) processada(s), {entrada['erros']} erro(s) de entrada."
+                f"{entrada['processados']} entrada(s) processada(s), {entrada['erros']} erro(s) de entrada; "
+                f"{renovadas} licenca(s) renovada(s), {erros_licenca} erro(s) de licenca."
             )
         )

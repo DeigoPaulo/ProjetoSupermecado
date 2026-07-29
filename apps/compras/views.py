@@ -21,6 +21,12 @@ from apps.auditoria.models import LogAuditoria
 from apps.estoque.models import Estoque, MovimentacaoEstoque
 from apps.financeiro.models import ContaFinanceira, StatusContaFinanceira
 
+from .escopo import (
+    cotacoes_para_usuario,
+    entradas_para_usuario,
+    pedidos_para_usuario,
+    respostas_para_usuario,
+)
 from .forms import (
     CotacaoCompraForm,
     EntradaCompraForm,
@@ -90,7 +96,7 @@ def importar_xml(request):
 @login_required
 @role_required(*COMPRAS)
 def cotacoes_compra_lista(request):
-    cotacoes = CotacaoCompra.objects.select_related("filial", "usuario").prefetch_related("itens", "respostas")
+    cotacoes = cotacoes_para_usuario(request.user).select_related("filial", "usuario").prefetch_related("itens", "respostas")
     termo = (request.GET.get("q") or "").strip()
     if termo:
         cotacoes = cotacoes.filter(Q(referencia__icontains=termo) | Q(filial__nome__icontains=termo))
@@ -99,7 +105,7 @@ def cotacoes_compra_lista(request):
         cotacoes = cotacoes.filter(status=status)
     por_status = {
         item["status"]: item["quantidade"]
-        for item in CotacaoCompra.objects.values("status").annotate(quantidade=Count("id"))
+        for item in cotacoes_para_usuario(request.user).values("status").annotate(quantidade=Count("id"))
     }
     return render(request, "compras/cotacao_list.html", {
         "cotacoes": cotacoes,
@@ -116,12 +122,12 @@ def cotacoes_compra_lista(request):
 @login_required
 @role_required(*COMPRAS)
 def cotacao_compra_form(request, pk=None):
-    cotacao = get_object_or_404(CotacaoCompra, pk=pk) if pk else None
+    cotacao = get_object_or_404(cotacoes_para_usuario(request.user), pk=pk) if pk else None
     if cotacao and cotacao.status != StatusCotacaoCompra.RASCUNHO:
         messages.error(request, "Somente cotacoes em rascunho podem ser editadas.")
         return redirect("compras:cotacao_detalhe", pk=cotacao.pk)
 
-    form = CotacaoCompraForm(request.POST or None, instance=cotacao)
+    form = CotacaoCompraForm(request.POST or None, instance=cotacao, user=request.user)
     formset = ItemCotacaoCompraFormSet(request.POST or None, instance=cotacao, prefix="itens")
     if request.method == "POST" and form.is_valid() and formset.is_valid():
         nova = cotacao is None
@@ -150,7 +156,7 @@ def cotacao_compra_form(request, pk=None):
 @role_required(*COMPRAS)
 def cotacao_compra_detalhe(request, pk):
     cotacao = get_object_or_404(
-        CotacaoCompra.objects.select_related("filial", "usuario")
+        cotacoes_para_usuario(request.user).select_related("filial", "usuario")
         .prefetch_related(
             "itens__produto",
             "respostas__fornecedor",
@@ -164,7 +170,7 @@ def cotacao_compra_detalhe(request, pk):
 @login_required
 @role_required(*COMPRAS)
 def cotacao_compra_abrir(request, pk):
-    cotacao = get_object_or_404(CotacaoCompra.objects.prefetch_related("itens"), pk=pk)
+    cotacao = get_object_or_404(cotacoes_para_usuario(request.user).prefetch_related("itens"), pk=pk)
     if request.method == "POST":
         try:
             abrir_cotacao_compra(cotacao, usuario=request.user, ip=request.META.get("REMOTE_ADDR"))
@@ -178,13 +184,13 @@ def cotacao_compra_abrir(request, pk):
 @login_required
 @role_required(*COMPRAS)
 def cotacao_resposta_form(request, pk):
-    cotacao = get_object_or_404(CotacaoCompra.objects.prefetch_related("itens__produto"), pk=pk)
+    cotacao = get_object_or_404(cotacoes_para_usuario(request.user).prefetch_related("itens__produto"), pk=pk)
     if cotacao.status != StatusCotacaoCompra.ABERTA:
         messages.error(request, "Propostas so podem ser registradas em cotacoes abertas.")
         return redirect("compras:cotacao_detalhe", pk=cotacao.pk)
     itens = list(cotacao.itens.all())
     item_queryset = cotacao.itens.select_related("produto")
-    form = RespostaCotacaoFornecedorForm(request.POST or None)
+    form = RespostaCotacaoFornecedorForm(request.POST or None, user=request.user, empresa_id=cotacao.filial.empresa_id)
     initial = [{"item": item.pk, "disponivel": True} for item in itens]
     formset = PrecoRespostaCotacaoFormSet(
         request.POST or None,
@@ -251,8 +257,8 @@ def cotacao_resposta_form(request, pk):
 @login_required
 @role_required(*COMPRAS)
 def cotacao_selecionar_resposta(request, pk, resposta_pk):
-    cotacao = get_object_or_404(CotacaoCompra, pk=pk)
-    resposta = get_object_or_404(RespostaCotacaoFornecedor, pk=resposta_pk, cotacao=cotacao)
+    cotacao = get_object_or_404(cotacoes_para_usuario(request.user), pk=pk)
+    resposta = get_object_or_404(respostas_para_usuario(request.user), pk=resposta_pk, cotacao=cotacao)
     if request.method == "POST":
         try:
             pedido = gerar_pedido_da_resposta(
@@ -271,7 +277,7 @@ def cotacao_selecionar_resposta(request, pk, resposta_pk):
 @login_required
 @role_required(*COMPRAS)
 def pedidos_compra_lista(request):
-    pedidos = PedidoCompra.objects.select_related("fornecedor", "filial", "usuario").prefetch_related("itens")
+    pedidos = pedidos_para_usuario(request.user).select_related("fornecedor", "filial", "usuario").prefetch_related("itens")
     termo = (request.GET.get("q") or "").strip()
     if termo:
         pedidos = pedidos.filter(
@@ -284,7 +290,7 @@ def pedidos_compra_lista(request):
         pedidos = pedidos.filter(status=status)
     por_status = {
         item["status"]: item["quantidade"]
-        for item in PedidoCompra.objects.values("status").annotate(quantidade=Count("id"))
+        for item in pedidos_para_usuario(request.user).values("status").annotate(quantidade=Count("id"))
     }
     return render(request, "compras/pedido_list.html", {
         "pedidos": pedidos,
@@ -302,12 +308,12 @@ def pedidos_compra_lista(request):
 @login_required
 @role_required(*COMPRAS)
 def pedido_compra_form(request, pk=None):
-    pedido = get_object_or_404(PedidoCompra, pk=pk) if pk else None
+    pedido = get_object_or_404(pedidos_para_usuario(request.user), pk=pk) if pk else None
     if pedido and pedido.status != StatusPedidoCompra.RASCUNHO:
         messages.error(request, "Somente pedidos em rascunho podem ser editados.")
         return redirect("compras:pedido_detalhe", pk=pedido.pk)
 
-    form = PedidoCompraForm(request.POST or None, instance=pedido)
+    form = PedidoCompraForm(request.POST or None, instance=pedido, user=request.user)
     formset = ItemPedidoCompraFormSet(request.POST or None, instance=pedido, prefix="itens")
     if request.method == "POST" and form.is_valid() and formset.is_valid():
         novo = pedido is None
@@ -350,7 +356,7 @@ def pedido_compra_form(request, pk=None):
 @role_required(*COMPRAS)
 def pedido_compra_detalhe(request, pk):
     pedido = get_object_or_404(
-        PedidoCompra.objects.select_related("fornecedor", "filial", "usuario").prefetch_related("itens__produto"),
+        pedidos_para_usuario(request.user).select_related("fornecedor", "filial", "usuario").prefetch_related("itens__produto"),
         pk=pk,
     )
     return render(request, "compras/pedido_detalhe.html", {"pedido": pedido})
@@ -359,7 +365,7 @@ def pedido_compra_detalhe(request, pk):
 @login_required
 @role_required(*COMPRAS)
 def pedido_compra_enviar(request, pk):
-    pedido = get_object_or_404(PedidoCompra.objects.prefetch_related("itens"), pk=pk)
+    pedido = get_object_or_404(pedidos_para_usuario(request.user).prefetch_related("itens"), pk=pk)
     if request.method == "POST":
         try:
             enviar_pedido_compra(pedido, usuario=request.user, ip=request.META.get("REMOTE_ADDR"))
@@ -373,7 +379,7 @@ def pedido_compra_enviar(request, pk):
 @login_required
 @role_required(*COMPRAS)
 def pedido_compra_cancelar(request, pk):
-    pedido = get_object_or_404(PedidoCompra, pk=pk)
+    pedido = get_object_or_404(pedidos_para_usuario(request.user), pk=pk)
     if request.method == "POST":
         try:
             cancelar_pedido_compra(
@@ -392,7 +398,7 @@ def pedido_compra_cancelar(request, pk):
 @login_required
 @role_required(*COMPRAS)
 def pedido_compra_gerar_entrada(request, pk):
-    pedido = get_object_or_404(PedidoCompra.objects.prefetch_related("itens"), pk=pk)
+    pedido = get_object_or_404(pedidos_para_usuario(request.user).prefetch_related("itens"), pk=pk)
     if request.method == "POST":
         try:
             entrada = converter_pedido_em_entrada(
@@ -411,8 +417,13 @@ def pedido_compra_gerar_entrada(request, pk):
     return redirect("compras:pedido_detalhe", pk=pedido.pk)
 
 
-def entradas_filtradas(params):
-    queryset = EntradaCompra.objects.select_related("fornecedor", "filial", "usuario").prefetch_related("contas_financeiras").order_by("-data_recebimento")
+def entradas_filtradas(params, user=None):
+    queryset = entradas_para_usuario(
+        user,
+        EntradaCompra.objects.select_related("fornecedor", "filial", "usuario")
+        .prefetch_related("contas_financeiras")
+        .order_by("-data_recebimento"),
+    )
     termo = (params.get("q") or "").strip()
     if termo:
         queryset = queryset.filter(Q(numero_documento__icontains=termo) | Q(fornecedor__razao_social__icontains=termo) | Q(fornecedor__nome_fantasia__icontains=termo))
@@ -443,11 +454,11 @@ class EntradaCompraListView(LoginRequiredMixin, RoleRequiredMixin, ListView):
         return f"?{params.urlencode()}"
 
     def get_queryset(self):
-        return entradas_filtradas(self.request.GET)
+        return entradas_filtradas(self.request.GET, self.request.user)
 
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
-        base_queryset = EntradaCompra.objects.all()
+        base_queryset = entradas_para_usuario(self.request.user)
         por_status = {
             item["status"]: item
             for item in base_queryset.values("status").annotate(quantidade=Count("id"), total=Sum("total_produtos"))
@@ -509,7 +520,7 @@ def entradas_csv(request):
         "Valor financeiro",
         "Valor pago",
     ])
-    for entrada in entradas_filtradas(request.GET):
+    for entrada in entradas_filtradas(request.GET, request.user):
         contas = list(entrada.contas_financeiras.all())
         status_financeiro = ", ".join(conta.get_status_display() for conta in contas) or "Sem conta"
         vencimentos = ", ".join(conta.vencimento.strftime("%d/%m/%Y") for conta in contas if conta.vencimento)
@@ -536,7 +547,7 @@ def entradas_csv(request):
 @login_required
 @role_required(*COMPRAS)
 def entradas_imprimir(request):
-    entradas = list(entradas_filtradas(request.GET))
+    entradas = list(entradas_filtradas(request.GET, request.user))
     total_entradas = len(entradas)
     total_compras = sum((entrada.total_produtos for entrada in entradas), 0)
     total_financeiro = sum((conta.valor for entrada in entradas for conta in entrada.contas_financeiras.all()), 0)
@@ -560,7 +571,7 @@ def entradas_imprimir(request):
 @role_required(*COMPRAS)
 def entrada_imprimir(request, pk):
     entrada = get_object_or_404(
-        EntradaCompra.objects.select_related("fornecedor", "filial", "usuario").prefetch_related(
+        entradas_para_usuario(request.user).select_related("fornecedor", "filial", "usuario").prefetch_related(
             "itens__produto",
             "contas_financeiras__lancamentos__conta",
             "contas_financeiras__lancamentos__usuario",
@@ -585,7 +596,7 @@ class EntradaCompraDetailView(LoginRequiredMixin, RoleRequiredMixin, DetailView)
     context_object_name = "entrada"
 
     def get_queryset(self):
-        return EntradaCompra.objects.select_related("fornecedor", "filial", "usuario", "pedido_origem").prefetch_related(
+        return entradas_para_usuario(self.request.user).select_related("fornecedor", "filial", "usuario", "pedido_origem").prefetch_related(
             "itens__produto",
             "contas_financeiras__lancamentos__conta",
             "contas_financeiras__lancamentos__usuario",
@@ -631,6 +642,11 @@ class EntradaCompraFormMixin(LoginRequiredMixin, RoleRequiredMixin, TemplateResp
     def post(self, request, *args, **kwargs):
         self.object = self.get_object() if self.kwargs.get("pk") else None
         return super().post(request, *args, **kwargs)
+
+    def get_form_kwargs(self):
+        kwargs = super().get_form_kwargs()
+        kwargs["user"] = self.request.user
+        return kwargs
 
     def get_retorno_lista_url(self):
         retorno = self.request.POST.get("next") or self.request.GET.get("next") or ""
@@ -695,13 +711,13 @@ class EntradaCompraCreateView(EntradaCompraFormMixin):
 
 class EntradaCompraUpdateView(EntradaCompraFormMixin):
     def get_queryset(self):
-        return EntradaCompra.objects.filter(status=StatusEntradaCompra.RASCUNHO)
+        return entradas_para_usuario(self.request.user).filter(status=StatusEntradaCompra.RASCUNHO)
 
 
 @login_required
 @role_required(*COMPRAS)
 def finalizar_entrada(request, pk):
-    entrada = get_object_or_404(EntradaCompra.objects.prefetch_related("itens__produto"), pk=pk)
+    entrada = get_object_or_404(entradas_para_usuario(request.user).prefetch_related("itens__produto"), pk=pk)
     if request.method != "POST":
         return redirect("compras:detalhe", pk=entrada.pk)
 
@@ -719,7 +735,7 @@ def finalizar_entrada(request, pk):
 @login_required
 @role_required(*COMPRAS)
 def cancelar_entrada(request, pk):
-    entrada = get_object_or_404(EntradaCompra.objects.prefetch_related("itens__produto", "contas_financeiras"), pk=pk)
+    entrada = get_object_or_404(entradas_para_usuario(request.user).prefetch_related("itens__produto", "contas_financeiras"), pk=pk)
     if request.method != "POST":
         return redirect("compras:detalhe", pk=entrada.pk)
 
@@ -743,7 +759,7 @@ def cancelar_entrada(request, pk):
 @login_required
 @role_required(*COMPRAS)
 def excluir_rascunho(request, pk):
-    entrada = get_object_or_404(EntradaCompra.objects.select_related("pedido_origem").prefetch_related("itens"), pk=pk)
+    entrada = get_object_or_404(entradas_para_usuario(request.user).select_related("pedido_origem").prefetch_related("itens"), pk=pk)
     retorno = request.POST.get("next") or reverse("compras:lista")
     if not url_has_allowed_host_and_scheme(retorno, allowed_hosts={request.get_host()}):
         retorno = reverse("compras:lista")

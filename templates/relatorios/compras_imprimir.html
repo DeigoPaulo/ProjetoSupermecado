@@ -27,7 +27,7 @@
 </head>
 <body>
   <header>
-    <div><h1>Relatorio de compras</h1><p>Entradas finalizadas de {{ data_inicio|date:"d/m/Y" }} a {{ data_fim|date:"d/m/Y" }}</p></div>
+    <div><h1>Relat?rio de compras</h1><p>Entradas finalizadas de {{ data_inicio|date:"d/m/Y" }} a {{ data_fim|date:"d/m/Y" }}{% if filial_selecionada %} ? Filial: {{ filial_selecionada }}{% else %} ? Todas as filiais permitidas{% endif %}</p></div>
     <p>Gerado em {{ gerado_em|date:"d/m/Y H:i" }}</p>
   </header>
   <div class="actions"><button type="button" onclick="window.print()">Imprimir / Salvar como PDF</button></div>
@@ -47,6 +47,6 @@
       {% empty %}<tr><td colspan="8">Nenhuma entrada finalizada no periodo.</td></tr>{% endfor %}
     </tbody>
   </table>
-  <footer>Sistema Supermercado</footer>
+  <footer>Deigo Varejo · Deigo Tecnologia</footer>
 </body>
 </html>

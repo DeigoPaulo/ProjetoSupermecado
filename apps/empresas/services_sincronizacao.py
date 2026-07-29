@@ -18,7 +18,7 @@ class ErroSincronizacao(Exception):
 
 @transaction.atomic
 def enfileirar_evento(*, empresa, tipo, objeto_tipo, objeto_id, payload, chave_idempotencia, filial=None):
-    if empresa.modo_implantacao == ModoImplantacao.LOCAL or not empresa.sincronizacao_automatica:
+    if not empresa.sincronizacao_operacional_habilitada:
         return None, False
     evento, criado = EventoSincronizacao.objects.get_or_create(
         chave_idempotencia=chave_idempotencia,
@@ -90,8 +90,11 @@ def processar_fila(*, limite=50, enviar=enviar_evento_http):
         EventoSincronizacao.objects.filter(
             status__in=[StatusSincronizacao.PENDENTE, StatusSincronizacao.ERRO],
             tentativas__lt=settings.SINCRONIZACAO_MAX_TENTATIVAS,
+            empresa__is_active=True,
             empresa__sincronizacao_automatica=True,
         )
+        .exclude(empresa__modo_implantacao=ModoImplantacao.LOCAL)
+        .exclude(empresa__url_sincronizacao="")
         .filter(Q(proxima_tentativa_em__isnull=True) | Q(proxima_tentativa_em__lte=agora))
         .order_by("criado_em")
         .values_list("pk", flat=True)[:limite]
@@ -101,6 +104,12 @@ def processar_fila(*, limite=50, enviar=enviar_evento_http):
         with transaction.atomic():
             evento = EventoSincronizacao.objects.select_for_update().select_related("empresa", "filial").get(pk=pk)
             if evento.status not in {StatusSincronizacao.PENDENTE, StatusSincronizacao.ERRO}:
+                continue
+            if not evento.empresa.sincronizacao_operacional_habilitada:
+                evento.status = StatusSincronizacao.PAUSADO
+                evento.ultimo_erro = "Pausado pela política de implantação."
+                evento.proxima_tentativa_em = None
+                evento.save(update_fields=["status", "ultimo_erro", "proxima_tentativa_em", "atualizado_em"])
                 continue
             evento.status = StatusSincronizacao.PROCESSANDO
             evento.tentativas += 1

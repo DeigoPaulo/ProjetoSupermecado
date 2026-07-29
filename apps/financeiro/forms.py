@@ -1,6 +1,8 @@
 from django import forms
 
+from apps.clientes.escopo import clientes_para_usuario, empresa_id_do_usuario
 from apps.core_forms import aplicar_select2
+from apps.fornecedores.escopo import fornecedores_para_usuario
 
 from .models import CategoriaFinanceira, ContaFinanceira, ContaMovimentoFinanceiro, TransferenciaFinanceira
 
@@ -30,8 +32,13 @@ class ContaFinanceiraForm(forms.ModelForm):
             "observacoes": forms.Textarea(attrs={"rows": 3}),
         }
 
-    def __init__(self, *args, **kwargs):
+    def __init__(self, *args, user=None, **kwargs):
         super().__init__(*args, **kwargs)
+        empresa_id = empresa_id_do_usuario(user) if user else None
+        if empresa_id is not None:
+            self.fields["filial"].queryset = self.fields["filial"].queryset.filter(empresa_id=empresa_id)
+        self.fields["cliente"].queryset = clientes_para_usuario(user, self.fields["cliente"].queryset)
+        self.fields["fornecedor"].queryset = fornecedores_para_usuario(user, self.fields["fornecedor"].queryset)
         aplicar_select2(
             self,
             ["categoria", "filial", "fornecedor", "cliente"],
@@ -41,6 +48,14 @@ class ContaFinanceiraForm(forms.ModelForm):
                 "cliente": "/clientes/busca.json",
             },
         )
+
+    def clean(self):
+        cleaned_data = super().clean()
+        fornecedor = cleaned_data.get("fornecedor")
+        filial = cleaned_data.get("filial")
+        if fornecedor and fornecedor.empresa_id and filial and fornecedor.empresa_id != filial.empresa_id:
+            self.add_error("fornecedor", "Fornecedor informado pertence a outra empresa.")
+        return cleaned_data
 
 
 class BaixaContaForm(forms.Form):

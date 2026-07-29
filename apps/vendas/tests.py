@@ -13,8 +13,8 @@ from apps.clientes.models import Cliente
 from apps.pdv.models import Caixa
 from apps.produtos.models import Categoria, Produto
 
-from .models import EstornoParcialPagamento, FormaPagamento, PagamentoVenda, StatusEstornoParcial, StatusPagamento, StatusVenda, TipoDocumentoConsumidor, Venda
-from .services import cancelar_venda, confirmar_estorno_pagamento_eletronico, confirmar_estorno_parcial_eletronico, finalizar_venda, registrar_devolucao_venda
+from .models import EstornoParcialPagamento, FormaPagamento, FormaPagamentoFilial, PagamentoVenda, StatusEstornoParcial, StatusPagamento, StatusVenda, TipoDocumentoConsumidor, Venda
+from .services import cancelar_venda, confirmar_estorno_pagamento_eletronico, confirmar_estorno_parcial_eletronico, finalizar_venda, formas_pagamento_disponiveis, registrar_devolucao_venda
 
 
 class VendaServiceTests(TestCase):
@@ -40,8 +40,90 @@ class VendaServiceTests(TestCase):
         self.dinheiro = FormaPagamento.objects.create(nome="Dinheiro", tipo="DINHEIRO", permite_troco=True)
         self.pix = FormaPagamento.objects.create(nome="Pix", tipo="PIX")
         self.crediario = FormaPagamento.objects.create(nome="Crediario", tipo="CREDIARIO")
-        self.cliente = Cliente.objects.create(nome="Cliente Teste", cpf_cnpj="123.456.789-00")
+        self.cliente = Cliente.objects.create(empresa=self.empresa, nome="Cliente Teste", cpf_cnpj="123.456.789-00")
 
+    def test_finalizacao_rejeita_cliente_de_outra_empresa(self):
+        empresa_estrangeira = Empresa.objects.create(
+            razao_social="Outro Mercado Ltda",
+            nome_fantasia="Outro Mercado",
+            cnpj="22.222.222/0001-22",
+        )
+        cliente_estrangeiro = Cliente.objects.create(empresa=empresa_estrangeira, nome="Cliente estrangeiro")
+
+        with self.assertRaisesMessage(ValidationError, "Cliente informado pertence a outra empresa"):
+            finalizar_venda(
+                caixa=self.caixa,
+                usuario=self.usuario,
+                cliente=cliente_estrangeiro,
+                itens=[{"produto": self.produto, "quantidade": Decimal("1.000")}],
+                pagamentos=[{"forma_pagamento": self.dinheiro, "valor": Decimal("25.00")}],
+            )
+
+        self.assertFalse(Venda.objects.exists())
+        self.estoque.refresh_from_db()
+        self.assertEqual(self.estoque.quantidade_atual, Decimal("10.000"))
+    def test_nova_forma_global_e_inicializada_na_filial_automaticamente(self):
+        formas_pagamento_disponiveis(self.filial)
+        nova_forma = FormaPagamento.objects.create(nome="Cartao loja", tipo="CARTAO")
+
+        disponiveis = formas_pagamento_disponiveis(self.filial)
+
+        self.assertIn(nova_forma, disponiveis)
+        self.assertTrue(
+            FormaPagamentoFilial.objects.filter(
+                filial=self.filial,
+                forma_pagamento=nova_forma,
+                ativo=True,
+            ).exists()
+        )
+    def test_finalizacao_rejeita_forma_desabilitada_na_filial(self):
+        FormaPagamentoFilial.objects.create(
+            filial=self.filial,
+            forma_pagamento=self.dinheiro,
+            ativo=False,
+        )
+        FormaPagamentoFilial.objects.create(filial=self.filial, forma_pagamento=self.pix, ativo=True)
+        FormaPagamentoFilial.objects.create(filial=self.filial, forma_pagamento=self.crediario, ativo=True)
+
+        with self.assertRaisesMessage(ValidationError, "Forma de pagamento nao habilitada para esta filial"):
+            finalizar_venda(
+                caixa=self.caixa,
+                usuario=self.usuario,
+                itens=[{"produto": self.produto, "quantidade": Decimal("1.000")}],
+                pagamentos=[{"forma_pagamento": self.dinheiro, "valor": Decimal("25.00")}],
+            )
+
+        self.assertFalse(Venda.objects.exists())
+        self.estoque.refresh_from_db()
+        self.assertEqual(self.estoque.quantidade_atual, Decimal("10.000"))
+
+    def test_lancamento_usa_conta_configurada_para_a_filial(self):
+        conta_pix = ContaMovimentoFinanceiro.objects.create(
+            filial=self.filial,
+            nome="PIX específico da filial",
+            tipo=TipoContaMovimento.PIX,
+        )
+        FormaPagamentoFilial.objects.create(
+            filial=self.filial,
+            forma_pagamento=self.pix,
+            conta_movimento_padrao=conta_pix,
+            ativo=True,
+        )
+
+        venda = finalizar_venda(
+            caixa=self.caixa,
+            usuario=self.usuario,
+            itens=[{"produto": self.produto, "quantidade": Decimal("1.000")}],
+            pagamentos=[{"forma_pagamento": self.pix, "valor": Decimal("25.00")}],
+        )
+
+        self.assertTrue(
+            LancamentoFinanceiro.objects.filter(
+                conta=conta_pix,
+                pagamento_venda__venda=venda,
+                pagamento_venda__forma_pagamento=self.pix,
+            ).exists()
+        )
     def test_finalizar_venda_com_pagamento_dividido_baixa_estoque(self):
         pix_configurado = ContaMovimentoFinanceiro.objects.create(
             filial=self.filial,

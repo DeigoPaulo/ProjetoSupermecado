@@ -273,6 +273,8 @@ class ReceitaDesmembramento(models.Model):
         ordering = ["produto_origem__nome", "produto_destino__nome"]
 
     def clean(self):
+        if self.filial_id and self.empresa_id and self.filial.empresa_id != self.empresa_id:
+            raise ValidationError("A filial deve pertencer a empresa da receita.")
         if self.produto_origem_id and self.produto_destino_id and self.produto_origem_id == self.produto_destino_id:
             raise ValidationError("Produto origem e produto destino devem ser diferentes.")
         if self.quantidade_origem <= 0 or self.quantidade_destino <= 0:
@@ -299,6 +301,8 @@ class ComposicaoProduto(models.Model):
     def clean(self):
         if self.quantidade_final <= 0:
             raise ValidationError("Quantidade final da composicao deve ser maior que zero.")
+        if self.filial_id and self.empresa_id and self.filial.empresa_id != self.empresa_id:
+            raise ValidationError("A filial deve pertencer à empresa da composição.")
 
     def __str__(self):
         return f"{self.produto_final} ({self.quantidade_final})"
@@ -339,6 +343,14 @@ class ProducaoComposicaoProduto(models.Model):
 
     class Meta:
         ordering = ["-criado_em"]
+
+    def clean(self):
+        if self.filial_id and self.empresa_id and self.filial.empresa_id != self.empresa_id:
+            raise ValidationError("A filial deve pertencer à empresa da produção.")
+        if self.composicao_id and self.empresa_id and self.composicao.empresa_id != self.empresa_id:
+            raise ValidationError("A composição deve pertencer à empresa da produção.")
+        if self.composicao_id and self.composicao.filial_id and self.composicao.filial_id != self.filial_id:
+            raise ValidationError("A produção deve usar a filial da composição.")
 
     def __str__(self):
         return f"Producao {self.id} - {self.produto_final}"
@@ -404,8 +416,16 @@ class OrdemProducaoComposicao(models.Model):
     def clean(self):
         if self.quantidade_planejada <= 0:
             raise ValidationError("Quantidade planejada deve ser maior que zero.")
+        if self.filial_id and self.empresa_id and self.filial.empresa_id != self.empresa_id:
+            raise ValidationError("A filial deve pertencer à empresa da ordem.")
+        if self.composicao_id and self.empresa_id and self.composicao.empresa_id != self.empresa_id:
+            raise ValidationError("A composição deve pertencer à empresa da ordem.")
         if self.composicao_id and self.composicao.filial_id and self.composicao.filial_id != self.filial_id:
             raise ValidationError("Ordem de produção deve usar a filial da composição.")
+        if self.responsavel_operacional_id and self.empresa_id:
+            perfil = getattr(self.responsavel_operacional, "perfil_supermercado", None)
+            if perfil and perfil.is_active and perfil.filial_id and perfil.filial.empresa_id != self.empresa_id:
+                raise ValidationError("O responsável operacional deve pertencer à empresa da ordem.")
 
     def __str__(self):
         return f"Ordem {self.id} - {self.produto_final}"

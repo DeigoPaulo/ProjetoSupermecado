@@ -9,3 +9,4 @@ staticfiles/
 *.log
 logs/
 ProjetoLimpoGitHub/
+desktop_pdv/.venv-build/

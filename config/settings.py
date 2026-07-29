@@ -10,6 +10,7 @@ For the full list of settings and their values, see
 https://docs.djangoproject.com/en/6.0/ref/settings/
 """
 
+import json
 import os
 from pathlib import Path
 
@@ -37,6 +38,17 @@ def env_path(name, default):
     raw = os.getenv(name)
     path = Path(raw) if raw else Path(default)
     return path if path.is_absolute() else BASE_DIR / path
+
+
+def env_json_object(name, default="{}"):
+    raw = os.getenv(name, default)
+    try:
+        value = json.loads(raw)
+    except json.JSONDecodeError as exc:
+        raise ImproperlyConfigured(f"{name} deve conter um objeto JSON valido.") from exc
+    if not isinstance(value, dict):
+        raise ImproperlyConfigured(f"{name} deve conter um objeto JSON.")
+    return value
 
 
 ENVIRONMENT = os.getenv("DJANGO_ENV", "development")
@@ -77,6 +89,7 @@ INSTALLED_APPS = [
     'apps.relatorios',
     'apps.auditoria',
     'apps.configuracoes',
+    'apps.licenciamento',
 ]
 
 MIDDLEWARE = [
@@ -85,6 +98,7 @@ MIDDLEWARE = [
     'django.middleware.common.CommonMiddleware',
     'django.middleware.csrf.CsrfViewMiddleware',
     'django.contrib.auth.middleware.AuthenticationMiddleware',
+    'apps.licenciamento.middleware.ControleLicencaMiddleware',
     'django.contrib.messages.middleware.MessageMiddleware',
     'django.middleware.clickjacking.XFrameOptionsMiddleware',
 ]
@@ -105,6 +119,7 @@ TEMPLATES = [
                 'django.contrib.auth.context_processors.auth',
                 'django.contrib.messages.context_processors.messages',
                 'apps.accounts.context_processors.supermarket_access',
+                'apps.licenciamento.context_processors.alerta_licenciamento',
             ],
         },
     },
@@ -211,21 +226,52 @@ EMAIL_TIMEOUT = int(os.getenv("EMAIL_TIMEOUT", "10"))
 DEFAULT_FROM_EMAIL = os.getenv("DEFAULT_FROM_EMAIL", "nao-responda@supermercado.local")
 
 PDV_NUVEM_REQUER_APROVACAO = env_bool("PDV_NUVEM_REQUER_APROVACAO", False)
-PDV_DESKTOP_VERSION = os.getenv("PDV_DESKTOP_VERSION", "0.1.1")
+PDV_DESKTOP_VERSION = os.getenv("PDV_DESKTOP_VERSION", "0.1.3")
 PDV_DESKTOP_MIN_VERSION = os.getenv("PDV_DESKTOP_MIN_VERSION", PDV_DESKTOP_VERSION)
 PDV_DESKTOP_RELEASE_CHANNEL = os.getenv("PDV_DESKTOP_RELEASE_CHANNEL", "ESTAVEL").upper()
 PDV_TEF_SIMULATOR_ENABLED = env_bool("PDV_TEF_SIMULATOR_ENABLED", DEBUG)
-PDV_DESKTOP_INSTALLER_PATH = env_path("PDV_DESKTOP_INSTALLER_PATH", BASE_DIR / "artifacts" / "SupermercadoPDV.msi")
+PDV_DESKTOP_INSTALLER_PATH = env_path("PDV_DESKTOP_INSTALLER_PATH", BASE_DIR / "artifacts" / "DeigoPDV.msi")
 PDV_DESKTOP_REQUIRE_SIGNED_INSTALLER = env_bool("PDV_DESKTOP_REQUIRE_SIGNED_INSTALLER", not DEBUG)
+LOCAL_SERVER_VERSION = os.getenv("LOCAL_SERVER_VERSION", "0.1.0")
+LOCAL_SERVER_PACKAGE_PATH = env_path("LOCAL_SERVER_PACKAGE_PATH", BASE_DIR / "artifacts" / "DeigoVarejoServidorLocal.zip")
+LOCAL_SERVER_REQUIRE_SIGNED_COMMIT = env_bool("LOCAL_SERVER_REQUIRE_SIGNED_COMMIT", not DEBUG)
 FISCAL_CERTIFICATE_KEY = os.getenv("FISCAL_CERTIFICATE_KEY", SECRET_KEY)
+FISCAL_SEFAZ_ADAPTER = os.getenv("FISCAL_SEFAZ_ADAPTER", "")
+FINANCEIRO_CONTABIL_ADAPTER = os.getenv("FINANCEIRO_CONTABIL_ADAPTER", "")
+FISCAL_SCHEMA_DIR = env_path("FISCAL_SCHEMA_DIR", BASE_DIR / "fiscal_schemas")
+FISCAL_NFE_SCHEMA_FILE = os.getenv("FISCAL_NFE_SCHEMA_FILE", "nfe_v4.00.xsd")
+FISCAL_SCHEMA_SHA256 = os.getenv("FISCAL_SCHEMA_SHA256", "")
+FISCAL_LOCAL_XML_SIGNATURE_ENABLED = env_bool("FISCAL_LOCAL_XML_SIGNATURE_ENABLED", True)
+FISCAL_AUTO_TRANSMIT_ENABLED = env_bool("FISCAL_AUTO_TRANSMIT_ENABLED", False)
+FISCAL_AUTO_TRANSMIT_MAX_ATTEMPTS = int(os.getenv("FISCAL_AUTO_TRANSMIT_MAX_ATTEMPTS", "8"))
+FISCAL_AUTO_TRANSMIT_RETRY_BASE_SECONDS = int(os.getenv("FISCAL_AUTO_TRANSMIT_RETRY_BASE_SECONDS", "60"))
+FISCAL_AUTO_TRANSMIT_RETRY_MAX_SECONDS = int(os.getenv("FISCAL_AUTO_TRANSMIT_RETRY_MAX_SECONDS", "3600"))
+FISCAL_AUTO_TRANSMIT_LEASE_SECONDS = int(os.getenv("FISCAL_AUTO_TRANSMIT_LEASE_SECONDS", "300"))
 SINCRONIZACAO_API_TOKEN = os.getenv("SINCRONIZACAO_API_TOKEN", "")
 SINCRONIZACAO_TIMEOUT_SEGUNDOS = int(os.getenv("SINCRONIZACAO_TIMEOUT_SEGUNDOS", "10"))
 SINCRONIZACAO_MAX_TENTATIVAS = int(os.getenv("SINCRONIZACAO_MAX_TENTATIVAS", "8"))
 SINCRONIZACAO_RETRY_BASE_SEGUNDOS = int(os.getenv("SINCRONIZACAO_RETRY_BASE_SEGUNDOS", "30"))
 SINCRONIZACAO_RETRY_MAX_SEGUNDOS = int(os.getenv("SINCRONIZACAO_RETRY_MAX_SEGUNDOS", "3600"))
+LICENCIAMENTO_CENTRAL_URL = os.getenv("LICENCIAMENTO_CENTRAL_URL", "")
+LICENCIAMENTO_API_TOKEN = os.getenv("LICENCIAMENTO_API_TOKEN", "")
+LICENCIAMENTO_INSTALACAO_ID = os.getenv("LICENCIAMENTO_INSTALACAO_ID", "")
+LICENCIAMENTO_CHAVE_ASSINATURA = os.getenv("LICENCIAMENTO_CHAVE_ASSINATURA", SECRET_KEY)
+LICENCIAMENTO_CONCESSAO_HORAS = int(os.getenv("LICENCIAMENTO_CONCESSAO_HORAS", "24"))
+LICENCIAMENTO_OFFLINE_DIAS = int(os.getenv("LICENCIAMENTO_OFFLINE_DIAS", "3"))
+LICENCIAMENTO_TIMEOUT_SEGUNDOS = int(os.getenv("LICENCIAMENTO_TIMEOUT_SEGUNDOS", "10"))
+LICENCIAMENTO_CHAVE_PRIVADA_PEM = os.getenv("LICENCIAMENTO_CHAVE_PRIVADA_PEM", "")
+LICENCIAMENTO_CHAVE_PRIVADA_ARQUIVO = os.getenv("LICENCIAMENTO_CHAVE_PRIVADA_ARQUIVO", "")
+LICENCIAMENTO_CHAVE_PUBLICA_PEM = os.getenv("LICENCIAMENTO_CHAVE_PUBLICA_PEM", "")
+LICENCIAMENTO_CHAVE_PUBLICA_ARQUIVO = os.getenv("LICENCIAMENTO_CHAVE_PUBLICA_ARQUIVO", "")
+LICENCIAMENTO_PERMITIR_ASSINATURA_COMPARTILHADA = env_bool("LICENCIAMENTO_PERMITIR_ASSINATURA_COMPARTILHADA", DEBUG)
+ASAAS_API_URL = os.getenv("ASAAS_API_URL", "https://api-sandbox.asaas.com/v3")
+ASAAS_API_KEY = os.getenv("ASAAS_API_KEY", "")
+ASAAS_WEBHOOK_TOKEN = os.getenv("ASAAS_WEBHOOK_TOKEN", "")
+ASAAS_TIMEOUT_SEGUNDOS = int(os.getenv("ASAAS_TIMEOUT_SEGUNDOS", "15"))
 CADASTRO_CNPJ_PROVIDER_URL = os.getenv("CADASTRO_CNPJ_PROVIDER_URL", "")
 CADASTRO_CEP_PROVIDER_URL = os.getenv("CADASTRO_CEP_PROVIDER_URL", "")
 CADASTRO_LOOKUP_TIMEOUT_SEGUNDOS = int(os.getenv("CADASTRO_LOOKUP_TIMEOUT_SEGUNDOS", "5"))
+MARKETPLACE_PARTNER_ADAPTERS = env_json_object("MARKETPLACE_PARTNER_ADAPTERS_JSON")
 MARKETPLACE_GEOCODING_PROVIDER_URL = os.getenv("MARKETPLACE_GEOCODING_PROVIDER_URL", "")
 MARKETPLACE_GEOCODING_TIMEOUT_SEGUNDOS = int(os.getenv("MARKETPLACE_GEOCODING_TIMEOUT_SEGUNDOS", "5"))
 

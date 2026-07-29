@@ -26,6 +26,15 @@
     <input type="date" name="data_fim" value="{{ data_fim|date:'Y-m-d' }}">
   </label>
   <label>
+    <span>Filial</span>
+    <select name="filial">
+      {% if permite_consolidado %}<option value="">Todas as filiais</option>{% endif %}
+      {% for filial in filiais %}
+        <option value="{{ filial.pk }}" {% if filial_id == filial.pk|stringformat:"s" %}selected{% endif %}>{{ filial }}</option>
+      {% endfor %}
+    </select>
+  </label>
+  <label>
     <span>Operador</span>
     <select name="operador">
       <option value="">Todos</option>
@@ -46,6 +55,7 @@
   <article class="metric"><span>Conferido</span><strong>R$ {{ valor_conferido_total|floatformat:2 }}</strong></article>
   <article class="metric"><span>Sangrias</span><strong>R$ {{ total_sangrias|floatformat:2 }}</strong></article>
   <article class="metric"><span>Suprimentos</span><strong>R$ {{ total_suprimentos|floatformat:2 }}</strong></article>
+  <article class="metric"><span>Entradas líquidas</span><strong>R$ {{ total_entradas_pagamentos|floatformat:2 }}</strong></article>
   <article class="metric"><span>Diferença conferida</span><strong>R$ {{ diferenca_total|floatformat:2 }}</strong></article>
 </section>
 
@@ -56,7 +66,7 @@
     <tbody>
       {% for item in resumo_por_operador %}
         <tr>
-          <td>{{ item.operador }}</td>
+          <td><a href="?data_inicio={{ data_inicio|date:'Y-m-d' }}&amp;data_fim={{ data_fim|date:'Y-m-d' }}{% if filial_id %}&amp;filial={{ filial_id }}{% endif %}&amp;operador={{ item.operador_id }}">{{ item.operador }}</a></td>
           <td>{{ item.caixas }}</td>
           <td>{{ item.vendas }}</td>
           <td><strong>R$ {{ item.total_vendas|floatformat:2 }}</strong></td>
@@ -101,7 +111,7 @@
 </div>
 
 <div class="panel mt-panel">
-  <div class="panel-title">Pagamentos por forma</div>
+  <div class="panel-title">Entradas líquidas por forma de pagamento</div>
   <table>
     <thead><tr><th>Forma</th><th>Total</th></tr></thead>
     <tbody>
@@ -116,4 +126,5 @@
     </tbody>
   </table>
 </div>
+{% include "includes/pagination.html" %}
 {% endblock %}

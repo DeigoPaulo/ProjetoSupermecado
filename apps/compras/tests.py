@@ -7,6 +7,7 @@ from django.core.files.uploadedfile import SimpleUploadedFile
 from django.test import TestCase
 from django.utils import timezone
 
+from apps.accounts.models import PerfilUsuario, TipoPerfil
 from apps.auditoria.models import LogAuditoria
 from apps.empresas.models import Empresa, Filial
 from apps.estoque.models import Estoque, LoteEstoque, MovimentacaoEstoque, TipoMovimentacaoEstoque
@@ -1161,10 +1162,12 @@ class CotacoesCompraTests(TestCase):
             cnpj=self.empresa.cnpj,
         )
         self.fornecedor_a = Fornecedor.objects.create(
+            empresa=self.empresa,
             razao_social="Fornecedor Cotacao A",
             nome_fantasia="Fornecedor A",
         )
         self.fornecedor_b = Fornecedor.objects.create(
+            empresa=self.empresa,
             razao_social="Fornecedor Cotacao B",
             nome_fantasia="Fornecedor B",
         )
@@ -1535,3 +1538,121 @@ class ImportacaoXMLEntradaTests(TestCase):
         self.assertEqual(lote.quantidade_atual, Decimal("3.000"))
         self.assertEqual(lote.custo_unitario, Decimal("5.50"))
         self.assertEqual(lote.origem_referencia, f"entrada_compra:{entrada.id}")
+
+
+class ComprasIsolamentoEmpresaTests(TestCase):
+    def setUp(self):
+        User = get_user_model()
+        self.empresa_a = Empresa.objects.create(
+            razao_social="Mercado Isolado A", nome_fantasia="Mercado Isolado A", cnpj="41.111.111/0001-11"
+        )
+        self.empresa_b = Empresa.objects.create(
+            razao_social="Mercado Isolado B", nome_fantasia="Mercado Isolado B", cnpj="42.222.222/0001-22"
+        )
+        self.filial_a = Filial.objects.create(empresa=self.empresa_a, nome="Matriz Isolada A")
+        self.filial_b = Filial.objects.create(empresa=self.empresa_b, nome="Matriz Isolada B")
+        self.usuario_a = User.objects.create_user("compras_isolado_a", password="123")
+        self.super_admin = User.objects.create_superuser("compras_global", "global@example.com", "123")
+        PerfilUsuario.objects.create(usuario=self.usuario_a, filial=self.filial_a, tipo=TipoPerfil.COMPRAS)
+        self.fornecedor_a = Fornecedor.objects.create(empresa=self.empresa_a, razao_social="Fornecedor Isolado A")
+        self.fornecedor_b = Fornecedor.objects.create(empresa=self.empresa_b, razao_social="Fornecedor Isolado B")
+        self.cotacao_a = CotacaoCompra.objects.create(
+            filial=self.filial_a, usuario=self.usuario_a, referencia="COT-EMPRESA-A"
+        )
+        self.cotacao_b = CotacaoCompra.objects.create(
+            filial=self.filial_b, usuario=self.super_admin, referencia="COT-EMPRESA-B"
+        )
+        self.resposta_b = RespostaCotacaoFornecedor.objects.create(
+            cotacao=self.cotacao_b, fornecedor=self.fornecedor_b, usuario=self.super_admin
+        )
+        self.pedido_a = PedidoCompra.objects.create(
+            fornecedor=self.fornecedor_a, filial=self.filial_a, usuario=self.usuario_a, referencia="PED-EMPRESA-A"
+        )
+        self.pedido_b = PedidoCompra.objects.create(
+            fornecedor=self.fornecedor_b, filial=self.filial_b, usuario=self.super_admin, referencia="PED-EMPRESA-B"
+        )
+        self.entrada_a = EntradaCompra.objects.create(
+            fornecedor=self.fornecedor_a, filial=self.filial_a, usuario=self.usuario_a, numero_documento="NF-EMPRESA-A"
+        )
+        self.entrada_b = EntradaCompra.objects.create(
+            fornecedor=self.fornecedor_b, filial=self.filial_b, usuario=self.super_admin, numero_documento="NF-EMPRESA-B"
+        )
+        self.client.force_login(self.usuario_a)
+
+    def test_listagens_e_resumos_exibem_somente_empresa_do_usuario(self):
+        cenarios = [
+            ("/compras/cotacoes/", "COT-EMPRESA-A", "COT-EMPRESA-B"),
+            ("/compras/pedidos/", "PED-EMPRESA-A", "PED-EMPRESA-B"),
+            ("/compras/", "NF-EMPRESA-A", "NF-EMPRESA-B"),
+        ]
+
+        for url, proprio, estrangeiro in cenarios:
+            with self.subTest(url=url):
+                response = self.client.get(url)
+                self.assertEqual(response.status_code, 200)
+                self.assertContains(response, proprio)
+                self.assertNotContains(response, estrangeiro)
+
+    def test_urls_de_cotacao_e_proposta_estrangeiras_retornam_404(self):
+        requisicoes = [
+            ("get", f"/compras/cotacoes/{self.cotacao_b.pk}/", {}),
+            ("get", f"/compras/cotacoes/{self.cotacao_b.pk}/editar/", {}),
+            ("get", f"/compras/cotacoes/{self.cotacao_b.pk}/proposta/", {}),
+            ("post", f"/compras/cotacoes/{self.cotacao_b.pk}/abrir/", {}),
+            (
+                "post",
+                f"/compras/cotacoes/{self.cotacao_b.pk}/propostas/{self.resposta_b.pk}/selecionar/",
+                {},
+            ),
+        ]
+
+        for metodo, url, dados in requisicoes:
+            with self.subTest(url=url):
+                response = getattr(self.client, metodo)(url, dados)
+                self.assertEqual(response.status_code, 404)
+
+    def test_urls_de_pedido_estrangeiro_retornam_404(self):
+        requisicoes = [
+            ("get", f"/compras/pedidos/{self.pedido_b.pk}/", {}),
+            ("get", f"/compras/pedidos/{self.pedido_b.pk}/editar/", {}),
+            ("post", f"/compras/pedidos/{self.pedido_b.pk}/enviar/", {}),
+            ("post", f"/compras/pedidos/{self.pedido_b.pk}/gerar-entrada/", {}),
+            ("post", f"/compras/pedidos/{self.pedido_b.pk}/cancelar/", {"motivo": "Teste"}),
+        ]
+
+        for metodo, url, dados in requisicoes:
+            with self.subTest(url=url):
+                response = getattr(self.client, metodo)(url, dados)
+                self.assertEqual(response.status_code, 404)
+
+    def test_urls_de_entrada_estrangeira_retornam_404(self):
+        requisicoes = [
+            ("get", f"/compras/{self.entrada_b.pk}/", {}),
+            ("get", f"/compras/{self.entrada_b.pk}/imprimir/", {}),
+            ("get", f"/compras/{self.entrada_b.pk}/editar/", {}),
+            ("post", f"/compras/{self.entrada_b.pk}/finalizar/", {}),
+            ("post", f"/compras/{self.entrada_b.pk}/cancelar/", {"motivo": "Teste"}),
+            ("post", f"/compras/{self.entrada_b.pk}/excluir-rascunho/", {}),
+        ]
+
+        for metodo, url, dados in requisicoes:
+            with self.subTest(url=url):
+                response = getattr(self.client, metodo)(url, dados)
+                self.assertEqual(response.status_code, 404)
+
+    def test_exportacoes_respeitam_empresa_do_usuario(self):
+        csv_response = self.client.get("/compras/exportar.csv")
+        print_response = self.client.get("/compras/imprimir/")
+
+        self.assertContains(csv_response, "NF-EMPRESA-A")
+        self.assertNotContains(csv_response, "NF-EMPRESA-B")
+        self.assertContains(print_response, "NF-EMPRESA-A")
+        self.assertNotContains(print_response, "NF-EMPRESA-B")
+
+    def test_super_admin_mantem_visao_global(self):
+        self.client.force_login(self.super_admin)
+
+        response = self.client.get("/compras/")
+
+        self.assertContains(response, "NF-EMPRESA-A")
+        self.assertContains(response, "NF-EMPRESA-B")

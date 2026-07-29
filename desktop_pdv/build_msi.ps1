@@ -4,6 +4,7 @@ param(
     [string]$Version,
     [string]$Source,
     [string]$Output,
+    [string]$Icon,
     [string]$WixCommand = "wix",
     [switch]$RequireSignedExecutable,
     [string]$CertificateThumbprint,
@@ -13,11 +14,12 @@ param(
 $ErrorActionPreference = "Stop"
 $Root = Split-Path -Parent $MyInvocation.MyCommand.Path
 $Template = Join-Path $Root "installer\Product.wxs.template"
+if (-not $Icon) { $Icon = Join-Path $Root "assets\deigo-pdv.ico" }
 if (-not $Source) {
-    $Source = Join-Path $Root "dist\SupermercadoPDV.exe"
+    $Source = Join-Path $Root "dist\DeigoPDV.exe"
 }
 if (-not $Output) {
-    $Output = Join-Path $Root "dist\SupermercadoPDV-$Version-x64.msi"
+    $Output = Join-Path $Root "dist\DeigoPDV-$Version-x64.msi"
 }
 $Source = [System.IO.Path]::GetFullPath($Source)
 $Output = [System.IO.Path]::GetFullPath($Output)
@@ -51,8 +53,9 @@ New-Item -ItemType Directory -Path $BuildDir -Force | Out-Null
 New-Item -ItemType Directory -Path (Split-Path -Parent $Output) -Force | Out-Null
 $GeneratedWxs = Join-Path $BuildDir "Product.generated.wxs"
 $EscapedSource = [System.Security.SecurityElement]::Escape($Source)
+$EscapedIcon = [System.Security.SecurityElement]::Escape([System.IO.Path]::GetFullPath($Icon))
 $Content = Get-Content -LiteralPath $Template -Raw
-$Content = $Content.Replace("__VERSION__", $Version).Replace("__SOURCE__", $EscapedSource)
+$Content = $Content.Replace("__VERSION__", $Version).Replace("__SOURCE__", $EscapedSource).Replace("__ICON__", $EscapedIcon)
 [System.IO.File]::WriteAllText($GeneratedWxs, $Content, [System.Text.UTF8Encoding]::new($false))
 
 & $WixExecutable build $GeneratedWxs -arch x64 -o $Output

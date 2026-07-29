@@ -232,9 +232,17 @@ def ler_peso_balanca(configuracao: dict | None) -> dict:
             fator_conversao=config["fator_conversao"],
         )
     except ErroBalanca as erro:
+        mensagem = str(erro)
+        identificador = (
+            f"{config['protocolo']} em {config['porta']}"
+            if config["porta"]
+            else config["protocolo"]
+        )
+        if identificador and identificador not in mensagem:
+            mensagem = f"{mensagem} ({identificador})"
         return {
             "status": "erro",
-            "mensagem": str(erro),
+            "mensagem": mensagem,
             "fallback_manual": config["fallback_manual"],
             "unidade": config["unidade_padrao"],
             "protocolo": config["protocolo"],

@@ -1,7 +1,9 @@
 from django import forms
 from django.forms import formset_factory, inlineformset_factory
 
+from apps.clientes.escopo import empresa_id_do_usuario
 from apps.core_forms import aplicar_select2
+from apps.fornecedores.escopo import fornecedores_para_usuario
 
 from .models import (
     CotacaoCompra,
@@ -23,13 +25,12 @@ class CotacaoCompraForm(forms.ModelForm):
             "observacoes": forms.Textarea(attrs={"rows": 3}),
         }
 
-    def __init__(self, *args, **kwargs):
+    def __init__(self, *args, user=None, **kwargs):
         super().__init__(*args, **kwargs)
-        aplicar_select2(
-            self,
-            ["filial"],
-            ajax_urls={"filial": "/empresas/filiais/busca.json"},
-        )
+        empresa_id = empresa_id_do_usuario(user) if user else None
+        if empresa_id is not None:
+            self.fields["filial"].queryset = self.fields["filial"].queryset.filter(empresa_id=empresa_id)
+        aplicar_select2(self, ["filial"], ajax_urls={"filial": "/empresas/filiais/busca.json"})
 
 
 class ItemCotacaoCompraForm(forms.ModelForm):
@@ -43,11 +44,7 @@ class ItemCotacaoCompraForm(forms.ModelForm):
 
 
 ItemCotacaoCompraFormSet = inlineformset_factory(
-    CotacaoCompra,
-    ItemCotacaoCompra,
-    form=ItemCotacaoCompraForm,
-    extra=3,
-    can_delete=True,
+    CotacaoCompra, ItemCotacaoCompra, form=ItemCotacaoCompraForm, extra=3, can_delete=True
 )
 
 
@@ -57,24 +54,21 @@ class RespostaCotacaoFornecedorForm(forms.ModelForm):
         fields = ["fornecedor", "prazo_entrega_dias", "observacoes"]
         widgets = {"observacoes": forms.Textarea(attrs={"rows": 3})}
 
-    def __init__(self, *args, **kwargs):
+    def __init__(self, *args, user=None, empresa_id=None, **kwargs):
         super().__init__(*args, **kwargs)
-        aplicar_select2(
-            self,
-            ["fornecedor"],
-            ajax_urls={"fornecedor": "/fornecedores/busca.json"},
-        )
+        empresa_id = empresa_id if empresa_id is not None else empresa_id_do_usuario(user) if user else None
+        queryset = fornecedores_para_usuario(user, self.fields["fornecedor"].queryset)
+        if empresa_id is not None:
+            queryset = queryset.filter(empresa_id=empresa_id)
+        self.fields["fornecedor"].queryset = queryset
+        aplicar_select2(self, ["fornecedor"], ajax_urls={"fornecedor": "/fornecedores/busca.json"})
 
 
 class PrecoRespostaCotacaoForm(forms.Form):
     item = forms.ModelChoiceField(queryset=ItemCotacaoCompra.objects.none(), widget=forms.HiddenInput)
     disponivel = forms.BooleanField(label="Disponivel", required=False, initial=True)
     custo_unitario = forms.DecimalField(
-        label="Custo unitario",
-        max_digits=10,
-        decimal_places=2,
-        min_value=0,
-        required=False,
+        label="Custo unitario", max_digits=10, decimal_places=2, min_value=0, required=False
     )
 
     def __init__(self, *args, item_queryset=None, **kwargs):
@@ -100,13 +94,25 @@ class PedidoCompraForm(forms.ModelForm):
             "observacoes": forms.Textarea(attrs={"rows": 3}),
         }
 
-    def __init__(self, *args, **kwargs):
+    def __init__(self, *args, user=None, **kwargs):
         super().__init__(*args, **kwargs)
+        empresa_id = empresa_id_do_usuario(user) if user else None
+        self.fields["fornecedor"].queryset = fornecedores_para_usuario(user, self.fields["fornecedor"].queryset)
+        if empresa_id is not None:
+            self.fields["filial"].queryset = self.fields["filial"].queryset.filter(empresa_id=empresa_id)
         aplicar_select2(
             self,
             ["fornecedor", "filial"],
             ajax_urls={"fornecedor": "/fornecedores/busca.json", "filial": "/empresas/filiais/busca.json"},
         )
+
+    def clean(self):
+        cleaned_data = super().clean()
+        fornecedor = cleaned_data.get("fornecedor")
+        filial = cleaned_data.get("filial")
+        if fornecedor and fornecedor.empresa_id and filial and fornecedor.empresa_id != filial.empresa_id:
+            self.add_error("fornecedor", "Fornecedor informado pertence a outra empresa.")
+        return cleaned_data
 
 
 class ItemPedidoCompraForm(forms.ModelForm):
@@ -120,26 +126,29 @@ class ItemPedidoCompraForm(forms.ModelForm):
 
 
 ItemPedidoCompraFormSet = inlineformset_factory(
-    PedidoCompra,
-    ItemPedidoCompra,
-    form=ItemPedidoCompraForm,
-    extra=3,
-    can_delete=True,
+    PedidoCompra, ItemPedidoCompra, form=ItemPedidoCompraForm, extra=3, can_delete=True
 )
 
 
 class EntradaCompraForm(forms.ModelForm):
     class Meta:
         model = EntradaCompra
-        fields = ["fornecedor", "filial", "numero_documento", "data_emissao", "vencimento_financeiro", "total_documento", "gerar_conta_financeira", "observacoes"]
+        fields = [
+            "fornecedor", "filial", "numero_documento", "data_emissao", "vencimento_financeiro",
+            "total_documento", "gerar_conta_financeira", "observacoes",
+        ]
         widgets = {
             "data_emissao": forms.DateInput(attrs={"type": "date"}),
             "vencimento_financeiro": forms.DateInput(attrs={"type": "date"}),
             "observacoes": forms.Textarea(attrs={"rows": 3}),
         }
 
-    def __init__(self, *args, **kwargs):
+    def __init__(self, *args, user=None, **kwargs):
         super().__init__(*args, **kwargs)
+        empresa_id = empresa_id_do_usuario(user) if user else None
+        self.fields["fornecedor"].queryset = fornecedores_para_usuario(user, self.fields["fornecedor"].queryset)
+        if empresa_id is not None:
+            self.fields["filial"].queryset = self.fields["filial"].queryset.filter(empresa_id=empresa_id)
         if not (self.instance and self.instance.chave_acesso_xml):
             self.fields.pop("total_documento", None)
         elif "total_documento" in self.fields:
@@ -153,6 +162,10 @@ class EntradaCompraForm(forms.ModelForm):
 
     def clean(self):
         cleaned_data = super().clean()
+        fornecedor = cleaned_data.get("fornecedor")
+        filial = cleaned_data.get("filial")
+        if fornecedor and fornecedor.empresa_id and filial and fornecedor.empresa_id != filial.empresa_id:
+            self.add_error("fornecedor", "Fornecedor informado pertence a outra empresa.")
         if self.instance and self.instance.pedido_origem_id:
             if cleaned_data.get("fornecedor") != self.instance.pedido_origem.fornecedor:
                 self.add_error("fornecedor", "O fornecedor deve permanecer igual ao pedido de origem.")
@@ -168,14 +181,9 @@ class EntradaCompraForm(forms.ModelForm):
 
 
 class ImportarXMLEntradaForm(forms.Form):
-    arquivo_xml = forms.FileField(
-        label="Arquivo XML da NF-e",
-        help_text="Envie uma NF-e autorizada de ate 5 MB.",
-    )
+    arquivo_xml = forms.FileField(label="Arquivo XML da NF-e", help_text="Envie uma NF-e autorizada de ate 5 MB.")
     gerar_conta_financeira = forms.BooleanField(
-        label="Gerar conta financeira ao finalizar",
-        required=False,
-        initial=True,
+        label="Gerar conta financeira ao finalizar", required=False, initial=True
     )
 
     def clean_arquivo_xml(self):
@@ -191,12 +199,7 @@ class ItemEntradaCompraForm(forms.ModelForm):
     class Meta:
         model = ItemEntradaCompra
         fields = [
-            "produto",
-            "quantidade",
-            "custo_unitario",
-            "codigo_lote",
-            "fabricacao",
-            "validade",
+            "produto", "quantidade", "custo_unitario", "codigo_lote", "fabricacao", "validade",
             "atualizar_preco_custo",
         ]
         widgets = {
@@ -224,9 +227,5 @@ class ItemEntradaCompraForm(forms.ModelForm):
 
 
 ItemEntradaCompraFormSet = inlineformset_factory(
-    EntradaCompra,
-    ItemEntradaCompra,
-    form=ItemEntradaCompraForm,
-    extra=3,
-    can_delete=True,
+    EntradaCompra, ItemEntradaCompra, form=ItemEntradaCompraForm, extra=3, can_delete=True
 )

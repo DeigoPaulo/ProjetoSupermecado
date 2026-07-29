@@ -32,14 +32,17 @@
 </section>
 
 <section class="metrics-grid">
-  <article class="metric"><span>Fila saida mais antiga</span><strong>{{ diagnostico_operacional.filas.saida.idade_mais_antigo_minutos }} min</strong></article>
-  <article class="metric"><span>Saida esgotada</span><strong>{{ diagnostico_operacional.filas.saida.esgotados }}</strong></article>
+  <article class="metric"><span>Fila saída mais antiga</span><strong>{{ diagnostico_operacional.filas.saida.idade_mais_antigo_minutos }} min</strong></article>
+  <article class="metric"><span>Saída esgotada</span><strong>{{ diagnostico_operacional.filas.saida.esgotados }}</strong></article>
+  <article class="metric"><span>Saída pausada</span><strong>{{ diagnostico_operacional.filas.saida.pausados }}</strong></article>
   <article class="metric"><span>Fila entrada mais antiga</span><strong>{{ diagnostico_operacional.filas.entrada.idade_mais_antigo_minutos }} min</strong></article>
+  <article class="metric"><span>Entrada pausada</span><strong>{{ diagnostico_operacional.filas.entrada.pausados }}</strong></article>
 </section>
 
 <section class="metrics-grid">
   <article class="metric"><span>Politica manual</span><strong>{{ diagnostico_operacional.empresas.politica_manual }}</strong></article>
   <article class="metric"><span>Nuvem produtos/estoque</span><strong>{{ diagnostico_operacional.empresas.politica_remoto_produtos_estoque }}</strong></article>
+  <article class="metric"><span>Loja produtos/estoque</span><strong>{{ diagnostico_operacional.empresas.politica_local_produtos_estoque }}</strong></article>
   <article class="metric"><span>Empresas filtradas</span><strong>{{ diagnostico_operacional.empresas.total_ativas }}</strong></article>
   <article class="metric"><span>Prontidao sync</span><strong>{{ diagnostico_operacional.prontidao.percentual }}%</strong></article>
 </section>
@@ -169,6 +172,8 @@
       </tbody>
     </table>
   </div>
+
+  {% include "includes/pagination_named.html" with page_obj=vendas_sincronizadas %}
 </section>
 
 <section class="panel table-panel">
@@ -193,6 +198,8 @@
       </tbody>
     </table>
   </div>
+
+  {% include "includes/pagination_named.html" with page_obj=documentos_fiscais_sincronizados %}
 </section>
 
 <section class="panel table-panel">
@@ -217,6 +224,8 @@
       </tbody>
     </table>
   </div>
+
+  {% include "includes/pagination_named.html" with page_obj=eventos %}
 </section>
 
 <section class="panel table-panel">
@@ -241,5 +250,7 @@
       </tbody>
     </table>
   </div>
+
+  {% include "includes/pagination_named.html" with page_obj=eventos_entrada %}
 </section>
 {% endblock %}

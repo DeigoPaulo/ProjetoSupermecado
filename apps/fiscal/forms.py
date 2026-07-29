@@ -1,9 +1,16 @@
 from django import forms
 
+from apps.clientes.escopo import empresa_id_do_usuario
+
 from .models import ConfiguracaoFiscal, NaturezaOperacao, SerieFiscal
 
 
 class ConfiguracaoFiscalForm(forms.ModelForm):
+    def __init__(self, *args, user=None, **kwargs):
+        super().__init__(*args, **kwargs)
+        empresa_id = empresa_id_do_usuario(user) if user else None
+        if empresa_id is not None:
+            self.fields["filial"].queryset = self.fields["filial"].queryset.filter(empresa_id=empresa_id)
     certificado_arquivo = forms.FileField(
         required=False,
         label="Certificado A1 (.pfx/.p12)",
@@ -25,8 +32,11 @@ class ConfiguracaoFiscalForm(forms.ModelForm):
             "inscricao_estadual",
             "csc_id",
             "csc_token",
+            "url_qrcode_nfce",
+            "url_consulta_nfce",
             "certificado_nome",
             "certificado_validade",
+            "permite_contingencia_offline",
             "certificado_arquivo",
             "certificado_senha",
             "ativo",
@@ -58,6 +68,11 @@ class ConfiguracaoFiscalForm(forms.ModelForm):
 
 
 class SerieFiscalForm(forms.ModelForm):
+    def __init__(self, *args, user=None, **kwargs):
+        super().__init__(*args, **kwargs)
+        empresa_id = empresa_id_do_usuario(user) if user else None
+        if empresa_id is not None:
+            self.fields["filial"].queryset = self.fields["filial"].queryset.filter(empresa_id=empresa_id)
     class Meta:
         model = SerieFiscal
         fields = ["filial", "tipo_documento", "serie", "proximo_numero", "ativo"]

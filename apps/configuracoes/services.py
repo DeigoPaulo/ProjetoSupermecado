@@ -45,9 +45,9 @@ def estilos_impressao(configuracao):
     }
 
 
-def criar_configuracoes_padrao():
+def criar_configuracoes_padrao(empresa=None):
     criadas = 0
-    empresa = Empresa.objects.filter(is_active=True).order_by("id").first()
+    empresa = empresa or Empresa.objects.filter(is_active=True).order_by("id").first()
     if not empresa:
         return criadas
     for tipo in [

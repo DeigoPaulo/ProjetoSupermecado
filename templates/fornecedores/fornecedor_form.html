@@ -18,6 +18,16 @@
       <p>Dados fiscais e comerciais para compras, recebimento e contato.</p>
     </div>
     <div class="form-grid">
+      {% if form.empresa.is_hidden %}
+        {{ form.empresa }}
+        {{ form.empresa.errors }}
+      {% else %}
+        <div class="field span-2">
+          {{ form.empresa.label_tag }}
+          {{ form.empresa }}
+          {{ form.empresa.errors }}
+        </div>
+      {% endif %}
       <div class="field">
         {{ form.razao_social.label_tag }}
         {{ form.razao_social }}

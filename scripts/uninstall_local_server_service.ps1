@@ -1,10 +1,10 @@
 param(
-    [string]$ServiceDirectory = "$env:ProgramData\MercaFlow\ServidorLocal",
+    [string]$ServiceDirectory = "$env:ProgramData\DeigoVarejo\ServidorLocal",
     [switch]$RemoveServiceFiles
 )
 
 $ErrorActionPreference = "Stop"
-$ServiceName = "MercaFlowServidorLocal"
+$ServiceName = "DeigoVarejoServidorLocal"
 $ServiceExe = Join-Path $ServiceDirectory "$ServiceName.exe"
 
 $identity = [Security.Principal.WindowsIdentity]::GetCurrent()

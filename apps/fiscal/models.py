@@ -18,6 +18,7 @@ class StatusDocumentoFiscal(models.TextChoices):
     PRONTO = "PRONTO", "Pronto para transmissao"
     EMITIDO = "EMITIDO", "Emitido"
     REJEITADO = "REJEITADO", "Rejeitado"
+    CONTINGENCIA = "CONTINGENCIA", "Contingencia offline"
     CANCELADO = "CANCELADO", "Cancelado"
     INUTILIZADO = "INUTILIZADO", "Inutilizado"
 
@@ -29,12 +30,29 @@ class ConfiguracaoFiscal(models.Model):
     inscricao_estadual = models.CharField(max_length=30, blank=True)
     csc_id = models.CharField("ID CSC", max_length=20, blank=True)
     csc_token = models.CharField("Token CSC", max_length=255, blank=True)
+    url_qrcode_nfce = models.URLField(
+        "URL do QR Code NFC-e",
+        max_length=500,
+        blank=True,
+        help_text="Endpoint oficial da SEFAZ para o QR Code, conforme a UF e o ambiente.",
+    )
+    url_consulta_nfce = models.URLField(
+        "URL de consulta NFC-e",
+        max_length=500,
+        blank=True,
+        help_text="Pagina oficial de consulta da chave de acesso na SEFAZ.",
+    )
     certificado_nome = models.CharField(max_length=255, blank=True)
     certificado_validade = models.DateField(null=True, blank=True)
     certificado_a1_criptografado = models.BinaryField(blank=True, null=True, editable=False)
     certificado_senha_criptografada = models.BinaryField(blank=True, null=True, editable=False)
     certificado_atualizado_em = models.DateTimeField(null=True, blank=True)
     ativo = models.BooleanField(default=True)
+    permite_contingencia_offline = models.BooleanField(
+        "Permite contingencia offline NFC-e",
+        default=False,
+        help_text="Habilite somente quando a UF e a situacao operacional permitirem a contingencia offline.",
+    )
     atualizado_em = models.DateTimeField(auto_now=True)
 
     class Meta:
@@ -111,8 +129,17 @@ class DocumentoFiscal(models.Model):
     valor_total = models.DecimalField(max_digits=12, decimal_places=2, default=0)
     xml_conteudo = models.TextField(blank=True)
     xml_gerado_em = models.DateTimeField(null=True, blank=True)
+    xml_assinado_em = models.DateTimeField(null=True, blank=True)
+    certificado_serial_assinatura = models.CharField(max_length=128, blank=True)
     mensagem_retorno = models.TextField(blank=True)
     motivo_cancelamento = models.CharField(max_length=255, blank=True)
+    contingencia_iniciada_em = models.DateTimeField(null=True, blank=True)
+    contingencia_justificativa = models.CharField(max_length=256, blank=True)
+    transmissao_limite_em = models.DateTimeField(null=True, blank=True)
+    tentativas_transmissao = models.PositiveIntegerField(default=0)
+    ultima_tentativa_em = models.DateTimeField(null=True, blank=True)
+    proxima_tentativa_em = models.DateTimeField(null=True, blank=True)
+    transmissao_reservada_em = models.DateTimeField(null=True, blank=True)
     usuario = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.PROTECT, related_name="documentos_fiscais")
     criado_em = models.DateTimeField(auto_now_add=True)
     atualizado_em = models.DateTimeField(auto_now=True)

@@ -13,6 +13,16 @@ document.addEventListener("DOMContentLoaded", function () {
     });
   }
 
+  var pdvLogoutForm = document.getElementById("pdv-logout-form");
+  var pdvExitButton = document.getElementById("pdv-exit-button");
+  if (pdvLogoutForm) {
+    pdvLogoutForm.addEventListener("submit", function (event) {
+      if (!window.confirm("Sair do PDV? O carrinho atual sera descartado.")) {
+        event.preventDefault();
+      }
+    });
+  }
+
   function aplicarMascaras() {
     if (typeof window.jQuery === "undefined" || !window.jQuery.fn.mask) {
       window.setTimeout(aplicarMascaras, 100);
@@ -98,19 +108,27 @@ document.addEventListener("DOMContentLoaded", function () {
     frame.src = url;
   }
 
-  function imprimirCupomVenda(url, desktopUrl) {
+  function imprimirCupomVenda(url, desktopUrl, opcoes) {
+    opcoes = opcoes || {};
     var desktopBridge = window.SupermercadoDesktop && window.SupermercadoDesktop.printSale;
     if (desktopBridge && desktopUrl && window.fetch) {
       window.fetch(desktopUrl, { credentials: "same-origin" })
         .then(function (response) { return response.json(); })
         .then(function (payload) {
           var impressao = payload && payload.impressao;
-          if (impressao && impressao.mensagem && !impressao.impressora_configurada) {
+          if (opcoes.somenteAutomatico && !(impressao && impressao.impressao_automatica)) return null;
+          if (impressao && impressao.mensagem && (!impressao.impressora_configurada || impressao.documento_pronto === false)) {
             window.alert(impressao.mensagem);
             imprimirCupomFallback(url);
             return null;
           }
-          return desktopBridge(payload);
+          return Promise.resolve(desktopBridge(payload)).then(function (resultado) {
+            if (resultado && resultado.status !== "ok") {
+              window.alert(resultado.mensagem || "A impressora nao confirmou a emissao do documento.");
+              imprimirCupomFallback(url);
+            }
+            return resultado;
+          });
         })
         .catch(function () { imprimirCupomFallback(url); });
       return;
@@ -627,6 +645,9 @@ document.addEventListener("DOMContentLoaded", function () {
     var finalizeButton = document.getElementById("pdv-finalize-button");
     var finishShortcut = document.getElementById("pdv-finish-shortcut");
     var paymentFeedback = document.getElementById("pdv-payment-feedback");
+    var documentTypeInput = document.getElementById("id_documento_consumidor_tipo");
+    var documentInput = document.getElementById("id_documento_consumidor");
+    var captureDocumentButton = document.getElementById("pdv-capture-document");
     var resumo = document.querySelector(".pdv-summary");
     var descontoDisplay = document.getElementById("pdv-desconto-display");
     var totalFinalDisplay = document.getElementById("pdv-total-final");
@@ -733,6 +754,40 @@ document.addEventListener("DOMContentLoaded", function () {
 
     function informarPagamentoFeedback(texto) {
       if (paymentFeedback) paymentFeedback.textContent = texto || "";
+    }
+
+    function atualizarCapacidadeDocumentoPinpad() {
+      var bridge = window.SupermercadoDesktop && window.SupermercadoDesktop.tefCapabilities;
+      if (!captureDocumentButton) return;
+      captureDocumentButton.hidden = true;
+      if (!bridge) return;
+      Promise.resolve(bridge()).then(function (resultado) {
+        captureDocumentButton.hidden = !(resultado && resultado.captura_documento_consumidor);
+      }).catch(function () { captureDocumentButton.hidden = true; });
+    }
+
+    function capturarDocumentoPinpad() {
+      var bridge = window.SupermercadoDesktop && window.SupermercadoDesktop.captureConsumerDocument;
+      if (!bridge || !captureDocumentButton || captureDocumentButton.hidden) {
+        informarPagamentoFeedback("Captura pelo pinpad indisponivel. Digite o documento manualmente.");
+        if (documentInput) documentInput.focus();
+        return;
+      }
+      captureDocumentButton.disabled = true;
+      informarPagamentoFeedback("Aguardando CPF/CNPJ no pinpad...");
+      Promise.resolve(bridge({ tipo: (documentTypeInput && documentTypeInput.value) || "AUTO" })).then(function (resultado) {
+        if (resultado && resultado.status === "ok") {
+          if (documentTypeInput) documentTypeInput.value = resultado.tipo;
+          if (documentInput) { documentInput.value = resultado.documento; documentInput.focus(); documentInput.select(); }
+          informarPagamentoFeedback("Documento recebido do pinpad.");
+          return;
+        }
+        informarPagamentoFeedback((resultado && resultado.mensagem) || (resultado && resultado.status === "cancelado" ? "Captura cancelada no pinpad." : "Falha no pinpad. Digite o documento manualmente."));
+        if (documentInput) documentInput.focus();
+      }).catch(function () {
+        informarPagamentoFeedback("Falha na comunicacao com o pinpad. Digite o documento manualmente.");
+        if (documentInput) documentInput.focus();
+      }).finally(function () { captureDocumentButton.disabled = false; });
     }
 
     function informarBalanca(texto, tipo) {
@@ -897,22 +952,23 @@ document.addEventListener("DOMContentLoaded", function () {
 
     function selecionarPagamentoEletronico(tipo) {
       if (!paymentRows) return;
-      var termosPorTipo = {
-        crédito: ["crédito", "cartao de crédito"],
-        débito: ["débito", "cartao de débito"],
-        pix: ["pix"],
-      };
-      var termos = termosPorTipo[tipo] || [];
+      var tipoTef = String(tipo || "").trim().toUpperCase();
+      var tiposAceitos = {
+        CREDITO: ["CREDITO", "CARTAO_CREDITO"],
+        DEBITO: ["DEBITO", "CARTAO_DEBITO"],
+        PIX: ["PIX"],
+        VALE_ALIMENTACAO: ["VALE_ALIMENTACAO"],
+        VALE_REFEICAO: ["VALE_REFEICAO"],
+      }[tipoTef] || [];
       var linha = prepararLinhaParaPagamento();
       var select = linha && linha.querySelector("select");
       var input = linha && linha.querySelector("input[name='pagamento_valor']");
       if (!select || !input) return;
       var opcao = Array.prototype.find.call(select.options, function (item) {
-        var nome = item.textContent.trim().toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
-        return termos.some(function (termo) { return nome.includes(termo); });
+        return tiposAceitos.indexOf(String(item.dataset.paymentType || "").toUpperCase()) !== -1;
       });
       if (!opcao) {
-        informarPagamentoFeedback("Forma eletrônica não cadastrada para " + tipo + ".");
+        informarPagamentoFeedback("Forma eletronica nao cadastrada para " + tipoTef.replaceAll("_", " ") + ".");
         select.focus();
         return;
       }
@@ -920,7 +976,7 @@ document.addEventListener("DOMContentLoaded", function () {
       input.value = valorRestantePagamento().toFixed(2);
       fecharEscolhaEletronica();
       atualizarResumoPdv();
-      processarPagamentoEletronico(linha, tipo);
+      processarPagamentoEletronico(linha, tipoTef);
     }
 
     function limparAutorizacaoPagamento(row, preservarRequisicao) {
@@ -1008,6 +1064,7 @@ document.addEventListener("DOMContentLoaded", function () {
     }
 
     function processarPagamentoEletronico(row, tipo) {
+      var tipoTef = String(tipo || "").trim().toUpperCase();
       var bridge = window.SupermercadoDesktop && window.SupermercadoDesktop.processPayment;
       var input = row && row.querySelector("input[name='pagamento_valor']");
       var select = row && row.querySelector("select");
@@ -1025,21 +1082,21 @@ document.addEventListener("DOMContentLoaded", function () {
         input.focus();
         return;
       }
-      var assinaturaRequisicao = tipo + "|" + valor;
+      var assinaturaRequisicao = tipoTef + "|" + valor;
       if (!row.dataset.tefRequestKey || row.dataset.tefRequestSignature !== assinaturaRequisicao) {
         row.dataset.tefRequestKey = window.crypto && window.crypto.randomUUID
           ? window.crypto.randomUUID()
           : "pdv-" + Date.now() + "-" + Math.random().toString(16).slice(2);
         row.dataset.tefRequestSignature = assinaturaRequisicao;
       }
-      informarPagamentoFeedback(tipo === "pix" ? "Gerando QR Code PIX..." : "Aguardando resposta da maquininha...");
+      informarPagamentoFeedback(tipoTef === "PIX" ? "Gerando QR Code PIX..." : "Aguardando resposta da maquininha...");
       Promise.resolve(bridge.call(window.SupermercadoDesktop, {
-        tipo: tipo,
+        tipo: tipoTef,
         valor: valor,
         idempotency_key: row.dataset.tefRequestKey,
       }))
         .then(function (resultado) {
-          if (tipo === "pix" && resultado && resultado.status === "pending") {
+          if (tipoTef === "PIX" && resultado && resultado.status === "pending") {
             informarPagamentoFeedback("QR Code PIX disponível. Aguardando pagamento do cliente...");
             return aguardarConfirmacaoPix(resultado, row.dataset.tefRequestKey);
           }
@@ -1051,7 +1108,7 @@ document.addEventListener("DOMContentLoaded", function () {
           }
           aplicarAutorizacaoPagamento(row, resultado);
           ocultarPixPanel();
-          informarPagamentoFeedback("Pagamento " + tipo.toUpperCase() + " aprovado. Aut. " + resultado.codigo_autorizacao + ".");
+          informarPagamentoFeedback("Pagamento " + tipoTef.replaceAll("_", " ") + " aprovado. Aut. " + resultado.codigo_autorizacao + ".");
           select.focus();
         })
         .catch(function (erro) {
@@ -1228,11 +1285,18 @@ document.addEventListener("DOMContentLoaded", function () {
       focarBuscaProduto();
     }
 
-    function imprimirUltimaVenda() {
+    function imprimirUltimaVenda(opcoes) {
       if (!postSaleModal) return;
       var url = postSaleModal.getAttribute("data-print-url");
       var desktopUrl = postSaleModal.getAttribute("data-desktop-print-url");
-      imprimirCupomVenda(url, desktopUrl);
+      imprimirCupomVenda(url, desktopUrl, opcoes);
+    }
+
+    function solicitarImpressaoAutomaticaPosVenda() {
+      if (!postSaleModal || postSaleModal.dataset.autoPrintRequested === "1") return;
+      if (!(window.SupermercadoDesktop && window.SupermercadoDesktop.printSale)) return;
+      postSaleModal.dataset.autoPrintRequested = "1";
+      imprimirUltimaVenda({ somenteAutomatico: true });
     }
 
     function adicionarLinhaPagamento(opcoes) {
@@ -1287,14 +1351,19 @@ document.addEventListener("DOMContentLoaded", function () {
     if (confirmPaymentButton) confirmPaymentButton.addEventListener("click", finalizarVendaPdv);
     if (finalizeButton) finalizeButton.addEventListener("click", abrirPagamentos);
     if (finishShortcut) finishShortcut.addEventListener("click", abrirPagamentos);
+    if (captureDocumentButton) captureDocumentButton.addEventListener("click", capturarDocumentoPinpad);
+    document.addEventListener("supermercado:desktop-ready", atualizarCapacidadeDocumentoPinpad);
+    atualizarCapacidadeDocumentoPinpad();
     if (addPaymentButton) {
       addPaymentButton.addEventListener("click", function () {
         adicionarLinhaPagamento({ somenteSeRestante: true });
       });
     }
     if (scaleButton) scaleButton.addEventListener("click", lerPesoBalancaPdv);
-    if (postSalePrintButton) postSalePrintButton.addEventListener("click", imprimirUltimaVenda);
+    if (postSalePrintButton) postSalePrintButton.addEventListener("click", function () { imprimirUltimaVenda(); });
     if (postSaleCloseButton) postSaleCloseButton.addEventListener("click", fecharPosVenda);
+    document.addEventListener("supermercado:desktop-ready", solicitarImpressaoAutomaticaPosVenda, { once: true });
+    solicitarImpressaoAutomaticaPosVenda();
     if (electronicChoice) {
       electronicChoice.addEventListener("click", function (event) {
         var button = event.target.closest("[data-pdv-electronic-payment]");
@@ -1440,9 +1509,19 @@ document.addEventListener("DOMContentLoaded", function () {
         return;
       }
       if (event.shiftKey && key.toLowerCase() === "m") {
-        event.preventDefault();
         var menuLink = document.getElementById("pdv-menu-link");
-        if (menuLink) window.location.href = menuLink.href;
+        if (menuLink) {
+          event.preventDefault();
+          window.location.href = menuLink.href;
+        }
+        return;
+      }
+      if (event.shiftKey && key.toLowerCase() === "s") {
+        var exitButton = document.getElementById("pdv-exit-button");
+        if (exitButton) {
+          event.preventDefault();
+          exitButton.click();
+        }
         return;
       }
       var activeModal = modalAberto();
@@ -1547,6 +1626,11 @@ document.addEventListener("DOMContentLoaded", function () {
         return;
       }
       if (paymentModal && paymentModal.classList.contains("is-open")) {
+        if (event.shiftKey && key === "F4") {
+          event.preventDefault();
+          capturarDocumentoPinpad();
+          return;
+        }
         if ((event.shiftKey && (key === "+" || key === "=")) || key === "Add") {
           event.preventDefault();
           adicionarLinhaPagamento({ somenteSeRestante: true });
@@ -1560,11 +1644,13 @@ document.addEventListener("DOMContentLoaded", function () {
             return;
           }
         }
-        if (electronicChoice && electronicChoice.classList.contains("is-open") && ["F1", "F2", "F3"].indexOf(key) !== -1) {
+        if (electronicChoice && electronicChoice.classList.contains("is-open") && ["F1", "F2", "F3", "F4", "F5"].indexOf(key) !== -1) {
           event.preventDefault();
-          if (key === "F1") selecionarPagamentoEletronico("crédito");
-          if (key === "F2") selecionarPagamentoEletronico("débito");
-          if (key === "F3") selecionarPagamentoEletronico("pix");
+          if (key === "F1") selecionarPagamentoEletronico("CREDITO");
+          if (key === "F2") selecionarPagamentoEletronico("DEBITO");
+          if (key === "F3") selecionarPagamentoEletronico("PIX");
+          if (key === "F4") selecionarPagamentoEletronico("VALE_ALIMENTACAO");
+          if (key === "F5") selecionarPagamentoEletronico("VALE_REFEICAO");
           return;
         }
         if (["F1", "F2", "F3", "F4"].indexOf(key) !== -1) {

@@ -6,12 +6,14 @@
 <header class="page-header">
   <div>
     <h1>Empresas e filiais</h1>
-    <p>Cadastro operacional usado por PDV, fiscal, financeiro e relatorios.</p>
+    <p>Cadastro operacional usado por PDV, fiscal, financeiro e relatórios. Novas matrizes e filiais são liberadas pelo super admin conforme o licenciamento contratado.</p>
   </div>
-  <div class="actions">
-    <a class="secondary-button" href="{% url 'empresas:filial_nova' %}"><i class="fa-solid fa-store"></i> Nova filial</a>
-    <a class="primary-button" href="{% url 'empresas:empresa_nova' %}"><i class="fa-solid fa-plus"></i> Nova empresa</a>
-  </div>
+  {% if request.user.is_superuser %}
+    <div class="actions">
+      <a class="secondary-button" href="{% url 'empresas:filial_nova' %}"><i class="fa-solid fa-store"></i> Nova filial</a>
+      <a class="primary-button" href="{% url 'empresas:empresa_nova' %}"><i class="fa-solid fa-plus"></i> Nova empresa</a>
+    </div>
+  {% endif %}
 </header>
 
 <section class="metrics-grid">

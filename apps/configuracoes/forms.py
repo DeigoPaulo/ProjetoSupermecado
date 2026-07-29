@@ -2,7 +2,7 @@ from django import forms
 
 from apps.core_forms import aplicar_select2
 from apps.pdv.models import TerminalPdv
-from apps.vendas.models import FormaPagamento
+from apps.vendas.models import FormaPagamento, FormaPagamentoFilial
 
 from .models import ConfiguracaoImpressao, ModeloEtiqueta, TipoDocumentoImpressao
 
@@ -45,7 +45,13 @@ class ConfiguracaoImpressaoForm(forms.ModelForm):
         }
 
     def __init__(self, *args, **kwargs):
+        empresas_queryset = kwargs.pop("empresas_queryset", None)
+        filiais_queryset = kwargs.pop("filiais_queryset", None)
         super().__init__(*args, **kwargs)
+        if empresas_queryset is not None:
+            self.fields["empresa"].queryset = empresas_queryset
+        if filiais_queryset is not None:
+            self.fields["filial"].queryset = filiais_queryset
         aplicar_select2(self, ["empresa", "filial"], ajax_urls={"filial": "/empresas/filiais/busca.json"})
         self.fields["impressora_padrao"].widget.attrs.update(
             {
@@ -116,10 +122,16 @@ class ModeloEtiquetaForm(forms.ModelForm):
         ]
 
     def __init__(self, *args, **kwargs):
+        configuracoes_queryset = kwargs.pop("configuracoes_queryset", None)
+        terminais_queryset = kwargs.pop("terminais_queryset", None)
         super().__init__(*args, **kwargs)
-        self.fields["configuracao"].queryset = ConfiguracaoImpressao.objects.filter(
-            tipo_documento=TipoDocumentoImpressao.ETIQUETA
+        self.fields["configuracao"].queryset = (
+            configuracoes_queryset
+            if configuracoes_queryset is not None
+            else ConfiguracaoImpressao.objects.filter(tipo_documento=TipoDocumentoImpressao.ETIQUETA)
         ).select_related("empresa", "filial")
+        if terminais_queryset is not None:
+            self.fields["terminal"].queryset = terminais_queryset
         aplicar_select2(self, ["configuracao", "terminal"])
 
     def clean(self):
@@ -150,6 +162,10 @@ class FormaPagamentoForm(forms.ModelForm):
         ("DINHEIRO", "Dinheiro"),
         ("PIX", "PIX"),
         ("CARTAO", "Cartao / TEF"),
+        ("CREDITO", "Cartão de crédito / TEF"),
+        ("DEBITO", "Cartão de débito / TEF"),
+        ("VALE_ALIMENTACAO", "Vale-alimentação / voucher"),
+        ("VALE_REFEICAO", "Vale-refeição / voucher"),
         ("CREDIARIO", "Crediario"),
         ("VALE", "Vale / convenio"),
         ("OUTRO", "Outro"),
@@ -170,6 +186,32 @@ class FormaPagamentoForm(forms.ModelForm):
             self.add_error("permite_troco", "Troco deve ser habilitado somente para pagamentos em dinheiro.")
         return cleaned
 
+
+class FormaPagamentoFilialForm(forms.ModelForm):
+    class Meta:
+        model = FormaPagamentoFilial
+        fields = ["filial", "conta_movimento_padrao", "ativo"]
+        labels = {
+            "filial": "Filial",
+            "conta_movimento_padrao": "Conta de movimento padrão",
+            "ativo": "Disponível no PDV desta filial",
+        }
+
+    def __init__(self, *args, filiais_queryset=None, contas_queryset=None, **kwargs):
+        super().__init__(*args, **kwargs)
+        if filiais_queryset is not None:
+            self.fields["filial"].queryset = filiais_queryset
+        if contas_queryset is not None:
+            self.fields["conta_movimento_padrao"].queryset = contas_queryset
+        aplicar_select2(self, ["filial", "conta_movimento_padrao"])
+
+    def clean(self):
+        cleaned = super().clean()
+        filial = cleaned.get("filial")
+        conta = cleaned.get("conta_movimento_padrao")
+        if filial and conta and conta.filial_id != filial.id:
+            self.add_error("conta_movimento_padrao", "A conta deve pertencer à filial selecionada.")
+        return cleaned
 
 class TerminalPdvForm(forms.ModelForm):
     class Meta:
@@ -200,7 +242,10 @@ class TerminalPdvForm(forms.ModelForm):
         }
 
     def __init__(self, *args, **kwargs):
+        filiais_queryset = kwargs.pop("filiais_queryset", None)
         super().__init__(*args, **kwargs)
+        if filiais_queryset is not None:
+            self.fields["filial"].queryset = filiais_queryset
         aplicar_select2(self, ["filial"], ajax_urls={"filial": "/empresas/filiais/busca.json"})
         self.fields["protocolo_balanca"].required = False
 

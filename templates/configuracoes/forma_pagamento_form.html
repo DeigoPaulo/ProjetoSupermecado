@@ -5,8 +5,13 @@
 {% block content %}
 <header class="page-header">
   <div>
-    <h1>{% if object %}Editar forma de pagamento{% else %}Nova forma de pagamento{% endif %}</h1>
-    <p>As formas ativas ficam disponiveis no popup de pagamento do PDV.</p>
+    {% if catalogo_global %}
+      <h1>{% if object %}Editar item do catálogo{% else %}Nova forma de pagamento{% endif %}</h1>
+      <p>O catálogo técnico é compartilhado; cada empresa decide em quais filiais a forma fica disponível.</p>
+    {% else %}
+      <h1>Configurar {{ forma_catalogo.nome }}</h1>
+      <p>Esta alteração vale somente para a filial selecionada da sua empresa.</p>
+    {% endif %}
   </div>
 </header>
 
@@ -14,15 +19,21 @@
   {% csrf_token %}
   {% if form.non_field_errors %}<div class="form-note form-note-danger">{{ form.non_field_errors }}</div>{% endif %}
   <section class="form-section form-field-wide">
-    <h2>Configuracao operacional</h2>
+    <h2>{% if catalogo_global %}Catálogo técnico{% else %}Configuração da filial{% endif %}</h2>
     <div class="form-grid form-grid-inner">
-      <label class="form-field"><span>{{ form.nome.label }}</span>{{ form.nome }}{{ form.nome.errors }}</label>
-      <label class="form-field"><span>{{ form.tipo.label }}</span>{{ form.tipo }}{{ form.tipo.errors }}</label>
-      <label class="form-field form-field-wide"><span>{{ form.conta_movimento_padrao.label }}</span>{{ form.conta_movimento_padrao }}{{ form.conta_movimento_padrao.errors }}<small>Se ficar vazio, o PDV cria/usa automaticamente Caixa PDV, PIX PDV, Banco/cartao PDV ou Outros recebimentos PDV conforme o tipo.</small></label>
-      <label class="toggle-field">{{ form.permite_troco }} <span>{{ form.permite_troco.label }}</span>{{ form.permite_troco.errors }}</label>
-      <label class="toggle-field">{{ form.exige_autorizacao }} <span>{{ form.exige_autorizacao.label }}</span>{{ form.exige_autorizacao.errors }}</label>
-      <label class="toggle-field">{{ form.ativo }} <span>{{ form.ativo.label }}</span>{{ form.ativo.errors }}</label>
-      <div class="form-note form-field-wide"><strong>Historico preservado.</strong><span>Para deixar de usar uma forma, desative-a. Vendas antigas continuarao vinculadas corretamente.</span></div>
+      {% if catalogo_global %}
+        <label class="form-field"><span>{{ form.nome.label }}</span>{{ form.nome }}{{ form.nome.errors }}</label>
+        <label class="form-field"><span>{{ form.tipo.label }}</span>{{ form.tipo }}{{ form.tipo.errors }}</label>
+        <label class="form-field form-field-wide"><span>{{ form.conta_movimento_padrao.label }}</span>{{ form.conta_movimento_padrao }}{{ form.conta_movimento_padrao.errors }}<small>Compatibilidade legada. Prefira a conta configurada por filial.</small></label>
+        <label class="toggle-field">{{ form.permite_troco }} <span>{{ form.permite_troco.label }}</span>{{ form.permite_troco.errors }}</label>
+        <label class="toggle-field">{{ form.exige_autorizacao }} <span>{{ form.exige_autorizacao.label }}</span>{{ form.exige_autorizacao.errors }}</label>
+        <label class="toggle-field">{{ form.ativo }} <span>{{ form.ativo.label }}</span>{{ form.ativo.errors }}</label>
+      {% else %}
+        <label class="form-field"><span>{{ form.filial.label }}</span>{{ form.filial }}{{ form.filial.errors }}</label>
+        <label class="form-field"><span>{{ form.conta_movimento_padrao.label }}</span>{{ form.conta_movimento_padrao }}{{ form.conta_movimento_padrao.errors }}<small>Se ficar vazia, o sistema usa ou cria automaticamente a conta apropriada nesta filial.</small></label>
+        <label class="toggle-field form-field-wide">{{ form.ativo }} <span>{{ form.ativo.label }}</span>{{ form.ativo.errors }}</label>
+      {% endif %}
+      <div class="form-note form-field-wide"><strong>Histórico preservado.</strong><span>Desativar impede novos pagamentos nesta filial sem alterar vendas antigas.</span></div>
     </div>
   </section>
   <div class="form-actions">

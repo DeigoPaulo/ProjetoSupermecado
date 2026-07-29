@@ -9,8 +9,8 @@
     <p>Faturamento, descontos, lucro estimado e produtos mais vendidos.</p>
   </div>
   <div class="actions">
-    <a class="secondary-button" href="{% url 'relatorios:vendas_csv' %}?data_inicio={{ data_inicio|date:'Y-m-d' }}&amp;data_fim={{ data_fim|date:'Y-m-d' }}"><i class="fa-solid fa-file-csv"></i> Excel/CSV</a>
-    <a class="secondary-button" href="{% url 'relatorios:vendas_imprimir' %}?data_inicio={{ data_inicio|date:'Y-m-d' }}&amp;data_fim={{ data_fim|date:'Y-m-d' }}" target="_blank"><i class="fa-solid fa-file-pdf"></i> PDF</a>
+    <a class="secondary-button" href="{% url 'relatorios:vendas_csv' %}?data_inicio={{ data_inicio|date:'Y-m-d' }}&amp;data_fim={{ data_fim|date:'Y-m-d' }}{% if filial_id %}&amp;filial={{ filial_id }}{% endif %}"><i class="fa-solid fa-file-csv"></i> Excel/CSV</a>
+    <a class="secondary-button" href="{% url 'relatorios:vendas_imprimir' %}?data_inicio={{ data_inicio|date:'Y-m-d' }}&amp;data_fim={{ data_fim|date:'Y-m-d' }}{% if filial_id %}&amp;filial={{ filial_id }}{% endif %}" target="_blank"><i class="fa-solid fa-file-pdf"></i> PDF</a>
     <a class="secondary-button" href="{% url 'relatorios:curva_abc' %}">Curva ABC</a>
     <a class="secondary-button" href="{% url 'relatorios:estoque_baixo' %}">Estoque baixo</a>
     <a class="secondary-button" href="{% url 'relatorios:devolucoes' %}">Devolucoes</a>
@@ -19,7 +19,19 @@
   </div>
 </header>
 
-{% include "relatorios/includes/periodo_form.html" %}
+<form method="get" class="filter-bar">
+  <label>Início<input type="date" name="data_inicio" value="{{ data_inicio|date:'Y-m-d' }}"></label>
+  <label>Fim<input type="date" name="data_fim" value="{{ data_fim|date:'Y-m-d' }}"></label>
+  <label>Filial
+    <select name="filial">
+      {% if permite_consolidado %}<option value="">Todas as filiais</option>{% endif %}
+      {% for filial in filiais %}
+        <option value="{{ filial.pk }}" {% if filial_id == filial.pk|stringformat:"s" %}selected{% endif %}>{{ filial }}</option>
+      {% endfor %}
+    </select>
+  </label>
+  <button type="submit" class="primary-button">Filtrar</button>
+</form>
 
 <section class="metrics-grid">
   <article class="metric"><span>Vendas</span><strong>{{ total_vendas }}</strong></article>
@@ -69,4 +81,5 @@
     </table>
   </div>
 </section>
+{% include "includes/pagination.html" with page_obj=vendas %}
 {% endblock %}

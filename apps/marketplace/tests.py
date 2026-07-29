@@ -6,6 +6,7 @@ from django.contrib.auth import get_user_model
 from django.core.exceptions import ValidationError
 from django.test import TestCase, override_settings
 
+from apps.accounts.models import PerfilUsuario, TipoPerfil
 from apps.auditoria.models import LogAuditoria
 from apps.empresas.models import Empresa, Filial
 from apps.estoque.models import Estoque
@@ -28,6 +29,26 @@ class FakeHTTPResponse:
 
     def close(self):
         pass
+
+
+class FakeMarketplaceAdapter:
+    nome = "Parceiro de teste"
+
+    def normalizar_pedido(self, *, payload, integracao):
+        pedido = payload["order"]
+        return {
+            "referencia_externa": pedido["id"],
+            "nome_cliente": pedido["customer"],
+            "tipo_entrega": "RETIRADA",
+            "itens": [
+                {
+                    "codigo_barras": item["ean"],
+                    "quantidade": item["qty"],
+                    "preco_unitario": item["price"],
+                }
+                for item in pedido["items"]
+            ],
+        }
 
 
 class FluxoPedidoOnlineTests(TestCase):
@@ -109,6 +130,7 @@ class FluxoPedidoOnlineTests(TestCase):
         self.assertEqual(integracao_form.status_code, 200)
         self.assertContains(integracao_form, "Plataforma")
         self.assertContains(integracao_form, "site proprio")
+        self.assertContains(integracao_form, "provedor")
 
     def test_detalhe_bloqueia_separacao_quando_entrega_nao_foi_calculada(self):
         PoliticaEntrega.objects.create(filial=self.filial, raio_maximo_km=Decimal("10"), valor_minimo_pedido=Decimal("0"))
@@ -213,6 +235,76 @@ class FluxoPedidoOnlineTests(TestCase):
         self.assertTrue(repetida.json()["duplicado"])
         self.assertEqual(PedidoOnline.objects.filter(integracao=integracao, referencia_externa="EXT-100").count(), 1)
 
+    @override_settings(
+        MARKETPLACE_PARTNER_ADAPTERS={"IFOOD": "apps.marketplace.tests.FakeMarketplaceAdapter"}
+    )
+    def test_api_adapter_especifico_normaliza_payload_e_preserva_idempotencia(self):
+        integracao = IntegracaoMarketplace.objects.create(
+            nome="iFood",
+            provedor="IFOOD",
+            filial=self.filial,
+            usuario=self.usuario,
+            token_prefixo="temporario",
+            token_hash="temporario",
+        )
+        token = gerar_token_integracao(integracao)
+        payload = {
+            "order": {
+                "id": "IFOOD-101",
+                "customer": "Cliente Adaptado",
+                "items": [{"ean": self.produto.codigo_barras, "qty": "2", "price": "14.50"}],
+            }
+        }
+
+        primeira = self.client.post(
+            "/pedidos-online/api/pedidos/",
+            data=json.dumps(payload),
+            content_type="application/json",
+            HTTP_X_INTEGRATION_KEY=token,
+        )
+        repetida = self.client.post(
+            "/pedidos-online/api/pedidos/",
+            data=json.dumps(payload),
+            content_type="application/json",
+            HTTP_X_INTEGRATION_KEY=token,
+        )
+
+        self.assertEqual(primeira.status_code, 201)
+        self.assertEqual(repetida.status_code, 200)
+        self.assertTrue(repetida.json()["duplicado"])
+        pedido = PedidoOnline.objects.get(integracao=integracao, referencia_externa="IFOOD-101")
+        self.assertEqual(pedido.nome_cliente, "Cliente Adaptado")
+        self.assertEqual(pedido.total, Decimal("29.00"))
+        self.assertEqual(integracao.pedidos.count(), 1)
+
+    def test_api_bloqueia_provedor_sem_adaptador_antes_de_criar_pedido(self):
+        integracao = IntegracaoMarketplace.objects.create(
+            nome="iFood sem driver",
+            provedor="IFOOD",
+            filial=self.filial,
+            usuario=self.usuario,
+            token_prefixo="temporario",
+            token_hash="temporario",
+        )
+        token = gerar_token_integracao(integracao)
+
+        resposta = self.client.post(
+            "/pedidos-online/api/pedidos/",
+            data=json.dumps({"order": {"id": "SEM-DRIVER"}}),
+            content_type="application/json",
+            HTTP_X_INTEGRATION_KEY=token,
+        )
+
+        self.assertEqual(resposta.status_code, 503)
+        self.assertEqual(resposta.json()["contrato"], "marketplace_partner_adapter_v1")
+        self.assertIn("Nenhum adaptador", resposta.json()["erro"])
+        self.assertFalse(PedidoOnline.objects.filter(integracao=integracao).exists())
+
+        status = self.client.get("/pedidos-online/api/status/", HTTP_X_INTEGRATION_KEY=token).json()
+        self.assertEqual(status["prontidao"]["status"], "Bloqueada")
+        self.assertEqual(status["prontidao"]["adaptador"]["contrato"], "marketplace_partner_adapter_v1")
+        self.assertFalse(status["prontidao"]["adaptador"]["carregavel"])
+
     def test_prepara_nfe_modelo_55_para_pedido_online(self):
         self.filial.uf = "SP"
         self.filial.codigo_municipio_ibge = "3550308"
@@ -277,6 +369,9 @@ class FluxoPedidoOnlineTests(TestCase):
         self.assertEqual(dados["resumo"]["pedidos_abertos"], 1)
         self.assertEqual(dados["integracoes"][0]["token_prefixo"], integracao.token_prefixo)
         self.assertEqual(dados["integracoes"][0]["prontidao"]["contrato"], "marketplace_partner_readiness_v1")
+        self.assertEqual(dados["integracoes"][0]["prontidao"]["adaptador"]["contrato"], "marketplace_partner_adapter_v1")
+        self.assertTrue(dados["integracoes"][0]["prontidao"]["adaptador"]["carregavel"])
+        self.assertEqual(dados["integracoes"][0]["provedor"], "PADRAO")
         self.assertIn("politica_entrega", dados["integracoes"][0])
         self.assertEqual(dados["resumo"]["com_bloqueio"], 0)
         self.assertNotIn(token, json.dumps(dados))
@@ -403,3 +498,172 @@ class FluxoPedidoOnlineTests(TestCase):
 
         self.assertEqual(resposta.status_code, 200)
         self.assertContains(resposta, "Bairro fora da area atendida")
+
+
+class MarketplaceIsolamentoEmpresaTests(TestCase):
+    def setUp(self):
+        User = get_user_model()
+        self.empresa_a = Empresa.objects.create(
+            razao_social="Marketplace A Ltda", nome_fantasia="Marketplace A", cnpj="51.111.111/0001-11"
+        )
+        self.empresa_b = Empresa.objects.create(
+            razao_social="Marketplace B Ltda", nome_fantasia="Marketplace B", cnpj="52.222.222/0001-22"
+        )
+        self.filial_a = Filial.objects.create(empresa=self.empresa_a, nome="Matriz Marketplace A")
+        self.filial_b = Filial.objects.create(empresa=self.empresa_b, nome="Matriz Marketplace B")
+        self.usuario_a = User.objects.create_user("marketplace_admin_a", password="123")
+        self.super_admin = User.objects.create_superuser("marketplace_global", "marketglobal@example.com", "123")
+        PerfilUsuario.objects.create(usuario=self.usuario_a, filial=self.filial_a, tipo=TipoPerfil.ADMINISTRADOR)
+        self.categoria = Categoria.objects.create(nome="Categoria Marketplace Isolado")
+        self.produto = Produto.objects.create(
+            codigo_barras="7895151515151",
+            nome="Produto Marketplace Isolado",
+            categoria=self.categoria,
+            preco_custo=Decimal("5.00"),
+            preco_venda=Decimal("10.00"),
+            vendido_no_marketplace=True,
+        )
+        self.pedido_a = PedidoOnline.objects.create(
+            filial=self.filial_a, nome_cliente="Cliente Marketplace A", usuario=self.usuario_a
+        )
+        self.pedido_b = PedidoOnline.objects.create(
+            filial=self.filial_b, nome_cliente="Cliente Marketplace B", usuario=self.super_admin
+        )
+        self.item_b = ItemPedidoOnline.objects.create(
+            pedido=self.pedido_b, produto=self.produto, quantidade=Decimal("1"), preco_unitario=Decimal("10")
+        )
+        self.integracao_a = IntegracaoMarketplace.objects.create(
+            nome="Integracao Marketplace A",
+            filial=self.filial_a,
+            usuario=self.usuario_a,
+            token_prefixo="temporario-a",
+            token_hash="temporario-a",
+        )
+        self.integracao_b = IntegracaoMarketplace.objects.create(
+            nome="Integracao Marketplace B",
+            filial=self.filial_b,
+            usuario=self.super_admin,
+            token_prefixo="temporario-b",
+            token_hash="temporario-b",
+        )
+        self.token_b = gerar_token_integracao(self.integracao_b)
+        self.politica_a = PoliticaEntrega.objects.create(
+            filial=self.filial_a, raio_maximo_km=Decimal("8"), valor_minimo_pedido=Decimal("20")
+        )
+        self.politica_b = PoliticaEntrega.objects.create(
+            filial=self.filial_b, raio_maximo_km=Decimal("9"), valor_minimo_pedido=Decimal("25")
+        )
+        self.client.force_login(self.usuario_a)
+
+    def test_pedidos_e_urls_operacionais_respeitam_empresa(self):
+        lista = self.client.get("/pedidos-online/")
+        self.assertContains(lista, "Cliente Marketplace A")
+        self.assertNotContains(lista, "Cliente Marketplace B")
+
+        requisicoes = [
+            ("get", f"/pedidos-online/{self.pedido_b.pk}/", {}),
+            ("get", f"/pedidos-online/{self.pedido_b.pk}/separacao/imprimir/", {}),
+            ("post", f"/pedidos-online/{self.pedido_b.pk}/acao/", {"acao": "cancelar"}),
+            (
+                "post",
+                f"/pedidos-online/{self.pedido_b.pk}/itens/{self.item_b.pk}/remover/",
+                {},
+            ),
+        ]
+        for metodo, url, dados in requisicoes:
+            with self.subTest(url=url):
+                response = getattr(self.client, metodo)(url, dados)
+                self.assertEqual(response.status_code, 404)
+
+        self.pedido_b.refresh_from_db()
+        self.assertNotEqual(self.pedido_b.status, StatusPedido.CANCELADO)
+        self.assertTrue(ItemPedidoOnline.objects.filter(pk=self.item_b.pk).exists())
+
+    def test_integracoes_e_diagnostico_respeitam_empresa(self):
+        pagina = self.client.get("/pedidos-online/integracoes/")
+        diagnostico = self.client.get("/pedidos-online/integracoes/diagnostico.json")
+        renovacao = self.client.post(f"/pedidos-online/integracoes/{self.integracao_b.pk}/renovar/")
+
+        self.assertContains(pagina, self.integracao_a.nome)
+        self.assertNotContains(pagina, self.integracao_b.nome)
+        self.assertEqual([item["id"] for item in diagnostico.json()["integracoes"]], [self.integracao_a.pk])
+        self.assertEqual(renovacao.status_code, 404)
+
+    def test_formulario_de_integracao_rejeita_filial_de_outra_empresa(self):
+        response = self.client.post(
+            "/pedidos-online/integracoes/nova/",
+            {"nome": "Integracao forjada", "filial": self.filial_b.pk, "is_active": "on"},
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertFalse(IntegracaoMarketplace.objects.filter(nome="Integracao forjada").exists())
+
+    def test_politicas_diagnostico_simulacao_e_edicao_respeitam_empresa(self):
+        pagina = self.client.get("/pedidos-online/politicas-entrega/")
+        diagnostico = self.client.get("/pedidos-online/politicas-entrega/diagnostico.json")
+        edicao = self.client.get(f"/pedidos-online/politicas-entrega/{self.politica_b.pk}/editar/")
+        simulacao = self.client.get(
+            "/pedidos-online/politicas-entrega/",
+            {"simular": "1", "politica": self.politica_b.pk, "subtotal": "30", "distancia": "3"},
+        )
+
+        self.assertContains(pagina, str(self.filial_a))
+        self.assertNotContains(pagina, str(self.filial_b))
+        self.assertEqual([item["id"] for item in diagnostico.json()["politicas"]], [self.politica_a.pk])
+        self.assertEqual(edicao.status_code, 404)
+        self.assertContains(simulacao, "Politica ativa nao encontrada")
+
+    def test_formulario_de_politica_rejeita_filial_de_outra_empresa(self):
+        response = self.client.post(
+            "/pedidos-online/politicas-entrega/nova/",
+            {
+                "filial": self.filial_b.pk,
+                "raio_maximo_km": "10",
+                "valor_minimo_pedido": "20",
+                "frete_gratis_acima": "",
+                "bairros_atendidos": "",
+                "bairros_bloqueados": "",
+                "horarios_entrega": "",
+                "permite_retirada": "on",
+                "is_active": "on",
+                "faixas-TOTAL_FORMS": "0",
+                "faixas-INITIAL_FORMS": "0",
+                "faixas-MIN_NUM_FORMS": "0",
+                "faixas-MAX_NUM_FORMS": "1000",
+            },
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(PoliticaEntrega.objects.filter(filial=self.filial_b).count(), 1)
+
+    def test_modelo_rejeita_integracao_de_outra_filial(self):
+        pedido = PedidoOnline(
+            integracao=self.integracao_b,
+            filial=self.filial_a,
+            nome_cliente="Pedido forjado",
+            usuario=self.usuario_a,
+        )
+
+        with self.assertRaises(ValidationError):
+            pedido.full_clean()
+
+    def test_api_do_parceiro_usa_token_como_fronteira_e_ignora_sessao(self):
+        response = self.client.get(
+            "/pedidos-online/api/status/",
+            HTTP_X_INTEGRATION_KEY=self.token_b,
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()["filial"]["id"], self.filial_b.pk)
+        self.assertEqual(response.json()["integracao"]["id"], self.integracao_b.pk)
+
+    def test_super_admin_mantem_visao_global(self):
+        self.client.force_login(self.super_admin)
+
+        pedidos_response = self.client.get("/pedidos-online/")
+        integracoes_response = self.client.get("/pedidos-online/integracoes/")
+
+        self.assertContains(pedidos_response, "Cliente Marketplace A")
+        self.assertContains(pedidos_response, "Cliente Marketplace B")
+        self.assertContains(integracoes_response, self.integracao_a.nome)
+        self.assertContains(integracoes_response, self.integracao_b.nome)

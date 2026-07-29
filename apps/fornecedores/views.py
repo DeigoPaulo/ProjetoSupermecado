@@ -7,7 +7,9 @@ from django.views.decorators.http import require_GET
 from django.views.generic import CreateView, ListView, UpdateView
 
 from apps.accounts.permissions import COMPRAS, RoleRequiredMixin, role_required
+from apps.clientes.escopo import empresa_id_do_usuario
 
+from .escopo import fornecedores_para_usuario
 from .forms import FornecedorForm
 from .models import Fornecedor
 
@@ -20,14 +22,34 @@ class FornecedorListView(LoginRequiredMixin, RoleRequiredMixin, ListView):
     paginate_by = 30
 
     def get_queryset(self):
-        queryset = Fornecedor.objects.order_by("razao_social")
-        termo = self.request.GET.get("q")
+        queryset = fornecedores_para_usuario(
+            self.request.user,
+            Fornecedor.objects.select_related("empresa"),
+        ).order_by("razao_social")
+        termo = (self.request.GET.get("q") or "").strip()
         if termo:
-            queryset = queryset.filter(razao_social__icontains=termo) | queryset.filter(nome_fantasia__icontains=termo) | queryset.filter(cnpj__icontains=termo)
+            queryset = queryset.filter(
+                Q(razao_social__icontains=termo)
+                | Q(nome_fantasia__icontains=termo)
+                | Q(cnpj__icontains=termo)
+            )
         return queryset
 
 
-class FornecedorCreateView(LoginRequiredMixin, RoleRequiredMixin, CreateView):
+class FornecedorFormMixin:
+    def get_form_kwargs(self):
+        kwargs = super().get_form_kwargs()
+        kwargs["user"] = self.request.user
+        return kwargs
+
+    def form_valid(self, form):
+        empresa_id = empresa_id_do_usuario(self.request.user)
+        if empresa_id is not None:
+            form.instance.empresa_id = empresa_id
+        return super().form_valid(form)
+
+
+class FornecedorCreateView(FornecedorFormMixin, LoginRequiredMixin, RoleRequiredMixin, CreateView):
     required_roles = COMPRAS
     model = Fornecedor
     form_class = FornecedorForm
@@ -39,12 +61,15 @@ class FornecedorCreateView(LoginRequiredMixin, RoleRequiredMixin, CreateView):
         return super().form_valid(form)
 
 
-class FornecedorUpdateView(LoginRequiredMixin, RoleRequiredMixin, UpdateView):
+class FornecedorUpdateView(FornecedorFormMixin, LoginRequiredMixin, RoleRequiredMixin, UpdateView):
     required_roles = COMPRAS
     model = Fornecedor
     form_class = FornecedorForm
     template_name = "fornecedores/fornecedor_form.html"
     success_url = reverse_lazy("fornecedores:lista")
+
+    def get_queryset(self):
+        return fornecedores_para_usuario(self.request.user, Fornecedor.objects.all())
 
     def form_valid(self, form):
         messages.success(self.request, "Fornecedor atualizado com sucesso.")
@@ -57,10 +82,14 @@ def fornecedores_busca(request):
     termo = (request.GET.get("q") or request.GET.get("term") or "").strip()
     if not termo:
         return JsonResponse({"results": []})
-    fornecedores = (
-        Fornecedor.objects.filter(Q(razao_social__icontains=termo) | Q(nome_fantasia__icontains=termo) | Q(cnpj__icontains=termo))
-        .order_by("razao_social")[:20]
-    )
+    fornecedores = fornecedores_para_usuario(
+        request.user,
+        Fornecedor.objects.filter(
+            Q(razao_social__icontains=termo)
+            | Q(nome_fantasia__icontains=termo)
+            | Q(cnpj__icontains=termo)
+        ),
+    ).order_by("razao_social")[:20]
     return JsonResponse(
         {
             "results": [
@@ -75,5 +104,3 @@ def fornecedores_busca(request):
             ]
         }
     )
-
-# Create your views here.

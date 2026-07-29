@@ -29,6 +29,7 @@
   <label class="form-field"><span>Buscar</span><input type="search" name="q" value="{{ q }}" placeholder="Descrição, origem ou referência"></label>
   <label class="form-field"><span>Início</span><input type="date" name="data_inicio" value="{{ data_inicio|date:'Y-m-d' }}"></label>
   <label class="form-field"><span>Fim</span><input type="date" name="data_fim" value="{{ data_fim|date:'Y-m-d' }}"></label>
+  <label class="form-field"><span>Filial</span><select name="filial">{% if permite_consolidado %}<option value="">Todas as filiais da empresa</option>{% endif %}{% for item in filiais_opcoes %}<option value="{{ item.pk }}" {% if filial_id == item.pk|stringformat:"s" %}selected{% endif %}>{{ item }}</option>{% endfor %}</select></label>
   <label class="form-field"><span>Conta</span><select name="conta"><option value="">Todas</option>{% for item in contas_opcoes %}<option value="{{ item.pk }}" {% if conta == item.pk|stringformat:"s" %}selected{% endif %}>{{ item }}</option>{% endfor %}</select></label>
   <label class="form-field"><span>Status</span><select name="status"><option value="">Todos</option><option value="pendente" {% if status == 'pendente' %}selected{% endif %}>Pendentes</option><option value="conciliado" {% if status == 'conciliado' %}selected{% endif %}>Conciliados</option></select></label>
   <div class="form-actions"><button class="primary-button" type="submit"><i class="fa-solid fa-filter"></i> Filtrar</button><a class="secondary-button" href="{% url 'financeiro:conciliacao_bancaria' %}">Limpar</a></div>

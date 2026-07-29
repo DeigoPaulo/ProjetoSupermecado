@@ -14,11 +14,11 @@
   <article class="metric"><span>Empresas</span><strong>{{ total_empresas }}</strong></article>
   <article class="metric"><span>Filiais</span><strong>{{ total_filiais }}</strong></article>
   <article class="metric"><span>Usuarios ativos</span><strong>{{ usuarios_ativos }}</strong></article>
-  <article class="metric"><span>Checklist</span><strong>{{ resumo_checklist.percentual }}%</strong></article>
+  {% if is_admin_master %}<article class="metric"><span>Checklist</span><strong>{{ resumo_checklist.percentual }}%</strong></article>{% endif %}
   <article class="metric"><span>Filiais sem IBGE</span><strong>{{ filiais_sem_ibge }}</strong></article>
   <article class="metric"><span>Impressoras pendentes</span><strong>{{ impressoes_sem_impressora }}</strong></article>
   <article class="metric"><span>Fiscal pendente</span><strong>{{ certificados_vencidos }}</strong></article>
-  <article class="metric"><span>Registros backup</span><strong>{{ total_registros }}</strong></article>
+  {% if is_admin_master %}<article class="metric"><span>Registros backup</span><strong>{{ total_registros }}</strong></article>{% endif %}
 </section>
 
 <section class="system-shortcuts">
