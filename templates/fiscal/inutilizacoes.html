@@ -1,0 +1,109 @@
+{% extends "base.html" %}
+
+{% block title %}Inutilização fiscal{% endblock %}
+
+{% block content %}
+<header class="page-header">
+  <div>
+    <h1>Inutilização de numeração</h1>
+    <p>Comunique à SEFAZ uma quebra real da sequência de NF-e ou NFC-e.</p>
+  </div>
+  <div class="actions">
+    <a class="secondary-button" href="{% url 'fiscal:documentos' %}"><i class="fa-solid fa-arrow-left"></i> Central fiscal</a>
+  </div>
+</header>
+
+<section class="operation-notice operation-notice-warning">
+  <i class="fa-solid fa-triangle-exclamation"></i>
+  <div>
+    <strong>Use somente para números que nunca foram utilizados.</strong>
+    <span>Notas autorizadas, canceladas, denegadas ou emitidas em contingência não podem integrar a faixa. A comunicação deve ser feita até o décimo dia do mês seguinte à quebra.</span>
+  </div>
+</section>
+
+<section class="split-grid">
+  <article class="panel">
+    <div class="panel-heading">
+      <div>
+        <h2>Solicitar inutilização</h2>
+        <p>Em homologação sem adaptador, o protocolo gerado é explicitamente simulado.</p>
+      </div>
+    </div>
+    <form method="post" class="form-grid">
+      {% csrf_token %}
+      {% if form.non_field_errors %}<div class="form-note form-note-danger form-field-wide">{{ form.non_field_errors }}</div>{% endif %}
+      {% for field in form %}
+        <label class="form-field {% if field.name == 'justificativa' %}form-field-wide{% endif %}">
+          <span>{{ field.label }}</span>
+          {{ field }}
+          {{ field.errors }}
+          {% if field.help_text %}<small>{{ field.help_text }}</small>{% endif %}
+        </label>
+      {% endfor %}
+      <div class="form-actions form-field-wide">
+        <button class="primary-button form-confirm" type="submit" data-msg="Confirma que nenhum número desta faixa foi utilizado?">
+          <i class="fa-solid fa-paper-plane"></i> Solicitar à SEFAZ
+        </button>
+      </div>
+    </form>
+  </article>
+
+  <article class="panel">
+    <h2>Prontidão do adaptador</h2>
+    <dl class="detail-list">
+      <div><dt>Configurado</dt><dd>{% if diagnostico_adapter.configurado %}Sim{% else %}Não{% endif %}</dd></div>
+      <div><dt>Carregável</dt><dd>{% if diagnostico_adapter.carregavel %}Sim{% else %}Não{% endif %}</dd></div>
+      <div><dt>Inutilização real</dt><dd>{% if diagnostico_adapter.inutiliza_numeracao %}Disponível{% else %}Não implementada{% endif %}</dd></div>
+    </dl>
+    <div class="form-note">
+      <strong>Ambiente de produção</strong>
+      <span>Sem o método <code>inutilizar</code> no adaptador, a solicitação falha fechada e nenhum protocolo é inventado.</span>
+    </div>
+  </article>
+</section>
+
+<form method="get" class="toolbar report-filter">
+  <label>
+    <span>Status</span>
+    <select name="status">
+      <option value="">Todos</option>
+      {% for valor, rotulo in status_choices %}<option value="{{ valor }}" {% if valor == status %}selected{% endif %}>{{ rotulo }}</option>{% endfor %}
+    </select>
+  </label>
+  <button type="submit">Filtrar</button>
+</form>
+
+<section class="panel">
+  <h2>Solicitações registradas</h2>
+  <div class="table-wrapper">
+    <table>
+      <thead>
+        <tr><th>Data</th><th>Filial</th><th>Documento</th><th>Ano</th><th>Série/faixa</th><th>Status</th><th>Protocolo</th><th>Retorno</th></tr>
+      </thead>
+      <tbody>
+        {% for item in inutilizacoes %}
+          <tr>
+            <td>{{ item.criado_em|date:"d/m/Y H:i" }}</td>
+            <td>{{ item.filial }}</td>
+            <td>{{ item.get_tipo_documento_display }}<br><small>{{ item.get_ambiente_display }}</small></td>
+            <td>{{ item.ano }}</td>
+            <td><strong>{{ item.serie }}/{{ item.numero_inicial }}–{{ item.numero_final }}</strong></td>
+            <td><span class="status {% if item.status == 'AUTORIZADA' %}status-success{% elif item.status == 'REJEITADA' %}status-danger{% else %}status-warning{% endif %}">{{ item.get_status_display }}</span></td>
+            <td>{{ item.protocolo|default:"-" }}</td>
+            <td>{{ item.mensagem_retorno|default:"-" }}</td>
+          </tr>
+        {% empty %}
+          <tr><td colspan="8" class="empty">Nenhuma inutilização registrada.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% if page_obj.paginator.num_pages > 1 %}
+    <nav class="pagination" aria-label="Paginação">
+      {% if page_obj.has_previous %}<a class="secondary-button" href="?status={{ status }}&page={{ page_obj.previous_page_number }}">Anterior</a>{% endif %}
+      <span>Página {{ page_obj.number }} de {{ page_obj.paginator.num_pages }}</span>
+      {% if page_obj.has_next %}<a class="secondary-button" href="?status={{ status }}&page={{ page_obj.next_page_number }}">Próxima</a>{% endif %}
+    </nav>
+  {% endif %}
+</section>
+{% endblock %}

@@ -2,7 +2,7 @@
 <html lang="pt-br">
 <head>
   <meta charset="utf-8">
-  <title>Separacao do pedido {{ pedido.pk }}</title>
+  <title>Separação do pedido {{ pedido.pk }}</title>
   <style>
     @page { size: {{ estilos_impressao.page_size }}; margin: {{ estilos_impressao.margem_css }}; }
     * { box-sizing: border-box; }
@@ -26,19 +26,24 @@
   </style>
 </head>
 <body>
-  <div class="toolbar"><button type="button" onclick="window.print()">Imprimir / Salvar PDF</button></div>
+  <div class="toolbar"><button type="button" onclick="window.print()">Imprimir comanda</button></div>
   <main class="sheet">
     <header class="header">
       {% if impressao.exibir_logo and pedido.filial.empresa.logo %}<img class="logo" src="{{ pedido.filial.empresa.logo.url }}" alt="Logo">{% endif %}
-      <div><h1>Pedido de separacao #{{ pedido.pk }}</h1><p>{{ pedido.filial }}</p><p>{{ pedido.criado_em|date:"d/m/Y H:i" }}</p></div>
+      <div><h1>Comanda de entrega #{{ pedido.pk }}</h1><p>{{ pedido.filial }}</p><p>{{ pedido.criado_em|date:"d/m/Y H:i" }}</p></div>
     </header>
     <div class="meta">
       <p><strong>Cliente:</strong> {{ pedido.nome_cliente }}</p>
       <p><strong>Telefone:</strong> {{ pedido.telefone|default:"-" }}</p>
       <p><strong>Canal:</strong> {{ pedido.get_canal_display }}</p>
       <p><strong>Modalidade:</strong> {{ pedido.get_tipo_entrega_display }}</p>
+      <p><strong>Status:</strong> {{ pedido.get_status_display }}</p>
+      <p><strong>Pagamento:</strong> {{ pedido.get_status_pagamento_display }}{% if pedido.forma_pagamento %} - {{ pedido.get_forma_pagamento_display }}{% endif %}</p>
+      <p><strong>Total:</strong> R$ {{ pedido.total|floatformat:2 }}</p>
+      {% if pedido.referencia_pagamento %}<p><strong>Refer?ncia:</strong> {{ pedido.referencia_pagamento }}</p>{% endif %}
     </div>
-    {% if pedido.endereco_entrega %}<p><strong>Endereco:</strong> {{ pedido.endereco_entrega }}</p>{% endif %}
+    {% if pedido.endereco_entrega %}<p><strong>Endereço:</strong> {{ pedido.endereco_entrega }}</p>{% endif %}
+    {% if pedido.bairro_entrega %}<p><strong>Bairro:</strong> {{ pedido.bairro_entrega }}</p>{% endif %}
     <h2>Produtos</h2>
     <table>
       <thead><tr><th></th><th>Produto</th><th class="qty">Quantidade</th></tr></thead>
@@ -47,6 +52,6 @@
     {% if pedido.observacoes %}<h2>Observacoes</h2><p>{{ pedido.observacoes|linebreaksbr }}</p>{% endif %}
     <div class="footer"><p>Separado por: __________________________________</p><p>Conferido por: _________________________________</p>{% if impressao.mensagem_rodape %}<p>{{ impressao.mensagem_rodape|linebreaksbr }}</p>{% endif %}</div>
   </main>
-  {% if impressao.impressao_automatica %}<script>window.addEventListener("load", function () { window.print(); });</script>{% endif %}
+  {% if auto_imprimir or impressao.impressao_automatica %}<script>window.addEventListener("load", function () { window.print(); });</script>{% endif %}
 </body>
 </html>

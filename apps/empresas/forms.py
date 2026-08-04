@@ -77,5 +77,5 @@ class FilialForm(forms.ModelForm):
     def clean_codigo_municipio_ibge(self):
         codigo = self.cleaned_data.get("codigo_municipio_ibge", "").strip()
         if codigo and (not codigo.isdigit() or len(codigo) != 7):
-            raise forms.ValidationError("Informe o codigo IBGE com 7 digitos.")
+            raise forms.ValidationError("Informe o código IBGE com 7 digitos.")
         return codigo

@@ -39,14 +39,14 @@ def _carregar_chave_certificado(configuracao):
             senha.encode("utf-8") if senha else None,
         )
     except Exception as exc:
-        raise ValidationError("Nao foi possivel abrir o certificado A1 para assinatura fiscal.") from exc
+        raise ValidationError("Não foi possível abrir o certificado A1 para assinatura fiscal.") from exc
     if not isinstance(chave, rsa.RSAPrivateKey) or certificado is None:
         raise ValidationError("A assinatura fiscal exige certificado A1 com chave privada RSA.")
     agora = datetime.now(UTC)
     inicio = certificado.not_valid_before_utc
     fim = certificado.not_valid_after_utc
     if agora < inicio or agora > fim:
-        raise ValidationError("Certificado A1 fora do periodo de validade para assinatura fiscal.")
+        raise ValidationError("Certificado A1 fora do período de validade para assinatura fiscal.")
     return chave, certificado
 
 
@@ -57,7 +57,7 @@ def assinatura_local_disponivel(configuracao=None):
 
 
 def assinar_parametros_qrcode_nfce(configuracao, parametros):
-    """Assina os parametros do QR Code em contingencia com o A1 do emitente."""
+    """Assina os parametros do QR Code em contingência com o A1 do emitente."""
     chave, _ = _carregar_chave_certificado(configuracao)
     assinatura = chave.sign(parametros.encode("utf-8"), padding.PKCS1v15(), hashes.SHA1())
     return base64.b64encode(assinatura).decode("ascii")
@@ -65,7 +65,7 @@ def assinar_parametros_qrcode_nfce(configuracao, parametros):
 
 def assinar_xml_documento(documento):
     if not settings.FISCAL_LOCAL_XML_SIGNATURE_ENABLED:
-        raise ValidationError("XML fiscal nao esta assinado porque a assinatura XML local esta desabilitada.")
+        raise ValidationError("XML fiscal não está assinado porque a assinatura XML local está desabilitada.")
     if not documento.xml_conteudo:
         raise ValidationError("Documento fiscal sem XML para assinatura.")
     try:
@@ -162,15 +162,15 @@ def verificar_assinatura_xml(xml):
 
     uri = referencia.get("URI", "")
     if not uri.startswith("#"):
-        raise ValidationError("Referencia da assinatura fiscal invalida.")
+        raise ValidationError("Referência da assinatura fiscal inválida.")
     alvos = [elemento for elemento in raiz.iter() if elemento.get("Id") == uri[1:]]
     if not alvos:
-        raise ValidationError("Elemento referenciado pela assinatura fiscal nao foi encontrado.")
+        raise ValidationError("Elemento referenciado pela assinatura fiscal não foi encontrado.")
     if len(alvos) != 1:
-        raise ValidationError("Referencia duplicada na assinatura fiscal.")
+        raise ValidationError("Referência duplicada na assinatura fiscal.")
     alvo = alvos[0]
     if alvo.tag != f"{{{NFE_NS}}}infNFe" or not uri.startswith("#NFe"):
-        raise ValidationError("Referencia da assinatura fiscal nao aponta para infNFe.")
+        raise ValidationError("Referência da assinatura fiscal não aponta para infNFe.")
     try:
         algoritmos = {
             "canonicalizacao": signed_info.find(f"{{{DSIG_NS}}}CanonicalizationMethod").get("Algorithm"),
@@ -182,18 +182,18 @@ def verificar_assinatura_xml(xml):
             for item in referencia.findall(f"{{{DSIG_NS}}}Transforms/{{{DSIG_NS}}}Transform")
         ]
     except AttributeError as exc:
-        raise ValidationError("Algoritmos da assinatura fiscal nao foram informados.") from exc
+        raise ValidationError("Algoritmos da assinatura fiscal não foram informados.") from exc
     if algoritmos != {
         "canonicalizacao": C14N_ALGORITHM,
         "assinatura": RSA_SHA1_ALGORITHM,
         "digest": SHA1_ALGORITHM,
     }:
-        raise ValidationError("Algoritmos da assinatura fiscal divergem do padrao NF-e.")
+        raise ValidationError("Algoritmos da assinatura fiscal divergem do padrão NF-e.")
     if transformacoes != [ENVELOPED_ALGORITHM, C14N_ALGORITHM]:
-        raise ValidationError("Transformacoes da assinatura fiscal divergem do padrao NF-e.")
+        raise ValidationError("Transformacoes da assinatura fiscal divergem do padrão NF-e.")
     digest_calculado = base64.b64encode(hashlib.sha1(_canonicalizar(alvo)).digest()).decode("ascii")
     if not hmac.compare_digest(digest_informado or "", digest_calculado):
-        raise ValidationError("Digest da assinatura fiscal invalido.")
+        raise ValidationError("Digest da assinatura fiscal inválido.")
 
     try:
         certificado = x509.load_der_x509_certificate(base64.b64decode(certificado_valor))
@@ -204,7 +204,7 @@ def verificar_assinatura_xml(xml):
             hashes.SHA1(),
         )
     except (ValueError, TypeError, InvalidSignature) as exc:
-        raise ValidationError("Assinatura criptografica do XML fiscal invalida.") from exc
+        raise ValidationError("Assinatura criptografica do XML fiscal inválida.") from exc
     return {
         "valida": True,
         "certificado_serial": format(certificado.serial_number, "X"),

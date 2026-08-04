@@ -2,7 +2,9 @@ from django import forms
 from django.contrib.auth.models import User
 from django.db import transaction
 
-from .models import PerfilUsuario, TipoPerfil
+from apps.empresas.models import AcaoPinSupervisor, Empresa
+
+from .models import CredencialAutorizacao, PerfilUsuario, TipoPerfil, TipoCredencialAutorizacao
 
 
 class UsuarioPerfilForm(forms.Form):
@@ -57,7 +59,7 @@ class UsuarioPerfilForm(forms.Form):
         if self.instance:
             qs = qs.exclude(pk=self.instance.pk)
         if qs.exists():
-            raise forms.ValidationError("Ja existe um usuario com este login.")
+            raise forms.ValidationError("Ja existe um usuário com este login.")
         return username
 
     @transaction.atomic
@@ -81,3 +83,69 @@ class UsuarioPerfilForm(forms.Form):
         perfil.is_active = self.cleaned_data["is_active"]
         perfil.save()
         return user
+
+class CredencialAutorizacaoForm(forms.ModelForm):
+    identificador = forms.CharField(
+        label="Leitura do cartão ou crachá",
+        max_length=255,
+        widget=forms.PasswordInput(
+            render_value=True,
+            attrs={"autocomplete": "off", "autofocus": True, "class": "no-upper"},
+        ),
+        help_text="Aproxime, passe ou leia a credencial. O valor original não será armazenado.",
+    )
+    pin = forms.CharField(
+        label="PIN adicional",
+        required=False,
+        max_length=20,
+        widget=forms.PasswordInput(attrs={"autocomplete": "new-password", "inputmode": "numeric"}),
+        help_text="Opcional. Recomendado para estornos e operações de maior risco.",
+    )
+
+    class Meta:
+        model = CredencialAutorizacao
+        fields = ["usuario", "tipo", "nome", "valida_ate"]
+        widgets = {"valida_ate": forms.DateTimeInput(attrs={"type": "datetime-local"})}
+
+    def __init__(self, *args, usuarios_queryset=None, **kwargs):
+        super().__init__(*args, **kwargs)
+        if usuarios_queryset is not None:
+            self.fields["usuario"].queryset = usuarios_queryset
+
+    def clean_identificador(self):
+        identificador = self.cleaned_data["identificador"].strip()
+        identificador_hash = CredencialAutorizacao.calcular_hash(identificador)
+        if CredencialAutorizacao.objects.filter(identificador_hash=identificador_hash).exists():
+            raise forms.ValidationError("Esta credencial já está cadastrada.")
+        return identificador
+
+    def save(self, *, criada_por, commit=True):
+        credencial = super().save(commit=False)
+        credencial.definir_identificador(self.cleaned_data["identificador"])
+        credencial.definir_pin(self.cleaned_data.get("pin"))
+        credencial.criada_por = criada_por
+        if commit:
+            credencial.save()
+        return credencial
+
+
+class PoliticaPinSupervisorForm(forms.ModelForm):
+    acoes_credencial_exigem_pin = forms.MultipleChoiceField(
+        label="Exigir cartão e PIN nestas operações",
+        choices=AcaoPinSupervisor.choices,
+        required=False,
+        widget=forms.CheckboxSelectMultiple,
+        help_text="Login e senha de supervisor continuam disponíveis como contingência.",
+    )
+
+    class Meta:
+        model = Empresa
+        fields = ["acoes_credencial_exigem_pin"]
+
+    def clean_acoes_credencial_exigem_pin(self):
+        validas = {valor for valor, _rotulo in AcaoPinSupervisor.choices}
+        selecionadas = set(self.cleaned_data["acoes_credencial_exigem_pin"])
+        invalidas = selecionadas - validas
+        if invalidas:
+            raise forms.ValidationError("A política contém uma operação de autorização inválida.")
+        return [valor for valor, _rotulo in AcaoPinSupervisor.choices if valor in selecionadas]

@@ -1,11 +1,11 @@
 {% extends "base.html" %}
 
-{% block title %}Relatorio de Devolucoes{% endblock %}
+{% block title %}Relatório de Devoluções{% endblock %}
 
 {% block content %}
 <header class="page-header">
   <div>
-    <h1>Devolucoes</h1>
+    <h1>Devoluções</h1>
     <p>Acompanhe trocas, devolucoes parciais, motivos e impacto no faturamento.</p>
   </div>
   <div class="actions">
@@ -20,15 +20,15 @@
 {% include "relatorios/includes/periodo_form.html" %}
 
 <section class="metrics-grid">
-  <article class="metric"><span>Devolucoes</span><strong>{{ total_devolucoes }}</strong></article>
+  <article class="metric"><span>Devoluções</span><strong>{{ total_devolucoes }}</strong></article>
   <article class="metric"><span>Valor devolvido</span><strong>R$ {{ valor_total|floatformat:2 }}</strong></article>
   <article class="metric"><span>Itens devolvidos</span><strong>{{ quantidade_itens|quantidade_br }}</strong></article>
-  <article class="metric"><span>Periodo</span><strong>{{ data_inicio|date:"d/m" }} - {{ data_fim|date:"d/m" }}</strong></article>
+  <article class="metric"><span>Período</span><strong>{{ data_inicio|date:"d/m" }} - {{ data_fim|date:"d/m" }}</strong></article>
 </section>
 
 <section class="two-column">
   <div class="panel">
-    <div class="panel-title">Devolucoes do periodo</div>
+    <div class="panel-title">Devoluções do periodo</div>
     <table>
       <thead><tr><th>Data</th><th>Venda</th><th>Cliente</th><th>Operador</th><th>Motivo</th><th>Valor</th></tr></thead>
       <tbody>

@@ -82,8 +82,8 @@ def montar_texto_cupom(payload: dict, largura: int | None = None) -> str:
     )
     if identificacao:
         linhas.extend(_centralizar(identificacao, largura))
-    linhas.extend([separador, "CUPOM NÃO FISCAL - USO INTERNO".center(largura), separador])
-    linhas.append(_linha("CÓD DESCRIÇÃO", largura))
+    linhas.extend([separador, "CUPOM NAO FISCAL - USO INTERNO".center(largura), separador])
+    linhas.append(_linha("COD DESCRICAO", largura))
     linhas.append(_colunas("QTD x VL.UNIT.", "TOTAL", largura))
     for item in payload.get("itens", []):
         codigo = str(item.get("codigo_barras") or item.get("sequencia") or "")
@@ -108,7 +108,7 @@ def montar_texto_cupom(payload: dict, largura: int | None = None) -> str:
         if pagamento.get("nsu"):
             linhas.append(_linha(f"NSU: {pagamento['nsu']}", largura))
         if pagamento.get("codigo_autorizacao"):
-            linhas.append(_linha(f"AUTORIZAÇÃO: {pagamento['codigo_autorizacao']}", largura))
+            linhas.append(_linha(f"AUTORIZACAO: {pagamento['codigo_autorizacao']}", largura))
     if total_pago:
         linhas.append(_colunas("VALOR RECEBIDO:", f"R$ {total_pago:.2f}".replace(".", ","), largura))
     if troco:
@@ -126,10 +126,47 @@ def montar_texto_cupom(payload: dict, largura: int | None = None) -> str:
     rodape = payload.get("impressao", {}).get("mensagem_rodape", "")
     if rodape:
         linhas.extend(_centralizar(rodape, largura))
-    linhas.extend(["NÃO É DOCUMENTO FISCAL".center(largura), "=" * largura, "", ""])
+    linhas.extend(["NAO E DOCUMENTO FISCAL".center(largura), "=" * largura, "", ""])
     return "\n".join(linhas)
 
 
+def montar_texto_comanda_entrega(payload: dict, largura: int | None = None) -> str:
+    largura = _largura_cupom(payload, largura)
+    pedido = payload.get("pedido", {})
+    separador = "-" * largura
+    linhas = []
+    linhas.extend(_centralizar(pedido.get("empresa", "SUPERMERCADO"), largura))
+    if pedido.get("filial"):
+        linhas.extend(_centralizar(pedido["filial"], largura))
+    linhas.extend(["=" * largura, _centralizar(f"COMANDA DE ENTREGA #{pedido.get('id', '')}", largura)[0], "=" * largura])
+    linhas.append(_colunas("DATA:", _data_hora_br(pedido.get("criado_em", "")), largura))
+    linhas.append(_colunas("STATUS:", pedido.get("status", ""), largura))
+    linhas.extend([separador, "CLIENTE", _linha(pedido.get("cliente", ""), largura)])
+    if pedido.get("telefone"):
+        linhas.append(_linha(f"TELEFONE: {pedido['telefone']}", largura))
+    linhas.append("ENDERECO:")
+    endereco = pedido.get("endereco", "")
+    if pedido.get("bairro"):
+        endereco = f"{endereco} - {pedido['bairro']}"
+    linhas.extend(_quebrar(endereco, largura))
+    linhas.extend([separador, "ITENS PARA ENTREGA"])
+    for indice, item in enumerate(payload.get("itens", []), start=1):
+        descricao = f"{indice:02d} {item.get('produto', '')}"
+        linhas.extend(_quebrar(descricao, largura))
+        quantidade = f"QTD: {item.get('quantidade', '0')} {item.get('unidade', '')}".strip()
+        linhas.append(_linha(quantidade, largura))
+    linhas.extend([separador, _colunas("TOTAL:", f"R$ {pedido.get('total', '0,00')}", largura)])
+    pagamento = pedido.get("pagamento", "Pendente")
+    linhas.append(_colunas("PAGAMENTO:", pagamento, largura))
+    if pedido.get("forma_pagamento"):
+        linhas.append(_linha(f"FORMA: {pedido['forma_pagamento']}", largura))
+    if pedido.get("referencia_pagamento"):
+        linhas.extend(_quebrar(f"REFERENCIA: {pedido['referencia_pagamento']}", largura))
+    if pedido.get("observacoes"):
+        linhas.extend([separador, "OBSERVACOES"])
+        linhas.extend(_quebrar(pedido["observacoes"], largura))
+    linhas.extend([separador, "ENTREGADOR: __________________________", "ASSINATURA: __________________________", "", ""])
+    return "\n".join(linhas)
 def _agrupar_chave_acesso(chave: str) -> str:
     digitos = "".join(caractere for caractere in str(chave or "") if caractere.isdigit())
     return " ".join(digitos[indice:indice + 4] for indice in range(0, len(digitos), 4))
@@ -203,7 +240,10 @@ def montar_danfe_nfce_escpos(payload: dict, cortar: bool = True) -> bytes:
 def montar_cupom_escpos(payload: dict, cortar: bool = True) -> bytes:
     if payload.get("tipo") == "danfe_nfce":
         return montar_danfe_nfce_escpos(payload, cortar=cortar)
-    texto = montar_texto_cupom(payload).encode("cp850", errors="replace")
+    if payload.get("tipo") == "comanda_entrega":
+        texto = montar_texto_comanda_entrega(payload).encode("cp850", errors="replace")
+    else:
+        texto = montar_texto_cupom(payload).encode("cp850", errors="replace")
     comandos = [b"\x1b@", b"\x1bM\x01", b"\x1bt\x02", texto, b"\n\n"]
     if payload.get("gaveta", {}).get("abrir"):
         comandos.append(montar_pulso_gaveta_escpos(inicializar=False))

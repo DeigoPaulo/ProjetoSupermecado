@@ -17,6 +17,8 @@
     <a class="secondary-button" href="{% url 'financeiro:livro' %}"><i class="fa-solid fa-book"></i> Livro</a>
     <a class="secondary-button" href="{% url 'financeiro:contas_movimento' %}"><i class="fa-solid fa-building-columns"></i> Contas de movimento</a>
     <a class="secondary-button" href="{% url 'financeiro:categorias' %}"><i class="fa-solid fa-folder-tree"></i> Categorias</a>
+    <a class="secondary-button" href="{% url 'financeiro:centros_custo' %}"><i class="fa-solid fa-sitemap"></i> Centros de custo</a>
+    <a class="secondary-button" href="{% url 'financeiro:plano_contas' %}"><i class="fa-solid fa-list-ol"></i> Plano de contas</a>
     <a class="primary-button" href="{% url 'financeiro:conta_nova' %}"><i class="fa-solid fa-plus"></i> Nova conta</a>
   </div>
 </header>
@@ -79,7 +81,7 @@
         <tr>
           <th>Vencimento</th>
           <th>Tipo</th>
-          <th>Descricao</th>
+          <th>Descrição</th>
           <th>Parceiro</th>
           <th>Status</th>
           <th>Valor</th>
@@ -91,7 +93,7 @@
           <tr>
             <td>{{ conta.vencimento|date:"d/m/Y" }}{% if conta.esta_vencida %}<br><span class="status status-danger">Vencida</span>{% endif %}</td>
             <td>{{ conta.get_tipo_display }}</td>
-            <td><strong>{{ conta.descricao }}</strong><br><small>{{ conta.categoria|default:"Sem categoria" }}</small></td>
+            <td><strong>{{ conta.descricao }}</strong><br><small>{{ conta.categoria|default:"Sem categoria" }} - {{ conta.centro_custo|default:"Sem centro de custo" }}</small></td>
             <td>{% if conta.fornecedor %}{{ conta.fornecedor }}{% elif conta.cliente %}{{ conta.cliente }}{% else %}-{% endif %}</td>
             <td><span class="status {% if conta.status == 'CANCELADA' %}status-muted{% elif conta.status == 'PAGA' %}status-success{% endif %}">{{ conta.get_status_display }}</span></td>
             <td><strong>R$ {{ conta.valor|floatformat:2 }}</strong></td>

@@ -133,7 +133,7 @@ def enviar_pedido_compra(pedido, *, usuario, ip=None):
             if item.quantidade <= 0:
                 raise ValidationError("Quantidade deve ser maior que zero.")
             if item.custo_unitario_previsto < 0:
-                raise ValidationError("Custo previsto nao pode ser negativo.")
+                raise ValidationError("Custo previsto não pode ser negativo.")
             item.total_previsto = item.quantidade * item.custo_unitario_previsto
             item.save(update_fields=["total_previsto"])
             total += item.total_previsto
@@ -159,12 +159,12 @@ def cancelar_pedido_compra(pedido, *, usuario, motivo, ip=None):
     if not motivo:
         raise ValidationError("Informe o motivo do cancelamento.")
     if pedido.status not in {StatusPedidoCompra.RASCUNHO, StatusPedidoCompra.ENVIADO}:
-        raise ValidationError("Este pedido nao pode ser cancelado.")
+        raise ValidationError("Este pedido não pode ser cancelado.")
 
     with transaction.atomic():
         pedido = PedidoCompra.objects.select_for_update().get(pk=pedido.pk)
         if pedido.status not in {StatusPedidoCompra.RASCUNHO, StatusPedidoCompra.ENVIADO}:
-            raise ValidationError("Este pedido nao pode ser cancelado.")
+            raise ValidationError("Este pedido não pode ser cancelado.")
         pedido.status = StatusPedidoCompra.CANCELADO
         pedido.cancelado_em = timezone.now()
         pedido.save(update_fields=["status", "cancelado_em", "updated_at"])
@@ -192,7 +192,7 @@ def converter_pedido_em_entrada(pedido, *, usuario, ip=None):
 
         itens_pedido = list(pedido.itens.select_related("produto"))
         if not itens_pedido:
-            raise ValidationError("Pedido sem itens nao pode gerar entrada.")
+            raise ValidationError("Pedido sem itens não pode gerar entrada.")
 
         entrada = EntradaCompra.objects.create(
             pedido_origem=pedido,
@@ -252,7 +252,7 @@ def finalizar_entrada_compra(entrada, *, supervisor=None, ip=None):
             if item.quantidade <= 0:
                 raise ValidationError("Quantidade deve ser maior que zero.")
             if item.custo_unitario < 0:
-                raise ValidationError("Custo unitario nao pode ser negativo.")
+                raise ValidationError("Custo unitario não pode ser negativo.")
 
             item.total = item.quantidade * item.custo_unitario
             item.save(update_fields=["total"])
@@ -304,7 +304,7 @@ def cancelar_entrada_compra(entrada, *, usuario, motivo, supervisor=None, ip=Non
 
     itens = list(entrada.itens.select_related("produto"))
     if not itens:
-        raise ValidationError("Entrada sem itens nao pode ser cancelada.")
+        raise ValidationError("Entrada sem itens não pode ser cancelada.")
 
     with transaction.atomic():
         entrada = entrada.__class__.objects.select_for_update().get(pk=entrada.pk)
@@ -354,6 +354,7 @@ def _criar_conta_pagar_compra(entrada):
     from apps.financeiro.models import CategoriaFinanceira, ContaFinanceira, TipoContaFinanceira
 
     categoria, _ = CategoriaFinanceira.objects.get_or_create(
+        empresa=entrada.filial.empresa,
         nome="Compras de mercadorias",
         defaults={"tipo": TipoContaFinanceira.PAGAR},
     )

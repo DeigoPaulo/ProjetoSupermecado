@@ -10,7 +10,12 @@ from apps.auditoria.models import LogAuditoria
 
 from .adapters import diagnosticar_adaptador_sefaz
 from .models import AmbienteFiscal, DocumentoFiscal, StatusDocumentoFiscal
-from .services import salvar_xml_documento, transmitir_documento_sefaz, transmitir_documento_simulado
+from .services import (
+    consultar_situacao_documento,
+    salvar_xml_documento,
+    transmitir_documento_sefaz,
+    transmitir_documento_simulado,
+)
 STATUS_FILA = [StatusDocumentoFiscal.PRONTO, StatusDocumentoFiscal.CONTINGENCIA]
 
 
@@ -19,6 +24,7 @@ def configuracao_fila_fiscal():
         "contrato": "fiscal_transmission_queue_v1",
         "habilitada": bool(getattr(settings, "FISCAL_AUTO_TRANSMIT_ENABLED", False)),
         "max_tentativas": max(1, int(getattr(settings, "FISCAL_AUTO_TRANSMIT_MAX_ATTEMPTS", 8))),
+        "max_consultas": max(1, int(getattr(settings, "FISCAL_AUTO_QUERY_MAX_ATTEMPTS", 12))),
         "espera_base_segundos": max(1, int(getattr(settings, "FISCAL_AUTO_TRANSMIT_RETRY_BASE_SECONDS", 60))),
         "espera_maxima_segundos": max(1, int(getattr(settings, "FISCAL_AUTO_TRANSMIT_RETRY_MAX_SECONDS", 3600))),
         "lease_segundos": max(30, int(getattr(settings, "FISCAL_AUTO_TRANSMIT_LEASE_SECONDS", 300))),
@@ -43,8 +49,17 @@ def documentos_elegiveis_fila(*, simular_homologacao=False, agora=None, queryset
         .filter(
             status__in=STATUS_FILA,
             ambiente__in=ambientes,
-            tentativas_transmissao__lt=configuracao["max_tentativas"],
             filial__configuracao_fiscal__ativo=True,
+        )
+        .filter(
+            Q(
+                aguardando_consulta_sefaz=True,
+                tentativas_consulta_sefaz__lt=configuracao["max_consultas"],
+            )
+            | Q(
+                aguardando_consulta_sefaz=False,
+                tentativas_transmissao__lt=configuracao["max_tentativas"],
+            )
         )
         .filter(Q(proxima_tentativa_em__isnull=True) | Q(proxima_tentativa_em__lte=agora))
         .filter(
@@ -60,7 +75,16 @@ def _reservar_documento(documento_id, agora, configuracao):
         DocumentoFiscal.objects.filter(
             pk=documento_id,
             status__in=STATUS_FILA,
-            tentativas_transmissao__lt=configuracao["max_tentativas"],
+        )
+        .filter(
+            Q(
+                aguardando_consulta_sefaz=True,
+                tentativas_consulta_sefaz__lt=configuracao["max_consultas"],
+            )
+            | Q(
+                aguardando_consulta_sefaz=False,
+                tentativas_transmissao__lt=configuracao["max_tentativas"],
+            )
         )
         .filter(Q(proxima_tentativa_em__isnull=True) | Q(proxima_tentativa_em__lte=agora))
         .filter(
@@ -80,7 +104,15 @@ def diagnostico_fila_fiscal(queryset=None):
     reservados = base.filter(
         transmissao_reservada_em__gte=agora - timedelta(seconds=configuracao["lease_segundos"])
     ).count()
-    esgotados = base.filter(tentativas_transmissao__gte=configuracao["max_tentativas"]).count()
+    esgotados = base.filter(
+        aguardando_consulta_sefaz=False,
+        tentativas_transmissao__gte=configuracao["max_tentativas"],
+    ).count()
+    aguardando_consulta = base.filter(aguardando_consulta_sefaz=True).count()
+    consultas_esgotadas = base.filter(
+        aguardando_consulta_sefaz=True,
+        tentativas_consulta_sefaz__gte=configuracao["max_consultas"],
+    ).count()
     adapter = diagnosticar_adaptador_sefaz()
     return {
         **configuracao,
@@ -88,6 +120,8 @@ def diagnostico_fila_fiscal(queryset=None):
         "elegiveis_producao": elegiveis_producao,
         "reservados": reservados,
         "tentativas_esgotadas": esgotados,
+        "aguardando_consulta_sefaz": aguardando_consulta,
+        "consultas_esgotadas": consultas_esgotadas,
         "adaptador_configurado": adapter["configurado"],
         "adaptador_carregavel": adapter["carregavel"],
         "pronta": bool(configuracao["habilitada"] and adapter["carregavel"]),
@@ -100,12 +134,16 @@ def reagendar_documento_fiscal(documento, usuario, motivo, ip=None):
     status_anterior = documento.status
     tentativas_anteriores = documento.tentativas_transmissao
     mensagem_anterior = documento.mensagem_retorno
+    if documento.aguardando_consulta_sefaz:
+        raise ValidationError(
+            "Consulte a situação da chave na SEFAZ antes de reprocessar este documento."
+        )
     if status_anterior not in {
         StatusDocumentoFiscal.PRONTO,
         StatusDocumentoFiscal.REJEITADO,
         StatusDocumentoFiscal.CONTINGENCIA,
     }:
-        raise ValidationError("Somente documentos pendentes, rejeitados ou em contingencia podem ser reprocessados.")
+        raise ValidationError("Somente documentos pendentes, rejeitados ou em contingência podem ser reprocessados.")
     motivo = (motivo or "").strip()
     if not 10 <= len(motivo) <= 255:
         raise ValidationError("Informe um motivo entre 10 e 255 caracteres para o reprocessamento.")
@@ -113,6 +151,7 @@ def reagendar_documento_fiscal(documento, usuario, motivo, ip=None):
     if status_anterior == StatusDocumentoFiscal.REJEITADO:
         documento.status = StatusDocumentoFiscal.PRONTO
     documento.tentativas_transmissao = 0
+    documento.tentativas_consulta_sefaz = 0
     documento.proxima_tentativa_em = timezone.now()
     documento.transmissao_reservada_em = None
     documento.xml_assinado_em = None
@@ -121,6 +160,7 @@ def reagendar_documento_fiscal(documento, usuario, motivo, ip=None):
         update_fields=[
             "status",
             "tentativas_transmissao",
+            "tentativas_consulta_sefaz",
             "proxima_tentativa_em",
             "transmissao_reservada_em",
             "xml_assinado_em",
@@ -145,6 +185,42 @@ def reagendar_documento_fiscal(documento, usuario, motivo, ip=None):
     return documento
 
 
+@transaction.atomic
+def retomar_consultas_documento_fiscal(documento, usuario, motivo, ip=None):
+    documento = DocumentoFiscal.objects.select_for_update().get(pk=documento.pk)
+    configuracao = configuracao_fila_fiscal()
+    tentativas_anteriores = documento.tentativas_consulta_sefaz
+    mensagem_anterior = documento.mensagem_consulta_sefaz
+    if not documento.aguardando_consulta_sefaz:
+        raise ValidationError("Este documento não está aguardando reconciliação com a SEFAZ.")
+    if tentativas_anteriores < configuracao["max_consultas"]:
+        raise ValidationError("O limite de consultas automáticas ainda não foi atingido.")
+    if not diagnosticar_adaptador_sefaz()["consulta_documento"]:
+        raise ValidationError("O adaptador SEFAZ configurado não oferece consulta de protocolo.")
+    motivo = (motivo or "").strip()
+    if not 10 <= len(motivo) <= 255:
+        raise ValidationError("Informe um motivo entre 10 e 255 caracteres para retomar as consultas.")
+
+    documento.tentativas_consulta_sefaz = 0
+    documento.proxima_tentativa_em = timezone.now()
+    documento.transmissao_reservada_em = None
+    documento.save(update_fields=["tentativas_consulta_sefaz", "proxima_tentativa_em", "transmissao_reservada_em", "atualizado_em"])
+    LogAuditoria.objects.create(
+        usuario=usuario,
+        modulo="fiscal",
+        acao="RETOMA_CONSULTAS_SEFAZ",
+        descricao=(
+            f"Consultas automáticas do documento fiscal {documento.id} retomadas. "
+            f"Consultas anteriores: {tentativas_anteriores}; motivo: {motivo}; "
+            f"último retorno: {mensagem_anterior[:500] or '-'}"
+        ),
+        objeto_tipo="DocumentoFiscal",
+        objeto_id=str(documento.id),
+        ip=ip,
+    )
+    return documento
+
+
 def processar_fila_fiscal(*, limite=50, simular_homologacao=False, forcar=False):
     configuracao = configuracao_fila_fiscal()
     limite = min(200, max(1, int(limite)))
@@ -155,18 +231,21 @@ def processar_fila_fiscal(*, limite=50, simular_homologacao=False, forcar=False)
         "emitidos": 0,
         "rejeitados": 0,
         "reagendados": 0,
+        "consultados": 0,
+        "reconciliados": 0,
+        "consultas_esgotadas": 0,
         "ignorados": 0,
         "erros": [],
     }
     if not configuracao["habilitada"] and not forcar:
-        resumo["motivo"] = "Transmissao fiscal automatica desabilitada."
+        resumo["motivo"] = "Transmissao fiscal automática desabilitada."
         return resumo
 
     elegiveis = documentos_elegiveis_fila(simular_homologacao=simular_homologacao)
     if elegiveis.filter(ambiente=AmbienteFiscal.PRODUCAO).exists():
         adapter = diagnosticar_adaptador_sefaz()
         if not adapter["carregavel"]:
-            raise ValidationError(adapter["erro"] or "Adaptador SEFAZ de producao indisponivel.")
+            raise ValidationError(adapter["erro"] or "Adaptador SEFAZ de produção indisponivel.")
 
     for documento_id in list(elegiveis.values_list("id", flat=True)[:limite]):
         agora = timezone.now()
@@ -175,6 +254,39 @@ def processar_fila_fiscal(*, limite=50, simular_homologacao=False, forcar=False)
             continue
         documento = DocumentoFiscal.objects.select_related("usuario").get(pk=documento_id)
         try:
+            if documento.aguardando_consulta_sefaz:
+                resultado, _ = consultar_situacao_documento(
+                    documento, documento.usuario
+                )
+                resumo["processados"] += 1
+                resumo["consultados"] += 1
+                if resultado.status not in STATUS_FILA:
+                    resumo["reconciliados"] += 1
+                    if resultado.status == StatusDocumentoFiscal.EMITIDO:
+                        resumo["emitidos"] += 1
+                    DocumentoFiscal.objects.filter(pk=documento_id).update(
+                        proxima_tentativa_em=None,
+                        transmissao_reservada_em=None,
+                    )
+                elif (
+                    resultado.tentativas_consulta_sefaz
+                    >= configuracao["max_consultas"]
+                ):
+                    DocumentoFiscal.objects.filter(pk=documento_id).update(
+                        proxima_tentativa_em=None,
+                        transmissao_reservada_em=None,
+                    )
+                    resumo["consultas_esgotadas"] += 1
+                else:
+                    atraso = atraso_proxima_tentativa(
+                        resultado.tentativas_consulta_sefaz, configuracao
+                    )
+                    DocumentoFiscal.objects.filter(pk=documento_id).update(
+                        proxima_tentativa_em=timezone.now() + timedelta(seconds=atraso),
+                        transmissao_reservada_em=None,
+                    )
+                    resumo["reagendados"] += 1
+                continue
             if documento.ambiente == AmbienteFiscal.HOMOLOGACAO:
                 resultado = transmitir_documento_simulado(documento, documento.usuario)
             else:
@@ -201,13 +313,35 @@ def processar_fila_fiscal(*, limite=50, simular_homologacao=False, forcar=False)
                 )
                 resumo["reagendados"] += 1
         except Exception as exc:
-            documento.refresh_from_db(fields=["tentativas_transmissao"])
-            atraso = atraso_proxima_tentativa(documento.tentativas_transmissao, configuracao)
+            documento.refresh_from_db(
+                fields=[
+                    "aguardando_consulta_sefaz",
+                    "tentativas_transmissao",
+                    "tentativas_consulta_sefaz",
+                ]
+            )
+            tentativas = (
+                documento.tentativas_consulta_sefaz
+                if documento.aguardando_consulta_sefaz
+                else documento.tentativas_transmissao
+            )
+            consulta_esgotada = (
+                documento.aguardando_consulta_sefaz
+                and documento.tentativas_consulta_sefaz >= configuracao["max_consultas"]
+            )
+            atraso = atraso_proxima_tentativa(tentativas, configuracao)
             DocumentoFiscal.objects.filter(pk=documento_id).update(
-                proxima_tentativa_em=timezone.now() + timedelta(seconds=atraso),
+                proxima_tentativa_em=(
+                    None
+                    if consulta_esgotada
+                    else timezone.now() + timedelta(seconds=atraso)
+                ),
                 transmissao_reservada_em=None,
             )
             resumo["processados"] += 1
-            resumo["reagendados"] += 1
+            if consulta_esgotada:
+                resumo["consultas_esgotadas"] += 1
+            else:
+                resumo["reagendados"] += 1
             resumo["erros"].append({"documento_id": documento_id, "mensagem": str(exc)[:500]})
     return resumo

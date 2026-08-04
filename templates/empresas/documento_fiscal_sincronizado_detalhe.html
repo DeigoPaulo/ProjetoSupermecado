@@ -25,7 +25,7 @@
       <dt>Empresa</dt><dd>{{ documento.empresa }}</dd>
       <dt>Filial</dt><dd>{{ documento.filial|default:"-" }}</dd>
       <dt>Venda</dt><dd>{{ documento.venda_externa_id|default:"-" }}</dd>
-      <dt>Serie / numero</dt><dd>{{ documento.serie|default:"-" }} / {{ documento.numero|default:"-" }}</dd>
+      <dt>Série / número</dt><dd>{{ documento.serie|default:"-" }} / {{ documento.numero|default:"-" }}</dd>
       <dt>Emitido em</dt><dd>{{ documento.emitido_em|date:"d/m/Y H:i:s"|default:"-" }}</dd>
       <dt>Recebido em</dt><dd>{{ documento.recebido_em|date:"d/m/Y H:i:s" }}</dd>
       <dt>Evento</dt><dd><code>{{ documento.evento.identificador }}</code></dd>

@@ -6,20 +6,48 @@ from django.db import transaction
 
 from apps.auditoria.models import LogAuditoria
 
-from .models import Categoria, Marca, Produto, UnidadeMedida
+from .models import Categoria, Marca, OrigemMercadoria, Produto, UnidadeMedida
 
 
 CABECALHOS_OBRIGATORIOS = {"codigo_barras", "nome", "categoria", "preco_venda"}
+MODOS_IMPORTACAO = {"", "completo", "fiscal"}
 
 
 def _decimal(valor, padrao="0"):
     if valor in [None, ""]:
         return Decimal(padrao)
-    texto = str(valor).strip().replace(".", "").replace(",", ".")
+    texto = str(valor).strip()
+    if "," in texto:
+        texto = texto.replace(".", "").replace(",", ".")
     try:
         return Decimal(texto)
     except InvalidOperation as exc:
         raise ValueError(f"Valor decimal invalido: {valor}") from exc
+
+
+def _decimal_opcional(valor, rotulo):
+    if valor in [None, ""]:
+        return None
+    resultado = _decimal(valor)
+    if resultado < 0 or resultado > 100:
+        raise ValueError(f"{rotulo} deve estar entre 0 e 100.")
+    return resultado
+
+
+def _codigo_numerico(valor, tamanho, rotulo):
+    texto = str(valor or "").strip()
+    codigo = "".join(filter(str.isdigit, texto))
+    if codigo and len(codigo) != tamanho:
+        raise ValueError(f"{rotulo} deve possuir {tamanho} digitos.")
+    return codigo
+
+
+def _origem_mercadoria(valor):
+    origem = str(valor or "").strip()
+    permitidas = {codigo for codigo, _rotulo in OrigemMercadoria.choices}
+    if origem and origem not in permitidas:
+        raise ValueError("Origem da mercadoria invalida.")
+    return origem
 
 
 def _boolean(valor):
@@ -33,7 +61,13 @@ def _unidade(valor):
 
 
 @transaction.atomic
-def importar_produtos_csv(arquivo, *, atualizar_existentes=True):
+def importar_produtos_csv(
+    arquivo,
+    *,
+    atualizar_existentes=True,
+    usuario=None,
+    ip=None,
+):
     stream = TextIOWrapper(arquivo.file, encoding="utf-8-sig")
     reader = csv.DictReader(stream, delimiter=";")
     if reader.fieldnames and len(reader.fieldnames) == 1:
@@ -47,60 +81,135 @@ def importar_produtos_csv(arquivo, *, atualizar_existentes=True):
 
     criados = 0
     atualizados = 0
+    fiscais_atualizados = 0
     ignorados = 0
     erros = []
 
     for numero_linha, row in enumerate(reader, start=2):
         try:
+            row = {
+                str(chave).strip(): valor
+                for chave, valor in row.items()
+                if chave is not None
+            }
             codigo = (row.get("codigo_barras") or "").strip()
             nome = (row.get("nome") or "").strip()
             categoria_nome = (row.get("categoria") or "").strip()
+            modo_importacao = (row.get("_modo_importacao") or "").strip().lower()
+            if modo_importacao not in MODOS_IMPORTACAO:
+                raise ValueError("Modo de importacao invalido.")
             if not codigo or not nome or not categoria_nome:
-                raise ValueError("codigo_barras, nome e categoria sao obrigatorios.")
-
-            categoria, _ = Categoria.all_objects.get_or_create(nome=categoria_nome)
-            marca = None
-            marca_nome = (row.get("marca") or "").strip()
-            if marca_nome:
-                marca, _ = Marca.all_objects.get_or_create(nome=marca_nome)
-
-            dados = {
-                "codigo_interno": (row.get("codigo_interno") or "").strip(),
-                "nome": nome,
-                "descricao": (row.get("descricao") or "").strip(),
-                "categoria": categoria,
-                "marca": marca,
-                "unidade": _unidade(row.get("unidade")),
-                "produto_pesavel": _boolean(row.get("produto_pesavel")),
-                "preco_custo": _decimal(row.get("preco_custo"), "0"),
-                "preco_venda": _decimal(row.get("preco_venda"), "0"),
-                "estoque_minimo": _decimal(row.get("estoque_minimo"), "0"),
-                "vendido_no_pdv": not str(row.get("vendido_no_pdv") or "").strip() or _boolean(row.get("vendido_no_pdv")),
-                "vendido_no_marketplace": _boolean(row.get("vendido_no_marketplace")),
-                "is_active": not str(row.get("is_active") or "").strip() or _boolean(row.get("is_active")),
-            }
+                raise ValueError("codigo_barras, nome e categoria são obrigatorios.")
 
             produto = Produto.all_objects.filter(codigo_barras=codigo).first()
+            if modo_importacao == "fiscal" and not produto:
+                raise ValueError(
+                    "Produto nao encontrado. A planilha fiscal atualiza apenas produtos existentes."
+                )
+
+            dados = {}
+            marca = None
+            if modo_importacao != "fiscal":
+                categoria, _ = Categoria.all_objects.get_or_create(nome=categoria_nome)
+                marca_nome = (row.get("marca") or "").strip()
+                if marca_nome:
+                    marca, _ = Marca.all_objects.get_or_create(nome=marca_nome)
+                dados.update(
+                    {
+                        "nome": nome,
+                        "categoria": categoria,
+                        "preco_venda": _decimal(row.get("preco_venda"), "0"),
+                    }
+                )
+            campos_comerciais_opcionais = {
+                "codigo_interno": lambda valor: str(valor or "").strip(),
+                "descricao": lambda valor: str(valor or "").strip(),
+                "marca": lambda _valor: marca,
+                "unidade": _unidade,
+                "produto_pesavel": _boolean,
+                "preco_custo": lambda valor: _decimal(valor, "0"),
+                "estoque_minimo": lambda valor: _decimal(valor, "0"),
+                "vendido_no_pdv": _boolean,
+                "vendido_no_marketplace": _boolean,
+                "is_active": _boolean,
+            }
+            for campo, normalizar in campos_comerciais_opcionais.items():
+                if modo_importacao != "fiscal" and campo in fieldnames:
+                    dados[campo] = normalizar(row.get(campo))
+
+
+            campos_fiscais = {}
+            normalizadores_fiscais = {
+                "ncm": lambda valor: _codigo_numerico(valor, 8, "NCM"),
+                "cest": lambda valor: _codigo_numerico(valor, 7, "CEST"),
+                "origem_mercadoria": _origem_mercadoria,
+                "cst_icms": lambda valor: _codigo_numerico(valor, 2, "CST ICMS"),
+                "csosn": lambda valor: _codigo_numerico(valor, 3, "CSOSN"),
+                "aliquota_icms": lambda valor: _decimal_opcional(valor, "Aliquota ICMS"),
+                "reducao_base_icms": lambda valor: _decimal_opcional(valor, "Reducao da base ICMS"),
+                "aliquota_fcp": lambda valor: _decimal_opcional(valor, "Aliquota FCP"),
+                "codigo_beneficio_fiscal": lambda valor: str(valor or "").strip().upper(),
+                "cst_pis": lambda valor: _codigo_numerico(valor, 2, "CST PIS"),
+                "aliquota_pis": lambda valor: _decimal_opcional(valor, "Aliquota PIS"),
+                "cst_cofins": lambda valor: _codigo_numerico(valor, 2, "CST COFINS"),
+                "aliquota_cofins": lambda valor: _decimal_opcional(valor, "Aliquota COFINS"),
+                "cst_ipi": lambda valor: _codigo_numerico(valor, 2, "CST IPI"),
+                "codigo_enquadramento_ipi": lambda valor: _codigo_numerico(
+                    valor, 3, "Codigo de enquadramento IPI"
+                ),
+                "aliquota_ipi": lambda valor: _decimal_opcional(valor, "Aliquota IPI"),
+                "cst_ibs_cbs": lambda valor: _codigo_numerico(valor, 3, "CST IBS/CBS"),
+                "classificacao_tributaria_ibs_cbs": lambda valor: _codigo_numerico(
+                    valor, 6, "Classificacao tributaria IBS/CBS"
+                ),
+            }
+            for campo, normalizar in normalizadores_fiscais.items():
+                if campo in fieldnames:
+                    campos_fiscais[campo] = normalizar(row.get(campo))
+            dados.update(campos_fiscais)
+
             if produto:
                 if not atualizar_existentes:
                     ignorados += 1
                     continue
                 for campo, valor in dados.items():
                     setattr(produto, campo, valor)
+                produto.full_clean()
                 produto.save()
                 atualizados += 1
+                if modo_importacao == "fiscal":
+                    fiscais_atualizados += 1
             else:
-                Produto.all_objects.create(codigo_barras=codigo, **dados)
+                produto = Produto(codigo_barras=codigo, **dados)
+                produto.full_clean()
+                produto.save()
                 criados += 1
         except Exception as exc:
             erros.append(f"Linha {numero_linha}: {exc}")
 
-    return {
+    resultado = {
         "criados": criados,
         "atualizados": atualizados,
+        "fiscais_atualizados": fiscais_atualizados,
         "ignorados": ignorados,
         "erros": erros,
     }
+    if usuario:
+        LogAuditoria.objects.create(
+            usuario=usuario,
+            modulo="produtos",
+            acao="IMPORTA_PRODUTOS_CSV",
+            descricao=(
+                f"Importacao CSV concluida: {criados} criado(s), "
+                f"{atualizados} atualizado(s) "
+                f"({fiscais_atualizados} somente fiscal), {ignorados} ignorado(s) "
+                f"e {len(erros)} linha(s) com erro."
+            ),
+            objeto_tipo="Produto",
+            objeto_id="lote",
+            ip=ip,
+        )
+    return resultado
 
 
 def produtos_para_reajuste(*, categoria=None, marca=None):

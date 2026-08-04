@@ -6,7 +6,7 @@
 <header class="page-header">
   <div>
     <h1>Terminais PDV</h1>
-    <p>Cadastre as maquinas de caixa autorizadas para operar o aplicativo local por filial.</p>
+    <p>Cadastre as máquinas de caixa autorizadas para operar o aplicativo local por filial.</p>
   </div>
   <div class="page-actions">
     <a class="secondary-button" href="{% url 'configuracoes:terminais_pdv_diagnosticos' %}"><i class="fa-solid fa-stethoscope"></i> Diagnósticos</a>
@@ -18,7 +18,7 @@
 <section class="operation-notice">
   <i class="fa-solid fa-key"></i>
   <div>
-    <strong>Credencial criada para {{ chave_nova.terminal }}. Ela sera mostrada somente agora.</strong>
+    <strong>Credencial criada para {{ chave_nova.terminal }}. Ela será mostrada somente agora.</strong>
     <span>Identificador: <code>{{ chave_nova.identificador }}</code></span>
     <span>Chave do aplicativo: <code>{{ chave_nova.chave }}</code></span>
   </div>
@@ -29,7 +29,7 @@
   <i class="fa-solid fa-network-wired"></i>
   <div>
     <strong>O terminal do operador deve usar o servidor local da loja.</strong>
-    <span>A nuvem sincroniza por API e filas; o PDV do caixa nao precisa carregar telas administrativas completas.</span>
+    <span>A nuvem sincroniza por API e filas; o PDV do caixa não precisa carregar telas administrativas completas.</span>
   </div>
 </section>
 
@@ -39,7 +39,7 @@
     <input type="search" name="q" value="{{ busca }}" placeholder="Terminal, filial, empresa ou identificador">
   </label>
   <label class="form-field">
-    <span>Licenca</span>
+    <span>Licença</span>
     <select name="licenca">
       <option value="">Todas</option>
       {% for value,label in status_licenca_choices %}
@@ -71,12 +71,12 @@
           <th>Identificador</th>
           <th>Chave</th>
           <th>TEF</th>
-          <th>Balanca</th>
-          <th>Licenca</th>
-          <th>Atualizacao</th>
+          <th>Balança</th>
+          <th>Licença</th>
+          <th>Atualização</th>
           <th>Offline/local</th>
           <th>Fiscal</th>
-          <th>Ultima conexao</th>
+          <th>Última conexão</th>
           <th>Status</th>
           <th></th>
         </tr>
@@ -87,9 +87,9 @@
             <td><strong>{{ terminal.nome }}</strong><br><small>{{ terminal.descricao|default:"Aplicativo PDV local" }}</small></td>
             <td>{{ terminal.filial }}</td>
             <td><code>{{ terminal.identificador }}</code></td>
-            <td>{% if terminal.chave_api_prefixo %}<code>{{ terminal.chave_api_prefixo }}...</code>{% else %}<span class="status status-warning">Nao gerada</span>{% endif %}</td>
+            <td>{% if terminal.chave_api_prefixo %}<code>{{ terminal.chave_api_prefixo }}...</code>{% else %}<span class="status status-warning">Não gerada</span>{% endif %}</td>
             <td><strong>{{ terminal.get_provedor_tef_display }}</strong><br><small>{{ terminal.get_modo_integracao_tef_display }}</small></td>
-            <td>{% if terminal.usa_balanca %}<span class="status status-success">Configurada</span><br><small>{{ terminal.get_protocolo_balanca_display }} - {{ terminal.porta_balanca }}</small>{% else %}<span class="status status-muted">Nao usa</span>{% endif %}</td>
+            <td>{% if terminal.usa_balanca %}<span class="status status-success">Configurada</span><br><small>{{ terminal.get_protocolo_balanca_display }} - {{ terminal.porta_balanca }}</small>{% else %}<span class="status status-muted">Não usa</span>{% endif %}</td>
             <td>{% if terminal.licenca_liberada %}<span class="status status-success">Liberada</span>{% elif terminal.status_licenca == "PENDENTE" %}<span class="status status-warning">Pendente</span>{% else %}<span class="status status-muted">{{ terminal.get_status_licenca_display }}</span>{% endif %}{% if terminal.licenca_liberada_em %}<br><small>{{ terminal.licenca_liberada_em|date:"d/m/Y H:i" }}</small>{% endif %}</td>
             <td><strong>{{ terminal.get_canal_atualizacao_display }}</strong><br>{% if terminal.bloquear_atualizacoes %}<span class="status status-warning">Congelada</span>{% else %}<span class="status status-success">Liberada pelo canal</span>{% endif %}</td>
             <td>{% if terminal.permite_modo_offline %}<span class="status status-success">Permitido</span>{% else %}<span class="status status-muted">Somente online local</span>{% endif %}</td>
@@ -100,24 +100,24 @@
               <a class="icon-button" href="{% url 'configuracoes:terminal_pdv_editar' terminal.pk %}" title="Editar terminal"><i class="fa-solid fa-pen"></i></a>
               {% if user.is_superuser %}
               {% if terminal.licenca_liberada %}
-                <form method="post" action="{% url 'configuracoes:terminal_pdv_alterar_licenca' terminal.pk 'bloquear' %}" class="inline-form" onsubmit="return confirm('Bloquear a licenca deste terminal? O pacote de ativacao deixara de ser liberado.');">
+                <form method="post" action="{% url 'configuracoes:terminal_pdv_alterar_licenca' terminal.pk 'bloquear' %}" class="inline-form" onsubmit="return confirm('Bloquear a licença deste terminal? O pacote de ativação deixará de ser liberado.');">
                   {% csrf_token %}
-                  <button class="icon-button" type="submit" title="Bloquear licenca"><i class="fa-solid fa-ban"></i></button>
+                  <button class="icon-button" type="submit" title="Bloquear licença"><i class="fa-solid fa-ban"></i></button>
                 </form>
               {% else %}
-                <form method="post" action="{% url 'configuracoes:terminal_pdv_alterar_licenca' terminal.pk 'liberar' %}" class="inline-form" onsubmit="return confirm('Liberar licenca para esta maquina?');">
+                <form method="post" action="{% url 'configuracoes:terminal_pdv_alterar_licenca' terminal.pk 'liberar' %}" class="inline-form" onsubmit="return confirm('Liberar licença para esta máquina?');">
                   {% csrf_token %}
-                  <button class="icon-button" type="submit" title="Liberar licenca"><i class="fa-solid fa-unlock-keyhole"></i></button>
+                  <button class="icon-button" type="submit" title="Liberar licença"><i class="fa-solid fa-unlock-keyhole"></i></button>
                 </form>
               {% endif %}
               {% if terminal.status_licenca != "CANCELADA" %}
-                <form method="post" action="{% url 'configuracoes:terminal_pdv_alterar_licenca' terminal.pk 'cancelar' %}" class="inline-form" onsubmit="return confirm('Cancelar a licenca deste terminal?');">
+                <form method="post" action="{% url 'configuracoes:terminal_pdv_alterar_licenca' terminal.pk 'cancelar' %}" class="inline-form" onsubmit="return confirm('Cancelar a licença deste terminal?');">
                   {% csrf_token %}
-                  <button class="icon-button" type="submit" title="Cancelar licenca"><i class="fa-solid fa-circle-xmark"></i></button>
+                  <button class="icon-button" type="submit" title="Cancelar licença"><i class="fa-solid fa-circle-xmark"></i></button>
                 </form>
               {% endif %}
               {% endif %}
-              <form method="post" action="{% url 'configuracoes:terminal_pdv_regenerar_chave' terminal.pk %}" class="inline-form" onsubmit="return confirm('Renovar a chave? O aplicativo atual deixara de conectar ate ser reconfigurado.');">
+              <form method="post" action="{% url 'configuracoes:terminal_pdv_regenerar_chave' terminal.pk %}" class="inline-form" onsubmit="return confirm('Renovar a chave? O aplicativo atual deixará de conectar até ser reconfigurado.');">
                 {% csrf_token %}
                 <button class="icon-button" type="submit" title="Renovar chave"><i class="fa-solid fa-rotate"></i></button>
               </form>

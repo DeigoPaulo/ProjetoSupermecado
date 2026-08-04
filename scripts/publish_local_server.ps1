@@ -4,6 +4,7 @@ param(
     [string]$Version,
     [string]$SourceDirectory = "dist\server_local",
     [string]$Destination = "artifacts\DeigoVarejoServidorLocal.zip",
+    [string]$PythonPath = ".venv\Scripts\python.exe",
     [switch]$RequireSignedCommit,
     [switch]$Force
 )
@@ -38,6 +39,15 @@ if ([string]$Manifest.arquivo -ne [IO.Path]::GetFileName($SourceArchive)) { thro
 if ([string]$Manifest.sha256 -ne $ActualHash) { throw "SHA-256 do pacote diverge do manifesto." }
 if ([long]$Manifest.tamanho_bytes -ne (Get-Item -LiteralPath $SourceArchive).Length) { throw "Tamanho do pacote diverge do manifesto." }
 if ($Manifest.contem_dados_cliente -ne $false) { throw "O pacote nao confirma ausencia de dados do cliente." }
+$Python = if ([IO.Path]::IsPathRooted($PythonPath)) { $PythonPath } else { Join-Path $Root $PythonPath }
+if (-not (Test-Path -LiteralPath $Python -PathType Leaf)) { throw "Python do projeto nao encontrado para validar o pacote: $Python" }
+$ValidationCode = "import json,sys; from pathlib import Path; from apps.configuracoes.artifacts import validar_conteudo_pacote_servidor; r=validar_conteudo_pacote_servidor(Path(sys.argv[1])); print(json.dumps(r, ensure_ascii=False)); sys.exit(0 if r['valido'] else 2)"
+$ValidationJson = & $Python -c $ValidationCode $SourceArchive
+if ($LASTEXITCODE -ne 0) { throw "Conteudo do pacote recusado antes da publicacao: $ValidationJson" }
+$ContentValidation = $ValidationJson | ConvertFrom-Json
+if ($ContentValidation.contrato -ne "local_server_package_content_v1" -or $ContentValidation.valido -ne $true) {
+    throw "Contrato de validacao do conteudo do pacote invalido."
+}
 if ($RequireSignedCommit -and $Manifest.commit_assinado_exigido -ne $true) {
     throw "O pacote nao foi gerado exigindo commit Git assinado."
 }

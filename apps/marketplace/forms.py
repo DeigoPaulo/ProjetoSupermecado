@@ -12,6 +12,8 @@ from .models import (
     ItemPedidoOnline,
     PedidoOnline,
     PoliticaEntrega,
+    StatusPedido,
+    TipoEntrega,
 )
 
 
@@ -20,7 +22,7 @@ class PedidoOnlineForm(forms.ModelForm):
         model = PedidoOnline
         fields = [
             "filial", "cliente", "nome_cliente", "documento_cliente_tipo", "documento_cliente",
-            "telefone", "canal", "tipo_entrega", "endereco_entrega", "referencia_externa",
+            "telefone", "canal", "tipo_entrega", "endereco_entrega", "bairro_entrega", "referencia_externa",
             "taxa_entrega", "desconto", "observacoes",
         ]
         widgets = {
@@ -55,6 +57,28 @@ class ItemPedidoOnlineForm(forms.ModelForm):
 class PagamentoPedidoForm(forms.Form):
     forma_pagamento = forms.ChoiceField(choices=FormaPagamentoPedido.choices)
     valor_pago = forms.DecimalField(max_digits=12, decimal_places=2, min_value=0.01)
+    referencia_pagamento = forms.CharField(
+        label="NSU ou referência da transação", max_length=120, required=False,
+        help_text="Obrigatório para cartão cobrado na entrega.",
+    )
+
+    def __init__(self, *args, pedido=None, **kwargs):
+        super().__init__(*args, **kwargs)
+        cartoes_na_entrega = {
+            FormaPagamentoPedido.CARTAO_CREDITO_ENTREGA,
+            FormaPagamentoPedido.CARTAO_DEBITO_ENTREGA,
+        }
+        pode_confirmar_cartao_entrega = (
+            pedido
+            and pedido.tipo_entrega == TipoEntrega.ENTREGA
+            and pedido.status == StatusPedido.SAIU_ENTREGA
+        )
+        if not pode_confirmar_cartao_entrega:
+            self.fields["forma_pagamento"].choices = [
+                escolha
+                for escolha in FormaPagamentoPedido.choices
+                if escolha[0] not in cartoes_na_entrega
+            ]
 
 
 class IntegracaoMarketplaceForm(forms.ModelForm):
@@ -102,6 +126,6 @@ FaixaTaxaEntregaFormSet = inlineformset_factory(
 
 class CalcularEntregaForm(forms.Form):
     distancia_entrega_km = forms.DecimalField(
-        label="Distancia ate o cliente (km)", max_digits=7, decimal_places=2, min_value=0
+        label="Distância até o cliente (km)", max_digits=7, decimal_places=2, min_value=0
     )
     bairro_entrega = forms.CharField(label="Bairro", max_length=120, required=False)

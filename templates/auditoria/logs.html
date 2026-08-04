@@ -6,7 +6,7 @@
 <header class="page-header">
   <div>
     <h1>Auditoria</h1>
-    <p>Consulta de acoes sensiveis registradas no sistema.</p>
+    <p>Consulta de ações sensíveis registradas no sistema.</p>
   </div>
   <div class="actions">
     <a class="secondary-button" href="{{ csv_url }}"><i class="fa-solid fa-file-csv"></i> Excel/CSV</a>
@@ -32,7 +32,7 @@
     </select>
   </label>
   <label>
-    <span>Acao</span>
+    <span>Ação</span>
     <select name="acao">
       <option value="">Todas</option>
       {% for item in acoes %}
@@ -41,21 +41,21 @@
     </select>
   </label>
   <label>
-    <span>Usuario</span>
+    <span>Usuário</span>
     <input type="search" name="usuario" value="{{ usuario }}" placeholder="Login">
   </label>
   <label>
     <span>Busca</span>
-    <input type="search" name="q" value="{{ q }}" placeholder="Descricao, objeto ou IP">
+    <input type="search" name="q" value="{{ q }}" placeholder="Descrição, objeto ou IP">
   </label>
   <button type="submit">Filtrar</button>
 </form>
 
 <section class="metrics-grid">
   <article class="metric"><span>Registros encontrados</span><strong>{{ total_logs }}</strong></article>
-  <article class="metric"><span>Periodo</span><strong>{{ data_inicio|date:"d/m" }} a {{ data_fim|date:"d/m" }}</strong></article>
+  <article class="metric"><span>Período</span><strong>{{ data_inicio|date:"d/m" }} a {{ data_fim|date:"d/m" }}</strong></article>
   <article class="metric"><span>Modulos</span><strong>{{ modulos|length }}</strong></article>
-  <article class="metric"><span>Acoes</span><strong>{{ acoes|length }}</strong></article>
+  <article class="metric"><span>Ações</span><strong>{{ acoes|length }}</strong></article>
 </section>
 
 <section class="panel">
@@ -65,11 +65,11 @@
         <tr>
           <th>Data</th>
           <th>Modulo</th>
-          <th>Acao</th>
-          <th>Usuario</th>
+          <th>Ação</th>
+          <th>Usuário</th>
           <th>Objeto</th>
           <th>IP</th>
-          <th>Descricao</th>
+          <th>Descrição</th>
         </tr>
       </thead>
       <tbody>

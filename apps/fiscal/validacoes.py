@@ -39,7 +39,7 @@ def diagnosticar_schemas_fiscais():
             "pronto": False,
             "arquivo": str(arquivo),
             "sha256": "",
-            "erro": "Arquivo raiz do schema fiscal nao encontrado.",
+            "erro": "Arquivo raiz do schema fiscal não encontrado.",
         }
     conteudo = arquivo.read_bytes()
     sha256 = hashlib.sha256(conteudo).hexdigest()
@@ -76,7 +76,7 @@ def diagnosticar_schemas_fiscais():
 def validar_xml_schema(documento):
     diagnostico = diagnosticar_schemas_fiscais()
     if not diagnostico["pronto"]:
-        raise ValidationError(diagnostico["erro"] or "Pacote XSD fiscal nao esta pronto.")
+        raise ValidationError(diagnostico["erro"] or "Pacote XSD fiscal não está pronto.")
     try:
         parser = etree.XMLParser(resolve_entities=False, no_network=True, load_dtd=False)
         raiz = etree.fromstring(documento.xml_conteudo.encode("utf-8"), parser)
@@ -89,7 +89,7 @@ def validar_xml_schema(documento):
 def validar_xml_pre_transmissao(documento, adapter):
     xml = documento.xml_conteudo or ""
     if "<!DOCTYPE" in xml.upper() or "<!ENTITY" in xml.upper():
-        raise ValidationError("XML fiscal com DTD ou entidade externa nao pode ser transmitido.")
+        raise ValidationError("XML fiscal com DTD ou entidade externa não pode ser transmitido.")
     try:
         raiz = ET.fromstring(xml)
     except ET.ParseError as exc:
@@ -97,18 +97,18 @@ def validar_xml_pre_transmissao(documento, adapter):
 
     chave = documento.chave_acesso or ""
     if len(chave) != 44 or not chave.isdigit() or not _digito_verificador_valido(chave):
-        raise ValidationError("Chave de acesso fiscal invalida.")
+        raise ValidationError("Chave de acesso fiscal inválida.")
 
     inf_nfe = raiz.find(f"{{{NFE_NS}}}infNFe")
     if inf_nfe is None or inf_nfe.get("Id") != f"NFe{chave}":
-        raise ValidationError("Identificador infNFe nao corresponde a chave de acesso.")
+        raise ValidationError("Identificador infNFe não corresponde a chave de acesso.")
 
     modelo = inf_nfe.findtext(f"{{{NFE_NS}}}ide/{{{NFE_NS}}}mod")
     modelo_esperado = "65" if documento.tipo_documento == TipoDocumentoFiscal.NFCE else "55"
     if modelo != modelo_esperado:
-        raise ValidationError("Modelo fiscal do XML nao corresponde ao documento.")
+        raise ValidationError("Modelo fiscal do XML não corresponde ao documento.")
     if inf_nfe.findtext(f"{{{NFE_NS}}}ide/{{{NFE_NS}}}cDV") != chave[-1]:
-        raise ValidationError("Digito verificador do XML nao corresponde a chave de acesso.")
+        raise ValidationError("Digito verificador do XML não corresponde a chave de acesso.")
 
     if not bool(getattr(adapter, "valida_schema", False)):
         validar_xml_schema(documento)
@@ -116,7 +116,7 @@ def validar_xml_pre_transmissao(documento, adapter):
     assinatura = raiz.find(f"{{{DSIG_NS}}}Signature")
     if assinatura is None and not bool(getattr(adapter, "assina_xml", False)):
         raise ValidationError(
-            "XML fiscal ainda nao esta assinado e o adaptador configurado nao declarou assinatura propria."
+            "XML fiscal ainda não está assinado e o adaptador configurado não declarou assinatura própria."
         )
     return {
         "chave_acesso": chave,

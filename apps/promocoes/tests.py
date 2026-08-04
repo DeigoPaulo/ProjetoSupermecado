@@ -37,7 +37,7 @@ class PromocaoViewsTests(TestCase):
         response = self.client.get(f"/promocoes/{self.promocao.pk}/editar/")
 
         self.assertEqual(response.status_code, 200)
-        self.assertContains(response, "Produto e preco")
+        self.assertContains(response, "Produto e preço")
         self.assertContains(response, "Vigencia")
         self.assertContains(response, "O PDV aplica automaticamente")
         self.assertContains(response, "select2-field")
@@ -48,7 +48,7 @@ class PromocaoViewsTests(TestCase):
             "/promocoes/nova/",
             {
                 "produto": self.produto.pk,
-                "nome": "Periodo invalido",
+                "nome": "Periodo inválido",
                 "preco_promocional": "10.00",
                 "inicio": inicio.strftime("%Y-%m-%dT%H:%M"),
                 "fim": (inicio - timedelta(hours=1)).strftime("%Y-%m-%dT%H:%M"),

@@ -54,9 +54,9 @@ class MovimentacaoEstoqueForm(forms.Form):
         if produto and produto.exige_lote and tipo == TipoMovimentacaoEstoque.ENTRADA and not codigo_lote:
             self.add_error("codigo_lote", "Este produto exige lote nas novas entradas.")
         if (fabricacao or validade) and not codigo_lote:
-            self.add_error("codigo_lote", "Informe o lote ao preencher fabricacao ou validade.")
+            self.add_error("codigo_lote", "Informe o lote ao preencher fabricação ou validade.")
         if fabricacao and validade and fabricacao > validade:
-            self.add_error("validade", "A validade nao pode ser anterior a fabricacao.")
+            self.add_error("validade", "A validade não pode ser anterior a fabricação.")
         if codigo_lote and tipo not in {
             TipoMovimentacaoEstoque.ENTRADA,
             TipoMovimentacaoEstoque.DEVOLUCAO,
@@ -65,11 +65,11 @@ class MovimentacaoEstoqueForm(forms.Form):
             TipoMovimentacaoEstoque.VENDA,
             TipoMovimentacaoEstoque.PERDA,
         }:
-            self.add_error("codigo_lote", "Este tipo de movimento nao aceita lote.")
+            self.add_error("codigo_lote", "Este tipo de movimento não aceita lote.")
         return cleaned_data
 
 class AtribuirSaldoLoteForm(forms.Form):
-    codigo = forms.CharField(max_length=60, label="Codigo do lote")
+    codigo = forms.CharField(max_length=60, label="Código do lote")
     quantidade = forms.DecimalField(max_digits=12, decimal_places=3, min_value=0.001)
     custo_unitario = forms.DecimalField(max_digits=10, decimal_places=2, min_value=0)
     fabricacao = forms.DateField(required=False, widget=forms.DateInput(attrs={"type": "date"}))
@@ -81,7 +81,7 @@ class AtribuirSaldoLoteForm(forms.Form):
         fabricacao = cleaned_data.get("fabricacao")
         validade = cleaned_data.get("validade")
         if fabricacao and validade and fabricacao > validade:
-            self.add_error("validade", "A validade nao pode ser anterior a fabricacao.")
+            self.add_error("validade", "A validade não pode ser anterior a fabricação.")
         return cleaned_data
 
 
@@ -128,7 +128,7 @@ class PerdaEstoqueForm(forms.ModelForm):
         aplicar_select2(self, ["produto", "filial"])
 
 class DesmembramentoProdutoForm(forms.Form):
-    receita = forms.ModelChoiceField(queryset=None, required=False, label="Receita padrao")
+    receita = forms.ModelChoiceField(queryset=None, required=False, label="Receita padrão")
     filial = forms.ModelChoiceField(queryset=None)
     produto_origem = forms.ModelChoiceField(queryset=None, label="Produto origem")
     quantidade_origem = forms.DecimalField(max_digits=12, decimal_places=3, min_value=0.001)
@@ -315,9 +315,9 @@ class ProducaoComposicaoForm(forms.Form):
         if self.composicao and self.composicao.produto_final.exige_lote and not codigo_lote:
             self.add_error("codigo_lote", "O produto final exige lote.")
         if (fabricacao or validade) and not codigo_lote:
-            self.add_error("codigo_lote", "Informe o lote ao preencher fabricacao ou validade.")
+            self.add_error("codigo_lote", "Informe o lote ao preencher fabricação ou validade.")
         if fabricacao and validade and fabricacao > validade:
-            self.add_error("validade", "A validade nao pode ser anterior a fabricacao.")
+            self.add_error("validade", "A validade não pode ser anterior a fabricação.")
         return cleaned_data
 
     @property
@@ -374,7 +374,7 @@ class ConfiguracaoSLASetorProducaoForm(forms.ModelForm):
             self.fields["empresa"].queryset = self.fields["empresa"].queryset.filter(pk=empresa_id)
             self.fields["filial"].queryset = self.fields["filial"].queryset.filter(empresa_id=empresa_id)
         self.fields["filial"].required = False
-        self.fields["setor"].widget.attrs["placeholder"] = "Ex.: Padaria, Acougue, Hortifruti"
+        self.fields["setor"].widget.attrs["placeholder"] = "Ex.: Padaria, Açougue, Hortifruti"
         self.fields["meta_minutos"].widget.attrs["min"] = 1
         aplicar_select2(self, ["empresa", "filial"])
 

@@ -13,7 +13,7 @@ VALIDAR_IMAGEM_PNG_JPEG = FileExtensionValidator(
 
 class ModoImplantacao(models.TextChoices):
     LOCAL = "LOCAL", "Somente servidor local"
-    HIBRIDO = "HIBRIDO", "Servidor local com sincronizacao em nuvem"
+    HIBRIDO = "HIBRIDO", "Servidor local com sincronização em nuvem"
     NUVEM_AGENTE = "NUVEM_AGENTE", "Nuvem com agente local"
 
 
@@ -40,6 +40,25 @@ class StatusEventoEntrada(models.TextChoices):
     PAUSADO = "PAUSADO", "Pausado pela política"
 
 
+class AcaoPinSupervisor(models.TextChoices):
+    PDV_DESCONTO = "PDV_DESCONTO", "Desconto no PDV"
+    PDV_ESTORNO = "PDV_ESTORNO", "Estorno, devolução ou cancelamento de venda"
+    PDV_MOVIMENTO_CAIXA = "PDV_MOVIMENTO_CAIXA", "Sangria, suprimento ou conferência de caixa"
+    COMPRA_FINALIZAR = "COMPRA_FINALIZAR", "Finalização de entrada de compra"
+    COMPRA_CANCELAR = "COMPRA_CANCELAR", "Cancelamento de entrada de compra"
+    ESTOQUE_AJUSTE = "ESTOQUE_AJUSTE", "Ajuste, inventário, perda ou produção"
+    ESTOQUE_CANCELAR = "ESTOQUE_CANCELAR", "Cancelamento de produção ou desmembramento"
+    PRECO_REAJUSTE = "PRECO_REAJUSTE", "Reajuste de preços em lote"
+
+
+def acoes_pin_supervisor_padrao():
+    return [
+        AcaoPinSupervisor.PDV_ESTORNO,
+        AcaoPinSupervisor.COMPRA_CANCELAR,
+        AcaoPinSupervisor.ESTOQUE_CANCELAR,
+    ]
+
+
 class Empresa(models.Model):
     razao_social = models.CharField(max_length=255)
     nome_fantasia = models.CharField(max_length=255)
@@ -55,13 +74,18 @@ class Empresa(models.Model):
         choices=ModoImplantacao.choices,
         default=ModoImplantacao.LOCAL,
     )
-    sincronizacao_automatica = models.BooleanField("Sincronizacao automatica", default=False)
+    sincronizacao_automatica = models.BooleanField("Sincronizacao automática", default=False)
     url_sincronizacao = models.URLField("URL segura da nuvem", blank=True)
     politica_conflito_sincronizacao = models.CharField(
-        "Politica de conflito",
+        "Política de conflito",
         max_length=40,
         choices=PoliticaConflitoSincronizacao.choices,
         default=PoliticaConflitoSincronizacao.MANUAL,
+    )
+    acoes_credencial_exigem_pin = models.JSONField(
+        "Ações que exigem cartão e PIN",
+        default=acoes_pin_supervisor_padrao,
+        blank=True,
     )
     is_active = models.BooleanField(default=True)
     created_at = models.DateTimeField(auto_now_add=True)
@@ -70,6 +94,9 @@ class Empresa(models.Model):
 
     class Meta:
         ordering = ["nome_fantasia"]
+
+    def exige_pin_supervisor(self, acao):
+        return bool(acao and acao in (self.acoes_credencial_exigem_pin or []))
 
     @property
     def sincronizacao_operacional_habilitada(self):
@@ -126,7 +153,7 @@ class Filial(models.Model):
     endereco = models.TextField(blank=True)
     municipio = models.CharField(max_length=120, blank=True)
     uf = models.CharField(max_length=2, choices=UF_CHOICES, blank=True)
-    codigo_municipio_ibge = models.CharField("Codigo municipio IBGE", max_length=7, blank=True)
+    codigo_municipio_ibge = models.CharField("Código município IBGE", max_length=7, blank=True)
     is_active = models.BooleanField(default=True)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
@@ -245,5 +272,34 @@ class DocumentoFiscalSincronizado(models.Model):
 
     def __str__(self):
         return f"Documento fiscal sincronizado {self.documento_externo_id}"
+
+
+class LancamentoFinanceiroSincronizado(models.Model):
+    empresa = models.ForeignKey(Empresa, on_delete=models.PROTECT, related_name="lancamentos_financeiros_sincronizados")
+    filial = models.ForeignKey(Filial, on_delete=models.PROTECT, related_name="lancamentos_financeiros_sincronizados", null=True, blank=True)
+    evento = models.OneToOneField(EventoEntradaSincronizacao, on_delete=models.PROTECT, related_name="lancamento_financeiro_sincronizado")
+    lancamento_externo_id = models.CharField(max_length=120)
+    tipo = models.CharField(max_length=20)
+    origem = models.CharField(max_length=40)
+    descricao = models.CharField(max_length=255)
+    valor = models.DecimalField(max_digits=14, decimal_places=2)
+    data = models.DateField()
+    conta_movimento = models.CharField(max_length=160, blank=True)
+    centro_custo = models.CharField(max_length=180, blank=True)
+    conta_contabil = models.CharField(max_length=220, blank=True)
+    usuario = models.CharField(max_length=150, blank=True)
+    estorno_de_externo_id = models.CharField(max_length=120, blank=True)
+    payload = models.JSONField(default=dict)
+    recebido_em = models.DateTimeField(auto_now_add=True)
+    atualizado_em = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ["-data", "-recebido_em"]
+        constraints = [
+            models.UniqueConstraint(fields=["empresa", "lancamento_externo_id"], name="empresas_lanc_fin_sync_unico")
+        ]
+
+    def __str__(self):
+        return f"Lancamento financeiro sincronizado {self.lancamento_externo_id}"
 
 # Create your models here.

@@ -62,6 +62,9 @@ Recomendacao inicial para uma loja:
 - volume de backup diferente do volume principal sempre que possivel.
 
 Nao expor PostgreSQL, WinSW ou a administracao do ERP diretamente na internet.
+Em producao, publicar o ERP por proxy reverso HTTPS, inclusive na rede interna da loja.
+O proxy deve encaminhar X-Forwarded-Proto=https; HTTP direto fica restrito ao
+desenvolvimento e ao healthcheck local controlado.
 
 ## 5. Preparacao do Windows
 
@@ -112,7 +115,7 @@ DJANGO_ENV=production
 DEBUG=false
 SECRET_KEY=GERAR_UMA_CHAVE_EXCLUSIVA
 ALLOWED_HOSTS=127.0.0.1,localhost,IP_DO_SERVIDOR,NOME_DNS
-CSRF_TRUSTED_ORIGINS=http://IP_DO_SERVIDOR:8000
+CSRF_TRUSTED_ORIGINS=https://NOME_DNS
 
 POSTGRES_DB=deigo_varejo
 POSTGRES_USER=deigo_varejo_app
@@ -120,6 +123,14 @@ POSTGRES_PASSWORD=SENHA_EXCLUSIVA
 POSTGRES_HOST=127.0.0.1
 POSTGRES_PORT=5432
 POSTGRES_CONN_MAX_AGE=60
+
+SESSION_COOKIE_SECURE=true
+CSRF_COOKIE_SECURE=true
+SECURE_SSL_REDIRECT=true
+SECURE_HSTS_SECONDS=3600
+SECURE_HSTS_INCLUDE_SUBDOMAINS=false
+SECURE_HSTS_PRELOAD=false
+USE_X_FORWARDED_PROTO=true
 
 MEDIA_ROOT=C:\ProgramData\DeigoVarejo\Dados\media
 STATIC_ROOT=C:\ProgramData\DeigoVarejo\Dados\staticfiles
@@ -261,6 +272,7 @@ Antes de emitir documento real:
 - configurar as URLs oficiais do QR Code e da consulta NFC-e por UF/ambiente;
 - configurar e homologar `FISCAL_SEFAZ_ADAPTER`, schema e certificado A1;
 - manter `FISCAL_AUTO_TRANSMIT_ENABLED=False` ate a homologacao ser aprovada;
+- ajustar `FISCAL_AUTO_QUERY_MAX_ATTEMPTS` somente com o provedor fiscal; o padrão limita a 12 consultas automáticas antes de exigir análise manual, sem retransmitir a nota;
 - depois da aprovacao, habilitar a fila e registrar `scripts/register_fiscal_transmission_task.ps1` com conta de servico dedicada;
 - conferir na Central Fiscal documentos elegiveis, leases ativos, retentativas e tentativas esgotadas;
 - quando uma rejeicao ou falha esgotar as tentativas, corrigir primeiro o cadastro de origem e usar `Recolocar na fila` no detalhe do documento;
@@ -308,6 +320,23 @@ de producao.
 
 No modo hibrido:
 
+No arquivo de ambiente do servidor local e da Central, configure uma credencial exclusiva por CNPJ:
+
+```env
+SINCRONIZACAO_TOKENS_EMPRESA_JSON={"00.000.000/0001-00":"segredo-longo-e-exclusivo-da-empresa"}
+
+Para trocar a credencial sem interromper a loja, publique primeiro a configuração de rotação nos dois lados. O primeiro valor é sempre usado para novos envios, e os anteriores são aceitos apenas temporariamente:
+
+    SINCRONIZACAO_TOKENS_EMPRESA_JSON={"00.000.000/0001-00":{"atual":"novo-segredo-exclusivo","anteriores":["segredo-anterior"]}}
+
+Depois que todos os servidores locais estiverem enviando com o token atual, remova `anteriores`. O diagnóstico marca empresas que ainda estão nessa janela de rotação e nunca exibe os segredos.
+
+SINCRONIZACAO_PERMITE_TOKEN_GLOBAL=false
+SINCRONIZACAO_MAX_EVENTO_BYTES=1048576
+```
+
+O token global compartilhado é apenas uma contingência de migração e não deve permanecer habilitado na produção.
+
 ```powershell
 .\scripts\register_sync_task.ps1 -IntervaloMinutos 1
 ```
@@ -338,9 +367,21 @@ Executar e registrar:
 - reinicio do servidor e dos PDVs;
 - queda de internet e retorno;
 - backup automatico e restauracao em ambiente separado;
-- logs, auditoria, data/hora e espaco em disco.
+- logs, auditoria, data/hora e espaco em disco;
+- dossie de implantacao com SHA-256 validado em modo estrito.
 
-Falha critica impede o aceite e a entrada em producao.
+~~~powershell
+.\.venv\Scripts\python.exe manage.py gerar_dossie_implantacao --perfil servidor-local --producao --saida artifacts\dossie_implantacao.json
+.\.venv\Scripts\python.exe manage.py verificar_dossie_implantacao artifacts\dossie_implantacao.json --estrito
+.\.venv\Scripts\python.exe manage.py verificar_pos_implantacao --estrito
+.\.venv\Scripts\python.exe manage.py gerar_evidencia_aceite --dossie artifacts\dossie_implantacao.json --saida artifacts\evidencia_aceite.json --estrito
+~~~
+
+Falha critica ou dossie nao liberavel impede o aceite e a entrada em producao.
+
+Como alternativa aos comandos, o super admin pode acessar **Sistema > Servidor local > Baixar evidências**. O ZIP gerado contém o dossiê, a evidência de aceite e seus arquivos SHA-256; o evento fica registrado na auditoria. O pacote também é gerado quando houver bloqueios, para documentar as correções necessárias antes da liberação.
+
+Após executar os testes em uma máquina limpa, registre o resultado em **Sistema > Servidor local > Homologação em máquina limpa**. Informe a máquina, o sistema operacional e a versão do artefato; envie **evidencia_aceite.json** e o arquivo **.sha256** produzido junto com ela. O sistema compara o checksum, valida contrato, perfil, alvo de produção, diagnóstico pós-instalação e flags de segurança, e calcula o hash sem entrada manual. Uma aprovação exige evidência liberável. Reprovações exigem a descrição da falha e da correção necessária; o sistema impede reutilizar a mesma evidência e registra o responsável na auditoria.
 
 ## 17. Entrega ao cliente
 
@@ -353,6 +394,7 @@ Entregar:
 - contato de suporte e janela de manutencao;
 - versao, hash e data da instalacao;
 - termo de aceite assinado;
+- evidencia_aceite.json e seu SHA-256 anexados ao termo;
 - orientacao para nao alterar servicos, banco ou arquivos da instalacao.
 
 Nao entregar repositorio, codigo-fonte, chaves privadas, token central, certificado

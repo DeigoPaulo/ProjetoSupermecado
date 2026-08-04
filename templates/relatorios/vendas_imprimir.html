@@ -2,7 +2,7 @@
 <html lang="pt-br">
 <head>
   <meta charset="utf-8">
-  <title>Relatorio de vendas</title>
+  <title>Relatório de vendas</title>
   <style>
     @page { size: A4 landscape; margin: 12mm; }
     * { box-sizing: border-box; }
@@ -28,7 +28,10 @@
 <body>
   <header>
     <div><h1>Relatório de vendas</h1><p>Supermercado - período de {{ data_inicio|date:"d/m/Y" }} a {{ data_fim|date:"d/m/Y" }}{% if filial_selecionada %} · Filial: {{ filial_selecionada }}{% else %} · Todas as filiais permitidas{% endif %}</p></div>
-    <p>Gerado em {{ gerado_em|date:"d/m/Y H:i" }}</p>
+    <div>
+      <p>Gerado em {{ gerado_em|date:"d/m/Y H:i" }}</p>
+      {% if operador_selecionado %}<p>Funcionário: {{ operador_selecionado }}</p>{% endif %}
+    </div>
   </header>
   <div class="actions"><button type="button" onclick="window.print()">Imprimir / Salvar como PDF</button></div>
   <section class="summary">

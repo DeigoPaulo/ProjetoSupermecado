@@ -6,24 +6,24 @@
 <header class="page-header">
   <div>
     <h1>Pedidos online</h1>
-    <p>Recebimento, reserva, separacao e entrega de pedidos externos.</p>
+    <p>Recebimento, reserva, separação e entrega de pedidos externos.</p>
   </div>
   <div class="actions">
-    {% if access.sistema %}<a class="secondary-button" href="{% url 'marketplace:politicas_entrega' %}"><i class="fa-solid fa-truck-fast"></i> Entregas</a><a class="secondary-button" href="{% url 'marketplace:integracoes' %}"><i class="fa-solid fa-plug"></i> Integracoes</a>{% endif %}
+    {% if access.sistema %}<a class="secondary-button" href="{% url 'marketplace:politicas_entrega' %}"><i class="fa-solid fa-truck-fast"></i> Entregas</a><a class="secondary-button" href="{% url 'marketplace:integracoes' %}"><i class="fa-solid fa-plug"></i> Integrações</a>{% endif %}
     <a class="primary-button" href="{% url 'marketplace:novo' %}"><i class="fa-solid fa-circle-plus"></i> Novo pedido</a>
   </div>
 </header>
 
 <section class="metrics-grid">
   <article class="metric"><span>Rascunhos</span><strong>{{ painel.rascunho }}</strong></article>
-  <article class="metric"><span>Em separacao</span><strong>{{ painel.separacao }}</strong></article>
+  <article class="metric"><span>Em separação</span><strong>{{ painel.separacao }}</strong></article>
   <article class="metric"><span>Prontos</span><strong>{{ painel.pronto }}</strong></article>
   <article class="metric"><span>Em entrega</span><strong>{{ painel.entrega }}</strong></article>
   <article class="metric"><span>Valor filtrado</span><strong>R$ {{ valor_total|floatformat:2 }}</strong></article>
 </section>
 
 <form method="get" class="toolbar">
-  <input type="search" name="q" value="{{ request.GET.q }}" placeholder="Numero, cliente ou referencia externa">
+  <input type="search" name="q" value="{{ request.GET.q }}" placeholder="Número, cliente ou referência externa">
   <select name="status">
     <option value="">Todos os status</option>
     {% for valor, rotulo in status_opcoes %}<option value="{{ valor }}" {% if request.GET.status == valor %}selected{% endif %}>{{ rotulo }}</option>{% endfor %}
@@ -33,7 +33,7 @@
 
 <div class="panel">
   <table>
-    <thead><tr><th>Pedido</th><th>Cliente</th><th>Canal</th><th>Entrega</th><th>Filial</th><th>Separacao</th><th>Pagamento</th><th>Total</th><th>Status</th><th></th></tr></thead>
+    <thead><tr><th>Pedido</th><th>Cliente</th><th>Canal</th><th>Entrega</th><th>Filial</th><th>Separação</th><th>Pagamento</th><th>Total</th><th>Status</th><th></th></tr></thead>
     <tbody>
       {% for pedido in pedidos %}
         <tr>
@@ -43,7 +43,7 @@
           <td>{{ pedido.get_tipo_entrega_display }}</td>
           <td>{{ pedido.filial }}</td>
           <td>
-            <div class="order-progress" aria-label="Separacao {{ pedido.percentual_separacao }}%">
+            <div class="order-progress" aria-label="Separação {{ pedido.percentual_separacao }}%">
               <span><strong>{{ pedido.total_itens_separados|quantidade_br }}</strong> / {{ pedido.total_itens_pedido|quantidade_br }}</span>
               <div><i style="width: {{ pedido.percentual_separacao }}%"></i></div>
             </div>

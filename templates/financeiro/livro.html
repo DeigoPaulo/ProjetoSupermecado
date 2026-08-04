@@ -55,7 +55,7 @@
   <div class="panel-title">Lancamentos realizados</div>
   <div class="table-wrap">
     <table>
-      <thead><tr><th>Data</th><th>Conta / filial</th><th>Tipo</th><th>Descricao</th><th>Origem</th><th>Valor</th><th>Usuario</th><th>Acao</th></tr></thead>
+      <thead><tr><th>Data</th><th>Conta / filial</th><th>Tipo</th><th>Descrição</th><th>Origem</th><th>Valor</th><th>Usuário</th><th>Ação</th></tr></thead>
       <tbody>
         {% for lancamento in lancamentos %}
           <tr>
@@ -69,15 +69,15 @@
               {% if lancamento.pagamento_venda %}<br><small>Pagamento da venda #{{ lancamento.pagamento_venda.venda_id }}</small>{% endif %}
               {% if lancamento.sangria %}<br><small>Sangria #{{ lancamento.sangria_id }}</small>{% endif %}
               {% if lancamento.suprimento %}<br><small>Suprimento #{{ lancamento.suprimento_id }}</small>{% endif %}
-              {% if lancamento.estorno_de %}<br><small>Estorno do lancamento #{{ lancamento.estorno_de_id }}</small>{% endif %}
-              {% if lancamento.estornos.exists %}<br><small>Estornado pelo lancamento #{{ lancamento.estornos.first.id }}</small>{% endif %}
+              {% if lancamento.estorno_de %}<br><small>Estorno do lançamento #{{ lancamento.estorno_de_id }}</small>{% endif %}
+              {% if lancamento.estornos.exists %}<br><small>Estornado pelo lançamento #{{ lancamento.estornos.first.id }}</small>{% endif %}
             </td>
             <td>{{ lancamento.origem }}</td>
             <td><strong>R$ {{ lancamento.valor|floatformat:2 }}</strong></td>
             <td>{{ lancamento.usuario }}</td>
             <td>
               {% if not lancamento.estorno_de and not lancamento.estornos.exists %}
-                <form method="post" action="{% url 'financeiro:estornar_livro' lancamento.pk %}" class="inline-form form-confirm" data-msg="Registrar estorno inverso deste lancamento?">
+                <form method="post" action="{% url 'financeiro:estornar_livro' lancamento.pk %}" class="inline-form form-confirm" data-msg="Registrar estorno inverso deste lançamento?">
                   {% csrf_token %}
                   <input type="text" name="motivo" placeholder="Motivo" required>
                   <button class="secondary-button danger-button" type="submit">Estornar</button>
@@ -88,7 +88,7 @@
             </td>
           </tr>
         {% empty %}
-          <tr><td colspan="8" class="empty">Nenhum lancamento realizado no periodo.</td></tr>
+          <tr><td colspan="8" class="empty">Nenhum lançamento realizado no periodo.</td></tr>
         {% endfor %}
       </tbody>
     </table>

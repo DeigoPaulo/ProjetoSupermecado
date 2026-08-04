@@ -9,6 +9,7 @@ from django.db import transaction
 from django.db.models import Q
 from django.utils import timezone
 
+from .credenciais_sincronizacao import token_sincronizacao_para_cnpj
 from .models import EventoSincronizacao, ModoImplantacao, StatusSincronizacao
 
 
@@ -35,9 +36,11 @@ def enfileirar_evento(*, empresa, tipo, objeto_tipo, objeto_id, payload, chave_i
 
 
 def enviar_evento_http(evento):
-    token = settings.SINCRONIZACAO_API_TOKEN
+    token, _origem_token = token_sincronizacao_para_cnpj(evento.empresa.cnpj)
     if not token:
-        raise ErroSincronizacao("Credencial SINCRONIZACAO_API_TOKEN nao configurada no servidor local.")
+        raise ErroSincronizacao(
+            "Credencial individual de sincronização não configurada para o CNPJ da empresa."
+        )
     url = urljoin(evento.empresa.url_sincronizacao.rstrip("/") + "/", "eventos/")
     corpo = json.dumps(
         {

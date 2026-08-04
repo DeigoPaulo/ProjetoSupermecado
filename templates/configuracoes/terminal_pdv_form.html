@@ -6,7 +6,7 @@
 <header class="page-header">
   <div>
     <h1>{% if object %}Editar terminal PDV{% else %}Novo terminal PDV{% endif %}</h1>
-    <p>Vincule a maquina do caixa a uma filial e ao fluxo local/offline.</p>
+    <p>Vincule a máquina do caixa a uma filial e ao fluxo local/offline.</p>
   </div>
 </header>
 
@@ -14,7 +14,7 @@
   {% csrf_token %}
   {% if form.non_field_errors %}<div class="form-note form-note-danger">{{ form.non_field_errors }}</div>{% endif %}
   <section class="form-section form-field-wide">
-    <h2>Identificacao do terminal</h2>
+    <h2>Identificação do terminal</h2>
     <div class="form-grid form-grid-inner">
       <label class="form-field"><span>{{ form.filial.label }}</span>{{ form.filial }}{{ form.filial.errors }}</label>
       <label class="form-field"><span>{{ form.nome.label }}</span>{{ form.nome }}{{ form.nome.errors }}</label>
@@ -37,25 +37,25 @@
       <label class="form-field"><span>{{ form.observacao_licenca.label }}</span>{{ form.observacao_licenca }}{{ form.observacao_licenca.errors }}</label>
       <div class="form-note form-field-wide">
         <strong>Licenciamento do app desktop.</strong>
-        <span>O instalador e o pacote de ativacao devem ser liberados pelo admin master por terminal/maquina contratada. Terminal bloqueado ou pendente nao deve ativar o app no caixa.</span>
+        <span>O instalador e o pacote de ativação devem ser liberados pelo admin master por terminal/máquina contratada. Terminal bloqueado ou pendente não deve ativar o app no caixa.</span>
       </div>
       <label class="form-field"><span>{{ form.canal_atualizacao.label }}</span>{{ form.canal_atualizacao }}{{ form.canal_atualizacao.errors }}</label>
       <label class="toggle-field">{{ form.bloquear_atualizacoes }} <span>{{ form.bloquear_atualizacoes.label }}</span>{{ form.bloquear_atualizacoes.errors }}</label>
       <div class="form-note form-field-wide">
-        <strong>Atualizacao controlada.</strong>
+        <strong>Atualização controlada.</strong>
         <span>Use o canal piloto em poucos caixas antes da liberacao estavel. O congelamento bloqueia atualizacoes opcionais; versoes abaixo do minimo de seguranca continuam obrigatorias.</span>
       </div>
       <label class="toggle-field">{{ form.permite_modo_offline }} <span>{{ form.permite_modo_offline.label }}</span>{{ form.permite_modo_offline.errors }}</label>
       <label class="toggle-field">{{ form.emite_documento_fiscal }} <span>{{ form.emite_documento_fiscal.label }}</span>{{ form.emite_documento_fiscal.errors }}</label>
       <div class="form-note form-field-wide">
         <strong>Fiscal por terminal.</strong>
-        <span>Quando desativado, este PDV nao tenta preparar/transmitir NFC-e automaticamente. Use somente por decisao administrativa da empresa; obrigacoes fiscais continuam dependendo da legislacao e do contador.</span>
+        <span>Quando desativado, este PDV não tenta preparar/transmitir NFC-e automaticamente. Use somente por decisão administrativa da empresa; obrigações fiscais continuam dependendo da legislação e do contador.</span>
       </div>
       <label class="toggle-field">{{ form.ativo }} <span>{{ form.ativo.label }}</span>{{ form.ativo.errors }}</label>
       {% if object %}
         <div class="form-note form-field-wide"><strong>Identificador do aplicativo.</strong><span><code>{{ object.identificador }}</code></span></div>
       {% else %}
-        <div class="form-note form-field-wide"><strong>Identificador automatico.</strong><span>Ao salvar, o sistema gera o codigo que sera usado pelo app PDV instalado nesta maquina.</span></div>
+        <div class="form-note form-field-wide"><strong>Identificador automatico.</strong><span>Ao salvar, o sistema gera o codigo que sera usado pelo app PDV instalado nesta máquina.</span></div>
       {% endif %}
     </div>
   </section>

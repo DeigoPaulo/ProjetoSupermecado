@@ -44,7 +44,7 @@
     <i class="fa-solid fa-right-left"></i>
     <div>
       <strong>Transferencias ignoradas</strong>
-      <span>Movimentacoes entre contas nao entram como receita ou despesa para evitar duplicidade.</span>
+      <span>Movimentacoes entre contas não entram como receita ou despesa para evitar duplicidade.</span>
     </div>
   </article>
   <article class="finance-insight">
@@ -96,7 +96,7 @@
             <td><strong>R$ {{ linha.resultado|floatformat:2 }}</strong></td>
           </tr>
         {% empty %}
-          <tr><td colspan="4" class="empty">Nenhum lancamento realizado no periodo.</td></tr>
+          <tr><td colspan="4" class="empty">Nenhum lançamento realizado no periodo.</td></tr>
         {% endfor %}
       </tbody>
     </table>
@@ -118,7 +118,52 @@
             <td><strong>R$ {{ linha.resultado|floatformat:2 }}</strong></td>
           </tr>
         {% empty %}
-          <tr><td colspan="5" class="empty">Nenhum lancamento categorizado no periodo.</td></tr>
+          <tr><td colspan="5" class="empty">Nenhum lançamento categorizado no periodo.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</section>
+
+<section class="panel table-panel">
+  <div class="panel-title">Resultado por centro de custo</div>
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>Código</th><th>Centro de custo</th><th>Receitas</th><th>Despesas</th><th>Resultado</th></tr></thead>
+      <tbody>
+        {% for linha in por_centro_custo %}
+          <tr>
+            <td>{{ linha.codigo }}</td>
+            <td>{{ linha.centro_custo }}</td>
+            <td>R$ {{ linha.receitas|floatformat:2 }}</td>
+            <td>R$ {{ linha.despesas|floatformat:2 }}</td>
+            <td><strong>R$ {{ linha.resultado|floatformat:2 }}</strong></td>
+          </tr>
+        {% empty %}
+          <tr><td colspan="5" class="empty">Nenhum lançamento realizado no período.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</section>
+
+<section class="panel table-panel">
+  <div class="panel-title">Resultado por conta cont?bil</div>
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>C?digo</th><th>Conta cont?bil</th><th>Natureza</th><th>Receitas</th><th>Despesas</th><th>Resultado</th></tr></thead>
+      <tbody>
+        {% for linha in por_conta_contabil %}
+          <tr>
+            <td>{{ linha.codigo }}</td>
+            <td>{{ linha.conta_contabil }}</td>
+            <td>{{ linha.natureza }}</td>
+            <td>R$ {{ linha.receitas|floatformat:2 }}</td>
+            <td>R$ {{ linha.despesas|floatformat:2 }}</td>
+            <td><strong>R$ {{ linha.resultado|floatformat:2 }}</strong></td>
+          </tr>
+        {% empty %}
+          <tr><td colspan="6" class="empty">Nenhum lan?amento realizado no per?odo.</td></tr>
         {% endfor %}
       </tbody>
     </table>
@@ -140,7 +185,7 @@
             <td><strong>R$ {{ linha.resultado|floatformat:2 }}</strong></td>
           </tr>
         {% empty %}
-          <tr><td colspan="5" class="empty">Nenhum lancamento realizado no periodo.</td></tr>
+          <tr><td colspan="5" class="empty">Nenhum lançamento realizado no periodo.</td></tr>
         {% endfor %}
       </tbody>
     </table>

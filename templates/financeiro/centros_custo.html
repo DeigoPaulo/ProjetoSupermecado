@@ -1,0 +1,37 @@
+{% extends "base.html" %}
+
+{% block title %}Centros de custo{% endblock %}
+
+{% block content %}
+<header class="page-header">
+  <div>
+    <h1>Centros de custo</h1>
+    <p>Organize receitas e despesas por área responsável da empresa.</p>
+  </div>
+  <div class="actions">
+    <a class="secondary-button" href="{% url 'financeiro:contas' %}">Financeiro</a>
+    <a class="primary-button" href="{% url 'financeiro:centro_custo_novo' %}"><i class="fa-solid fa-plus"></i> Novo centro</a>
+  </div>
+</header>
+
+<section class="panel">
+  <div class="table-wrapper">
+    <table>
+      <thead><tr><th>Código</th><th>Nome</th><th>Empresa</th><th>Status</th><th></th></tr></thead>
+      <tbody>
+        {% for centro in centros %}
+          <tr>
+            <td><strong>{{ centro.codigo }}</strong></td>
+            <td>{{ centro.nome }}</td>
+            <td>{{ centro.empresa.nome_fantasia }}</td>
+            <td><span class="status {% if not centro.ativo %}status-muted{% endif %}">{% if centro.ativo %}Ativo{% else %}Inativo{% endif %}</span></td>
+            <td><a class="secondary-button" href="{% url 'financeiro:centro_custo_editar' centro.pk %}">Editar</a></td>
+          </tr>
+        {% empty %}
+          <tr><td colspan="5" class="empty">Nenhum centro de custo cadastrado.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</section>
+{% endblock %}

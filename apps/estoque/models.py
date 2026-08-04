@@ -23,6 +23,7 @@ class Estoque(models.Model):
     filial = models.ForeignKey("empresas.Filial", on_delete=models.PROTECT, related_name="estoques")
     quantidade_atual = models.DecimalField(max_digits=12, decimal_places=3, default=0)
     quantidade_reservada = models.DecimalField(max_digits=12, decimal_places=3, default=0)
+    custo_medio = models.DecimalField(max_digits=14, decimal_places=6, default=0)
     atualizado_em = models.DateTimeField(auto_now=True)
 
     class Meta:
@@ -33,13 +34,17 @@ class Estoque(models.Model):
     def quantidade_disponivel(self):
         return self.quantidade_atual - self.quantidade_reservada
 
+    @property
+    def valor_custo_estoque(self):
+        return self.quantidade_atual * self.custo_medio
+
     def clean(self):
         if self.quantidade_atual < 0:
-            raise ValidationError("Quantidade atual nao pode ser negativa.")
+            raise ValidationError("Quantidade atual não pode ser negativa.")
         if self.quantidade_reservada < 0:
-            raise ValidationError("Quantidade reservada nao pode ser negativa.")
+            raise ValidationError("Quantidade reservada não pode ser negativa.")
         if self.quantidade_reservada > self.quantidade_atual:
-            raise ValidationError("Quantidade reservada nao pode superar o estoque fisico.")
+            raise ValidationError("Quantidade reservada não pode superar o estoque físico.")
 
     def __str__(self):
         return f"{self.produto} / {self.filial}: {self.quantidade_disponivel}"
@@ -86,15 +91,15 @@ class LoteEstoque(models.Model):
 
     def clean(self):
         if not self.codigo.strip():
-            raise ValidationError("Informe o codigo do lote.")
+            raise ValidationError("Informe o código do lote.")
         if self.quantidade_inicial <= 0:
             raise ValidationError("Quantidade inicial do lote deve ser maior que zero.")
         if self.quantidade_atual < 0:
-            raise ValidationError("Quantidade atual do lote nao pode ser negativa.")
+            raise ValidationError("Quantidade atual do lote não pode ser negativa.")
         if self.quantidade_atual > self.quantidade_inicial:
-            raise ValidationError("Quantidade atual nao pode superar a quantidade inicial do lote.")
+            raise ValidationError("Quantidade atual não pode superar a quantidade inicial do lote.")
         if self.fabricacao and self.validade and self.fabricacao > self.validade:
-            raise ValidationError("A fabricacao do lote nao pode ser posterior a validade.")
+            raise ValidationError("A fabricação do lote não pode ser posterior a validade.")
 
     def __str__(self):
         return f"{self.produto} - lote {self.codigo}"
@@ -173,7 +178,7 @@ class TipoPerdaEstoque(models.TextChoices):
     QUEBRA = "QUEBRA", "Quebra"
     EXTRAVIO_FURTO = "EXTRAVIO_FURTO", "Extravio/furto"
     CONSUMO_INTERNO = "CONSUMO_INTERNO", "Consumo interno"
-    DEVOLUCAO_NAO_REAPROVEITAVEL = "DEVOLUCAO_NAO_REAPROVEITAVEL", "Devolucao nao reaproveitavel"
+    DEVOLUCAO_NAO_REAPROVEITAVEL = "DEVOLUCAO_NAO_REAPROVEITAVEL", "Devolução não reaproveitável"
     OUTROS = "OUTROS", "Outros"
 
 
@@ -205,12 +210,12 @@ class PerdaEstoque(models.Model):
 
 
 class TipoDesmembramentoProduto(models.TextChoices):
-    SIMPLES = "SIMPLES", "Simples / unitizacao"
+    SIMPLES = "SIMPLES", "Simples / unitização"
     CAIXA_FARDO = "CAIXA_FARDO", "Caixa / fardo"
     HORTIFRUTI = "HORTIFRUTI", "Hortifruti reembalado"
-    ACOUGUE = "ACOUGUE", "Acougue por rendimento"
-    PRODUCAO = "PRODUCAO", "Producao interna"
-    KIT = "KIT", "Kit / composicao"
+    ACOUGUE = "ACOUGUE", "Açougue por rendimento"
+    PRODUCAO = "PRODUCAO", "Produção interna"
+    KIT = "KIT", "Kit / composição"
 
 
 class StatusDesmembramentoProduto(models.TextChoices):
@@ -300,7 +305,7 @@ class ComposicaoProduto(models.Model):
 
     def clean(self):
         if self.quantidade_final <= 0:
-            raise ValidationError("Quantidade final da composicao deve ser maior que zero.")
+            raise ValidationError("Quantidade final da composição deve ser maior que zero.")
         if self.filial_id and self.empresa_id and self.filial.empresa_id != self.empresa_id:
             raise ValidationError("A filial deve pertencer à empresa da composição.")
 
@@ -321,7 +326,7 @@ class ItemComposicaoProduto(models.Model):
         if self.quantidade <= 0:
             raise ValidationError("Quantidade do componente deve ser maior que zero.")
         if self.composicao_id and self.produto_componente_id == self.composicao.produto_final_id:
-            raise ValidationError("Produto final nao pode ser componente da propria composicao.")
+            raise ValidationError("Produto final não pode ser componente da própria composição.")
 
     def __str__(self):
         return f"{self.produto_componente}: {self.quantidade}"
@@ -470,7 +475,7 @@ class ConfiguracaoSLASetorProducao(models.Model):
         if self.filial_id and self.empresa_id and self.filial.empresa_id != self.empresa_id:
             raise ValidationError("A filial deve pertencer a empresa informada.")
         if not self.setor.strip():
-            raise ValidationError("Setor e obrigatorio.")
+            raise ValidationError("Setor e obrigatório.")
 
     def __str__(self):
         filial = self.filial.nome if self.filial_id else "Todas as filiais"
@@ -666,6 +671,8 @@ def movimentar_estoque(
         if quantidade <= 0:
             raise ValidationError("Quantidade deve ser maior que zero.")
         estoque, _ = Estoque.objects.select_for_update().get_or_create(produto=produto, filial=filial)
+        quantidade_anterior = estoque.quantidade_atual
+        custo_medio_anterior = estoque.custo_medio or Decimal(produto.preco_custo or 0)
 
         if tipo in [TipoMovimentacaoEstoque.SAIDA, TipoMovimentacaoEstoque.VENDA, TipoMovimentacaoEstoque.PERDA]:
             if estoque.quantidade_disponivel < quantidade:
@@ -681,6 +688,17 @@ def movimentar_estoque(
             estoque.quantidade_reservada -= quantidade
         else:
             estoque.quantidade_atual += quantidade
+
+        if (
+            tipo in [TipoMovimentacaoEstoque.ENTRADA, TipoMovimentacaoEstoque.DEVOLUCAO]
+            and custo_unitario is not None
+            and estoque.quantidade_atual > 0
+        ):
+            valor_anterior = quantidade_anterior * custo_medio_anterior
+            valor_entrada = quantidade * Decimal(custo_unitario)
+            estoque.custo_medio = ((valor_anterior + valor_entrada) / estoque.quantidade_atual).quantize(
+                Decimal("0.000001"), rounding=ROUND_HALF_UP
+            )
 
         estoque.full_clean()
         estoque.save()

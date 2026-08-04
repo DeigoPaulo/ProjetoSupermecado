@@ -1,9 +1,9 @@
 {% extends "base.html" %}
-{% block title %}Politica de entrega{% endblock %}
+{% block title %}Política de entrega{% endblock %}
 {% block content %}
 <header class="page-header">
   <div>
-    <h1>{% if politica %}Editar politica{% else %}Nova politica{% endif %}</h1>
+    <h1>{% if politica %}Editar política{% else %}Nova política{% endif %}</h1>
     <p>Configure a area comercial e os valores de entrega da filial.</p>
   </div>
   <a class="secondary-button" href="{% url 'marketplace:politicas_entrega' %}"><i class="fa-solid fa-arrow-left"></i> Voltar</a>
@@ -35,7 +35,7 @@
   </section>
 
   <section class="panel">
-    <div class="panel-title">Faixas por distancia</div>
+    <div class="panel-title">Faixas por distância</div>
     {{ formset.management_form }}
     {{ formset.non_form_errors }}
     <div class="delivery-band-editor">
@@ -52,7 +52,7 @@
 
   <div class="sticky-form-actions">
     <a class="secondary-button" href="{% url 'marketplace:politicas_entrega' %}">Cancelar</a>
-    <button class="primary-button" type="submit"><i class="fa-solid fa-floppy-disk"></i> Salvar politica</button>
+    <button class="primary-button" type="submit"><i class="fa-solid fa-floppy-disk"></i> Salvar política</button>
   </div>
 </form>
 {% endblock %}

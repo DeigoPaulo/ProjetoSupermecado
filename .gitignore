@@ -10,3 +10,6 @@ staticfiles/
 logs/
 ProjetoLimpoGitHub/
 desktop_pdv/.venv-build/
+desktop_pdv/.build-venv/
+
+dist/protected_modules/

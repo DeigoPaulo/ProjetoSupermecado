@@ -6,6 +6,7 @@ from django.contrib.auth.decorators import login_required
 from django.core.exceptions import PermissionDenied
 from django.core.paginator import Paginator
 from django.db.models import Count, DecimalField, ExpressionWrapper, F, Sum
+from django.db.models.functions import ExtractHour
 from django.http import HttpResponse
 from django.shortcuts import redirect, render
 from django.utils import timezone
@@ -158,6 +159,36 @@ def _vendas_periodo(data_inicio, data_fim, filiais):
     ).select_related("filial", "caixa", "cliente", "usuario")
 
 
+def _operadores_vendas(filiais):
+    return get_user_model().objects.filter(
+        vendas__filial__in=filiais,
+        vendas__status=StatusVenda.FINALIZADA,
+    ).distinct().order_by("username")
+
+
+def _vendas_filtradas(request):
+    data_inicio, data_fim = _periodo_from_request(request)
+    filiais, selecionadas, filial_id, permite_consolidado = _filiais_relatorio(request)
+    operador_id = (request.GET.get("operador") or "").strip()
+    operadores = _operadores_vendas(selecionadas)
+    vendas_qs = _vendas_periodo(data_inicio, data_fim, selecionadas)
+    if operador_id:
+        if not operador_id.isdigit() or not operadores.filter(pk=int(operador_id)).exists():
+            raise PermissionDenied("Funcionário fora do escopo permitido.")
+        vendas_qs = vendas_qs.filter(usuario_id=int(operador_id))
+    return (
+        data_inicio,
+        data_fim,
+        filiais,
+        selecionadas,
+        filial_id,
+        permite_consolidado,
+        operadores,
+        operador_id,
+        vendas_qs,
+    )
+
+
 def _csv_safe(value):
     if value is None:
         return ""
@@ -169,6 +200,13 @@ def _csv_safe(value):
 
 def _csv_money(value):
     return f"{Decimal(value or 0):.2f}".replace(".", ",")
+
+
+def _csv_response(filename):
+    response = HttpResponse(content_type="text/csv; charset=utf-8")
+    response["Content-Disposition"] = f'attachment; filename="{filename}"'
+    response.write("\ufeff")
+    return response
 
 
 def _csv_filtro_filial(writer, escopo):
@@ -189,7 +227,7 @@ def _escopo_filiais_caixa(user):
         filial__isnull=False,
     ).first()
     if not perfil:
-        raise PermissionDenied("Usuario sem filial vinculada para consultar caixas.")
+        raise PermissionDenied("Usuário sem filial vinculada para consultar caixas.")
     if perfil.tipo == TipoPerfil.ADMINISTRADOR:
         return filiais.filter(empresa_id=perfil.filial.empresa_id), True
     return filiais.filter(pk=perfil.filial_id), False
@@ -366,9 +404,10 @@ def _movimentacoes_periodo(data_inicio, data_fim, filiais, tipo=""):
 @login_required
 @role_required(*RELATORIOS)
 def vendas(request):
-    data_inicio, data_fim = _periodo_from_request(request)
-    filiais, selecionadas, filial_id, permite_consolidado = _filiais_relatorio(request)
-    vendas_qs = _vendas_periodo(data_inicio, data_fim, selecionadas)
+    (
+        data_inicio, data_fim, filiais, _, filial_id, permite_consolidado,
+        operadores, operador_id, vendas_qs,
+    ) = _vendas_filtradas(request)
 
     itens_qs = ItemVenda.objects.filter(venda__in=vendas_qs).select_related("produto")
     devolucoes_qs = DevolucaoVenda.objects.filter(
@@ -389,6 +428,8 @@ def vendas(request):
         "filiais": filiais,
         "filial_id": filial_id,
         "permite_consolidado": permite_consolidado,
+        "operadores": operadores,
+        "operador_id": operador_id,
         "vendas": _paginar(request, vendas_qs),
         "total_vendas": vendas_qs.count(),
         "faturamento": faturamento_bruto,
@@ -407,16 +448,22 @@ def vendas(request):
 @login_required
 @role_required(*RELATORIOS)
 def vendas_csv(request):
-    data_inicio, data_fim = _periodo_from_request(request)
-    filiais, selecionadas, filial_id, _ = _filiais_relatorio(request)
-    response = HttpResponse(content_type="text/csv; charset=utf-8")
-    response["Content-Disposition"] = f'attachment; filename="vendas_{data_inicio}_{data_fim}.csv"'
+    (
+        data_inicio, data_fim, filiais, _, filial_id, _,
+        _, operador_id, vendas_qs,
+    ) = _vendas_filtradas(request)
+    response = _csv_response(f"vendas_{data_inicio}_{data_fim}.csv")
     response.write("\ufeff")
     writer = csv.writer(response, delimiter=";")
     if filial_id:
         writer.writerow(["Filtro filial", _csv_safe(filiais.get(pk=filial_id))])
+    if operador_id:
+        writer.writerow([
+            "Filtro funcionário",
+            _csv_safe(get_user_model().objects.get(pk=operador_id)),
+        ])
     writer.writerow(["Venda", "Data", "Filial", "Cliente", "Operador", "Subtotal", "Desconto", "Total"])
-    for venda in _vendas_periodo(data_inicio, data_fim, selecionadas).iterator():
+    for venda in vendas_qs.iterator():
         writer.writerow([
             venda.id,
             timezone.localtime(venda.data).strftime("%d/%m/%Y %H:%M"),
@@ -433,13 +480,18 @@ def vendas_csv(request):
 @login_required
 @role_required(*RELATORIOS)
 def vendas_imprimir(request):
-    data_inicio, data_fim = _periodo_from_request(request)
-    filiais, selecionadas, filial_id, _ = _filiais_relatorio(request)
-    vendas_qs = _vendas_periodo(data_inicio, data_fim, selecionadas)
+    (
+        data_inicio, data_fim, filiais, _, filial_id, _,
+        _, operador_id, vendas_qs,
+    ) = _vendas_filtradas(request)
     context = {
         "data_inicio": data_inicio,
         "data_fim": data_fim,
         "filial_selecionada": filiais.filter(pk=filial_id).first() if filial_id else None,
+        "operador_selecionado": (
+            get_user_model().objects.filter(pk=operador_id).first()
+            if operador_id else None
+        ),
         "vendas": vendas_qs,
         "total_vendas": vendas_qs.count(),
         "faturamento": vendas_qs.aggregate(total=Sum("total_liquido"))["total"] or 0,
@@ -454,6 +506,7 @@ def curva_abc(request):
     data_inicio, data_fim = _periodo_from_request(request)
     selecionadas, escopo = _escopo_relatorio_contexto(request)
     linhas, total_liquido = _calcular_curva_abc(data_inicio, data_fim, selecionadas)
+    horarios_pico = _calcular_horarios_pico(data_inicio, data_fim, selecionadas)
     context = {
         **escopo,
         "data_inicio": data_inicio, "data_fim": data_fim, "linhas": _paginar(request, linhas),
@@ -461,8 +514,26 @@ def curva_abc(request):
         "classe_a": sum(1 for item in linhas if item["classe"] == "A"),
         "classe_b": sum(1 for item in linhas if item["classe"] == "B"),
         "classe_c": sum(1 for item in linhas if item["classe"] == "C"),
+        "horarios_pico": horarios_pico,
+        "horario_pico": horarios_pico[0] if horarios_pico else None,
     }
     return render(request, "relatorios/curva_abc.html", context)
+
+
+
+def _calcular_horarios_pico(data_inicio, data_fim, filiais):
+    return list(
+        Venda.objects.filter(
+            filial__in=filiais,
+            status=StatusVenda.FINALIZADA,
+            data__date__gte=data_inicio,
+            data__date__lte=data_fim,
+        )
+        .annotate(hora=ExtractHour("data"))
+        .values("hora")
+        .annotate(vendas=Count("id"), faturamento=Sum("total_liquido"))
+        .order_by("-faturamento", "hora")[:5]
+    )
 
 
 def _calcular_curva_abc(data_inicio, data_fim, filiais):
@@ -532,12 +603,11 @@ def curva_abc_csv(request):
     data_inicio, data_fim = _periodo_from_request(request)
     selecionadas, escopo = _escopo_relatorio_contexto(request)
     linhas, _ = _calcular_curva_abc(data_inicio, data_fim, selecionadas)
-    response = HttpResponse(content_type="text/csv; charset=utf-8")
-    response["Content-Disposition"] = f'attachment; filename="curva_abc_{data_inicio}_{data_fim}.csv"'
+    response = _csv_response(f"curva_abc_{data_inicio}_{data_fim}.csv")
     response.write("\ufeff")
     writer = csv.writer(response, delimiter=";")
     _csv_filtro_filial(writer, escopo)
-    writer.writerow(["Classe", "Produto", "Codigo", "Quantidade liquida", "Devolucoes", "Valor liquido", "Participacao %", "Acumulado %"])
+    writer.writerow(["Classe", "Produto", "Código", "Quantidade líquida", "Devoluções", "Valor líquido", "Participação %", "Acumulado %"])
     for item in linhas:
         writer.writerow([item["classe"], _csv_safe(item["produto"]), _csv_safe(item["codigo"]),
                          str(item["quantidade"]).replace(".", ","), str(item["devolvido"]).replace(".", ","),
@@ -557,10 +627,10 @@ def curva_abc_imprimir(request):
                f'{item["participacao"]:.2f}%', f'{item["acumulado"]:.2f}%'] for item in dados]
     return render(request, "relatorios/exportacao_imprimir.html", {
         **escopo,
-        "titulo": "Curva ABC", "subtitulo": "Classificacao de produtos por faturamento liquido",
+        "titulo": "Curva ABC", "subtitulo": "Classificacao de produtos por faturamento líquido",
         "data_inicio": data_inicio, "data_fim": data_fim, "gerado_em": timezone.localtime(),
-        "cabecalhos": ["Classe", "Produto", "Codigo", "Qtd liquida", "Devolucoes", "Valor liquido", "%", "% acum."],
-        "linhas": linhas, "resumos": [("Produtos", len(dados)), ("Faturamento liquido", f"R$ {total_liquido:.2f}")],
+        "cabecalhos": ["Classe", "Produto", "Codigo", "Qtd liquida", "Devolucoes", "Valor líquido", "%", "% acum."],
+        "linhas": linhas, "resumos": [("Produtos", len(dados)), ("Faturamento líquido", f"R$ {total_liquido:.2f}")],
     })
 
 
@@ -578,12 +648,11 @@ def estoque_baixo(request):
 @role_required(*RELATORIOS)
 def estoque_baixo_csv(request):
     selecionadas, escopo = _escopo_relatorio_contexto(request)
-    response = HttpResponse(content_type="text/csv; charset=utf-8")
-    response["Content-Disposition"] = f'attachment; filename="estoque_baixo_{timezone.localdate()}.csv"'
+    response = _csv_response(f"estoque_baixo_{timezone.localdate()}.csv")
     response.write("\ufeff")
     writer = csv.writer(response, delimiter=";")
     _csv_filtro_filial(writer, escopo)
-    writer.writerow(["Produto", "Categoria", "Filial", "Atual", "Reservado", "Disponivel", "Minimo", "Deficit"])
+    writer.writerow(["Produto", "Categoria", "Filial", "Atual", "Reservado", "Disponível", "Mínimo", "Déficit"])
     for estoque in _estoques_baixos(selecionadas).iterator():
         deficit = max(estoque.produto.estoque_minimo - estoque.quantidade_disponivel, Decimal("0.000"))
         writer.writerow([
@@ -607,9 +676,9 @@ def estoque_baixo_imprimir(request):
     hoje = timezone.localdate()
     return render(request, "relatorios/exportacao_imprimir.html", {
         **escopo,
-        "titulo": "Relatorio de estoque baixo", "subtitulo": "Produtos que exigem atencao para reposicao",
+        "titulo": "Relatório de estoque baixo", "subtitulo": "Produtos que exigem atencao para reposicao",
         "data_inicio": hoje, "data_fim": hoje, "gerado_em": timezone.localtime(),
-        "cabecalhos": ["Produto", "Categoria", "Filial", "Atual", "Reservado", "Disponivel", "Minimo", "Deficit"],
+        "cabecalhos": ["Produto", "Categoria", "Filial", "Atual", "Reservado", "Disponível", "Mínimo", "Déficit"],
         "linhas": linhas, "resumos": [("Produtos/filiais", len(linhas))],
     })
 
@@ -702,12 +771,11 @@ def sugestao_reposicao_csv(request):
         dias_cobertura = 7
     dias_cobertura = min(max(dias_cobertura, 1), 90)
     linhas = _calcular_reposicao(data_inicio, data_fim, dias_cobertura, selecionadas)
-    response = HttpResponse(content_type="text/csv; charset=utf-8")
-    response["Content-Disposition"] = f'attachment; filename="reposicao_{data_inicio}_{data_fim}.csv"'
+    response = _csv_response(f"reposicao_{data_inicio}_{data_fim}.csv")
     response.write("\ufeff")
     writer = csv.writer(response, delimiter=";")
     _csv_filtro_filial(writer, escopo)
-    writer.writerow(["Produto", "Categoria", "Filial", "Disponivel", "Minimo", "Venda no periodo", "Media por dia", "Dias cobertura", "Quantidade sugerida"])
+    writer.writerow(["Produto", "Categoria", "Filial", "Disponível", "Mínimo", "Venda no período", "Média por dia", "Dias de cobertura", "Quantidade sugerida"])
     for item in linhas:
         writer.writerow([_csv_safe(item["produto"].nome), _csv_safe(item["produto"].categoria), _csv_safe(item["filial"]),
                          str(item["disponivel"]).replace(".", ","), str(item["estoque_minimo"]).replace(".", ","),
@@ -735,7 +803,7 @@ def sugestao_reposicao_imprimir(request):
         **escopo,
         "titulo": "Sugestao de reposicao", "subtitulo": f"Necessidade calculada para {dias_cobertura} dias de cobertura",
         "data_inicio": data_inicio, "data_fim": data_fim, "gerado_em": timezone.localtime(),
-        "cabecalhos": ["Produto", "Categoria", "Filial", "Disponivel", "Minimo", "Venda periodo", "Media/dia", "Sugerido"],
+        "cabecalhos": ["Produto", "Categoria", "Filial", "Disponivel", "Minimo", "Venda período", "Media/dia", "Sugerido"],
         "linhas": linhas, "resumos": [("Produtos", len(dados)), ("Quantidade sugerida", quantidade)],
     })
 
@@ -767,12 +835,11 @@ def movimentacoes_estoque_csv(request):
     data_inicio, data_fim = _periodo_from_request(request)
     selecionadas, escopo = _escopo_relatorio_contexto(request)
     tipo = request.GET.get("tipo") or ""
-    response = HttpResponse(content_type="text/csv; charset=utf-8")
-    response["Content-Disposition"] = f'attachment; filename="movimentacoes_estoque_{data_inicio}_{data_fim}.csv"'
+    response = _csv_response(f"movimentacoes_estoque_{data_inicio}_{data_fim}.csv")
     response.write("\ufeff")
     writer = csv.writer(response, delimiter=";")
     _csv_filtro_filial(writer, escopo)
-    writer.writerow(["Data", "Produto", "Filial", "Tipo", "Quantidade", "Custo unitario", "Custo total", "Referencia", "Responsavel", "Motivo"])
+    writer.writerow(["Data", "Produto", "Filial", "Tipo", "Quantidade", "Custo unitário", "Custo total", "Referência", "Responsável", "Motivo"])
     for mov in _movimentacoes_periodo(data_inicio, data_fim, selecionadas, tipo).iterator():
         writer.writerow([
             timezone.localtime(mov.data).strftime("%d/%m/%Y %H:%M"), _csv_safe(mov.produto), _csv_safe(mov.filial),
@@ -832,12 +899,11 @@ def perdas(request):
 def perdas_csv(request):
     data_inicio, data_fim = _periodo_from_request(request)
     selecionadas, escopo = _escopo_relatorio_contexto(request)
-    response = HttpResponse(content_type="text/csv; charset=utf-8")
-    response["Content-Disposition"] = f'attachment; filename="perdas_{data_inicio}_{data_fim}.csv"'
+    response = _csv_response(f"perdas_{data_inicio}_{data_fim}.csv")
     response.write("\ufeff")
     writer = csv.writer(response, delimiter=";")
     _csv_filtro_filial(writer, escopo)
-    writer.writerow(["Data", "Produto", "Filial", "Tipo", "Motivo", "Quantidade", "Responsavel", "Custo estimado", "Venda estimada"])
+    writer.writerow(["Data", "Produto", "Filial", "Tipo", "Motivo", "Quantidade", "Responsável", "Custo estimado", "Venda estimada"])
     for perda in _perdas_periodo(data_inicio, data_fim, selecionadas).iterator():
         writer.writerow([
             timezone.localtime(perda.data).strftime("%d/%m/%Y %H:%M"), _csv_safe(perda.produto), _csv_safe(perda.filial),
@@ -861,7 +927,7 @@ def perdas_imprimir(request):
     ] for perda in perdas_qs]
     return render(request, "relatorios/exportacao_imprimir.html", {
         **escopo,
-        "titulo": "Relatorio de perdas", "subtitulo": "Perdas registradas no estoque",
+        "titulo": "Relatório de perdas", "subtitulo": "Perdas registradas no estoque",
         "data_inicio": data_inicio, "data_fim": data_fim, "gerado_em": timezone.localtime(),
         "cabecalhos": ["Data", "Produto", "Filial", "Tipo", "Motivo", "Qtd", "Responsavel", "Custo", "Venda estimada"],
         "linhas": linhas,
@@ -908,12 +974,11 @@ def _linhas_devolucoes(data_inicio, data_fim, filiais):
 def devolucoes_csv(request):
     data_inicio, data_fim = _periodo_from_request(request)
     selecionadas, escopo = _escopo_relatorio_contexto(request)
-    response = HttpResponse(content_type="text/csv; charset=utf-8")
-    response["Content-Disposition"] = f'attachment; filename="devolucoes_{data_inicio}_{data_fim}.csv"'
+    response = _csv_response(f"devolucoes_{data_inicio}_{data_fim}.csv")
     response.write("\ufeff")
     writer = csv.writer(response, delimiter=";")
     _csv_filtro_filial(writer, escopo)
-    writer.writerow(["Data", "Devolucao", "Venda", "Cliente", "Produto", "Quantidade", "Valor", "Motivo", "Responsavel"])
+    writer.writerow(["Data", "Devolução", "Venda", "Cliente", "Produto", "Quantidade", "Valor", "Motivo", "Responsável"])
     for linha in _linhas_devolucoes(data_inicio, data_fim, selecionadas):
         linha[3] = _csv_safe(linha[3])
         linha[4] = _csv_safe(linha[4])
@@ -936,7 +1001,7 @@ def devolucoes_imprimir(request):
         linha[6] = f"R$ {linha[6]:.2f}"
     return render(request, "relatorios/exportacao_imprimir.html", {
         **escopo,
-        "titulo": "Relatorio de devolucoes", "subtitulo": "Itens devolvidos e impacto nas vendas",
+        "titulo": "Relatório de devolucoes", "subtitulo": "Itens devolvidos e impacto nas vendas",
         "data_inicio": data_inicio, "data_fim": data_fim, "gerado_em": timezone.localtime(),
         "cabecalhos": ["Data", "Devolucao", "Venda", "Cliente", "Produto", "Qtd", "Valor", "Motivo", "Responsavel"],
         "linhas": linhas,
@@ -971,12 +1036,11 @@ def compras(request):
 def compras_csv(request):
     data_inicio, data_fim = _periodo_from_request(request)
     selecionadas, escopo = _escopo_relatorio_contexto(request)
-    response = HttpResponse(content_type="text/csv; charset=utf-8")
-    response["Content-Disposition"] = f'attachment; filename="compras_{data_inicio}_{data_fim}.csv"'
+    response = _csv_response(f"compras_{data_inicio}_{data_fim}.csv")
     response.write("\ufeff")
     writer = csv.writer(response, delimiter=";")
     _csv_filtro_filial(writer, escopo)
-    writer.writerow(["Entrada", "Documento", "Emissao", "Recebimento", "Fornecedor", "Filial", "Responsavel", "Total"])
+    writer.writerow(["Entrada", "Documento", "Emissão", "Recebimento", "Fornecedor", "Filial", "Responsável", "Total"])
     for entrada in _compras_periodo(data_inicio, data_fim, selecionadas).iterator():
         writer.writerow([
             entrada.id,
@@ -1058,8 +1122,7 @@ def caixas(request):
 @role_required(*RELATORIOS)
 def caixas_csv(request):
     data_inicio, data_fim, operador_id, filial_id, caixas_qs = _caixas_filtrados(request)
-    response = HttpResponse(content_type="text/csv; charset=utf-8")
-    response["Content-Disposition"] = f'attachment; filename="caixas_{data_inicio}_{data_fim}.csv"'
+    response = _csv_response(f"caixas_{data_inicio}_{data_fim}.csv")
     response.write("\ufeff")
     writer = csv.writer(response, delimiter=";")
     if filial_id:
@@ -1091,7 +1154,7 @@ def caixas_csv(request):
         ])
     writer.writerow([])
     writer.writerow(["Resumo por operador"])
-    writer.writerow(["Operador", "Caixas", "Vendas", "Total vendas", "Sangrias", "Suprimentos", "Saldo operacional", "Valor inicial", "Declarado", "Conferido", "Diferenca"])
+    writer.writerow(["Operador", "Caixas", "Vendas", "Total vendas", "Sangrias", "Suprimentos", "Saldo operacional", "Valor inicial", "Declarado", "Conferido", "Diferença"])
     for item in _resumo_caixas_por_operador(caixas_qs):
         writer.writerow([
             _csv_safe(item["operador"]),
@@ -1107,8 +1170,8 @@ def caixas_csv(request):
             _csv_money(item["diferenca"]),
         ])
     writer.writerow([])
-    writer.writerow(["Entradas liquidas por forma de pagamento"])
-    writer.writerow(["Forma", "Entradas", "Estornos parciais", "Liquido"])
+    writer.writerow(["Entradas líquidas por forma de pagamento"])
+    writer.writerow(["Forma", "Entradas", "Estornos parciais", "Líquido"])
     for item in _entradas_caixa_por_forma(caixas_qs):
         writer.writerow([
             _csv_safe(item["forma_pagamento__nome"] or "Sem forma"),

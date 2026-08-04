@@ -16,6 +16,7 @@
         <span class="secondary-button is-disabled" aria-disabled="true"><i class="fa-solid fa-clock"></i> Pacote ainda não publicado</span>
       {% endif %}
       <a class="secondary-button" href="{% url 'configuracoes:servidor_local_manifest' %}"><i class="fa-solid fa-code"></i> Manifesto JSON</a>
+      <a class="secondary-button" href="{% url 'configuracoes:servidor_local_evidencias' %}"><i class="fa-solid fa-file-shield"></i> Baixar evidências</a>
     {% endif %}
     <a class="secondary-button" href="{% url 'empresas:lista' %}"><i class="fa-solid fa-building"></i> Empresas</a>
   </div>
@@ -31,9 +32,9 @@
 
 <section class="metrics-grid">
   <article class="metric"><span>Contrato</span><strong>{{ payload.contrato }}</strong></article>
-  <article class="metric"><span>Prontidao local</span><strong>{{ prontidao.percentual }}%</strong></article>
+  <article class="metric"><span>Prontidão local</span><strong>{{ prontidao.percentual }}%</strong></article>
   <article class="metric"><span>Local</span><strong>{{ modos.local.empresas }}</strong></article>
-  <article class="metric"><span>Hibrido</span><strong>{{ modos.hibrido.empresas }}</strong></article>
+  <article class="metric"><span>Híbrido</span><strong>{{ modos.hibrido.empresas }}</strong></article>
   <article class="metric"><span>Nuvem/agente</span><strong>{{ modos.nuvem_agente.empresas }}</strong></article>
   <article class="metric"><span>PDV separado</span><strong>Sim</strong></article>
 </section>
@@ -65,7 +66,7 @@
 <section class="operation-notice {% if prontidao.bloqueios %}operation-notice-warning{% endif %}">
   <i class="fa-solid fa-clipboard-check"></i>
   <div>
-    <strong>Prontidao do servidor local: {{ prontidao.status }}</strong>
+    <strong>Prontidão do servidor local: {{ prontidao.status }}</strong>
     <span>{{ prontidao.proximo_passo }} Contrato {{ prontidao.contrato }}.</span>
   </div>
 </section>
@@ -112,13 +113,13 @@
     </div>
   </div>
   <dl class="detail-list">
-    <dt>Nome do servico</dt><dd><code>{{ payload.servico_windows.nome }}</code></dd>
+    <dt>Nome do serviço</dt><dd><code>{{ payload.servico_windows.nome }}</code></dd>
     <dt>Status</dt><dd>{{ payload.servico_windows.status }}</dd>
     <dt>Banco recomendado</dt><dd><strong>{{ payload.servico_windows.banco_recomendado }}</strong> com <code>pg_dump</code> e <code>pg_restore</code>.</dd>
-    <dt>Usuario recomendado</dt><dd>{{ payload.servico_windows.usuario_recomendado }}</dd>
+    <dt>Usuário recomendado</dt><dd>{{ payload.servico_windows.usuario_recomendado }}</dd>
     <dt>Diretório de dados</dt><dd><code>{{ payload.servico_windows.diretorio_dados }}</code></dd>
     <dt>Permissões</dt><dd>{{ payload.servico_windows.permissoes }}</dd>
-    <dt>Comando de producao</dt><dd><code>{{ payload.servico_windows.comando_producao }}</code></dd>
+    <dt>Comando de produção</dt><dd><code>{{ payload.servico_windows.comando_producao }}</code></dd>
     <dt>Fallback atual</dt><dd><code>{{ payload.servico_windows.fallback_operacional }}</code></dd>
     <dt>Healthcheck</dt><dd><code>{{ payload.servico_windows.healthcheck }}</code></dd>
     <dt>Restart</dt><dd>{{ payload.servico_windows.restart }}</dd>
@@ -208,6 +209,86 @@
     </table>
   </div>
 </section>
+
+
+{% if request.user.is_superuser %}
+<section class="panel" id="homologacoes">
+  <div class="panel-heading">
+    <div>
+      <h2>Homologação em máquina limpa</h2>
+      <p>Registre somente testes executados fora da estação de desenvolvimento e vincule o SHA-256 da evidência técnica.</p>
+    </div>
+    <span class="status {% if resumo_homologacoes.aprovadas %}status-success{% else %}status-warning{% endif %}">
+      {{ resumo_homologacoes.aprovadas }} aprovada(s)
+    </span>
+  </div>
+
+  <div class="metrics-grid">
+    <article class="metric"><span>Registros</span><strong>{{ resumo_homologacoes.total }}</strong></article>
+    <article class="metric"><span>Aprovadas</span><strong>{{ resumo_homologacoes.aprovadas }}</strong></article>
+    <article class="metric"><span>Reprovadas</span><strong>{{ resumo_homologacoes.reprovadas }}</strong></article>
+  </div>
+
+  <form method="post" enctype="multipart/form-data" class="form-grid">
+    {% csrf_token %}
+    {% for field in formulario_homologacao %}
+      {% if field.is_hidden %}
+        {{ field }}
+        {% for error in field.errors %}<small class="field-error form-field-full">{{ error }}</small>{% endfor %}
+      {% else %}
+        <div class="{% if field.name == 'observacoes' %}form-field-full{% endif %}">
+          {{ field.label_tag }}
+          {{ field }}
+          {% if field.help_text %}<small class="form-help">{{ field.help_text }}</small>{% endif %}
+          {% for error in field.errors %}<small class="field-error">{{ error }}</small>{% endfor %}
+        </div>
+      {% endif %}
+    {% endfor %}
+    <div class="form-actions form-field-full">
+      <button class="primary-button" type="submit">
+        <i class="fa-solid fa-clipboard-check"></i> Registrar homologação
+      </button>
+    </div>
+  </form>
+
+  <div class="table-wrapper">
+    <table>
+      <thead>
+        <tr>
+          <th>Data</th>
+          <th>Máquina</th>
+          <th>Sistema</th>
+          <th>Versão</th>
+          <th>Evidência</th>
+          <th>Resultado</th>
+          <th>Responsável</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for homologacao in homologacoes %}
+          <tr>
+            <td>{{ homologacao.criada_em|date:"d/m/Y H:i" }}</td>
+            <td><strong>{{ homologacao.maquina }}</strong></td>
+            <td>{{ homologacao.sistema_operacional }}</td>
+            <td>{{ homologacao.versao_artefato }}</td>
+            <td><code title="{{ homologacao.hash_evidencia }}">{{ homologacao.hash_evidencia|slice:":12" }}...</code></td>
+            <td>
+              <span class="status {% if homologacao.resultado == 'APROVADA' %}status-success{% else %}status-danger{% endif %}">
+                {{ homologacao.get_resultado_display }}
+              </span>
+              {% if homologacao.observacoes %}<small class="d-block mt-1">{{ homologacao.observacoes }}</small>{% endif %}
+            </td>
+            <td>{{ homologacao.registrada_por.username }}</td>
+          </tr>
+        {% empty %}
+          <tr><td colspan="7" class="empty">Nenhuma homologação em máquina limpa registrada.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% include "includes/pagination_named.html" with page_obj=homologacoes page_param="homologacao_page" anchor="homologacoes" %}
+</section>
+{% endif %}
 
 <section class="panel table-panel">
   <div class="panel-heading">

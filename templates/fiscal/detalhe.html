@@ -13,11 +13,17 @@
     {% if not imprimir %}
       <a class="primary-button" href="{% url 'fiscal:imprimir' documento.pk %}" target="_blank"><i class="fa-solid fa-print"></i> Imprimir</a>
       <a class="secondary-button" href="{% url 'fiscal:baixar_xml' documento.pk %}"><i class="fa-solid fa-code"></i> Baixar XML</a>
+      {% if sefaz_consulta_disponivel and documento.chave_acesso %}
+        <form method="post" action="{% url 'fiscal:consultar_sefaz' documento.pk %}" class="inline-form">
+          {% csrf_token %}
+          <button class="secondary-button" type="submit"><i class="fa-solid fa-magnifying-glass"></i> Consultar SEFAZ</button>
+        </form>
+      {% endif %}
       {% if documento.ambiente == "HOMOLOGACAO" %}
         {% if documento.status == "PRONTO" or documento.status == "CONTINGENCIA" %}
           <form method="post" action="{% url 'fiscal:transmitir_simulado' documento.pk %}" class="inline-form form-confirm" data-msg="Transmitir em homologacao simulada?">
             {% csrf_token %}
-            <button class="primary-button" type="submit"><i class="fa-solid fa-paper-plane"></i> Transmitir homologacao</button>
+            <button class="primary-button" type="submit"><i class="fa-solid fa-paper-plane"></i> Transmitir homologação</button>
           </form>
         {% endif %}
       {% endif %}
@@ -34,6 +40,25 @@
     {% endif %}
   </div>
 </header>
+
+{% if not imprimir and access.sistema and documento.status == "EMITIDO" %}
+<section class="operation-notice operation-notice-warning">
+  <i class="fa-solid fa-ban"></i>
+  <div>
+    <strong>Cancelamento de documento autorizado.</strong>
+    {% if sefaz_cancelamento_disponivel %}
+      <span>A situação só será alterada depois que a SEFAZ autorizar o evento e devolver o protocolo.</span>
+      <form method="post" action="{% url 'fiscal:cancelar' documento.pk %}" class="stacked-form form-confirm" data-msg="Enviar o evento de cancelamento deste documento para a SEFAZ?">
+        {% csrf_token %}
+        <label class="form-field"><span>Justificativa fiscal</span><textarea name="motivo" minlength="15" maxlength="255" rows="2" required placeholder="Informe o motivo completo do cancelamento."></textarea></label>
+        <button class="secondary-button danger-button" type="submit"><i class="fa-solid fa-ban"></i> Solicitar cancelamento</button>
+      </form>
+    {% else %}
+      <span>O adaptador fiscal configurado ainda não oferece o evento de cancelamento. O documento permanece emitido.</span>
+    {% endif %}
+  </div>
+</section>
+{% endif %}
 
 {% if not imprimir and documento.status == "PRONTO" and documento.tipo_documento == "NFCE" and documento.filial.configuracao_fiscal.permite_contingencia_offline %}
 <section class="operation-notice operation-notice-warning">
@@ -53,13 +78,29 @@
 <section class="operation-notice operation-notice-warning">
   <i class="fa-solid fa-clock"></i>
   <div>
-    <strong>Documento sem autorizacao da SEFAZ.</strong>
+    <strong>Documento sem autorização da SEFAZ.</strong>
     <span>Contingencia iniciada em {{ documento.contingencia_iniciada_em|date:"d/m/Y H:i" }}. Transmitir ate {{ documento.transmissao_limite_em|date:"d/m/Y H:i" }}. Justificativa: {{ documento.contingencia_justificativa }}</span>
   </div>
 </section>
 {% endif %}
 
+{% if not imprimir and access.sistema and consulta_sefaz_esgotada %}
+<section class="operation-notice operation-notice-warning">
+  <i class="fa-solid fa-magnifying-glass-arrow-right"></i>
+  <div>
+    <strong>Reconciliação automática pausada após {{ max_consultas_sefaz }} consulta(s).</strong>
+    <span>A transmissão continua bloqueada para impedir duplicidade. Após analisar a indisponibilidade, retome somente as consultas de protocolo; esta ação não retransmite a nota.</span>
+    <form method="post" action="{% url 'fiscal:retomar_consultas_sefaz' documento.pk %}" class="stacked-form form-confirm" data-msg="Retomar somente as consultas automáticas deste documento na SEFAZ?">
+      {% csrf_token %}
+      <label class="form-field"><span>Motivo da retomada</span><input type="text" name="motivo" minlength="10" maxlength="255" required placeholder="Ex.: comunicação com a SEFAZ normalizada e retorno analisado."></label>
+      <button class="secondary-button" type="submit"><i class="fa-solid fa-rotate"></i> Retomar consultas automáticas</button>
+    </form>
+  </div>
+</section>
+{% endif %}
+
 {% if not imprimir and access.sistema %}
+  {% if not documento.aguardando_consulta_sefaz %}
   {% if documento.status == "REJEITADO" or documento.tentativas_transmissao > 0 %}
   <section class="operation-notice operation-notice-warning">
     <i class="fa-solid fa-rotate"></i>
@@ -73,6 +114,7 @@
       </form>
     </div>
   </section>
+  {% endif %}
   {% endif %}
 {% endif %}
 
@@ -93,9 +135,15 @@
   </article>
   <article class="panel">
     <h2>Documento</h2>
-    <p>Natureza: {{ documento.natureza_operacao|default:"Nao informada" }}</p>
+    <p>Natureza: {{ documento.natureza_operacao|default:"Não informada" }}</p>
     <p>Chave: {{ documento.chave_acesso|default:"Aguardando transmissao" }}</p>
     <p>Protocolo: {{ documento.protocolo|default:"Aguardando transmissao" }}</p>
+    {% if documento.protocolo_cancelamento %}<p>Protocolo de cancelamento: {{ documento.protocolo_cancelamento }}</p>{% endif %}
+    {% if documento.cancelamento_em %}<p>Cancelado em: {{ documento.cancelamento_em|date:"d/m/Y H:i" }}</p>{% endif %}
+    {% if documento.mensagem_cancelamento %}<p>Retorno do cancelamento: {{ documento.mensagem_cancelamento }}</p>{% endif %}
+    {% if documento.aguardando_consulta_sefaz %}<p><strong>Aguardando reconciliação na SEFAZ antes de qualquer retransmissão.</strong> Consultas automáticas realizadas: {{ documento.tentativas_consulta_sefaz }}.</p>{% endif %}
+    {% if documento.consulta_sefaz_em %}<p>Última consulta SEFAZ: {{ documento.consulta_sefaz_em|date:"d/m/Y H:i" }}</p>{% endif %}
+    {% if documento.mensagem_consulta_sefaz %}<p>Retorno da consulta: {{ documento.mensagem_consulta_sefaz }}</p>{% endif %}
     <p>XML: {% if documento.xml_gerado_em %}Gerado em {{ documento.xml_gerado_em|date:"d/m/Y H:i" }}{% else %}Aguardando geracao{% endif %}</p>
     <p>Assinatura: {% if documento.xml_assinado_em %}Validada em {{ documento.xml_assinado_em|date:"d/m/Y H:i" }} · certificado {{ documento.certificado_serial_assinatura }}{% else %}Pelo provedor ou aguardando transmissão{% endif %}</p>
     {% if documento.mensagem_retorno %}<p>{{ documento.mensagem_retorno }}</p>{% endif %}
@@ -110,7 +158,7 @@
       <thead>
         <tr>
           <th>Produto</th>
-          <th>Codigo</th>
+          <th>Código</th>
           <th>Qtd</th>
           <th>Unitario</th>
           <th>Desconto</th>
@@ -170,7 +218,7 @@
   <h2>Itens do pedido online</h2>
   <div class="table-wrapper">
     <table>
-      <thead><tr><th>Produto</th><th>Codigo</th><th>Qtd</th><th>Unitario</th><th>Total</th></tr></thead>
+      <thead><tr><th>Produto</th><th>Código</th><th>Qtd</th><th>Unitario</th><th>Total</th></tr></thead>
       <tbody>
         {% for item in documento.pedido_online.itens.all %}
           <tr>
@@ -192,9 +240,9 @@
   <article class="panel">
     <h2>Destinatario</h2>
     <p>Cliente: {{ documento.pedido_online.nome_cliente }}</p>
-    <p>Documento: {% if documento.pedido_online.documento_cliente %}{{ documento.pedido_online.get_documento_cliente_tipo_display }} {{ documento.pedido_online.documento_cliente }}{% else %}Nao informado{% endif %}</p>
+    <p>Documento: {% if documento.pedido_online.documento_cliente %}{{ documento.pedido_online.get_documento_cliente_tipo_display }} {{ documento.pedido_online.documento_cliente }}{% else %}Não informado{% endif %}</p>
     <p>Entrega: {{ documento.pedido_online.get_tipo_entrega_display }}</p>
-    {% if documento.pedido_online.endereco_entrega %}<p>Endereco: {{ documento.pedido_online.endereco_entrega }}</p>{% endif %}
+    {% if documento.pedido_online.endereco_entrega %}<p>Endereço: {{ documento.pedido_online.endereco_entrega }}</p>{% endif %}
   </article>
   <article class="panel">
     <h2>Resumo do pedido</h2>

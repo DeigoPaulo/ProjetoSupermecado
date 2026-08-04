@@ -12,7 +12,7 @@ class AdicionarItemForm(forms.Form):
     busca = forms.CharField(
         label="Produto",
         max_length=255,
-        widget=forms.TextInput(attrs={"autofocus": "autofocus", "autocomplete": "off", "placeholder": "Codigo de barras ou nome"}),
+        widget=forms.TextInput(attrs={"autofocus": "autofocus", "autocomplete": "off", "placeholder": "Código de barras ou nome"}),
     )
     quantidade = forms.DecimalField(
         label="Quantidade",
@@ -123,6 +123,56 @@ class PreVendaForm(forms.Form):
         self.fields["cliente"].queryset = clientes_para_usuario(user, Cliente.objects.filter(is_active=True))
         self.fields["validade"].initial = timezone.localdate() + timedelta(days=7)
 
+
+class EntregaPdvForm(forms.Form):
+    cliente = forms.ModelChoiceField(label="Cliente", queryset=None, required=False, widget=forms.HiddenInput(attrs={"id": "id_entrega_cliente"}))
+    nome_cliente = forms.CharField(
+        label="Nome do cliente",
+        max_length=150,
+        widget=forms.TextInput(
+            attrs={
+                "autocomplete": "off",
+                "data-delivery-client-search": "1",
+                "role": "combobox",
+                "aria-autocomplete": "list",
+                "aria-expanded": "false",
+                "aria-controls": "pdv-delivery-client-results",
+            }
+        ),
+    )
+    telefone = forms.CharField(label="Telefone", max_length=30, required=False)
+    endereco_entrega = forms.CharField(
+        label="Endereço de entrega", required=False, widget=forms.Textarea(attrs={"rows": 2})
+    )
+    bairro_entrega = forms.CharField(label="Bairro", max_length=120, required=False)
+    distancia_entrega_km = forms.DecimalField(
+        label="Distância até o cliente (km)", max_digits=7, decimal_places=2, min_value=0, required=False
+    )
+    observacoes = forms.CharField(label="Observações", required=False, widget=forms.Textarea(attrs={"rows": 2}))
+    salvar_cliente = forms.BooleanField(
+        label="Salvar cliente para próximas entregas",
+        required=False,
+        help_text="Opcional. Sem marcar, o pedido será criado como cliente avulso.",
+    )
+
+    def __init__(self, *args, user=None, **kwargs):
+        super().__init__(*args, **kwargs)
+        from apps.clientes.escopo import clientes_para_usuario
+        from apps.clientes.models import Cliente
+
+        self.fields["cliente"].queryset = clientes_para_usuario(user, Cliente.objects.filter(is_active=True))
+
+    def clean(self):
+        cleaned_data = super().clean()
+        cliente = cleaned_data.get("cliente")
+        if cliente:
+            cleaned_data["nome_cliente"] = cliente.nome
+            cleaned_data["telefone"] = cleaned_data.get("telefone") or cliente.telefone
+            cleaned_data["endereco_entrega"] = cleaned_data.get("endereco_entrega") or cliente.endereco
+            cleaned_data["salvar_cliente"] = False
+        if not (cleaned_data.get("endereco_entrega") or "").strip():
+            self.add_error("endereco_entrega", "Informe o endereço para o pedido de entrega.")
+        return cleaned_data
 
 class SangriaForm(forms.ModelForm):
     class Meta:

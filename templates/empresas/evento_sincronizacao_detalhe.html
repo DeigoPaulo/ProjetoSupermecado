@@ -1,14 +1,14 @@
 {% extends "base.html" %}
 
-{% block title %}Evento de saida{% endblock %}
+{% block title %}Evento de saída{% endblock %}
 
 {% block content %}
 <header class="page-header">
   <div>
-    <h1>Evento de saida {{ evento.tipo }}</h1>
-    <p>Auditoria do evento gerado localmente para envio ao servidor de sincronizacao.</p>
+    <h1>Evento de saída {{ evento.tipo }}</h1>
+    <p>Auditoria do evento gerado localmente para envio ao servidor de sincronização.</p>
   </div>
-  <a class="secondary-button" href="{% url 'empresas:sincronizacao' %}"><i class="fa-solid fa-arrow-left"></i> Sincronizacao</a>
+  <a class="secondary-button" href="{% url 'empresas:sincronizacao' %}"><i class="fa-solid fa-arrow-left"></i> Sincronização</a>
 </header>
 
 <section class="metrics-grid">
@@ -25,18 +25,18 @@
       <dt>Empresa</dt><dd>{{ evento.empresa }}</dd>
       <dt>Filial</dt><dd>{{ evento.filial|default:"-" }}</dd>
       <dt>Identificador</dt><dd><code>{{ evento.identificador }}</code></dd>
-      <dt>Chave idempotente</dt><dd><code>{{ evento.chave_idempotencia }}</code></dd>
+      <dt>Chave idempotente</dt><dd><code>{{ evento.chave_idempotência }}</code></dd>
       <dt>Criado em</dt><dd>{{ evento.criado_em|date:"d/m/Y H:i:s" }}</dd>
       <dt>Processado em</dt><dd>{{ evento.processado_em|date:"d/m/Y H:i:s"|default:"-" }}</dd>
-      <dt>Proxima tentativa</dt><dd>{{ evento.proxima_tentativa_em|date:"d/m/Y H:i:s"|default:"-" }}</dd>
+      <dt>Próxima tentativa</dt><dd>{{ evento.proxima_tentativa_em|date:"d/m/Y H:i:s"|default:"-" }}</dd>
     </dl>
   </article>
 
   <article class="panel">
-    <div class="panel-title">Diagnostico</div>
+    <div class="panel-title">Diagnóstico</div>
     <dl class="definition-list">
-      <dt>Status tecnico</dt><dd>{{ evento.status }}</dd>
-      <dt>Ultimo erro</dt><dd>{{ evento.ultimo_erro|default:"-" }}</dd>
+      <dt>Status técnico</dt><dd>{{ evento.status }}</dd>
+      <dt>Último erro</dt><dd>{{ evento.ultimo_erro|default:"-" }}</dd>
     </dl>
     {% if evento.status == "ERRO" %}
       <form method="post" action="{% url 'empresas:sincronizacao_reprocessar' evento.pk %}">
@@ -49,7 +49,7 @@
 
 <section class="panel code-sample">
   <div class="panel-title">Payload enviado</div>
-  <span>Conteudo preservado para idempotencia, suporte e comparacao entre loja e nuvem.</span>
+  <span>Conteúdo preservado para idempotência, suporte e comparação entre loja e nuvem.</span>
   <code>{{ payload_formatado }}</code>
 </section>
 {% endblock %}

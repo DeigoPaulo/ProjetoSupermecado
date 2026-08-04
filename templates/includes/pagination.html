@@ -5,7 +5,7 @@
   {% else %}<span class="secondary-button disabled"><i class="fa-solid fa-chevron-left"></i> Anterior</span>{% endif %}
   <strong>Pagina {{ page_obj.number }} de {{ page_obj.paginator.num_pages }}</strong>
   {% if page_obj.has_next %}
-    <a class="secondary-button" href="?{% if request.GET.urlencode %}{{ request.GET.urlencode }}&amp;{% endif %}page={{ page_obj.next_page_number }}">Proxima <i class="fa-solid fa-chevron-right"></i></a>
-  {% else %}<span class="secondary-button disabled">Proxima <i class="fa-solid fa-chevron-right"></i></span>{% endif %}
+    <a class="secondary-button" href="?{% if request.GET.urlencode %}{{ request.GET.urlencode }}&amp;{% endif %}page={{ page_obj.next_page_number }}">Próxima <i class="fa-solid fa-chevron-right"></i></a>
+  {% else %}<span class="secondary-button disabled">Próxima <i class="fa-solid fa-chevron-right"></i></span>{% endif %}
 </nav>
 {% endif %}

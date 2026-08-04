@@ -2,7 +2,7 @@ from apps.clientes.escopo import empresa_id_do_usuario
 from apps.empresas.models import Filial
 from apps.vendas.models import Venda
 
-from .models import ConfiguracaoFiscal, DocumentoFiscal, SerieFiscal
+from .models import ConfiguracaoFiscal, DocumentoFiscal, InutilizacaoNumeracaoFiscal, NaturezaOperacao, SerieFiscal
 
 
 def _por_empresa_do_usuario(user, queryset, lookup_empresa):
@@ -27,8 +27,18 @@ def series_para_usuario(user, queryset=None):
     return _por_empresa_do_usuario(user, queryset, "filial__empresa_id")
 
 
+def naturezas_para_usuario(user, queryset=None):
+    queryset = queryset if queryset is not None else NaturezaOperacao.objects.all()
+    return _por_empresa_do_usuario(user, queryset, "empresa_id")
+
+
 def documentos_para_usuario(user, queryset=None):
     queryset = queryset if queryset is not None else DocumentoFiscal.objects.all()
+    return _por_empresa_do_usuario(user, queryset, "filial__empresa_id")
+
+
+def inutilizacoes_para_usuario(user, queryset=None):
+    queryset = queryset if queryset is not None else InutilizacaoNumeracaoFiscal.objects.all()
     return _por_empresa_do_usuario(user, queryset, "filial__empresa_id")
 
 

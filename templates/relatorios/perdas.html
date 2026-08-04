@@ -1,6 +1,6 @@
 {% extends "base.html" %}
 
-{% block title %}Relatorio de Perdas{% endblock %}
+{% block title %}Relatório de Perdas{% endblock %}
 
 {% block content %}
 <header class="page-header">
@@ -22,7 +22,7 @@
   <article class="metric"><span>Registros</span><strong>{{ total_perdas }}</strong></article>
   <article class="metric"><span>Custo perdido</span><strong>R$ {{ valor_custo_total|floatformat:2 }}</strong></article>
   <article class="metric"><span>Venda estimada</span><strong>R$ {{ valor_venda_total|floatformat:2 }}</strong></article>
-  <article class="metric"><span>Periodo</span><strong>{{ data_inicio|date:"d/m" }} - {{ data_fim|date:"d/m" }}</strong></article>
+  <article class="metric"><span>Período</span><strong>{{ data_inicio|date:"d/m" }} - {{ data_fim|date:"d/m" }}</strong></article>
 </section>
 
 <section class="two-column">

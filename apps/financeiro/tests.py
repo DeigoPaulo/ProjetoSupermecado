@@ -12,7 +12,8 @@ from apps.fiscal.models import AmbienteFiscal, DocumentoFiscal, StatusDocumentoF
 from apps.pdv.models import Caixa
 from apps.vendas.models import FormaPagamento, PagamentoVenda, StatusVenda, Venda
 
-from .models import CategoriaFinanceira, ConciliacaoLancamentoFinanceiro, ContaFinanceira, ContaMovimentoFinanceiro, ExportacaoContabil, LancamentoFinanceiro, StatusContaFinanceira, StatusExportacaoContabil, TipoContaFinanceira, TipoContaMovimento, TipoLancamentoFinanceiro, TransferenciaFinanceira
+from .forms import CategoriaFinanceiraForm, ContaContabilForm, ContaFinanceiraForm
+from .models import CategoriaFinanceira, CentroCusto, ContaContabil, ConciliacaoLancamentoFinanceiro, ContaFinanceira, ContaMovimentoFinanceiro, ExportacaoContabil, LancamentoFinanceiro, StatusContaFinanceira, StatusExportacaoContabil, TipoContaContabil, TipoContaFinanceira, TipoContaMovimento, TipoLancamentoFinanceiro, TransferenciaFinanceira
 from .services import baixar_conta, cancelar_conta, conciliar_lancamento, estornar_lancamento, realizar_transferencia
 
 
@@ -36,7 +37,7 @@ class FinanceiroTests(TestCase):
         self.client.force_login(self.user)
         self.empresa = Empresa.objects.create(razao_social="Mercado Teste", nome_fantasia="Mercado", cnpj="33.333.333/0001-33")
         self.filial = Filial.objects.create(empresa=self.empresa, nome="Matriz", cnpj=self.empresa.cnpj)
-        self.categoria = CategoriaFinanceira.objects.create(nome="Mercadorias", tipo=TipoContaFinanceira.PAGAR)
+        self.categoria = CategoriaFinanceira.objects.create(empresa=self.empresa, nome="Mercadorias", tipo=TipoContaFinanceira.PAGAR)
         self.conta = ContaFinanceira.objects.create(
             tipo=TipoContaFinanceira.PAGAR,
             descricao="Compra de mercadorias",
@@ -54,6 +55,51 @@ class FinanceiroTests(TestCase):
             vencimento=timezone.localdate(),
             usuario=self.user,
         )
+
+    def test_super_admin_escolhe_empresa_ao_criar_categoria(self):
+        outra_empresa = Empresa.objects.create(
+            razao_social="Outro Mercado LTDA",
+            nome_fantasia="Outro Mercado",
+            cnpj="44.444.444/0001-44",
+        )
+
+        resposta = self.client.post(
+            "/financeiro/categorias/nova/",
+            {"empresa": outra_empresa.id, "nome": "Receitas de entrega", "tipo": TipoContaFinanceira.RECEBER, "is_active": "on"},
+        )
+
+        self.assertRedirects(resposta, "/financeiro/categorias/")
+        categoria = CategoriaFinanceira.objects.get(nome="Receitas de entrega")
+        self.assertEqual(categoria.empresa, outra_empresa)
+
+    def test_form_conta_rejeita_categoria_de_outra_empresa(self):
+        outra_empresa = Empresa.objects.create(
+            razao_social="Outro Mercado LTDA",
+            nome_fantasia="Outro Mercado",
+            cnpj="55.555.555/0001-55",
+        )
+        categoria_outra_empresa = CategoriaFinanceira.objects.create(
+            empresa=outra_empresa,
+            nome="Despesa externa",
+            tipo=TipoContaFinanceira.PAGAR,
+        )
+        form = ContaFinanceiraForm(
+            data={
+                "tipo": TipoContaFinanceira.PAGAR,
+                "descricao": "Conta isolada",
+                "categoria": categoria_outra_empresa.id,
+                "filial": self.filial.id,
+                "fornecedor": "",
+                "cliente": "",
+                "valor": "10.00",
+                "vencimento": timezone.localdate().isoformat(),
+                "observacoes": "",
+            },
+            user=self.user,
+        )
+
+        self.assertFalse(form.is_valid())
+        self.assertIn("categoria", form.errors)
 
     def test_baixa_conta_e_registra_auditoria(self):
         baixar_conta(
@@ -92,7 +138,7 @@ class FinanceiroTests(TestCase):
         baixa_form = self.client.get(f"/financeiro/{self.conta.pk}/baixar/")
 
         self.assertEqual(conta_form.status_code, 200)
-        self.assertContains(conta_form, "Classificacao")
+        self.assertContains(conta_form, "Classificação")
         self.assertContains(conta_form, "Origem e parceiro")
         self.assertContains(conta_form, "Valores e vencimento")
         self.assertContains(conta_form, "select2-field")
@@ -184,6 +230,240 @@ class FinanceiroTests(TestCase):
         self.assertEqual(response_csv["Content-Type"], "text/csv; charset=utf-8")
         self.assertIn(b"Saldo operacional", response_csv.content)
 
+    def test_plano_contas_preserva_classificacao_no_livro_estorno_e_relatorios(self):
+        grupo = ContaContabil.objects.create(
+            empresa=self.empresa,
+            codigo="3",
+            nome="Despesas",
+            natureza="DESPESA",
+            tipo=TipoContaContabil.SINTETICA,
+        )
+        conta_contabil = ContaContabil.objects.create(
+            empresa=self.empresa,
+            codigo="3.01.001",
+            nome="Compra de mercadorias",
+            natureza="DESPESA",
+            tipo=TipoContaContabil.ANALITICA,
+            conta_pai=grupo,
+        )
+        outra_conta = ContaContabil.objects.create(
+            empresa=self.empresa,
+            codigo="3.01.002",
+            nome="Fretes sobre compras",
+            natureza="DESPESA",
+            tipo=TipoContaContabil.ANALITICA,
+            conta_pai=grupo,
+        )
+        self.categoria.conta_contabil = conta_contabil
+        self.categoria.save(update_fields=["conta_contabil"])
+        caixa = ContaMovimentoFinanceiro.objects.create(
+            filial=self.filial,
+            nome="Caixa plano contabil",
+            tipo=TipoContaMovimento.CAIXA,
+        )
+
+        baixar_conta(
+            conta=self.conta,
+            usuario=self.user,
+            data_pagamento=timezone.localdate(),
+            valor_pago=Decimal("150.00"),
+            forma_pagamento="PIX",
+            conta_movimento=caixa,
+        )
+        lancamento = LancamentoFinanceiro.objects.get(conta_financeira=self.conta)
+        self.assertEqual(lancamento.conta_contabil, conta_contabil)
+
+        self.categoria.conta_contabil = outra_conta
+        self.categoria.save(update_fields=["conta_contabil"])
+        estorno = estornar_lancamento(
+            lancamento=lancamento,
+            usuario=self.user,
+            motivo="Correcao operacional",
+        )
+        self.assertEqual(estorno.conta_contabil, conta_contabil)
+
+        tela = self.client.get("/financeiro/resultado/")
+        csv_texto = self.client.get("/financeiro/resultado/exportar.csv").content.decode("utf-8-sig")
+        pacote = self.client.get("/financeiro/resultado/pacote-contabil.json").json()
+        self.assertContains(tela, "Resultado por conta cont?bil")
+        self.assertContains(tela, "Compra de mercadorias")
+        self.assertIn("Codigo;Conta contabil;Natureza;Receitas;Despesas;Resultado", csv_texto)
+        self.assertIn("3.01.001;Compra de mercadorias;Despesa", csv_texto)
+        self.assertEqual(pacote["plano_contas"][0]["codigo"], "3.01.001")
+
+    def test_plano_contas_bloqueia_ciclo_e_vinculos_invalidos(self):
+        raiz = ContaContabil.objects.create(
+            empresa=self.empresa, codigo="1", nome="Ativo", natureza="ATIVO",
+            tipo=TipoContaContabil.SINTETICA,
+        )
+        filha = ContaContabil.objects.create(
+            empresa=self.empresa, codigo="1.01", nome="Disponivel", natureza="ATIVO",
+            tipo=TipoContaContabil.SINTETICA, conta_pai=raiz,
+        )
+        raiz.conta_pai = filha
+        with self.assertRaises(ValidationError):
+            raiz.full_clean()
+        raiz.conta_pai = None
+        analitica = ContaContabil.objects.create(
+            empresa=self.empresa, codigo="1.01.001", nome="Caixa", natureza="ATIVO",
+            tipo=TipoContaContabil.ANALITICA, conta_pai=filha,
+        )
+        subconta_invalida = ContaContabil(
+            empresa=self.empresa, codigo="1.01.001.01", nome="Subcaixa", natureza="ATIVO",
+            tipo=TipoContaContabil.ANALITICA, conta_pai=analitica,
+        )
+        with self.assertRaises(ValidationError):
+            subconta_invalida.full_clean()
+        self.categoria.conta_contabil = analitica
+        self.categoria.save(update_fields=["conta_contabil"])
+        analitica.tipo = TipoContaContabil.SINTETICA
+        with self.assertRaises(ValidationError):
+            analitica.full_clean()
+
+        outra_empresa = Empresa.objects.create(
+            razao_social="Empresa Contabil Externa LTDA",
+            nome_fantasia="Contabil Externa",
+            cnpj="77.777.777/0001-77",
+        )
+        externa = ContaContabil.objects.create(
+            empresa=outra_empresa, codigo="4.01", nome="Receita externa", natureza="RECEITA",
+            tipo=TipoContaContabil.ANALITICA,
+        )
+        form = CategoriaFinanceiraForm(
+            data={
+                "empresa": self.empresa.pk,
+                "nome": "Categoria isolada",
+                "tipo": TipoContaFinanceira.RECEBER,
+                "conta_contabil": externa.pk,
+                "is_active": "on",
+            },
+            user=self.user,
+        )
+        self.assertFalse(form.is_valid())
+        self.assertIn("conta_contabil", form.errors)
+
+        form_sintetica = CategoriaFinanceiraForm(
+            data={
+                "empresa": self.empresa.pk,
+                "nome": "Categoria sintetica",
+                "tipo": TipoContaFinanceira.PAGAR,
+                "conta_contabil": raiz.pk,
+                "is_active": "on",
+            },
+            user=self.user,
+        )
+        self.assertFalse(form_sintetica.is_valid())
+        self.assertIn("conta_contabil", form_sintetica.errors)
+
+    def test_cadastro_conta_contabil_registra_auditoria(self):
+        resposta = self.client.post(
+            "/financeiro/plano-contas/nova/",
+            {
+                "empresa": self.empresa.pk,
+                "codigo": "3.02.001",
+                "nome": "Energia eletrica",
+                "natureza": "DESPESA",
+                "tipo": TipoContaContabil.ANALITICA,
+                "conta_pai": "",
+                "ativa": "on",
+            },
+        )
+        self.assertRedirects(resposta, "/financeiro/plano-contas/")
+        conta = ContaContabil.objects.get(codigo="3.02.001")
+        self.assertTrue(LogAuditoria.objects.filter(
+            acao="CADASTRO_CONTA_CONTABIL", objeto_id=str(conta.pk)
+        ).exists())
+
+    def test_centro_custo_isolado_e_preservado_no_livro_e_relatorios(self):
+        centro = CentroCusto.objects.create(
+            empresa=self.empresa, codigo="ADM", nome="Administrativo"
+        )
+        self.conta.centro_custo = centro
+        self.conta.save(update_fields=["centro_custo", "atualizado_em"])
+        caixa = ContaMovimentoFinanceiro.objects.create(
+            filial=self.filial,
+            nome="Caixa centro de custo",
+            tipo=TipoContaMovimento.CAIXA,
+        )
+
+        baixar_conta(
+            conta=self.conta,
+            usuario=self.user,
+            data_pagamento=timezone.localdate(),
+            valor_pago=Decimal("150.00"),
+            forma_pagamento="PIX",
+            conta_movimento=caixa,
+        )
+        lancamento = LancamentoFinanceiro.objects.get(conta_financeira=self.conta)
+        self.assertEqual(lancamento.centro_custo, centro)
+
+        self.conta.centro_custo = None
+        self.conta.save(update_fields=["centro_custo", "atualizado_em"])
+        estorno = estornar_lancamento(
+            lancamento=lancamento,
+            usuario=self.user,
+            motivo="Correcao de classificacao",
+        )
+        self.assertEqual(estorno.centro_custo, centro)
+
+        tela = self.client.get("/financeiro/resultado/")
+        csv_texto = self.client.get("/financeiro/resultado/exportar.csv").content.decode("utf-8-sig")
+        pacote = self.client.get("/financeiro/resultado/pacote-contabil.json").json()
+
+        self.assertContains(tela, "Resultado por centro de custo")
+        self.assertContains(tela, "Administrativo")
+        self.assertIn("Codigo;Centro de custo;Receitas;Despesas;Resultado", csv_texto)
+        self.assertIn("ADM;Administrativo", csv_texto)
+        self.assertEqual(pacote["centros_custo"][0]["codigo"], "ADM")
+        self.assertEqual(pacote["centros_custo"][0]["centro_custo"], "Administrativo")
+
+    def test_form_conta_rejeita_centro_custo_de_outra_empresa(self):
+        outra_empresa = Empresa.objects.create(
+            razao_social="Empresa Centro Externo LTDA",
+            nome_fantasia="Centro Externo",
+            cnpj="66.666.666/0001-66",
+        )
+        centro_externo = CentroCusto.objects.create(
+            empresa=outra_empresa, codigo="EXT", nome="Centro externo"
+        )
+        form = ContaFinanceiraForm(
+            data={
+                "tipo": TipoContaFinanceira.PAGAR,
+                "descricao": "Conta com centro invalido",
+                "categoria": self.categoria.id,
+                "centro_custo": centro_externo.id,
+                "filial": self.filial.id,
+                "fornecedor": "",
+                "cliente": "",
+                "valor": "10.00",
+                "vencimento": timezone.localdate().isoformat(),
+                "observacoes": "",
+            },
+            user=self.user,
+        )
+
+        self.assertFalse(form.is_valid())
+        self.assertIn("centro_custo", form.errors)
+
+    def test_cadastro_centro_custo_registra_auditoria(self):
+        resposta = self.client.post(
+            "/financeiro/centros-custo/novo/",
+            {
+                "empresa": self.empresa.id,
+                "codigo": "LOJA",
+                "nome": "Operacao da loja",
+                "ativo": "on",
+            },
+        )
+
+        self.assertRedirects(resposta, "/financeiro/centros-custo/")
+        centro = CentroCusto.objects.get(codigo="LOJA")
+        self.assertTrue(
+            LogAuditoria.objects.filter(
+                acao="CADASTRO_CENTRO_CUSTO", objeto_id=str(centro.pk)
+            ).exists()
+        )
+
     def test_resultado_financeiro_ignora_transferencias_e_exporta_csv(self):
         caixa = ContaMovimentoFinanceiro.objects.create(
             filial=self.filial,
@@ -267,11 +547,11 @@ class FinanceiroTests(TestCase):
         self.assertIn("Margem operacional;28,57%", csv_texto)
         self.assertIn("Categoria;Tipo;Receitas;Despesas;Resultado", csv_texto)
         self.assertIn("Mercadorias;Conta a pagar;0,00;150,00;-150,00", csv_texto)
-        self.assertIn("Filial;Conta movimento;Tipo;Saldo inicial;Entradas periodo;Saidas periodo;Saldo atual", csv_texto)
-        self.assertIn("Matriz;Caixa resultado;Caixa fisico;500,00;210,00;150,00;510,00", csv_texto)
+        self.assertIn("Filial;Conta movimento;Tipo;Saldo inicial;Entradas período;Saidas período;Saldo atual", csv_texto)
+        self.assertIn("Matriz;Caixa resultado;Caixa físico;500,00;210,00;150,00;510,00", csv_texto)
         self.assertIn("Pacote contabil gerencial", csv_texto)
         self.assertIn("Movimentação total do livro;60,00", csv_texto)
-        self.assertIn("Transferencias internas;2;Entradas 50,00 / Saidas 50,00", csv_texto)
+        self.assertIn("Transferências internas;2;Entradas 50,00 / Saidas 50,00", csv_texto)
         self.assertIn("Conciliação bancária;25,00%;1 conciliados / 3 pendentes", csv_texto)
         self.assertIn("Valor conciliado;210,00;Pendente 250,00", csv_texto)
         self.assertIn("Alerta;;", csv_texto)
@@ -292,8 +572,8 @@ class FinanceiroTests(TestCase):
         self.assertIn("não substitui SPED", " ".join(payload["alertas"]))
         self.assertIn("Balancete gerencial por conta", csv_texto)
         self.assertIn("Filial;Conta movimento;Tipo;Saldo anterior;Entradas;Saidas;Saldo final", csv_texto)
-        self.assertIn("Matriz;Caixa resultado;Caixa fisico;500,00;210,00;200,00;510,00", csv_texto)
-        self.assertIn("Matriz;Banco resultado;Conta bancaria;0,00;50,00;0,00;50,00", csv_texto)
+        self.assertIn("Matriz;Caixa resultado;Caixa físico;500,00;210,00;200,00;510,00", csv_texto)
+        self.assertIn("Matriz;Banco resultado;Conta bancária;0,00;50,00;0,00;50,00", csv_texto)
         self.assertNotIn("TRANSFERENCIA", csv_texto)
 
     def test_resultado_concilia_documento_fiscal_com_livro_da_venda(self):
@@ -729,7 +1009,7 @@ class FinanceiroTests(TestCase):
         self.assertTrue(LogAuditoria.objects.filter(modulo="financeiro", acao="ESTORNO_LANCAMENTO").exists())
         with self.assertRaisesMessage(ValidationError, "ja possui estorno"):
             estornar_lancamento(lancamento=lancamento, usuario=self.user, motivo="Repetido")
-        with self.assertRaisesMessage(ValidationError, "nao pode ser estornado novamente"):
+        with self.assertRaisesMessage(ValidationError, "não pode ser estornado novamente"):
             estornar_lancamento(lancamento=estorno, usuario=self.user, motivo="Reversao indevida")
 
     def test_tela_livro_estorna_lancamento_com_motivo(self):
@@ -757,7 +1037,7 @@ class FinanceiroTests(TestCase):
 
         self.assertRedirects(response, "/financeiro/livro/")
         self.assertContains(response, "Estorno registrado")
-        self.assertContains(response, "Estorno do lancamento")
+        self.assertContains(response, "Estorno do lançamento")
         self.assertContains(response, "Fechado")
         self.assertEqual(LancamentoFinanceiro.objects.filter(estorno_de=lancamento).count(), 1)
     def test_conciliacao_bancaria_preserva_livro_audita_e_exporta(self):

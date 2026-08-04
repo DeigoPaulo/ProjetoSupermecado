@@ -48,7 +48,7 @@ def _data_emissao(valor):
         try:
             return date.fromisoformat(valor[:10])
         except ValueError:
-            raise ValidationError("Data de emissao invalida no XML.") from None
+            raise ValidationError("Data de emissao inválida no XML.") from None
 
 
 def _sem_namespace(tag):
@@ -57,18 +57,18 @@ def _sem_namespace(tag):
 
 def ler_xml_nfe(conteudo):
     if not conteudo:
-        raise ValidationError("O arquivo XML esta vazio.")
+        raise ValidationError("O arquivo XML está vazio.")
     if len(conteudo) > LIMITE_XML_BYTES:
-        raise ValidationError("O arquivo XML deve ter no maximo 5 MB.")
+        raise ValidationError("O arquivo XML deve ter no máximo 5 MB.")
 
     conteudo_maiusculo = conteudo.upper()
     if b"<!DOCTYPE" in conteudo_maiusculo or b"<!ENTITY" in conteudo_maiusculo:
-        raise ValidationError("XML com DTD ou entidades externas nao e permitido.")
+        raise ValidationError("XML com DTD ou entidades externas não e permitido.")
 
     try:
         raiz = ElementTree.fromstring(conteudo)
     except ElementTree.ParseError:
-        raise ValidationError("O arquivo enviado nao e um XML valido.") from None
+        raise ValidationError("O arquivo enviado não e um XML valido.") from None
 
     if _sem_namespace(raiz.tag) not in {"nfeProc", "NFe"}:
         raise ValidationError("O XML deve representar uma NF-e.")
@@ -84,19 +84,19 @@ def ler_xml_nfe(conteudo):
 
     protocolo = next((elemento for elemento in raiz.iter() if _sem_namespace(elemento.tag) == "infProt"), None)
     if protocolo is None:
-        raise ValidationError("XML sem protocolo de autorizacao da NF-e.")
+        raise ValidationError("XML sem protocolo de autorização da NF-e.")
     cstat = _texto(protocolo, caminho("cStat"))
     if cstat != "100":
-        raise ValidationError(f"A NF-e nao esta autorizada (cStat {cstat or 'ausente'}).")
+        raise ValidationError(f"A NF-e não está autorizada (cStat {cstat or 'ausente'}).")
 
     identificador = (inf_nfe.attrib.get("Id") or "").strip()
     chave = identificador[3:] if identificador.startswith("NFe") else identificador
     chave = _digitos(chave)
     if len(chave) != 44:
-        raise ValidationError("Chave de acesso da NF-e ausente ou invalida.")
+        raise ValidationError("Chave de acesso da NF-e ausente ou inválida.")
     chave_protocolada = _digitos(_texto(protocolo, caminho("chNFe"), obrigatorio=True, rotulo="chave protocolada"))
     if chave_protocolada != chave:
-        raise ValidationError("A chave da NF-e difere da chave do protocolo de autorizacao.")
+        raise ValidationError("A chave da NF-e difere da chave do protocolo de autorização.")
 
     emitente = inf_nfe.find(caminho("emit"))
     destinatario = inf_nfe.find(caminho("dest"))
@@ -117,10 +117,10 @@ def ler_xml_nfe(conteudo):
             raise ValidationError("A NF-e possui item com valor negativo.")
         dados_base = {
             "numero": detalhe.attrib.get("nItem", ""),
-            "codigo": _texto(produto, caminho("cProd"), obrigatorio=True, rotulo="codigo do produto"),
+            "codigo": _texto(produto, caminho("cProd"), obrigatorio=True, rotulo="código do produto"),
             "ean": _texto(produto, caminho("cEAN")),
             "ean_tributavel": _texto(produto, caminho("cEANTrib")),
-            "descricao": _texto(produto, caminho("xProd"), obrigatorio=True, rotulo="descricao do produto"),
+            "descricao": _texto(produto, caminho("xProd"), obrigatorio=True, rotulo="descrição do produto"),
         }
         rastros = produto.findall(caminho("rastro"))
         if rastros:
@@ -136,12 +136,12 @@ def ler_xml_nfe(conteudo):
                     fabricacao = date.fromisoformat(_texto(rastro, caminho("dFab"))) if _texto(rastro, caminho("dFab")) else None
                     validade = date.fromisoformat(_texto(rastro, caminho("dVal"))) if _texto(rastro, caminho("dVal")) else None
                 except ValueError:
-                    raise ValidationError("Data de fabricacao ou validade invalida em lote da NF-e.") from None
+                    raise ValidationError("Data de fabricação ou validade inválida em lote da NF-e.") from None
                 if fabricacao and validade and fabricacao > validade:
-                    raise ValidationError("A NF-e possui lote com fabricacao posterior a validade.")
+                    raise ValidationError("A NF-e possui lote com fabricação posterior a validade.")
                 lotes_item.append({
                     "quantidade": quantidade_lote,
-                    "codigo_lote": _texto(rastro, caminho("nLote"), obrigatorio=True, rotulo="codigo do lote"),
+                    "codigo_lote": _texto(rastro, caminho("nLote"), obrigatorio=True, rotulo="código do lote"),
                     "fabricacao": fabricacao,
                     "validade": validade,
                 })
@@ -173,7 +173,7 @@ def ler_xml_nfe(conteudo):
                 "total": total_lote,
             })
     if not itens:
-        raise ValidationError("A NF-e nao possui itens de produto.")
+        raise ValidationError("A NF-e não possui itens de produto.")
 
     vencimentos = []
     for duplicata in inf_nfe.findall(f".//{namespace}dup"):
@@ -182,7 +182,7 @@ def ler_xml_nfe(conteudo):
             try:
                 vencimentos.append(date.fromisoformat(valor))
             except ValueError:
-                raise ValidationError("Data de vencimento invalida no XML.") from None
+                raise ValidationError("Data de vencimento inválida no XML.") from None
 
     data_valor = _texto(ide, caminho("dhEmi")) or _texto(ide, caminho("dEmi"))
     total_nfe = next((elemento for elemento in inf_nfe.iter() if _sem_namespace(elemento.tag) == "ICMSTot"), None)
@@ -193,15 +193,15 @@ def ler_xml_nfe(conteudo):
         "total da NF-e",
     ).quantize(CENTAVOS, rounding=ROUND_HALF_UP)
     if total_documento < 0:
-        raise ValidationError("O total da NF-e nao pode ser negativo.")
+        raise ValidationError("O total da NF-e não pode ser negativo.")
     emitente_cnpj = _digitos(_texto(emitente, caminho("CNPJ"), obrigatorio=True, rotulo="CNPJ do emitente"))
     destinatario_cnpj = _digitos(_texto(destinatario, caminho("CNPJ"), obrigatorio=True, rotulo="CNPJ do destinatario"))
     if len(emitente_cnpj) != 14 or len(destinatario_cnpj) != 14:
-        raise ValidationError("CNPJ do emitente ou destinatario invalido no XML.")
+        raise ValidationError("CNPJ do emitente ou destinatario inválido no XML.")
 
     return {
         "chave": chave,
-        "numero_documento": _texto(ide, caminho("nNF"), obrigatorio=True, rotulo="numero da NF-e"),
+        "numero_documento": _texto(ide, caminho("nNF"), obrigatorio=True, rotulo="número da NF-e"),
         "data_emissao": _data_emissao(data_valor),
         "emitente_cnpj": emitente_cnpj,
         "emitente_nome": _texto(emitente, caminho("xNome")),
@@ -293,7 +293,7 @@ def importar_xml_entrada(conteudo, *, usuario, gerar_conta_financeira=True, ip=N
     ]
     if sem_lote_obrigatorio:
         raise ValidationError(
-            ["Nenhuma entrada foi criada. A NF-e nao informou rastro para produtos que exigem lote:"]
+            ["Nenhuma entrada foi criada. A NF-e não informou rastro para produtos que exigem lote:"]
             + sem_lote_obrigatorio
         )
 

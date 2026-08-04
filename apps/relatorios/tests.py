@@ -2,6 +2,8 @@ from decimal import Decimal
 
 from django.contrib.auth import get_user_model
 from django.test import TestCase
+from django.urls import reverse
+from django.utils import timezone
 
 from apps.accounts.models import PerfilUsuario, TipoPerfil
 from apps.empresas.models import Empresa, Filial
@@ -185,7 +187,7 @@ class DashboardTests(TestCase):
         self.assertContains(imprimir, "R$ 75,00")
         self.assertContains(response, "Entradas líquidas por forma de pagamento")
         self.assertEqual(response.context["total_entradas_pagamentos"], Decimal("75.00"))
-        self.assertContains(csv_response, "Entradas liquidas por forma de pagamento")
+        self.assertContains(csv_response, "Entradas líquidas por forma de pagamento")
         self.assertContains(csv_response, "Dinheiro;80,00;5,00;75,00")
         self.assertContains(imprimir, "Entradas líquidas por forma de pagamento")
 
@@ -312,10 +314,31 @@ class DashboardTests(TestCase):
         self.assertContains(centro_csv, "Filtro filial;Mercado Teste - Filial Centro Vendas")
         self.assertContains(centro_pdf, "Filial: Mercado Teste - Filial Centro Vendas")
 
+        por_operador = self.client.get(f"/vendas/?operador={operador_centro.pk}")
+        por_operador_csv = self.client.get(f"/vendas/exportar.csv?operador={operador_centro.pk}")
+        por_operador_pdf = self.client.get(f"/vendas/imprimir/?operador={operador_centro.pk}")
+
+        self.assertEqual(por_operador.context["total_vendas"], 1)
+        self.assertEqual(por_operador.context["faturamento"], Decimal("30"))
+        self.assertEqual(list(por_operador.context["vendas"])[0].usuario, operador_centro)
+        self.assertContains(por_operador_csv, "Filtro funcionário;operador_venda_centro")
+        self.assertContains(por_operador_pdf, "Funcionário: operador_venda_centro")
+        self.assertNotIn(
+            operador_externo.pk,
+            por_operador.context["operadores"].values_list("pk", flat=True),
+        )
+
         for url in [
             f"/vendas/?filial={filial_externa.pk}",
             f"/vendas/exportar.csv?filial={filial_externa.pk}",
             f"/vendas/imprimir/?filial={filial_externa.pk}",
+        ]:
+            self.assertEqual(self.client.get(url).status_code, 403)
+
+        for url in [
+            f"/vendas/?operador={operador_externo.pk}",
+            f"/vendas/exportar.csv?operador={operador_externo.pk}",
+            f"/vendas/imprimir/?operador={operador_externo.pk}",
         ]:
             self.assertEqual(self.client.get(url).status_code, 403)
     def test_relatorios_restantes_bloqueiam_filial_de_outra_empresa(self):
@@ -407,3 +430,60 @@ class DashboardTests(TestCase):
         self.assertContains(response, "<strong>20</strong>", html=True)
         self.assertContains(response, "<strong>1,250</strong>", html=True)
         self.assertNotContains(response, "20,000")
+
+
+class CurvaAbcHorarioPicoTests(TestCase):
+    def setUp(self):
+        usuario_modelo = get_user_model()
+        self.empresa = Empresa.objects.create(razao_social="Empresa Horario", nome_fantasia="Empresa Horario", cnpj="66554433000122")
+        self.filial = Filial.objects.create(empresa=self.empresa, nome="Matriz Horario")
+        self.usuario = usuario_modelo.objects.create_user("gerente_horario", password="senha")
+        PerfilUsuario.objects.create(usuario=self.usuario, filial=self.filial, tipo=TipoPerfil.GERENTE)
+
+    def test_curva_abc_exibe_horario_de_maior_movimento(self):
+        caixa = Caixa.objects.create(filial=self.filial, usuario_abertura=self.usuario)
+        venda = Venda.objects.create(
+            filial=self.filial, caixa=caixa, usuario=self.usuario,
+            total_bruto=Decimal("55"), total_liquido=Decimal("55"), status=StatusVenda.FINALIZADA,
+        )
+        data_pico = timezone.localtime().replace(hour=18, minute=10, second=0, microsecond=0)
+        Venda.objects.filter(pk=venda.pk).update(data=data_pico)
+        self.client.force_login(self.usuario)
+
+        resposta = self.client.get("/curva-abc/")
+
+        self.assertEqual(resposta.status_code, 200)
+        self.assertEqual(resposta.context["horario_pico"]["hora"], 18)
+        self.assertContains(resposta, "18:00 - 18:59")
+
+class RelatoriosCsvDownloadTests(TestCase):
+    def setUp(self):
+        User = get_user_model()
+        self.usuario = User.objects.create_superuser(
+            username="csv_admin",
+            email="csv@example.com",
+            password="senha",
+        )
+        self.client.force_login(self.usuario)
+
+    def test_todos_os_relatorios_csv_baixam_em_utf8_para_excel(self):
+        nomes = [
+            "vendas_csv",
+            "curva_abc_csv",
+            "estoque_baixo_csv",
+            "sugestao_reposicao_csv",
+            "movimentacoes_estoque_csv",
+            "perdas_csv",
+            "devolucoes_csv",
+            "compras_csv",
+            "caixas_csv",
+        ]
+
+        for nome in nomes:
+            with self.subTest(relatorio=nome):
+                response = self.client.get(reverse(f"relatorios:{nome}"))
+                self.assertEqual(response.status_code, 200)
+                self.assertEqual(response["Content-Type"], "text/csv; charset=utf-8")
+                self.assertIn("attachment; filename=", response["Content-Disposition"])
+                self.assertTrue(response.content.startswith(b"\xef\xbb\xbf"))
+                self.assertGreater(len(response.content), 3)

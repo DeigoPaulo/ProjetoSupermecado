@@ -40,6 +40,14 @@ Cadastre no Asaas o webhook `https://SEU-DOMINIO/licenciamento/webhooks/asaas/`.
 
 A central possui o diagnóstico protegido `licensing_readiness_v1` em `/licenciamento/central/diagnostico.json`.
 
+Antes de conectar o sandbox, valide a mesma prontidão pelo terminal:
+
+```powershell
+.\.venv\Scripts\python.exe manage.py verificar_prontidao_licenciamento --json --estrito
+```
+
+Para a liberação definitiva, use `--producao`. Esse modo também rejeita a URL de sandbox e retorna código de erro enquanto qualquer requisito permanecer incompleto.
+
 ### Rotina diária
 
 O comando gera uma fatura mensal por contrato sem duplicidade, publica cobranças pendentes no Asaas e recalcula aviso, tolerância e suspensão:

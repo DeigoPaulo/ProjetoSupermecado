@@ -7,8 +7,58 @@ from apps.auditoria.models import LogAuditoria
 from .models import ConciliacaoLancamentoFinanceiro, ContaFinanceira, ContaMovimentoFinanceiro, LancamentoFinanceiro, StatusContaFinanceira, TipoContaFinanceira, TipoContaMovimento, TipoLancamentoFinanceiro, TransferenciaFinanceira
 
 
-def registrar_lancamento(*, conta, tipo, descricao, valor, data, usuario, origem, conta_financeira=None, transferencia=None, estorno_de=None, pagamento_venda=None, sangria=None, suprimento=None):
-    return LancamentoFinanceiro.objects.create(
+def _publicar_lancamento_sincronizacao(lancamento):
+    from apps.empresas.services_sincronizacao import enfileirar_evento
+
+    filial = lancamento.conta.filial
+    usuario = lancamento.usuario
+    enfileirar_evento(
+        empresa=filial.empresa,
+        filial=filial,
+        tipo="financeiro.lancamento_registrado",
+        objeto_tipo="LancamentoFinanceiro",
+        objeto_id=lancamento.pk,
+        chave_idempotencia=f"financeiro:lancamento:{filial.empresa_id}:{lancamento.pk}",
+        payload={
+            "contrato": "financeiro_lancamento_v1",
+            "lancamento_id": str(lancamento.pk),
+            "filial_cnpj": filial.cnpj,
+            "filial_nome": filial.nome,
+            "tipo": lancamento.tipo,
+            "origem": lancamento.origem,
+            "descricao": lancamento.descricao,
+            "valor": str(lancamento.valor),
+            "data": lancamento.data.isoformat(),
+            "conta_movimento": {
+                "nome": lancamento.conta.nome,
+                "tipo": lancamento.conta.tipo,
+            },
+            "centro_custo": (
+                {"codigo": lancamento.centro_custo.codigo, "nome": lancamento.centro_custo.nome}
+                if lancamento.centro_custo_id else None
+            ),
+            "conta_contabil": (
+                {
+                    "codigo": lancamento.conta_contabil.codigo,
+                    "nome": lancamento.conta_contabil.nome,
+                    "natureza": lancamento.conta_contabil.natureza,
+                }
+                if lancamento.conta_contabil_id else None
+            ),
+            "conta_financeira_id": str(lancamento.conta_financeira_id or ""),
+            "estorno_de_id": str(lancamento.estorno_de_id or ""),
+            "usuario": usuario.get_username() if usuario else "",
+            "criado_em": lancamento.criado_em.isoformat(),
+        },
+    )
+
+
+def registrar_lancamento(*, conta, tipo, descricao, valor, data, usuario, origem, conta_financeira=None, centro_custo=None, conta_contabil=None, transferencia=None, estorno_de=None, pagamento_venda=None, sangria=None, suprimento=None):
+    if centro_custo is None and conta_financeira is not None:
+        centro_custo = conta_financeira.centro_custo
+    if conta_contabil is None and conta_financeira is not None and conta_financeira.categoria_id:
+        conta_contabil = conta_financeira.categoria.conta_contabil
+    lancamento = LancamentoFinanceiro.objects.create(
         conta=conta,
         tipo=tipo,
         origem=origem,
@@ -16,6 +66,8 @@ def registrar_lancamento(*, conta, tipo, descricao, valor, data, usuario, origem
         valor=valor,
         data=data,
         conta_financeira=conta_financeira,
+        centro_custo=centro_custo,
+        conta_contabil=conta_contabil,
         transferencia=transferencia,
         estorno_de=estorno_de,
         pagamento_venda=pagamento_venda,
@@ -23,6 +75,8 @@ def registrar_lancamento(*, conta, tipo, descricao, valor, data, usuario, origem
         suprimento=suprimento,
         usuario=usuario,
     )
+    _publicar_lancamento_sincronizacao(lancamento)
+    return lancamento
 
 
 def conta_caixa_pdv(filial):
@@ -48,13 +102,13 @@ def realizar_transferencia(*, conta_origem, conta_destino, valor, data, usuario,
     origem = contas.get(conta_origem.pk)
     destino = contas.get(conta_destino.pk)
     if not origem or not destino:
-        raise ValidationError("Conta de origem ou destino nao encontrada.")
+        raise ValidationError("Conta de origem ou destino não encontrada.")
     if origem.pk == destino.pk:
         raise ValidationError("As contas de origem e destino devem ser diferentes.")
     if not origem.ativa or not destino.ativa:
         raise ValidationError("A transferencia exige contas ativas.")
     if origem.filial.empresa_id != destino.filial.empresa_id:
-        raise ValidationError("Transferencias entre empresas diferentes nao sao permitidas.")
+        raise ValidationError("Transferências entre empresas diferentes não são permitidas.")
     if valor <= 0:
         raise ValidationError("Valor da transferencia deve ser maior que zero.")
     if origem.saldo_atual < valor:
@@ -97,9 +151,9 @@ def estornar_lancamento(*, lancamento, usuario, motivo, data=None, ip=None):
 
     lancamento = LancamentoFinanceiro.objects.select_for_update().select_related("conta").get(pk=lancamento.pk)
     if lancamento.estorno_de_id:
-        raise ValidationError("Lancamento de estorno nao pode ser estornado novamente.")
+        raise ValidationError("Lançamento de estorno não pode ser estornado novamente.")
     if lancamento.estornos.exists():
-        raise ValidationError("Este lancamento ja possui estorno registrado.")
+        raise ValidationError("Este lançamento ja possui estorno registrado.")
 
     tipo_inverso = (
         TipoLancamentoFinanceiro.SAIDA
@@ -115,6 +169,8 @@ def estornar_lancamento(*, lancamento, usuario, motivo, data=None, ip=None):
         usuario=usuario,
         origem="ESTORNO",
         conta_financeira=lancamento.conta_financeira,
+        centro_custo=lancamento.centro_custo,
+        conta_contabil=lancamento.conta_contabil,
         transferencia=lancamento.transferencia,
         estorno_de=lancamento,
         pagamento_venda=lancamento.pagamento_venda,
@@ -178,7 +234,7 @@ def cancelar_conta(*, conta, usuario, motivo="", ip=None):
     if conta.status == StatusContaFinanceira.CANCELADA:
         return conta
     if conta.status == StatusContaFinanceira.PAGA:
-        raise ValidationError("Conta paga nao pode ser cancelada.")
+        raise ValidationError("Conta paga não pode ser cancelada.")
     conta.status = StatusContaFinanceira.CANCELADA
     conta.observacoes = f"{conta.observacoes}\nCancelada: {motivo}".strip()
     conta.save(update_fields=["status", "observacoes", "atualizado_em"])
@@ -198,9 +254,9 @@ def conciliar_lancamento(*, lancamento, data_conciliacao, referencia_externa, us
     lancamento = LancamentoFinanceiro.objects.select_for_update().select_related("conta").get(pk=lancamento.pk)
     referencia_externa = (referencia_externa or "").strip()
     if not referencia_externa:
-        raise ValidationError("Informe a referencia do extrato ou comprovante.")
+        raise ValidationError("Informe a referência do extrato ou comprovante.")
     if ConciliacaoLancamentoFinanceiro.objects.filter(lancamento=lancamento).exists():
-        raise ValidationError("Este lancamento ja foi conciliado.")
+        raise ValidationError("Este lançamento ja foi conciliado.")
     conciliacao = ConciliacaoLancamentoFinanceiro.objects.create(
         lancamento=lancamento,
         data_conciliacao=data_conciliacao,

@@ -34,7 +34,7 @@ def _sha256(conteudo):
 def _slug_versao(valor):
     slug = re.sub(r"[^A-Za-z0-9._-]+", "-", valor.strip()).strip(".-")
     if not slug:
-        raise CommandError("Informe uma versao valida para identificar o pacote.")
+        raise CommandError("Informe uma versão valida para identificar o pacote.")
     return slug
 
 
@@ -52,7 +52,7 @@ def _baixar_url_oficial(url):
     except CommandError:
         raise
     except Exception as exc:
-        raise CommandError("Nao foi possivel baixar o pacote fiscal oficial.") from exc
+        raise CommandError("Não foi possível baixar o pacote fiscal oficial.") from exc
     if len(conteudo) > LIMITE_DOWNLOAD:
         raise CommandError("Pacote fiscal excede o limite de download.")
     return conteudo
@@ -65,7 +65,7 @@ def _ler_pacote(arquivo=None, url=None):
         return _baixar_url_oficial(url), url
     caminho = Path(arquivo).expanduser().resolve()
     if not caminho.is_file():
-        raise CommandError("Arquivo ZIP de schemas nao encontrado.")
+        raise CommandError("Arquivo ZIP de schemas não encontrado.")
     if caminho.stat().st_size > LIMITE_DOWNLOAD:
         raise CommandError("Pacote fiscal excede o limite permitido.")
     return caminho.read_bytes(), str(caminho)
@@ -77,7 +77,7 @@ def _validar_membro(info):
         raise CommandError("Pacote fiscal contem caminho inseguro.")
     modo = info.external_attr >> 16
     if stat.S_ISLNK(modo):
-        raise CommandError("Pacote fiscal nao pode conter links simbolicos.")
+        raise CommandError("Pacote fiscal não pode conter links simbolicos.")
     return nome
 
 
@@ -86,7 +86,7 @@ def _extrair_seguro(conteudo, destino):
         with zipfile.ZipFile(io.BytesIO(conteudo)) as pacote:
             arquivos = [info for info in pacote.infolist() if not info.is_dir()]
             if not arquivos or len(arquivos) > LIMITE_ARQUIVOS:
-                raise CommandError("Quantidade de arquivos do pacote fiscal e invalida.")
+                raise CommandError("Quantidade de arquivos do pacote fiscal e inválida.")
             total = sum(info.file_size for info in arquivos)
             if total > LIMITE_EXTRAIDO:
                 raise CommandError("Conteudo extraido do pacote fiscal excede o limite.")
@@ -99,7 +99,7 @@ def _extrair_seguro(conteudo, destino):
                 with pacote.open(info) as origem, alvo.open("wb") as saida:
                     shutil.copyfileobj(origem, saida)
     except zipfile.BadZipFile as exc:
-        raise CommandError("O arquivo informado nao e um ZIP fiscal valido.") from exc
+        raise CommandError("O arquivo informado não e um ZIP fiscal valido.") from exc
 
 
 def _localizar_raiz(destino, nome):
@@ -129,7 +129,7 @@ class Command(BaseCommand):
         parser.add_argument("--sha256", required=True, help="SHA-256 esperado do ZIP oficial.")
         parser.add_argument("--versao", required=True, help="Identificador controlado do pacote.")
         parser.add_argument("--arquivo-raiz", default="nfe_v4.00.xsd")
-        parser.add_argument("--substituir", action="store_true", help="Substitui a mesma versao ja instalada.")
+        parser.add_argument("--substituir", action="store_true", help="Substitui a mesma versão ja instalada.")
 
     def handle(self, *args, **options):
         esperado = options["sha256"].strip().lower()
@@ -145,7 +145,7 @@ class Command(BaseCommand):
         pacotes = base / "pacotes"
         destino = pacotes / versao
         if destino.exists() and not options["substituir"]:
-            raise CommandError("Esta versao ja esta instalada. Use --substituir para promove-la novamente.")
+            raise CommandError("Esta versão ja está instalada. Use --substituir para promove-la novamente.")
         pacotes.mkdir(parents=True, exist_ok=True)
 
         temporario = Path(tempfile.mkdtemp(prefix=f".{versao}-", dir=pacotes))

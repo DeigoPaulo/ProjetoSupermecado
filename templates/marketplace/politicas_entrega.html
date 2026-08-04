@@ -1,15 +1,15 @@
 {% extends "base.html" %}
-{% block title %}Politicas de entrega{% endblock %}
+{% block title %}Políticas de entrega{% endblock %}
 {% block content %}
 <header class="page-header">
   <div>
-    <h1>Politicas de entrega</h1>
-    <p>Raio, pedido minimo, frete gratis e faixas configuradas por filial.</p>
+    <h1>Políticas de entrega</h1>
+    <p>Raio, pedido mínimo, frete grátis e faixas configuradas por filial.</p>
   </div>
   <div class="actions">
-    <a class="secondary-button" href="{% url 'marketplace:politicas_entrega_diagnostico' %}"><i class="fa-solid fa-stethoscope"></i> Diagnostico JSON</a>
+    <a class="secondary-button" href="{% url 'marketplace:politicas_entrega_diagnostico' %}"><i class="fa-solid fa-stethoscope"></i> Diagnóstico JSON</a>
     <a class="secondary-button" href="{% url 'marketplace:pedidos' %}"><i class="fa-solid fa-cart-shopping"></i> Pedidos</a>
-    <a class="primary-button" href="{% url 'marketplace:nova_politica_entrega' %}"><i class="fa-solid fa-plus"></i> Nova politica</a>
+    <a class="primary-button" href="{% url 'marketplace:nova_politica_entrega' %}"><i class="fa-solid fa-plus"></i> Nova política</a>
   </div>
 </header>
 
@@ -18,7 +18,7 @@
   <form class="form-grid" method="get">
     <input type="hidden" name="simular" value="1">
     <label class="form-field">
-      <span>Politica</span>
+      <span>Política</span>
       <select name="politica" required>
         <option value="">Selecione</option>
         {% for politica in politicas %}
@@ -27,9 +27,9 @@
       </select>
     </label>
     <label class="form-field"><span>Subtotal do pedido</span><input type="number" name="subtotal" min="0" step="0.01" value="{{ request.GET.subtotal }}" placeholder="0,00" required></label>
-    <label class="form-field"><span>Distancia em km</span><input type="number" name="distancia" min="0" step="0.01" value="{{ request.GET.distancia }}" placeholder="0,00"></label>
+    <label class="form-field"><span>Distância em km</span><input type="number" name="distancia" min="0" step="0.01" value="{{ request.GET.distancia }}" placeholder="0,00"></label>
     <label class="form-field form-field-wide"><span>Endereço para geocodificação</span><input type="text" name="endereco" value="{{ request.GET.endereco }}" placeholder="Opcional: usado quando a distância não for informada"></label>
-    <label class="form-field"><span>Bairro</span><input type="text" name="bairro" value="{{ request.GET.bairro }}" placeholder="Opcional se a politica nao restringe bairro"></label>
+    <label class="form-field"><span>Bairro</span><input type="text" name="bairro" value="{{ request.GET.bairro }}" placeholder="Opcional se a política não restringe bairro"></label>
     <label class="form-field form-field-action"><span>&nbsp;</span><button class="primary-button" type="submit"><i class="fa-solid fa-calculator"></i> Simular</button></label>
   </form>
   {% if simulacao %}
@@ -62,8 +62,8 @@
 
       <div class="delivery-policy-metrics">
         <div><span>Raio</span><strong>{{ politica.raio_maximo_km }} km</strong></div>
-        <div><span>Pedido minimo</span><strong>R$ {{ politica.valor_minimo_pedido|floatformat:2 }}</strong></div>
-        <div><span>Frete gratis</span><strong>{% if politica.frete_gratis_acima is not None %}R$ {{ politica.frete_gratis_acima|floatformat:2 }}{% else %}-{% endif %}</strong></div>
+        <div><span>Pedido mínimo</span><strong>R$ {{ politica.valor_minimo_pedido|floatformat:2 }}</strong></div>
+        <div><span>Frete grátis</span><strong>{% if politica.frete_gratis_acima is not None %}R$ {{ politica.frete_gratis_acima|floatformat:2 }}{% else %}-{% endif %}</strong></div>
       </div>
 
       <div class="delivery-rules">
@@ -81,16 +81,16 @@
       </div>
 
       <div class="card-actions">
-        <span>{{ politica.permite_retirada|yesno:"Permite retirada,Nao permite retirada" }}</span>
+        <span>{{ politica.permite_retirada|yesno:"Permite retirada,Não permite retirada" }}</span>
         <a class="secondary-button" href="{% url 'marketplace:editar_politica_entrega' politica.pk %}"><i class="fa-solid fa-pen"></i> Editar</a>
       </div>
     </article>
   {% empty %}
     <article class="panel empty-state">
       <i class="fa-solid fa-truck-fast"></i>
-      <strong>Nenhuma politica de entrega configurada.</strong>
-      <span>Crie uma regra por filial para controlar raio, pedido minimo, taxa e frete gratis.</span>
-      <a class="primary-button" href="{% url 'marketplace:nova_politica_entrega' %}">Criar primeira politica</a>
+      <strong>Nenhuma política de entrega configurada.</strong>
+      <span>Crie uma regra por filial para controlar raio, pedido mínimo, taxa e frete grátis.</span>
+      <a class="primary-button" href="{% url 'marketplace:nova_politica_entrega' %}">Criar primeira política</a>
     </article>
   {% endfor %}
 </section>

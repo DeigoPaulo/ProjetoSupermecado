@@ -19,6 +19,7 @@ from django.views.generic.edit import ModelFormMixin, ProcessFormView
 from apps.accounts.permissions import COMPRAS, RoleRequiredMixin, role_required, supervisor_from_request
 from apps.auditoria.models import LogAuditoria
 from apps.estoque.models import Estoque, MovimentacaoEstoque
+from apps.empresas.models import AcaoPinSupervisor
 from apps.financeiro.models import ContaFinanceira, StatusContaFinanceira
 
 from .escopo import (
@@ -342,7 +343,7 @@ def pedido_compra_form(request, pk=None):
                 objeto_id=str(pedido.id),
                 ip=request.META.get("REMOTE_ADDR"),
             )
-        messages.success(request, "Pedido de compra salvo como rascunho. Estoque e financeiro nao foram alterados.")
+        messages.success(request, "Pedido de compra salvo como rascunho. Estoque e financeiro não foram alterados.")
         return redirect("compras:pedido_detalhe", pk=pedido.pk)
 
     return render(request, "compras/pedido_form.html", {
@@ -411,7 +412,7 @@ def pedido_compra_gerar_entrada(request, pk):
         else:
             messages.success(
                 request,
-                "Entrada criada como rascunho. Confira os itens antes de finalizar; estoque e financeiro ainda nao foram alterados.",
+                "Entrada criada como rascunho. Confira os itens antes de finalizar; estoque e financeiro ainda não foram alterados.",
             )
             return redirect("compras:detalhe", pk=entrada.pk)
     return redirect("compras:pedido_detalhe", pk=pedido.pk)
@@ -693,7 +694,7 @@ class EntradaCompraFormMixin(LoginRequiredMixin, RoleRequiredMixin, TemplateResp
 
         if finalizar_agora:
             try:
-                supervisor = supervisor_from_request(self.request)
+                supervisor = supervisor_from_request(self.request, acao=AcaoPinSupervisor.COMPRA_FINALIZAR)
                 finalizar_entrada_compra(self.object, supervisor=supervisor, ip=self.request.META.get("REMOTE_ADDR"))
             except ValidationError as exc:
                 messages.error(self.request, "Entrada salva como rascunho. " + " ".join(exc.messages))
@@ -722,7 +723,7 @@ def finalizar_entrada(request, pk):
         return redirect("compras:detalhe", pk=entrada.pk)
 
     try:
-        supervisor = supervisor_from_request(request)
+        supervisor = supervisor_from_request(request, acao=AcaoPinSupervisor.COMPRA_FINALIZAR)
         finalizar_entrada_compra(entrada, supervisor=supervisor, ip=request.META.get("REMOTE_ADDR"))
     except ValidationError as exc:
         messages.error(request, " ".join(exc.messages))
@@ -740,7 +741,7 @@ def cancelar_entrada(request, pk):
         return redirect("compras:detalhe", pk=entrada.pk)
 
     try:
-        supervisor = supervisor_from_request(request)
+        supervisor = supervisor_from_request(request, acao=AcaoPinSupervisor.COMPRA_CANCELAR)
         cancelar_entrada_compra(
             entrada,
             usuario=request.user,

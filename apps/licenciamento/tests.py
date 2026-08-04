@@ -1,4 +1,5 @@
 import json
+from io import StringIO
 from datetime import timedelta
 from decimal import Decimal
 from unittest.mock import patch
@@ -6,6 +7,7 @@ from unittest.mock import patch
 from django.contrib.auth import get_user_model
 from django.core import signing
 from django.core.management import call_command
+from django.core.management.base import CommandError
 from django.test import Client, TestCase, override_settings
 from django.utils import timezone
 
@@ -133,6 +135,41 @@ class LicenciamentoTests(TestCase):
         self.assertEqual(payload["contrato"], "licensing_readiness_v1")
         self.assertTrue(payload["script_agendamento_disponivel"])
         self.assertIn("comando_agendamento", payload)
+
+    def test_comando_prontidao_licenciamento_aprova_sandbox_configurado(self):
+        privada_pem, _ = self._chaves_emergenciais()
+        saida = StringIO()
+        with self.settings(
+            LICENCIAMENTO_CHAVE_PRIVADA_PEM=privada_pem,
+            LICENCIAMENTO_CHAVE_PRIVADA_ARQUIVO="",
+            LICENCIAMENTO_PERMITIR_ASSINATURA_COMPARTILHADA=False,
+            ASAAS_API_URL="https://api-sandbox.asaas.com/v3",
+            ASAAS_API_KEY="chave-sandbox",
+            ASAAS_WEBHOOK_TOKEN="token-webhook",
+        ):
+            call_command(
+                "verificar_prontidao_licenciamento",
+                "--json",
+                "--estrito",
+                stdout=saida,
+            )
+
+        payload = json.loads(saida.getvalue())
+        self.assertTrue(payload["pronto_homologacao"])
+        self.assertFalse(payload["pronto_producao"])
+        self.assertTrue(payload["asaas_url_https"])
+
+    def test_comando_prontidao_licenciamento_bloqueia_configuracao_incompleta(self):
+        with self.settings(
+            LICENCIAMENTO_CHAVE_PRIVADA_PEM="",
+            LICENCIAMENTO_CHAVE_PRIVADA_ARQUIVO="",
+            LICENCIAMENTO_PERMITIR_ASSINATURA_COMPARTILHADA=False,
+            ASAAS_API_URL="http://api-insegura.example",
+            ASAAS_API_KEY="",
+            ASAAS_WEBHOOK_TOKEN="",
+        ):
+            with self.assertRaisesMessage(CommandError, "não está pronto para homologação"):
+                call_command("verificar_prontidao_licenciamento", "--estrito")
 
     def test_rotina_diaria_atualiza_contrato_vencido(self):
         self.contrato.cobranca_automatica = False

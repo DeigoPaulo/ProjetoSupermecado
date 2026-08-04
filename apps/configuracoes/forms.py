@@ -4,7 +4,18 @@ from apps.core_forms import aplicar_select2
 from apps.pdv.models import TerminalPdv
 from apps.vendas.models import FormaPagamento, FormaPagamentoFilial
 
-from .models import ConfiguracaoImpressao, ModeloEtiqueta, TipoDocumentoImpressao
+from .homologation import (
+    EvidenciaHomologacaoInvalida,
+    validar_arquivos_evidencia,
+)
+
+from .models import (
+    ConfiguracaoImpressao,
+    HomologacaoServidorLocal,
+    ModeloEtiqueta,
+    ResultadoHomologacaoServidor,
+    TipoDocumentoImpressao,
+)
 
 
 class ConfiguracaoImpressaoForm(forms.ModelForm):
@@ -82,7 +93,7 @@ class ConfiguracaoImpressaoForm(forms.ModelForm):
             TipoDocumentoImpressao.FECHAMENTO_CAIXA,
         }
         if usa_gaveta and tipo_documento not in tipos_caixa:
-            self.add_error("gaveta_automatica", "Gaveta automatica deve ser configurada apenas para documentos de caixa.")
+            self.add_error("gaveta_automatica", "Gaveta automática deve ser configurada apenas para documentos de caixa.")
         if not usa_gaveta:
             cleaned["abrir_gaveta_em_dinheiro"] = False
             cleaned["abrir_gaveta_em_movimento_caixa"] = False
@@ -153,7 +164,100 @@ class ModeloEtiquetaForm(forms.ModelForm):
             filial_incompativel = configuracao.filial_id and terminal.filial_id != configuracao.filial_id
             empresa_incompativel = not configuracao.filial_id and terminal.filial.empresa_id != configuracao.empresa_id
             if filial_incompativel or empresa_incompativel:
-                self.add_error("terminal", "O terminal deve pertencer ao escopo da configuracao selecionada.")
+                self.add_error("terminal", "O terminal deve pertencer ao escopo da configuração selecionada.")
+        return cleaned
+
+
+class HomologacaoServidorLocalForm(forms.ModelForm):
+    arquivo_evidencia = forms.FileField(
+        label="Evidência de aceite (JSON)",
+        help_text="Arquivo evidencia_aceite.json gerado na máquina homologada.",
+        widget=forms.FileInput(attrs={"accept": "application/json,.json"}),
+    )
+    arquivo_sha256 = forms.FileField(
+        label="Checksum da evidência (SHA-256)",
+        help_text="Arquivo .sha256 gerado junto com a evidência.",
+        widget=forms.FileInput(attrs={"accept": ".sha256,.txt,text/plain"}),
+    )
+    hash_evidencia = forms.CharField(
+        required=False,
+        widget=forms.HiddenInput(),
+        error_messages={
+            "unique": "Esta evidência já foi registrada em outra homologação.",
+        },
+    )
+
+    class Meta:
+        model = HomologacaoServidorLocal
+        fields = [
+            "maquina",
+            "sistema_operacional",
+            "versao_artefato",
+            "resultado",
+            "arquivo_evidencia",
+            "arquivo_sha256",
+            "hash_evidencia",
+            "observacoes",
+        ]
+        labels = {
+            "maquina": "Máquina homologada",
+            "sistema_operacional": "Sistema operacional",
+            "versao_artefato": "Versão do artefato",
+            "resultado": "Resultado",
+            "observacoes": "Observações",
+        }
+        error_messages = {
+            "hash_evidencia": {
+                "unique": "Esta evidência já foi registrada em outra homologação.",
+            },
+        }
+        widgets = {
+            "maquina": forms.TextInput(attrs={"placeholder": "Ex.: SRV-LOJA-01"}),
+            "sistema_operacional": forms.TextInput(
+                attrs={"placeholder": "Ex.: Windows Server 2022 Standard"}
+            ),
+            "versao_artefato": forms.TextInput(attrs={"placeholder": "Ex.: 1.0.0"}),
+            "observacoes": forms.Textarea(
+                attrs={
+                    "rows": 3,
+                    "placeholder": "Registre ressalvas, falhas ou equipamentos usados.",
+                }
+            ),
+        }
+
+    def clean(self):
+        cleaned = super().clean()
+        arquivo_evidencia = cleaned.get("arquivo_evidencia")
+        arquivo_sha256 = cleaned.get("arquivo_sha256")
+        evidencia = None
+        if arquivo_evidencia and arquivo_sha256:
+            try:
+                evidencia = validar_arquivos_evidencia(
+                    arquivo_evidencia,
+                    arquivo_sha256,
+                )
+            except EvidenciaHomologacaoInvalida as exc:
+                self.add_error("arquivo_evidencia", str(exc))
+            else:
+                cleaned["hash_evidencia"] = evidencia["sha256"]
+        resultado = cleaned.get("resultado")
+        if (
+            resultado == ResultadoHomologacaoServidor.APROVADA
+            and evidencia
+            and not evidencia["liberavel"]
+        ):
+            self.add_error(
+                "arquivo_evidencia",
+                "Uma homologação aprovada exige evidência com status liberável.",
+            )
+        if (
+            resultado == ResultadoHomologacaoServidor.REPROVADA
+            and not (cleaned.get("observacoes") or "").strip()
+        ):
+            self.add_error(
+                "observacoes",
+                "Descreva o motivo e a correção necessária para uma homologação reprovada.",
+            )
         return cleaned
 
 
@@ -161,13 +265,13 @@ class FormaPagamentoForm(forms.ModelForm):
     TIPOS = [
         ("DINHEIRO", "Dinheiro"),
         ("PIX", "PIX"),
-        ("CARTAO", "Cartao / TEF"),
+        ("CARTAO", "Cartão / TEF"),
         ("CREDITO", "Cartão de crédito / TEF"),
         ("DEBITO", "Cartão de débito / TEF"),
         ("VALE_ALIMENTACAO", "Vale-alimentação / voucher"),
         ("VALE_REFEICAO", "Vale-refeição / voucher"),
-        ("CREDIARIO", "Crediario"),
-        ("VALE", "Vale / convenio"),
+        ("CREDIARIO", "Crediário"),
+        ("VALE", "Vale / convênio"),
         ("OUTRO", "Outro"),
     ]
     tipo = forms.ChoiceField(choices=TIPOS)
@@ -175,6 +279,12 @@ class FormaPagamentoForm(forms.ModelForm):
     class Meta:
         model = FormaPagamento
         fields = ["nome", "tipo", "conta_movimento_padrao", "permite_troco", "exige_autorizacao", "ativo"]
+        labels = {
+            "conta_movimento_padrao": "Conta movimento padrão",
+            "permite_troco": "Permite troco",
+            "exige_autorizacao": "Exige autorização",
+            "ativo": "Ativo",
+        }
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
@@ -257,11 +367,11 @@ class TerminalPdvForm(forms.ModelForm):
             if protocolo == "NAO_CONFIGURADO":
                 self.add_error("protocolo_balanca", "Informe o protocolo da balanca.")
             if not porta:
-                self.add_error("porta_balanca", "Informe a porta, caminho ou endereco da balanca.")
+                self.add_error("porta_balanca", "Informe a porta, caminho ou endereço da balanca.")
             elif protocolo == "TCP_IP":
                 host, separador, numero_porta = porta.rpartition(":")
                 if not separador or not host.strip() or not numero_porta.isdigit():
-                    self.add_error("porta_balanca", "Para TCP/IP, informe no formato endereco:porta.")
+                    self.add_error("porta_balanca", "Para TCP/IP, informe no formato endereço:porta.")
                 elif not 1 <= int(numero_porta) <= 65535:
                     self.add_error("porta_balanca", "Informe uma porta TCP/IP entre 1 e 65535.")
             if protocolo == "OUTRO" and not (cleaned.get("modelo_balanca") or "").strip():

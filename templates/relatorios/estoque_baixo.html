@@ -12,7 +12,7 @@
     <a class="secondary-button" href="{% url 'relatorios:estoque_baixo_csv' %}{% if filial_id %}?filial={{ filial_id }}{% endif %}"><i class="fa-solid fa-file-csv"></i> Excel/CSV</a>
     <a class="secondary-button" href="{% url 'relatorios:estoque_baixo_imprimir' %}{% if filial_id %}?filial={{ filial_id }}{% endif %}" target="_blank"><i class="fa-solid fa-file-pdf"></i> PDF</a>
     <a class="secondary-button" href="{% url 'relatorios:vendas' %}">Vendas</a>
-    <a class="secondary-button" href="{% url 'relatorios:sugestao_reposicao' %}">Reposicao</a>
+    <a class="secondary-button" href="{% url 'relatorios:sugestao_reposicao' %}">Reposição</a>
     <a class="secondary-button" href="{% url 'relatorios:movimentacoes_estoque' %}">Movimentações</a>
     <a class="secondary-button" href="{% url 'relatorios:compras' %}">Compras</a>
     <a class="primary-button" href="{% url 'compras:nova' %}">Nova entrada</a>
@@ -34,7 +34,7 @@
 
 <div class="panel">
   <table>
-    <thead><tr><th>Produto</th><th>Categoria</th><th>Filial</th><th>Atual</th><th>Reservado</th><th>Disponivel</th><th>Minimo</th></tr></thead>
+    <thead><tr><th>Produto</th><th>Categoria</th><th>Filial</th><th>Atual</th><th>Reservado</th><th>Disponível</th><th>Mínimo</th></tr></thead>
     <tbody>
       {% for estoque in estoques %}
         <tr>

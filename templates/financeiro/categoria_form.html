@@ -17,8 +17,10 @@
   <section class="form-section form-field-wide">
     <h2>Categoria</h2>
     <div class="form-grid form-grid-inner">
+      {% if form.empresa %}<label class="form-field"><span>{{ form.empresa.label }}</span>{{ form.empresa }}{{ form.empresa.errors }}</label>{% endif %}
       <label class="form-field"><span>{{ form.nome.label }}</span>{{ form.nome }}{{ form.nome.errors }}</label>
       <label class="form-field"><span>{{ form.tipo.label }}</span>{{ form.tipo }}{{ form.tipo.errors }}</label>
+      <label class="form-field"><span>{{ form.conta_contabil.label }}</span>{{ form.conta_contabil }}{{ form.conta_contabil.errors }}</label>
       <label class="toggle-field">{{ form.is_active }} <span>{{ form.is_active.label }}</span>{{ form.is_active.errors }}</label>
     </div>
   </section>

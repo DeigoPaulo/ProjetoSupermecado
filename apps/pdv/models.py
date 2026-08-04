@@ -21,7 +21,7 @@ class StatusAcessoPdvNuvem(models.TextChoices):
 
 
 class ProvedorTef(models.TextChoices):
-    NAO_CONFIGURADO = "NAO_CONFIGURADO", "Nao configurado"
+    NAO_CONFIGURADO = "NAO_CONFIGURADO", "Não configurado"
     SITEF = "SITEF", "SiTef / Software Express"
     CIELO = "CIELO", "Cielo"
     STONE = "STONE", "Stone"
@@ -35,11 +35,11 @@ class ModoIntegracaoTef(models.TextChoices):
     DESKTOP_BRIDGE = "DESKTOP_BRIDGE", "App desktop / bridge local"
     API = "API", "API direta da operadora"
     POS_INTEGRADO = "POS_INTEGRADO", "POS/SmartPOS integrado"
-    MANUAL = "MANUAL", "Manual sem retorno automatico"
+    MANUAL = "MANUAL", "Manual sem retorno automático"
 
 
 class ProtocoloBalanca(models.TextChoices):
-    NAO_CONFIGURADO = "NAO_CONFIGURADO", "Nao configurado"
+    NAO_CONFIGURADO = "NAO_CONFIGURADO", "Não configurado"
     SERIAL = "SERIAL", "Serial RS-232/USB"
     TCP_IP = "TCP_IP", "TCP/IP"
     ARQUIVO_TXT = "ARQUIVO_TXT", "Arquivo texto local"

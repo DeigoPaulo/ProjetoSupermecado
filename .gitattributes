@@ -1,0 +1,8 @@
+/apps/**/tests.py export-ignore
+/apps/**/test_*.py export-ignore
+/config/tests.py export-ignore
+/scripts/test_*.py export-ignore
+/docs/protótipos/** export-ignore
+/docs/prototipos/** export-ignore
+/docs/referencias/** export-ignore
+/docs/*.docx export-ignore

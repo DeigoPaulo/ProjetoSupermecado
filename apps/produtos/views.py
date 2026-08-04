@@ -14,11 +14,17 @@ from django.views.generic import CreateView, ListView, UpdateView
 from apps.accounts.permissions import CADASTROS, RoleRequiredMixin, role_required, supervisor_from_request
 from apps.configuracoes.models import ConfiguracaoImpressao, TipoDocumentoImpressao
 from apps.configuracoes.services import configuracao_impressao_para
+from apps.empresas.models import AcaoPinSupervisor
 from apps.estoque.models import Estoque, MovimentacaoEstoque, TipoMovimentacaoEstoque
+from apps.empresas.services_snapshots import enfileirar_snapshot_produto
 from apps.promocoes.services import preco_atual_produto
 
-from .forms import CategoriaForm, EtiquetaProdutoForm, MarcaForm, ProdutoForm, ProdutoImagemFormSet, ProdutoImportCSVForm, ReajustePrecoForm
-from .models import Categoria, Marca, Produto
+from .forms import (
+    CategoriaForm, CodigoBarrasProdutoFormSet, ConfiguracaoBalancaProdutoFormSet, EtiquetaProdutoForm,
+    InformacaoNutricionalFormSet, MarcaForm, ProdutoForm, ProdutoFornecedorFormSet, ProdutoImagemFormSet,
+    ProdutoImportCSVForm, ReajustePrecoForm, SetorBalancaForm,
+)
+from .models import Categoria, ConfiguracaoBalancaProduto, Marca, Produto, ProdutoFornecedor, SetorBalanca
 from .services import aplicar_reajuste_precos, importar_produtos_csv, simular_reajuste_precos
 
 
@@ -34,10 +40,17 @@ class ProdutoListView(LoginRequiredMixin, RoleRequiredMixin, ListView):
     paginate_by = 25
 
     def get_queryset(self):
-        queryset = Produto.all_objects.select_related("categoria", "marca").order_by("nome")
+        queryset = Produto.all_objects.select_related(
+            "categoria", "categoria__parent", "categoria__parent__parent", "categoria__parent__parent__parent", "marca"
+        ).order_by("nome")
         termo = self.request.GET.get("q")
         if termo:
-            queryset = queryset.filter(Q(nome__icontains=termo) | Q(codigo_barras__icontains=termo))
+            queryset = queryset.filter(
+                Q(nome__icontains=termo)
+                | Q(codigo_barras__icontains=termo)
+                | Q(codigo_interno__icontains=termo)
+                | Q(codigos_adicionais__codigo__icontains=termo)
+            ).distinct()
         return queryset
 
 
@@ -48,20 +61,133 @@ class ProdutoGaleriaMixin:
             context["galeria_formset"] = ProdutoImagemFormSet(
                 self.request.POST, self.request.FILES, instance=self.object, prefix="galeria"
             )
+            context["nutricao_formset_submitted"] = "nutricao-TOTAL_FORMS" in self.request.POST
+            if context["nutricao_formset_submitted"]:
+                context["nutricao_formset"] = InformacaoNutricionalFormSet(
+                    self.request.POST, instance=self.object, prefix="nutricao"
+                )
+            else:
+                context["nutricao_formset"] = InformacaoNutricionalFormSet(instance=self.object, prefix="nutricao")
+            codigos_data = self.request.POST
+            if "codigos-TOTAL_FORMS" not in codigos_data:
+                codigos_data = codigos_data.copy()
+                codigos_data.update({
+                    "codigos-TOTAL_FORMS": "0",
+                    "codigos-INITIAL_FORMS": "0",
+                    "codigos-MIN_NUM_FORMS": "0",
+                    "codigos-MAX_NUM_FORMS": "1000",
+                })
+            context["codigos_formset"] = CodigoBarrasProdutoFormSet(
+                codigos_data, instance=self.object, prefix="codigos"
+            )
+            fornecedores_data = self.request.POST
+            if "fornecedores-TOTAL_FORMS" not in fornecedores_data:
+                fornecedores_data = fornecedores_data.copy()
+                fornecedores_data.update({
+                    "fornecedores-TOTAL_FORMS": "0",
+                    "fornecedores-INITIAL_FORMS": "0",
+                    "fornecedores-MIN_NUM_FORMS": "0",
+                    "fornecedores-MAX_NUM_FORMS": "1000",
+                })
+            balanca_data = self.request.POST
+            if "balanca-TOTAL_FORMS" not in balanca_data:
+                balanca_data = balanca_data.copy()
+                balanca_data.update({
+                    "balanca-TOTAL_FORMS": "0",
+                    "balanca-INITIAL_FORMS": "0",
+                    "balanca-MIN_NUM_FORMS": "0",
+                    "balanca-MAX_NUM_FORMS": "1000",
+                })
+            context["balanca_formset"] = ConfiguracaoBalancaProdutoFormSet(
+                balanca_data,
+                instance=self.object,
+                prefix="balanca",
+                queryset=self._balanca_queryset(),
+                form_kwargs={"user": self.request.user},
+            )
+            context["fornecedores_formset"] = ProdutoFornecedorFormSet(
+                fornecedores_data,
+                instance=self.object,
+                prefix="fornecedores",
+                queryset=self._fornecedores_queryset(),
+                form_kwargs={"user": self.request.user},
+            )
         else:
             context["galeria_formset"] = ProdutoImagemFormSet(instance=self.object, prefix="galeria")
+            context["nutricao_formset"] = InformacaoNutricionalFormSet(instance=self.object, prefix="nutricao")
+            context["nutricao_formset_submitted"] = False
+            context["codigos_formset"] = CodigoBarrasProdutoFormSet(instance=self.object, prefix="codigos")
+            context["balanca_formset"] = ConfiguracaoBalancaProdutoFormSet(
+                instance=self.object,
+                prefix="balanca",
+                queryset=self._balanca_queryset(),
+                form_kwargs={"user": self.request.user},
+            )
+            context["fornecedores_formset"] = ProdutoFornecedorFormSet(
+                instance=self.object,
+                prefix="fornecedores",
+                queryset=self._fornecedores_queryset(),
+                form_kwargs={"user": self.request.user},
+            )
         return context
+
+    def _balanca_queryset(self):
+        from apps.clientes.escopo import empresa_id_do_usuario
+
+        queryset = ConfiguracaoBalancaProduto.objects.select_related("setor", "setor__empresa")
+        empresa_id = empresa_id_do_usuario(self.request.user)
+        if empresa_id is not None:
+            queryset = queryset.filter(setor__empresa_id=empresa_id)
+        return queryset
+
+    def _fornecedores_queryset(self):
+        from apps.fornecedores.escopo import fornecedores_para_usuario
+
+        fornecedores = fornecedores_para_usuario(self.request.user)
+        return ProdutoFornecedor.objects.filter(fornecedor__in=fornecedores).select_related("fornecedor")
 
     def form_valid(self, form):
         context = self.get_context_data(form=form)
         galeria_formset = context["galeria_formset"]
-        if not galeria_formset.is_valid():
+        codigos_formset = context["codigos_formset"]
+        fornecedores_formset = context["fornecedores_formset"]
+        balanca_formset = context["balanca_formset"]
+        nutricao_formset = context["nutricao_formset"]
+        nutricao_informada = context["nutricao_formset_submitted"]
+        if (
+            not galeria_formset.is_valid()
+            or not codigos_formset.is_valid()
+            or not fornecedores_formset.is_valid()
+            or not balanca_formset.is_valid()
+            or (nutricao_informada and not nutricao_formset.is_valid())
+        ):
             return self.form_invalid(form)
         with transaction.atomic():
             self.object = form.save()
             galeria_formset.instance = self.object
             galeria_formset.save()
+            codigos_formset.instance = self.object
+            codigos_formset.save()
+            fornecedores_formset.instance = self.object
+            fornecedores_formset.save()
+            balanca_formset.instance = self.object
+            balanca_formset.save()
+            if nutricao_informada:
+                nutricao_formset.instance = self.object
+                nutricao_formset.save()
+            empresas_publicadas = set()
+            for estoque in self.object.estoques.select_related("filial__empresa").order_by("filial_id"):
+                empresa = estoque.filial.empresa
+                if empresa.pk in empresas_publicadas:
+                    continue
+                enfileirar_snapshot_produto(produto=self.object, empresa=empresa, filial=estoque.filial)
+                empresas_publicadas.add(empresa.pk)
         messages.success(self.request, self.success_message)
+        messages.info(
+            self.request,
+            "Cadastro central atualizado. Os PDVs conectados usam a alteração imediatamente; "
+            "instalações híbridas recebem o evento pela fila automática, sem carga manual.",
+        )
         return redirect(self.get_success_url())
 
 
@@ -97,6 +223,22 @@ class CategoriaCreateView(LoginRequiredMixin, RoleRequiredMixin, CreateView):
         return super().form_valid(form)
 
 
+class SetorBalancaCreateView(LoginRequiredMixin, RoleRequiredMixin, CreateView):
+    required_roles = CADASTROS
+    model = SetorBalanca
+    form_class = SetorBalancaForm
+    template_name = "produtos/setor_balanca_form.html"
+    success_url = reverse_lazy("produtos:lista")
+
+    def get_form_kwargs(self):
+        kwargs = super().get_form_kwargs()
+        kwargs["user"] = self.request.user
+        return kwargs
+
+    def form_valid(self, form):
+        messages.success(self.request, "Setor de balança cadastrado com sucesso.")
+        return super().form_valid(form)
+
 class MarcaCreateView(LoginRequiredMixin, RoleRequiredMixin, CreateView):
     required_roles = CADASTROS
     model = Marca
@@ -112,15 +254,50 @@ class MarcaCreateView(LoginRequiredMixin, RoleRequiredMixin, CreateView):
 @login_required
 @role_required(*CADASTROS)
 @require_GET
+def setores_balanca_busca(request):
+    from apps.clientes.escopo import empresa_id_do_usuario
+
+    termo = (request.GET.get("q") or request.GET.get("term") or "").strip()
+    setores = SetorBalanca.objects.select_related("empresa").filter(is_active=True)
+    empresa_id = empresa_id_do_usuario(request.user)
+    if empresa_id is not None:
+        setores = setores.filter(empresa_id=empresa_id)
+    if termo:
+        filtros = Q(nome__icontains=termo) | Q(empresa__nome_fantasia__icontains=termo)
+        if termo.isdigit():
+            filtros |= Q(codigo=int(termo))
+        setores = setores.filter(filtros)
+    resultados = [
+        _select2_payload(
+            setor,
+            f"{setor.codigo:03d} - {setor.nome}",
+            descricao=setor.empresa.nome_fantasia,
+        )
+        for setor in setores.order_by("empresa__nome_fantasia", "codigo")[:30]
+    ]
+    return JsonResponse({"results": resultados})
+
+@login_required
+@role_required(*CADASTROS)
+@require_GET
 def categorias_busca(request):
     termo = (request.GET.get("q") or request.GET.get("term") or "").strip()
     if not termo:
         return JsonResponse({"results": []})
-    categorias = Categoria.objects.filter(Q(nome__icontains=termo) | Q(descricao__icontains=termo)).order_by("nome")[:20]
+    categorias = (
+        Categoria.objects.select_related("parent", "parent__parent", "parent__parent__parent")
+        .filter(
+            Q(nome__icontains=termo)
+            | Q(descricao__icontains=termo)
+            | Q(parent__nome__icontains=termo)
+            | Q(parent__parent__nome__icontains=termo)
+        )
+        .order_by("nome")[:20]
+    )
     return JsonResponse(
         {
             "results": [
-                _select2_payload(categoria, categoria.nome, descricao=categoria.descricao, ativa=categoria.is_active)
+                _select2_payload(categoria, categoria.caminho_completo, descricao=categoria.get_nivel_display(), ativa=categoria.is_active)
                 for categoria in categorias
             ]
         }
@@ -147,6 +324,13 @@ def marcas_busca(request):
 
 @login_required
 @role_required(*CADASTROS)
+@require_GET
+def proximo_codigo_interno(request):
+    return JsonResponse({"codigo": Produto.proximo_codigo_interno()})
+
+
+@login_required
+@role_required(*CADASTROS)
 def importar_csv(request):
     resultado = None
     if request.method == "POST":
@@ -156,13 +340,20 @@ def importar_csv(request):
                 resultado = importar_produtos_csv(
                     form.cleaned_data["arquivo"],
                     atualizar_existentes=form.cleaned_data["atualizar_existentes"],
+                    usuario=request.user,
+                    ip=request.META.get("REMOTE_ADDR"),
                 )
             except ValueError as exc:
                 messages.error(request, str(exc))
             else:
                 messages.success(
                     request,
-                    f"Importacao concluida: {resultado['criados']} criados, {resultado['atualizados']} atualizados, {resultado['ignorados']} ignorados.",
+                    (
+                        f"Importacao concluida: {resultado['criados']} criados, "
+                        f"{resultado['atualizados']} atualizados "
+                        f"({resultado['fiscais_atualizados']} somente fiscal), "
+                        f"{resultado['ignorados']} ignorados."
+                    ),
                 )
                 if not resultado["erros"]:
                     return redirect("produtos:lista")
@@ -183,7 +374,7 @@ def reajustar_precos(request):
         dados = form.cleaned_data
         if request.POST.get("confirmar") == "1":
             try:
-                supervisor = supervisor_from_request(request)
+                supervisor = supervisor_from_request(request, acao=AcaoPinSupervisor.PRECO_REAJUSTE)
                 total = aplicar_reajuste_precos(
                     usuario=request.user,
                     categoria=dados["categoria"],
@@ -245,10 +436,13 @@ def etiquetas(request):
             queryset = queryset.filter(
                 Q(codigo_barras__iexact=busca)
                 | Q(codigo_interno__iexact=busca)
+                | Q(codigos_adicionais__codigo__iexact=busca)
                 | Q(codigo_barras__icontains=busca)
+                | Q(codigos_adicionais__codigo__icontains=busca)
                 | Q(codigo_interno__icontains=busca)
                 | Q(nome__icontains=busca)
             )
+        queryset = queryset.distinct()
         if dados["categoria"]:
             queryset = queryset.filter(categoria=dados["categoria"])
         if dados["marca"]:

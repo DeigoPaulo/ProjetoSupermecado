@@ -6,7 +6,7 @@
 <header class="page-header">
   <div>
     <h1>Consulta de preco</h1>
-    <p>Busque por codigo de barras, codigo interno ou nome do produto.</p>
+    <p>Busque por código de barras, código interno ou nome do produto.</p>
   </div>
   <div class="actions">
     <a class="secondary-button" href="{% url 'pdv:pdv' %}">Voltar ao PDV</a>
@@ -14,7 +14,7 @@
 </header>
 
 <form method="get" class="toolbar price-check-toolbar">
-  <input type="search" name="q" value="{{ termo }}" placeholder="Codigo ou nome do produto" autofocus>
+  <input type="search" name="q" value="{{ termo }}" placeholder="Código ou nome do produto" autofocus>
   <button class="primary-button" type="submit">Consultar</button>
 </form>
 
@@ -23,7 +23,8 @@
     <div class="panel price-check-main">
       <div class="price-check-eyebrow">{{ produto.categoria }}</div>
       <h2>{{ produto.nome }}</h2>
-      <div class="price-check-code">{{ produto.codigo_barras }}</div>
+      <div class="price-check-code">{% if apresentacao %}{{ apresentacao.codigo }}{% else %}{{ produto.codigo_barras }}{% endif %}</div>
+      {% if apresentacao %}<div class="price-check-promo">{{ apresentacao.get_tipo_display }} com {{ apresentacao.fator_conversao|quantidade_br }} {{ produto.get_unidade_display|lower }}(s)</div>{% endif %}
       <div class="price-check-price">R$ {{ preco_atual|floatformat:2 }}</div>
       {% if promocao %}
         <div class="price-check-promo">Promocao ativa: {{ promocao.nome }} ate {{ promocao.fim|date:"d/m/Y H:i" }}</div>
@@ -39,8 +40,8 @@
       <dl class="summary-list">
         <dt>Unidade</dt><dd>{{ produto.get_unidade_display }}</dd>
         <dt>Marca</dt><dd>{{ produto.marca|default:"-" }}</dd>
-        <dt>Codigo interno</dt><dd>{{ produto.codigo_interno|default:"-" }}</dd>
-        <dt>Pesavel</dt><dd>{{ produto.produto_pesavel|yesno:"Sim,Nao" }}</dd>
+        <dt>Código interno</dt><dd>{{ produto.codigo_interno|default:"-" }}</dd>
+        <dt>Pesavel</dt><dd>{{ produto.produto_pesavel|yesno:"Sim,Não" }}</dd>
         <dt>PDV</dt><dd>{{ produto.vendido_no_pdv|yesno:"Liberado,Bloqueado" }}</dd>
       </dl>
     </div>
@@ -50,7 +51,7 @@
     <div class="panel-title">Estoque por filial</div>
     <table>
       <thead>
-        <tr><th>Filial</th><th>Fisico</th><th>Reservado</th><th>Disponivel</th></tr>
+        <tr><th>Filial</th><th>Físico</th><th>Reservado</th><th>Disponível</th></tr>
       </thead>
       <tbody>
         {% for estoque in estoques %}

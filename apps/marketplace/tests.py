@@ -15,6 +15,7 @@ from apps.fiscal.services import preparar_documento_pedido_online
 from apps.produtos.models import Categoria, Produto
 from apps.vendas.models import TipoDocumentoConsumidor
 
+from .forms import PagamentoPedidoForm
 from .models import FaixaTaxaEntrega, FormaPagamentoPedido, IntegracaoMarketplace, ItemPedidoOnline, PedidoOnline, PoliticaEntrega, StatusPagamentoPedido, StatusPedido, TipoEntrega
 from .services import alterar_status_pedido, calcular_entrega_pedido, cancelar_pedido, gerar_token_integracao, registrar_pagamento, reservar_pedido
 
@@ -92,6 +93,90 @@ class FluxoPedidoOnlineTests(TestCase):
         with self.assertRaises(ValidationError):
             alterar_status_pedido(pedido=self.pedido, destino=StatusPedido.PRONTO, usuario=self.usuario)
 
+    def test_forma_cartao_entrega_so_aparece_apos_saida_para_entrega(self):
+        formulario = PagamentoPedidoForm(pedido=self.pedido)
+        opcoes = {codigo for codigo, _ in formulario.fields["forma_pagamento"].choices}
+        self.assertNotIn(FormaPagamentoPedido.CARTAO_CREDITO_ENTREGA, opcoes)
+        self.assertNotIn(FormaPagamentoPedido.CARTAO_DEBITO_ENTREGA, opcoes)
+
+        self.pedido.tipo_entrega = TipoEntrega.ENTREGA
+        self.pedido.status = StatusPedido.SAIU_ENTREGA
+        self.pedido.save(update_fields=["tipo_entrega", "status"])
+        formulario = PagamentoPedidoForm(pedido=self.pedido)
+        opcoes = {codigo for codigo, _ in formulario.fields["forma_pagamento"].choices}
+        self.assertIn(FormaPagamentoPedido.CARTAO_CREDITO_ENTREGA, opcoes)
+        self.assertIn(FormaPagamentoPedido.CARTAO_DEBITO_ENTREGA, opcoes)
+
+    def test_tela_pagamento_exige_nsu_ao_selecionar_cartao_entrega(self):
+        self.client.force_login(self.usuario)
+        resposta = self.client.get(f"/pedidos-online/{self.pedido.pk}/")
+
+        self.assertEqual(resposta.status_code, 200)
+        self.assertContains(resposta, 'deliveryCards = ["CARTAO_CREDITO_ENTREGA", "CARTAO_DEBITO_ENTREGA"]')
+        self.assertContains(resposta, 'reference.required = needsReference')
+
+    def test_cartao_antecipado_exige_nsu_sem_exigir_saida_para_entrega(self):
+        self.pedido.tipo_entrega = TipoEntrega.ENTREGA
+        self.pedido.status = StatusPedido.PRONTO
+        self.pedido.save(update_fields=["tipo_entrega", "status"])
+
+        with self.assertRaisesMessage(ValidationError, "Informe o NSU"):
+            registrar_pagamento(
+                pedido=self.pedido, forma_pagamento=FormaPagamentoPedido.CARTAO,
+                valor_pago=Decimal("30"), usuario=self.usuario,
+            )
+
+        registrar_pagamento(
+            pedido=self.pedido, forma_pagamento=FormaPagamentoPedido.CARTAO,
+            valor_pago=Decimal("30"), referencia_pagamento="NSU-LOJA-0001", usuario=self.usuario,
+        )
+        self.pedido.refresh_from_db()
+        self.assertEqual(self.pedido.status_pagamento, StatusPagamentoPedido.PAGO)
+
+    def test_cartao_na_entrega_exige_fluxo_referencia_e_registra_nsu(self):
+        with self.assertRaisesMessage(ValidationError, "somente para pedidos de entrega"):
+            registrar_pagamento(
+                pedido=self.pedido,
+                forma_pagamento=FormaPagamentoPedido.CARTAO_CREDITO_ENTREGA,
+                valor_pago=Decimal("30"),
+                usuario=self.usuario,
+            )
+
+        self.pedido.tipo_entrega = TipoEntrega.ENTREGA
+        self.pedido.status = StatusPedido.PRONTO
+        self.pedido.save(update_fields=["tipo_entrega", "status"])
+        with self.assertRaisesMessage(ValidationError, "depois que o pedido sair para entrega"):
+            registrar_pagamento(
+                pedido=self.pedido,
+                forma_pagamento=FormaPagamentoPedido.CARTAO_CREDITO_ENTREGA,
+                valor_pago=Decimal("30"),
+                referencia_pagamento="NSU-ENTREGA-0001",
+                usuario=self.usuario,
+            )
+
+        self.pedido.status = StatusPedido.SAIU_ENTREGA
+        self.pedido.save(update_fields=["status"])
+        with self.assertRaisesMessage(ValidationError, "Informe o NSU"):
+            registrar_pagamento(
+                pedido=self.pedido,
+                forma_pagamento=FormaPagamentoPedido.CARTAO_CREDITO_ENTREGA,
+                valor_pago=Decimal("30"),
+                usuario=self.usuario,
+            )
+
+        registrar_pagamento(
+            pedido=self.pedido,
+            forma_pagamento=FormaPagamentoPedido.CARTAO_DEBITO_ENTREGA,
+            valor_pago=Decimal("30"),
+            referencia_pagamento="NSU-ENTREGA-0001",
+            usuario=self.usuario,
+        )
+        self.pedido.refresh_from_db()
+
+        self.assertEqual(self.pedido.status_pagamento, StatusPagamentoPedido.PAGO)
+        self.assertEqual(self.pedido.forma_pagamento, FormaPagamentoPedido.CARTAO_DEBITO_ENTREGA)
+        self.assertEqual(self.pedido.referencia_pagamento, "NSU-ENTREGA-0001")
+
     def test_cancelamento_de_pedido_pago_registra_estorno(self):
         registrar_pagamento(pedido=self.pedido, forma_pagamento=FormaPagamentoPedido.PIX, valor_pago=Decimal("30"), usuario=self.usuario)
         cancelar_pedido(pedido=self.pedido, usuario=self.usuario)
@@ -111,7 +196,7 @@ class FluxoPedidoOnlineTests(TestCase):
         resposta = self.client.get("/pedidos-online/")
         self.assertEqual(resposta.status_code, 200)
         self.assertContains(resposta, "Cliente Online")
-        self.assertContains(resposta, "Separacao")
+        self.assertContains(resposta, "Separação")
         self.assertContains(resposta, "Pagamento")
         self.assertContains(resposta, "order-progress")
 
@@ -129,7 +214,7 @@ class FluxoPedidoOnlineTests(TestCase):
         self.assertContains(pedido_form, 'data-ajax-url="/clientes/busca.json"')
         self.assertEqual(integracao_form.status_code, 200)
         self.assertContains(integracao_form, "Plataforma")
-        self.assertContains(integracao_form, "site proprio")
+        self.assertContains(integracao_form, "site próprio")
         self.assertContains(integracao_form, "provedor")
 
     def test_detalhe_bloqueia_separacao_quando_entrega_nao_foi_calculada(self):
@@ -142,15 +227,51 @@ class FluxoPedidoOnlineTests(TestCase):
         resposta = self.client.get(f"/pedidos-online/{self.pedido.pk}/")
 
         self.assertEqual(resposta.status_code, 200)
-        self.assertContains(resposta, "Calcule a entrega antes de iniciar a separacao.")
+        self.assertContains(resposta, "Calcule a entrega antes de iniciar a separação.")
         self.assertContains(resposta, "Entrega pendente de calculo.")
         self.assertContains(resposta, "disabled")
+
+    def test_detalhe_reaproveita_bairro_e_distancia_salvos(self):
+        self.pedido.tipo_entrega = TipoEntrega.ENTREGA
+        self.pedido.endereco_entrega = "Rua Teste, 10"
+        self.pedido.bairro_entrega = "Centro"
+        self.pedido.distancia_entrega_km = Decimal("3.50")
+        self.pedido.save()
+        self.client.force_login(self.usuario)
+
+        resposta = self.client.get(f"/pedidos-online/{self.pedido.pk}/")
+
+        self.assertEqual(resposta.status_code, 200)
+        self.assertContains(resposta, 'name="bairro_entrega"')
+        self.assertContains(resposta, 'value="Centro"')
+        self.assertContains(resposta, 'name="distancia_entrega_km"')
+        self.assertContains(resposta, 'value="3.50"')
+
+    def test_atalho_f6_do_pagamento_ignora_campos_ocultos(self):
+        self.client.force_login(self.usuario)
+
+        resposta = self.client.get(f"/pedidos-online/{self.pedido.pk}/")
+
+        self.assertEqual(resposta.status_code, 200)
+        self.assertContains(resposta, 'input:not([type=hidden]):not([disabled])')
+
+    def test_pedido_pronto_exibe_atalho_para_sair_entrega(self):
+        self.pedido.tipo_entrega = TipoEntrega.ENTREGA
+        self.pedido.status = StatusPedido.PRONTO
+        self.pedido.save()
+        self.client.force_login(self.usuario)
+
+        resposta = self.client.get(f"/pedidos-online/{self.pedido.pk}/")
+
+        self.assertEqual(resposta.status_code, 200)
+        self.assertContains(resposta, 'id="delivery-dispatch-button"')
+        self.assertContains(resposta, "F4")
 
     def test_folha_de_separacao_renderiza_sem_configuracao_especifica(self):
         self.client.force_login(self.usuario)
         resposta = self.client.get(f"/pedidos-online/{self.pedido.pk}/separacao/imprimir/")
         self.assertEqual(resposta.status_code, 200)
-        self.assertContains(resposta, f"Pedido de separacao #{self.pedido.pk}")
+        self.assertContains(resposta, f"Comanda de entrega #{self.pedido.pk}")
         self.assertContains(resposta, self.produto.codigo_barras)
 
     def test_api_exige_chave_valida(self):
@@ -208,7 +329,7 @@ class FluxoPedidoOnlineTests(TestCase):
         self.assertFalse(payload["politica_entrega"]["ativa"])
         self.assertFalse(payload["politica_entrega"]["permite_entrega"])
         self.assertTrue(payload["politica_entrega"]["permite_retirada"])
-        self.assertIn("Filial sem politica de entrega ativa", payload["alertas"][0])
+        self.assertIn("Filial sem política de entrega ativa", payload["alertas"][0])
 
     def test_api_cria_pedido_e_impede_duplicidade(self):
         integracao = IntegracaoMarketplace.objects.create(nome="Parceiro", filial=self.filial, usuario=self.usuario, token_prefixo="temporario", token_hash="temporario")
@@ -313,7 +434,11 @@ class FluxoPedidoOnlineTests(TestCase):
         self.produto.origem_mercadoria = "0"
         self.produto.cst_icms = "00"
         self.produto.aliquota_icms = Decimal("18.00")
-        self.produto.save(update_fields=["ncm", "origem_mercadoria", "cst_icms", "aliquota_icms"])
+        self.produto.cst_pis = "01"
+        self.produto.aliquota_pis = Decimal("1.6500")
+        self.produto.cst_cofins = "01"
+        self.produto.aliquota_cofins = Decimal("7.6000")
+        self.produto.save(update_fields=["ncm", "origem_mercadoria", "cst_icms", "aliquota_icms", "cst_pis", "aliquota_pis", "cst_cofins", "aliquota_cofins"])
         ConfiguracaoFiscal.objects.create(
             filial=self.filial,
             ambiente=AmbienteFiscal.HOMOLOGACAO,
@@ -323,7 +448,7 @@ class FluxoPedidoOnlineTests(TestCase):
             certificado_senha_criptografada=b"senha",
         )
         SerieFiscal.objects.create(filial=self.filial, tipo_documento=TipoDocumentoFiscal.NFE, serie=55, proximo_numero=200)
-        NaturezaOperacao.objects.create(descricao="Venda online de mercadorias", cfop="5102", tipo_documento=TipoDocumentoFiscal.NFE)
+        NaturezaOperacao.objects.create(empresa=self.filial.empresa, descricao="Venda online de mercadorias", cfop="5102", tipo_documento=TipoDocumentoFiscal.NFE)
         self.pedido.documento_cliente_tipo = TipoDocumentoConsumidor.CNPJ
         self.pedido.documento_cliente = "12345678000190"
         self.pedido.status_pagamento = StatusPagamentoPedido.PAGO
@@ -339,7 +464,79 @@ class FluxoPedidoOnlineTests(TestCase):
         self.assertEqual(documento.pedido_online, self.pedido)
         self.assertIn("<mod>55</mod>", documento.xml_conteudo)
         self.assertIn("<CNPJ>12345678000190</CNPJ>", documento.xml_conteudo)
+        self.assertIn("<vBC>30.00</vBC>", documento.xml_conteudo)
+        self.assertIn("<vICMS>5.40</vICMS>", documento.xml_conteudo)
+        self.assertIn("<vNF>30.00</vNF>", documento.xml_conteudo)
         self.assertEqual(DocumentoFiscal.objects.filter(pedido_online=self.pedido).count(), 1)
+
+    def test_nfe_pedido_usa_icms40_para_cst_nao_tributado(self):
+        self.filial.uf = "SP"
+        self.filial.codigo_municipio_ibge = "3550308"
+        self.filial.save(update_fields=["uf", "codigo_municipio_ibge"])
+        self.produto.ncm = "10063021"
+        self.produto.origem_mercadoria = "0"
+        self.produto.cst_icms = "40"
+        self.produto.aliquota_icms = Decimal("0.00")
+        self.produto.cst_pis = "06"
+        self.produto.aliquota_pis = None
+        self.produto.cst_cofins = "06"
+        self.produto.aliquota_cofins = None
+        self.produto.save(
+            update_fields=[
+                "ncm",
+                "origem_mercadoria",
+                "cst_icms",
+                "aliquota_icms",
+                "cst_pis",
+                "aliquota_pis",
+                "cst_cofins",
+                "aliquota_cofins",
+            ]
+        )
+        ConfiguracaoFiscal.objects.create(
+            filial=self.filial,
+            ambiente=AmbienteFiscal.HOMOLOGACAO,
+            regime_tributario="Regime normal",
+            inscricao_estadual="123456789",
+            certificado_a1_criptografado=b"certificado",
+            certificado_senha_criptografada=b"senha",
+        )
+        SerieFiscal.objects.create(
+            filial=self.filial,
+            tipo_documento=TipoDocumentoFiscal.NFE,
+            serie=55,
+            proximo_numero=200,
+        )
+        NaturezaOperacao.objects.create(
+            empresa=self.filial.empresa,
+            descricao="Venda online de mercadorias",
+            cfop="5102",
+            tipo_documento=TipoDocumentoFiscal.NFE,
+        )
+        self.pedido.documento_cliente_tipo = TipoDocumentoConsumidor.CNPJ
+        self.pedido.documento_cliente = "12345678000190"
+        self.pedido.status_pagamento = StatusPagamentoPedido.PAGO
+        self.pedido.forma_pagamento = FormaPagamentoPedido.GATEWAY
+        self.pedido.valor_pago = self.pedido.total
+        self.pedido.save(
+            update_fields=[
+                "documento_cliente_tipo",
+                "documento_cliente",
+                "status_pagamento",
+                "forma_pagamento",
+                "valor_pago",
+            ]
+        )
+
+        documento = preparar_documento_pedido_online(self.pedido, self.usuario)
+
+        self.assertIn("<mod>55</mod>", documento.xml_conteudo)
+        self.assertIn(
+            "<ICMS40><orig>0</orig><CST>40</CST></ICMS40>",
+            documento.xml_conteudo,
+        )
+        self.assertIn("<vBC>0.00</vBC>", documento.xml_conteudo)
+        self.assertIn("<vICMS>0.00</vICMS>", documento.xml_conteudo)
 
     def test_integracoes_mostram_saude_operacional_e_diagnostico_json(self):
         integracao = IntegracaoMarketplace.objects.create(nome="Parceiro", filial=self.filial, usuario=self.usuario, token_prefixo="temporario", token_hash="temporario")
@@ -401,7 +598,7 @@ class FluxoPedidoOnlineTests(TestCase):
         calcular_entrega_pedido(pedido=self.pedido, distancia_km=Decimal("4"))
         self.pedido.refresh_from_db()
         self.assertEqual(self.pedido.taxa_entrega, Decimal("0"))
-        self.assertIn("Frete gratis", self.pedido.regra_entrega_aplicada)
+        self.assertIn("Frete grátis", self.pedido.regra_entrega_aplicada)
 
     def test_calculo_de_entrega_recusa_distancia_fora_do_raio(self):
         PoliticaEntrega.objects.create(filial=self.filial, raio_maximo_km=Decimal("5"), valor_minimo_pedido=Decimal("0"))
@@ -497,7 +694,7 @@ class FluxoPedidoOnlineTests(TestCase):
         resposta = self.client.get(f"/pedidos-online/politicas-entrega/?simular=1&politica={politica.pk}&subtotal=30&distancia=3&bairro=Industrial")
 
         self.assertEqual(resposta.status_code, 200)
-        self.assertContains(resposta, "Bairro fora da area atendida")
+        self.assertContains(resposta, "Bairro fora da área atendida")
 
 
 class MarketplaceIsolamentoEmpresaTests(TestCase):
@@ -611,7 +808,7 @@ class MarketplaceIsolamentoEmpresaTests(TestCase):
         self.assertNotContains(pagina, str(self.filial_b))
         self.assertEqual([item["id"] for item in diagnostico.json()["politicas"]], [self.politica_a.pk])
         self.assertEqual(edicao.status_code, 404)
-        self.assertContains(simulacao, "Politica ativa nao encontrada")
+        self.assertContains(simulacao, "Política ativa não encontrada")
 
     def test_formulario_de_politica_rejeita_filial_de_outra_empresa(self):
         response = self.client.post(

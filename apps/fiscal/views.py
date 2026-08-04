@@ -1,12 +1,15 @@
+import csv
+
 from django.conf import settings
 from django.contrib import messages
 from django.contrib.auth.decorators import login_required
 from django.core.exceptions import ValidationError
 from django.core.paginator import Paginator
 from django.db.models import Q
-from django.http import HttpResponse, JsonResponse
+from django.http import HttpResponse, JsonResponse, StreamingHttpResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.utils import timezone
+from django.views.decorators.http import require_POST
 
 from apps.accounts.permissions import RELATORIOS, SISTEMA, role_required
 from apps.auditoria.models import LogAuditoria
@@ -21,21 +24,35 @@ from .escopo import (
     configuracoes_para_usuario,
     documentos_para_usuario,
     filiais_para_usuario,
+    inutilizacoes_para_usuario,
+    naturezas_para_usuario,
     series_para_usuario,
     vendas_para_usuario,
 )
-from .forms import ConfiguracaoFiscalForm, NaturezaOperacaoForm, SerieFiscalForm
-from .fila import diagnostico_fila_fiscal, reagendar_documento_fiscal
-from .models import AmbienteFiscal, ConfiguracaoFiscal, DocumentoFiscal, NaturezaOperacao, SerieFiscal, StatusDocumentoFiscal, TipoDocumentoFiscal
+from .forms import ConfiguracaoFiscalForm, InutilizacaoNumeracaoFiscalForm, NaturezaOperacaoForm, SerieFiscalForm
+from .fila import (
+    configuracao_fila_fiscal,
+    diagnostico_fila_fiscal,
+    reagendar_documento_fiscal,
+    retomar_consultas_documento_fiscal,
+)
+from .models import AmbienteFiscal, ConfiguracaoFiscal, DocumentoFiscal, InutilizacaoNumeracaoFiscal, NaturezaOperacao, SerieFiscal, StatusDocumentoFiscal, StatusInutilizacaoFiscal, TipoDocumentoFiscal
 from .validacoes import diagnosticar_schemas_fiscais
 from .qrcode_nfce import gerar_qrcode_data_uri, obter_url_qrcode_nfce
+from .perfis_uf import pendencias_endpoints_nfce
 from .services import (
+    CSOSN_ICMS_SUPORTADOS,
+    CST_ICMS_SUPORTADOS,
     ativar_contingencia_offline,
     cancelar_documento,
+    capacidade_tributaria_fiscal,
+    consultar_situacao_documento,
+    filtro_pendencias_produto_fiscal,
     pendencias_preparacao_fiscal,
     pendencias_produto_fiscal,
     preparar_documento_venda,
     salvar_xml_documento,
+    solicitar_inutilizacao_numeracao,
     transmitir_documento_simulado,
     transmitir_documento_sefaz,
 )
@@ -51,12 +68,17 @@ def _diagnostico_prontidao_fiscal(user):
             SerieFiscal.objects.filter(tipo_documento=TipoDocumentoFiscal.NFCE, ativo=True).select_related("filial"),
         )
     }
-    natureza_nfce = NaturezaOperacao.objects.filter(tipo_documento=TipoDocumentoFiscal.NFCE, ativo=True).first()
+    naturezas_nfce = {}
+    for natureza in naturezas_para_usuario(
+        user,
+        NaturezaOperacao.objects.filter(tipo_documento=TipoDocumentoFiscal.NFCE, ativo=True, padrao=True),
+    ):
+        naturezas_nfce.setdefault(natureza.empresa_id, natureza)
     regimes = list(configuracoes_qs.exclude(regime_tributario="").values_list("regime_tributario", flat=True))
-    produtos_pendentes = 0
-    for produto in Produto.all_objects.select_related("categoria", "marca")[:500]:
-        if pendencias_produto_fiscal(produto, regimes):
-            produtos_pendentes += 1
+    ufs = list(configuracoes_qs.exclude(filial__uf="").values_list("filial__uf", flat=True))
+    crts = list(configuracoes_qs.values_list("crt", flat=True))
+    filtro_produtos_pendentes = filtro_pendencias_produto_fiscal(regimes, ufs, crts)
+    produtos_pendentes = Produto.all_objects.filter(filtro_produtos_pendentes).count()
     vendas_pendentes_qs = vendas_para_usuario(
         user, Venda.objects.filter(status=StatusVenda.FINALIZADA, documentos_fiscais__isnull=True)
     )
@@ -82,11 +104,12 @@ def _diagnostico_prontidao_fiscal(user):
                 pendencias.append("CSC/Token NFC-e incompleto.")
             if not config.inscricao_estadual:
                 pendencias.append("Inscrição estadual ausente.")
+            pendencias.extend(pendencias_endpoints_nfce(filial, config))
         if not filial.uf or not filial.codigo_municipio_ibge:
             pendencias.append("UF ou código IBGE da filial ausente.")
         if not serie:
             pendencias.append("Série NFC-e ativa ausente.")
-        if not natureza_nfce:
+        if filial.empresa_id not in naturezas_nfce:
             pendencias.append("Natureza de operação NFC-e ativa ausente.")
         vendas_pendentes = vendas_pendentes_qs.filter(filial=filial).count()
         if vendas_pendentes:
@@ -140,6 +163,7 @@ def _diagnostico_prontidao_fiscal(user):
         "assinatura_local_pronta": assinatura_local_pronta,
         "assinatura_xml_disponivel": assinatura_disponivel,
         "sefaz_adapter_valida_schema": diagnostico_adapter["valida_schema"],
+        "sefaz_adapter_consulta_documento": diagnostico_adapter["consulta_documento"],
         "schema_local_configurado": diagnostico_schema["configurado"],
         "schema_local_pronto": diagnostico_schema["pronto"],
         "schema_local_sha256": diagnostico_schema["sha256"],
@@ -166,6 +190,7 @@ def _diagnostico_prontidao_fiscal(user):
         "filiais": filiais,
         "alertas": alertas,
         "producao": producao,
+        "capacidade_tributaria": capacidade_tributaria_fiscal(),
         "fila_transmissao": diagnostico_fila_fiscal(documentos_para_usuario(user)),
     }
 
@@ -198,15 +223,24 @@ def documentos(request):
             request.user, SerieFiscal.objects.filter(tipo_documento=TipoDocumentoFiscal.NFCE, ativo=True)
         ).values_list("filial_id", flat=True)
     )
-    natureza_padrao = NaturezaOperacao.objects.filter(tipo_documento=TipoDocumentoFiscal.NFCE, ativo=True).first()
+    naturezas_padrao = {}
+    for natureza in naturezas_para_usuario(
+        request.user,
+        NaturezaOperacao.objects.filter(tipo_documento=TipoDocumentoFiscal.NFCE, ativo=True, padrao=True),
+    ):
+        naturezas_padrao.setdefault(natureza.empresa_id, natureza)
     for venda in vendas_pendentes:
         configuracao = configuracoes_por_filial.get(venda.filial_id)
         if not configuracao:
             pendencias = ["Configure os dados fiscais da filial."]
         elif not configuracao.ativo:
-            pendencias = ["A configuracao fiscal da filial esta inativa."]
+            pendencias = ["A configuração fiscal da filial está inativa."]
         else:
-            pendencias = pendencias_preparacao_fiscal(venda, configuracao, natureza_padrao)
+            pendencias = pendencias_preparacao_fiscal(
+                venda,
+                configuracao,
+                naturezas_padrao.get(venda.filial.empresa_id),
+            )
         if venda.filial_id not in filiais_com_serie:
             pendencias.append("Cadastre uma serie NFC-e ativa para a filial.")
         venda.pendencias_fiscais = pendencias
@@ -232,7 +266,10 @@ def documentos(request):
         "vendas_pendentes": vendas_pendentes,
         "configuracoes": configuracoes_para_usuario(request.user, ConfiguracaoFiscal.objects.select_related("filial")),
         "series": series_para_usuario(request.user, SerieFiscal.objects.select_related("filial")),
-        "naturezas": NaturezaOperacao.objects.all(),
+        "naturezas": naturezas_para_usuario(
+            request.user,
+            NaturezaOperacao.objects.select_related("empresa"),
+        ),
         "total_documentos": documentos_qs.count(),
         "pendentes": documentos_qs.filter(status="PRONTO").count(),
         "emitidos": documentos_qs.filter(status="EMITIDO").count(),
@@ -241,6 +278,58 @@ def documentos(request):
         "pendencias_automaticas": len(logs_pendencia),
     }
     return render(request, "fiscal/documentos.html", context)
+
+
+@login_required
+@role_required(*SISTEMA)
+def inutilizacoes(request):
+    if request.method == "POST":
+        form = InutilizacaoNumeracaoFiscalForm(request.POST, user=request.user)
+        if form.is_valid():
+            dados = form.cleaned_data
+            try:
+                solicitar_inutilizacao_numeracao(
+                    filial=dados["filial"],
+                    tipo_documento=dados["tipo_documento"],
+                    ano=dados["ano"],
+                    serie=dados["serie"],
+                    numero_inicial=dados["numero_inicial"],
+                    numero_final=dados["numero_final"],
+                    justificativa=dados["justificativa"],
+                    usuario=request.user,
+                    ip=request.META.get("REMOTE_ADDR"),
+                )
+            except ValidationError as exc:
+                form.add_error(None, exc)
+            else:
+                messages.success(request, "Faixa inutilizada e protocolada com sucesso.")
+                return redirect("fiscal:inutilizacoes")
+    else:
+        form = InutilizacaoNumeracaoFiscalForm(
+            user=request.user,
+            initial={"ano": timezone.localdate().year},
+        )
+
+    status = request.GET.get("status", "")
+    registros = inutilizacoes_para_usuario(
+        request.user,
+        InutilizacaoNumeracaoFiscal.objects.select_related("filial", "usuario"),
+    )
+    if status in StatusInutilizacaoFiscal.values:
+        registros = registros.filter(status=status)
+    pagina = Paginator(registros, 50).get_page(request.GET.get("page"))
+    return render(
+        request,
+        "fiscal/inutilizacoes.html",
+        {
+            "form": form,
+            "inutilizacoes": pagina,
+            "page_obj": pagina,
+            "status": status,
+            "status_choices": StatusInutilizacaoFiscal.choices,
+            "diagnostico_adapter": diagnosticar_adaptador_sefaz(),
+        },
+    )
 
 
 @login_required
@@ -323,8 +412,8 @@ def contingencia_json(request):
         "total": len(itens),
         "limite": 200,
         "observacao": (
-            "Exportacao operacional para contingencia/suporte. "
-            "Nao substitui assinatura, autorizacao ou transmissao oficial pela SEFAZ."
+            "Exportacao operacional para contingência/suporte. "
+            "Não substitui assinatura, autorização ou transmissao oficial pela SEFAZ."
         ),
         "documentos": itens,
     }
@@ -340,6 +429,137 @@ def contingencia_json(request):
     return JsonResponse(payload, json_dumps_params={"ensure_ascii": False, "indent": 2})
 
 
+def _parametros_validacao_produtos_fiscais(user):
+    configuracoes_qs = configuracoes_para_usuario(user)
+    regimes = list(
+        configuracoes_qs.exclude(regime_tributario="").values_list(
+            "regime_tributario", flat=True
+        )
+    )
+    crts = list(configuracoes_qs.values_list("crt", flat=True))
+    ufs = list(
+        configuracoes_qs.exclude(filial__uf="").values_list("filial__uf", flat=True)
+    )
+    pendente_q = filtro_pendencias_produto_fiscal(regimes, ufs, crts)
+    return regimes, ufs, crts, pendente_q
+
+
+def _filtrar_catalogo_fiscal(queryset, pendente_q, filtro):
+    if filtro == "prontos":
+        return queryset.exclude(pendente_q), "prontos"
+    if filtro == "todos":
+        return queryset, "todos"
+    return queryset.filter(pendente_q), "pendentes"
+
+
+def _decimal_csv(valor):
+    return "" if valor is None else str(valor).replace(".", ",")
+
+
+class _CSVBuffer:
+    def write(self, valor):
+        return valor
+
+
+@login_required
+@role_required(*RELATORIOS)
+def produtos_fiscais_exportar_csv(request):
+    q = request.GET.get("q", "").strip()
+    filtro = request.GET.get("filtro", "pendentes")
+    produtos_qs = Produto.all_objects.select_related("categoria").order_by("nome")
+    if q:
+        produtos_qs = produtos_qs.filter(
+            Q(nome__icontains=q) | Q(codigo_barras__icontains=q)
+        )
+    _regimes, _ufs, _crts, pendente_q = _parametros_validacao_produtos_fiscais(
+        request.user
+    )
+    produtos_qs, filtro = _filtrar_catalogo_fiscal(produtos_qs, pendente_q, filtro)
+    total = produtos_qs.count()
+    cabecalhos = [
+        "codigo_barras",
+        "codigo_interno",
+        "nome",
+        "categoria",
+        "preco_venda",
+        "ncm",
+        "cest",
+        "origem_mercadoria",
+        "cst_icms",
+        "csosn",
+        "aliquota_icms",
+        "reducao_base_icms",
+        "aliquota_fcp",
+        "codigo_beneficio_fiscal",
+        "cst_pis",
+        "aliquota_pis",
+        "cst_cofins",
+        "aliquota_cofins",
+        "cst_ipi",
+        "codigo_enquadramento_ipi",
+        "aliquota_ipi",
+        "cst_ibs_cbs",
+        "classificacao_tributaria_ibs_cbs",
+        "_modo_importacao",
+    ]
+    escritor = csv.writer(_CSVBuffer(), delimiter=";", lineterminator="\r\n")
+
+    def linhas():
+        yield "﻿"
+        yield escritor.writerow(cabecalhos)
+        for produto in produtos_qs.iterator(chunk_size=1000):
+            yield escritor.writerow(
+                [
+                    produto.codigo_barras,
+                    produto.codigo_interno,
+                    produto.nome,
+                    produto.categoria.nome,
+                    _decimal_csv(produto.preco_venda),
+                    produto.ncm,
+                    produto.cest,
+                    produto.origem_mercadoria,
+                    produto.cst_icms,
+                    produto.csosn,
+                    _decimal_csv(produto.aliquota_icms),
+                    _decimal_csv(produto.reducao_base_icms),
+                    _decimal_csv(produto.aliquota_fcp),
+                    produto.codigo_beneficio_fiscal,
+                    produto.cst_pis,
+                    _decimal_csv(produto.aliquota_pis),
+                    produto.cst_cofins,
+                    _decimal_csv(produto.aliquota_cofins),
+                    produto.cst_ipi,
+                    produto.codigo_enquadramento_ipi,
+                    _decimal_csv(produto.aliquota_ipi),
+                    produto.cst_ibs_cbs,
+                    produto.classificacao_tributaria_ibs_cbs,
+                    "fiscal",
+                ]
+            )
+
+    LogAuditoria.objects.create(
+        usuario=request.user,
+        modulo="fiscal",
+        acao="EXPORTA_PRODUTOS_FISCAIS_CSV",
+        descricao=(
+            f"Exportacao fiscal de produtos: {total} registro(s), "
+            f"filtro={filtro}, busca={q or '-'}."
+        ),
+        objeto_tipo="Produto",
+        objeto_id="lote",
+        ip=request.META.get("REMOTE_ADDR"),
+    )
+    response = StreamingHttpResponse(
+        linhas(),
+        content_type="text/csv; charset=utf-8",
+    )
+    data = timezone.localdate().strftime("%Y%m%d")
+    response["Content-Disposition"] = (
+        f'attachment; filename="produtos-fiscais-{filtro}-{data}.csv"'
+    )
+    return response
+
+
 @login_required
 @role_required(*RELATORIOS)
 def produtos_fiscais(request):
@@ -348,32 +568,18 @@ def produtos_fiscais(request):
     produtos_qs = Produto.all_objects.select_related("categoria", "marca").order_by("nome")
     if q:
         produtos_qs = produtos_qs.filter(Q(nome__icontains=q) | Q(codigo_barras__icontains=q))
-    regimes = list(
-        configuracoes_para_usuario(request.user)
-        .exclude(regime_tributario="")
-        .values_list("regime_tributario", flat=True)
+    regimes, ufs, crts, pendente_q = _parametros_validacao_produtos_fiscais(
+        request.user
     )
-    regimes_maiusculos = [regime.upper() for regime in regimes if regime]
-    exige_simples = not regimes_maiusculos or any("SIMPLES" in regime for regime in regimes_maiusculos)
-    exige_normal = not regimes_maiusculos or any("SIMPLES" not in regime for regime in regimes_maiusculos)
-    pendente_q = ~Q(ncm__regex=r"^\d{8}$") | (Q(cest__isnull=False) & ~Q(cest="") & ~Q(cest__regex=r"^\d{7}$")) | Q(origem_mercadoria="")
-    if exige_simples:
-        pendente_q |= ~Q(csosn__regex=r"^\d{3}$")
-    if exige_normal:
-        pendente_q |= ~Q(cst_icms__regex=r"^\d{2}$")
-    pendente_q |= Q(aliquota_icms__isnull=True) | Q(aliquota_icms__lt=0)
     total_analisados = produtos_qs.count()
     total_pendentes = produtos_qs.filter(pendente_q).count()
-    if filtro == "prontos":
-        produtos_qs = produtos_qs.exclude(pendente_q)
-    elif filtro == "pendentes":
-        produtos_qs = produtos_qs.filter(pendente_q)
-    else:
-        filtro = "todos"
+    produtos_qs, filtro = _filtrar_catalogo_fiscal(
+        produtos_qs, pendente_q, filtro
+    )
     pagina = Paginator(produtos_qs, 50).get_page(request.GET.get("page"))
     produtos = list(pagina.object_list)
     for produto in produtos:
-        produto.pendencias_fiscais = pendencias_produto_fiscal(produto, regimes)
+        produto.pendencias_fiscais = pendencias_produto_fiscal(produto, regimes, ufs, crts)
         produto.pronto_fiscal = not produto.pendencias_fiscais
     context = {
         "produtos": produtos,
@@ -383,6 +589,7 @@ def produtos_fiscais(request):
         "total_analisados": total_analisados,
         "total_pendentes": total_pendentes,
         "total_prontos": total_analisados - total_pendentes,
+        "capacidade_tributaria": capacidade_tributaria_fiscal(),
     }
     return render(request, "fiscal/produtos_fiscais.html", context)
 
@@ -415,6 +622,7 @@ def detalhe(request, pk):
         and assinatura_disponivel
         and (diagnostico_adapter["valida_schema"] or diagnostico_schema["pronto"])
     )
+    fila_configuracao = configuracao_fila_fiscal()
     return render(
         request,
         "fiscal/detalhe.html",
@@ -422,13 +630,26 @@ def detalhe(request, pk):
             "documento": documento,
             "imprimir": False,
             "sefaz_adapter_configurado": sefaz_pronta,
+            "sefaz_consulta_disponivel": diagnostico_adapter["consulta_documento"],
+            "consulta_sefaz_esgotada": (
+                documento.aguardando_consulta_sefaz
+                and documento.tentativas_consulta_sefaz >= fila_configuracao["max_consultas"]
+            ),
+            "max_consultas_sefaz": fila_configuracao["max_consultas"],
+            "sefaz_cancelamento_disponivel": (
+                diagnostico_adapter["cancela_documento"]
+                or (
+                    documento.ambiente == AmbienteFiscal.HOMOLOGACAO
+                    and documento.protocolo.startswith("HOM")
+                )
+            ),
         },
     )
 
 def _contexto_danfe_nfce(documento):
     contexto = {"documento": documento, "qrcode_data_uri": "", "qrcode_erro": ""}
     if documento.status not in {StatusDocumentoFiscal.EMITIDO, StatusDocumentoFiscal.CONTINGENCIA}:
-        contexto["qrcode_erro"] = "QR Code disponivel somente apos autorizacao ou emissao em contingencia."
+        contexto["qrcode_erro"] = "QR Code disponível somente apos autorização ou emissao em contingência."
         return contexto
     try:
         contexto["qrcode_url"] = obter_url_qrcode_nfce(documento)
@@ -474,12 +695,12 @@ def configuracao_form(request, pk=None):
                     salvar_certificado_a1(configuracao, arquivo, senha)
                 except ValidationError as exc:
                     form.add_error("certificado_arquivo", exc)
-                    return render(request, "fiscal/form.html", {"form": form, "titulo": "Configuracao fiscal"})
-            messages.success(request, "Configuracao fiscal salva.")
+                    return render(request, "fiscal/form.html", {"form": form, "titulo": "Configuração fiscal"})
+            messages.success(request, "Configuração fiscal salva.")
             return redirect("fiscal:documentos")
     else:
         form = ConfiguracaoFiscalForm(instance=configuracao, user=request.user)
-    return render(request, "fiscal/form.html", {"form": form, "titulo": "Configuracao fiscal"})
+    return render(request, "fiscal/form.html", {"form": form, "titulo": "Configuração fiscal"})
 
 
 @login_required
@@ -513,9 +734,9 @@ def serie_form(request, pk=None):
 @login_required
 @role_required(*SISTEMA)
 def natureza_form(request, pk=None):
-    natureza = get_object_or_404(NaturezaOperacao, pk=pk) if pk else None
+    natureza = get_object_or_404(naturezas_para_usuario(request.user), pk=pk) if pk else None
     if request.method == "POST":
-        form = NaturezaOperacaoForm(request.POST, instance=natureza)
+        form = NaturezaOperacaoForm(request.POST, instance=natureza, user=request.user)
         if form.is_valid():
             criando = natureza is None
             natureza = form.save()
@@ -531,11 +752,35 @@ def natureza_form(request, pk=None):
                 objeto_id=str(natureza.pk),
                 ip=request.META.get("REMOTE_ADDR"),
             )
-            messages.success(request, "Natureza de operacao salva.")
+            messages.success(request, "Natureza de operação salva.")
             return redirect("fiscal:documentos")
     else:
-        form = NaturezaOperacaoForm(instance=natureza)
-    return render(request, "fiscal/form.html", {"form": form, "titulo": "Natureza de operacao"})
+        form = NaturezaOperacaoForm(instance=natureza, user=request.user)
+    return render(request, "fiscal/form.html", {"form": form, "titulo": "Natureza de operação"})
+
+
+@login_required
+@role_required(*SISTEMA)
+@require_POST
+def definir_natureza_padrao(request, pk):
+    natureza = get_object_or_404(naturezas_para_usuario(request.user), pk=pk, ativo=True)
+    if not natureza.padrao:
+        natureza.padrao = True
+        natureza.save(update_fields=["padrao"])
+        LogAuditoria.objects.create(
+            usuario=request.user,
+            modulo="fiscal",
+            acao="DEFINE_NATUREZA_PADRAO",
+            descricao=(
+                f"Natureza de operacao {natureza.descricao} definida como padrao "
+                f"para {natureza.get_tipo_documento_display()} na empresa {natureza.empresa}."
+            ),
+            objeto_tipo="NaturezaOperacao",
+            objeto_id=str(natureza.pk),
+            ip=request.META.get("REMOTE_ADDR"),
+        )
+        messages.success(request, "Natureza de operação definida como padrão.")
+    return redirect("fiscal:documentos")
 
 
 @login_required
@@ -565,7 +810,7 @@ def ativar_contingencia(request, pk):
         else:
             messages.warning(
                 request,
-                "NFC-e registrada em contingencia offline. Transmita para a SEFAZ assim que a comunicacao voltar.",
+                "NFC-e registrada em contingência offline. Transmita para a SEFAZ assim que a comunicacao voltar.",
             )
     return redirect("fiscal:detalhe", pk=pk)
 
@@ -607,6 +852,25 @@ def reagendar_transmissao(request, pk):
 
 @login_required
 @role_required(*SISTEMA)
+@require_POST
+def retomar_consultas_sefaz(request, pk):
+    documento = get_object_or_404(documentos_para_usuario(request.user), pk=pk)
+    try:
+        retomar_consultas_documento_fiscal(
+            documento,
+            request.user,
+            request.POST.get("motivo", ""),
+            ip=request.META.get("REMOTE_ADDR"),
+        )
+    except ValidationError as exc:
+        messages.error(request, " ".join(exc.messages))
+    else:
+        messages.success(request, "Consultas automáticas à SEFAZ retomadas com segurança.")
+    return redirect("fiscal:detalhe", pk=pk)
+
+
+@login_required
+@role_required(*SISTEMA)
 def transmitir_simulado(request, pk):
     documento = get_object_or_404(documentos_para_usuario(request.user), pk=pk)
     if request.method == "POST":
@@ -615,9 +879,34 @@ def transmitir_simulado(request, pk):
         except ValidationError as exc:
             messages.error(request, " ".join(exc.messages))
         else:
-            messages.success(request, "Documento fiscal transmitido em homologacao simulada.")
+            messages.success(request, "Documento fiscal transmitido em homologação simulada.")
     return redirect("fiscal:detalhe", pk=pk)
 
+
+
+@login_required
+@role_required(*SISTEMA)
+@require_POST
+def consultar_sefaz(request, pk):
+    documento = get_object_or_404(documentos_para_usuario(request.user), pk=pk)
+    try:
+        documento, resultado = consultar_situacao_documento(
+            documento,
+            request.user,
+            ip=request.META.get("REMOTE_ADDR"),
+        )
+    except ValidationError as exc:
+        messages.error(request, " ".join(exc.messages))
+    else:
+        if resultado.status == "AUTORIZADO":
+            messages.success(request, "A SEFAZ confirmou a autorização do documento.")
+        elif resultado.status == "CANCELADO":
+            messages.success(request, "A SEFAZ confirmou o cancelamento do documento.")
+        elif resultado.status == "DENEGADO":
+            messages.warning(request, "A SEFAZ informou uso denegado para este documento.")
+        else:
+            messages.warning(request, resultado.mensagem)
+    return redirect("fiscal:detalhe", pk=pk)
 
 
 @login_required

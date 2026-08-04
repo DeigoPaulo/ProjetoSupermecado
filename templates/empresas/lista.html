@@ -36,7 +36,7 @@
             <td>{{ empresa.regime_tributario|default:"-" }}</td>
             <td>
               <strong>{{ empresa.get_modo_implantacao_display }}</strong><br>
-              <small>{% if empresa.sincronizacao_automatica %}Sincronizacao ativa{% else %}Sem sincronizacao automatica{% endif %}</small><br>
+              <small>{% if empresa.sincronizacao_automatica %}Sincronizacao ativa{% else %}Sem sincronizacao automática{% endif %}</small><br>
               <small>Conflito: {{ empresa.get_politica_conflito_sincronizacao_display }}</small>
             </td>
             <td>{% if empresa.is_active %}<span class="status status-success">Ativa</span>{% else %}<span class="status status-muted">Inativa</span>{% endif %}</td>

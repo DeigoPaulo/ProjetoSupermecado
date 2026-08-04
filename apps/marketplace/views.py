@@ -6,6 +6,7 @@ from django.core.paginator import Paginator
 from django.db.models import Count, Max, Q, Sum
 from django.http import JsonResponse
 from django.shortcuts import get_object_or_404, redirect, render
+from django.urls import reverse
 from django.utils import timezone
 from django.views.decorators.csrf import csrf_exempt
 from decimal import Decimal, InvalidOperation
@@ -14,7 +15,7 @@ from urllib.error import HTTPError, URLError
 from urllib.parse import urlencode
 from urllib.request import Request, urlopen
 
-from apps.accounts.permissions import CADASTROS, SISTEMA, role_required
+from apps.accounts.permissions import CADASTROS, PDV, SISTEMA, role_required
 from apps.configuracoes.models import TipoDocumentoImpressao
 from apps.configuracoes.services import configuracao_impressao_para, estilos_impressao
 from apps.fiscal.services import preparar_documento_pedido_online
@@ -80,7 +81,7 @@ def novo_pedido(request):
     return render(request, "marketplace/pedido_form.html", {"form": form})
 
 
-@role_required(*CADASTROS)
+@role_required(*CADASTROS, *PDV)
 def detalhe(request, pk):
     pedido = get_object_or_404(pedidos_para_usuario(request.user).select_related("filial", "cliente", "usuario").prefetch_related("itens__produto"), pk=pk)
     form_item = ItemPedidoOnlineForm(request.POST or None)
@@ -96,8 +97,8 @@ def detalhe(request, pk):
             pedido.recalcular()
             messages.success(request, "Produto incluido no pedido.")
             return redirect("marketplace:detalhe", pk=pedido.pk)
-    pagamento_form = PagamentoPedidoForm(initial={"valor_pago": pedido.total})
-    entrega_form = CalcularEntregaForm(initial={"distancia_entrega_km": pedido.distancia_entrega_km})
+    pagamento_form = PagamentoPedidoForm(initial={"valor_pago": pedido.total}, pedido=pedido)
+    entrega_form = CalcularEntregaForm(initial={"distancia_entrega_km": pedido.distancia_entrega_km, "bairro_entrega": pedido.bairro_entrega})
     tem_politica_entrega = PoliticaEntrega.objects.filter(filial=pedido.filial, is_active=True).exists()
     entrega_pendente = pedido.tipo_entrega == TipoEntrega.ENTREGA and tem_politica_entrega and not pedido.regra_entrega_aplicada
     pode_iniciar_separacao = pedido.status == StatusPedido.RASCUNHO and pedido.itens.exists() and not entrega_pendente
@@ -113,16 +114,91 @@ def detalhe(request, pk):
             "tem_politica_entrega": tem_politica_entrega,
             "entrega_pendente": entrega_pendente,
             "pode_iniciar_separacao": pode_iniciar_separacao,
+            "origem_pdv": request.GET.get("origem") == "pdv",
         },
     )
 
 
-@role_required(*CADASTROS)
+@role_required(*CADASTROS, *PDV)
 def imprimir_separacao(request, pk):
     pedido = get_object_or_404(pedidos_para_usuario(request.user).select_related("filial__empresa", "cliente", "usuario").prefetch_related("itens__produto"), pk=pk)
     impressao = configuracao_impressao_para(pedido.filial, TipoDocumentoImpressao.PEDIDO_SEPARACAO)
-    return render(request, "marketplace/pedido_separacao_imprimir.html", {"pedido": pedido, "impressao": impressao, "estilos_impressao": estilos_impressao(impressao)})
+    return render(
+        request,
+        "marketplace/pedido_separacao_imprimir.html",
+        {
+            "pedido": pedido,
+            "impressao": impressao,
+            "estilos_impressao": estilos_impressao(impressao),
+            "auto_imprimir": request.GET.get("auto") == "1",
+        },
+    )
 
+@role_required(*CADASTROS, *PDV)
+def impressao_separacao_desktop(request, pk):
+    pedido = get_object_or_404(
+        pedidos_para_usuario(request.user)
+        .select_related("filial__empresa", "cliente", "usuario")
+        .prefetch_related("itens__produto"),
+        pk=pk,
+    )
+    impressao = configuracao_impressao_para(pedido.filial, TipoDocumentoImpressao.PEDIDO_SEPARACAO)
+    impressora_padrao = (impressao.impressora_padrao or "").strip() if impressao else ""
+    mensagem = ""
+    if not impressao:
+        mensagem = "Nenhuma configuração para Pedido de separação foi encontrada em Sistema > Impressoes."
+    elif not impressora_padrao:
+        mensagem = "A configuração de Pedido de separação não possui impressora padrão."
+
+    def quantidade_br(valor):
+        decimal = Decimal(valor or 0)
+        if decimal == decimal.to_integral_value():
+            return f"{decimal:.0f}"
+        return f"{decimal:.3f}".replace(".", ",")
+
+    return JsonResponse(
+        {
+            "status": "ok",
+            "tipo": "comanda_entrega",
+            "pedido": {
+                "id": pedido.id,
+                "empresa": str(pedido.filial.empresa),
+                "filial": pedido.filial.nome,
+                "criado_em": timezone.localtime(pedido.criado_em).isoformat(),
+                "status": pedido.get_status_display(),
+                "cliente": pedido.nome_cliente,
+                "telefone": pedido.telefone,
+                "endereco": pedido.endereco_entrega,
+                "bairro": pedido.bairro_entrega,
+                "observacoes": pedido.observacoes,
+                "total": f"{pedido.total:.2f}".replace(".", ","),
+                "pagamento": pedido.get_status_pagamento_display(),
+                "forma_pagamento": pedido.get_forma_pagamento_display() if pedido.forma_pagamento else "",
+                "referencia_pagamento": pedido.referencia_pagamento,
+            },
+            "itens": [
+                {
+                    "produto": item.produto.nome,
+                    "codigo_barras": item.produto.codigo_barras,
+                    "quantidade": quantidade_br(item.quantidade),
+                    "unidade": item.produto.unidade,
+                }
+                for item in pedido.itens.all()
+            ],
+            "impressao": {
+                "configurada": bool(impressao),
+                "impressora_configurada": bool(impressora_padrao),
+                "impressora_padrao": impressora_padrao,
+                "modelo_papel": impressao.modelo_papel if impressao else "",
+                "numero_vias": impressao.numero_vias if impressao else 1,
+                "impressao_automatica": impressao.impressao_automatica if impressao else False,
+                "mensagem_rodape": impressao.mensagem_rodape if impressao else "",
+                "mensagem": mensagem,
+                "documento_pronto": True,
+            },
+            "gaveta": {"abrir": False},
+        }
+    )
 
 @role_required(*CADASTROS)
 def remover_item(request, pk, item_id):
@@ -135,7 +211,7 @@ def remover_item(request, pk, item_id):
     return redirect("marketplace:detalhe", pk=pedido.pk)
 
 
-@role_required(*CADASTROS)
+@role_required(*CADASTROS, *PDV)
 def acao_pedido(request, pk):
     pedido = get_object_or_404(pedidos_para_usuario(request.user), pk=pk)
     if request.method != "POST":
@@ -150,7 +226,7 @@ def acao_pedido(request, pk):
             alterar_status_pedido(pedido=pedido, destino=request.POST.get("destino"), usuario=request.user, ip=request.META.get("REMOTE_ADDR"))
         elif acao == "separacao":
             if pedido.status != StatusPedido.EM_SEPARACAO:
-                raise ValidationError("A separacao so pode ser informada durante essa etapa.")
+                raise ValidationError("A separação so pode ser informada durante essa etapa.")
             with transaction.atomic():
                 for item in pedido.itens.select_for_update():
                     valor = request.POST.get(f"item_{item.pk}", "0").replace(",", ".")
@@ -158,7 +234,7 @@ def acao_pedido(request, pk):
                     item.full_clean()
                     item.save(update_fields=["quantidade_separada"])
         elif acao == "pagamento":
-            form = PagamentoPedidoForm(request.POST)
+            form = PagamentoPedidoForm(request.POST, pedido=pedido)
             if not form.is_valid():
                 raise ValidationError("Verifique a forma e o valor do pagamento.")
             registrar_pagamento(pedido=pedido, usuario=request.user, ip=request.META.get("REMOTE_ADDR"), **form.cleaned_data)
@@ -167,14 +243,16 @@ def acao_pedido(request, pk):
         elif acao == "calcular_entrega":
             form = CalcularEntregaForm(request.POST)
             if not form.is_valid():
-                raise ValidationError("Informe uma distancia valida para a entrega.")
+                raise ValidationError("Informe uma distância válida para a entrega.")
             calcular_entrega_pedido(pedido=pedido, **form.cleaned_data)
         else:
-            raise ValidationError("Acao invalida.")
+            raise ValidationError("Acao inválida.")
     except ValidationError as exc:
         messages.error(request, " ".join(exc.messages))
     else:
         messages.success(request, "Pedido atualizado com sucesso.")
+    if request.POST.get("origem_pdv") == "1":
+        return redirect(f"{reverse('pdv:pdv')}?delivery={pedido.pk}")
     return redirect("marketplace:detalhe", pk=pk)
 
 
@@ -198,7 +276,7 @@ def _prontidao_integracao_marketplace(integracao, alertas, politica_entrega):
     recomendacoes = []
     adaptador = diagnosticar_adaptador_marketplace(integracao.provedor)
     if not adaptador["carregavel"]:
-        bloqueios.append(adaptador["erro"] or "Adaptador do parceiro indisponivel.")
+        bloqueios.append(adaptador["erro"] or "Adaptador do parceiro indisponível.")
     if not integracao.is_active:
         bloqueios.append("Integração inativa.")
     if not politica_entrega.get("ativa") and not politica_entrega.get("permite_retirada"):
@@ -251,9 +329,9 @@ def _diagnostico_integracoes_marketplace(user=None):
         alerta_integracao = []
         diagnostico_adaptador = diagnosticar_adaptador_marketplace(integracao.provedor)
         if not diagnostico_adaptador["carregavel"]:
-            alerta_integracao.append(diagnostico_adaptador["erro"] or "Adaptador do parceiro indisponivel.")
+            alerta_integracao.append(diagnostico_adaptador["erro"] or "Adaptador do parceiro indisponível.")
         if not integracao.is_active:
-            alerta_integracao.append("Integracao inativa.")
+            alerta_integracao.append("Integração inativa.")
         if not integracao.ultimo_uso_em:
             alerta_integracao.append("Chave nunca usada por parceiro externo.")
         if integracao.pagamentos_pendentes:
@@ -321,7 +399,7 @@ def nova_integracao(request):
         integracao.token_hash = "temporario"
         integracao.save()
         request.session["marketplace_novo_token"] = gerar_token_integracao(integracao)
-        messages.success(request, "Integracao criada. Guarde a chave exibida, pois ela nao sera mostrada novamente.")
+        messages.success(request, "Integração criada. Guarde a chave exibida, pois ela não será mostrada novamente.")
         return redirect("marketplace:integracoes")
     return render(request, "marketplace/integracao_form.html", {"form": form})
 
@@ -360,22 +438,22 @@ def _politicas_entrega_diagnostico(user=None):
         faixas = list(politica.faixas.all())
         alertas = []
         if not politica.is_active:
-            alertas.append("Politica inativa.")
+            alertas.append("Política inativa.")
         if not faixas:
             alertas.append("Nenhuma faixa de taxa cadastrada.")
         if faixas and faixas[0].distancia_inicial_km > 0:
-            alertas.append("A primeira faixa nao comeca em 0 km.")
+            alertas.append("A primeira faixa não comeca em 0 km.")
         for anterior, atual in zip(faixas, faixas[1:]):
             if atual.distancia_inicial_km > anterior.distancia_final_km:
-                alertas.append("Existem lacunas entre as faixas de distancia.")
+                alertas.append("Existem lacunas entre as faixas de distância.")
                 break
             if atual.distancia_inicial_km < anterior.distancia_final_km:
-                alertas.append("Existem faixas de distancia sobrepostas.")
+                alertas.append("Existem faixas de distância sobrepostas.")
                 break
         if faixas and faixas[-1].distancia_final_km < politica.raio_maximo_km:
-            alertas.append("A ultima faixa nao cobre todo o raio maximo.")
+            alertas.append("A ultima faixa não cobre todo o raio máximo.")
         if politica.valor_minimo_pedido <= 0:
-            alertas.append("Pedido minimo zerado.")
+            alertas.append("Pedido mínimo zerado.")
         resumo["politicas"] += 1
         resumo["ativas"] += 1 if politica.is_active else 0
         resumo["sem_faixas"] += 1 if not faixas else 0
@@ -414,19 +492,19 @@ def _politicas_entrega_diagnostico(user=None):
     if not itens:
         prontidao_status = "no_policy_configured"
         prontidao_percentual = 25
-        recomendacoes = ["Cadastre ao menos uma politica de entrega por filial que realiza entregas."]
+        recomendacoes = ["Cadastre ao menos uma política de entrega por filial que realiza entregas."]
     elif resumo["com_alerta"]:
         prontidao_status = "configuration_required"
         prontidao_percentual = 65
-        recomendacoes = ["Corrija os alertas de faixa, raio e pedido minimo antes de liberar pedidos para entrega."]
+        recomendacoes = ["Corrija os alertas de faixa, raio e pedido mínimo antes de liberar pedidos para entrega."]
     elif not provider_configurado:
         prontidao_status = "ready_with_manual_distance"
         prontidao_percentual = 85
-        recomendacoes = ["Escolha e homologue um provedor de mapa/rota; o calculo manual permanece disponivel."]
+        recomendacoes = ["Escolha e homologue um provedor de mapa/rota; o calculo manual permanece disponível."]
     else:
         prontidao_status = "ready_for_provider_homologation"
         prontidao_percentual = 92
-        recomendacoes = ["Homologue rotas, timeout e indisponibilidade do provedor com enderecos reais das filiais."]
+        recomendacoes = ["Homologue rotas, timeout e indisponibilidade do provedor com endereços reais das filiais."]
     return {
         "resumo": resumo,
         "prontidao": {
@@ -492,14 +570,14 @@ def _politica_entrega_parceiro_payload(filial):
                 "geocoding": geocoding_configurado,
                 "timeout_segundos": getattr(settings, "MARKETPLACE_GEOCODING_TIMEOUT_SEGUNDOS", 5),
             },
-            "alertas": ["Filial sem politica de entrega ativa. Envie pedidos como retirada ou configure a politica."],
+            "alertas": ["Filial sem política de entrega ativa. Envie pedidos como retirada ou configure a política."],
         }
     faixas = list(politica.faixas.all())
     alertas = []
     if not faixas:
         alertas.append("Nenhuma faixa de taxa cadastrada.")
     if faixas and faixas[-1].distancia_final_km < politica.raio_maximo_km:
-        alertas.append("A ultima faixa nao cobre todo o raio maximo.")
+        alertas.append("A ultima faixa não cobre todo o raio máximo.")
     bairros_atendidos = bool(str(politica.bairros_atendidos or "").strip())
     bairros_bloqueados = bool(str(politica.bairros_bloqueados or "").strip())
     return {
@@ -533,7 +611,7 @@ def _politica_entrega_parceiro_payload(filial):
 def _consultar_distancia_entrega(*, politica, endereco):
     provider_url = getattr(settings, "MARKETPLACE_GEOCODING_PROVIDER_URL", "")
     if not provider_url:
-        return {"status": "manual_required", "mensagem": "Geocodificacao nao configurada. Informe a distancia manualmente."}
+        return {"status": "manual_required", "mensagem": "Geocodificação não configurada. Informe a distância manualmente."}
     url = _montar_url_geocoding(provider_url, politica=politica, endereco=endereco)
     timeout = getattr(settings, "MARKETPLACE_GEOCODING_TIMEOUT_SEGUNDOS", 5)
     requisicao = Request(url, headers={"Accept": "application/json", "User-Agent": "DeigoVarejoERP/delivery_geocode_v1"})
@@ -547,15 +625,15 @@ def _consultar_distancia_entrega(*, politica, endereco):
             if close:
                 close()
     except HTTPError as exc:
-        return {"status": "provider_error", "mensagem": f"Provedor de geocodificacao respondeu HTTP {exc.code}."}
+        return {"status": "provider_error", "mensagem": f"Provedor de geocodificação respondeu HTTP {exc.code}."}
     except (URLError, TimeoutError, OSError) as exc:
-        return {"status": "provider_error", "mensagem": f"Falha ao consultar geocodificacao: {exc}."}
+        return {"status": "provider_error", "mensagem": f"Falha ao consultar geocodificação: {exc}."}
     try:
         dados = json.loads(conteudo)
     except json.JSONDecodeError:
-        return {"status": "provider_error", "mensagem": "Provedor de geocodificacao retornou resposta que nao e JSON."}
+        return {"status": "provider_error", "mensagem": "Provedor de geocodificação retornou resposta que não é JSON."}
     if status_code >= 400 or not isinstance(dados, dict):
-        return {"status": "provider_error", "mensagem": "Provedor de geocodificacao retornou formato inesperado."}
+        return {"status": "provider_error", "mensagem": "Provedor de geocodificação retornou formato inesperado."}
     distancia = (
         _decimal_geocoding(dados.get("distancia_km"))
         or _decimal_geocoding(dados.get("distance_km"))
@@ -563,7 +641,7 @@ def _consultar_distancia_entrega(*, politica, endereco):
         or _decimal_geocoding(dados.get("distance"))
     )
     if distancia is None:
-        return {"status": "provider_error", "mensagem": "Provedor de geocodificacao nao retornou distancia_km."}
+        return {"status": "provider_error", "mensagem": "Provedor de geocodificação não retornou distancia_km."}
     return {"status": "ok", "distancia_km": distancia, "provider_payload": dados}
 
 
@@ -576,14 +654,14 @@ def _simular_politica_entrega(request):
         bairro = request.GET.get("bairro", "").strip()
         endereco = request.GET.get("endereco", "").strip()
     except (TypeError, ValueError, InvalidOperation):
-        return {"erro": "Informe politica, subtotal e distancia validos."}
+        return {"erro": "Informe política, subtotal e distância válidos."}
     politica = politicas_para_usuario(request.user).filter(pk=politica_id, is_active=True).prefetch_related("faixas").first()
     if not politica:
-        return {"erro": "Politica ativa nao encontrada."}
+        return {"erro": "Política ativa não encontrada."}
     geocodificacao = None
     if distancia is None:
         if not endereco:
-            return {"erro": "Informe a distancia ou o endereco para calcular a entrega."}
+            return {"erro": "Informe a distância ou o endereço para calcular a entrega."}
         geocodificacao = _consultar_distancia_entrega(politica=politica, endereco=endereco)
         if geocodificacao["status"] != "ok":
             return {"erro": geocodificacao["mensagem"], "politica": politica, "subtotal": subtotal, "bairro": bairro, "endereco": endereco, "geocodificacao": geocodificacao}
@@ -626,7 +704,7 @@ def politica_entrega_form(request, pk=None):
                 faixa.save()
             for removida in formset.deleted_objects:
                 removida.delete()
-        messages.success(request, "Politica de entrega salva com sucesso.")
+        messages.success(request, "Política de entrega salva com sucesso.")
         return redirect("marketplace:politicas_entrega")
     return render(request, "marketplace/politica_entrega_form.html", {"form": form, "formset": formset, "politica": politica})
 
@@ -644,10 +722,10 @@ def _autenticar_integracao(request):
 @csrf_exempt
 def api_status_integracao(request):
     if request.method != "GET":
-        return JsonResponse({"erro": "Metodo nao permitido."}, status=405)
+        return JsonResponse({"erro": "Método não permitido."}, status=405)
     integracao = _autenticar_integracao(request)
     if not integracao:
-        return JsonResponse({"erro": "Chave de integracao invalida."}, status=401)
+        return JsonResponse({"erro": "Chave de integração inválida."}, status=401)
     pedidos = integracao.pedidos.all()
     pagamentos_pendentes = pedidos.filter(
         status_pagamento=StatusPagamentoPedido.PENDENTE
@@ -702,16 +780,16 @@ def api_status_integracao(request):
 @csrf_exempt
 def api_receber_pedido(request):
     if request.method != "POST":
-        return JsonResponse({"erro": "Metodo nao permitido."}, status=405)
+        return JsonResponse({"erro": "Método não permitido."}, status=405)
     integracao = _autenticar_integracao(request)
     if not integracao:
-        return JsonResponse({"erro": "Chave de integracao invalida."}, status=401)
+        return JsonResponse({"erro": "Chave de integração inválida."}, status=401)
     if len(request.body) > 1024 * 1024:
         return JsonResponse({"erro": "Conteudo excede o limite de 1 MB."}, status=413)
     try:
         payload_recebido = json.loads(request.body)
     except json.JSONDecodeError:
-        return JsonResponse({"erro": "JSON invalido ou campos obrigatorios ausentes."}, status=400)
+        return JsonResponse({"erro": "JSON inválido ou campos obrigatorios ausentes."}, status=400)
     try:
         dados = normalizar_payload_marketplace(integracao, payload_recebido)
     except ImproperlyConfigured as exc:
@@ -744,6 +822,7 @@ def api_receber_pedido(request):
                 canal=CanalPedido.MARKETPLACE,
                 tipo_entrega=tipo_entrega,
                 endereco_entrega=str(dados.get("endereco_entrega", "")),
+                bairro_entrega=str(dados.get("bairro_entrega", "")).strip(),
                 referencia_externa=referencia,
                 taxa_entrega=taxa_entrega,
                 desconto=desconto,
@@ -765,8 +844,8 @@ def api_receber_pedido(request):
             integracao.ultimo_uso_em = timezone.now()
             integracao.save(update_fields=["ultimo_uso_em"])
     except Produto.DoesNotExist:
-        return JsonResponse({"erro": "Produto inexistente ou indisponivel para marketplace."}, status=400)
+        return JsonResponse({"erro": "Produto inexistente ou indisponível para marketplace."}, status=400)
     except (KeyError, TypeError, InvalidOperation, ValidationError) as exc:
-        mensagem = " ".join(exc.messages) if isinstance(exc, ValidationError) else "Item do pedido invalido."
+        mensagem = " ".join(exc.messages) if isinstance(exc, ValidationError) else "Item do pedido inválido."
         return JsonResponse({"erro": mensagem}, status=400)
     return JsonResponse({"pedido_id": pedido.pk, "status": pedido.status, "duplicado": False}, status=201)

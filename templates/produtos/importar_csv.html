@@ -6,7 +6,7 @@
 <header class="page-header">
   <div>
     <h1>Importar produtos</h1>
-    <p>Envie um CSV para criar ou atualizar produtos pelo codigo de barras.</p>
+    <p>Envie um CSV para criar ou atualizar produtos pelo código de barras.</p>
   </div>
   <a class="secondary-button" href="{% url 'produtos:lista' %}">Voltar</a>
 </header>
@@ -25,11 +25,16 @@
   </form>
 
   <div class="panel">
-    <div class="panel-title">Modelo de CSV</div>
+    <div class="panel-title">Modelo comercial</div>
     <div class="code-sample">
       <code>codigo_barras;nome;categoria;marca;unidade;preco_custo;preco_venda;estoque_minimo;produto_pesavel</code>
       <code>789100000001;ARROZ TIPO 1 5KG;Mercearia;Marca propria;UN;18,90;24,90;5;nao</code>
-      <code>789100000002;BANANA PRATA KG;Hortifruti;Fornecedor local;KG;3,20;5,99;10;sim</code>
+    </div>
+    <div class="panel-title">Atualização fiscal em lote</div>
+    <p>O arquivo exportado pela Central Fiscal vem marcado como fiscal: ele altera somente os tributos de produtos existentes e preserva nome, categoria, preço e demais dados comerciais.</p>
+    <div class="code-sample">
+      <code>codigo_barras;nome;categoria;preco_venda;ncm;cest;origem_mercadoria;cst_icms;csosn;aliquota_icms;reducao_base_icms;aliquota_fcp;codigo_beneficio_fiscal;cst_pis;aliquota_pis;cst_cofins;aliquota_cofins;cst_ipi;codigo_enquadramento_ipi;aliquota_ipi;cst_ibs_cbs;classificacao_tributaria_ibs_cbs;_modo_importacao</code>
+      <code>789100000001;ARROZ TIPO 1 5KG;Mercearia;24,90;10063021;;0;00;;18;;;;01;1,65;01;7,60;;;;;;fiscal</code>
     </div>
   </div>
 </section>
@@ -40,6 +45,7 @@
     <div class="summary-list">
       <dt>Criados</dt><dd>{{ resultado.criados }}</dd>
       <dt>Atualizados</dt><dd>{{ resultado.atualizados }}</dd>
+      <dt>Somente fiscal</dt><dd>{{ resultado.fiscais_atualizados }}</dd>
       <dt>Ignorados</dt><dd>{{ resultado.ignorados }}</dd>
     </div>
     {% if resultado.erros %}

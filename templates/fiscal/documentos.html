@@ -12,6 +12,7 @@
     <a class="secondary-button" href="{% url 'fiscal:diagnostico_json' %}"><i class="fa-solid fa-code"></i> Diagnóstico JSON</a>
     <a class="secondary-button" href="{% url 'fiscal:contingencia_json' %}"><i class="fa-solid fa-file-export"></i> Contingência JSON</a>
     <a class="secondary-button" href="{% url 'fiscal:produtos_fiscais' %}"><i class="fa-solid fa-boxes-stacked"></i> Produtos fiscais</a>
+    <a class="secondary-button" href="{% url 'fiscal:inutilizacoes' %}"><i class="fa-solid fa-ban"></i> Inutilizar numeração</a>
     <a class="secondary-button" href="{% url 'fiscal:configuracao_nova' %}"><i class="fa-solid fa-gear"></i> Configuração</a>
     <a class="secondary-button" href="{% url 'fiscal:serie_nova' %}"><i class="fa-solid fa-hashtag"></i> Série</a>
     <a class="primary-button" href="{% url 'fiscal:natureza_nova' %}"><i class="fa-solid fa-plus"></i> Natureza</a>
@@ -49,7 +50,7 @@
   <i class="fa-solid fa-arrows-rotate"></i>
   <div>
     <strong>Fila automática: {% if diagnostico.fila_transmissao.habilitada %}ativa{% else %}desativada{% endif %} · contrato {{ diagnostico.fila_transmissao.contrato }}.</strong>
-    <span>{{ diagnostico.fila_transmissao.elegiveis_producao }} elegível(is) em produção, {{ diagnostico.fila_transmissao.reservados }} reservado(s) e {{ diagnostico.fila_transmissao.tentativas_esgotadas }} com tentativas esgotadas. Limite: {{ diagnostico.fila_transmissao.max_tentativas }} tentativa(s).</span>
+    <span>{{ diagnostico.fila_transmissao.elegiveis_producao }} elegível(is) em produção, {{ diagnostico.fila_transmissao.aguardando_consulta_sefaz }} aguardando consulta SEFAZ, {{ diagnostico.fila_transmissao.consultas_esgotadas }} com reconciliação esgotada, {{ diagnostico.fila_transmissao.reservados }} reservado(s) e {{ diagnostico.fila_transmissao.tentativas_esgotadas }} com transmissões esgotadas. Limites: {{ diagnostico.fila_transmissao.max_tentativas }} transmissão(ões) e {{ diagnostico.fila_transmissao.max_consultas }} consulta(s).</span>
   </div>
 </section>
 
@@ -98,7 +99,7 @@
       {% for valor, rotulo in status_choices %}<option value="{{ valor }}" {% if valor == status %}selected{% endif %}>{{ rotulo }}</option>{% endfor %}
     </select>
   </label>
-  <label><span>Numero</span><input type="search" name="q" value="{{ q }}" placeholder="Numero fiscal"></label>
+  <label><span>Número</span><input type="search" name="q" value="{{ q }}" placeholder="Número fiscal"></label>
   <button type="submit">Filtrar</button>
 </form>
 
@@ -113,7 +114,7 @@
           <th>Filial</th>
           <th>Cliente</th>
           <th>Total</th>
-          <th>Situacao fiscal</th>
+          <th>Situação fiscal</th>
           <th></th>
         </tr>
       </thead>
@@ -134,7 +135,7 @@
                   <ul>{% for pendencia in venda.pendencias_fiscais %}<li>{{ pendencia }}</li>{% endfor %}</ul>
                 </details>
                 {% if venda.ultima_tentativa_fiscal %}
-                  <small class="muted">Tentativa automatica em {{ venda.ultima_tentativa_fiscal.criado_em|date:"d/m/Y H:i" }}.</small>
+                  <small class="muted">Tentativa automática em {{ venda.ultima_tentativa_fiscal.criado_em|date:"d/m/Y H:i" }}.</small>
                 {% endif %}
               {% endif %}
             </td>
@@ -161,7 +162,7 @@
         <tr>
           <th>Data</th>
           <th>Tipo</th>
-          <th>Série/numero</th>
+          <th>Série/número</th>
           <th>Venda</th>
           <th>Status</th>
           <th>Total</th>
@@ -175,7 +176,7 @@
             <td>{{ documento.get_tipo_documento_display }}<br><small>{{ documento.get_ambiente_display }}</small></td>
             <td><strong>{{ documento.serie }}/{{ documento.numero|default:"-" }}</strong></td>
             <td>{% if documento.venda %}Venda {{ documento.venda_id }}{% elif documento.pedido_online %}Pedido online {{ documento.pedido_online_id }}{% else %}-{% endif %}</td>
-            <td><span class="status {% if documento.status == 'EMITIDO' %}status-success{% elif documento.status == 'CONTINGENCIA' %}status-warning{% elif documento.status == 'REJEITADO' or documento.status == 'CANCELADO' %}status-danger{% endif %}">{{ documento.get_status_display }}</span></td>
+            <td><span class="status {% if documento.status == 'EMITIDO' %}status-success{% elif documento.status == 'CONTINGENCIA' %}status-warning{% elif documento.status == 'REJEITADO' or documento.status == 'CANCELADO' or documento.status == 'DENEGADO' %}status-danger{% endif %}">{{ documento.get_status_display }}</span></td>
             <td>R$ {{ documento.valor_total|floatformat:2 }}</td>
             <td class="row-actions">
               <a class="secondary-button" href="{% url 'fiscal:detalhe' documento.pk %}">Ver</a>
@@ -185,7 +186,7 @@
                 {% if documento.status == "PRONTO" or documento.status == "CONTINGENCIA" %}
                   <form method="post" action="{% url 'fiscal:transmitir_simulado' documento.pk %}" class="inline-form form-confirm" data-msg="Transmitir em homologacao simulada?">
                     {% csrf_token %}
-                    <button class="primary-button" type="submit">Transmitir homologacao</button>
+                    <button class="primary-button" type="submit">Transmitir homologação</button>
                   </form>
                 {% endif %}
               {% endif %}
@@ -219,7 +220,7 @@
               <td>{{ configuracao.get_ambiente_display }}</td>
               <td>
                 {% if configuracao.certificado_status == "valido" %}
-                  <span class="status status-success">Valido ate {{ configuracao.certificado_validade|date:"d/m/Y" }}</span>
+                  <span class="status status-success">Válido até {{ configuracao.certificado_validade|date:"d/m/Y" }}</span>
                 {% elif configuracao.certificado_status == "vence_em_breve" %}
                   <span class="status status-warning">Vence em {{ configuracao.certificado_dias_para_vencer }} dia{{ configuracao.certificado_dias_para_vencer|pluralize }}</span>
                 {% elif configuracao.certificado_status == "vencido" %}
@@ -227,13 +228,13 @@
                 {% elif configuracao.certificado_status == "sem_validade" %}
                   <span class="status status-warning">Sem validade lida</span>
                 {% else %}
-                  <span class="status status-danger">Nao enviado</span>
+                  <span class="status status-danger">Não enviado</span>
                 {% endif %}
               </td>
               <td><a class="secondary-button" href="{% url 'fiscal:configuracao_editar' configuracao.pk %}">Editar</a></td>
             </tr>
           {% empty %}
-            <tr><td colspan="4" class="empty">Nenhuma configuracao fiscal cadastrada.</td></tr>
+            <tr><td colspan="4" class="empty">Nenhuma configuração fiscal cadastrada.</td></tr>
           {% endfor %}
         </tbody>
       </table>
@@ -267,18 +268,31 @@
   <h2>Naturezas de operação</h2>
   <div class="table-wrapper">
     <table>
-      <thead><tr><th>Descricao</th><th>CFOP</th><th>Tipo</th><th>Estoque</th><th></th></tr></thead>
+      <thead><tr><th>Empresa</th><th>Descrição</th><th>CFOP</th><th>Tipo</th><th>Padrão</th><th>Estoque</th><th></th></tr></thead>
       <tbody>
         {% for natureza in naturezas %}
           <tr>
+            <td>{{ natureza.empresa.nome_fantasia }}</td>
             <td>{{ natureza.descricao }}</td>
             <td>{{ natureza.cfop|default:"-" }}</td>
             <td>{{ natureza.get_tipo_documento_display }}</td>
-            <td>{% if natureza.movimenta_estoque %}Sim{% else %}Nao{% endif %}</td>
+            <td>
+              {% if natureza.padrao %}
+                <span class="status-badge status-success">Padrão</span>
+              {% elif natureza.ativo %}
+                <form method="post" action="{% url 'fiscal:natureza_definir_padrao' natureza.pk %}" class="inline-form">
+                  {% csrf_token %}
+                  <button type="submit" class="secondary-button">Tornar padrão</button>
+                </form>
+              {% else %}
+                -
+              {% endif %}
+            </td>
+            <td>{% if natureza.movimenta_estoque %}Sim{% else %}Não{% endif %}</td>
             <td><a class="secondary-button" href="{% url 'fiscal:natureza_editar' natureza.pk %}">Editar</a></td>
           </tr>
         {% empty %}
-          <tr><td colspan="5" class="empty">Nenhuma natureza de operação cadastrada.</td></tr>
+          <tr><td colspan="7" class="empty">Nenhuma natureza de operação cadastrada.</td></tr>
         {% endfor %}
       </tbody>
     </table>

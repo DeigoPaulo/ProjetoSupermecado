@@ -33,9 +33,9 @@ class Command(BaseCommand):
         erros_licenca = sum(1 for item in licencas if item["status"] == "erro")
         self.stdout.write(
             self.style.SUCCESS(
-                "Sincronizacao completa: "
-                f"{saida['enviados']} enviado(s), {saida['erros']} erro(s) de saida; "
+                "Sincronização completa: "
+                f"{saida['enviados']} enviado(s), {saida['erros']} erro(s) de saída; "
                 f"{entrada['processados']} entrada(s) processada(s), {entrada['erros']} erro(s) de entrada; "
-                f"{renovadas} licenca(s) renovada(s), {erros_licenca} erro(s) de licenca."
+                f"{renovadas} licenca(s) renovada(s), {erros_licenca} erro(s) de licença."
             )
         )

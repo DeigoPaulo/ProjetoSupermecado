@@ -15,6 +15,7 @@ urlpatterns = [
     path("sincronizacao/diagnostico.json", views.sincronizacao_diagnostico, name="sincronizacao_diagnostico"),
     path("sincronizacao/vendas.csv", views.vendas_sincronizadas_csv, name="vendas_sincronizadas_csv"),
     path("sincronizacao/documentos-fiscais.csv", views.documentos_fiscais_sincronizados_csv, name="documentos_fiscais_sincronizados_csv"),
+    path("sincronizacao/lancamentos-financeiros.csv", views.lancamentos_financeiros_sincronizados_csv, name="lancamentos_financeiros_sincronizados_csv"),
     path("sincronizacao/eventos.csv", views.eventos_sincronizacao_csv, name="eventos_sincronizacao_csv"),
     path("sincronizacao/entrada.csv", views.eventos_entrada_sincronizacao_csv, name="eventos_entrada_sincronizacao_csv"),
     path("sincronizacao/vendas/<int:pk>/", views.venda_sincronizada_detalhe, name="venda_sincronizada_detalhe"),

@@ -5,7 +5,6 @@ import uuid
 from calendar import monthrange
 from datetime import date
 from decimal import Decimal
-from pathlib import Path
 
 from django.conf import settings
 from django.contrib import messages
@@ -42,6 +41,7 @@ from .models import (
 )
 from .services import (
     aplicar_autorizacao_emergencial,
+    diagnostico_prontidao_licenciamento,
     emitir_autorizacao_emergencial,
     emitir_concessao,
     gerar_cobranca_asaas,
@@ -57,38 +57,6 @@ def _exigir_super_admin(user):
     if not user.is_authenticated or not user.is_superuser:
         raise PermissionDenied
 
-
-def _licenciamento_readiness():
-    privada_pem = bool(str(settings.LICENCIAMENTO_CHAVE_PRIVADA_PEM or "").strip())
-    privada_arquivo = str(settings.LICENCIAMENTO_CHAVE_PRIVADA_ARQUIVO or "").strip()
-    privada_disponivel = privada_pem or bool(privada_arquivo and Path(privada_arquivo).is_file())
-    script = Path(settings.BASE_DIR) / "scripts" / "register_licensing_billing_task.ps1"
-    alertas = []
-    if not privada_disponivel:
-        alertas.append("Configure a chave privada Ed25519 somente no servidor central.")
-    if settings.LICENCIAMENTO_PERMITIR_ASSINATURA_COMPARTILHADA:
-        alertas.append("O fallback de assinatura compartilhada está ativo; desative-o em produção.")
-    if not settings.ASAAS_API_KEY:
-        alertas.append("Configure a credencial do Asaas para publicar as cobranças.")
-    if not settings.ASAAS_WEBHOOK_TOKEN:
-        alertas.append("Configure o token do webhook do Asaas.")
-    return {
-        "contrato": "licensing_readiness_v1",
-        "chave_privada_ed25519": privada_disponivel,
-        "fallback_assinatura_compartilhada": settings.LICENCIAMENTO_PERMITIR_ASSINATURA_COMPARTILHADA,
-        "asaas_configurado": bool(settings.ASAAS_API_KEY),
-        "asaas_sandbox": "sandbox" in settings.ASAAS_API_URL.lower(),
-        "webhook_configurado": bool(settings.ASAAS_WEBHOOK_TOKEN),
-        "script_agendamento_disponivel": script.is_file(),
-        "comando_agendamento": ".\\scripts\\register_licensing_billing_task.ps1 -Horario 06:00 -ExecutarSemLogin",
-        "pronto_homologacao": bool(
-            privada_disponivel
-            and settings.ASAAS_API_KEY
-            and settings.ASAAS_WEBHOOK_TOKEN
-            and script.is_file()
-        ),
-        "alertas": alertas,
-    }
 
 def _empresa_do_usuario(user):
     perfil = getattr(user, "perfil_supermercado", None)
@@ -156,7 +124,7 @@ def central_licencas(request):
             "autorizacoes_emergenciais": _pagina_nomeada(
                 request, autorizacoes_qs, "autorizacoes_page"
             ),
-            "readiness": _licenciamento_readiness(),
+            "readiness": diagnostico_prontidao_licenciamento(),
         },
     )
 
@@ -164,7 +132,7 @@ def central_licencas(request):
 @login_required
 def central_diagnostico(request):
     _exigir_super_admin(request.user)
-    return JsonResponse(_licenciamento_readiness())
+    return JsonResponse(diagnostico_prontidao_licenciamento())
 
 def _form_super_admin(request, form_class, titulo, sucesso, redirect_name="licenciamento:central"):
     _exigir_super_admin(request.user)

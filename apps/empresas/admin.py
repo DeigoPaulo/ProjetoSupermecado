@@ -1,6 +1,6 @@
 from django.contrib import admin
 
-from .models import DocumentoFiscalSincronizado, Empresa, EventoEntradaSincronizacao, EventoSincronizacao, Filial, VendaSincronizada
+from .models import DocumentoFiscalSincronizado, Empresa, EventoEntradaSincronizacao, EventoSincronizacao, Filial, LancamentoFinanceiroSincronizado, VendaSincronizada
 
 
 @admin.register(Empresa)
@@ -46,6 +46,14 @@ class DocumentoFiscalSincronizadoAdmin(admin.ModelAdmin):
     list_display = ("documento_externo_id", "empresa", "filial", "tipo_documento", "status", "valor_total", "emitido_em")
     list_filter = ("empresa", "filial", "tipo_documento", "status")
     search_fields = ("documento_externo_id", "venda_externa_id", "chave_acesso", "protocolo")
+    readonly_fields = ("evento", "payload", "recebido_em", "atualizado_em")
+
+
+@admin.register(LancamentoFinanceiroSincronizado)
+class LancamentoFinanceiroSincronizadoAdmin(admin.ModelAdmin):
+    list_display = ("lancamento_externo_id", "empresa", "filial", "data", "tipo", "origem", "valor")
+    list_filter = ("empresa", "filial", "tipo", "origem")
+    search_fields = ("lancamento_externo_id", "descricao", "conta_movimento", "centro_custo", "conta_contabil", "usuario")
     readonly_fields = ("evento", "payload", "recebido_em", "atualizado_em")
 
 # Register your models here.

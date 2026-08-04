@@ -6,18 +6,29 @@
 <header class="page-header">
   <div>
     <h1>{% if object %}Editar cliente{% else %}Novo cliente{% endif %}</h1>
-    <p>Dados basicos para identificar vendas e contatos.</p>
+    <p>Dados básicos para identificar vendas e contatos.</p>
   </div>
 </header>
 
 <form method="post" class="form-grid panel">
   {% csrf_token %}
+  {% if form.empresa.is_hidden %}
+    {{ form.empresa }}
+    {{ form.empresa.errors }}
+  {% endif %}
   <section class="form-section">
     <div class="form-section-header">
-      <h2>Identificacao</h2>
-      <p>Dados usados para localizar o cliente no PDV, historico e crediario futuro.</p>
+      <h2>Identificação</h2>
+      <p>Dados usados para localizar o cliente no PDV, histórico e crediário futuro.</p>
     </div>
     <div class="form-grid">
+      {% if not form.empresa.is_hidden %}
+      <div class="field span-2">
+        {{ form.empresa.label_tag }}
+        {{ form.empresa }}
+        {{ form.empresa.errors }}
+      </div>
+      {% endif %}
       <div class="field span-2">
         {{ form.nome.label_tag }}
         {{ form.nome }}
@@ -39,8 +50,8 @@
 
   <section class="form-section">
     <div class="form-section-header">
-      <h2>Contato e endereco</h2>
-      <p>Informacoes para entrega, atendimento e relacionamento com o supermercado.</p>
+      <h2>Contato e endereço</h2>
+      <p>Informações para entrega, atendimento e relacionamento com o supermercado.</p>
     </div>
     <div class="form-grid">
       <div class="field">
@@ -56,7 +67,7 @@
       <div class="field span-2">
         {{ form.endereco.label_tag }}
         {{ form.endereco }}
-        <span class="help-text">Em etapa futura este campo sera apoiado por busca de CEP.</span>
+        <span class="help-text">Em etapa futura este campo será apoiado por busca de CEP.</span>
         {{ form.endereco.errors }}
       </div>
     </div>

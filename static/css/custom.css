@@ -778,6 +778,26 @@ tr:last-child td {
   object-fit: cover;
 }
 
+.product-codes-editor h3 { margin: 0 0 12px; font-size: 15px; }
+.product-codes-grid { display: grid; gap: 10px; }
+.product-code-item {
+  display: grid;
+  grid-template-columns: minmax(180px, 2fr) minmax(130px, 1fr) minmax(160px, 1fr) auto auto;
+  gap: 10px;
+  align-items: end;
+  padding: 12px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: #f8fbff;
+}
+.product-code-item .toggle-field { min-height: 42px; white-space: nowrap; }
+.product-code-delete { color: #b42318; }
+@media (max-width: 1050px) {
+  .product-code-item { grid-template-columns: repeat(2, minmax(0, 1fr)); align-items: start; }
+}
+@media (max-width: 650px) {
+  .product-code-item { grid-template-columns: 1fr; }
+}
 .product-gallery-editor h3 { margin: 0 0 12px; font-size: 15px; }
 .product-gallery-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; }
 .product-gallery-item { display: grid; gap: 8px; align-content: start; padding: 12px; border: 1px solid var(--border); border-radius: 6px; background: #fff; }
@@ -893,6 +913,11 @@ tr:last-child td {
   padding: 18px;
 }
 
+
+.form-grid .form-field-full {
+  grid-column: 1 / -1;
+}
+
 .form-note {
   grid-column: 1 / -1;
   border: 1px solid var(--border);
@@ -937,6 +962,32 @@ tr:last-child td {
 .fiscal-config-status strong,
 .fiscal-config-status span {
   display: block;
+}
+
+.detail-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(230px, 1fr));
+  gap: 10px 18px;
+  padding: 16px;
+}
+
+.detail-grid > div {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  min-width: 0;
+}
+
+.detail-grid span {
+  color: var(--muted);
+  font-size: 13px;
+  flex: 0 0 auto;
+}
+
+.detail-grid strong {
+  color: var(--text);
+  min-width: 0;
+  overflow-wrap: anywhere;
 }
 
 .form-field {
@@ -1816,6 +1867,257 @@ input[type="checkbox"] {
   display: flex;
 }
 
+.pdv-delivery-question {
+  position: fixed;
+  z-index: 38;
+  inset: 0;
+  display: none;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  background: rgba(7, 18, 45, 0.36);
+}
+
+.pdv-delivery-question.is-open {
+  display: flex;
+}
+
+.pdv-delivery-question-dialog {
+  width: min(540px, 100%);
+  padding: 24px;
+  border: 1px solid #b8c8ef;
+  border-radius: 10px;
+  background: #ffffff;
+  box-shadow: 0 24px 80px rgba(0, 32, 96, 0.28);
+}
+
+.pdv-delivery-question-eyebrow {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  color: #0050e8;
+  font-size: 12px;
+  font-weight: 900;
+}
+
+.pdv-delivery-question h2 {
+  margin: 8px 0 6px;
+  color: #002060;
+  font-size: 21px;
+}
+
+.pdv-delivery-question p {
+  margin: 0;
+  color: #52627a;
+  line-height: 1.45;
+}
+
+.pdv-delivery-options {
+  display: grid;
+  gap: 10px;
+  margin: 20px 0;
+}
+
+.pdv-delivery-option {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-height: 66px;
+  padding: 12px 14px;
+  border: 1px solid #ccd9ef;
+  border-radius: 8px;
+  cursor: pointer;
+}
+
+.pdv-delivery-option:has(input:checked) {
+  border-color: #0050e8;
+  background: #edf4ff;
+  box-shadow: 0 0 0 2px rgba(0, 80, 232, 0.1);
+}
+
+.pdv-delivery-option input {
+  width: 19px;
+  height: 19px;
+  accent-color: #0050e8;
+}
+
+.pdv-delivery-option strong,
+.pdv-delivery-option small {
+  display: block;
+}
+
+.pdv-delivery-option strong {
+  color: #061b46;
+}
+
+.pdv-delivery-option small {
+  margin-top: 3px;
+  color: #61708a;
+}
+
+.pdv-delivery-question-actions {
+  margin: 0;
+}
+
+.pdv-delivery-cash-payment {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  margin: 0 14px 12px;
+  padding: 11px 12px;
+  border: 1px solid #a9dfc0;
+  border-radius: 8px;
+  background: #effbf4;
+  color: #08763d;
+}
+
+.pdv-delivery-cash-payment i {
+  margin-top: 2px;
+}
+
+.pdv-delivery-cash-payment strong,
+.pdv-delivery-cash-payment b,
+.pdv-delivery-cash-payment small {
+  display: block;
+}
+
+.pdv-delivery-cash-payment b {
+  margin-top: 2px;
+  font-size: 17px;
+}
+
+.pdv-delivery-cash-payment small {
+  margin-top: 3px;
+  color: #27694a;
+}
+
+.pdv-delivery-create-dialog {
+  grid-template-rows: auto minmax(0, 1fr);
+  width: min(720px, 100%);
+  height: min(720px, calc(100dvh - 24px));
+  max-height: calc(100dvh - 24px);
+}
+
+.pdv-delivery-create-form {
+  display: grid;
+  grid-template-rows: minmax(0, 1fr) auto;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.pdv-delivery-create-form .pdv-delivery-form {
+  min-height: 0;
+  padding: 10px 14px 8px;
+}
+
+.pdv-delivery-create-form .pdv-modal-empty {
+  padding: 6px 10px;
+}
+
+.pdv-delivery-create-form .pdv-delivery-cash-payment {
+  margin: 0 0 4px;
+  padding: 8px 10px;
+}
+
+.pdv-delivery-create-form .form-field {
+  gap: 3px;
+}
+
+.pdv-delivery-create-form input,
+.pdv-delivery-create-form select {
+  min-height: 34px;
+  padding-top: 6px;
+  padding-bottom: 6px;
+}
+
+.pdv-delivery-create-form textarea {
+  min-height: 48px;
+  max-height: 64px;
+}
+
+.pdv-delivery-client-field {
+  position: relative;
+}
+
+.pdv-delivery-client-results {
+  position: absolute;
+  z-index: 8;
+  top: calc(100% - 20px);
+  left: 0;
+  right: 0;
+  max-height: 190px;
+  overflow-y: auto;
+  border: 1px solid #9bbcf3;
+  border-radius: 6px;
+  background: #ffffff;
+  box-shadow: 0 10px 24px rgba(7, 42, 105, 0.18);
+}
+
+.pdv-delivery-client-option {
+  display: grid;
+  width: 100%;
+  gap: 2px;
+  padding: 9px 11px;
+  border: 0;
+  border-bottom: 1px solid #e0e8f5;
+  border-radius: 0;
+  background: #ffffff;
+  color: #0b2b63;
+  text-align: left;
+}
+
+.pdv-delivery-client-option:last-child {
+  border-bottom: 0;
+}
+
+.pdv-delivery-client-option.is-selected {
+  background: #eaf2ff;
+  outline: 2px solid #1262d8;
+  outline-offset: -2px;
+}
+
+.pdv-delivery-client-option small {
+  color: #5b6f91;
+}
+
+.pdv-delivery-save-client {
+  grid-template-columns: auto 1fr;
+  align-items: center;
+}
+
+.pdv-delivery-create-form .pdv-delivery-save-client input[type="checkbox"] {
+  min-height: 18px;
+  width: 18px;
+  margin: 0;
+}
+
+.pdv-delivery-save-client .form-help,
+.pdv-delivery-save-client .field-error {
+  grid-column: 1 / -1;
+}
+
+.pdv-delivery-create-form .pdv-modal-footer {
+  position: relative;
+  z-index: 1;
+  padding: 9px 14px;
+  background: #ffffff;
+}
+
+@media (max-height: 700px) {
+  .pdv-delivery-create-dialog {
+    height: calc(100dvh - 12px);
+    max-height: calc(100dvh - 12px);
+  }
+
+  .pdv-delivery-create-form .pdv-delivery-form {
+    gap: 5px;
+    padding-top: 7px;
+  }
+
+  .pdv-delivery-create-form .pdv-modal-empty {
+    padding: 3px 8px;
+  }
+}
 .pdv-modal {
   position: fixed;
   z-index: 34;
@@ -1841,6 +2143,122 @@ input[type="checkbox"] {
   border-radius: 10px;
   background: #ffffff;
   box-shadow: 0 24px 80px rgba(0, 32, 96, 0.24);
+}
+
+.pdv-delivery-dialog {
+  width: min(1040px, calc(100vw - 44px));
+  max-height: calc(100vh - 36px);
+}
+
+.pdv-delivery-detail-list {
+  display: block;
+  padding: 0;
+}
+
+.pdv-delivery-detail {
+  display: grid;
+  grid-template-rows: auto minmax(180px, 1fr) auto;
+  min-height: 0;
+}
+
+.pdv-delivery-summary {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px 24px;
+  padding: 16px 18px;
+  border-bottom: 1px solid #dbe6f5;
+}
+
+.pdv-delivery-summary > div {
+  display: flex;
+  gap: 6px;
+  min-width: 0;
+}
+
+.pdv-delivery-summary span,
+.pdv-delivery-separation-form label span,
+.pdv-delivery-payment-form label span {
+  color: #52627a;
+  font-size: .82rem;
+  font-weight: 800;
+  flex: 0 0 auto;
+}
+
+.pdv-delivery-summary strong {
+  color: #102a59;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.pdv-delivery-summary-wide { grid-column: 1 / -1; }
+
+.pdv-delivery-items-wrap {
+  overflow: auto;
+  padding: 0 18px;
+}
+
+.pdv-delivery-items {
+  width: 100%;
+  margin: 0;
+}
+
+.pdv-delivery-items th { background: #f5f8fd; }
+.pdv-delivery-items th:last-child,
+.pdv-delivery-items td:last-child { width: 150px; text-align: right; }
+
+.pdv-delivery-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: end;
+  gap: 10px;
+  padding: 14px 18px;
+  border-top: 1px solid #dbe6f5;
+}
+
+.pdv-delivery-actions form { margin: 0; }
+
+.pdv-delivery-payment-confirmed {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 42px;
+  padding: 0 12px;
+  border: 1px solid #a9dec0;
+  border-radius: 7px;
+  background: #effbf3;
+  color: #08763d;
+  font-weight: 800;
+}
+
+
+.pdv-delivery-separation-form,
+.pdv-delivery-payment-form {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(150px, 1fr)) auto;
+  align-items: end;
+  gap: 10px;
+  width: 100%;
+}
+
+.pdv-delivery-separation-form label,
+.pdv-delivery-payment-form label {
+  display: grid;
+  gap: 5px;
+  min-width: 0;
+}
+
+.pdv-delivery-separation-form input,
+.pdv-delivery-payment-form input,
+.pdv-delivery-payment-form select { min-width: 0; }
+
+@media (max-width: 720px) {
+  .pdv-delivery-dialog { width: min(100%, calc(100vw - 20px)); }
+  .pdv-delivery-summary { grid-template-columns: 1fr; }
+  .pdv-delivery-summary-wide { grid-column: auto; }
+  .pdv-delivery-separation-form,
+  .pdv-delivery-payment-form { grid-template-columns: 1fr; }
+  .pdv-delivery-actions form { width: 100%; }
+  .pdv-delivery-actions button { width: 100%; }
 }
 
 .pdv-refund-dialog {
@@ -2206,9 +2624,10 @@ input[type="checkbox"] {
 
 .pdv-shortcut-bar {
   display: grid;
-  grid-template-columns: repeat(7, minmax(0, 1fr));
+  grid-template-columns: repeat(8, minmax(0, 1fr));
   gap: 8px;
   min-height: 58px;
+  overflow: hidden;
   border-top: 1px solid var(--border);
   background: #ffffff;
   padding: 7px 14px;
@@ -2444,6 +2863,20 @@ button:disabled {
   font-weight: 800;
 }
 
+.field-with-icon-action {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 40px;
+  gap: 6px;
+  align-items: stretch;
+}
+
+.field-with-icon-action .icon-button {
+  width: 40px;
+  min-width: 40px;
+  height: 100%;
+  min-height: 38px;
+}
+
 .label-sheet {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
@@ -2490,7 +2923,7 @@ button:disabled {
 }
 
 .price-label-compacto .label-store,
-.price-label-compacto .label-code,
+.price-label-compacto .label-barcode,
 .price-label-compacto .label-meta {
   grid-column: 1;
 }
@@ -2525,9 +2958,26 @@ button:disabled {
 }
 
 .label-code {
+  display: block;
+  margin-top: 2px;
   color: var(--muted);
   font-family: Consolas, "Courier New", monospace;
   font-size: 11px;
+  line-height: 1;
+  text-align: center;
+}
+
+.label-barcode {
+  min-width: 0;
+  line-height: 1;
+}
+
+.label-barcode-svg {
+  display: block;
+  width: min(100%, 62mm);
+  height: 11mm;
+  max-height: 44px;
+  margin: 0 auto;
 }
 
 .label-price {
@@ -2593,9 +3043,18 @@ button:disabled {
     padding: 3mm 4mm;
   }
 
+  body:has(.labels-page) .price-label-compacto .label-store,
+  body:has(.labels-page) .price-label-compacto .label-meta {
+    display: none;
+  }
+
   body:has(.labels-page) .price-label-compacto .label-name {
-    min-height: 11mm;
+    min-height: 7mm;
     font-size: 13px;
+  }
+
+  body:has(.labels-page) .price-label-compacto .label-barcode-svg {
+    height: 9mm;
   }
 
   body:has(.labels-page) .price-label-compacto .label-price {
@@ -2771,7 +3230,7 @@ button:disabled {
 
 .project-overview {
   display: grid;
-  grid-template-columns: repeat(6, minmax(0, 1fr));
+  grid-template-columns: repeat(4, minmax(0, 1fr));
   border: 1px solid #d8e1ef;
   border-radius: 8px;
   background: #fff;
@@ -2869,6 +3328,9 @@ button:disabled {
 .roadmap-card-meta span { background: #e8eef8; color: #51617a; }
 .roadmap-card-meta b { background: #dceafe; color: #0b57d0; }
 .roadmap-card-meta em { background: #fff0ce; color: #8a5100; }
+.roadmap-card-meta .roadmap-dependency { border-radius: 999px; font-size: .68rem; font-style: normal; font-weight: 800; padding: 4px 7px; text-transform: uppercase; }
+.roadmap-dependency-interno { background: #dcfce7; color: #166534; }
+.roadmap-dependency-externo { background: #f1f5f9; color: #526175; }
 
 .checklist-item {
   display: grid;
@@ -3689,3 +4151,425 @@ button:disabled,
 .command-box code { white-space: nowrap; color: #17376d; }
 @media (max-width: 900px) { .readiness-grid { grid-template-columns: repeat(2, minmax(140px, 1fr)); } }
 @media (max-width: 560px) { .readiness-grid { grid-template-columns: 1fr; } }
+.product-optional-section {
+  padding: 0;
+  overflow: visible;
+}
+
+.product-optional-section > summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 16px 18px;
+  cursor: pointer;
+  list-style: none;
+}
+
+.product-optional-section > summary::-webkit-details-marker {
+  display: none;
+}
+
+.product-optional-section > summary span {
+  display: grid;
+  gap: 3px;
+}
+
+.product-optional-section > summary strong {
+  font-size: 18px;
+  color: #0b2b63;
+}
+
+.product-optional-section > summary small {
+  color: #5b6f91;
+}
+
+.product-optional-section[open] > summary {
+  border-bottom: 1px solid #dbe5f3;
+}
+
+.product-optional-section[open] > summary i {
+  transform: rotate(180deg);
+}
+
+.product-optional-content {
+  padding: 18px;
+}
+
+.product-nutrition-grid {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(150px, 1fr));
+  gap: 12px;
+}
+
+@media (max-width: 1100px) {
+  .product-nutrition-grid {
+    grid-template-columns: repeat(2, minmax(150px, 1fr));
+  }
+}
+
+.supervisor-credential-block {
+  grid-column: 1 / -1;
+  display: grid;
+  gap: 8px;
+  padding: 10px;
+  border: 1px solid #bfd0e8;
+  background: #f7faff;
+}
+
+.supervisor-credential-heading,
+.supervisor-credential-heading > span {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.supervisor-credential-heading > span {
+  align-items: flex-start;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.supervisor-credential-heading small {
+  color: #5f6f86;
+}
+
+.supervisor-credential-fields {
+  display: grid;
+  grid-template-columns: auto minmax(180px, 1fr) minmax(140px, 0.55fr);
+  gap: 8px;
+}
+
+.supervisor-credential-block.has-credential {
+  border-color: #2f9e61;
+  background: #f0fbf5;
+}
+
+.credential-read-field input {
+  min-height: 46px;
+  font-size: 18px;
+}
+
+.table-subline {
+  display: block;
+  margin-top: 3px;
+  color: #607089;
+}
+
+@media (max-width: 760px) {
+  .supervisor-credential-fields {
+    grid-template-columns: 1fr;
+  }
+}
+/* PDV: modal de estorno com lista e comandos independentes. */
+.pdv-refund-dialog {
+  grid-template-rows: auto minmax(0, 1fr);
+  width: min(1020px, calc(100vw - 32px));
+  max-height: calc(100vh - 32px);
+}
+
+.pdv-refund-dialog .pdv-modal-header > div {
+  display: grid;
+  gap: 2px;
+}
+
+.pdv-refund-dialog .pdv-modal-header > div > span {
+  color: #607089;
+  font-size: .76rem;
+}
+
+.pdv-refund-workspace {
+  display: grid;
+  grid-template-columns: minmax(0, 1.15fr) minmax(360px, .85fr);
+  min-height: 0;
+  overflow: hidden;
+  background: #fff;
+}
+
+.pdv-refund-browser {
+  display: grid;
+  grid-template-rows: auto auto minmax(0, 1fr) auto;
+  min-width: 0;
+  min-height: 0;
+  padding: 16px;
+}
+
+.pdv-refund-browser .operation-notice {
+  margin: 0 0 12px;
+}
+
+.pdv-refund-search {
+  display: grid;
+  gap: 5px;
+  margin-bottom: 10px;
+  color: #263b60;
+  font-size: .78rem;
+  font-weight: 800;
+}
+
+.pdv-refund-search .pdv-modal-search {
+  width: 100%;
+  margin: 0;
+  border: 1px solid #cbd7ea;
+  border-radius: 7px;
+  padding: 10px 12px;
+}
+
+.pdv-refund-list {
+  align-content: start;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 1px 5px 1px 1px;
+}
+
+.pdv-refund-card {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 12px;
+  min-height: 58px;
+  border: 1px solid #d6e0ef;
+  border-radius: 7px;
+  padding: 10px 12px;
+}
+
+.pdv-refund-card + .pdv-refund-card {
+  margin-top: 7px;
+}
+
+.pdv-refund-card > b {
+  color: #003c9e;
+  font-size: .9rem;
+  white-space: nowrap;
+}
+
+.pdv-refund-summary {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+}
+
+.pdv-refund-summary strong {
+  color: #08285f;
+  font-size: .9rem;
+}
+
+.pdv-refund-summary small {
+  overflow: hidden;
+  color: #66758c;
+  font-size: .74rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.pdv-refund-browser .pdv-modal-pagination {
+  margin: 12px -16px -16px;
+}
+
+.pdv-refund-command-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  min-width: 0;
+  min-height: 0;
+  overflow-y: auto;
+  border-top: 0;
+  border-left: 1px solid #dbe6f5;
+  background: #f7faff;
+  padding: 18px;
+}
+
+.pdv-refund-selected {
+  gap: 5px;
+  border-bottom: 1px solid #dbe6f5;
+  padding-bottom: 13px;
+}
+
+.pdv-refund-selected span {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+}
+
+.pdv-refund-selected strong {
+  font-size: 1.05rem;
+}
+
+.pdv-refund-details {
+  border-top: 0;
+  padding-top: 0;
+}
+
+.pdv-refund-details summary {
+  width: 100%;
+  min-height: 42px;
+}
+
+.pdv-refund-details[open] summary {
+  border-color: #ef4444;
+  background: #fff1f1;
+}
+
+.pdv-refund-warning {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 10px;
+  border-left: 3px solid #e19a24;
+  background: #fff8e7;
+  color: #6d4c0d;
+  font-size: .76rem;
+  padding: 9px 10px;
+}
+
+.pdv-refund-form {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  align-items: end;
+  gap: 10px;
+  margin-top: 10px;
+}
+
+.pdv-refund-form .form-field {
+  gap: 5px;
+}
+
+.pdv-refund-form .form-field > span {
+  color: #344967;
+  font-size: .73rem;
+  font-weight: 800;
+}
+
+.pdv-refund-form .pdv-refund-reason,
+.pdv-refund-form .supervisor-credential-block,
+.pdv-refund-confirm {
+  grid-column: 1 / -1;
+}
+
+.pdv-refund-form input {
+  width: 100%;
+  min-height: 38px;
+  font-size: .8rem;
+}
+
+.pdv-refund-form .supervisor-credential-block {
+  gap: 7px;
+  border-radius: 7px;
+  padding: 10px;
+}
+
+.pdv-refund-form .supervisor-credential-heading small {
+  line-height: 1.3;
+}
+
+.pdv-refund-form .supervisor-credential-fields {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.pdv-refund-form .supervisor-credential-fields [data-supervisor-card-focus] {
+  grid-column: 1 / -1;
+  justify-content: center;
+}
+
+.pdv-refund-confirm {
+  justify-content: center;
+  min-height: 42px;
+}
+
+.pdv-refund-command-empty {
+  align-items: center;
+  justify-content: center;
+  color: #687892;
+  text-align: center;
+}
+
+.pdv-refund-command-empty > i {
+  color: #9babc1;
+  font-size: 2rem;
+}
+
+@media (max-width: 900px) {
+  .pdv-refund-dialog {
+    width: min(720px, calc(100vw - 24px));
+  }
+
+  .pdv-refund-workspace {
+    grid-template-columns: 1fr;
+    overflow-y: auto;
+  }
+
+  .pdv-refund-browser {
+    min-height: 390px;
+  }
+
+  .pdv-refund-command-panel {
+    overflow: visible;
+    border-top: 1px solid #dbe6f5;
+    border-left: 0;
+  }
+}
+
+@media (max-height: 720px) and (min-width: 901px) {
+  .pdv-refund-browser,
+  .pdv-refund-command-panel {
+    padding: 12px;
+  }
+
+  .pdv-refund-browser .operation-notice {
+    padding: 9px 11px;
+  }
+
+  .pdv-refund-browser .pdv-modal-pagination {
+    margin: 10px -12px -12px;
+  }
+
+  .pdv-refund-command-panel {
+    gap: 10px;
+  }
+}
+
+
+.checkbox-grid > div {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.checkbox-grid > div > div {
+  min-width: 0;
+}
+
+.checkbox-grid label {
+  display: flex;
+  align-items: flex-start;
+  gap: 9px;
+  min-height: 44px;
+  padding: 10px 12px;
+  border: 1px solid #d6e0ef;
+  border-radius: 6px;
+  background: #f8fbff;
+  color: #102a56;
+  line-height: 1.35;
+  cursor: pointer;
+}
+
+.checkbox-grid input[type="checkbox"] {
+  flex: 0 0 auto;
+  width: 17px;
+  height: 17px;
+  margin: 1px 0 0;
+  accent-color: #0b57d0;
+}
+
+.checkbox-grid label:has(input:checked) {
+  border-color: #7aa7eb;
+  background: #edf5ff;
+}
+
+@media (max-width: 760px) {
+  .checkbox-grid > div {
+    grid-template-columns: 1fr;
+  }
+}

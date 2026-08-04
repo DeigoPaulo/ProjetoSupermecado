@@ -6,10 +6,10 @@ param(
 $ErrorActionPreference = "Stop"
 
 $Root = Split-Path -Parent $MyInvocation.MyCommand.Path
-$Venv = Join-Path $Root ".venv-build"
+$Venv = Join-Path $Root ".build-venv"
 $Python = Join-Path $Venv "Scripts\python.exe"
 $Output = Join-Path $Root "dist\DeigoPDV.exe"
-$Icon = Join-Path $Root "assets\deigo-pdv.ico"
+$Spec = Join-Path $Root "DeigoPDV.spec"
 
 function Assert-LastExitCode {
     param([string]$Step)
@@ -34,21 +34,16 @@ if ($RecreateVenv) {
     Assert-LastExitCode "Criacao do ambiente de build"
 }
 
-& $Python -m pip install --upgrade pip
-Assert-LastExitCode "Atualizacao do pip"
+& $Python -m pip --version
+Assert-LastExitCode "Validacao do pip"
 & $Python -m pip install -r (Join-Path $Root "requirements-build.txt")
 Assert-LastExitCode "Instalacao das dependencias de build"
 & $Python -m PyInstaller `
     --noconfirm `
     --clean `
-    --onefile `
-    --windowed `
-    --icon $Icon `
-    --add-data "$Icon;assets" `
-    --name "DeigoPDV" `
     --distpath (Join-Path $Root "dist") `
     --workpath (Join-Path $Root "build") `
-    (Join-Path $Root "app.py")
+    $Spec
 Assert-LastExitCode "Geracao do executavel"
 
 if (-not (Test-Path -LiteralPath $Output -PathType Leaf)) {

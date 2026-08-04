@@ -1,6 +1,6 @@
 {% extends "base.html" %}
 
-{% block title %}Sugestao de Reposicao{% endblock %}
+{% block title %}Sugestao de Reposição{% endblock %}
 
 {% block content %}
 <header class="page-header">
@@ -46,7 +46,7 @@
   <article class="metric"><span>Produtos sugeridos</span><strong>{{ total_produtos }}</strong></article>
   <article class="metric"><span>Quantidade sugerida</span><strong>{{ quantidade_sugerida|quantidade_br }}</strong></article>
   <article class="metric"><span>Cobertura</span><strong>{{ dias_cobertura }} dias</strong></article>
-  <article class="metric"><span>Periodo venda</span><strong>{{ data_inicio|date:"d/m" }} - {{ data_fim|date:"d/m" }}</strong></article>
+  <article class="metric"><span>Período venda</span><strong>{{ data_inicio|date:"d/m" }} - {{ data_fim|date:"d/m" }}</strong></article>
 </section>
 
 <div class="panel">
@@ -57,8 +57,8 @@
         <th>Produto</th>
         <th>Categoria</th>
         <th>Filial</th>
-        <th>Disponivel</th>
-        <th>Minimo</th>
+        <th>Disponível</th>
+        <th>Mínimo</th>
         <th>Venda periodo</th>
         <th>Media/dia</th>
         <th>Sugerido</th>

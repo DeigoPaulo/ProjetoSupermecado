@@ -84,7 +84,7 @@ def finalizar_venda(*, caixa, usuario, itens, forma_pagamento=None, desconto=Dec
         formas_informadas.append(forma_pagamento)
     formas_permitidas = set(formas_pagamento_disponiveis(caixa.filial).values_list("id", flat=True))
     if any(forma.id not in formas_permitidas for forma in formas_informadas):
-        raise ValidationError("Forma de pagamento nao habilitada para esta filial.")
+        raise ValidationError("Forma de pagamento não habilitada para está filial.")
     documento_consumidor_tipo, documento_consumidor, observacao_fiscal_consumidor = _normalizar_documento_consumidor(
         documento_consumidor_tipo,
         documento_consumidor,
@@ -105,11 +105,15 @@ def finalizar_venda(*, caixa, usuario, itens, forma_pagamento=None, desconto=Dec
         )
 
         total_bruto = Decimal("0.00")
+        from apps.estoque.models import Estoque
+
         for item in itens:
             produto = item["produto"]
             quantidade = item["quantidade"]
             total_item = calcular_item(produto, quantidade)
             total_bruto += total_item
+            estoque_produto = Estoque.objects.select_for_update().get(produto=produto, filial=caixa.filial)
+            custo_unitario = estoque_produto.custo_medio or produto.preco_custo
 
             ItemVenda.objects.create(
                 venda=venda,
@@ -118,7 +122,7 @@ def finalizar_venda(*, caixa, usuario, itens, forma_pagamento=None, desconto=Dec
                 preco_unitario_venda=preco_atual_produto(produto),
                 desconto=Decimal("0.00"),
                 total=total_item,
-                custo_unitario_no_momento=produto.preco_custo,
+                custo_unitario_no_momento=custo_unitario,
             )
             movimentar_estoque(
                 produto=produto,
@@ -128,12 +132,12 @@ def finalizar_venda(*, caixa, usuario, itens, forma_pagamento=None, desconto=Dec
                 usuario=usuario,
                 motivo="Venda PDV",
                 referencia=f"venda:{venda.id}",
-                custo_unitario=produto.preco_custo,
+                custo_unitario=custo_unitario,
             )
 
         total_liquido = total_bruto - desconto
         if total_liquido < 0:
-            raise ValidationError("Desconto nao pode ser maior que o total da venda.")
+            raise ValidationError("Desconto não pode ser maior que o total da venda.")
 
         venda.total_bruto = total_bruto
         venda.total_liquido = total_liquido
@@ -199,7 +203,7 @@ def _normalizar_pagamento_eletronico(pagamento):
     pagamento.setdefault("transacao_externa_id", f"TEF-SIM-{referencia[:16]}")
     pagamento.setdefault("nsu", referencia[16:28])
     pagamento.setdefault("codigo_autorizacao", referencia[28:34])
-    pagamento.setdefault("mensagem_processadora", "Autorizacao eletronica simulada. Substituir pelo adaptador TEF/API no app desktop.")
+    pagamento.setdefault("mensagem_processadora", "Autorização eletrônica simulada. Substituir pelo adaptador TEF/API no app desktop.")
     return pagamento
 
 
@@ -221,9 +225,9 @@ def _normalizar_documento_consumidor(tipo, documento, *, preparar_fiscal):
     if tipo == TipoDocumentoConsumidor.CNPJ and len(documento) != 14:
         raise ValidationError("CNPJ na nota deve conter 14 digitos.")
     if tipo == TipoDocumentoConsumidor.CNPJ and preparar_fiscal:
-        raise ValidationError("Para consumidor identificado por CNPJ, use o fluxo de NF-e modelo 55 em vez de NFC-e automatica.")
+        raise ValidationError("Para consumidor identificado por CNPJ, use o fluxo de NF-e modelo 55 em vez de NFC-e automática.")
     if tipo == TipoDocumentoConsumidor.ESTRANGEIRO and len(documento) > 20:
-        raise ValidationError("Documento estrangeiro deve ter no maximo 20 caracteres.")
+        raise ValidationError("Documento estrangeiro deve ter no máximo 20 caracteres.")
     observacao = ""
     if tipo == TipoDocumentoConsumidor.CNPJ:
         observacao = "Consumidor solicitou CNPJ na nota; emissao fiscal deve seguir NF-e modelo 55."
@@ -250,7 +254,7 @@ def _conta_movimento_para_pagamento(filial, forma_pagamento):
     nome_tipo = {
         TipoContaMovimento.CAIXA: "Caixa PDV",
         TipoContaMovimento.PIX: "PIX PDV",
-        TipoContaMovimento.BANCO: "Banco/cartao PDV",
+        TipoContaMovimento.BANCO: "Banco/cart?o PDV",
         TipoContaMovimento.OUTRA: "Outros recebimentos PDV",
     }[tipo_conta]
     conta, _ = ContaMovimentoFinanceiro.objects.get_or_create(
@@ -300,6 +304,7 @@ def _criar_conta_receber_venda(venda, valor, vencimento_financeiro=None):
     from apps.financeiro.models import CategoriaFinanceira, ContaFinanceira, TipoContaFinanceira
 
     categoria, _ = CategoriaFinanceira.objects.get_or_create(
+        empresa=venda.filial.empresa,
         nome="Crediario de clientes",
         defaults={"tipo": TipoContaFinanceira.RECEBER},
     )
@@ -362,7 +367,7 @@ def criar_pre_venda(*, filial, usuario, itens, desconto=Decimal("0.00"), cliente
 
         total_liquido = total_bruto - desconto
         if total_liquido < 0:
-            raise ValidationError("Desconto nao pode ser maior que o total da pre-venda.")
+            raise ValidationError("Desconto não pode ser maior que o total da pre-venda.")
 
         pre_venda.total_bruto = total_bruto
         pre_venda.total_liquido = total_liquido
@@ -374,9 +379,9 @@ def criar_pre_venda(*, filial, usuario, itens, desconto=Decimal("0.00"), cliente
 def registrar_devolucao_venda(*, venda, usuario, itens, motivo, supervisor=None, ip=None):
     venda = Venda.objects.select_for_update().get(pk=venda.pk)
     if venda.status != StatusVenda.FINALIZADA:
-        raise ValidationError("Apenas vendas finalizadas podem receber devolucao.")
+        raise ValidationError("Apenas vendas finalizadas podem receber devolução.")
     if not motivo:
-        raise ValidationError("Informe o motivo da devolucao.")
+        raise ValidationError("Informe o motivo da devolução.")
 
     itens_validos = []
     for item in itens:
@@ -606,11 +611,11 @@ def confirmar_estorno_pagamento_eletronico(*, pagamento, usuario, motivo="", aut
     if pagamento.status != StatusPagamento.ESTORNO_PENDENTE:
         raise ValidationError("Apenas pagamentos com estorno pendente podem ser confirmados.")
     if not pagamento.transacao_externa_id:
-        raise ValidationError("Pagamento sem transacao externa deve ser estornado pelo fluxo local.")
+        raise ValidationError("Pagamento sem transação externa deve ser estornado pelo fluxo local.")
     autorizacao = autorizacao.strip() if autorizacao else ""
     mensagem_processadora = mensagem_processadora.strip() if mensagem_processadora else ""
     if not (autorizacao or mensagem_processadora):
-        raise ValidationError("Informe a autorizacao ou o retorno da adquirente antes de confirmar o estorno.")
+        raise ValidationError("Informe a autorização ou o retorno da adquirente antes de confirmar o estorno.")
     agora = timezone.now()
     mensagem = mensagem_processadora or "Estorno confirmado pela operadora."
     if autorizacao:

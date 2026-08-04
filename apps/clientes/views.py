@@ -77,7 +77,7 @@ def clientes_busca(request):
     clientes = (
         clientes_para_usuario(
             request.user,
-            Cliente.objects.filter(
+            Cliente.objects.filter(is_active=True).filter(
                 Q(nome__icontains=termo) | Q(cpf_cnpj__icontains=termo) | Q(telefone__icontains=termo)
             ),
         )
@@ -92,6 +92,8 @@ def clientes_busca(request):
                     "nome": cliente.nome,
                     "cpf_cnpj": cliente.cpf_cnpj,
                     "telefone": cliente.telefone,
+                    "email": cliente.email,
+                    "endereco": cliente.endereco,
                 }
                 for cliente in clientes
             ]

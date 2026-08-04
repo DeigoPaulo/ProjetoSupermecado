@@ -1,6 +1,20 @@
 from django.contrib import admin
 
-from .models import CategoriaFinanceira, ContaFinanceira, ContaMovimentoFinanceiro, LancamentoFinanceiro, TransferenciaFinanceira
+from .models import CategoriaFinanceira, CentroCusto, ContaContabil, ContaFinanceira, ContaMovimentoFinanceiro, LancamentoFinanceiro, TransferenciaFinanceira
+
+
+@admin.register(ContaContabil)
+class ContaContabilAdmin(admin.ModelAdmin):
+    list_display = ("codigo", "nome", "natureza", "tipo", "empresa", "conta_pai", "ativa")
+    list_filter = ("natureza", "tipo", "ativa", "empresa")
+    search_fields = ("codigo", "nome")
+
+
+@admin.register(CentroCusto)
+class CentroCustoAdmin(admin.ModelAdmin):
+    list_display = ("codigo", "nome", "empresa", "ativo")
+    list_filter = ("ativo", "empresa")
+    search_fields = ("codigo", "nome")
 
 
 @admin.register(CategoriaFinanceira)
@@ -12,7 +26,7 @@ class CategoriaFinanceiraAdmin(admin.ModelAdmin):
 
 @admin.register(ContaFinanceira)
 class ContaFinanceiraAdmin(admin.ModelAdmin):
-    list_display = ("descricao", "tipo", "status", "filial", "valor", "vencimento", "data_pagamento")
+    list_display = ("descricao", "tipo", "status", "filial", "centro_custo", "valor", "vencimento", "data_pagamento")
     list_filter = ("tipo", "status", "filial", "vencimento")
     search_fields = ("descricao", "observacoes")
     readonly_fields = ("criado_em", "atualizado_em")
@@ -30,7 +44,7 @@ class LancamentoFinanceiroAdmin(admin.ModelAdmin):
     list_display = ("data", "conta", "tipo", "descricao", "valor", "origem", "usuario")
     list_filter = ("tipo", "origem", "data", "conta")
     search_fields = ("descricao",)
-    readonly_fields = ("conta", "tipo", "origem", "descricao", "valor", "data", "conta_financeira", "transferencia", "usuario", "criado_em")
+    readonly_fields = ("conta", "tipo", "origem", "descricao", "valor", "data", "conta_financeira", "centro_custo", "conta_contabil", "transferencia", "usuario", "criado_em")
 
     def has_add_permission(self, request):
         return False

@@ -1,6 +1,6 @@
 {% extends "base.html" %}
 
-{% block title %}Relatorio de Vendas{% endblock %}
+{% block title %}Relatório de Vendas{% endblock %}
 
 {% block content %}
 <header class="page-header">
@@ -9,11 +9,11 @@
     <p>Faturamento, descontos, lucro estimado e produtos mais vendidos.</p>
   </div>
   <div class="actions">
-    <a class="secondary-button" href="{% url 'relatorios:vendas_csv' %}?data_inicio={{ data_inicio|date:'Y-m-d' }}&amp;data_fim={{ data_fim|date:'Y-m-d' }}{% if filial_id %}&amp;filial={{ filial_id }}{% endif %}"><i class="fa-solid fa-file-csv"></i> Excel/CSV</a>
-    <a class="secondary-button" href="{% url 'relatorios:vendas_imprimir' %}?data_inicio={{ data_inicio|date:'Y-m-d' }}&amp;data_fim={{ data_fim|date:'Y-m-d' }}{% if filial_id %}&amp;filial={{ filial_id }}{% endif %}" target="_blank"><i class="fa-solid fa-file-pdf"></i> PDF</a>
+    <a class="secondary-button" href="{% url 'relatorios:vendas_csv' %}?data_inicio={{ data_inicio|date:'Y-m-d' }}&amp;data_fim={{ data_fim|date:'Y-m-d' }}{% if filial_id %}&amp;filial={{ filial_id }}{% endif %}{% if operador_id %}&amp;operador={{ operador_id }}{% endif %}"><i class="fa-solid fa-file-csv"></i> Excel/CSV</a>
+    <a class="secondary-button" href="{% url 'relatorios:vendas_imprimir' %}?data_inicio={{ data_inicio|date:'Y-m-d' }}&amp;data_fim={{ data_fim|date:'Y-m-d' }}{% if filial_id %}&amp;filial={{ filial_id }}{% endif %}{% if operador_id %}&amp;operador={{ operador_id }}{% endif %}" target="_blank"><i class="fa-solid fa-file-pdf"></i> PDF</a>
     <a class="secondary-button" href="{% url 'relatorios:curva_abc' %}">Curva ABC</a>
     <a class="secondary-button" href="{% url 'relatorios:estoque_baixo' %}">Estoque baixo</a>
-    <a class="secondary-button" href="{% url 'relatorios:devolucoes' %}">Devolucoes</a>
+    <a class="secondary-button" href="{% url 'relatorios:devolucoes' %}">Devoluções</a>
     <a class="secondary-button" href="{% url 'relatorios:compras' %}">Compras</a>
     <a class="secondary-button" href="{% url 'relatorios:caixas' %}">Caixas</a>
   </div>
@@ -30,13 +30,21 @@
       {% endfor %}
     </select>
   </label>
+  <label>Funcionário
+    <select name="operador">
+      <option value="">Todos os funcionários</option>
+      {% for operador in operadores %}
+        <option value="{{ operador.pk }}" {% if operador_id == operador.pk|stringformat:"s" %}selected{% endif %}>{{ operador }}</option>
+      {% endfor %}
+    </select>
+  </label>
   <button type="submit" class="primary-button">Filtrar</button>
 </form>
 
 <section class="metrics-grid">
   <article class="metric"><span>Vendas</span><strong>{{ total_vendas }}</strong></article>
   <article class="metric"><span>Faturamento bruto</span><strong>R$ {{ faturamento|floatformat:2 }}</strong></article>
-  <article class="metric"><span>Devolucoes</span><strong>R$ {{ valor_devolucoes|floatformat:2 }}</strong></article>
+  <article class="metric"><span>Devoluções</span><strong>R$ {{ valor_devolucoes|floatformat:2 }}</strong></article>
   <article class="metric"><span>Faturamento liquido</span><strong>R$ {{ faturamento_liquido|floatformat:2 }}</strong></article>
   <article class="metric"><span>Descontos</span><strong>R$ {{ descontos|floatformat:2 }}</strong></article>
   <article class="metric"><span>Lucro estimado</span><strong>R$ {{ lucro_estimado|floatformat:2 }}</strong></article>

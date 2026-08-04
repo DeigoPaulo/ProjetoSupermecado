@@ -21,8 +21,8 @@ class ClienteViewsTests(TestCase):
         response = self.client.get(f"/clientes/{self.cliente.pk}/editar/")
 
         self.assertEqual(response.status_code, 200)
-        self.assertContains(response, "Identificacao")
-        self.assertContains(response, "Contato e endereco")
+        self.assertContains(response, "Identificação")
+        self.assertContains(response, "Contato e endereço")
         self.assertContains(response, "Opcional para venda presencial avulsa.")
         self.assertContains(response, "busca de CEP")
 
@@ -33,6 +33,7 @@ class ClienteViewsTests(TestCase):
         payload = response.json()
         self.assertEqual(payload["results"][0]["id"], self.cliente.id)
         self.assertIn("Cliente Teste", payload["results"][0]["text"])
+        self.assertEqual(payload["results"][0]["endereco"], self.cliente.endereco)
 
 class ClienteIsolamentoEmpresaTests(TestCase):
     def setUp(self):
@@ -67,6 +68,25 @@ class ClienteIsolamentoEmpresaTests(TestCase):
         self.assertNotContains(lista, self.cliente_b.nome)
         self.assertEqual([item["id"] for item in busca.json()["results"]], [self.cliente_a.pk])
         self.assertEqual(edicao_estrangeira.status_code, 404)
+
+    def test_usuario_cria_cliente_na_empresa_do_perfil_sem_enviar_empresa(self):
+        self.client.force_login(self.usuario_a)
+
+        resposta = self.client.post(
+            "/clientes/novo/",
+            {
+                "nome": "Cliente criado no caixa",
+                "cpf_cnpj": "",
+                "telefone": "62999990000",
+                "email": "",
+                "endereco": "Rua do Cliente, 10",
+                "is_active": "on",
+            },
+        )
+
+        self.assertRedirects(resposta, "/clientes/")
+        cliente = Cliente.objects.get(nome="Cliente criado no caixa")
+        self.assertEqual(cliente.empresa, self.empresa_a)
 
     def test_usuario_nao_consegue_forcar_empresa_de_outro_cliente(self):
         self.client.force_login(self.usuario_a)

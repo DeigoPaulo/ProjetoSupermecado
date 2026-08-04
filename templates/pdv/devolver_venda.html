@@ -22,7 +22,7 @@
     </label>
     <label class="form-field">
       <span>Supervisor</span>
-      <input type="text" name="supervisor_usuario" required placeholder="Usuario supervisor">
+      <input type="text" name="supervisor_usuario" required placeholder="Usuário supervisor">
     </label>
     <label class="form-field">
       <span>Senha</span>
@@ -55,7 +55,7 @@
             value="0"
             {% if item.quantidade_disponivel_devolucao <= 0 %}disabled{% endif %}
           >
-          <small class="form-help">Disponivel: {{ item.quantidade_disponivel_devolucao|quantidade_br }}</small>
+          <small class="form-help">Disponível: {{ item.quantidade_disponivel_devolucao|quantidade_br }}</small>
         </label>
       </div>
     {% endfor %}

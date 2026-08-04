@@ -15,7 +15,7 @@
   {% csrf_token %}
   {% if form.non_field_errors %}<div class="form-note form-note-danger">{{ form.non_field_errors }}</div>{% endif %}
   <section class="form-section form-field-wide">
-    <h2>Identificacao e saldo</h2>
+    <h2>Identificação e saldo</h2>
     <div class="form-grid form-grid-inner">
       <label class="form-field"><span>{{ form.filial.label }}</span>{{ form.filial }}{{ form.filial.errors }}</label>
       <label class="form-field"><span>{{ form.nome.label }}</span>{{ form.nome }}{{ form.nome.errors }}</label>

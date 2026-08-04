@@ -15,13 +15,15 @@ from PIL import Image
 from apps.accounts.models import PerfilUsuario, TipoPerfil
 from apps.auditoria.models import LogAuditoria
 from apps.estoque.models import Estoque, MovimentacaoEstoque, TipoMovimentacaoEstoque, movimentar_estoque
-from apps.produtos.models import Categoria, Produto
+from apps.financeiro.models import ContaMovimentoFinanceiro, TipoContaMovimento, TipoLancamentoFinanceiro
+from apps.financeiro.services import registrar_lancamento
+from apps.produtos.models import Categoria, CodigoBarrasProduto, Produto
 
 from .forms import EmpresaForm
-from .models import DocumentoFiscalSincronizado, Empresa, EventoEntradaSincronizacao, EventoSincronizacao, Filial, ModoImplantacao, PoliticaConflitoSincronizacao, StatusEventoEntrada, StatusSincronizacao, VendaSincronizada
+from .models import DocumentoFiscalSincronizado, Empresa, EventoEntradaSincronizacao, EventoSincronizacao, Filial, LancamentoFinanceiroSincronizado, ModoImplantacao, PoliticaConflitoSincronizacao, StatusEventoEntrada, StatusSincronizacao, VendaSincronizada
 from . import services_eventos_entrada
 from .services_eventos_entrada import ConflitoSincronizacao, processar_entrada_sincronizacao
-from .services_sincronizacao import enfileirar_evento, processar_fila
+from .services_sincronizacao import enviar_evento_http, enfileirar_evento, processar_fila
 
 
 GIF_1X1 = (
@@ -74,6 +76,109 @@ class EmpresasViewsTests(TestCase):
             codigo_municipio_ibge="3550308",
         )
 
+    def test_registrar_lancamento_publica_contrato_financeiro_idempotente(self):
+        conta = ContaMovimentoFinanceiro.objects.create(
+            filial=self.filial,
+            nome="Caixa principal",
+            tipo=TipoContaMovimento.CAIXA,
+        )
+
+        lancamento = registrar_lancamento(
+            conta=conta,
+            tipo=TipoLancamentoFinanceiro.ENTRADA,
+            descricao="Venda PDV #150",
+            valor=Decimal("82.70"),
+            data=timezone.localdate(),
+            usuario=self.user,
+            origem="PDV_VENDA",
+        )
+
+        evento = EventoSincronizacao.objects.get(
+            tipo="financeiro.lancamento_registrado",
+            objeto_id=str(lancamento.pk),
+        )
+        self.assertEqual(evento.filial, self.filial)
+        self.assertEqual(evento.payload["contrato"], "financeiro_lancamento_v1")
+        self.assertEqual(evento.payload["valor"], "82.70")
+        self.assertEqual(evento.payload["conta_movimento"]["nome"], "Caixa principal")
+        self.assertEqual(evento.chave_idempotencia, f"financeiro:lancamento:{self.empresa.pk}:{lancamento.pk}")
+
+    def test_entrada_financeira_cria_espelho_e_expoe_painel_csv_diagnostico(self):
+        evento = EventoEntradaSincronizacao.objects.create(
+            identificador="921bc683-b120-4a28-a29c-423b72dd4ea2",
+            chave_idempotencia="financeiro:lancamento:loja:501",
+            empresa=self.empresa,
+            tipo="financeiro.lancamento_registrado",
+            payload={
+                "payload": {
+                    "contrato": "financeiro_lancamento_v1",
+                    "lancamento_id": "501",
+                    "filial_cnpj": self.filial.cnpj,
+                    "tipo": "ENTRADA",
+                    "origem": "PDV_VENDA",
+                    "descricao": "Venda PDV #501",
+                    "valor": "35.40",
+                    "data": "2026-08-03",
+                    "conta_movimento": {"nome": "Caixa principal", "tipo": "CAIXA"},
+                    "centro_custo": {"codigo": "PDV", "nome": "Frente de caixa"},
+                    "conta_contabil": {"codigo": "3.1.1", "nome": "Receita de vendas"},
+                    "usuario": "OPERADOR01",
+                }
+            },
+        )
+
+        resultado = processar_entrada_sincronizacao()
+
+        evento.refresh_from_db()
+        espelho = LancamentoFinanceiroSincronizado.objects.get(lancamento_externo_id="501")
+        painel = self.client.get("/empresas/sincronizacao/", {"q": "Venda PDV #501"})
+        csv_response = self.client.get("/empresas/sincronizacao/lancamentos-financeiros.csv", {"q": "Venda PDV #501"})
+        diagnostico = self.client.get("/empresas/sincronizacao/diagnostico.json").json()
+
+        self.assertEqual(resultado, {"processados": 1, "erros": 0})
+        self.assertEqual(evento.status, StatusEventoEntrada.PROCESSADO)
+        self.assertEqual(espelho.filial, self.filial)
+        self.assertEqual(espelho.valor, Decimal("35.40"))
+        self.assertEqual(espelho.conta_contabil, "3.1.1 - Receita de vendas")
+        self.assertContains(painel, "Livro financeiro sincronizado para retaguarda")
+        self.assertContains(painel, "Venda PDV #501")
+        self.assertContains(painel, "R$ 35,40")
+        self.assertEqual(csv_response["Content-Type"], "text/csv; charset=utf-8")
+        self.assertIn("Venda PDV #501", csv_response.content.decode("utf-8-sig"))
+        self.assertEqual(diagnostico["retaguarda"]["lancamentos_financeiros"], 1)
+        self.assertEqual(diagnostico["retaguarda"]["entradas_financeiras"], "35.4000000000000")
+
+    def test_entrada_financeira_rejeita_mesmo_id_com_valor_divergente(self):
+        primeiro = EventoEntradaSincronizacao.objects.create(
+            identificador="df347f6d-a15b-467b-b665-4a8535a52460",
+            chave_idempotencia="financeiro:lancamento:loja:700:v1",
+            empresa=self.empresa,
+            tipo="financeiro.lancamento_registrado",
+            payload={"payload": {
+                "contrato": "financeiro_lancamento_v1", "lancamento_id": "700", "filial_cnpj": self.filial.cnpj, "tipo": "SAIDA",
+                "origem": "PAGAMENTO", "descricao": "Fornecedor", "valor": "10.00", "data": "2026-08-03",
+            }},
+        )
+        processar_entrada_sincronizacao()
+        divergente = EventoEntradaSincronizacao.objects.create(
+            identificador="4c955c3f-8bd8-4eca-81fd-6ed002c19760",
+            chave_idempotencia="financeiro:lancamento:loja:700:v2",
+            empresa=self.empresa,
+            tipo="financeiro.lancamento_registrado",
+            payload={"payload": {
+                "contrato": "financeiro_lancamento_v1", "lancamento_id": "700", "filial_cnpj": self.filial.cnpj, "tipo": "SAIDA",
+                "origem": "PAGAMENTO", "descricao": "Fornecedor", "valor": "12.00", "data": "2026-08-03",
+            }},
+        )
+
+        processar_entrada_sincronizacao()
+
+        divergente.refresh_from_db()
+        self.assertEqual(divergente.status, StatusEventoEntrada.CONFLITO)
+        self.assertIn("tipo ou valor diferente", divergente.ultimo_erro)
+        self.assertEqual(LancamentoFinanceiroSincronizado.objects.filter(lancamento_externo_id="700").count(), 1)
+        self.assertEqual(primeiro.lancamento_financeiro_sincronizado.valor, Decimal("10.00"))
+
     def test_lista_empresas_e_filiais(self):
         response = self.client.get("/empresas/")
 
@@ -99,9 +204,9 @@ class EmpresasViewsTests(TestCase):
         self.assertContains(empresa_response, "Identificação")
         self.assertContains(empresa_response, "Contato e visual")
         self.assertContains(empresa_response, "Implantacao e conectividade")
-        self.assertContains(empresa_response, "Politica de conflito")
+        self.assertContains(empresa_response, "Política de conflito")
         self.assertContains(empresa_response, "Nuvem prevalece para produtos e estoque")
-        self.assertContains(empresa_response, "modo local nao publica o sistema na internet")
+        self.assertContains(empresa_response, "modo local não publica o sistema na internet")
         self.assertContains(empresa_response, "Consulta CNPJ/CEP preparada")
         self.assertContains(empresa_response, "Consultar CNPJ")
         self.assertContains(empresa_response, "data-cadastro-lookup-url")
@@ -297,6 +402,13 @@ class EmpresasViewsTests(TestCase):
             preco_venda="6.00",
         )
 
+        CodigoBarrasProduto.objects.create(
+            produto=produto,
+            codigo="17891000000029",
+            tipo="CAIXA",
+            fator_conversao=Decimal("12.000"),
+        )
+
         movimentacao = movimentar_estoque(
             produto=produto,
             filial=self.filial,
@@ -305,6 +417,7 @@ class EmpresasViewsTests(TestCase):
             usuario=self.user,
             motivo="Recebimento local",
             referencia="entrada:compra:10",
+            custo_unitario=Decimal("4.50"),
         )
 
         evento_produto = EventoSincronizacao.objects.get(tipo="produto.atualizado")
@@ -314,6 +427,15 @@ class EmpresasViewsTests(TestCase):
         self.assertEqual(evento_produto.payload["codigo_barras"], produto.codigo_barras)
         self.assertEqual(evento_produto.payload["preco_venda"], "6.00")
         self.assertEqual(evento_produto.payload["categoria"], {"nome": "Mercearia hibrida"})
+        self.assertEqual(
+            evento_produto.payload["categoria_hierarquia"],
+            [{"nome": "Mercearia hibrida", "nivel": "GRUPO"}],
+        )
+        self.assertEqual(evento_produto.payload["tipo_produto"], "MERCADORIA")
+        self.assertEqual(evento_produto.payload["unidade_compra"], "UN")
+        self.assertEqual(evento_produto.payload["fator_conversao_compra"], "1")
+        self.assertEqual(evento_produto.payload["codigos_adicionais"][0]["codigo"], "17891000000029")
+        self.assertEqual(evento_produto.payload["codigos_adicionais"][0]["fator_conversao"], "12.000")
         self.assertEqual(evento.filial, self.filial)
         self.assertEqual(evento.objeto_tipo, "Estoque")
         self.assertEqual(
@@ -325,6 +447,7 @@ class EmpresasViewsTests(TestCase):
         self.assertEqual(evento.payload["filial_cnpj"], self.filial.cnpj)
         self.assertEqual(evento.payload["quantidade_atual"], "7.500")
         self.assertEqual(evento.payload["quantidade_reservada"], "0.000")
+        self.assertEqual(evento.payload["custo_medio"], "4.500000")
         self.assertEqual(evento.payload["movimentacao"]["tipo"], TipoMovimentacaoEstoque.ENTRADA)
         self.assertEqual(evento.payload["movimentacao"]["referencia"], "entrada:compra:10")
 
@@ -451,7 +574,7 @@ class EmpresasViewsTests(TestCase):
         self.assertContains(painel, "Servidor indisponivel")
         self.assertContains(painel, "Cada evento possui chave idempotente")
         self.assertContains(painel, f"/empresas/sincronizacao/eventos/{evento.pk}/")
-        self.assertContains(detalhe, "Evento de saida produto.atualizado")
+        self.assertContains(detalhe, "Evento de saída produto.atualizado")
         self.assertContains(detalhe, "Servidor indisponivel")
         self.assertContains(detalhe, "Payload enviado")
 
@@ -520,7 +643,7 @@ class EmpresasViewsTests(TestCase):
             )
 
         self.assertEqual(chamadas, [("saida", 10), ("entrada", 5)])
-        self.assertIn("2 enviado(s), 1 erro(s) de saida", saida_stdout.getvalue())
+        self.assertIn("2 enviado(s), 1 erro(s) de saída", saida_stdout.getvalue())
 
     def test_comando_gera_carga_inicial_por_filial_com_idempotencia(self):
         self.empresa.modo_implantacao = ModoImplantacao.HIBRIDO
@@ -662,7 +785,7 @@ class EmpresasViewsTests(TestCase):
         self.assertIn("Nuvem indisponivel", evento.ultimo_erro)
         self.assertIsNotNone(evento.proxima_tentativa_em)
 
-    @override_settings(SINCRONIZACAO_API_TOKEN="token-seguro")
+    @override_settings(SINCRONIZACAO_API_TOKEN="token-seguro", SINCRONIZACAO_PERMITE_TOKEN_GLOBAL=True)
     def test_receptor_autenticado_armazena_evento_e_elimina_duplicidade(self):
         dados = {
             "id": "9ad3ac53-1f99-4de5-9e8a-90ac1ee015ad",
@@ -696,7 +819,146 @@ class EmpresasViewsTests(TestCase):
         self.assertEqual(entrada.empresa, self.empresa)
         self.assertEqual(entrada.payload["payload"]["total"], "125.90")
 
-    @override_settings(SINCRONIZACAO_API_TOKEN="token-seguro")
+    @override_settings(
+        SINCRONIZACAO_API_TOKEN="",
+        SINCRONIZACAO_TOKENS_EMPRESA={
+            "44.444.444/0001-44": "token-empresa-a",
+            "55.555.555/0001-55": "token-empresa-b",
+        },
+        SINCRONIZACAO_PERMITE_TOKEN_GLOBAL=False,
+    )
+    def test_receptor_isola_credencial_por_cnpj(self):
+        dados = {
+            "id": "a8e6d892-2f72-40c8-9a63-aa2086e0d881",
+            "tipo": "venda.finalizada",
+            "empresa_cnpj": self.empresa.cnpj,
+            "payload": {"total": "25.00"},
+        }
+        url = "/empresas/api/sincronizacao/eventos/"
+        cabecalhos = {"HTTP_IDEMPOTENCY_KEY": "venda:credencial:empresa"}
+
+        token_de_outra_empresa = self.client.post(
+            url,
+            data=dados,
+            content_type="application/json",
+            HTTP_AUTHORIZATION="Bearer token-empresa-b",
+            **cabecalhos,
+        )
+        token_correto = self.client.post(
+            url,
+            data=dados,
+            content_type="application/json",
+            HTTP_AUTHORIZATION="Bearer token-empresa-a",
+            **cabecalhos,
+        )
+
+        self.assertEqual(token_de_outra_empresa.status_code, 401)
+        self.assertEqual(token_correto.status_code, 202)
+        self.assertEqual(EventoEntradaSincronizacao.objects.count(), 1)
+
+    @override_settings(
+        SINCRONIZACAO_API_TOKEN="",
+        SINCRONIZACAO_TOKENS_EMPRESA={
+            "44.444.444/0001-44": {
+                "atual": "token-empresa-novo",
+                "anteriores": ["token-empresa-anterior"],
+            },
+        },
+        SINCRONIZACAO_PERMITE_TOKEN_GLOBAL=False,
+    )
+    def test_receptor_aceita_token_anterior_durante_rotacao(self):
+        url = "/empresas/api/sincronizacao/eventos/"
+        for indice, token in enumerate(
+            ["token-empresa-novo", "token-empresa-anterior"],
+            start=1,
+        ):
+            response = self.client.post(
+                url,
+                data={
+                    "id": f"a8e6d892-2f72-40c8-9a63-aa2086e0d88{indice}",
+                    "tipo": "venda.finalizada",
+                    "empresa_cnpj": self.empresa.cnpj,
+                    "payload": {"total": "25.00"},
+                },
+                content_type="application/json",
+                HTTP_AUTHORIZATION=f"Bearer {token}",
+                HTTP_IDEMPOTENCY_KEY=f"venda:rotacao:{indice}",
+            )
+            self.assertEqual(response.status_code, 202)
+
+        recusado = self.client.post(
+            url,
+            data={
+                "id": "a8e6d892-2f72-40c8-9a63-aa2086e0d889",
+                "tipo": "venda.finalizada",
+                "empresa_cnpj": self.empresa.cnpj,
+                "payload": {"total": "25.00"},
+            },
+            content_type="application/json",
+            HTTP_AUTHORIZATION="Bearer token-desconhecido",
+            HTTP_IDEMPOTENCY_KEY="venda:rotacao:recusada",
+        )
+        self.assertEqual(recusado.status_code, 401)
+        self.assertEqual(EventoEntradaSincronizacao.objects.count(), 2)
+
+    @override_settings(
+        SINCRONIZACAO_API_TOKEN="",
+        SINCRONIZACAO_TOKENS_EMPRESA={"44.444.444/0001-44": "token-empresa-a"},
+        SINCRONIZACAO_PERMITE_TOKEN_GLOBAL=False,
+        SINCRONIZACAO_MAX_EVENTO_BYTES=180,
+    )
+    def test_receptor_rejeita_evento_acima_do_limite(self):
+        response = self.client.post(
+            "/empresas/api/sincronizacao/eventos/",
+            data={
+                "id": "b5c33d39-ed8c-493e-954f-e7a8ee44e227",
+                "tipo": "produto.atualizado",
+                "empresa_cnpj": self.empresa.cnpj,
+                "payload": {"descricao": "x" * 500},
+            },
+            content_type="application/json",
+            HTTP_AUTHORIZATION="Bearer token-empresa-a",
+            HTTP_IDEMPOTENCY_KEY="produto:grande:1",
+        )
+
+        self.assertEqual(response.status_code, 413)
+        self.assertFalse(EventoEntradaSincronizacao.objects.exists())
+
+    @override_settings(
+        SINCRONIZACAO_API_TOKEN="",
+        SINCRONIZACAO_TOKENS_EMPRESA={
+            "44444444000144": {
+                "atual": "token-empresa-a",
+                "anteriores": ["token-empresa-antigo"],
+            },
+        },
+        SINCRONIZACAO_PERMITE_TOKEN_GLOBAL=False,
+    )
+    def test_emissor_usa_credencial_da_propria_empresa(self):
+        evento = self._evento_hibrido("venda:credencial:saida")
+
+        class Resposta:
+            status = 202
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *_args):
+                return False
+
+        with patch(
+            "apps.empresas.services_sincronizacao.urlopen",
+            return_value=Resposta(),
+        ) as chamada:
+            enviar_evento_http(evento)
+
+        requisicao = chamada.call_args.args[0]
+        self.assertEqual(
+            requisicao.get_header("Authorization"),
+            "Bearer token-empresa-a",
+        )
+
+    @override_settings(SINCRONIZACAO_API_TOKEN="token-seguro", SINCRONIZACAO_PERMITE_TOKEN_GLOBAL=True)
     def test_receptor_bloqueia_novo_evento_local_e_confirma_duplicado_anterior(self):
         dados = {
             "id": "f73edb66-bba6-4ca9-a8dd-bf34ab595c85",
@@ -737,7 +999,7 @@ class EmpresasViewsTests(TestCase):
         self.assertEqual(bloqueado.status_code, 409)
         self.assertIn("não permite sincronização operacional", bloqueado.json()["mensagem"])
         self.assertEqual(EventoEntradaSincronizacao.objects.count(), 1)
-    @override_settings(SINCRONIZACAO_API_TOKEN="token-seguro")
+    @override_settings(SINCRONIZACAO_API_TOKEN="token-seguro", SINCRONIZACAO_PERMITE_TOKEN_GLOBAL=True)
     def test_receptor_rejeita_token_invalido_e_empresa_desconhecida(self):
         dados = {
             "id": "07ef1a44-22b8-4056-bef4-bce452e3ca94",
@@ -825,17 +1087,58 @@ class EmpresasViewsTests(TestCase):
                     "codigo_barras": "789900000001",
                     "nome": "Macarrao Parafuso",
                     "categoria": "Mercearia",
+                    "categoria_hierarquia": [
+                        {"nome": "Alimentos", "nivel": "DEPARTAMENTO"},
+                        {"nome": "Mercearia", "nivel": "SECAO"},
+                    ],
+                    "tipo_produto": "INSUMO",
                     "marca": {"nome": "Casa Boa"},
                     "unidade": "UN",
+                    "unidade_compra": "CX",
+                    "fator_conversao_compra": "12.000",
+                    "peso_liquido": "5.500",
+                    "peso_bruto": "5.800",
+                    "codigos_adicionais": [
+                        {
+                            "codigo": "17899000000018",
+                            "tipo": "CAIXA",
+                            "fator_conversao": "12.000",
+                            "permite_venda": True,
+                            "is_active": True,
+                        }
+                    ],
                     "preco_custo": "3.20",
                     "preco_venda": "5.49",
                     "estoque_minimo": "6",
                     "vendido_no_pdv": True,
                     "vendido_no_marketplace": True,
+                    "informacao_nutricional": {
+                        "base_calculo": "100G",
+                        "porcao_quantidade": "80.00",
+                        "porcao_unidade": "g",
+                        "valor_energetico_kcal": "286.00",
+                        "carboidratos_g": "58.00",
+                        "proteinas_g": "10.00",
+                        "ingredientes": "Farinha de trigo.",
+                        "gluten": "CONTEM",
+                    },
+                    "produtos_similares": [],
                     "ncm": "19021900",
                     "origem_mercadoria": "0",
                     "cst_icms": "00",
                     "aliquota_icms": "18",
+                    "reducao_base_icms": "12.50",
+                    "aliquota_fcp": "2.00",
+                    "codigo_beneficio_fiscal": "GO123456",
+                    "cst_pis": "01",
+                    "aliquota_pis": "1.6500",
+                    "cst_cofins": "01",
+                    "aliquota_cofins": "7.6000",
+                    "cst_ipi": "50",
+                    "codigo_enquadramento_ipi": "999",
+                    "aliquota_ipi": "5.0000",
+                    "cst_ibs_cbs": "000",
+                    "classificacao_tributaria_ibs_cbs": "000001",
                     "is_active": True,
                 },
             },
@@ -849,9 +1152,30 @@ class EmpresasViewsTests(TestCase):
         self.assertEqual(evento.status, StatusEventoEntrada.PROCESSADO)
         self.assertEqual(produto.nome, "Macarrao Parafuso")
         self.assertEqual(produto.categoria.nome, "Mercearia")
+        self.assertEqual(produto.categoria.caminho_completo, "Alimentos > Mercearia")
+        self.assertEqual(produto.tipo_produto, "INSUMO")
         self.assertEqual(produto.marca.nome, "Casa Boa")
         self.assertEqual(produto.preco_venda, Decimal("5.49"))
         self.assertTrue(produto.vendido_no_marketplace)
+        self.assertEqual(produto.unidade_compra, "CX")
+        self.assertEqual(produto.fator_conversao_compra, Decimal("12.000"))
+        self.assertEqual(produto.peso_liquido, Decimal("5.500"))
+        self.assertEqual(produto.codigos_adicionais.get().codigo, "17899000000018")
+        self.assertEqual(produto.informacao_nutricional.porcao_quantidade, Decimal("80.00"))
+        self.assertEqual(produto.informacao_nutricional.gluten, "CONTEM")
+        self.assertEqual(produto.reducao_base_icms, Decimal("12.50"))
+        self.assertEqual(produto.aliquota_fcp, Decimal("2.00"))
+        self.assertEqual(produto.codigo_beneficio_fiscal, "GO123456")
+        self.assertEqual(produto.cst_pis, "01")
+        self.assertEqual(produto.aliquota_pis, Decimal("1.6500"))
+        self.assertEqual(produto.cst_cofins, "01")
+        self.assertEqual(produto.aliquota_cofins, Decimal("7.6000"))
+        self.assertEqual(produto.cst_ipi, "50")
+        self.assertEqual(produto.codigo_enquadramento_ipi, "999")
+        self.assertEqual(produto.aliquota_ipi, Decimal("5.0000"))
+        self.assertEqual(produto.cst_ibs_cbs, "000")
+        self.assertEqual(produto.classificacao_tributaria_ibs_cbs, "000001")
+        self.assertFalse(produto.produtos_similares.exists())
 
     def test_processador_de_entrada_atualiza_produto_existente(self):
         categoria = Categoria.objects.create(nome="Bebidas")
@@ -947,6 +1271,7 @@ class EmpresasViewsTests(TestCase):
                     "filial_cnpj": self.filial.cnpj,
                     "quantidade_atual": "12.500",
                     "quantidade_reservada": "2.000",
+                    "custo_medio": "8.750000",
                 },
             },
         )
@@ -960,6 +1285,7 @@ class EmpresasViewsTests(TestCase):
         self.assertEqual(evento.status, StatusEventoEntrada.PROCESSADO)
         self.assertEqual(estoque.quantidade_atual, Decimal("12.500"))
         self.assertEqual(estoque.quantidade_reservada, Decimal("2.000"))
+        self.assertEqual(estoque.custo_medio, Decimal("8.750000"))
         self.assertEqual(movimentacao.tipo, TipoMovimentacaoEstoque.AJUSTE)
         self.assertEqual(movimentacao.quantidade, Decimal("9.500"))
 
@@ -983,7 +1309,7 @@ class EmpresasViewsTests(TestCase):
 
         evento.refresh_from_db()
         self.assertEqual(evento.status, StatusEventoEntrada.CONFLITO)
-        self.assertIn("Produto do saldo de estoque nao encontrado", evento.ultimo_erro)
+        self.assertIn("Produto do saldo de estoque não encontrado", evento.ultimo_erro)
 
     def test_processador_de_entrada_registra_venda_finalizada_sincronizada(self):
         evento = EventoEntradaSincronizacao.objects.create(
@@ -1200,10 +1526,12 @@ class EmpresasViewsTests(TestCase):
         self.assertIn("Nuvem produtos/estoque", erro.content.decode("utf-8"))
         self.assertIn("Loja produtos/estoque", erro.content.decode("utf-8"))
         self.assertIn("processar_sincronizacao_completa", diagnostico["operacao"]["comando"])
+        self.assertIn("--limite-saida 50", diagnostico["operacao"]["comando"])
+        self.assertNotIn("?", diagnostico["operacao"]["comando"])
         self.assertFalse(diagnostico["operacao"]["pronto"])
         self.assertTrue(diagnostico["operacao"]["alertas"])
         self.assertEqual(diagnostico["prontidao"]["contrato"], "sync_readiness_v1")
-        self.assertContains(erro, "Prontidao da sincronizacao")
+        self.assertContains(erro, "Prontidão da sincronização")
 
     def test_diagnostico_sincronizacao_exibe_idade_e_tentativas_esgotadas(self):
         saida = EventoSincronizacao.objects.create(
@@ -1246,7 +1574,11 @@ class EmpresasViewsTests(TestCase):
         self.assertContains(painel, "Nuvem produtos/estoque")
         self.assertContains(painel, "sync_readiness_v1")
 
-    @override_settings(SINCRONIZACAO_API_TOKEN="")
+    @override_settings(
+        SINCRONIZACAO_API_TOKEN="",
+        SINCRONIZACAO_TOKENS_EMPRESA={},
+        SINCRONIZACAO_PERMITE_TOKEN_GLOBAL=False,
+    )
     def test_prontidao_sincronizacao_bloqueia_hibrido_sem_configuracao(self):
         self.empresa.modo_implantacao = ModoImplantacao.HIBRIDO
         self.empresa.sincronizacao_automatica = True
@@ -1259,8 +1591,40 @@ class EmpresasViewsTests(TestCase):
         self.assertEqual(diagnostico["prontidao"]["contrato"], "sync_readiness_v1")
         self.assertEqual(diagnostico["prontidao"]["status"], "Bloqueada")
         self.assertEqual(diagnostico["prontidao"]["empresas"]["hibrido"], 1)
-        self.assertIn("SINCRONIZACAO_API_TOKEN", " ".join(diagnostico["prontidao"]["bloqueios"]))
-        self.assertContains(painel, "Prontidao da sincronizacao: Bloqueada")
+        self.assertIn("credencial individual", " ".join(diagnostico["prontidao"]["bloqueios"]))
+        self.assertEqual(diagnostico["prontidao"]["credenciais"]["sem_credencial"], 1)
+        self.assertContains(painel, "Prontidão da sincronização: Bloqueada")
+
+    @override_settings(
+        SINCRONIZACAO_API_TOKEN="",
+        SINCRONIZACAO_TOKENS_EMPRESA={
+            "44.444.444/0001-44": {
+                "atual": "token-empresa-novo",
+                "anteriores": ["token-empresa-anterior"],
+            },
+        },
+        SINCRONIZACAO_PERMITE_TOKEN_GLOBAL=False,
+    )
+    def test_prontidao_sinaliza_credencial_em_rotacao(self):
+        self.empresa.modo_implantacao = ModoImplantacao.HIBRIDO
+        self.empresa.sincronizacao_automatica = True
+        self.empresa.url_sincronizacao = "https://nuvem.exemplo/api/"
+        self.empresa.save(
+            update_fields=[
+                "modo_implantacao",
+                "sincronizacao_automatica",
+                "url_sincronizacao",
+            ]
+        )
+
+        diagnostico = self.client.get(
+            "/empresas/sincronizacao/diagnostico.json"
+        ).json()["prontidao"]
+
+        self.assertEqual(diagnostico["status"], "Atencao")
+        self.assertEqual(diagnostico["credenciais"]["individuais"], 1)
+        self.assertEqual(diagnostico["credenciais"]["em_rotacao"], 1)
+        self.assertIn("rotacao de credencial", " ".join(diagnostico["recomendacoes"]))
 
     def test_politica_de_conflito_aceita_remoto_para_produto_e_audita_resolucao(self):
         self.empresa.politica_conflito_sincronizacao = PoliticaConflitoSincronizacao.REMOTO_PRODUTOS_ESTOQUE
@@ -1482,7 +1846,7 @@ class EmpresasViewsTests(TestCase):
         self.assertContains(response, "sistema.ping")
         self.assertContains(response, "/empresas/sincronizacao/entrada/")
         self.assertContains(detalhe, "Evento de entrada sistema.ping")
-        self.assertContains(detalhe, "Politica de conflito")
+        self.assertContains(detalhe, "Política de conflito")
         self.assertContains(detalhe, "Resolver manualmente")
         self.assertContains(detalhe, "Payload recebido")
 
@@ -1553,9 +1917,9 @@ class EmpresasViewsTests(TestCase):
         evento.refresh_from_db()
         painel = self.client.get("/empresas/sincronizacao/")
         self.assertContains(detalhe, "Marcar conflito como resolvido")
-        self.assertContains(detalhe, "Conflito aguardando decisao")
-        self.assertContains(detalhe, "Venda e fiscal permanecem manuais por seguranca")
-        self.assertContains(detalhe, "Politica da empresa")
+        self.assertContains(detalhe, "Conflito aguardando decisão")
+        self.assertContains(detalhe, "Venda e fiscal permanecem manuais por segurança")
+        self.assertContains(detalhe, "Política da empresa")
         self.assertContains(vazio, "Informe a decisao tomada")
         self.assertEqual(evento.status, StatusEventoEntrada.RESOLVIDO)
         self.assertEqual(evento.resolvido_por, self.user)
@@ -1592,7 +1956,7 @@ class EmpresasViewsTests(TestCase):
             "/empresas/filiais/nova/",
             {
                 "empresa": self.empresa.pk,
-                "nome": "Loja invalida",
+                "nome": "Loja inválida",
                 "cnpj": "",
                 "telefone": "",
                 "endereco": "",
@@ -1604,8 +1968,8 @@ class EmpresasViewsTests(TestCase):
         )
 
         self.assertEqual(response.status_code, 200)
-        self.assertContains(response, "Informe o codigo IBGE com 7 digitos.")
-        self.assertFalse(Filial.objects.filter(nome="Loja invalida").exists())
+        self.assertContains(response, "Informe o código IBGE com 7 digitos.")
+        self.assertFalse(Filial.objects.filter(nome="Loja inválida").exists())
 
     def test_endpoint_consulta_cadastro_prepara_integracao_externa(self):
         response = self.client.get("/empresas/consulta-cadastro.json")

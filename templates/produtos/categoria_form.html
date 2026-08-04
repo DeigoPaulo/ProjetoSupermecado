@@ -1,32 +1,35 @@
 {% extends "base.html" %}
 
-{% block title %}Categoria{% endblock %}
+{% block title %}Classificação comercial{% endblock %}
 
 {% block content %}
-<header class="page-header"><div><h1>Nova categoria</h1><p>Organize o cadastro de produtos.</p></div></header>
+<header class="page-header">
+  <div>
+    <h1>Nova classificação comercial</h1>
+    <p>Organize os produtos em departamento, seção, grupo e subgrupo.</p>
+  </div>
+</header>
 <form method="post" class="form-grid panel">
   {% csrf_token %}
-  <section class="form-section">
+  <section class="form-section form-field-wide">
     <div class="form-section-header">
-      <h2>Categoria de produto</h2>
-      <p>Use categorias para filtros, relatorios, reposicao, etiquetas e marketplace.</p>
+      <h2>Hierarquia do produto</h2>
+      <p>Cadastre toda a estrutura nesta tela. Exemplo: Mercearia &gt; Alimentos &gt; Massas &gt; Macarrão.</p>
     </div>
-    <div class="form-grid">
-      <div class="field">
-        {{ form.nome.label_tag }}
-        {{ form.nome }}
-        {{ form.nome.errors }}
-      </div>
-      <div class="field checkbox-field">
-        {{ form.is_active }}
-        {{ form.is_active.label_tag }}
-        {{ form.is_active.errors }}
-      </div>
-      <div class="field span-2">
-        {{ form.descricao.label_tag }}
-        {{ form.descricao }}
-        {{ form.descricao.errors }}
-      </div>
+    <div class="form-note form-field-wide">
+      <strong>Sem carga manual para os caixas.</strong>
+      <span>Ao salvar um produto, a classificação é publicada automaticamente para os PDVs e instalações híbridas.</span>
+    </div>
+    <div class="form-grid form-grid-inner">
+      <label class="form-field"><span>{{ form.nome.label }}</span>{{ form.nome }}{{ form.nome.errors }}</label>
+      <label class="form-field"><span>{{ form.nivel.label }}</span>{{ form.nivel }}{{ form.nivel.errors }}</label>
+      <label class="form-field form-field-wide">
+        <span>{{ form.parent.label }}</span>
+        {{ form.parent }}{{ form.parent.errors }}
+        <small>Deixe vazio para iniciar uma raiz. Para os demais níveis, selecione a classificação imediatamente superior.</small>
+      </label>
+      <label class="form-field form-field-wide"><span>{{ form.descricao.label }}</span>{{ form.descricao }}{{ form.descricao.errors }}</label>
+      <label class="toggle-field">{{ form.is_active }} <span>{{ form.is_active.label }}</span>{{ form.is_active.errors }}</label>
     </div>
   </section>
   {{ form.non_field_errors }}

@@ -2,7 +2,7 @@
 <html lang="pt-br">
 <head>
   <meta charset="utf-8">
-  <title>Relatorio de caixas</title>
+  <title>Relatório de caixas</title>
   <style>
     @page { size: A4 landscape; margin: 10mm; }
     * { box-sizing: border-box; }
@@ -28,7 +28,7 @@
 <body>
   <header>
     <div>
-      <h1>Relatorio de caixas</h1>
+      <h1>Relatório de caixas</h1>
       <p>Supermercado - periodo de {{ data_inicio|date:"d/m/Y" }} a {{ data_fim|date:"d/m/Y" }}</p>
       {% if filial_selecionada %}<p>Filial: {{ filial_selecionada }}</p>{% endif %}
       {% if operador_selecionado %}<p>Operador: {{ operador_selecionado.username }}</p>{% endif %}

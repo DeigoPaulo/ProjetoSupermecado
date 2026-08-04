@@ -19,6 +19,7 @@ urlpatterns = [
     path("api/pedidos/", views.api_receber_pedido, name="api_receber_pedido"),
     path("<int:pk>/", views.detalhe, name="detalhe"),
     path("<int:pk>/separacao/imprimir/", views.imprimir_separacao, name="imprimir_separacao"),
+    path("<int:pk>/separacao/impressao-desktop.json", views.impressao_separacao_desktop, name="impressao_separacao_desktop"),
     path("<int:pk>/acao/", views.acao_pedido, name="acao"),
     path("<int:pk>/itens/<int:item_id>/remover/", views.remover_item, name="remover_item"),
 ]

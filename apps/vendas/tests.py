@@ -64,7 +64,7 @@ class VendaServiceTests(TestCase):
         self.assertEqual(self.estoque.quantidade_atual, Decimal("10.000"))
     def test_nova_forma_global_e_inicializada_na_filial_automaticamente(self):
         formas_pagamento_disponiveis(self.filial)
-        nova_forma = FormaPagamento.objects.create(nome="Cartao loja", tipo="CARTAO")
+        nova_forma = FormaPagamento.objects.create(nome="Cartão loja", tipo="CARTAO")
 
         disponiveis = formas_pagamento_disponiveis(self.filial)
 
@@ -85,7 +85,7 @@ class VendaServiceTests(TestCase):
         FormaPagamentoFilial.objects.create(filial=self.filial, forma_pagamento=self.pix, ativo=True)
         FormaPagamentoFilial.objects.create(filial=self.filial, forma_pagamento=self.crediario, ativo=True)
 
-        with self.assertRaisesMessage(ValidationError, "Forma de pagamento nao habilitada para esta filial"):
+        with self.assertRaisesMessage(ValidationError, "Forma de pagamento não habilitada para está filial"):
             finalizar_venda(
                 caixa=self.caixa,
                 usuario=self.usuario,
@@ -125,6 +125,8 @@ class VendaServiceTests(TestCase):
             ).exists()
         )
     def test_finalizar_venda_com_pagamento_dividido_baixa_estoque(self):
+        self.estoque.custo_medio = Decimal("12.500000")
+        self.estoque.save(update_fields=["custo_medio", "atualizado_em"])
         pix_configurado = ContaMovimentoFinanceiro.objects.create(
             filial=self.filial,
             nome="PIX Banco Preferencial",
@@ -148,6 +150,7 @@ class VendaServiceTests(TestCase):
         self.assertEqual(venda.total_bruto, Decimal("50.00"))
         self.assertIsNone(venda.cliente)
         self.assertEqual(PagamentoVenda.objects.filter(venda=venda).count(), 2)
+        self.assertEqual(venda.itens.get().custo_unitario_no_momento, Decimal("12.50"))
         self.estoque.refresh_from_db()
         self.assertEqual(self.estoque.quantidade_atual, Decimal("8.000"))
         self.assertTrue(
@@ -271,7 +274,7 @@ class VendaServiceTests(TestCase):
         self.assertTrue(pagamento.transacao_externa_id.startswith("TEF-SIM-"))
         self.assertTrue(pagamento.nsu)
         self.assertTrue(pagamento.codigo_autorizacao)
-        self.assertIn("Autorizacao eletronica simulada", pagamento.mensagem_processadora)
+        self.assertIn("Autorização eletrônica simulada", pagamento.mensagem_processadora)
 
     def test_pagamento_eletronico_preserva_autorizacao_real(self):
         venda = finalizar_venda(
@@ -304,7 +307,16 @@ class VendaServiceTests(TestCase):
         self.produto.origem_mercadoria = "0"
         self.produto.cst_icms = "00"
         self.produto.aliquota_icms = Decimal("18.00")
-        self.produto.save(update_fields=["ncm", "origem_mercadoria", "cst_icms", "aliquota_icms"])
+        self.produto.cst_pis = "01"
+        self.produto.aliquota_pis = Decimal("1.6500")
+        self.produto.cst_cofins = "01"
+        self.produto.aliquota_cofins = Decimal("7.6000")
+        self.produto.save(
+            update_fields=[
+                "ncm", "origem_mercadoria", "cst_icms", "aliquota_icms",
+                "cst_pis", "aliquota_pis", "cst_cofins", "aliquota_cofins",
+            ]
+        )
         ConfiguracaoFiscal.objects.create(
             filial=self.filial,
             ambiente=AmbienteFiscal.HOMOLOGACAO,
@@ -312,11 +324,13 @@ class VendaServiceTests(TestCase):
             inscricao_estadual="123456789",
             csc_id="1",
             csc_token="token",
+            url_qrcode_nfce="https://homologacao.exemplo.gov.br/qrcode",
+            url_consulta_nfce="https://homologacao.exemplo.gov.br/consulta",
             certificado_a1_criptografado=b"certificado",
             certificado_senha_criptografada=b"senha",
         )
         SerieFiscal.objects.create(filial=self.filial, tipo_documento=TipoDocumentoFiscal.NFCE, serie=1, proximo_numero=10)
-        NaturezaOperacao.objects.create(descricao="Venda ao consumidor", cfop="5102", tipo_documento=TipoDocumentoFiscal.NFCE)
+        NaturezaOperacao.objects.create(empresa=self.filial.empresa, descricao="Venda ao consumidor", cfop="5102", tipo_documento=TipoDocumentoFiscal.NFCE)
 
         venda = finalizar_venda(
             caixa=self.caixa,
@@ -340,7 +354,16 @@ class VendaServiceTests(TestCase):
         self.produto.origem_mercadoria = "0"
         self.produto.cst_icms = "00"
         self.produto.aliquota_icms = Decimal("18.00")
-        self.produto.save(update_fields=["ncm", "origem_mercadoria", "cst_icms", "aliquota_icms"])
+        self.produto.cst_pis = "01"
+        self.produto.aliquota_pis = Decimal("1.6500")
+        self.produto.cst_cofins = "01"
+        self.produto.aliquota_cofins = Decimal("7.6000")
+        self.produto.save(
+            update_fields=[
+                "ncm", "origem_mercadoria", "cst_icms", "aliquota_icms",
+                "cst_pis", "aliquota_pis", "cst_cofins", "aliquota_cofins",
+            ]
+        )
         ConfiguracaoFiscal.objects.create(
             filial=self.filial,
             ambiente=AmbienteFiscal.HOMOLOGACAO,
@@ -348,11 +371,13 @@ class VendaServiceTests(TestCase):
             inscricao_estadual="123456789",
             csc_id="1",
             csc_token="token",
+            url_qrcode_nfce="https://homologacao.exemplo.gov.br/qrcode",
+            url_consulta_nfce="https://homologacao.exemplo.gov.br/consulta",
             certificado_a1_criptografado=b"certificado",
             certificado_senha_criptografada=b"senha",
         )
         SerieFiscal.objects.create(filial=self.filial, tipo_documento=TipoDocumentoFiscal.NFCE, serie=1, proximo_numero=10)
-        NaturezaOperacao.objects.create(descricao="Venda ao consumidor", cfop="5102", tipo_documento=TipoDocumentoFiscal.NFCE)
+        NaturezaOperacao.objects.create(empresa=self.filial.empresa, descricao="Venda ao consumidor", cfop="5102", tipo_documento=TipoDocumentoFiscal.NFCE)
 
         venda = finalizar_venda(
             caixa=self.caixa,
@@ -394,6 +419,7 @@ class VendaServiceTests(TestCase):
         self.assertEqual(conta.status, StatusContaFinanceira.ABERTA)
         self.assertEqual(conta.valor, Decimal("25.00"))
         self.assertEqual(conta.cliente, self.cliente)
+        self.assertEqual(conta.categoria.empresa, self.empresa)
 
     def test_venda_crediario_exige_cliente(self):
         with self.assertRaises(ValidationError):

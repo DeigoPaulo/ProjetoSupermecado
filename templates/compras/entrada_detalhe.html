@@ -71,7 +71,7 @@
     </table>
     <div class="panel-subtitle">Rastreio financeiro</div>
     <table>
-      <thead><tr><th>Data</th><th>Conta movimento</th><th>Tipo</th><th>Origem</th><th>Valor</th><th>Usuario</th></tr></thead>
+      <thead><tr><th>Data</th><th>Conta movimento</th><th>Tipo</th><th>Origem</th><th>Valor</th><th>Usuário</th></tr></thead>
       <tbody>
         {% for conta in entrada.contas_financeiras.all %}
           {% for lancamento in conta.lancamentos.all %}
@@ -84,7 +84,7 @@
               <td>{{ lancamento.usuario|default:"-" }}</td>
             </tr>
           {% empty %}
-            <tr><td colspan="6" class="empty">Conta {{ conta.id }} ainda nao gerou lancamento no livro financeiro.</td></tr>
+            <tr><td colspan="6" class="empty">Conta {{ conta.id }} ainda não gerou lançamento no livro financeiro.</td></tr>
           {% endfor %}
         {% endfor %}
       </tbody>
@@ -121,7 +121,7 @@
       </form>
     {% else %}
       <div class="operation-notice">
-        Esta entrada nao pode ser cancelada automaticamente.
+        Esta entrada não pode ser cancelada automaticamente.
         {% for bloqueio in bloqueios_cancelamento %}
           <br>{{ bloqueio }}
         {% endfor %}
@@ -133,7 +133,7 @@
 <section class="panel mt-panel">
   <div class="panel-title">Rastreio no estoque</div>
   <table>
-    <thead><tr><th>Data</th><th>Tipo</th><th>Produto</th><th>Quantidade</th><th>Custo total</th><th>Usuario</th></tr></thead>
+    <thead><tr><th>Data</th><th>Tipo</th><th>Produto</th><th>Quantidade</th><th>Custo total</th><th>Usuário</th></tr></thead>
     <tbody>
       {% for mov in movimentacoes_estoque %}
         <tr>
@@ -163,7 +163,7 @@
           <td>R$ {{ item.custo_unitario|floatformat:2 }}</td>
           <td>R$ {{ item.total|floatformat:2 }}</td>
           <td>{{ item.codigo_lote|default:"-" }}{% if item.validade %}<br><small>{{ item.validade|date:"d/m/Y" }}</small>{% endif %}</td>
-          <td>{{ item.atualizar_preco_custo|yesno:"Sim,Nao" }}</td>
+          <td>{{ item.atualizar_preco_custo|yesno:"Sim,Não" }}</td>
         </tr>
       {% empty %}
         <tr><td colspan="6" class="empty">Nenhum item informado.</td></tr>

@@ -4,6 +4,9 @@ param(
     [string]$Version,
     [string]$Commit = "HEAD",
     [string]$OutputDirectory = "dist\server_local",
+    [string]$PythonPath = ".venv\Scripts\python.exe",
+    [string]$ProtectedModulesDirectory = "",
+    [switch]$RequireProtectedModules,
     [switch]$RequireSignedCommit,
     [switch]$Force
 )
@@ -49,6 +52,36 @@ git archive --format=zip --output=$TempArchive $CommitSha -- $Paths
 if ($LASTEXITCODE -ne 0 -or -not (Test-Path -LiteralPath $TempArchive -PathType Leaf)) {
     throw "Falha ao gerar o arquivo do servidor local."
 }
+$Python = if ([IO.Path]::IsPathRooted($PythonPath)) { $PythonPath } else { Join-Path $Root $PythonPath }
+if (-not (Test-Path -LiteralPath $Python -PathType Leaf)) {
+    Remove-Item -LiteralPath $TempArchive -Force -ErrorAction SilentlyContinue
+    throw "Python do projeto nao encontrado para validar o pacote: $Python"
+}
+if ($RequireProtectedModules -and -not $ProtectedModulesDirectory) {
+    Remove-Item -LiteralPath $TempArchive -Force -ErrorAction SilentlyContinue
+    throw "Informe -ProtectedModulesDirectory para um pacote de producao protegido."
+}
+$ProtectedManifest = $null
+if ($ProtectedModulesDirectory) {
+    $ProtectedOverlay = if ([IO.Path]::IsPathRooted($ProtectedModulesDirectory)) { $ProtectedModulesDirectory } else { Join-Path $Root $ProtectedModulesDirectory }
+    & $Python scripts/protected_modules.py apply --root $Root --overlay $ProtectedOverlay --archive $TempArchive --commit $CommitSha
+    if ($LASTEXITCODE -ne 0) {
+        Remove-Item -LiteralPath $TempArchive -Force -ErrorAction SilentlyContinue
+        throw "Overlay de modulos protegidos recusado."
+    }
+    $ProtectedManifest = Get-Content -LiteralPath (Join-Path $ProtectedOverlay "protected-modules.manifest.json") -Raw | ConvertFrom-Json
+}
+$ValidationCode = "import json,sys; from pathlib import Path; from apps.configuracoes.artifacts import validar_conteudo_pacote_servidor; r=validar_conteudo_pacote_servidor(Path(sys.argv[1])); print(json.dumps(r, ensure_ascii=False)); sys.exit(0 if r['valido'] else 2)"
+$ValidationJson = & $Python -c $ValidationCode $TempArchive
+if ($LASTEXITCODE -ne 0) {
+    Remove-Item -LiteralPath $TempArchive -Force -ErrorAction SilentlyContinue
+    throw "Conteudo do pacote recusado: $ValidationJson"
+}
+$ContentValidation = $ValidationJson | ConvertFrom-Json
+if ($ContentValidation.contrato -ne "local_server_package_content_v1" -or $ContentValidation.valido -ne $true) {
+    Remove-Item -LiteralPath $TempArchive -Force -ErrorAction SilentlyContinue
+    throw "Contrato de validacao do conteudo do pacote invalido."
+}
 Move-Item -LiteralPath $TempArchive -Destination $Archive -Force
 $Hash = (Get-FileHash -LiteralPath $Archive -Algorithm SHA256).Hash
 $Payload = [ordered]@{
@@ -61,6 +94,10 @@ $Payload = [ordered]@{
     tamanho_bytes = (Get-Item -LiteralPath $Archive).Length
     sha256 = $Hash
     contem_dados_cliente = $false
+    conteudo_validado = $true
+    modulos_protegidos = [bool]$ProtectedModulesDirectory
+    manifesto_modulos_protegidos = $ProtectedManifest
+    validacao_conteudo = $ContentValidation
     inclui = $Paths
     instalacao = [ordered]@{
         preparar = ".\scripts\setup_local.ps1"

@@ -24,9 +24,9 @@ from apps.empresas.models import Empresa, Filial
 from apps.fiscal.models import DocumentoFiscal, StatusDocumentoFiscal
 from apps.vendas.models import PagamentoVenda, StatusVenda
 
-from .forms import BaixaContaForm, CategoriaFinanceiraForm, ContaFinanceiraForm, ContaMovimentoFinanceiroForm, TransferenciaFinanceiraForm
+from .forms import BaixaContaForm, CategoriaFinanceiraForm, CentroCustoForm, ContaContabilForm, ContaFinanceiraForm, ContaMovimentoFinanceiroForm, TransferenciaFinanceiraForm
 from .adapters import carregar_adaptador_contabil, diagnosticar_adaptador_contabil, normalizar_retorno_exportacao
-from .models import CategoriaFinanceira, ConciliacaoLancamentoFinanceiro, ContaFinanceira, ContaMovimentoFinanceiro, ExportacaoContabil, LancamentoFinanceiro, StatusContaFinanceira, StatusExportacaoContabil, TipoContaFinanceira, TipoLancamentoFinanceiro, TransferenciaFinanceira
+from .models import CategoriaFinanceira, CentroCusto, ContaContabil, ConciliacaoLancamentoFinanceiro, ContaFinanceira, ContaMovimentoFinanceiro, ExportacaoContabil, LancamentoFinanceiro, StatusContaFinanceira, StatusExportacaoContabil, TipoContaFinanceira, TipoLancamentoFinanceiro, TransferenciaFinanceira
 from .services import baixar_conta, cancelar_conta, conciliar_lancamento, estornar_lancamento, realizar_transferencia
 
 
@@ -46,7 +46,7 @@ def _escopo_filiais_financeiro(request):
             usuario=request.user, is_active=True, filial__isnull=False,
         ).first()
         if not perfil:
-            raise PermissionDenied("Usuario sem filial financeira vinculada.")
+            raise PermissionDenied("Usuário sem filial financeira vinculada.")
         if perfil.tipo == TipoPerfil.ADMINISTRADOR:
             filiais = filiais.filter(empresa_id=perfil.filial.empresa_id)
             permite_consolidado = True
@@ -57,13 +57,18 @@ def _escopo_filiais_financeiro(request):
     filial_parametro = (request.GET.get("filial") or "").strip()
     if filial_parametro:
         if not filial_parametro.isdigit() or not filiais.filter(pk=filial_parametro).exists():
-            raise PermissionDenied("Filial fora do escopo permitido para este usuario.")
+            raise PermissionDenied("Filial fora do escopo permitido para este usuário.")
         filial_id = int(filial_parametro)
     elif permite_consolidado:
         filial_id = None
     else:
         filial_id = filiais.values_list("id", flat=True).first()
     return filiais, filial_id, permite_consolidado, empresa_id
+
+def _queryset_no_escopo_financeiro(request, queryset, campo_filial="filial"):
+    filiais, _filial_id, _permite_consolidado, _empresa_id = _escopo_filiais_financeiro(request)
+    return queryset.filter(**{f"{campo_filial}__in": filiais})
+
 
 def _next_seguro(request, default="financeiro:contas"):
     destino = request.POST.get("next") or request.GET.get("next") or ""
@@ -79,7 +84,7 @@ def _contas_filtradas(request):
     q = request.GET.get("q", "").strip()
     filiais, filial_id, permite_consolidado, empresa_id = _escopo_filiais_financeiro(request)
     contas_qs = ContaFinanceira.objects.select_related(
-        "categoria", "filial", "fornecedor", "cliente"
+        "categoria", "centro_custo", "filial", "fornecedor", "cliente"
     ).filter(vencimento__gte=data_inicio, vencimento__lte=data_fim)
     if filial_id:
         contas_qs = contas_qs.filter(filial_id=filial_id)
@@ -239,7 +244,7 @@ def _conciliacao_bancaria_json(resumo):
     }
 def _resultado_financeiro_periodo(data_inicio, data_fim, filial_id=None, empresa_id=None):
     lancamentos = (
-        LancamentoFinanceiro.objects.select_related("conta", "conta__filial", "conta_financeira", "conta_financeira__categoria")
+        LancamentoFinanceiro.objects.select_related("conta", "conta__filial", "conta_financeira", "conta_financeira__categoria", "centro_custo", "conta_contabil")
         .filter(data__gte=data_inicio, data__lte=data_fim)
         .exclude(origem="TRANSFERENCIA")
     )
@@ -297,6 +302,51 @@ def _resultado_financeiro_periodo(data_inicio, data_fim, filial_id=None, empresa
         linha["resultado"] = linha["receitas"] - linha["despesas"]
         por_categoria.append(linha)
 
+    por_centro_custo = []
+    acumulado_centro = OrderedDict()
+    for lancamento in lancamentos:
+        centro = lancamento.centro_custo
+        chave = centro.pk if centro else None
+        linha = acumulado_centro.setdefault(
+            chave,
+            {
+                "codigo": centro.codigo if centro else "-",
+                "centro_custo": centro.nome if centro else "Sem centro de custo",
+                "receitas": Decimal("0.00"),
+                "despesas": Decimal("0.00"),
+            },
+        )
+        if lancamento.tipo == TipoLancamentoFinanceiro.ENTRADA:
+            linha["receitas"] += lancamento.valor
+        else:
+            linha["despesas"] += lancamento.valor
+    for linha in acumulado_centro.values():
+        linha["resultado"] = linha["receitas"] - linha["despesas"]
+        por_centro_custo.append(linha)
+
+    por_conta_contabil = []
+    acumulado_contabil = OrderedDict()
+    for lancamento in lancamentos:
+        conta_contabil = lancamento.conta_contabil
+        chave = conta_contabil.pk if conta_contabil else None
+        linha = acumulado_contabil.setdefault(
+            chave,
+            {
+                "codigo": conta_contabil.codigo if conta_contabil else "-",
+                "conta_contabil": conta_contabil.nome if conta_contabil else "Sem conta cont?bil",
+                "natureza": conta_contabil.get_natureza_display() if conta_contabil else "-",
+                "receitas": Decimal("0.00"),
+                "despesas": Decimal("0.00"),
+            },
+        )
+        if lancamento.tipo == TipoLancamentoFinanceiro.ENTRADA:
+            linha["receitas"] += lancamento.valor
+        else:
+            linha["despesas"] += lancamento.valor
+    for linha in acumulado_contabil.values():
+        linha["resultado"] = linha["receitas"] - linha["despesas"]
+        por_conta_contabil.append(linha)
+
     saldos_contas = []
     contas_movimento = ContaMovimentoFinanceiro.objects.select_related("filial", "filial__empresa").filter(ativa=True)
     if filial_id:
@@ -327,6 +377,8 @@ def _resultado_financeiro_periodo(data_inicio, data_fim, filial_id=None, empresa
         "por_origem": por_origem,
         "por_conta": por_conta,
         "por_categoria": por_categoria,
+        "por_centro_custo": por_centro_custo,
+        "por_conta_contabil": por_conta_contabil,
         "saldos_contas": saldos_contas,
         "balancete_contas": _balancete_contas_periodo(data_inicio, data_fim, filial_id, empresa_id),
         "dre_gerencial": _dre_gerencial(receitas, despesas, por_categoria),
@@ -346,19 +398,19 @@ def _dre_gerencial(receitas, despesas, por_categoria):
             "grupo": "Receita operacional",
             "valor": receitas,
             "natureza": "entrada",
-            "observacao": "Entradas realizadas no livro financeiro, sem transferencias internas.",
+            "observacao": "Entradas realizadas no livro financeiro, sem transferências internas.",
         },
         {
             "grupo": "Despesas operacionais",
             "valor": despesas,
             "natureza": "saida",
-            "observacao": "Saidas realizadas no livro financeiro, sem transferencias internas.",
+            "observacao": "Saidas realizadas no livro financeiro, sem transferências internas.",
         },
         {
             "grupo": "Resultado operacional",
             "valor": resultado,
             "natureza": "resultado",
-            "observacao": "Receitas menos despesas no periodo filtrado.",
+            "observacao": "Receitas menos despesas no período filtrado.",
         },
     ]
     return {
@@ -494,7 +546,7 @@ def _resumo_integracao_fiscal(data_inicio, data_fim, filial_id=None, empresa_id=
             "venda_id": venda_id, "filial": fiscal["filial__nome"],
             "valor_fiscal": valor_fiscal, "valor_financeiro": valor_financeiro,
             "diferenca": diferenca,
-            "situacao": "Sem lancamento financeiro" if not valor_financeiro else "Valores divergentes",
+            "situacao": "Sem lançamento financeiro" if not valor_financeiro else "Valores divergentes",
         })
     vendas_sem_documento = sorted(set(entradas_venda) - set(vendas_documentadas))
     for venda_id in vendas_sem_documento:
@@ -805,11 +857,32 @@ def resultado_financeiro_csv(request):
             str(linha["resultado"]).replace(".", ","),
         ])
     writer.writerow([])
+    writer.writerow(["Codigo", "Centro de custo", "Receitas", "Despesas", "Resultado"])
+    for linha in resultado["por_centro_custo"]:
+        writer.writerow([
+            linha["codigo"],
+            linha["centro_custo"],
+            valor_csv(linha["receitas"]),
+            valor_csv(linha["despesas"]),
+            valor_csv(linha["resultado"]),
+        ])
+    writer.writerow([])
+    writer.writerow(["Codigo", "Conta contabil", "Natureza", "Receitas", "Despesas", "Resultado"])
+    for linha in resultado["por_conta_contabil"]:
+        writer.writerow([
+            linha["codigo"],
+            linha["conta_contabil"],
+            linha["natureza"],
+            valor_csv(linha["receitas"]),
+            valor_csv(linha["despesas"]),
+            valor_csv(linha["resultado"]),
+        ])
+    writer.writerow([])
     writer.writerow(["Filial", "Conta", "Receitas", "Despesas", "Resultado"])
     for linha in resultado["por_conta"]:
         writer.writerow([linha["filial"], linha["conta"], str(linha["receitas"]).replace(".", ","), str(linha["despesas"]).replace(".", ","), str(linha["resultado"]).replace(".", ",")])
     writer.writerow([])
-    writer.writerow(["Filial", "Conta movimento", "Tipo", "Saldo inicial", "Entradas periodo", "Saidas periodo", "Saldo atual"])
+    writer.writerow(["Filial", "Conta movimento", "Tipo", "Saldo inicial", "Entradas período", "Saidas período", "Saldo atual"])
     for linha in resultado["saldos_contas"]:
         writer.writerow([
             linha["filial"],
@@ -825,8 +898,8 @@ def resultado_financeiro_csv(request):
     writer.writerow(["Item", "Valor", "Observacao"])
     for linha in resultado["pacote_contabil"]["linhas"]:
         writer.writerow([linha["item"], valor_csv(linha["valor"]), linha["observacao"]])
-    writer.writerow(["Total de lancamentos", resultado["pacote_contabil"]["total_lancamentos"], "Registros do livro financeiro no periodo."])
-    writer.writerow(["Transferencias internas", resultado["pacote_contabil"]["transferencias"], f"Entradas {valor_csv(resultado['pacote_contabil']['transferencias_entradas'])} / Saidas {valor_csv(resultado['pacote_contabil']['transferencias_saidas'])}"])
+    writer.writerow(["Total de lançamentos", resultado["pacote_contabil"]["total_lancamentos"], "Registros do livro financeiro no período."])
+    writer.writerow(["Transferências internas", resultado["pacote_contabil"]["transferencias"], f"Entradas {valor_csv(resultado['pacote_contabil']['transferencias_entradas'])} / Saidas {valor_csv(resultado['pacote_contabil']['transferencias_saidas'])}"])
     writer.writerow(["Estornos", resultado["pacote_contabil"]["estornos"], f"Valor {valor_csv(resultado['pacote_contabil']['estornos_valor'])}"])
     conciliacao = resultado["conciliacao_bancaria"]
     writer.writerow(["Conciliação bancária", f"{conciliacao['percentual']:.2f}".replace(".", ",") + "%", f"{conciliacao['conciliados']} conciliados / {conciliacao['pendentes']} pendentes"])
@@ -879,12 +952,30 @@ def _payload_pacote_contabil(data_inicio, data_fim, filiais, filial_id, empresa_
             "estornos": pacote["estornos"],
         },
         "dre_gerencial": resultado["dre_gerencial"],
+        "plano_contas": [
+            {
+                **linha,
+                "receitas": _valor_monetario_json(linha["receitas"]),
+                "despesas": _valor_monetario_json(linha["despesas"]),
+                "resultado": _valor_monetario_json(linha["resultado"]),
+            }
+            for linha in resultado["por_conta_contabil"]
+        ],
+        "centros_custo": [
+            {
+                **linha,
+                "receitas": _valor_monetario_json(linha["receitas"]),
+                "despesas": _valor_monetario_json(linha["despesas"]),
+                "resultado": _valor_monetario_json(linha["resultado"]),
+            }
+            for linha in resultado["por_centro_custo"]
+        ],
         "balancete_contas": resultado["balancete_contas"],
         "conciliacao_bancaria": _conciliacao_bancaria_json(resultado["conciliacao_bancaria"]),
         "integracao_fiscal": _integracao_fiscal_json(resultado["integracao_fiscal"]),
         "pacote_contabil": pacote,
         "alertas": pacote["alertas"],
-        "observacao": "Pacote gerencial de conferencia interna; nao substitui SPED, ECD, ECF ou obrigacoes oficiais.",
+        "observacao": "Pacote gerencial de conferencia interna; não substitui SPED, ECD, ECF ou obrigacoes oficiais.",
     }
 
 
@@ -1099,7 +1190,10 @@ def conciliacao_bancaria_csv(request):
 @login_required
 @role_required(*RELATORIOS)
 def contas_movimento(request):
-    contas_qs = ContaMovimentoFinanceiro.objects.select_related("filial", "filial__empresa")
+    contas_qs = _queryset_no_escopo_financeiro(
+        request,
+        ContaMovimentoFinanceiro.objects.select_related("filial", "filial__empresa"),
+    )
     contas_lista = list(contas_qs)
     return render(request, "financeiro/contas_movimento.html", {
         "contas_movimento": contas_lista,
@@ -1111,8 +1205,9 @@ def contas_movimento(request):
 @login_required
 @role_required(*SISTEMA)
 def conta_movimento_form(request, pk=None):
-    conta = get_object_or_404(ContaMovimentoFinanceiro, pk=pk) if pk else None
-    form = ContaMovimentoFinanceiroForm(request.POST or None, instance=conta)
+    contas = _queryset_no_escopo_financeiro(request, ContaMovimentoFinanceiro.objects.all())
+    conta = get_object_or_404(contas, pk=pk) if pk else None
+    form = ContaMovimentoFinanceiroForm(request.POST or None, instance=conta, user=request.user)
     if request.method == "POST" and form.is_valid():
         form.save()
         messages.success(request, "Conta de movimento salva.")
@@ -1123,7 +1218,7 @@ def conta_movimento_form(request, pk=None):
 @login_required
 @role_required(*SISTEMA)
 def transferencia_form(request):
-    form = TransferenciaFinanceiraForm(request.POST or None, initial={"data": timezone.localdate()})
+    form = TransferenciaFinanceiraForm(request.POST or None, initial={"data": timezone.localdate()}, user=request.user)
     if request.method == "POST" and form.is_valid():
         try:
             realizar_transferencia(
@@ -1134,12 +1229,16 @@ def transferencia_form(request):
         except ValidationError as exc:
             form.add_error(None, exc)
         else:
-            messages.success(request, "Transferencia registrada com os dois lancamentos financeiros.")
+            messages.success(request, "Transferencia registrada com os dois lançamentos financeiros.")
             return redirect("financeiro:livro")
     return render(request, "financeiro/transferencia_form.html", {
         "form": form,
-        "transferencias_recentes": TransferenciaFinanceira.objects.select_related(
-            "conta_origem", "conta_destino", "conta_origem__filial", "conta_destino__filial", "usuario"
+        "transferencias_recentes": _queryset_no_escopo_financeiro(
+            request,
+            TransferenciaFinanceira.objects.select_related(
+                "conta_origem", "conta_destino", "conta_origem__filial", "conta_destino__filial", "usuario"
+            ),
+            campo_filial="conta_origem__filial",
         )[:20],
     })
 
@@ -1198,7 +1297,10 @@ def livro_financeiro_csv(request):
 @login_required
 @role_required(*SISTEMA)
 def estornar_livro(request, pk):
-    lancamento = get_object_or_404(LancamentoFinanceiro, pk=pk)
+    lancamentos = _queryset_no_escopo_financeiro(
+        request, LancamentoFinanceiro.objects.all(), campo_filial="conta__filial"
+    )
+    lancamento = get_object_or_404(lancamentos, pk=pk)
     if request.method == "POST":
         try:
             estornar_lancamento(
@@ -1210,14 +1312,15 @@ def estornar_livro(request, pk):
         except ValidationError as exc:
             messages.error(request, " ".join(exc.messages))
         else:
-            messages.success(request, "Estorno registrado com lancamento inverso.")
+            messages.success(request, "Estorno registrado com lançamento inverso.")
     return redirect("financeiro:livro")
 
 
 @login_required
 @role_required(*SISTEMA)
 def conta_form(request, pk=None):
-    conta = get_object_or_404(ContaFinanceira, pk=pk) if pk else None
+    contas = _queryset_no_escopo_financeiro(request, ContaFinanceira.objects.all())
+    conta = get_object_or_404(contas, pk=pk) if pk else None
     if request.method == "POST":
         form = ContaFinanceiraForm(request.POST, instance=conta, user=request.user)
         if form.is_valid():
@@ -1235,7 +1338,9 @@ def conta_form(request, pk=None):
 @login_required
 @role_required(*SISTEMA)
 def baixar(request, pk):
-    conta = get_object_or_404(ContaFinanceira, pk=pk)
+    conta = get_object_or_404(
+        _queryset_no_escopo_financeiro(request, ContaFinanceira.objects.all()), pk=pk
+    )
     next_url = _next_seguro(request)
     initial = {"data_pagamento": timezone.localdate(), "valor_pago": conta.valor}
     if request.method == "POST":
@@ -1256,7 +1361,9 @@ def baixar(request, pk):
 @login_required
 @role_required(*SISTEMA)
 def cancelar(request, pk):
-    conta = get_object_or_404(ContaFinanceira, pk=pk)
+    conta = get_object_or_404(
+        _queryset_no_escopo_financeiro(request, ContaFinanceira.objects.all()), pk=pk
+    )
     next_url = _next_seguro(request)
     if request.method == "POST":
         try:
@@ -1270,21 +1377,88 @@ def cancelar(request, pk):
 
 @login_required
 @role_required(*SISTEMA)
+def plano_contas(request):
+    empresas = _escopo_filiais_financeiro(request)[0].values("empresa")
+    contas = ContaContabil.objects.filter(empresa__in=empresas).select_related("empresa", "conta_pai").order_by("empresa", "codigo")
+    page_obj = Paginator(contas, 50).get_page(request.GET.get("page"))
+    return render(request, "financeiro/plano_contas.html", {"contas_contabeis": page_obj, "page_obj": page_obj})
+
+
+@login_required
+@role_required(*SISTEMA)
+def conta_contabil_form(request, pk=None):
+    empresas = _escopo_filiais_financeiro(request)[0].values("empresa")
+    conta = get_object_or_404(ContaContabil.objects.filter(empresa__in=empresas), pk=pk) if pk else None
+    if request.method == "POST":
+        form = ContaContabilForm(request.POST, instance=conta, user=request.user)
+        if form.is_valid():
+            conta_salva = form.save()
+            LogAuditoria.objects.create(
+                usuario=request.user,
+                modulo="financeiro",
+                acao="ALTERACAO_CONTA_CONTABIL" if conta else "CADASTRO_CONTA_CONTABIL",
+                descricao=f"Conta cont?bil {conta_salva.codigo} - {conta_salva.nome} salva.",
+                objeto_tipo="ContaContabil",
+                objeto_id=str(conta_salva.pk),
+                ip=request.META.get("REMOTE_ADDR"),
+            )
+            messages.success(request, "Conta cont?bil salva.")
+            return redirect("financeiro:plano_contas")
+    else:
+        form = ContaContabilForm(instance=conta, user=request.user)
+    return render(request, "financeiro/conta_contabil_form.html", {"form": form, "conta_contabil": conta})
+
+
+@login_required
+@role_required(*SISTEMA)
+def centros_custo(request):
+    empresas = _escopo_filiais_financeiro(request)[0].values("empresa")
+    centros = CentroCusto.objects.filter(empresa__in=empresas).select_related("empresa").order_by("empresa", "nome")
+    return render(request, "financeiro/centros_custo.html", {"centros": centros})
+
+
+@login_required
+@role_required(*SISTEMA)
+def centro_custo_form(request, pk=None):
+    empresas = _escopo_filiais_financeiro(request)[0].values("empresa")
+    centro = get_object_or_404(CentroCusto.objects.filter(empresa__in=empresas), pk=pk) if pk else None
+    if request.method == "POST":
+        form = CentroCustoForm(request.POST, instance=centro, user=request.user)
+        if form.is_valid():
+            centro_salvo = form.save()
+            LogAuditoria.objects.create(
+                usuario=request.user,
+                modulo="financeiro",
+                acao="ALTERACAO_CENTRO_CUSTO" if centro else "CADASTRO_CENTRO_CUSTO",
+                descricao=f"Centro de custo {centro_salvo.codigo} - {centro_salvo.nome} salvo.",
+                objeto_tipo="CentroCusto",
+                objeto_id=str(centro_salvo.pk),
+                ip=request.META.get("REMOTE_ADDR"),
+            )
+            messages.success(request, "Centro de custo salvo.")
+            return redirect("financeiro:centros_custo")
+    else:
+        form = CentroCustoForm(instance=centro, user=request.user)
+    return render(request, "financeiro/centro_custo_form.html", {"form": form, "centro": centro})
+
+
+@login_required
+@role_required(*SISTEMA)
 def categorias(request):
-    categorias_qs = CategoriaFinanceira.objects.order_by("tipo", "nome")
+    categorias_qs = CategoriaFinanceira.objects.filter(empresa__in=_escopo_filiais_financeiro(request)[0].values("empresa")).select_related("conta_contabil").order_by("tipo", "nome")
     return render(request, "financeiro/categorias.html", {"categorias": categorias_qs})
 
 
 @login_required
 @role_required(*SISTEMA)
 def categoria_form(request, pk=None):
-    categoria = get_object_or_404(CategoriaFinanceira, pk=pk) if pk else None
+    categoria = get_object_or_404(CategoriaFinanceira.objects.filter(empresa__in=_escopo_filiais_financeiro(request)[0].values("empresa")), pk=pk) if pk else None
     if request.method == "POST":
-        form = CategoriaFinanceiraForm(request.POST, instance=categoria)
+        form = CategoriaFinanceiraForm(request.POST, instance=categoria, user=request.user)
         if form.is_valid():
             form.save()
             messages.success(request, "Categoria financeira salva.")
             return redirect("financeiro:categorias")
     else:
-        form = CategoriaFinanceiraForm(instance=categoria)
+        form = CategoriaFinanceiraForm(instance=categoria, user=request.user)
     return render(request, "financeiro/categoria_form.html", {"form": form, "categoria": categoria})

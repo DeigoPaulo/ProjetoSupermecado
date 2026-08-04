@@ -23,6 +23,21 @@
   <article class="metric"><span>Produtos analisados</span><strong>{{ total_produtos }}</strong></article>
   <article class="metric"><span>Classe A</span><strong>{{ classe_a }}</strong></article>
   <article class="metric"><span>Classe B/C</span><strong>{{ classe_b }} / {{ classe_c }}</strong></article>
+  <article class="metric"><span>Horario de pico</span><strong>{% if horario_pico %}{{ horario_pico.hora|stringformat:"02d" }}:00{% else %}-{% endif %}</strong></article>
+</section>
+
+<section class="panel">
+  <div class="panel-title">Horarios de maior movimento</div>
+  <table>
+    <thead><tr><th>Faixa horaria</th><th>Vendas</th><th>Faturamento</th></tr></thead>
+    <tbody>
+      {% for horario in horarios_pico %}
+        <tr><td>{{ horario.hora|stringformat:"02d" }}:00 - {{ horario.hora|stringformat:"02d" }}:59</td><td>{{ horario.vendas }}</td><td>R$ {{ horario.faturamento|floatformat:2 }}</td></tr>
+      {% empty %}
+        <tr><td colspan="3" class="empty">Sem vendas no periodo.</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
 </section>
 
 <div class="panel">
@@ -32,9 +47,9 @@
       <tr>
         <th>Classe</th>
         <th>Produto</th>
-        <th>Codigo</th>
+        <th>Código</th>
         <th>Qtd liquida</th>
-        <th>Devolucoes</th>
+        <th>Devoluções</th>
         <th>Valor liquido</th>
         <th>%</th>
         <th>% acum.</th>

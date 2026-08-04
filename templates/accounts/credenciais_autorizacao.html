@@ -1,0 +1,89 @@
+{% extends "base.html" %}
+
+{% block title %}Credenciais de autorização{% endblock %}
+
+{% block content %}
+<header class="page-header">
+  <div>
+    <h1>Credenciais de autorização</h1>
+    <p>Cartões e crachás usados por supervisores e administradores nas operações protegidas.</p>
+  </div>
+  <a class="secondary-button" href="{% url 'accounts:usuarios' %}"><i class="fa-solid fa-arrow-left"></i> Usuários</a>
+</header>
+
+<div class="form-note form-note-warning">
+  <strong><i class="fa-solid fa-shield-halved"></i> Credencial pessoal e intransferível</strong>
+  <span>O sistema armazena somente um hash. Para estorno e outras ações críticas, cadastre também um PIN.</span>
+</div>
+
+<section class="panel">
+  <div class="panel-title">Cadastrar cartão ou crachá</div>
+  <form method="post" class="stacked-form credential-enrollment-form">
+    {% csrf_token %}
+    <input type="hidden" name="acao_form" value="credencial">
+    {{ form.non_field_errors }}
+    <div class="form-grid">
+      <label class="form-field"><span>{{ form.usuario.label }}</span>{{ form.usuario }}{{ form.usuario.errors }}</label>
+      <label class="form-field"><span>{{ form.tipo.label }}</span>{{ form.tipo }}{{ form.tipo.errors }}</label>
+      <label class="form-field"><span>{{ form.nome.label }}</span>{{ form.nome }}{{ form.nome.errors }}</label>
+      <label class="form-field"><span>{{ form.valida_ate.label }}</span>{{ form.valida_ate }}{{ form.valida_ate.errors }}</label>
+      <label class="form-field credential-read-field">
+        <span>{{ form.identificador.label }}</span>
+        {{ form.identificador }}{{ form.identificador.errors }}
+        <small>{{ form.identificador.help_text }}</small>
+      </label>
+      <label class="form-field"><span>{{ form.pin.label }}</span>{{ form.pin }}{{ form.pin.errors }}<small>{{ form.pin.help_text }}</small></label>
+    </div>
+    <div class="form-actions"><button class="primary-button" type="submit"><i class="fa-solid fa-id-card"></i> Cadastrar credencial</button></div>
+  </form>
+</section>
+
+{% if politica_form %}
+<section class="panel">
+  <div class="panel-title">Política de cartão e PIN</div>
+  <form method="post" class="stacked-form">
+    {% csrf_token %}
+    <input type="hidden" name="acao_form" value="politica_pin">
+    {{ politica_form.non_field_errors }}
+    <div class="form-note">
+      <strong><i class="fa-solid fa-shield-halved"></i> Operações de maior risco</strong>
+      <span>Quando marcada, a operação aceita login e senha ou um cartão que tenha PIN cadastrado.</span>
+    </div>
+    <div class="checkbox-grid">{{ politica_form.acoes_credencial_exigem_pin }}{{ politica_form.acoes_credencial_exigem_pin.errors }}</div>
+    <div class="form-actions">
+      <button class="primary-button" type="submit"><i class="fa-solid fa-floppy-disk"></i> Salvar política</button>
+    </div>
+  </form>
+</section>
+{% endif %}
+
+<section class="panel">
+  <div class="panel-title">Credenciais cadastradas</div>
+  <div class="table-responsive">
+    <table>
+      <thead><tr><th>Responsável</th><th>Nome</th><th>Tipo</th><th>Validade</th><th>Último uso</th><th>Usos</th><th>Status</th><th></th></tr></thead>
+      <tbody>
+        {% for credencial in credenciais %}
+          <tr>
+            <td>{{ credencial.usuario.get_full_name|default:credencial.usuario.username }}<small class="table-subline">{{ credencial.usuario.username }}</small></td>
+            <td>{{ credencial.nome }}{% if credencial.pin_hash %}<small class="table-subline"><i class="fa-solid fa-key"></i> PIN exigido</small>{% endif %}</td>
+            <td>{{ credencial.get_tipo_display }}</td>
+            <td>{{ credencial.valida_ate|date:"d/m/Y H:i"|default:"Sem vencimento" }}</td>
+            <td>{{ credencial.ultimo_uso_em|date:"d/m/Y H:i"|default:"Nunca" }}</td>
+            <td>{{ credencial.total_usos }}</td>
+            <td>{% if credencial.vigente %}<span class="status status-success">Ativa</span>{% else %}<span class="status status-muted">Inativa</span>{% endif %}</td>
+            <td class="row-actions">
+              {% if credencial.ativa %}
+                <form method="post" action="{% url 'accounts:credencial_autorizacao_revogar' credencial.pk %}" class="form-confirm" data-msg="Revogar esta credencial?">
+                  {% csrf_token %}<button class="secondary-button danger-button" type="submit"><i class="fa-solid fa-ban"></i> Revogar</button>
+                </form>
+              {% endif %}
+            </td>
+          </tr>
+        {% empty %}<tr><td colspan="8" class="empty">Nenhuma credencial cadastrada.</td></tr>{% endfor %}
+      </tbody>
+    </table>
+  </div>
+</section>
+{% include "includes/pagination.html" %}
+{% endblock %}

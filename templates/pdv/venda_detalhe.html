@@ -54,7 +54,7 @@
       <dt>Status</dt><dd>{{ venda.status }}</dd>
       <dt>Operador</dt><dd>{{ venda.usuario }}</dd>
       <dt>Cliente</dt><dd>{{ venda.cliente|default:"Cliente avulso" }}</dd>
-      <dt>Documento na nota</dt><dd>{% if venda.documento_consumidor %}{{ venda.get_documento_consumidor_tipo_display }} {{ venda.documento_consumidor }}{% else %}Nao identificado{% endif %}</dd>
+      <dt>Documento na nota</dt><dd>{% if venda.documento_consumidor %}{{ venda.get_documento_consumidor_tipo_display }} {{ venda.documento_consumidor }}{% else %}Não identificado{% endif %}</dd>
       <dt>Caixa</dt><dd>{{ venda.caixa.id }}</dd>
       <dt>Total bruto</dt><dd>R$ {{ venda.total_bruto|floatformat:2 }}</dd>
       <dt>Desconto</dt><dd>R$ {{ venda.desconto|floatformat:2 }}</dd>
@@ -99,7 +99,7 @@
 
 {% if venda.devolucoes.all %}
   <div class="panel mt-panel">
-    <div class="panel-title">Devolucoes registradas</div>
+    <div class="panel-title">Devoluções registradas</div>
     <table>
       <thead><tr><th>Data</th><th>Motivo</th><th>Itens</th><th>Valor</th></tr></thead>
       <tbody>

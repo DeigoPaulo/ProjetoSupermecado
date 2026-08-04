@@ -45,5 +45,5 @@ class FornecedorForm(forms.ModelForm):
             return empresa
         empresa_id = empresa_id_do_usuario(self.user)
         if not empresa_id or not empresa or empresa.pk != empresa_id:
-            raise ValidationError("Empresa do fornecedor nao corresponde ao usuario autenticado.")
+            raise ValidationError("Empresa do fornecedor não corresponde ao usuário autenticado.")
         return empresa

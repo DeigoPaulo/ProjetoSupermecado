@@ -39,6 +39,54 @@ logger = logging.getLogger(__name__)
 SALT_CONCESSAO = "deigo-tecnologia.licenca.v1"
 
 
+def diagnostico_prontidao_licenciamento():
+    privada_pem = bool(str(settings.LICENCIAMENTO_CHAVE_PRIVADA_PEM or "").strip())
+    privada_arquivo = str(settings.LICENCIAMENTO_CHAVE_PRIVADA_ARQUIVO or "").strip()
+    privada_disponivel = privada_pem or bool(privada_arquivo and Path(privada_arquivo).is_file())
+    script = Path(settings.BASE_DIR) / "scripts" / "register_licensing_billing_task.ps1"
+    asaas_url = str(settings.ASAAS_API_URL or "").strip()
+    asaas_https = asaas_url.lower().startswith("https://")
+    asaas_sandbox = "sandbox" in asaas_url.lower()
+    fallback_ativo = bool(settings.LICENCIAMENTO_PERMITIR_ASSINATURA_COMPARTILHADA)
+    alertas = []
+
+    if not privada_disponivel:
+        alertas.append("Configure a chave privada Ed25519 somente no servidor central.")
+    if fallback_ativo:
+        alertas.append("O fallback de assinatura compartilhada está ativo; desative-o em produção.")
+    if not asaas_https:
+        alertas.append("Configure a URL HTTPS da API do Asaas.")
+    if not settings.ASAAS_API_KEY:
+        alertas.append("Configure a credencial do Asaas para publicar as cobranças.")
+    if not settings.ASAAS_WEBHOOK_TOKEN:
+        alertas.append("Configure o token do webhook do Asaas.")
+    if not script.is_file():
+        alertas.append("O script de agendamento diário do licenciamento não foi encontrado.")
+
+    pronto_homologacao = bool(
+        privada_disponivel
+        and not fallback_ativo
+        and asaas_https
+        and settings.ASAAS_API_KEY
+        and settings.ASAAS_WEBHOOK_TOKEN
+        and script.is_file()
+    )
+    return {
+        "contrato": "licensing_readiness_v1",
+        "chave_privada_ed25519": privada_disponivel,
+        "fallback_assinatura_compartilhada": fallback_ativo,
+        "asaas_configurado": bool(settings.ASAAS_API_KEY),
+        "asaas_url_https": asaas_https,
+        "asaas_sandbox": asaas_sandbox,
+        "webhook_configurado": bool(settings.ASAAS_WEBHOOK_TOKEN),
+        "script_agendamento_disponivel": script.is_file(),
+        "comando_agendamento": r".\scripts\register_licensing_billing_task.ps1 -Horario 06:00 -ExecutarSemLogin",
+        "pronto_homologacao": pronto_homologacao,
+        "pronto_producao": bool(pronto_homologacao and not asaas_sandbox),
+        "alertas": alertas,
+    }
+
+
 def _chave_assinatura():
     return settings.LICENCIAMENTO_CHAVE_ASSINATURA
 
@@ -280,7 +328,7 @@ def gerar_desafio_liberacao(empresa, agora=None):
         instalacao_id = str(settings.LICENCIAMENTO_INSTALACAO_ID).strip()
         instalacao_uuid = str(uuid.UUID(instalacao_id))
     except (ValueError, AttributeError):
-        raise RuntimeError("LICENCIAMENTO_INSTALACAO_ID não identifica esta instalação local.")
+        raise RuntimeError("LICENCIAMENTO_INSTALACAO_ID não identifica está instalação local.")
     nonce = secrets.token_urlsafe(32)
     desafio = DesafioLiberacaoLocal.objects.create(
         empresa=empresa,

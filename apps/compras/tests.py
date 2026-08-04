@@ -115,12 +115,45 @@ class ComprasFinanceiroTests(TestCase):
         self.assertEqual(entrada.total_produtos, Decimal("33.25"))
         self.assertEqual(estoque.quantidade_atual, Decimal("9.000"))
         self.assertEqual(self.produto.preco_custo, Decimal("4.75"))
+        self.assertEqual(estoque.custo_medio, Decimal("4.583333"))
         self.assertEqual(movimentacao.tipo, TipoMovimentacaoEstoque.ENTRADA)
         self.assertEqual(movimentacao.quantidade, Decimal("7.000"))
         self.assertEqual(movimentacao.custo_unitario, Decimal("4.75"))
         self.assertEqual(movimentacao.custo_total, Decimal("33.250"))
         self.assertFalse(ContaFinanceira.objects.filter(entrada_compra=entrada).exists())
 
+    def test_nova_compra_recalcula_custo_medio_sem_reescrever_entradas(self):
+        Estoque.objects.create(
+            produto=self.produto,
+            filial=self.filial,
+            quantidade_atual=Decimal("10.000"),
+            custo_medio=Decimal("2.000000"),
+        )
+        entrada = EntradaCompra.objects.create(
+            fornecedor=self.fornecedor,
+            filial=self.filial,
+            usuario=self.usuario,
+            numero_documento="NF-CUSTO-MEDIO",
+            gerar_conta_financeira=False,
+        )
+        item = ItemEntradaCompra.objects.create(
+            entrada=entrada,
+            produto=self.produto,
+            quantidade=Decimal("10.000"),
+            custo_unitario=Decimal("2.50"),
+            total=Decimal("25.00"),
+            atualizar_preco_custo=True,
+        )
+
+        finalizar_entrada_compra(entrada)
+
+        estoque = Estoque.objects.get(produto=self.produto, filial=self.filial)
+        item.refresh_from_db()
+        self.produto.refresh_from_db()
+        self.assertEqual(estoque.quantidade_atual, Decimal("20.000"))
+        self.assertEqual(estoque.custo_medio, Decimal("2.250000"))
+        self.assertEqual(item.custo_unitario, Decimal("2.50"))
+        self.assertEqual(self.produto.preco_custo, Decimal("2.50"))
     def test_cancelar_compra_finalizada_reverte_estoque_e_cancela_conta_aberta(self):
         entrada = EntradaCompra.objects.create(
             fornecedor=self.fornecedor,
@@ -178,7 +211,7 @@ class ComprasFinanceiroTests(TestCase):
         conta.valor_pago = Decimal("8.00")
         conta.save(update_fields=["status", "valor_pago", "atualizado_em"])
 
-        with self.assertRaisesMessage(ValidationError, "Conta paga nao pode ser cancelada."):
+        with self.assertRaisesMessage(ValidationError, "Conta paga não pode ser cancelada."):
             cancelar_entrada_compra(
                 entrada,
                 usuario=self.admin,
@@ -250,7 +283,7 @@ class ComprasFinanceiroTests(TestCase):
 
         response = self.client.get(f"/compras/{entrada.id}/")
 
-        self.assertContains(response, "Esta entrada nao pode ser cancelada automaticamente")
+        self.assertContains(response, "Esta entrada não pode ser cancelada automaticamente")
         self.assertContains(response, "A conta financeira vinculada ja foi paga")
         self.assertContains(response, "Saldo insuficiente para reverter")
         self.assertNotContains(response, "Cancelar e reverter estoque")
@@ -438,7 +471,7 @@ class ComprasFinanceiroTests(TestCase):
         self.assertContains(response, "Dados da entrada")
         self.assertContains(response, "Itens recebidos")
         self.assertContains(response, "Ao finalizar, o sistema atualiza estoque e financeiro.")
-        self.assertContains(response, "Salvar rascunho nao altera estoque")
+        self.assertContains(response, "Salvar rascunho não altera estoque")
         self.assertContains(response, 'name="supervisor_usuario" autocomplete="username"')
         self.assertContains(response, 'class="no-upper"')
         self.assertContains(response, "select2-field")
@@ -1478,7 +1511,7 @@ class ImportacaoXMLEntradaTests(TestCase):
         self.assertEqual(ItemEntradaCompra.objects.count(), 0)
 
     def test_rejeita_nfe_nao_autorizada_e_xml_com_dtd(self):
-        with self.assertRaisesMessage(ValidationError, "nao esta autorizada"):
+        with self.assertRaisesMessage(ValidationError, "não está autorizada"):
             ler_xml_nfe(self._xml(cstat="110"))
 
         chave_divergente = self._xml().replace(
@@ -1510,7 +1543,7 @@ class ImportacaoXMLEntradaTests(TestCase):
         self.produto.exige_lote = True
         self.produto.save(update_fields=["exige_lote", "updated_at"])
 
-        with self.assertRaisesMessage(ValidationError, "nao informou rastro"):
+        with self.assertRaisesMessage(ValidationError, "não informou rastro"):
             importar_xml_entrada(self._xml(), usuario=self.usuario)
 
         self.assertEqual(EntradaCompra.objects.count(), 0)

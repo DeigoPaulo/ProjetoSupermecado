@@ -34,6 +34,16 @@
           <option value="{{ impressora }}"></option>
         {% endfor %}
       </datalist>
+      <div class="form-field form-field-wide local-printer-picker" data-local-printer-picker>
+        <span>Impressoras desta máquina</span>
+        <div class="inline-form-actions">
+          <select id="local-printer-select" disabled>
+            <option value="">Abra esta tela no PDV Desktop para detectar</option>
+          </select>
+          <button class="secondary-button" id="refresh-local-printers" type="button"><i class="fa-solid fa-rotate"></i> Atualizar lista</button>
+        </div>
+        <small id="local-printer-feedback">A consulta é feita localmente pelo aplicativo e não envia dados de impressão ao servidor.</small>
+      </div>
       <label class="form-field"><span>{{ form.numero_vias.label }}</span>{{ form.numero_vias }}{{ form.numero_vias.errors }}</label>
       <label class="toggle-field">{{ form.impressao_automatica }} <span>{{ form.impressao_automatica.label }}</span>{{ form.impressao_automatica.errors }}</label>
       <label class="toggle-field">{{ form.exibir_logo }} <span>{{ form.exibir_logo.label }}</span>{{ form.exibir_logo.errors }}</label>

@@ -108,11 +108,11 @@ def atribuir_saldo_historico_lote(
     if not motivo:
         raise ValidationError("Informe o motivo da atribuicao.")
     if not codigo:
-        raise ValidationError("Informe o codigo do lote.")
+        raise ValidationError("Informe o código do lote.")
     if quantidade <= 0:
         raise ValidationError("Quantidade deve ser maior que zero.")
     if custo_unitario < 0:
-        raise ValidationError("Custo unitario nao pode ser negativo.")
+        raise ValidationError("Custo unitario não pode ser negativo.")
 
     estoque = Estoque.objects.select_for_update().select_related("produto", "filial").get(pk=estoque.pk)
     lotes_atuais = list(
@@ -293,9 +293,9 @@ def confirmar_producao_composicao(
     ip=None,
 ):
     if not motivo:
-        raise ValidationError("Informe o motivo da producao.")
+        raise ValidationError("Informe o motivo da produção.")
     if quantidade_final <= 0:
-        raise ValidationError("Quantidade final da composicao deve ser maior que zero.")
+        raise ValidationError("Quantidade final da composição deve ser maior que zero.")
 
     composicao = (
         ComposicaoProduto.objects.select_for_update()
@@ -304,29 +304,29 @@ def confirmar_producao_composicao(
         .get(pk=composicao.pk)
     )
     if not composicao.is_active:
-        raise ValidationError("Composicao inativa nao pode ser produzida.")
+        raise ValidationError("Composição inativa não pode ser produzida.")
     if composicao.filial_id and composicao.filial_id != filial.id:
-        raise ValidationError("Composicao pertence a outra filial.")
+        raise ValidationError("Composição pertence a outra filial.")
     codigo_lote = (codigo_lote or "").strip()
     fabricacao = _normalizar_data_lote(fabricacao, "fabricacao")
     validade = _normalizar_data_lote(validade, "validade")
     if composicao.produto_final.exige_lote and not codigo_lote:
         raise ValidationError("O produto final exige lote.")
     if (fabricacao or validade) and not codigo_lote:
-        raise ValidationError("Informe o lote ao preencher fabricacao ou validade.")
+        raise ValidationError("Informe o lote ao preencher fabricação ou validade.")
     if fabricacao and validade and fabricacao > validade:
-        raise ValidationError("A validade nao pode ser anterior a fabricacao.")
+        raise ValidationError("A validade não pode ser anterior a fabricação.")
 
     itens_receita = list(composicao.itens.select_related("produto_componente"))
     if not itens_receita:
-        raise ValidationError("Inclua ao menos um componente na composicao.")
+        raise ValidationError("Inclua ao menos um componente na composição.")
     fator = quantidade_final / composicao.quantidade_final
 
     consumos = []
     custo_total = Decimal("0.00")
     for item_receita in itens_receita:
         if item_receita.produto_componente_id == composicao.produto_final_id:
-            raise ValidationError("Produto final nao pode ser componente da propria composicao.")
+            raise ValidationError("Produto final não pode ser componente da própria composição.")
         quantidade_consumida = item_receita.quantidade * fator
         estoque_componente, _ = Estoque.objects.select_for_update().get_or_create(
             produto=item_receita.produto_componente,
@@ -434,7 +434,7 @@ def cancelar_producao_composicao(*, producao, usuario, motivo, supervisor=None, 
 
     estoque_final, _ = Estoque.objects.select_for_update().get_or_create(produto=producao.produto_final, filial=producao.filial)
     if estoque_final.quantidade_disponivel < producao.quantidade_final:
-        raise ValidationError("Produto final nao possui saldo suficiente para cancelar a composicao.")
+        raise ValidationError("Produto final não possui saldo suficiente para cancelar a composição.")
 
     estoque_final.quantidade_atual -= producao.quantidade_final
     estoque_final.full_clean()
@@ -901,7 +901,7 @@ def cancelar_desmembramento_produto(*, desmembramento, usuario, motivo, supervis
     )
     itens = list(desmembramento.itens.select_related("produto_destino"))
     if not itens:
-        raise ValidationError("Desmembramento sem itens de destino nao pode ser cancelado.")
+        raise ValidationError("Desmembramento sem itens de destino não pode ser cancelado.")
 
     estoques_destino = {}
     for item in itens:

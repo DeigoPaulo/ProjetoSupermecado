@@ -1,4 +1,32 @@
 document.addEventListener("DOMContentLoaded", function () {
+  var productCodeGenerator = document.querySelector("[data-product-code-generator]");
+  if (productCodeGenerator) {
+    var productCodeInput = document.getElementById("id_codigo_interno");
+    var productCodeFeedback = document.querySelector("[data-product-code-feedback]");
+    productCodeGenerator.addEventListener("click", function () {
+      productCodeGenerator.disabled = true;
+      if (productCodeFeedback) productCodeFeedback.textContent = "Gerando código...";
+      fetch(productCodeGenerator.dataset.url, { credentials: "same-origin" })
+        .then(function (response) {
+          if (!response.ok) throw new Error("Não foi possível gerar o código interno.");
+          return response.json();
+        })
+        .then(function (payload) {
+          if (!payload.codigo) throw new Error("Código interno não retornado pelo servidor.");
+          productCodeInput.value = payload.codigo;
+          productCodeInput.dispatchEvent(new Event("input", { bubbles: true }));
+          if (productCodeFeedback) productCodeFeedback.textContent = "Código sugerido. Você ainda pode alterá-lo antes de salvar.";
+          productCodeInput.focus();
+        })
+        .catch(function (error) {
+          if (productCodeFeedback) productCodeFeedback.textContent = error.message;
+        })
+        .finally(function () {
+          productCodeGenerator.disabled = false;
+        });
+    });
+  }
+
   var desktopCloseButton = document.getElementById("desktop-close-application");
   if (desktopCloseButton) {
     desktopCloseButton.addEventListener("click", function () {
@@ -8,9 +36,79 @@ document.addEventListener("DOMContentLoaded", function () {
       desktopCloseButton.disabled = true;
       Promise.resolve(bridge.call(window.SupermercadoDesktop)).catch(function () {
         desktopCloseButton.disabled = false;
-        window.alert("Nao foi possivel fechar o aplicativo.");
+        window.alert("Não foi possível fechar o aplicativo.");
       });
     });
+  }
+
+  var localPrinterPicker = document.querySelector("[data-local-printer-picker]");
+  if (localPrinterPicker) {
+    var localPrinterSelect = document.getElementById("local-printer-select");
+    var localPrinterRefresh = document.getElementById("refresh-local-printers");
+    var localPrinterFeedback = document.getElementById("local-printer-feedback");
+    var configuredPrinterInput = document.getElementById("id_impressora_padrao");
+
+    function informarImpressorasLocais(texto, erro) {
+      if (!localPrinterFeedback) return;
+      localPrinterFeedback.textContent = texto;
+      localPrinterFeedback.classList.toggle("field-error", Boolean(erro));
+    }
+
+    function renderizarImpressorasLocais(payload) {
+      if (!payload || payload.status !== "ok") {
+        throw new Error((payload && payload.mensagem) || "Não foi possível consultar as impressoras desta máquina.");
+      }
+      var impressoras = Array.isArray(payload.impressoras) ? payload.impressoras : [];
+      localPrinterSelect.innerHTML = "";
+      var placeholder = document.createElement("option");
+      placeholder.value = "";
+      placeholder.textContent = impressoras.length ? "Selecione uma impressora" : "Nenhuma impressora encontrada";
+      localPrinterSelect.appendChild(placeholder);
+      impressoras.forEach(function (impressora) {
+        var option = document.createElement("option");
+        option.value = impressora.nome;
+        option.textContent = impressora.nome + (impressora.padrao ? " (padrão)" : "") + (impressora.offline ? " - offline" : "");
+        option.disabled = Boolean(impressora.offline);
+        localPrinterSelect.appendChild(option);
+      });
+      localPrinterSelect.disabled = impressoras.length === 0;
+      var atual = configuredPrinterInput ? configuredPrinterInput.value : "";
+      if (atual && impressoras.some(function (item) { return item.nome === atual && !item.offline; })) {
+        localPrinterSelect.value = atual;
+      }
+      informarImpressorasLocais(impressoras.length + " impressora(s) detectada(s) pelo Windows.", false);
+    }
+
+    function carregarImpressorasLocais() {
+      var bridge = window.SupermercadoDesktop && window.SupermercadoDesktop.listPrinters;
+      if (!bridge) {
+        localPrinterSelect.disabled = true;
+        informarImpressorasLocais("Abra esta configuração pelo PDV Desktop para selecionar uma impressora instalada nesta máquina.", false);
+        return;
+      }
+      localPrinterSelect.disabled = true;
+      if (localPrinterRefresh) localPrinterRefresh.disabled = true;
+      informarImpressorasLocais("Consultando impressoras do Windows...", false);
+      Promise.resolve(bridge.call(window.SupermercadoDesktop))
+        .then(renderizarImpressorasLocais)
+        .catch(function (erro) {
+          localPrinterSelect.innerHTML = '<option value="">Falha na consulta local</option>';
+          informarImpressorasLocais(erro.message || "Falha ao consultar impressoras.", true);
+        })
+        .finally(function () {
+          if (localPrinterRefresh) localPrinterRefresh.disabled = false;
+        });
+    }
+
+    localPrinterSelect.addEventListener("change", function () {
+      if (!configuredPrinterInput || !localPrinterSelect.value) return;
+      configuredPrinterInput.value = localPrinterSelect.value;
+      configuredPrinterInput.dispatchEvent(new Event("input", { bubbles: true }));
+      informarImpressorasLocais("Impressora selecionada. Salve a configuração para aplicá-la.", false);
+    });
+    if (localPrinterRefresh) localPrinterRefresh.addEventListener("click", carregarImpressorasLocais);
+    document.addEventListener("supermercado:desktop-ready", carregarImpressorasLocais, { once: true });
+    carregarImpressorasLocais();
   }
 
   var pdvLogoutForm = document.getElementById("pdv-logout-form");
@@ -94,7 +192,7 @@ document.addEventListener("DOMContentLoaded", function () {
     if (!frame) {
       frame = document.createElement("iframe");
       frame.id = "pdv-print-frame";
-      frame.title = "Impressao do cupom";
+      frame.title = "Impressão do cupom";
       frame.setAttribute("aria-hidden", "true");
       frame.style.position = "fixed";
       frame.style.right = "0";
@@ -124,7 +222,7 @@ document.addEventListener("DOMContentLoaded", function () {
           }
           return Promise.resolve(desktopBridge(payload)).then(function (resultado) {
             if (resultado && resultado.status !== "ok") {
-              window.alert(resultado.mensagem || "A impressora nao confirmou a emissao do documento.");
+              window.alert(resultado.mensagem || "A impressora não confirmou a emissão do documento.");
               imprimirCupomFallback(url);
             }
             return resultado;
@@ -141,6 +239,51 @@ document.addEventListener("DOMContentLoaded", function () {
       imprimirCupomVenda(button.getAttribute("data-sale-print-url"), button.getAttribute("data-sale-desktop-print-url"));
     });
   });
+
+  function imprimirComandaEntrega(url, desktopUrl) {
+    var desktopBridge = window.SupermercadoDesktop && window.SupermercadoDesktop.printSale;
+    if (desktopBridge && desktopUrl && window.fetch) {
+      window.fetch(desktopUrl, { credentials: "same-origin" })
+        .then(function (response) { return response.json(); })
+        .then(function (payload) {
+          var impressao = payload && payload.impressao;
+          if (!impressao || !impressao.impressora_configurada) {
+            window.alert((impressao && impressao.mensagem) || "Configure a impressora de Pedido de separação em Sistema > Impressões.");
+            return null;
+          }
+          return Promise.resolve(desktopBridge(payload)).then(function (resultado) {
+            if (!resultado || resultado.status !== "ok") {
+              window.alert((resultado && resultado.mensagem) || "A impressora não confirmou a comanda de entrega.");
+            }
+            return resultado;
+          });
+        })
+        .catch(function () {
+          window.alert("Não foi possível preparar a comanda de entrega no servidor.");
+        });
+      return;
+    }
+    imprimirCupomFallback(url);
+  }
+
+  document.querySelectorAll("[data-delivery-print-url]").forEach(function (button) {
+    button.addEventListener("click", function () {
+      imprimirComandaEntrega(
+        button.getAttribute("data-delivery-print-url"),
+        button.getAttribute("data-delivery-desktop-print-url")
+      );
+    });
+  });
+
+  var deliveryAutoPrint = document.getElementById("pdv-delivery-auto-print");
+  if (deliveryAutoPrint) {
+    window.setTimeout(function () {
+      imprimirComandaEntrega(
+        deliveryAutoPrint.getAttribute("data-delivery-print-url"),
+        deliveryAutoPrint.getAttribute("data-delivery-desktop-print-url")
+      );
+    }, 250);
+  }
 
   function setSelect2Value(select, id, text) {
     if (!select || !id) return;
@@ -182,7 +325,7 @@ document.addEventListener("DOMContentLoaded", function () {
           if (observacao && receita.observacao) observacao.value = receita.observacao;
         })
         .catch(function (error) {
-          window.alert("Não foi possivel aplicar a receita: " + error.message);
+          window.alert("Não foi possível aplicar a receita: " + error.message);
         });
     });
   });
@@ -250,7 +393,7 @@ document.addEventListener("DOMContentLoaded", function () {
       var payloadElement = document.getElementById("labels-native-payload");
       var bridge = window.SupermercadoDesktop && window.SupermercadoDesktop.printLabels;
       if (!bridge) {
-        if (feedback) feedback.textContent = "Impressao direta disponível somente no aplicativo desktop. Use a impressão pelo navegador neste computador.";
+        if (feedback) feedback.textContent = "Impressão direta disponível somente no aplicativo desktop. Use a impressão pelo navegador neste computador.";
         return;
       }
       try {
@@ -269,7 +412,7 @@ document.addEventListener("DOMContentLoaded", function () {
         });
       } catch (erro) {
         labelsNativePrint.disabled = false;
-        if (feedback) feedback.textContent = "Não foi possivel preparar o lote: " + erro.message;
+        if (feedback) feedback.textContent = "Não foi possível preparar o lote: " + erro.message;
       }
     });
   }
@@ -286,7 +429,7 @@ document.addEventListener("DOMContentLoaded", function () {
       if (feedback) feedback.textContent = "Preparando etiqueta de teste...";
       fetch(button.getAttribute("data-url"), { headers: { "Accept": "application/json" } })
         .then(function (response) {
-          if (!response.ok) throw new Error("Não foi possivel carregar a etiqueta de teste.");
+          if (!response.ok) throw new Error("Não foi possível carregar a etiqueta de teste.");
           return response.json();
         })
         .then(function (payload) {
@@ -517,7 +660,7 @@ document.addEventListener("DOMContentLoaded", function () {
       fetch(lookupUrl + "?" + tipo + "=" + encodeURIComponent(digits), { headers: { "Accept": "application/json" } })
         .then(function (response) {
           return response.json().then(function (payload) {
-            if (!response.ok) throw new Error(payload.mensagem || "Nao foi possivel consultar o cadastro.");
+            if (!response.ok) throw new Error(payload.mensagem || "Não foi possível consultar o cadastro.");
             return payload;
           });
         })
@@ -526,7 +669,7 @@ document.addEventListener("DOMContentLoaded", function () {
             applyLookupData(payload);
             return;
           }
-          setFeedback(payload.mensagem || "Cadastro nao encontrado localmente.", payload.status === "invalid");
+          setFeedback(payload.mensagem || "Cadastro não encontrado localmente.", payload.status === "invalid");
         })
         .catch(function (error) {
           setFeedback(error.message, true);
@@ -545,7 +688,7 @@ document.addEventListener("DOMContentLoaded", function () {
       if (!bridge || form.dataset.tefRefundReady === "1") return;
       event.preventDefault();
       event.stopImmediatePropagation();
-      var msg = form.getAttribute("data-msg") || "Confirma esta operacao?";
+      var msg = form.getAttribute("data-msg") || "Confirma esta operação?";
       if (!window.confirm(msg)) return;
       var supervisor = form.querySelector("input[name='supervisor_usuario']");
       var senha = form.querySelector("input[name='supervisor_senha']");
@@ -573,7 +716,7 @@ document.addEventListener("DOMContentLoaded", function () {
       }))
         .then(function (resultado) {
           if (!resultado || resultado.status !== "ok" || !resultado.estornado) {
-            throw new Error((resultado && resultado.mensagem) || "Estorno nao confirmado pela maquininha.");
+            throw new Error((resultado && resultado.mensagem) || "Estorno não confirmado pela maquininha.");
           }
           var autorizacao = form.querySelector("input[name='autorizacao']");
           var mensagem = form.querySelector("input[name='mensagem_processadora']");
@@ -587,13 +730,13 @@ document.addEventListener("DOMContentLoaded", function () {
           if (mensagem) {
             mensagem.value = resultado.mensagem_processadora || "Estorno aprovado pela maquininha.";
             if (resultado.estorno_transacao_id) {
-              mensagem.value += " Transacao de estorno: " + resultado.estorno_transacao_id + ".";
+              mensagem.value += " Transação de estorno: " + resultado.estorno_transacao_id + ".";
             }
           }          form.dataset.tefRefundReady = "1";
           form.submit();
         })
         .catch(function (erro) {
-          window.alert("Nao foi possivel confirmar o estorno na maquininha: " + erro.message);
+          window.alert("Não foi possível confirmar o estorno na maquininha: " + erro.message);
           if (botao) {
             botao.disabled = false;
             botao.textContent = botao.dataset.originalText || "Confirmar estorno";
@@ -657,6 +800,10 @@ document.addEventListener("DOMContentLoaded", function () {
     var closePaymentButton = document.getElementById("pdv-close-payment");
     var confirmPaymentButton = document.getElementById("pdv-confirm-payment");
     var addPaymentButton = document.getElementById("pdv-add-payment");
+    var paymentDeliveryButton = document.getElementById("pdv-payment-delivery");
+    var deliveryQuestion = document.getElementById("pdv-delivery-question");
+    var deliveryQuestionConfirm = document.getElementById("pdv-confirm-delivery-question");
+    var deliveryQuestionCancel = document.getElementById("pdv-cancel-delivery-question");
     var paymentRows = document.getElementById("pdv-payment-rows");
     var paymentTemplate = document.getElementById("pdv-payment-row-template");
     var pagamentoLancado = document.getElementById("pdv-pagamento-lancado");
@@ -676,6 +823,149 @@ document.addEventListener("DOMContentLoaded", function () {
     var postSaleModal = document.getElementById("pdv-post-sale-modal");
     var postSalePrintButton = document.getElementById("pdv-print-last-sale");
     var postSaleCloseButton = document.getElementById("pdv-close-post-sale");
+    var deliveryClientField = document.querySelector(".pdv-delivery-client-field");
+    var deliveryClientSearch = deliveryClientField && deliveryClientField.querySelector("[data-delivery-client-search]");
+    var deliveryClientId = document.querySelector('#pdv-modal-delivery input[name="cliente"]');
+    var deliveryClientResults = document.getElementById("pdv-delivery-client-results");
+    var deliveryClientStatus = document.getElementById("pdv-delivery-client-status");
+    var deliverySaveClient = document.querySelector('#pdv-modal-delivery input[name="salvar_cliente"]');
+    var deliveryClientItems = [];
+    var deliveryClientIndex = -1;
+    var deliveryClientRequest = 0;
+    var deliveryClientTimer = null;
+
+    function fecharResultadosClienteEntrega() {
+      if (!deliveryClientResults || !deliveryClientSearch) return;
+      deliveryClientResults.hidden = true;
+      deliveryClientResults.innerHTML = "";
+      deliveryClientSearch.setAttribute("aria-expanded", "false");
+      deliveryClientSearch.removeAttribute("aria-activedescendant");
+      deliveryClientItems = [];
+      deliveryClientIndex = -1;
+    }
+
+    function atualizarSelecaoClienteEntrega() {
+      if (!deliveryClientResults || !deliveryClientSearch) return;
+      deliveryClientResults.querySelectorAll("[data-delivery-client-option]").forEach(function (option, index) {
+        var selected = index === deliveryClientIndex;
+        option.classList.toggle("is-selected", selected);
+        option.setAttribute("aria-selected", selected ? "true" : "false");
+        if (selected) {
+          deliveryClientSearch.setAttribute("aria-activedescendant", option.id);
+          option.scrollIntoView({ block: "nearest" });
+        }
+      });
+    }
+
+    function selecionarClienteEntrega(cliente) {
+      if (!cliente || !deliveryClientSearch || !deliveryClientId) return;
+      deliveryClientId.value = cliente.id;
+      deliveryClientSearch.value = cliente.nome || "";
+      var deliveryPhone = document.querySelector('#pdv-modal-delivery input[name="telefone"]');
+      var deliveryAddress = document.querySelector('#pdv-modal-delivery textarea[name="endereco_entrega"]');
+      if (deliveryPhone) deliveryPhone.value = cliente.telefone || "";
+      if (deliveryAddress) deliveryAddress.value = cliente.endereco || "";
+      if (deliverySaveClient) {
+        deliverySaveClient.checked = false;
+        deliverySaveClient.disabled = true;
+      }
+      if (deliveryClientStatus) deliveryClientStatus.textContent = "Cliente cadastrado selecionado. Telefone e endereço foram preenchidos.";
+      fecharResultadosClienteEntrega();
+      if (deliveryPhone) deliveryPhone.focus();
+    }
+
+    function renderizarClientesEntrega(resultados) {
+      if (!deliveryClientResults || !deliveryClientSearch) return;
+      deliveryClientItems = resultados || [];
+      deliveryClientResults.innerHTML = "";
+      if (!deliveryClientItems.length) {
+        fecharResultadosClienteEntrega();
+        if (deliveryClientStatus) deliveryClientStatus.textContent = "Cliente não encontrado. Continue como avulso ou marque a opção para salvá-lo.";
+        return;
+      }
+      deliveryClientItems.forEach(function (cliente, index) {
+        var option = document.createElement("button");
+        option.type = "button";
+        option.id = "pdv-delivery-client-option-" + cliente.id;
+        option.className = "pdv-delivery-client-option";
+        option.setAttribute("role", "option");
+        option.setAttribute("aria-selected", "false");
+        option.setAttribute("data-delivery-client-option", String(index));
+        option.tabIndex = -1;
+        var title = document.createElement("strong");
+        title.textContent = cliente.nome || "";
+        var detail = document.createElement("small");
+        detail.textContent = [cliente.telefone, cliente.cpf_cnpj, cliente.endereco].filter(Boolean).join(" | ") || "Cliente cadastrado";
+        option.appendChild(title);
+        option.appendChild(detail);
+        option.addEventListener("click", function () { selecionarClienteEntrega(cliente); });
+        deliveryClientResults.appendChild(option);
+      });
+      deliveryClientIndex = 0;
+      deliveryClientResults.hidden = false;
+      deliveryClientSearch.setAttribute("aria-expanded", "true");
+      atualizarSelecaoClienteEntrega();
+      if (deliveryClientStatus) deliveryClientStatus.textContent = "Cliente localizado. Use as setas e Enter para selecionar.";
+    }
+
+    function buscarClientesEntrega() {
+      if (!deliveryClientField || !deliveryClientSearch) return;
+      var termo = deliveryClientSearch.value.trim();
+      var url = deliveryClientField.getAttribute("data-client-search-url");
+      if (!url || termo.length < 2) {
+        fecharResultadosClienteEntrega();
+        if (deliveryClientStatus) deliveryClientStatus.textContent = "Digite ao menos 2 caracteres para localizar um cliente salvo.";
+        return;
+      }
+      var requestId = ++deliveryClientRequest;
+      fetch(url + "?q=" + encodeURIComponent(termo), { headers: { "X-Requested-With": "XMLHttpRequest" } })
+        .then(function (response) {
+          if (!response.ok) throw new Error("Falha ao consultar clientes.");
+          return response.json();
+        })
+        .then(function (payload) {
+          if (requestId !== deliveryClientRequest) return;
+          renderizarClientesEntrega(payload.results || []);
+        })
+        .catch(function () {
+          if (requestId !== deliveryClientRequest) return;
+          fecharResultadosClienteEntrega();
+          if (deliveryClientStatus) deliveryClientStatus.textContent = "Não foi possível consultar os clientes. A entrega avulsa continua disponível.";
+        });
+    }
+
+    if (deliveryClientSearch) {
+      deliveryClientSearch.addEventListener("input", function () {
+        if (deliveryClientId && deliveryClientId.value) {
+          deliveryClientId.value = "";
+          if (deliverySaveClient) deliverySaveClient.disabled = false;
+        }
+        clearTimeout(deliveryClientTimer);
+        deliveryClientTimer = setTimeout(buscarClientesEntrega, 180);
+      });
+      deliveryClientSearch.addEventListener("keydown", function (event) {
+        if (!deliveryClientResults || deliveryClientResults.hidden) return;
+        if (event.key === "ArrowDown" || event.key === "ArrowUp") {
+          event.preventDefault();
+          event.stopPropagation();
+          var delta = event.key === "ArrowDown" ? 1 : -1;
+          deliveryClientIndex = (deliveryClientIndex + delta + deliveryClientItems.length) % deliveryClientItems.length;
+          atualizarSelecaoClienteEntrega();
+          return;
+        }
+        if ((event.key === "Enter" || event.key === "Tab") && deliveryClientIndex >= 0) {
+          event.preventDefault();
+          event.stopPropagation();
+          selecionarClienteEntrega(deliveryClientItems[deliveryClientIndex]);
+          return;
+        }
+        if (event.key === "Escape") {
+          event.preventDefault();
+          event.stopPropagation();
+          fecharResultadosClienteEntrega();
+        }
+      });
+    }
 
     if (buscaProduto) {
       buscaProduto.focus();
@@ -785,7 +1075,7 @@ document.addEventListener("DOMContentLoaded", function () {
         informarPagamentoFeedback((resultado && resultado.mensagem) || (resultado && resultado.status === "cancelado" ? "Captura cancelada no pinpad." : "Falha no pinpad. Digite o documento manualmente."));
         if (documentInput) documentInput.focus();
       }).catch(function () {
-        informarPagamentoFeedback("Falha na comunicacao com o pinpad. Digite o documento manualmente.");
+        informarPagamentoFeedback("Falha na comunicação com o pinpad. Digite o documento manualmente.");
         if (documentInput) documentInput.focus();
       }).finally(function () { captureDocumentButton.disabled = false; });
     }
@@ -811,7 +1101,7 @@ document.addEventListener("DOMContentLoaded", function () {
         informarBalanca("Peso lido: " + String(resultado.peso).replace(".", ",") + " " + (resultado.unidade || "KG") + ".", "is-ok");
         return;
       }
-      var mensagem = resultado.mensagem || "Não foi possivel ler a balança. Digite a quantidade manualmente.";
+      var mensagem = resultado.mensagem || "Não foi possível ler a balança. Digite a quantidade manualmente.";
       informarBalanca(mensagem, resultado.status === "manual" ? "" : "is-error");
       quantidadeInput.focus();
       quantidadeInput.select();
@@ -876,23 +1166,100 @@ document.addEventListener("DOMContentLoaded", function () {
       return adicionarLinhaPagamento({ somenteSeRestante: true });
     }
 
-    function finalizarVendaPdv() {
-      if (!finishForm) return;
+    function validarFinalizacaoVendaPdv() {
+      if (!finishForm) return false;
       var desconto = Math.max(decimalFromInput(descontoInput && descontoInput.value), 0);
       if (desconto > 0 && (!discountSupervisor || !discountSupervisor.value.trim() || !discountPassword || !discountPassword.value)) {
         informarPagamentoFeedback("Informe usuário e senha do supervisor ou administrador para autorizar o desconto.");
         if (discountSupervisor && !discountSupervisor.value.trim()) discountSupervisor.focus();
         else if (discountPassword) discountPassword.focus();
-        return;
+        return false;
       }
       if (!pagamentoCompleto()) {
         informarPagamentoFeedback("Informe uma forma e complete o valor restante.");
         var primeiroSelect = paymentModal && paymentModal.querySelector("select");
         if (primeiroSelect) primeiroSelect.focus();
-        return;
+        return false;
       }
       informarPagamentoFeedback("");
-      finishForm.requestSubmit();
+      return true;
+    }
+
+    function prepararPagamentoNoCaixaParaEntrega(pagamentoNoCaixa) {
+      var deliveryForm = document.querySelector("#pdv-modal-delivery form");
+      if (!deliveryForm) return;
+      deliveryForm.querySelectorAll("[data-pdv-delivery-payment]").forEach(function (field) { field.remove(); });
+      var paymentInfo = document.getElementById("pdv-delivery-cash-payment");
+      if (!pagamentoNoCaixa) {
+        if (paymentInfo) paymentInfo.hidden = true;
+        return;
+      }
+      var createHidden = function (name, value) {
+        var field = document.createElement("input");
+        field.type = "hidden";
+        field.name = name;
+        field.value = value || "";
+        field.setAttribute("data-pdv-delivery-payment", "1");
+        deliveryForm.appendChild(field);
+      };
+      createHidden("pagamento_no_caixa", "1");
+      var caixa = finishForm && finishForm.querySelector('input[name="caixa"]');
+      if (caixa) createHidden("caixa", caixa.value);
+      if (paymentRows) {
+        paymentRows.querySelectorAll(".pdv-payment-row").forEach(function (row) {
+          row.querySelectorAll("select[name], input[name]").forEach(function (field) {
+            createHidden(field.name, field.value);
+          });
+        });
+      }
+      if (paymentInfo) {
+        var paidSummary = document.getElementById("pdv-delivery-cash-payment-value");
+        if (paidSummary) paidSummary.textContent = formatMoney(totalPagamentosLancados());
+        paymentInfo.hidden = false;
+      }
+    }
+
+    function abrirEntregaDoPagamento(pagamentoNoCaixa) {
+      prepararPagamentoNoCaixaParaEntrega(Boolean(pagamentoNoCaixa));
+      fecharPerguntaEntrega();
+      fecharPagamentos();
+      abrirModalPdv("delivery");
+      var deliveryName = document.querySelector('#pdv-modal-delivery input[name="nome_cliente"]');
+      if (deliveryName) deliveryName.focus();
+    }
+
+    function abrirPerguntaEntrega() {
+      if (!deliveryQuestion) {
+        if (finishForm) finishForm.requestSubmit();
+        return;
+      }
+      var noOption = deliveryQuestion.querySelector('input[value="no"]');
+      if (noOption) noOption.checked = true;
+      deliveryQuestion.classList.add("is-open");
+      deliveryQuestion.setAttribute("aria-hidden", "false");
+      if (noOption) noOption.focus();
+    }
+
+    function fecharPerguntaEntrega() {
+      if (!deliveryQuestion) return;
+      deliveryQuestion.classList.remove("is-open");
+      deliveryQuestion.setAttribute("aria-hidden", "true");
+    }
+
+    function confirmarPerguntaEntrega() {
+      if (!deliveryQuestion) return;
+      var escolha = deliveryQuestion.querySelector('input[name="pdv_delivery_choice"]:checked');
+      if (escolha && escolha.value === "yes") {
+        abrirEntregaDoPagamento(true);
+        return;
+      }
+      fecharPerguntaEntrega();
+      if (finishForm) finishForm.requestSubmit();
+    }
+
+    function finalizarVendaPdv() {
+      if (!validarFinalizacaoVendaPdv()) return;
+      abrirPerguntaEntrega();
     }
 
     function selecionarFormaPagamento(atalho) {
@@ -968,7 +1335,7 @@ document.addEventListener("DOMContentLoaded", function () {
         return tiposAceitos.indexOf(String(item.dataset.paymentType || "").toUpperCase()) !== -1;
       });
       if (!opcao) {
-        informarPagamentoFeedback("Forma eletronica nao cadastrada para " + tipoTef.replaceAll("_", " ") + ".");
+        informarPagamentoFeedback("Forma eletrônica não cadastrada para " + tipoTef.replaceAll("_", " ") + ".");
         select.focus();
         return;
       }
@@ -1104,7 +1471,7 @@ document.addEventListener("DOMContentLoaded", function () {
         })
         .then(function (resultado) {
           if (!resultado || resultado.status !== "ok" || !resultado.aprovado) {
-            throw new Error((resultado && resultado.mensagem) || "Pagamento recusado ou nao confirmado.");
+            throw new Error((resultado && resultado.mensagem) || "Pagamento recusado ou não confirmado.");
           }
           aplicarAutorizacaoPagamento(row, resultado);
           ocultarPixPanel();
@@ -1114,7 +1481,7 @@ document.addEventListener("DOMContentLoaded", function () {
         .catch(function (erro) {
           limparAutorizacaoPagamento(row, true);
           ocultarPixPanel();
-          informarPagamentoFeedback("Nao foi possivel confirmar na maquininha: " + erro.message);
+          informarPagamentoFeedback("Não foi possível confirmar na maquininha: " + erro.message);
           select.focus();
         });
     }
@@ -1153,6 +1520,17 @@ document.addEventListener("DOMContentLoaded", function () {
         modal.classList.remove("is-open");
         modal.setAttribute("aria-hidden", "true");
       });
+    }
+
+    function abrirConferenciaEntrega(deliveryId) {
+      var detailModal = document.getElementById("pdv-modal-delivery-detail");
+      if (!detailModal || !deliveryId) return;
+      detailModal.querySelectorAll("[data-delivery-detail]").forEach(function (detail) {
+        detail.hidden = detail.getAttribute("data-delivery-detail") !== String(deliveryId);
+      });
+      abrirModalPdv("delivery-detail");
+      var focusTarget = detailModal.querySelector('[data-delivery-detail="' + deliveryId + '"] button, [data-delivery-detail="' + deliveryId + '"] input, [data-delivery-detail="' + deliveryId + '"] select');
+      if (focusTarget) focusTarget.focus();
     }
 
     function filtrarModal(input) {
@@ -1354,6 +1732,14 @@ document.addEventListener("DOMContentLoaded", function () {
     if (captureDocumentButton) captureDocumentButton.addEventListener("click", capturarDocumentoPinpad);
     document.addEventListener("supermercado:desktop-ready", atualizarCapacidadeDocumentoPinpad);
     atualizarCapacidadeDocumentoPinpad();
+    if (paymentDeliveryButton) paymentDeliveryButton.addEventListener("click", function () { abrirEntregaDoPagamento(false); });
+    if (deliveryQuestionConfirm) deliveryQuestionConfirm.addEventListener("click", confirmarPerguntaEntrega);
+    if (deliveryQuestionCancel) {
+      deliveryQuestionCancel.addEventListener("click", function () {
+        fecharPerguntaEntrega();
+        if (confirmPaymentButton) confirmPaymentButton.focus();
+      });
+    }
     if (addPaymentButton) {
       addPaymentButton.addEventListener("click", function () {
         adicionarLinhaPagamento({ somenteSeRestante: true });
@@ -1402,6 +1788,11 @@ document.addEventListener("DOMContentLoaded", function () {
         }
         var modalRow = event.target.closest(".pdv-modal-row");
         if (modalRow && modal.contains(modalRow)) selecionarLinhaModal(modal, modalRow, false);
+        var deliveryButton = event.target.closest("[data-delivery-order]");
+        if (deliveryButton && modal.contains(deliveryButton)) {
+          abrirConferenciaEntrega(deliveryButton.getAttribute("data-delivery-id"));
+          return;
+        }
         var produtoButton = event.target.closest("[data-pdv-copy-product]");
         if (produtoButton && buscaProduto) {
           buscaProduto.value = produtoButton.getAttribute("data-pdv-copy-product") || "";
@@ -1425,6 +1816,34 @@ document.addEventListener("DOMContentLoaded", function () {
         if (modalRow && modal.contains(modalRow)) selecionarLinhaModal(modal, modalRow, false);
       });
     });
+    document.querySelectorAll(".pdv-delivery-separation-form").forEach(function (deliverySeparationForm) {
+      deliverySeparationForm.addEventListener("keydown", function (event) {
+        if (event.ctrlKey && event.key === "Enter") {
+          event.preventDefault();
+          if (deliverySeparationForm.requestSubmit) deliverySeparationForm.requestSubmit();
+          else deliverySeparationForm.submit();
+        }
+      });
+    });
+
+    document.querySelectorAll(".pdv-delivery-payment-form").forEach(function (deliveryPaymentForm) {
+      var paymentType = deliveryPaymentForm.querySelector('[name="forma_pagamento"]');
+      var reference = deliveryPaymentForm.querySelector('[name="referencia_pagamento"]');
+      if (!paymentType || !reference) return;
+      var deliveryCards = ["CARTAO_CREDITO_ENTREGA", "CARTAO_DEBITO_ENTREGA"];
+      function atualizarReferenciaEntrega() {
+        var requiresReference = deliveryCards.indexOf(paymentType.value) !== -1;
+        reference.required = requiresReference;
+        reference.setAttribute("aria-required", requiresReference ? "true" : "false");
+        reference.placeholder = requiresReference ? "Informe o NSU da maquininha" : "Opcional para esta forma de pagamento";
+      }
+      paymentType.addEventListener("change", atualizarReferenciaEntrega);
+      atualizarReferenciaEntrega();
+    });
+
+    var deliveryParam = new URLSearchParams(window.location.search).get("delivery");
+    if (deliveryParam) abrirConferenciaEntrega(deliveryParam);
+
     if (paymentRows) {
       paymentRows.addEventListener("input", function (event) {
         var row = event.target.closest(".pdv-payment-row");
@@ -1470,6 +1889,43 @@ document.addEventListener("DOMContentLoaded", function () {
     }
     document.addEventListener("keydown", function (event) {
       var key = event.key;
+      if (deliveryQuestion && deliveryQuestion.classList.contains("is-open")) {
+        var deliveryOptions = Array.prototype.slice.call(deliveryQuestion.querySelectorAll('input[name="pdv_delivery_choice"]'));
+        if (["ArrowUp", "ArrowLeft", "ArrowDown", "ArrowRight"].indexOf(key) !== -1) {
+          event.preventDefault();
+          var selectedIndex = deliveryOptions.findIndex(function (option) { return option.checked; });
+          var direction = key === "ArrowUp" || key === "ArrowLeft" ? -1 : 1;
+          var nextOption = deliveryOptions[(selectedIndex + direction + deliveryOptions.length) % deliveryOptions.length];
+          if (nextOption) {
+            nextOption.checked = true;
+            nextOption.focus();
+          }
+          return;
+        }
+        if (key === "Tab") {
+          var deliveryFocusable = Array.prototype.slice.call(deliveryQuestion.querySelectorAll('input:not([disabled]), button:not([disabled])'));
+          var activeIndex = deliveryFocusable.indexOf(document.activeElement);
+          var nextIndex = event.shiftKey ? activeIndex - 1 : activeIndex + 1;
+          event.preventDefault();
+          if (!deliveryFocusable.length) return;
+          if (nextIndex < 0) nextIndex = deliveryFocusable.length - 1;
+          if (nextIndex >= deliveryFocusable.length) nextIndex = 0;
+          deliveryFocusable[nextIndex].focus();
+          return;
+        }
+        if (key === "Escape") {
+          event.preventDefault();
+          fecharPerguntaEntrega();
+          if (confirmPaymentButton) confirmPaymentButton.focus();
+          return;
+        }
+        if (key === "Enter") {
+          event.preventDefault();
+          confirmarPerguntaEntrega();
+          return;
+        }
+        return;
+      }
       if (postSaleModal && postSaleModal.classList.contains("is-open")) {
         if (key === "F10") {
           event.preventDefault();
@@ -1503,8 +1959,12 @@ document.addEventListener("DOMContentLoaded", function () {
         }
         if (modalAberto()) {
           event.preventDefault();
-          fecharModalPdv();
-          focarBuscaProduto();
+          if (modalAberto().id === "pdv-modal-delivery-detail") {
+            abrirModalPdv("deliveries");
+          } else {
+            fecharModalPdv();
+            focarBuscaProduto();
+          }
         }
         return;
       }
@@ -1514,6 +1974,22 @@ document.addEventListener("DOMContentLoaded", function () {
           event.preventDefault();
           window.location.href = menuLink.href;
         }
+        return;
+      }
+      if (event.ctrlKey && key.toLowerCase() === "e") {
+        event.preventDefault();
+        if (paymentModal && paymentModal.classList.contains("is-open")) fecharPagamentos();
+        var deliveryButton = document.querySelector('[data-pdv-modal-open="delivery"]:not([disabled])');
+        if (deliveryButton) {
+          abrirModalPdv("delivery");
+          var deliveryName = document.querySelector('#pdv-modal-delivery input[name="nome_cliente"]');
+          if (deliveryName) deliveryName.focus();
+        }
+        return;
+      }
+      if (event.shiftKey && key.toLowerCase() === "e") {
+        event.preventDefault();
+        abrirModalPdv("deliveries");
         return;
       }
       if (event.shiftKey && key.toLowerCase() === "s") {
@@ -1567,6 +2043,88 @@ document.addEventListener("DOMContentLoaded", function () {
           if (linkVenda) window.location.href = linkVenda.href;
           return;
         }
+      }
+      if (activeModal && activeModal.id === "pdv-modal-delivery") {
+        var focoEmEntrega = document.activeElement && document.activeElement.closest && document.activeElement.closest("#pdv-modal-delivery form");
+        if (key === "Tab" && focoEmEntrega) {
+          var camposEntrega = Array.prototype.slice.call(
+            activeModal.querySelectorAll('input:not([type=hidden]):not([disabled]), select:not([disabled]), textarea:not([disabled]), button:not([disabled])')
+          ).filter(function (field) { return !field.closest("[hidden]") && field.offsetParent !== null; });
+          if (camposEntrega.length) {
+            var indiceEntrega = camposEntrega.indexOf(document.activeElement);
+            var proximoIndiceEntrega = event.shiftKey ? indiceEntrega - 1 : indiceEntrega + 1;
+            if (indiceEntrega === -1 || proximoIndiceEntrega < 0 || proximoIndiceEntrega >= camposEntrega.length) {
+              event.preventDefault();
+              camposEntrega[event.shiftKey ? camposEntrega.length - 1 : 0].focus();
+              return;
+            }
+          }
+        }
+        if (event.ctrlKey && key === "Enter" && focoEmEntrega) {
+          event.preventDefault();
+          var formEntrega = activeModal.querySelector("form");
+          if (formEntrega) {
+            if (formEntrega.requestSubmit) formEntrega.requestSubmit();
+            else formEntrega.submit();
+          }
+          return;
+        }
+      }
+      if (activeModal && activeModal.id === "pdv-modal-deliveries") {
+        if (key === "ArrowUp" || key === "ArrowDown") {
+          event.preventDefault();
+          moverSelecaoModal(activeModal, key === "ArrowUp" ? -1 : 1);
+          return;
+        }
+        if (key === "Enter") {
+          event.preventDefault();
+          var entregaSelecionada = linhaSelecionadaModal(activeModal);
+          if (entregaSelecionada) abrirConferenciaEntrega(entregaSelecionada.getAttribute("data-delivery-id"));
+          return;
+        }
+      }
+      if (activeModal && activeModal.id === "pdv-modal-delivery-detail") {
+        if (key === "F10") {
+          event.preventDefault();
+          var deliveryPrintButton = activeModal.querySelector("[data-delivery-print-url]");
+          if (deliveryPrintButton) deliveryPrintButton.click();
+          return;
+        }
+        var detailPanel = activeModal.querySelector("[data-delivery-detail]:not([hidden])");
+        if (key === "Tab" && detailPanel) {
+          var focusable = Array.prototype.slice.call(detailPanel.querySelectorAll('button:not([disabled]), input:not([type=hidden]):not([disabled]), select:not([disabled]), textarea:not([disabled])'));
+          if (focusable.length) {
+            var currentIndex = focusable.indexOf(document.activeElement);
+            var nextIndex = event.shiftKey ? currentIndex - 1 : currentIndex + 1;
+            if (currentIndex === -1 || nextIndex < 0 || nextIndex >= focusable.length) {
+              event.preventDefault();
+              focusable[event.shiftKey ? focusable.length - 1 : 0].focus();
+              return;
+            }
+          }
+        }
+        var focoNoFormularioEntrega = document.activeElement && document.activeElement.closest && document.activeElement.closest("#pdv-modal-delivery-detail form");
+        if (event.ctrlKey && key === "Enter" && focoNoFormularioEntrega && focoNoFormularioEntrega.classList.contains("pdv-delivery-separation-form")) {
+          event.preventDefault();
+          if (focoNoFormularioEntrega.requestSubmit) focoNoFormularioEntrega.requestSubmit();
+          else focoNoFormularioEntrega.submit();
+          return;
+        }
+        if (event.altKey && key === "Enter" && focoNoFormularioEntrega && focoNoFormularioEntrega.classList.contains("pdv-delivery-payment-form")) {
+          event.preventDefault();
+          if (focoNoFormularioEntrega.requestSubmit) focoNoFormularioEntrega.requestSubmit();
+          else focoNoFormularioEntrega.submit();
+          return;
+        }
+        if (key === "F6") {
+          var paymentInput = activeModal.querySelector(".pdv-delivery-payment-form select, .pdv-delivery-payment-form input:not([type=hidden])");
+          if (paymentInput) { event.preventDefault(); paymentInput.focus(); }
+          return;
+        }
+        var deliveryShortcuts = {F2: "reserve", F3: "ready", F4: "dispatch", F5: "complete"};
+        var deliveryAction = deliveryShortcuts[key];
+        var actionButton = deliveryAction && activeModal.querySelector('[data-delivery-action="' + deliveryAction + '"]');
+        if (actionButton) { event.preventDefault(); actionButton.click(); return; }
       }
       if (activeModal && activeModal.id === "pdv-modal-boxes") {
         var focoEmCaixaForm = document.activeElement && document.activeElement.closest && document.activeElement.closest(".pdv-cash-close-form, .pdv-cash-movement-form");
@@ -1715,3 +2273,87 @@ document.addEventListener("DOMContentLoaded", function () {
     atualizarResumoPdv();
   }
 });
+
+
+(function () {
+  function visible(element) {
+    return Boolean(element && (element.offsetWidth || element.offsetHeight || element.getClientRects().length));
+  }
+
+  function configureSupervisorCredential(form) {
+    var username = form.querySelector("input[name='supervisor_usuario']");
+    var password = form.querySelector("input[name='supervisor_senha']");
+    if (!username || !password || form.hasAttribute("data-supervisor-credential-ready")) return;
+    form.setAttribute("data-supervisor-credential-ready", "true");
+
+    var block = document.createElement("div");
+    block.className = "supervisor-credential-block";
+    block.innerHTML =
+      '<div class="supervisor-credential-heading"><i class="fa-solid fa-id-card"></i><span><strong>Cartão do supervisor</strong><small>Aproxime, passe ou leia o crachá. Login e senha continuam disponíveis.</small></span></div>' +
+      '<div class="supervisor-credential-fields"><button type="button" class="secondary-button" data-supervisor-card-focus title="Ler credencial"><i class="fa-solid fa-wifi"></i> Ler cartão</button>' +
+      '<input type="password" name="supervisor_credencial" class="no-upper" autocomplete="off" placeholder="Aguardando leitura" aria-label="Credencial do supervisor">' +
+      '<input type="password" name="supervisor_pin" autocomplete="off" inputmode="numeric" placeholder="PIN, quando exigido" aria-label="PIN da credencial"></div>';
+
+    var reference = username.closest("label") || username;
+    reference.parentNode.insertBefore(block, reference);
+    var credential = block.querySelector("input[name='supervisor_credencial']");
+    var focusButton = block.querySelector("[data-supervisor-card-focus]");
+    var usernameRequired = username.required;
+    var passwordRequired = password.required;
+
+    function updateMode() {
+      var usingCard = Boolean(credential.value.trim());
+      username.required = usingCard ? false : usernameRequired;
+      password.required = usingCard ? false : passwordRequired;
+      block.classList.toggle("has-credential", usingCard);
+    }
+
+    focusButton.addEventListener("click", function () {
+      var api = window.pywebview && window.pywebview.api;
+      if (!api || typeof api.readSupervisorCredential !== "function") {
+        credential.focus();
+        credential.select();
+        return;
+      }
+      focusButton.disabled = true;
+      api.readSupervisorCredential("").then(function (resultado) {
+        if (resultado && resultado.status === "ok" && resultado.credencial) {
+          window.deigoSupervisorCredential(resultado.credencial);
+          return;
+        }
+        window.alert((resultado && resultado.mensagem) || "Nao foi possivel ler o cartao. Use o leitor em modo teclado.");
+        credential.focus();
+      }).catch(function () {
+        window.alert("Leitor NFC indisponivel. Use o leitor em modo teclado ou informe login e senha.");
+        credential.focus();
+      }).finally(function () {
+        focusButton.disabled = false;
+      });
+    });
+    credential.addEventListener("input", updateMode);
+    credential.addEventListener("change", updateMode);
+    form.addEventListener("reset", function () { window.setTimeout(updateMode, 0); });
+    updateMode();
+  }
+
+  function configureAllSupervisorCredentials(root) {
+    (root || document).querySelectorAll("form").forEach(configureSupervisorCredential);
+  }
+
+  window.deigoSupervisorCredential = function (token) {
+    var forms = Array.from(document.querySelectorAll("form[data-supervisor-credential-ready]"));
+    var activeForm = document.activeElement && document.activeElement.closest("form[data-supervisor-credential-ready]");
+    var form = activeForm || forms.find(visible);
+    if (!form) return false;
+    var input = form.querySelector("input[name='supervisor_credencial']");
+    input.value = String(token || "").trim();
+    input.dispatchEvent(new Event("input", { bubbles: true }));
+    input.focus();
+    return Boolean(input.value);
+  };
+
+  configureAllSupervisorCredentials(document);
+  document.addEventListener("pdv:modal-opened", function (event) {
+    configureAllSupervisorCredentials(event.target || document);
+  });
+})();

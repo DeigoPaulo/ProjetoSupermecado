@@ -17,8 +17,8 @@ class StatusContaFinanceira(models.TextChoices):
 
 
 class TipoContaMovimento(models.TextChoices):
-    CAIXA = "CAIXA", "Caixa fisico"
-    BANCO = "BANCO", "Conta bancaria"
+    CAIXA = "CAIXA", "Caixa físico"
+    BANCO = "BANCO", "Conta bancária"
     PIX = "PIX", "Conta PIX"
     OUTRA = "OUTRA", "Outra"
 
@@ -35,13 +35,97 @@ class StatusExportacaoContabil(models.TextChoices):
     ERRO = "ERRO", "Erro"
 
 
+class NaturezaContaContabil(models.TextChoices):
+    ATIVO = "ATIVO", "Ativo"
+    PASSIVO = "PASSIVO", "Passivo"
+    PATRIMONIO_LIQUIDO = "PATRIMONIO_LIQUIDO", "Patrim?nio l?quido"
+    RECEITA = "RECEITA", "Receita"
+    DESPESA = "DESPESA", "Despesa"
+    COMPENSACAO = "COMPENSACAO", "Compensa??o"
+
+
+class TipoContaContabil(models.TextChoices):
+    SINTETICA = "SINTETICA", "Sint?tica"
+    ANALITICA = "ANALITICA", "Anal?tica"
+
+
+class ContaContabil(models.Model):
+    empresa = models.ForeignKey("empresas.Empresa", on_delete=models.PROTECT, related_name="plano_contas")
+    codigo = models.CharField(max_length=40)
+    nome = models.CharField(max_length=160)
+    natureza = models.CharField(max_length=30, choices=NaturezaContaContabil.choices)
+    tipo = models.CharField(max_length=20, choices=TipoContaContabil.choices, default=TipoContaContabil.ANALITICA)
+    conta_pai = models.ForeignKey("self", on_delete=models.PROTECT, null=True, blank=True, related_name="subcontas", verbose_name="Conta superior")
+    ativa = models.BooleanField(default=True)
+
+    class Meta:
+        ordering = ["empresa", "codigo"]
+        verbose_name = "Conta cont?bil"
+        verbose_name_plural = "Plano de contas"
+        constraints = [
+            models.UniqueConstraint(fields=["empresa", "codigo"], name="financeiro_conta_contabil_codigo_empresa"),
+        ]
+
+    def clean(self):
+        if self.conta_pai_id and self.conta_pai.empresa_id != self.empresa_id:
+            raise ValidationError({"conta_pai": "A conta superior pertence a outra empresa."})
+        if self.conta_pai_id and self.conta_pai.tipo != TipoContaContabil.SINTETICA:
+            raise ValidationError({"conta_pai": "A conta superior deve ser sint?tica."})
+        if self.pk and self.conta_pai_id == self.pk:
+            raise ValidationError({"conta_pai": "Uma conta n?o pode ser superior a ela mesma."})
+        if self.pk and self.tipo == TipoContaContabil.ANALITICA and self.subcontas.exists():
+            raise ValidationError({"tipo": "Uma conta com subcontas deve permanecer sint?tica."})
+        if self.pk:
+            tipo_anterior = ContaContabil.objects.filter(pk=self.pk).values_list("tipo", flat=True).first()
+            if tipo_anterior != self.tipo and (self.categorias_financeiras.exists() or self.lancamentos.exists()):
+                raise ValidationError({"tipo": "N?o altere o tipo de uma conta cont?bil j? utilizada."})
+        pai = self.conta_pai
+        visitados = {self.pk} if self.pk else set()
+        while pai:
+            if pai.pk in visitados:
+                raise ValidationError({"conta_pai": "A hierarquia do plano de contas formaria um ciclo."})
+            visitados.add(pai.pk)
+            pai = pai.conta_pai
+
+    def __str__(self):
+        return f"{self.codigo} - {self.nome}"
+
+
+class CentroCusto(models.Model):
+    empresa = models.ForeignKey("empresas.Empresa", on_delete=models.PROTECT, related_name="centros_custo")
+    codigo = models.CharField(max_length=30)
+    nome = models.CharField(max_length=120)
+    ativo = models.BooleanField(default=True)
+
+    class Meta:
+        ordering = ["empresa", "nome"]
+        verbose_name = "Centro de custo"
+        verbose_name_plural = "Centros de custo"
+        constraints = [
+            models.UniqueConstraint(fields=["empresa", "codigo"], name="financeiro_centro_codigo_unico_empresa"),
+            models.UniqueConstraint(fields=["empresa", "nome"], name="financeiro_centro_nome_unico_empresa"),
+        ]
+
+    def __str__(self):
+        return f"{self.codigo} - {self.nome}"
+
+
 class CategoriaFinanceira(models.Model):
-    nome = models.CharField(max_length=120, unique=True)
+    empresa = models.ForeignKey("empresas.Empresa", on_delete=models.PROTECT, related_name="categorias_financeiras")
+    nome = models.CharField(max_length=120)
+    conta_contabil = models.ForeignKey(ContaContabil, on_delete=models.PROTECT, null=True, blank=True, related_name="categorias_financeiras", verbose_name="Conta cont?bil")
     tipo = models.CharField(max_length=20, choices=TipoContaFinanceira.choices)
     is_active = models.BooleanField(default=True)
 
     class Meta:
         ordering = ["tipo", "nome"]
+        constraints = [models.UniqueConstraint(fields=["empresa", "nome"], name="financeiro_categoria_unica_por_empresa")]
+
+    def clean(self):
+        if self.conta_contabil_id and self.conta_contabil.empresa_id != self.empresa_id:
+            raise ValidationError({"conta_contabil": "A conta cont?bil pertence a outra empresa."})
+        if self.conta_contabil_id and self.conta_contabil.tipo != TipoContaContabil.ANALITICA:
+            raise ValidationError({"conta_contabil": "Selecione uma conta cont?bil anal?tica para a categoria."})
 
     def __str__(self):
         return self.nome
@@ -77,6 +161,7 @@ class ContaFinanceira(models.Model):
     status = models.CharField(max_length=20, choices=StatusContaFinanceira.choices, default=StatusContaFinanceira.ABERTA)
     descricao = models.CharField(max_length=255)
     categoria = models.ForeignKey(CategoriaFinanceira, on_delete=models.PROTECT, null=True, blank=True, related_name="contas")
+    centro_custo = models.ForeignKey(CentroCusto, on_delete=models.PROTECT, null=True, blank=True, related_name="contas_financeiras", verbose_name="Centro de custo")
     filial = models.ForeignKey("empresas.Filial", on_delete=models.PROTECT, related_name="contas_financeiras")
     fornecedor = models.ForeignKey("fornecedores.Fornecedor", on_delete=models.PROTECT, null=True, blank=True, related_name="contas_pagar")
     cliente = models.ForeignKey("clientes.Cliente", on_delete=models.PROTECT, null=True, blank=True, related_name="contas_receber")
@@ -101,6 +186,10 @@ class ContaFinanceira(models.Model):
             raise ValidationError({"cliente": "Cliente informado pertence a outra empresa."})
         if self.fornecedor_id and self.fornecedor.empresa_id and self.filial_id and self.fornecedor.empresa_id != self.filial.empresa_id:
             raise ValidationError({"fornecedor": "Fornecedor informado pertence a outra empresa."})
+        if self.categoria_id and self.filial_id and self.categoria.empresa_id != self.filial.empresa_id:
+            raise ValidationError({"categoria": "Categoria informada pertence a outra empresa."})
+        if self.centro_custo_id and self.filial_id and self.centro_custo.empresa_id != self.filial.empresa_id:
+            raise ValidationError({"centro_custo": "Centro de custo informado pertence a outra empresa."})
     @property
     def esta_vencida(self):
         return self.status == StatusContaFinanceira.ABERTA and self.vencimento < timezone.localdate()
@@ -135,7 +224,7 @@ class TransferenciaFinanceira(models.Model):
 
     def save(self, *args, **kwargs):
         if self.pk:
-            raise ValidationError("Transferencias financeiras nao podem ser alteradas.")
+            raise ValidationError("Transferências financeiras não podem ser alteradas.")
         if self.conta_origem_id == self.conta_destino_id:
             raise ValidationError("As contas de origem e destino devem ser diferentes.")
         if self.valor <= 0:
@@ -143,7 +232,7 @@ class TransferenciaFinanceira(models.Model):
         super().save(*args, **kwargs)
 
     def delete(self, *args, **kwargs):
-        raise ValidationError("Transferencias financeiras nao podem ser excluidas.")
+        raise ValidationError("Transferências financeiras não podem ser excluídas.")
 
     def __str__(self):
         return f"Transferencia #{self.pk} - {self.conta_origem} para {self.conta_destino}"
@@ -157,6 +246,8 @@ class LancamentoFinanceiro(models.Model):
     valor = models.DecimalField(max_digits=14, decimal_places=2)
     data = models.DateField(default=timezone.localdate)
     conta_financeira = models.ForeignKey(ContaFinanceira, on_delete=models.PROTECT, null=True, blank=True, related_name="lancamentos")
+    centro_custo = models.ForeignKey(CentroCusto, on_delete=models.PROTECT, null=True, blank=True, related_name="lancamentos", verbose_name="Centro de custo")
+    conta_contabil = models.ForeignKey(ContaContabil, on_delete=models.PROTECT, null=True, blank=True, related_name="lancamentos", verbose_name="Conta cont?bil")
     transferencia = models.ForeignKey(TransferenciaFinanceira, on_delete=models.PROTECT, null=True, blank=True, related_name="lancamentos")
     estorno_de = models.ForeignKey("self", on_delete=models.PROTECT, null=True, blank=True, related_name="estornos")
     pagamento_venda = models.ForeignKey("vendas.PagamentoVenda", on_delete=models.PROTECT, null=True, blank=True, related_name="lancamentos_financeiros")
@@ -174,13 +265,19 @@ class LancamentoFinanceiro(models.Model):
 
     def save(self, *args, **kwargs):
         if self.pk:
-            raise ValidationError("Lancamentos do livro financeiro nao podem ser alterados.")
+            raise ValidationError("Lancamentos do livro financeiro não podem ser alterados.")
+        if self.centro_custo_id and self.conta_id and self.centro_custo.empresa_id != self.conta.filial.empresa_id:
+            raise ValidationError({"centro_custo": "Centro de custo informado pertence a outra empresa."})
+        if self.conta_contabil_id and self.conta_id and self.conta_contabil.empresa_id != self.conta.filial.empresa_id:
+            raise ValidationError({"conta_contabil": "Conta cont?bil informada pertence a outra empresa."})
+        if self.conta_contabil_id and self.conta_contabil.tipo != TipoContaContabil.ANALITICA:
+            raise ValidationError({"conta_contabil": "Lan?amentos exigem conta cont?bil anal?tica."})
         if self.valor <= 0:
-            raise ValidationError("Valor do lancamento deve ser maior que zero.")
+            raise ValidationError("Valor do lançamento deve ser maior que zero.")
         super().save(*args, **kwargs)
 
     def delete(self, *args, **kwargs):
-        raise ValidationError("Lancamentos do livro financeiro nao podem ser excluidos.")
+        raise ValidationError("Lancamentos do livro financeiro não podem ser excluidos.")
 
     def __str__(self):
         return f"{self.get_tipo_display()} - {self.descricao}"
@@ -198,11 +295,11 @@ class ConciliacaoLancamentoFinanceiro(models.Model):
 
     def save(self, *args, **kwargs):
         if self.pk:
-            raise ValidationError("Conciliacoes financeiras nao podem ser alteradas.")
+            raise ValidationError("Conciliacoes financeiras não podem ser alteradas.")
         super().save(*args, **kwargs)
 
     def delete(self, *args, **kwargs):
-        raise ValidationError("Conciliacoes financeiras nao podem ser excluidas.")
+        raise ValidationError("Conciliacoes financeiras não podem ser excluídas.")
 
     def __str__(self):
         return f"Conciliacao do lancamento #{self.lancamento_id} - {self.referencia_externa}"

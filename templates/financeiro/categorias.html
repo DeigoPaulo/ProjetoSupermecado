@@ -6,7 +6,7 @@
 <header class="page-header">
   <div>
     <h1>Categorias financeiras</h1>
-    <p>Organize contas a pagar e receber para relatorios futuros.</p>
+    <p>Organize contas a pagar e receber para relatórios futuros.</p>
   </div>
   <div class="actions">
     <a class="secondary-button" href="{% url 'financeiro:contas' %}">Financeiro</a>
@@ -17,17 +17,18 @@
 <section class="panel">
   <div class="table-wrapper">
     <table>
-      <thead><tr><th>Nome</th><th>Tipo</th><th>Status</th><th></th></tr></thead>
+      <thead><tr><th>Nome</th><th>Tipo</th><th>Conta cont?bil</th><th>Status</th><th></th></tr></thead>
       <tbody>
         {% for categoria in categorias %}
           <tr>
             <td>{{ categoria.nome }}</td>
             <td>{{ categoria.get_tipo_display }}</td>
+            <td>{{ categoria.conta_contabil|default:"N?o vinculada" }}</td>
             <td><span class="status {% if not categoria.is_active %}status-muted{% endif %}">{% if categoria.is_active %}Ativa{% else %}Inativa{% endif %}</span></td>
             <td><a class="secondary-button" href="{% url 'financeiro:categoria_editar' categoria.pk %}">Editar</a></td>
           </tr>
         {% empty %}
-          <tr><td colspan="4" class="empty">Nenhuma categoria cadastrada.</td></tr>
+          <tr><td colspan="5" class="empty">Nenhuma categoria cadastrada.</td></tr>
         {% endfor %}
       </tbody>
     </table>

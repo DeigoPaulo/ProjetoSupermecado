@@ -109,7 +109,25 @@ O pacote do servidor é gerado somente a partir de um commit Git limpo e rastre�
 .\scripts\package_local_server.ps1 -Version 1.0.0
 ```
 
-O resultado contém o ZIP sem banco, mídia ou `.env`, um manifesto `local_server_package_v1` e um arquivo SHA-256. Em produção, use `-RequireSignedCommit` para aceitar somente commit Git com assinatura válida. A assinatura de código do artefato definitivo continua sendo uma etapa separada do pipeline comercial.
+O resultado contém o ZIP sem banco, mídia ou `.env`, um manifesto `local_server_package_v1` e um arquivo SHA-256. Em produção, use `-RequireSignedCommit` para aceitar somente commit Git com assinatura válida. A assinatura de código do artefato definitivo continua sendo uma etapa separada do pipeline comercial. Antes de concluir o pacote, o pipeline abre o ZIP pelo contrato `local_server_package_content_v1`, limita quantidade e tamanho descompactado, exige `manage.py`, `requirements.txt`, `config/settings.py` e aplicações Django e bloqueia caminhos inseguros, `.git`, ambientes virtuais, bancos, `.env`, certificados/chaves, mídia, logs, backups e artefatos. O publicador repete a mesma inspeção e a Central a executa novamente antes de liberar o download. As regras `export-ignore` também retiram testes Python, documentos iniciais, protótipos e referências internas; o contrato rejeita esses arquivos mesmo se forem reinseridos manualmente. Manuais operacionais de implantação permanecem permitidos.
+### Módulos sensíveis compilados
+
+O pacote comercial pode substituir módulos Python selecionados por extensões compiladas com Nuitka. Isso dificulta a leitura casual do código, mas não torna uma instalação sob controle do cliente absolutamente indevassável. A proteção comercial também depende de licenciamento, assinatura, ACLs e contrato.
+
+Na estação Windows de build, usando a mesma versão e arquitetura do Python da instalação de destino:
+
+```powershell
+.\.venv\Scripts\python.exe -m pip install -r requirements-build.txt
+.\scripts\build_protected_modules.ps1 -Commit HEAD -Force
+.\scripts\package_local_server.ps1 `
+  -Version 1.0.0 `
+  -ProtectedModulesDirectory dist\protected_modules `
+  -RequireProtectedModules `
+  -RequireSignedCommit
+```
+
+O contrato `local_server_protected_modules_v1` registra commit, implementação, versão e ABI do Python, plataforma, arquitetura e SHA-256 do fonte e do binário. O empacotador recusa overlays de outro commit ou runtime, confirma os hashes, remove o `.py` correspondente e incorpora o manifesto ao ZIP. Nunca copie um overlay entre versões do Python ou entre arquiteturas. Sem `-RequireProtectedModules`, o pacote continua sendo apenas de desenvolvimento/homologação.
+
 Depois da revisão, promova a versão para a Central do servidor local:
 
 ```powershell
@@ -170,6 +188,24 @@ Para PostgreSQL, instale as ferramentas cliente oficiais e mantenha `pg_dump` e 
 - **Licenciamento:** a consulta comercial à central é independente dessa política operacional e continua seguindo tolerância, cache e liberação emergencial definidos no módulo de licenciamento.
 
 A troca de modo deve ser feita pelo administrador da empresa. O diagnóstico em `Sistema > Sincronização` mostra separadamente eventos pendentes, com erro e pausados.
+## Credencial individual da sincronização
+
+Cada matriz deve usar uma credencial própria na comunicação loja-nuvem. Configure no servidor local e na Central o mesmo mapa JSON, usando o CNPJ como chave:
+
+```env
+SINCRONIZACAO_TOKENS_EMPRESA_JSON={"00.000.000/0001-00":"segredo-longo-e-exclusivo-da-empresa"}
+
+Para trocar a credencial sem interromper a loja, publique primeiro a configuração de rotação nos dois lados. O primeiro valor é sempre usado para novos envios, e os anteriores são aceitos apenas temporariamente:
+
+    SINCRONIZACAO_TOKENS_EMPRESA_JSON={"00.000.000/0001-00":{"atual":"novo-segredo-exclusivo","anteriores":["segredo-anterior"]}}
+
+Depois que todos os servidores locais estiverem enviando com o token atual, remova `anteriores`. O diagnóstico marca empresas que ainda estão nessa janela de rotação e nunca exibe os segredos.
+
+SINCRONIZACAO_MAX_EVENTO_BYTES=1048576
+```
+
+Não reutilize a credencial entre clientes. SINCRONIZACAO_API_TOKEN só pode ser aceito durante uma migração controlada, com SINCRONIZACAO_PERMITE_TOKEN_GLOBAL=true; o padrão seguro é false. O diagnóstico em Sistema > Sincronização lista empresas com credencial individual, fallback transitório ou configuração ausente.
+
 ## Sincronização loja-nuvem
 
 No modo híbrido ou nuvem com agente:

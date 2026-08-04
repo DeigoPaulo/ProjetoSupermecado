@@ -52,7 +52,7 @@
   <nav class="pagination" aria-label="Paginacao de solicitacoes">
     {% if pendentes.has_previous %}<a class="secondary-button" href="?pendentes_page={{ pendentes.previous_page_number }}&historico_page={{ historico.number }}">Anterior</a>{% endif %}
     <strong>Pagina {{ pendentes.number }} de {{ pendentes.paginator.num_pages }}</strong>
-    {% if pendentes.has_next %}<a class="secondary-button" href="?pendentes_page={{ pendentes.next_page_number }}&historico_page={{ historico.number }}">Proxima</a>{% endif %}
+    {% if pendentes.has_next %}<a class="secondary-button" href="?pendentes_page={{ pendentes.next_page_number }}&historico_page={{ historico.number }}">Próxima</a>{% endif %}
   </nav>
   {% endif %}</section>
 
@@ -78,10 +78,10 @@
     </tbody>
   </table>
   {% if historico.paginator.num_pages > 1 %}
-  <nav class="pagination" aria-label="Paginacao do historico">
+  <nav class="pagination" aria-label="Paginação do histórico">
     {% if historico.has_previous %}<a class="secondary-button" href="?pendentes_page={{ pendentes.number }}&historico_page={{ historico.previous_page_number }}">Anterior</a>{% endif %}
-    <strong>Pagina {{ historico.number }} de {{ historico.paginator.num_pages }}</strong>
-    {% if historico.has_next %}<a class="secondary-button" href="?pendentes_page={{ pendentes.number }}&historico_page={{ historico.next_page_number }}">Proxima</a>{% endif %}
+    <strong>Página {{ historico.number }} de {{ historico.paginator.num_pages }}</strong>
+    {% if historico.has_next %}<a class="secondary-button" href="?pendentes_page={{ pendentes.number }}&historico_page={{ historico.next_page_number }}">Próxima</a>{% endif %}
   </nav>
   {% endif %}</section>
 {% endblock %}

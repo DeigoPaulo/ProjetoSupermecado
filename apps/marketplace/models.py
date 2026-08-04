@@ -22,10 +22,10 @@ class TipoEntrega(models.TextChoices):
 
 class StatusPedido(models.TextChoices):
     RASCUNHO = "RASCUNHO", "Rascunho"
-    EM_SEPARACAO = "EM_SEPARACAO", "Em separacao"
+    EM_SEPARACAO = "EM_SEPARACAO", "Em separação"
     PRONTO = "PRONTO", "Pronto"
     SAIU_ENTREGA = "SAIU_ENTREGA", "Saiu para entrega"
-    CONCLUIDO = "CONCLUIDO", "Concluido"
+    CONCLUIDO = "CONCLUIDO", "Concluído"
     CANCELADO = "CANCELADO", "Cancelado"
 
 
@@ -37,18 +37,20 @@ class StatusPagamentoPedido(models.TextChoices):
 
 class FormaPagamentoPedido(models.TextChoices):
     PIX = "PIX", "PIX"
-    CARTAO = "CARTAO", "Cartao"
+    CARTAO = "CARTAO", "Cartão"
+    CARTAO_CREDITO_ENTREGA = "CARTAO_CREDITO_ENTREGA", "Cartão de crédito na entrega"
+    CARTAO_DEBITO_ENTREGA = "CARTAO_DEBITO_ENTREGA", "Cartão de débito na entrega"
     DINHEIRO = "DINHEIRO", "Dinheiro"
     GATEWAY = "GATEWAY", "Gateway/marketplace"
     OUTRO = "OUTRO", "Outro"
 
 
 class ProvedorIntegracaoMarketplace(models.TextChoices):
-    PADRAO = "PADRAO", "Contrato padrao"
+    PADRAO = "PADRAO", "Contrato padrão"
     IFOOD = "IFOOD", "iFood"
     RAPPI = "RAPPI", "Rappi"
     MERCADO_LIVRE = "MERCADO_LIVRE", "Mercado Livre"
-    SITE_PROPRIO = "SITE_PROPRIO", "Site proprio"
+    SITE_PROPRIO = "SITE_PROPRIO", "Site próprio"
     OUTRO = "OUTRO", "Outro parceiro"
 
 
@@ -86,8 +88,8 @@ class PoliticaEntrega(models.Model):
     raio_maximo_km = models.DecimalField(max_digits=7, decimal_places=2)
     valor_minimo_pedido = models.DecimalField(max_digits=10, decimal_places=2, default=0)
     frete_gratis_acima = models.DecimalField(max_digits=10, decimal_places=2, null=True, blank=True)
-    bairros_atendidos = models.TextField(blank=True, help_text="Separe bairros ou setores por virgula.")
-    bairros_bloqueados = models.TextField(blank=True, help_text="Separe bairros ou setores por virgula.")
+    bairros_atendidos = models.TextField(blank=True, help_text="Separe bairros ou setores por vírgula.")
+    bairros_bloqueados = models.TextField(blank=True, help_text="Separe bairros ou setores por vírgula.")
     horarios_entrega = models.TextField(blank=True)
     permite_retirada = models.BooleanField(default=True)
     is_active = models.BooleanField(default=True)
@@ -98,12 +100,12 @@ class PoliticaEntrega(models.Model):
 
     def clean(self):
         if self.raio_maximo_km <= 0:
-            raise ValidationError({"raio_maximo_km": "O raio maximo deve ser maior que zero."})
+            raise ValidationError({"raio_maximo_km": "O raio máximo deve ser maior que zero."})
         if self.valor_minimo_pedido < 0 or (self.frete_gratis_acima is not None and self.frete_gratis_acima < 0):
-            raise ValidationError("Os valores da politica nao podem ser negativos.")
+            raise ValidationError("Os valores da política não podem ser negativos.")
 
     def __str__(self):
-        return f"Politica de entrega - {self.filial}"
+        return f"Política de entrega - {self.filial}"
 
 
 class FaixaTaxaEntrega(models.Model):
@@ -117,9 +119,9 @@ class FaixaTaxaEntrega(models.Model):
 
     def clean(self):
         if self.distancia_inicial_km < 0 or self.distancia_final_km <= self.distancia_inicial_km:
-            raise ValidationError("A distancia final deve ser maior que a inicial.")
+            raise ValidationError("A distância final deve ser maior que a inicial.")
         if self.taxa < 0:
-            raise ValidationError({"taxa": "A taxa nao pode ser negativa."})
+            raise ValidationError({"taxa": "A taxa não pode ser negativa."})
 
     def __str__(self):
         return f"{self.distancia_inicial_km} a {self.distancia_final_km} km - R$ {self.taxa}"
@@ -136,6 +138,7 @@ class PedidoOnline(models.Model):
     canal = models.CharField(max_length=20, choices=CanalPedido.choices, default=CanalPedido.LOJA_ONLINE)
     tipo_entrega = models.CharField(max_length=20, choices=TipoEntrega.choices, default=TipoEntrega.RETIRADA)
     endereco_entrega = models.TextField(blank=True)
+    bairro_entrega = models.CharField(max_length=120, blank=True)
     distancia_entrega_km = models.DecimalField(max_digits=7, decimal_places=2, null=True, blank=True)
     regra_entrega_aplicada = models.CharField(max_length=180, blank=True)
     referencia_externa = models.CharField(max_length=80, blank=True)
@@ -146,8 +149,9 @@ class PedidoOnline(models.Model):
     desconto = models.DecimalField(max_digits=10, decimal_places=2, default=0)
     total = models.DecimalField(max_digits=12, decimal_places=2, default=0)
     status_pagamento = models.CharField(max_length=20, choices=StatusPagamentoPedido.choices, default=StatusPagamentoPedido.PENDENTE)
-    forma_pagamento = models.CharField(max_length=20, choices=FormaPagamentoPedido.choices, blank=True)
+    forma_pagamento = models.CharField(max_length=40, choices=FormaPagamentoPedido.choices, blank=True)
     valor_pago = models.DecimalField(max_digits=12, decimal_places=2, default=0)
+    referencia_pagamento = models.CharField(max_length=120, blank=True)
     pago_em = models.DateTimeField(null=True, blank=True)
     observacoes = models.TextField(blank=True)
     usuario = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.PROTECT, related_name="pedidos_online_criados")
@@ -162,13 +166,13 @@ class PedidoOnline(models.Model):
 
     def clean(self):
         if self.integracao_id and self.filial_id and self.integracao.filial_id != self.filial_id:
-            raise ValidationError({"integracao": "Integracao informada pertence a outra filial."})
+            raise ValidationError({"integracao": "Integração informada pertence a outra filial."})
         if self.cliente_id and self.filial_id and self.cliente.empresa_id != self.filial.empresa_id:
             raise ValidationError({"cliente": "Cliente informado pertence a outra empresa."})
         if self.tipo_entrega == TipoEntrega.ENTREGA and not self.endereco_entrega.strip():
-            raise ValidationError({"endereco_entrega": "Informe o endereco para pedidos com entrega."})
+            raise ValidationError({"endereco_entrega": "Informe o endereço para pedidos com entrega."})
         if self.desconto < 0 or self.taxa_entrega < 0:
-            raise ValidationError("Desconto e taxa de entrega nao podem ser negativos.")
+            raise ValidationError("Desconto e taxa de entrega não podem ser negativos.")
 
     def recalcular(self):
         self.subtotal = sum((item.total for item in self.itens.all()), Decimal("0.00"))
@@ -195,7 +199,7 @@ class ItemPedidoOnline(models.Model):
         if self.quantidade <= 0:
             raise ValidationError({"quantidade": "A quantidade deve ser maior que zero."})
         if self.preco_unitario < 0:
-            raise ValidationError({"preco_unitario": "O preco nao pode ser negativo."})
+            raise ValidationError({"preco_unitario": "O preço não pode ser negativo."})
         if self.quantidade_separada < 0 or self.quantidade_separada > self.quantidade:
             raise ValidationError({"quantidade_separada": "A quantidade separada deve ficar entre zero e a quantidade pedida."})
 

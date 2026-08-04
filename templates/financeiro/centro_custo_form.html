@@ -1,0 +1,31 @@
+{% extends "base.html" %}
+
+{% block title %}Centro de custo{% endblock %}
+
+{% block content %}
+<header class="page-header">
+  <div>
+    <h1>{% if centro %}Editar centro de custo{% else %}Novo centro de custo{% endif %}</h1>
+    <p>Identifique a área responsável pelas receitas e despesas.</p>
+  </div>
+  <a class="secondary-button" href="{% url 'financeiro:centros_custo' %}">Voltar</a>
+</header>
+
+<form method="post" class="form-grid panel">
+  {% csrf_token %}
+  {% if form.non_field_errors %}<div class="form-note form-note-danger">{{ form.non_field_errors }}</div>{% endif %}
+  <section class="form-section form-field-wide">
+    <h2>Identificação</h2>
+    <div class="form-grid form-grid-inner">
+      {% if form.empresa %}<label class="form-field"><span>{{ form.empresa.label }}</span>{{ form.empresa }}{{ form.empresa.errors }}</label>{% endif %}
+      <label class="form-field"><span>{{ form.codigo.label }}</span>{{ form.codigo }}{{ form.codigo.errors }}</label>
+      <label class="form-field"><span>{{ form.nome.label }}</span>{{ form.nome }}{{ form.nome.errors }}</label>
+      <label class="toggle-field">{{ form.ativo }} <span>{{ form.ativo.label }}</span>{{ form.ativo.errors }}</label>
+    </div>
+  </section>
+  <div class="form-actions">
+    <a class="secondary-button" href="{% url 'financeiro:centros_custo' %}">Cancelar</a>
+    <button class="primary-button" type="submit">Salvar</button>
+  </div>
+</form>
+{% endblock %}

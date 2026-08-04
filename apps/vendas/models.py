@@ -11,7 +11,7 @@ class StatusVenda(models.TextChoices):
 
 
 class TipoDocumentoConsumidor(models.TextChoices):
-    NAO_IDENTIFICADO = "NAO_IDENTIFICADO", "Nao identificado"
+    NAO_IDENTIFICADO = "NAO_IDENTIFICADO", "Não identificado"
     CPF = "CPF", "CPF"
     CNPJ = "CNPJ", "CNPJ"
     ESTRANGEIRO = "ESTRANGEIRO", "Documento estrangeiro"
@@ -97,7 +97,7 @@ class FormaPagamentoFilial(models.Model):
             and self.conta_movimento_padrao.filial_id != self.filial_id
         ):
             raise ValidationError(
-                {"conta_movimento_padrao": "A conta deve pertencer a esta filial."}
+                {"conta_movimento_padrao": "A conta deve pertencer a está filial."}
             )
 
     def __str__(self):

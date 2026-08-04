@@ -20,6 +20,7 @@ from django.views.generic import CreateView, ListView, UpdateView
 from apps.accounts.models import PerfilUsuario, TipoPerfil
 from apps.accounts.permissions import ESTOQUE, RoleRequiredMixin, role_required, supervisor_from_request
 from apps.auditoria.models import LogAuditoria
+from apps.empresas.models import AcaoPinSupervisor
 from apps.produtos.models import Produto
 
 from .escopo import (
@@ -173,10 +174,10 @@ def _programar_ordens_por_sugestao(*, composicoes, usuario, data_programada, ip=
             quantidade_planejada=quantidade,
             data_programada=data_programada,
             prioridade="NORMAL",
-            setor_responsavel="Producao interna",
+            setor_responsavel="Produção interna",
             etapa_operacional="AGUARDANDO",
             usuario=usuario,
-            motivo="Reposicao automatica ate estoque minimo",
+            motivo="Reposicao automática ate estoque mínimo",
             observacao=(
                 f"Gerada pelo planejamento: estoque final {resumo['estoque_final']}, "
                 f"minimo {resumo['estoque_minimo']}, demanda {resumo['demanda_reposicao']}."
@@ -302,7 +303,7 @@ def atribuir_saldo_lote(request, pk):
         form = AtribuirSaldoLoteForm(request.POST)
         if form.is_valid():
             try:
-                supervisor = supervisor_from_request(request)
+                supervisor = supervisor_from_request(request, acao=AcaoPinSupervisor.ESTOQUE_AJUSTE)
                 lote = atribuir_saldo_historico_lote(
                     estoque=estoque,
                     usuario=request.user,
@@ -337,7 +338,7 @@ def movimentar(request):
         form = MovimentacaoEstoqueForm(request.POST, user=request.user)
         if form.is_valid():
             try:
-                supervisor = supervisor_from_request(request)
+                supervisor = supervisor_from_request(request, acao=AcaoPinSupervisor.ESTOQUE_AJUSTE)
                 movimentacao = movimentar_estoque(usuario=request.user, **form.cleaned_data)
                 LogAuditoria.objects.create(
                     usuario=request.user,
@@ -414,7 +415,7 @@ def inventario_detalhe(request, pk):
 def adicionar_item_inventario(request, pk):
     inventario = get_object_or_404(inventarios_para_usuario(request.user), pk=pk)
     if inventario.status != StatusInventario.ABERTO:
-        messages.error(request, "Nao e possivel editar inventario aplicado ou cancelado.")
+        messages.error(request, "Não e possível editar inventario aplicado ou cancelado.")
         return redirect("estoque:inventario_detalhe", pk=inventario.pk)
 
     if request.method == "POST":
@@ -441,7 +442,7 @@ def aplicar_inventario_view(request, pk):
     if request.method != "POST":
         return redirect("estoque:inventario_detalhe", pk=inventario.pk)
     try:
-        supervisor = supervisor_from_request(request)
+        supervisor = supervisor_from_request(request, acao=AcaoPinSupervisor.ESTOQUE_AJUSTE)
         aplicar_inventario(inventario=inventario, usuario=request.user, supervisor=supervisor, ip=request.META.get("REMOTE_ADDR"))
     except ValidationError as exc:
         messages.error(request, " ".join(exc.messages))
@@ -470,7 +471,7 @@ def registrar_perda(request):
         form = PerdaEstoqueForm(request.POST, user=request.user)
         if form.is_valid():
             try:
-                supervisor = supervisor_from_request(request)
+                supervisor = supervisor_from_request(request, acao=AcaoPinSupervisor.ESTOQUE_AJUSTE)
                 registrar_perda_estoque(usuario=request.user, supervisor=supervisor, ip=request.META.get("REMOTE_ADDR"), **form.cleaned_data)
             except ValidationError as exc:
                 messages.error(request, " ".join(exc.messages))
@@ -673,15 +674,15 @@ def composicoes_csv(request):
             "Empresa",
             "Filial",
             "Produto final",
-            "Codigo produto final",
+            "Código produto final",
             "Tipo",
             "Qtd receita",
             "Componentes",
             "Estoque final",
-            "Estoque minimo",
+            "Estoque mínimo",
             "Demanda reposicao",
             "Capacidade componentes",
-            "Producao sugerida",
+            "Produção sugerida",
             "Custo previsto",
             "Status planejamento",
         ]
@@ -736,7 +737,7 @@ def composicoes_programar_sugestoes(request):
         try:
             data_programada = date.fromisoformat(data_informada)
         except ValueError:
-            messages.error(request, "Data de programacao invalida.")
+            messages.error(request, "Data de programacao inválida.")
             return redirect("estoque:composicoes")
     composicoes = list(_composicoes_filtradas(request).filter(is_active=True))
     criadas, ignoradas = _programar_ordens_por_sugestao(
@@ -1028,7 +1029,7 @@ def composicao_producoes_relatorio_csv(request):
             "Empresa",
             "Filial",
             "Produto final",
-            "Codigo produto final",
+            "Código produto final",
             "Qtd produzida",
             "Custo total",
             "Status",
@@ -1387,7 +1388,7 @@ def ordens_producao_composicao_csv(request):
             "Empresa",
             "Filial",
             "Produto final",
-            "Codigo produto final",
+            "Código produto final",
             "Quantidade planejada",
             "Prioridade",
             "Setor",
@@ -1396,7 +1397,7 @@ def ordens_producao_composicao_csv(request):
             "Status",
             "Criado por",
             "Motivo",
-            "Producao gerada",
+            "Produção gerada",
             "Criada em",
             "Concluida em",
             "Tempo na etapa",
@@ -1706,7 +1707,7 @@ def ordem_producao_composicao_confirmar(request, pk):
     if request.method != "POST":
         return redirect("estoque:ordens_producao_composicao")
     try:
-        supervisor = supervisor_from_request(request)
+        supervisor = supervisor_from_request(request, acao=AcaoPinSupervisor.ESTOQUE_AJUSTE)
         confirmar_ordem_producao_composicao(
             ordem=ordem,
             usuario=request.user,
@@ -1730,7 +1731,7 @@ def ordem_producao_composicao_cancelar(request, pk):
     if request.method != "POST":
         return redirect("estoque:ordens_producao_composicao")
     try:
-        supervisor = supervisor_from_request(request)
+        supervisor = supervisor_from_request(request, acao=AcaoPinSupervisor.ESTOQUE_CANCELAR)
         cancelar_ordem_producao_composicao(
             ordem=ordem,
             usuario=request.user,
@@ -1752,7 +1753,7 @@ def _salvar_composicao_com_itens(request, composicao=None):
         composicao = form.save()
         formset.instance = composicao
         formset.save()
-        messages.success(request, "Composicao salva com sucesso.")
+        messages.success(request, "Composição salva com sucesso.")
         return composicao, form, formset
     return None, form, formset
 
@@ -1828,7 +1829,7 @@ def composicao_produzir(request, pk):
     form = ProducaoComposicaoForm(request.POST, composicao=composicao, user=request.user)
     if form.is_valid():
         try:
-            supervisor = supervisor_from_request(request)
+            supervisor = supervisor_from_request(request, acao=AcaoPinSupervisor.ESTOQUE_AJUSTE)
             producao = confirmar_producao_composicao(
                 composicao=composicao,
                 usuario=request.user,
@@ -1841,7 +1842,7 @@ def composicao_produzir(request, pk):
         else:
             messages.success(request, f"Composicao {producao.id} produzida e estoque atualizado.")
     else:
-        messages.error(request, "Confira os dados da producao.")
+        messages.error(request, "Confira os dados da produção.")
     return redirect("estoque:composicao_detalhe", pk=composicao.pk)
 
 
@@ -1857,7 +1858,7 @@ def composicao_cancelar_producao(request, pk):
     if request.method != "POST":
         return redirect("estoque:composicao_detalhe", pk=producao.composicao_id)
     try:
-        supervisor = supervisor_from_request(request)
+        supervisor = supervisor_from_request(request, acao=AcaoPinSupervisor.ESTOQUE_CANCELAR)
         cancelar_producao_composicao(
             producao=producao,
             usuario=request.user,
@@ -1868,7 +1869,7 @@ def composicao_cancelar_producao(request, pk):
     except ValidationError as exc:
         messages.error(request, " ".join(exc.messages))
     else:
-        messages.success(request, "Producao cancelada e estoque revertido.")
+        messages.success(request, "Produção cancelada e estoque revertido.")
     return redirect("estoque:composicao_detalhe", pk=producao.composicao_id)
 
 
@@ -1886,10 +1887,10 @@ def desmembramentos_csv(request):
             "Filial",
             "Status",
             "Produto origem",
-            "Codigo origem",
+            "Código origem",
             "Qtd origem",
             "Produto destino",
-            "Codigo destino",
+            "Código destino",
             "Qtd destino",
             "Tipo destino",
             "Lote",
@@ -2136,15 +2137,23 @@ def produtos_busca(request):
         base_qs = base_qs.filter(vendido_no_marketplace=True)
 
     exatos = list(
-        base_qs.filter(Q(codigo_barras__iexact=termo) | Q(codigo_interno__iexact=termo)).select_related(
+        base_qs.filter(
+            Q(codigo_barras__iexact=termo)
+            | Q(codigo_interno__iexact=termo)
+            | Q(codigos_adicionais__codigo__iexact=termo)
+        ).distinct().select_related(
             "categoria", "marca"
         )[:10]
     )
     parciais = list(
         base_qs.filter(
-            Q(codigo_barras__icontains=termo) | Q(codigo_interno__icontains=termo) | Q(nome__icontains=termo)
+            Q(codigo_barras__icontains=termo)
+            | Q(codigo_interno__icontains=termo)
+            | Q(codigos_adicionais__codigo__icontains=termo)
+            | Q(nome__icontains=termo)
         )
         .exclude(pk__in=[produto.pk for produto in exatos])
+        .distinct()
         .select_related("categoria", "marca")
         .order_by("nome")[:20]
     )
@@ -2220,7 +2229,7 @@ def desmembramento_novo(request):
                 if request.POST.get("acao") == "simular":
                     previa = simular_desmembramento_multidestino(destinos=destinos, **dados)
                 else:
-                    supervisor = supervisor_from_request(request)
+                    supervisor = supervisor_from_request(request, acao=AcaoPinSupervisor.ESTOQUE_AJUSTE)
                     desmembramento = confirmar_desmembramento_multidestino(
                         usuario=request.user,
                         supervisor=supervisor,
@@ -2267,7 +2276,7 @@ def desmembramento_cancelar(request, pk):
     if request.method != "POST":
         return redirect("estoque:desmembramento_detalhe", pk=desmembramento.pk)
     try:
-        supervisor = supervisor_from_request(request)
+        supervisor = supervisor_from_request(request, acao=AcaoPinSupervisor.ESTOQUE_CANCELAR)
         cancelar_desmembramento_produto(
             desmembramento=desmembramento,
             usuario=request.user,

@@ -23,7 +23,7 @@ def carregar_adaptador_marketplace(provedor):
         adapter_class = import_string(caminho)
         adapter = adapter_class()
     except (ImportError, AttributeError, TypeError) as exc:
-        raise ImproperlyConfigured(f"Nao foi possivel carregar o adaptador do provedor {codigo}.") from exc
+        raise ImproperlyConfigured(f"Não foi possível carregar o adaptador do provedor {codigo}.") from exc
     if not callable(getattr(adapter, "normalizar_pedido", None)):
         raise ImproperlyConfigured("O adaptador de marketplace deve implementar normalizar_pedido.")
     return adapter
@@ -83,7 +83,7 @@ def normalizar_payload_marketplace(integracao, payload):
     except MarketplaceAdapterError:
         raise
     except Exception as exc:
-        raise MarketplaceAdapterError("O adaptador nao conseguiu normalizar o pedido recebido.") from exc
+        raise MarketplaceAdapterError("O adaptador não conseguiu normalizar o pedido recebido.") from exc
     if not isinstance(normalizado, dict):
-        raise MarketplaceAdapterError("O adaptador retornou um pedido em formato invalido.")
+        raise MarketplaceAdapterError("O adaptador retornou um pedido em formato inválido.")
     return normalizado

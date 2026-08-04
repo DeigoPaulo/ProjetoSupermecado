@@ -60,7 +60,7 @@ def parametros_qrcode_nfce(documento, configuracao=None):
 def gerar_url_qrcode_nfce(documento, configuracao=None):
     configuracao = configuracao or documento.filial.configuracao_fiscal
     if not configuracao.url_qrcode_nfce.strip():
-        raise ValidationError("Configure a URL oficial do QR Code NFC-e para esta filial.")
+        raise ValidationError("Configure a URL oficial do QR Code NFC-e para está filial.")
     return _url_com_parametro(configuracao.url_qrcode_nfce, parametros_qrcode_nfce(documento, configuracao))
 
 

@@ -1,11 +1,11 @@
 {% extends "base.html" %}
 
-{% block title %}Usuario{% endblock %}
+{% block title %}Usuário{% endblock %}
 
 {% block content %}
 <header class="page-header">
   <div>
-    <h1>{% if usuario_obj %}Editar usuario{% else %}Novo usuario{% endif %}</h1>
+    <h1>{% if usuario_obj %}Editar usuário{% else %}Novo usuário{% endif %}</h1>
     <p>Defina acesso, perfil operacional e filial vinculada.</p>
   </div>
 </header>
@@ -38,7 +38,7 @@
     <h2>Perfil operacional</h2>
     <div class="form-grid form-grid-inner">
       <label class="form-field"><span>{{ form.tipo.label }}</span>{{ form.tipo }}{{ form.tipo.errors }}</label>
-      <label class="form-field"><span>{{ form.filial.label }}</span>{{ form.filial }}{{ form.filial.errors }}<small>Use a filial para vincular operadores ao caixa e relatorios da loja.</small></label>
+      <label class="form-field"><span>{{ form.filial.label }}</span>{{ form.filial }}{{ form.filial.errors }}<small>Use a filial para vincular operadores ao caixa e relatórios da loja.</small></label>
     </div>
   </section>
 

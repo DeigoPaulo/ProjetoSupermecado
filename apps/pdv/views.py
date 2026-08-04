@@ -7,6 +7,7 @@ from django.contrib.auth.decorators import login_required
 from django.contrib.auth.mixins import LoginRequiredMixin
 from django.core.exceptions import ValidationError
 from django.core.paginator import Paginator
+from django.db import transaction
 from django.db.models import Q, Sum
 from django.http import FileResponse, Http404, JsonResponse
 from django.shortcuts import get_object_or_404, redirect, render
@@ -24,19 +25,21 @@ from apps.clientes.models import Cliente
 from apps.configuracoes.artifacts import artefato_pdv_desktop as _artefato_atualizacao_pdv
 from apps.configuracoes.models import TipoDocumentoImpressao
 from apps.configuracoes.services import configuracao_impressao_para, estilos_impressao
-from apps.empresas.models import Filial
+from apps.empresas.models import AcaoPinSupervisor, Filial
 from apps.estoque.models import Estoque
 from apps.financeiro.models import LancamentoFinanceiro, TipoLancamentoFinanceiro
 from apps.financeiro.services import conta_caixa_pdv, registrar_lancamento
+from apps.marketplace.models import CanalPedido, FormaPagamentoPedido, ItemPedidoOnline, PedidoOnline, PoliticaEntrega, StatusPedido, TipoEntrega
+from apps.marketplace.services import alterar_status_pedido, calcular_entrega_pedido, registrar_pagamento, reservar_pedido
 from apps.fiscal.models import ConfiguracaoFiscal, DocumentoFiscal, StatusDocumentoFiscal, TipoDocumentoFiscal
 from apps.fiscal.qrcode_nfce import gerar_qrcode_data_uri, obter_url_qrcode_nfce
-from apps.produtos.models import Produto
+from apps.produtos.models import CodigoBarrasProduto, ConfiguracaoBalancaProduto, Produto
 from apps.promocoes.models import PromocaoProduto
 from apps.promocoes.services import preco_atual_produto, promocao_ativa_para_produto
 from apps.vendas.models import EstornoParcialPagamento, FormaPagamento, PagamentoVenda, PreVenda, StatusEstornoParcial, StatusPagamento, StatusPreVenda, Venda
 from apps.vendas.services import calcular_item, cancelar_pre_venda, cancelar_venda, confirmar_estorno_pagamento_eletronico, confirmar_estorno_parcial_eletronico, converter_pre_venda, criar_pre_venda, finalizar_venda, forma_pagamento_disponivel, formas_pagamento_disponiveis, quantidade_devolvida_item, registrar_devolucao_venda
 
-from .forms import AbrirCaixaForm, AdicionarItemForm, ConferirCaixaForm, FecharCaixaForm, FinalizarVendaForm, PreVendaForm, SangriaForm, SuprimentoForm
+from .forms import AbrirCaixaForm, AdicionarItemForm, ConferirCaixaForm, EntregaPdvForm, FecharCaixaForm, FinalizarVendaForm, PreVendaForm, SangriaForm, SuprimentoForm
 from .models import AcessoPdvNuvem, Caixa, CanalAtualizacaoPdv, EventoDispositivoTerminal, Sangria, StatusAcessoPdvNuvem, StatusCaixa, Suprimento, TerminalPdv
 from .services_acesso import acesso_pdv_nuvem_aprovado, decidir_acesso_pdv_nuvem, solicitar_acesso_pdv_nuvem
 
@@ -286,14 +289,14 @@ def terminal_update_download(request):
         return JsonResponse(
             {
                 "status": "atualizacao_nao_liberada",
-                "mensagem": "A atualizacao nao esta liberada para este terminal.",
+                "mensagem": "A atualizacao não está liberada para este terminal.",
                 "politica_atualizacao": politica_atualizacao,
             },
             status=403,
         )
     artefato = _artefato_atualizacao_pdv()
     if not artefato["publicavel"]:
-        raise Http404("Atualizacao do PDV desktop ainda nao publicada.")
+        raise Http404("Atualizacao do PDV desktop ainda não publicada.")
     LogAuditoria.objects.create(
         usuario=None,
         modulo="pdv",
@@ -317,7 +320,7 @@ def terminal_device_events(request):
     try:
         payload = json.loads(request.body.decode("utf-8") or "{}")
     except (UnicodeDecodeError, json.JSONDecodeError):
-        return JsonResponse({"status": "erro", "mensagem": "JSON invalido."}, status=400)
+        return JsonResponse({"status": "erro", "mensagem": "JSON inválido."}, status=400)
 
     eventos = payload.get("eventos", [])
     if not isinstance(eventos, list):
@@ -456,6 +459,50 @@ def _bloqueio_pdv_nuvem(request):
     return render(request, "pdv/acesso_pdv_nuvem_pendente.html", {"solicitacao": solicitacao, "criada": criada}, status=403)
 
 
+def _empresa_id_operacional_pdv(request):
+    terminal = _terminal_da_requisicao(request)
+    if terminal:
+        return terminal.filial.empresa_id
+    filial = _filial_do_usuario(request.user)
+    return filial.empresa_id if filial else None
+
+def _resolver_produto_por_busca(busca, *, somente_venda=False, empresa_id=None):
+    busca = (busca or "").strip()
+    if not busca:
+        return None, Decimal("1.000"), None
+
+    produto = Produto.objects.filter(codigo_barras=busca).first()
+    if produto:
+        return produto, Decimal("1.000"), None
+
+    codigos = CodigoBarrasProduto.objects.select_related("produto").filter(
+        codigo=busca,
+        is_active=True,
+        produto__is_active=True,
+    )
+    if somente_venda:
+        codigos = codigos.filter(permite_venda=True)
+    apresentacao = codigos.first()
+    if apresentacao:
+        return apresentacao.produto, apresentacao.fator_conversao, apresentacao
+
+    if empresa_id and busca.isdigit():
+        configuracao_balanca = (
+            ConfiguracaoBalancaProduto.objects.select_related("produto")
+            .filter(
+                setor__empresa_id=empresa_id,
+                setor__is_active=True,
+                plu=int(busca),
+                is_active=True,
+                produto__is_active=True,
+            )
+            .first()
+        )
+        if configuracao_balanca and (not somente_venda or configuracao_balanca.produto.vendido_no_pdv):
+            return configuracao_balanca.produto, Decimal("1.000"), None
+    produto = Produto.objects.filter(Q(codigo_interno=busca) | Q(nome__icontains=busca)).first()
+    return produto, Decimal("1.000"), None
+
 def _get_cart(request):
     return request.session.get(CART_SESSION_KEY, {})
 
@@ -519,7 +566,7 @@ def _pagamentos_from_request(request, total_liquido, filial):
             raise ValidationError("Informe um valor de pagamento maior que zero.")
         forma = forma_pagamento_disponivel(filial, forma_id)
         if not forma:
-            raise ValidationError("Forma de pagamento invalida.")
+            raise ValidationError("Forma de pagamento inválida.")
         tipo = (forma.tipo or "").upper()
         status = (status_list[indice] if indice < len(status_list) else "").strip()
         transacao = (transacoes[indice] if indice < len(transacoes) else "").strip()
@@ -528,7 +575,7 @@ def _pagamentos_from_request(request, total_liquido, filial):
         mensagem = (mensagens[indice] if indice < len(mensagens) else "").strip()
         if tipo in formas_eletronicas:
             if status != StatusPagamento.CONFIRMADO or not (transacao and nsu and autorizacao):
-                raise ValidationError("Pagamento eletronico deve ser aprovado pela maquininha antes de finalizar.")
+                raise ValidationError("Pagamento eletrônico exige aprovação da maquininha, identificador da transação, NSU e código de autorização antes de finalizar.")
         pagamentos_lancados.append(
             {
                 "forma_pagamento": forma,
@@ -546,7 +593,7 @@ def _pagamentos_from_request(request, total_liquido, filial):
 
     total_pago = sum((item["valor"] for item in pagamentos_lancados), Decimal("0.00"))
     if total_pago < total_liquido:
-        raise ValidationError("A soma dos pagamentos nao pode ser menor que o total final.")
+        raise ValidationError("A soma dos pagamentos não pode ser menor que o total final.")
 
     restante = total_liquido
     pagamentos = []
@@ -559,6 +606,32 @@ def _pagamentos_from_request(request, total_liquido, filial):
         pagamentos.append(pagamento)
         restante -= valor_registrado
     return pagamentos, total_pago
+
+
+def _forma_pagamento_pedido_por_pagamentos(pagamentos):
+    tipos = {(pagamento["forma_pagamento"].tipo or "").upper() for pagamento in pagamentos}
+    if len(tipos) != 1:
+        return FormaPagamentoPedido.OUTRO
+    return {
+        "PIX": FormaPagamentoPedido.PIX,
+        "DINHEIRO": FormaPagamentoPedido.DINHEIRO,
+        "CARTAO": FormaPagamentoPedido.CARTAO,
+        "CREDITO": FormaPagamentoPedido.CARTAO,
+        "DEBITO": FormaPagamentoPedido.CARTAO,
+    }.get(tipos.pop(), FormaPagamentoPedido.OUTRO)
+
+
+def _referencia_pagamento_no_caixa(pagamentos):
+    detalhes = []
+    for pagamento in pagamentos:
+        forma = pagamento["forma_pagamento"].nome
+        valor = pagamento["valor"]
+        nsu = pagamento.get("nsu", "")
+        detalhe = f"{forma} R$ {valor:.2f}"
+        if nsu:
+            detalhe += f" NSU {nsu}"
+        detalhes.append(detalhe)
+    return ("Caixa PDV: " + " | ".join(detalhes))[:120]
 
 
 @login_required
@@ -574,22 +647,27 @@ def pdv(request):
         add_form = AdicionarItemForm(request.POST)
         finish_form = FinalizarVendaForm(user=request.user)
         pre_venda_form = PreVendaForm(user=request.user)
+        entrega_form = EntregaPdvForm(user=request.user)
         if add_form.is_valid():
             busca = add_form.cleaned_data["busca"].strip()
             quantidade = add_form.cleaned_data["quantidade"]
-            produto = Produto.objects.filter(Q(codigo_barras=busca) | Q(nome__icontains=busca)).first()
+            produto, fator_conversao, apresentacao = _resolver_produto_por_busca(
+                busca, somente_venda=True, empresa_id=_empresa_id_operacional_pdv(request)
+            )
             if produto:
                 produto_id = str(produto.id)
                 atual = Decimal(cart.get(produto_id, "0"))
-                cart[produto_id] = str(atual + quantidade)
+                quantidade_base = quantidade * fator_conversao
+                cart[produto_id] = str(atual + quantidade_base)
                 _save_cart(request, cart)
                 messages.success(request, "Item incluido no carrinho.")
                 return redirect("pdv:pdv")
-            messages.error(request, "Produto nao encontrado.")
+            messages.error(request, "Produto não encontrado.")
     elif request.method == "POST" and request.POST.get("action") == "finish":
         add_form = AdicionarItemForm()
         finish_form = FinalizarVendaForm(request.POST, user=request.user)
         pre_venda_form = PreVendaForm(user=request.user)
+        entrega_form = EntregaPdvForm(user=request.user)
         if finish_form.is_valid():
             items, total = _cart_items(cart)
             dados_venda = finish_form.cleaned_data.copy()
@@ -597,7 +675,7 @@ def pdv(request):
             supervisor_desconto = None
             if dados_venda["desconto"] > 0:
                 try:
-                    supervisor_desconto = supervisor_from_request(request)
+                    supervisor_desconto = supervisor_from_request(request, acao=AcaoPinSupervisor.PDV_DESCONTO)
                 except ValidationError as exc:
                     messages.error(request, " ".join(exc.messages))
                     return redirect("pdv:pdv")
@@ -609,7 +687,7 @@ def pdv(request):
                 return redirect("pdv:pdv")
             valor_base_troco = valor_recebido if valor_recebido is not None else total_pago
             if valor_base_troco is not None and valor_base_troco < total_liquido:
-                messages.error(request, "Valor pago pelo cliente nao pode ser menor que o total final.")
+                messages.error(request, "Valor pago pelo cliente não pode ser menor que o total final.")
                 return redirect("pdv:pdv")
             try:
                 terminal = _terminal_da_requisicao(request)
@@ -652,10 +730,115 @@ def pdv(request):
                 request.session.modified = True
                 messages.success(request, f"Venda {venda.id} finalizada com sucesso.")
                 return redirect("pdv:pdv")
+    elif request.method == "POST" and request.POST.get("action") == "create_delivery":
+        add_form = AdicionarItemForm()
+        finish_form = FinalizarVendaForm(user=request.user)
+        pre_venda_form = PreVendaForm(user=request.user)
+        entrega_form = EntregaPdvForm(request.POST, user=request.user)
+        if entrega_form.is_valid():
+            items, _ = _cart_items(cart)
+            if not items:
+                messages.error(request, "Adicione ao menos um produto antes de criar a entrega.")
+            else:
+                filial = _filial_do_usuario(request.user)
+                if not filial:
+                    messages.error(request, "Usuário sem filial vinculada para criar entrega.")
+                else:
+                    dados = entrega_form.cleaned_data
+                    try:
+                        with transaction.atomic():
+                            cliente_pedido = dados["cliente"]
+                            if not cliente_pedido and dados.get("salvar_cliente"):
+                                cliente_pedido = Cliente.objects.create(
+                                    empresa=filial.empresa,
+                                    nome=dados["nome_cliente"].strip(),
+                                    telefone=dados["telefone"].strip(),
+                                    endereco=dados["endereco_entrega"].strip(),
+                                )
+                            pedido = PedidoOnline.objects.create(
+                                filial=filial,
+                                cliente=cliente_pedido,
+                                nome_cliente=dados["nome_cliente"],
+                                telefone=dados["telefone"],
+                                tipo_entrega=TipoEntrega.ENTREGA,
+                                canal=CanalPedido.TELEFONE,
+                                endereco_entrega=dados["endereco_entrega"],
+                                bairro_entrega=dados["bairro_entrega"].strip(),
+                                observacoes=dados["observacoes"],
+                                usuario=request.user,
+                            )
+                            for item in items:
+                                quantidade = item["quantidade"]
+                                ItemPedidoOnline.objects.create(
+                                    pedido=pedido,
+                                    produto=item["produto"],
+                                    quantidade=quantidade,
+                                    preco_unitario=item["subtotal"] / quantidade,
+                                )
+                            pedido.recalcular()
+                            politica_ativa = PoliticaEntrega.objects.filter(filial=filial, is_active=True).exists()
+                            if politica_ativa:
+                                if dados["distancia_entrega_km"] is None:
+                                    raise ValidationError("Informe a distância para calcular o frete desta filial.")
+                                if not dados["bairro_entrega"].strip():
+                                    raise ValidationError("Informe o bairro para validar a área de entrega desta filial.")
+                                calcular_entrega_pedido(
+                                    pedido=pedido,
+                                    distancia_km=dados["distancia_entrega_km"],
+                                    bairro_entrega=dados["bairro_entrega"],
+                                )
+                            pagamentos_no_caixa = []
+                            if request.POST.get("pagamento_no_caixa") == "1":
+                                caixa_pagamento = Caixa.objects.filter(
+                                    id=request.POST.get("caixa"),
+                                    filial=filial,
+                                    status=StatusCaixa.ABERTO,
+                                    usuario_abertura=request.user,
+                                ).first()
+                                if not caixa_pagamento:
+                                    raise ValidationError("O pagamento no caixa exige um caixa aberto do operador.")
+                                pagamentos_no_caixa, _ = _pagamentos_from_request(request, pedido.total, filial)
+                            # Os itens foram lidos no caixa; somente pedidos online exigem conferencia manual.
+                            reservar_pedido(pedido=pedido, usuario=request.user, ip=request.META.get("REMOTE_ADDR"))
+                            for item_pedido in pedido.itens.all():
+                                item_pedido.quantidade_separada = item_pedido.quantidade
+                                item_pedido.save(update_fields=["quantidade_separada"])
+                            alterar_status_pedido(
+                                pedido=pedido,
+                                destino=StatusPedido.PRONTO,
+                                usuario=request.user,
+                                ip=request.META.get("REMOTE_ADDR"),
+                            )
+                            if pagamentos_no_caixa:
+                                registrar_pagamento(
+                                    pedido=pedido,
+                                    forma_pagamento=_forma_pagamento_pedido_por_pagamentos(pagamentos_no_caixa),
+                                    valor_pago=sum((pagamento["valor"] for pagamento in pagamentos_no_caixa), Decimal("0.00")),
+                                    referencia_pagamento=_referencia_pagamento_no_caixa(pagamentos_no_caixa),
+                                    usuario=request.user,
+                                    ip=request.META.get("REMOTE_ADDR"),
+                                )
+                                if any(pagamento["forma_pagamento"].tipo == "DINHEIRO" for pagamento in pagamentos_no_caixa):
+                                    _agendar_abertura_gaveta(
+                                        request, caixa_pagamento, f"pedido_delivery_{pedido.id}_dinheiro", "pagamento_entrega_no_caixa"
+                                    )
+                    except ValidationError as exc:
+                        messages.error(request, " ".join(exc.messages))
+                    else:
+                        _save_cart(request, {})
+                        request.session.pop(PRE_VENDA_SESSION_KEY, None)
+                        request.session.modified = True
+                        pagamento_confirmado = request.POST.get("pagamento_no_caixa") == "1"
+                        sufixo_pagamento = " O pagamento j\u00e1 foi registrado no caixa." if pagamento_confirmado else " O pagamento permanece pendente para a entrega."
+                        messages.success(request, f"Pedido de entrega #{pedido.id} criado e pronto para envio. A leitura do PDV confirmou os itens e reservou o estoque.{sufixo_pagamento}")
+                        request.session["pdv_ultima_entrega_id"] = pedido.id
+                        request.session.modified = True
+                        return redirect(f"{reverse('pdv:pdv')}?delivery={pedido.id}")
     elif request.method == "POST" and request.POST.get("action") == "save_pre_venda":
         add_form = AdicionarItemForm()
         finish_form = FinalizarVendaForm(user=request.user)
         pre_venda_form = PreVendaForm(request.POST, user=request.user)
+        entrega_form = EntregaPdvForm(user=request.user)
         if pre_venda_form.is_valid():
             items, _ = _cart_items(cart)
             try:
@@ -672,6 +855,7 @@ def pdv(request):
         add_form = AdicionarItemForm()
         finish_form = FinalizarVendaForm(user=request.user)
         pre_venda_form = PreVendaForm(user=request.user)
+        entrega_form = EntregaPdvForm(user=request.user)
 
     items, total = _cart_items(cart)
     quantidade_itens = sum((item["quantidade"] for item in items), Decimal("0.000"))
@@ -695,6 +879,7 @@ def pdv(request):
     caixas_recentes = caixas_escopo.order_by("-data_abertura")[:8]
     caixas_aguardando_conferencia = caixas_escopo.filter(status=StatusCaixa.FECHADO).order_by("-data_fechamento")[:5]
     vendas_recentes = vendas_escopo.filter(status="FINALIZADA").order_by("-data")[:8]
+    entregas_pendentes = PedidoOnline.objects.filter(filial=filial_visual, tipo_entrega=TipoEntrega.ENTREGA).exclude(status__in=[StatusPedido.CONCLUIDO, StatusPedido.CANCELADO]).prefetch_related("itens__produto").order_by("-criado_em")[:20]
     pre_venda_origem = None
     if request.session.get(PRE_VENDA_SESSION_KEY):
         pre_venda_origem = pre_vendas_escopo.filter(id=request.session[PRE_VENDA_SESSION_KEY]).first()
@@ -702,6 +887,15 @@ def pdv(request):
     ultima_venda_id = request.session.pop("pdv_ultima_venda_id", None)
     if ultima_venda_id:
         ultima_venda = vendas_escopo.filter(id=ultima_venda_id).first()
+        request.session.modified = True
+    ultima_entrega = None
+    ultima_entrega_id = request.session.pop("pdv_ultima_entrega_id", None)
+    if ultima_entrega_id:
+        ultima_entrega = PedidoOnline.objects.filter(
+            id=ultima_entrega_id,
+            filial=filial_visual,
+            tipo_entrega=TipoEntrega.ENTREGA,
+        ).first()
         request.session.modified = True
     produtos_rapidos = Produto.objects.select_related("categoria", "marca").filter(is_active=True, vendido_no_pdv=True).order_by("nome")[:24]
     promocoes_rapidas = PromocaoProduto.objects.select_related("produto").filter(ativa=True, inicio__lte=timezone.now(), fim__gte=timezone.now()).order_by("produto__nome")[:16]
@@ -712,6 +906,7 @@ def pdv(request):
             "add_form": add_form,
             "finish_form": finish_form,
             "pre_venda_form": pre_venda_form,
+            "entrega_form": entrega_form,
             "items": items,
             "quantidade_itens": quantidade_itens,
             "total": total,
@@ -725,8 +920,15 @@ def pdv(request):
             "caixas_recentes": caixas_recentes,
             "caixas_aguardando_conferencia": caixas_aguardando_conferencia,
             "vendas_recentes": vendas_recentes,
+            "entregas_pendentes": entregas_pendentes,
+            "formas_pagamento_pedido": FormaPagamentoPedido.choices,
+            "formas_pagamento_antecipado": [
+                escolha for escolha in FormaPagamentoPedido.choices
+                if escolha[0] not in {FormaPagamentoPedido.CARTAO_CREDITO_ENTREGA, FormaPagamentoPedido.CARTAO_DEBITO_ENTREGA}
+            ],
             "promocoes_rapidas": promocoes_rapidas,
             "ultima_venda": ultima_venda,
+            "ultima_entrega": ultima_entrega,
         },
     )
 
@@ -771,15 +973,10 @@ def consulta_preco(request):
     preco_atual = None
 
     if termo:
-        produto = (
-            Produto.objects.select_related("categoria", "marca")
-            .filter(is_active=True)
-            .filter(Q(codigo_barras=termo) | Q(codigo_interno=termo) | Q(nome__icontains=termo))
-            .first()
-        )
+        produto, fator_conversao, apresentacao = _resolver_produto_por_busca(termo, empresa_id=_empresa_id_operacional_pdv(request))
         if produto:
             promocao = promocao_ativa_para_produto(produto)
-            preco_atual = preco_atual_produto(produto)
+            preco_atual = preco_atual_produto(produto) * fator_conversao
             estoques = list(
                 _escopo_empresa_pdv(
                     request.user,
@@ -787,7 +984,7 @@ def consulta_preco(request):
                 ).order_by("filial__nome")
             )
         else:
-            messages.error(request, "Produto nao encontrado para consulta.")
+            messages.error(request, "Produto não encontrado para consulta.")
 
     return render(
         request,
@@ -797,6 +994,7 @@ def consulta_preco(request):
             "produto": produto,
             "promocao": promocao,
             "preco_atual": preco_atual,
+            "apresentacao": apresentacao if termo else None,
             "estoques": estoques,
         },
     )
@@ -836,7 +1034,7 @@ def decidir_acesso_pdv_nuvem_view(request, acesso_id):
         return redirect("pdv:acessos_pdv_nuvem")
     acao = request.POST.get("acao")
     if acao not in {"aprovar", "recusar"}:
-        messages.error(request, "Acao invalida para a solicitacao.")
+        messages.error(request, "Acao inválida para a solicitacao.")
         return redirect("pdv:acessos_pdv_nuvem")
     try:
         decidir_acesso_pdv_nuvem(
@@ -931,7 +1129,7 @@ def cancelar_pre_venda_view(request, pre_venda_id):
         return redirect("pdv:pre_venda_detalhe", pre_venda_id=pre_venda.id)
     motivo = request.POST.get("motivo", "").strip()
     try:
-        supervisor = supervisor_from_request(request)
+        supervisor = supervisor_from_request(request, acao=AcaoPinSupervisor.PDV_ESTORNO)
         cancelar_pre_venda(pre_venda=pre_venda, usuario=request.user, motivo=motivo, supervisor=supervisor, ip=request.META.get("REMOTE_ADDR"))
     except ValidationError as exc:
         messages.error(request, " ".join(exc.messages))
@@ -978,7 +1176,7 @@ def devolver_venda(request, venda_id):
                 quantidade = Decimal("0")
             itens_devolucao.append({"item_venda": item, "quantidade": quantidade})
         try:
-            supervisor = supervisor_from_request(request)
+            supervisor = supervisor_from_request(request, acao=AcaoPinSupervisor.PDV_ESTORNO)
             devolucao = registrar_devolucao_venda(
                 venda=venda,
                 usuario=request.user,
@@ -1075,7 +1273,7 @@ def venda_impressao_desktop(request, venda_id):
             and (documento_fiscal.protocolo or documento_fiscal.status == StatusDocumentoFiscal.CONTINGENCIA)
         )
         if not documento_pronto and not mensagem_impressao:
-            mensagem_impressao = "A NFC-e ainda nao possui chave, protocolo ou QR Code validos para impressao."
+            mensagem_impressao = "A NFC-e ainda não possui chave, protocolo ou QR Code validos para impressão."
         fiscal_payload = {
             "documento_id": documento_fiscal.id,
             "status": documento_fiscal.status,
@@ -1190,7 +1388,7 @@ def cancelar_venda_view(request, venda_id):
         return redirect("pdv:venda_detalhe", venda_id=venda.id)
     motivo = request.POST.get("motivo", "").strip()
     try:
-        supervisor = supervisor_from_request(request)
+        supervisor = supervisor_from_request(request, acao=AcaoPinSupervisor.PDV_ESTORNO)
         cancelar_venda(venda=venda, usuario=request.user, motivo=motivo, supervisor=supervisor, ip=request.META.get("REMOTE_ADDR"))
     except ValidationError as exc:
         messages.error(request, " ".join(exc.messages))
@@ -1216,7 +1414,7 @@ def confirmar_estorno_pagamento_view(request, pagamento_id):
     autorizacao = request.POST.get("autorizacao", "").strip()
     mensagem_processadora = request.POST.get("mensagem_processadora", "").strip()
     try:
-        supervisor_from_request(request)
+        supervisor_from_request(request, acao=AcaoPinSupervisor.PDV_ESTORNO)
         confirmar_estorno_pagamento_eletronico(
             pagamento=pagamento,
             usuario=request.user,
@@ -1246,7 +1444,7 @@ def confirmar_estorno_parcial_view(request, estorno_id):
     if request.method != "POST":
         return redirect("pdv:venda_detalhe", venda_id=estorno.pagamento.venda_id)
     try:
-        supervisor_from_request(request)
+        supervisor_from_request(request, acao=AcaoPinSupervisor.PDV_ESTORNO)
         confirmar_estorno_parcial_eletronico(
             estorno=estorno,
             usuario=request.user,
@@ -1392,7 +1590,7 @@ def caixa_detalhe(request, caixa_id):
 def _caixa_aberto_or_redirect(request, caixa_id):
     caixa = get_object_or_404(_escopo_empresa_pdv(request.user, Caixa.objects.all()), id=caixa_id)
     if caixa.status != StatusCaixa.ABERTO:
-        messages.error(request, "Este caixa nao esta aberto.")
+        messages.error(request, "Este caixa não está aberto.")
         return caixa, False
     return caixa, True
 
@@ -1413,7 +1611,7 @@ def registrar_sangria(request, caixa_id):
         form = SangriaForm(request.POST)
         if form.is_valid():
             try:
-                supervisor_from_request(request)
+                supervisor_from_request(request, acao=AcaoPinSupervisor.PDV_MOVIMENTO_CAIXA)
             except ValidationError as exc:
                 messages.error(request, " ".join(exc.messages))
             else:
@@ -1447,7 +1645,7 @@ def registrar_suprimento(request, caixa_id):
         form = SuprimentoForm(request.POST)
         if form.is_valid():
             try:
-                supervisor_from_request(request)
+                supervisor_from_request(request, acao=AcaoPinSupervisor.PDV_MOVIMENTO_CAIXA)
             except ValidationError as exc:
                 messages.error(request, " ".join(exc.messages))
             else:
@@ -1500,7 +1698,7 @@ def conferir_caixa(request, caixa_id):
         messages.error(request, "Apenas caixas fechados pelo operador podem ser conferidos.")
         return redirect("pdv:caixa_detalhe", caixa_id=caixa.id)
     try:
-        supervisor = supervisor_from_request(request)
+        supervisor = supervisor_from_request(request, acao=AcaoPinSupervisor.PDV_MOVIMENTO_CAIXA)
     except ValidationError as exc:
         messages.error(request, " ".join(exc.messages))
         return redirect("pdv:caixa_detalhe", caixa_id=caixa.id)

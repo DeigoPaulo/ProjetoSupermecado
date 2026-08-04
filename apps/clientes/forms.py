@@ -11,6 +11,11 @@ class ClienteForm(forms.ModelForm):
     class Meta:
         model = Cliente
         fields = ["empresa", "nome", "cpf_cnpj", "telefone", "email", "endereco", "is_active"]
+        labels = {
+            "cpf_cnpj": "CPF/CNPJ",
+            "endereco": "Endereço",
+            "is_active": "Ativo",
+        }
         widgets = {
             "nome": forms.TextInput(attrs={"class": "no-upper"}),
             "cpf_cnpj": forms.TextInput(attrs={"class": "mask-cpf-cnpj"}),
@@ -27,6 +32,7 @@ class ClienteForm(forms.ModelForm):
         if empresa_id is not None:
             self.fields["empresa"].queryset = self.fields["empresa"].queryset.filter(pk=empresa_id)
             self.fields["empresa"].initial = empresa_id or None
+            self.fields["empresa"].required = False
             self.fields["empresa"].widget = forms.HiddenInput()
 
     def clean_empresa(self):
@@ -34,6 +40,8 @@ class ClienteForm(forms.ModelForm):
         if not self.user or self.user.is_superuser:
             return empresa
         empresa_id = empresa_id_do_usuario(self.user)
-        if not empresa_id or not empresa or empresa.pk != empresa_id:
-            raise ValidationError("Empresa do cliente nao corresponde ao usuario autenticado.")
-        return empresa
+        if not empresa_id:
+            raise ValidationError("Empresa do cliente não corresponde ao usuário autenticado.")
+        if empresa and empresa.pk != empresa_id:
+            raise ValidationError("Empresa do cliente não corresponde ao usuário autenticado.")
+        return Empresa.objects.filter(pk=empresa_id, is_active=True).first()

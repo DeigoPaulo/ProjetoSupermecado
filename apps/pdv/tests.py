@@ -8,14 +8,16 @@ from django.contrib.auth import get_user_model
 from django.core.exceptions import ValidationError
 from django.test import TestCase, override_settings
 
-from apps.accounts.models import PerfilUsuario, TipoPerfil
+from apps.accounts.models import CredencialAutorizacao, PerfilUsuario, TipoCredencialAutorizacao, TipoPerfil, UsoCredencialAutorizacao
 from apps.auditoria.models import LogAuditoria
 from apps.configuracoes.models import ConfiguracaoImpressao, TipoDocumentoImpressao
+from apps.clientes.models import Cliente
 from apps.empresas.models import Empresa, Filial
 from apps.estoque.models import Estoque
 from apps.financeiro.models import ContaMovimentoFinanceiro, LancamentoFinanceiro, TipoContaMovimento, TipoLancamentoFinanceiro
+from apps.marketplace.models import CanalPedido, FaixaTaxaEntrega, FormaPagamentoPedido, ItemPedidoOnline, PedidoOnline, PoliticaEntrega, StatusPagamentoPedido, StatusPedido, TipoEntrega
 from apps.fiscal.models import AmbienteFiscal, ConfiguracaoFiscal, DocumentoFiscal, NaturezaOperacao, SerieFiscal, StatusDocumentoFiscal, TipoDocumentoFiscal
-from apps.produtos.models import Categoria, Produto
+from apps.produtos.models import Categoria, CodigoBarrasProduto, Produto
 from apps.vendas.models import EstornoParcialPagamento, FormaPagamento, PreVenda, StatusEstornoParcial, StatusPagamento, StatusVenda, Venda
 from apps.vendas.services import cancelar_venda, finalizar_venda, registrar_devolucao_venda
 
@@ -151,7 +153,7 @@ class AcessoPdvNuvemTests(TestCase):
     def test_bootstrap_bloqueia_simulador_tef_em_producao(self):
         terminal = TerminalPdv(
             filial=self.filial,
-            nome="Caixa producao",
+            nome="Caixa produção",
             provedor_tef=ProvedorTef.STONE,
             status_licenca=StatusLicencaTerminal.LIBERADA,
         )
@@ -170,7 +172,7 @@ class AcessoPdvNuvemTests(TestCase):
 
     @override_settings(PDV_DESKTOP_VERSION="0.3.0", PDV_DESKTOP_MIN_VERSION="0.2.0")
     def test_bootstrap_controla_versao_instalada_sem_atualizacao_automatica(self):
-        terminal = TerminalPdv(filial=self.filial, nome="Caixa versao", status_licenca=StatusLicencaTerminal.LIBERADA)
+        terminal = TerminalPdv(filial=self.filial, nome="Caixa versão", status_licenca=StatusLicencaTerminal.LIBERADA)
         chave = terminal.gerar_chave_api()
         terminal.save()
 
@@ -408,7 +410,7 @@ class AcessoPdvNuvemTests(TestCase):
                             "tipo": "balanca",
                             "payload": {
                                 "status": "erro",
-                                "mensagem": "Driver fisico indisponivel",
+                                "mensagem": "Driver físico indisponivel",
                                 "porta": "COM3",
                                 "fallback_manual": True,
                             },
@@ -428,7 +430,7 @@ class AcessoPdvNuvemTests(TestCase):
         evento = EventoDispositivoTerminal.objects.get(terminal=terminal)
         self.assertEqual(evento.tipo, "balanca")
         self.assertEqual(evento.status, "erro")
-        self.assertEqual(evento.mensagem, "Driver fisico indisponivel")
+        self.assertEqual(evento.mensagem, "Driver físico indisponivel")
         self.assertEqual(evento.payload["porta"], "COM3")
         self.assertIsNotNone(evento.ocorrido_em)
 
@@ -646,13 +648,21 @@ class AcessoPdvNuvemTests(TestCase):
 
         sem_autorizacao = self.client.post("/pdv/", dados, follow=True)
 
-        self.assertContains(sem_autorizacao, "Informe usuario e senha do supervisor.")
+        self.assertContains(sem_autorizacao, "Informe usuário e senha ou leia a credencial do supervisor.")
         self.assertEqual(Venda.objects.count(), 0)
         self.assertEqual(self.client.session["pdv_cart"], {str(produto.id): "2"})
 
+        credencial = CredencialAutorizacao(
+            usuario=self.admin,
+            tipo=TipoCredencialAutorizacao.NFC,
+            nome="Cartão do administrador",
+            criada_por=self.admin,
+        )
+        credencial.definir_identificador("CARTAO-ADMIN-PDV")
+        credencial.save()
         autorizado = self.client.post(
             "/pdv/",
-            {**dados, "supervisor_usuario": self.admin.username, "supervisor_senha": "senha"},
+            {**dados, "supervisor_credencial": "CARTAO-ADMIN-PDV"},
             follow=True,
         )
 
@@ -663,6 +673,9 @@ class AcessoPdvNuvemTests(TestCase):
         self.assertEqual(log.usuario, self.admin)
         self.assertIn(self.operador.username, log.descricao)
         self.assertIn(self.admin.username, log.descricao)
+        uso = UsoCredencialAutorizacao.objects.get(credencial=credencial)
+        self.assertEqual(uso.supervisor, self.admin)
+        self.assertEqual(uso.operador, self.operador)
     def test_impressao_desktop_avisa_quando_cupom_nao_tem_impressora_padrao(self):
         categoria = Categoria.objects.create(nome="Mercearia")
         produto = Produto.objects.create(codigo_barras="789100000002", nome="Feijao", categoria=categoria, preco_custo=Decimal("7"), preco_venda=Decimal("12"))
@@ -747,7 +760,32 @@ class AcessoPdvNuvemTests(TestCase):
             follow=True,
         )
 
-        self.assertContains(resposta, "Pagamento eletronico deve ser aprovado pela maquininha")
+        self.assertContains(resposta, "Pagamento eletrônico exige aprovação da maquininha")
+        self.assertEqual(Venda.objects.count(), 0)
+
+    def test_pdv_bloqueia_pagamento_eletronico_aprovado_sem_nsu(self):
+        categoria = Categoria.objects.create(nome="Bebidas")
+        produto = Produto.objects.create(codigo_barras="789100000024", nome="Suco", categoria=categoria, preco_custo=Decimal("4"), preco_venda=Decimal("9"))
+        Estoque.objects.create(produto=produto, filial=self.filial, quantidade_atual=Decimal("10"))
+        caixa = Caixa.objects.create(filial=self.filial, usuario_abertura=self.operador, valor_inicial=Decimal("100"))
+        forma = FormaPagamento.objects.create(nome="Cartão crédito", tipo="CREDITO")
+        session = self.client.session
+        session["pdv_cart"] = {str(produto.id): "1"}
+        session.save()
+        self.client.force_login(self.operador)
+
+        resposta = self.client.post(
+            "/pdv/",
+            {
+                "action": "finish", "caixa": caixa.id, "cliente": "", "desconto": "0", "vencimento_financeiro": "",
+                "pagamento_forma": [forma.id], "pagamento_valor": ["9.00"],
+                "pagamento_status": ["CONFIRMADO"], "pagamento_transacao_externa_id": ["TEF-123"],
+                "pagamento_nsu": [""], "pagamento_codigo_autorizacao": ["AUT123"],
+            },
+            follow=True,
+        )
+
+        self.assertContains(resposta, "NSU")
         self.assertEqual(Venda.objects.count(), 0)
 
     def test_pdv_finaliza_pagamento_eletronico_com_retorno_da_maquininha(self):
@@ -755,7 +793,7 @@ class AcessoPdvNuvemTests(TestCase):
         produto = Produto.objects.create(codigo_barras="789100000022", nome="Leite", categoria=categoria, preco_custo=Decimal("4"), preco_venda=Decimal("7.50"))
         Estoque.objects.create(produto=produto, filial=self.filial, quantidade_atual=Decimal("10"))
         caixa = Caixa.objects.create(filial=self.filial, usuario_abertura=self.operador, valor_inicial=Decimal("100"))
-        forma = FormaPagamento.objects.create(nome="Cartao debito", tipo="DEBITO")
+        forma = FormaPagamento.objects.create(nome="Cartão débito", tipo="DEBITO")
         session = self.client.session
         session["pdv_cart"] = {str(produto.id): "2"}
         session.save()
@@ -850,7 +888,7 @@ class AcessoPdvNuvemTests(TestCase):
         )
         pagamento.refresh_from_db()
         self.assertEqual(pagamento.status, StatusPagamento.ESTORNO_PENDENTE)
-        self.assertContains(sem_evidencia, "Informe a autorizacao ou o retorno da adquirente")
+        self.assertContains(sem_evidencia, "Informe a autorização ou o retorno da adquirente")
         self.assertFalse(LancamentoFinanceiro.objects.filter(pagamento_venda=pagamento, origem="ESTORNO").exists())
         resposta = self.client.post(
             f"/pdv/pagamentos/{pagamento.id}/confirmar-estorno/",
@@ -969,7 +1007,7 @@ class AcessoPdvNuvemTests(TestCase):
             certificado_senha_criptografada=b"senha",
         )
         SerieFiscal.objects.create(filial=self.filial, tipo_documento=TipoDocumentoFiscal.NFCE, serie=1, proximo_numero=1)
-        NaturezaOperacao.objects.create(descricao="Venda ao consumidor", cfop="5102", tipo_documento=TipoDocumentoFiscal.NFCE)
+        NaturezaOperacao.objects.create(empresa=self.filial.empresa, descricao="Venda ao consumidor", cfop="5102", tipo_documento=TipoDocumentoFiscal.NFCE)
         terminal = TerminalPdv.objects.create(filial=self.filial, nome="Caixa sem fiscal", emite_documento_fiscal=False)
         session = self.client.session
         session["pdv_cart"] = {str(produto.id): "1"}
@@ -1511,3 +1549,392 @@ class PdvTelaEscopoEmpresaTests(TestCase):
         self.assertIn(self.caixa, caixas)
         self.assertNotIn(self.caixa_colega, caixas)
         self.assertNotIn(self.caixa_estrangeiro, caixas)
+
+
+    def test_pdv_converte_ean_de_caixa_em_unidades_base_no_carrinho(self):
+        categoria = Categoria.objects.create(nome="Embalagens PDV")
+        produto = Produto.objects.create(
+            codigo_barras="7891234500001",
+            nome="Leite em unidade",
+            categoria=categoria,
+            preco_venda=Decimal("5.00"),
+        )
+        CodigoBarrasProduto.objects.create(
+            produto=produto,
+            codigo="17891234500008",
+            tipo="CAIXA",
+            fator_conversao=Decimal("12.000"),
+            permite_venda=True,
+        )
+        self.client.force_login(self.operador)
+
+        response = self.client.post(
+            "/pdv/",
+            {"action": "add", "busca": "17891234500008", "quantidade": "2.000"},
+        )
+
+        self.assertRedirects(response, "/pdv/")
+        self.assertEqual(self.client.session["pdv_cart"][str(produto.pk)], "24.000000")
+
+    def test_consulta_preco_calcula_valor_da_apresentacao_adicional(self):
+        categoria = Categoria.objects.create(nome="Consulta de embalagens")
+        produto = Produto.objects.create(
+            codigo_barras="7891234500002",
+            nome="Cafe em unidade",
+            categoria=categoria,
+            preco_venda=Decimal("4.50"),
+        )
+        codigo = CodigoBarrasProduto.objects.create(
+            produto=produto,
+            codigo="17891234500015",
+            tipo="FARDO",
+            fator_conversao=Decimal("6.000"),
+            permite_venda=True,
+        )
+        self.client.force_login(self.operador)
+
+        response = self.client.get("/pdv/consulta-preco/", {"q": codigo.codigo})
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.context["produto"], produto)
+        self.assertEqual(response.context["apresentacao"], codigo)
+        self.assertEqual(response.context["preco_atual"], Decimal("27.00000"))
+        self.assertContains(response, "Fardo com")
+
+@override_settings(PDV_NUVEM_REQUER_APROVACAO=False)
+class PdvEntregaTests(TestCase):
+    def setUp(self):
+        User = get_user_model()
+        empresa = Empresa.objects.create(razao_social="Mercado Entrega", nome_fantasia="Mercado Entrega", cnpj="98765432000190")
+        self.filial = Filial.objects.create(empresa=empresa, nome="Matriz")
+        self.operador = User.objects.create_user(username="operador_entrega", password="senha")
+        PerfilUsuario.objects.create(usuario=self.operador, filial=self.filial, tipo=TipoPerfil.OPERADOR_CAIXA)
+        categoria = Categoria.objects.create(nome="Mercearia entrega")
+        self.produto = Produto.objects.create(
+            codigo_barras="789100000999",
+            nome="Arroz entrega",
+            categoria=categoria,
+            preco_custo=Decimal("10.00"),
+            preco_venda=Decimal("15.00"),
+        )
+        Estoque.objects.create(produto=self.produto, filial=self.filial, quantidade_atual=Decimal("10"))
+
+    def test_carrinho_pode_virar_pedido_para_entrega_sem_finalizar_venda(self):
+        self.client.force_login(self.operador)
+        session = self.client.session
+        session["pdv_cart"] = {str(self.produto.id): "2"}
+        session.save()
+
+        resposta = self.client.post(
+            "/pdv/",
+            {
+                "action": "create_delivery",
+                "cliente": "",
+                "nome_cliente": "Ana da Entrega",
+                "telefone": "(11) 99999-9999",
+                "endereco_entrega": "Rua das Flores, 100",
+                "observacoes": "Interfone 12",
+            },
+            follow=True,
+        )
+
+        self.assertRedirects(resposta, "/pdv/?delivery=1")
+        self.assertContains(resposta, "Pedido de entrega #1 criado")
+        pedido = PedidoOnline.objects.get()
+        self.assertEqual(pedido.filial, self.filial)
+        self.assertEqual(pedido.canal, CanalPedido.TELEFONE)
+        self.assertEqual(pedido.tipo_entrega, TipoEntrega.ENTREGA)
+        self.assertEqual(pedido.total, Decimal("30.00"))
+        item = ItemPedidoOnline.objects.get(pedido=pedido)
+        self.assertEqual(item.produto, self.produto)
+        self.assertEqual(item.quantidade, Decimal("2"))
+        self.assertEqual(item.quantidade_separada, Decimal("2"))
+        pedido.refresh_from_db()
+        self.assertEqual(pedido.status, StatusPedido.PRONTO)
+        self.assertTrue(pedido.estoque_reservado)
+        self.assertEqual(self.client.session["pdv_cart"], {})
+        self.assertEqual(Venda.objects.count(), 0)
+
+    def test_entrega_reaproveita_cliente_salvo_e_preenche_dados_ausentes(self):
+        cliente = Cliente.objects.create(
+            empresa=self.filial.empresa,
+            nome="Cliente cadastrado",
+            telefone="62999991111",
+            endereco="Rua Cadastrada, 20",
+        )
+        self.client.force_login(self.operador)
+        session = self.client.session
+        session["pdv_cart"] = {str(self.produto.id): "1"}
+        session.save()
+
+        resposta = self.client.post(
+            "/pdv/",
+            {
+                "action": "create_delivery",
+                "cliente": cliente.pk,
+                "nome_cliente": "Texto ignorado",
+                "telefone": "",
+                "endereco_entrega": "",
+                "bairro_entrega": "",
+                "observacoes": "",
+            },
+        )
+
+        self.assertRedirects(resposta, "/pdv/?delivery=1")
+        pedido = PedidoOnline.objects.get()
+        self.assertEqual(pedido.cliente, cliente)
+        self.assertEqual(pedido.nome_cliente, cliente.nome)
+        self.assertEqual(pedido.telefone, cliente.telefone)
+        self.assertEqual(pedido.endereco_entrega, cliente.endereco)
+
+    def test_entrega_avulsa_pode_salvar_cliente_opcionalmente(self):
+        self.client.force_login(self.operador)
+        session = self.client.session
+        session["pdv_cart"] = {str(self.produto.id): "1"}
+        session.save()
+
+        resposta = self.client.post(
+            "/pdv/",
+            {
+                "action": "create_delivery",
+                "cliente": "",
+                "nome_cliente": "Novo cliente da entrega",
+                "telefone": "62988887777",
+                "endereco_entrega": "Avenida Nova, 30",
+                "bairro_entrega": "",
+                "observacoes": "",
+                "salvar_cliente": "on",
+            },
+        )
+
+        self.assertRedirects(resposta, "/pdv/?delivery=1")
+        cliente = Cliente.objects.get(nome="Novo cliente da entrega")
+        pedido = PedidoOnline.objects.get()
+        self.assertEqual(cliente.empresa, self.filial.empresa)
+        self.assertEqual(pedido.cliente, cliente)
+
+    def test_modal_de_entrega_oferece_busca_e_operacao_por_teclado(self):
+        self.client.force_login(self.operador)
+
+        resposta = self.client.get("/pdv/")
+
+        self.assertContains(resposta, 'data-client-search-url="/clientes/busca.json"')
+        self.assertContains(resposta, 'aria-autocomplete="list"')
+        self.assertContains(resposta, "Salvar cliente para pr")
+
+    def test_entrega_do_pdv_calcula_frete_com_politica_da_filial(self):
+        politica = PoliticaEntrega.objects.create(
+            filial=self.filial,
+            raio_maximo_km=Decimal("10.00"),
+            valor_minimo_pedido=Decimal("0.00"),
+            bairros_atendidos="Centro",
+        )
+        FaixaTaxaEntrega.objects.create(
+            politica=politica,
+            distancia_inicial_km=Decimal("0.00"),
+            distancia_final_km=Decimal("10.00"),
+            taxa=Decimal("6.50"),
+        )
+        self.client.force_login(self.operador)
+        session = self.client.session
+        session["pdv_cart"] = {str(self.produto.id): "2"}
+        session.save()
+
+        resposta = self.client.post(
+            "/pdv/",
+            {
+                "action": "create_delivery",
+                "cliente": "",
+                "nome_cliente": "Ana da Entrega",
+                "telefone": "11999999999",
+                "endereco_entrega": "Rua das Flores, 100",
+                "bairro_entrega": "Centro",
+                "distancia_entrega_km": "4.20",
+                "observacoes": "",
+            },
+        )
+
+        self.assertRedirects(resposta, "/pdv/?delivery=1")
+        pedido = PedidoOnline.objects.get()
+        self.assertEqual(pedido.bairro_entrega, "Centro")
+        self.assertEqual(pedido.taxa_entrega, Decimal("6.50"))
+        self.assertEqual(pedido.total, Decimal("36.50"))
+        self.assertEqual(pedido.regra_entrega_aplicada, "Faixa de 0.00 a 10.00 km")
+
+    def test_operador_abre_conferencia_da_entrega_pelo_pdv(self):
+        pedido = PedidoOnline.objects.create(
+            filial=self.filial,
+            nome_cliente="Cliente entrega",
+            telefone="11999999999",
+            tipo_entrega=TipoEntrega.ENTREGA,
+            canal=CanalPedido.TELEFONE,
+            endereco_entrega="Rua das Flores, 100",
+            usuario=self.operador,
+        )
+        ItemPedidoOnline.objects.create(
+            pedido=pedido,
+            produto=self.produto,
+            quantidade=Decimal("1"),
+            preco_unitario=Decimal("15.00"),
+        )
+        pedido.recalcular()
+        self.client.force_login(self.operador)
+
+        resposta = self.client.get(f"/pedidos-online/{pedido.id}/?origem=pdv")
+
+        self.assertEqual(resposta.status_code, 200)
+        self.assertContains(resposta, "Voltar ao PDV")
+        self.assertContains(resposta, "Cliente entrega")
+        impressao = self.client.get(f"/pedidos-online/{pedido.id}/separacao/imprimir/")
+        self.assertEqual(impressao.status_code, 200)
+        self.assertContains(impressao, "Cliente entrega")
+
+    def test_operador_confere_entrega_no_modal_do_pdv_sem_ir_ao_marketplace(self):
+        pedido = PedidoOnline.objects.create(
+            filial=self.filial,
+            nome_cliente="Cliente do modal",
+            telefone="11999999999",
+            tipo_entrega=TipoEntrega.ENTREGA,
+            canal=CanalPedido.TELEFONE,
+            endereco_entrega="Rua do Modal, 10",
+            usuario=self.operador,
+        )
+        ItemPedidoOnline.objects.create(
+            pedido=pedido,
+            produto=self.produto,
+            quantidade=Decimal("1"),
+            preco_unitario=Decimal("15.00"),
+        )
+        pedido.recalcular()
+        self.client.force_login(self.operador)
+
+        resposta = self.client.get("/pdv/")
+
+        self.assertEqual(resposta.status_code, 200)
+        self.assertContains(resposta, 'id="pdv-modal-delivery-detail"')
+        self.assertContains(resposta, f'data-delivery-id="{pedido.pk}"')
+        self.assertContains(resposta, 'data-delivery-action="reserve"')
+        self.assertContains(resposta, "/static/js/app.js")
+
+        resposta = self.client.post(
+            f"/pedidos-online/{pedido.pk}/acao/",
+            {"origem_pdv": "1", "acao": "reservar"},
+        )
+
+        self.assertRedirects(resposta, f"/pdv/?delivery={pedido.pk}")
+        pedido.refresh_from_db()
+
+    def test_modal_entrega_indica_pagamento_ja_confirmado(self):
+        pedido = PedidoOnline.objects.create(
+            filial=self.filial, nome_cliente="Cliente pago", telefone="11999999999",
+            tipo_entrega=TipoEntrega.ENTREGA, canal=CanalPedido.TELEFONE,
+            endereco_entrega="Rua do Pagamento, 10", status=StatusPedido.SAIU_ENTREGA,
+            status_pagamento=StatusPagamentoPedido.PAGO,
+            forma_pagamento=FormaPagamentoPedido.PIX, valor_pago=Decimal("15.00"), usuario=self.operador,
+        )
+        ItemPedidoOnline.objects.create(pedido=pedido, produto=self.produto, quantidade=Decimal("1"), preco_unitario=Decimal("15.00"))
+        pedido.recalcular()
+        self.client.force_login(self.operador)
+
+        resposta = self.client.get("/pdv/")
+
+        self.assertContains(resposta, "Pagamento confirmado: PIX")
+        self.assertContains(resposta, 'data-delivery-action="complete"')
+
+    def test_pdv_exibe_atalho_de_entrega_quando_ha_itens_no_carrinho(self):
+        self.client.force_login(self.operador)
+        session = self.client.session
+        session["pdv_cart"] = {str(self.produto.id): "1"}
+        session.save()
+
+        resposta = self.client.get("/pdv/")
+
+        self.assertContains(resposta, 'data-pdv-modal-open="delivery"')
+        self.assertContains(resposta, 'data-pdv-modal-open="deliveries"')
+        self.assertContains(resposta, 'id="pdv-payment-delivery"')
+        self.assertContains(resposta, "Entrega: pagar depois")
+        self.assertContains(resposta, "Ctrl+E")
+        self.assertContains(resposta, "Shift+E")
+        self.assertContains(resposta, 'id="pdv-delivery-question"')
+
+    def test_entrega_paga_no_caixa_fica_confirmada_no_pedido(self):
+        caixa = Caixa.objects.create(
+            filial=self.filial,
+            usuario_abertura=self.operador,
+            valor_inicial=Decimal("100.00"),
+        )
+        dinheiro = FormaPagamento.objects.create(nome="Dinheiro entrega", tipo="DINHEIRO", permite_troco=True)
+        self.client.force_login(self.operador)
+        session = self.client.session
+        session["pdv_cart"] = {str(self.produto.id): "1"}
+        session.save()
+
+        resposta = self.client.post(
+            "/pdv/",
+            {
+                "action": "create_delivery",
+                "pagamento_no_caixa": "1",
+                "caixa": str(caixa.id),
+                "pagamento_forma": str(dinheiro.id),
+                "pagamento_valor": "15.00",
+                "pagamento_status": "CONFIRMADO",
+                "pagamento_transacao_externa_id": "",
+                "pagamento_nsu": "",
+                "pagamento_codigo_autorizacao": "",
+                "pagamento_mensagem_processadora": "",
+                "cliente": "",
+                "nome_cliente": "Ana paga no caixa",
+                "telefone": "11999999999",
+                "endereco_entrega": "Rua das Flores, 100",
+                "bairro_entrega": "",
+                "observacoes": "",
+            },
+        )
+
+        self.assertRedirects(resposta, "/pdv/?delivery=1")
+        pedido = PedidoOnline.objects.get()
+        self.assertEqual(pedido.status_pagamento, StatusPagamentoPedido.PAGO)
+        self.assertEqual(pedido.forma_pagamento, FormaPagamentoPedido.DINHEIRO)
+        self.assertEqual(pedido.valor_pago, Decimal("15.00"))
+        self.assertIn("Caixa PDV", pedido.referencia_pagamento)
+    def test_comanda_desktop_usa_impressora_de_pedido_separacao(self):
+        ConfiguracaoImpressao.objects.create(
+            empresa=self.filial.empresa,
+            filial=self.filial,
+            tipo_documento=TipoDocumentoImpressao.PEDIDO_SEPARACAO,
+            impressora_padrao="EPSON COMANDA",
+            numero_vias=2,
+            impressao_automatica=True,
+        )
+        pedido = PedidoOnline.objects.create(
+            filial=self.filial,
+            nome_cliente="Cliente da comanda",
+            telefone="62999990000",
+            tipo_entrega=TipoEntrega.ENTREGA,
+            canal=CanalPedido.TELEFONE,
+            endereco_entrega="Rua da Entrega, 10",
+            status=StatusPedido.PRONTO,
+            status_pagamento=StatusPagamentoPedido.PAGO,
+            forma_pagamento=FormaPagamentoPedido.PIX,
+            valor_pago=Decimal("15.00"),
+            usuario=self.operador,
+        )
+        ItemPedidoOnline.objects.create(
+            pedido=pedido,
+            produto=self.produto,
+            quantidade=Decimal("1"),
+            preco_unitario=Decimal("15.00"),
+        )
+        pedido.recalcular()
+        self.client.force_login(self.operador)
+
+        resposta = self.client.get(f"/pedidos-online/{pedido.id}/separacao/impressao-desktop.json")
+
+        self.assertEqual(resposta.status_code, 200)
+        payload = resposta.json()
+        self.assertEqual(payload["tipo"], "comanda_entrega")
+        self.assertEqual(payload["impressao"]["impressora_padrao"], "EPSON COMANDA")
+        self.assertEqual(payload["impressao"]["numero_vias"], 2)
+        self.assertEqual(payload["pedido"]["cliente"], "Cliente da comanda")
+        self.assertEqual(payload["pedido"]["pagamento"], "Pago")
+        self.assertEqual(payload["itens"][0]["produto"], self.produto.nome)

@@ -23,6 +23,7 @@ from urllib.request import Request, urlopen
 
 from version import APP_VERSION
 from devices.printers import ErroDescobertaImpressoras, listar_impressoras_windows
+from devices.cards import ErroLeitorCartao, ler_uid_pcsc
 from devices.labels import montar_etiquetas_nativas
 from devices.printing import ErroImpressao, imprimir_raw_windows, montar_cupom_escpos, montar_pulso_gaveta_escpos
 from devices.scales import ler_peso_balanca, normalizar_configuracao_balanca
@@ -107,8 +108,9 @@ def caminho_configuracao() -> Path:
     )
     if caminho_informado:
         return Path(caminho_informado).expanduser().resolve()
+    # Configuracao ao lado do codigo e exclusiva do desenvolvimento.
     config_desenvolvimento = APP_DIR / "config.json"
-    if config_desenvolvimento.exists():
+    if not getattr(sys, "frozen", False) and config_desenvolvimento.exists():
         return config_desenvolvimento
     local_app_data = Path(os.environ.get("LOCALAPPDATA", Path.home()))
     novo = local_app_data / "DeigoPDV" / "config.json"
@@ -646,6 +648,8 @@ def ativar_terminal(config_atual: dict | None = None) -> dict:
 
     ttk.Button(corpo, text="Validar e ativar", command=confirmar).pack(anchor="e", pady=(8, 0))
     raiz.protocol("WM_DELETE_WINDOW", raiz.destroy)
+    raiz.bind_all("<Control-q>", lambda _event: raiz.destroy())
+    raiz.bind_all("<Control-Q>", lambda _event: raiz.destroy())
     raiz.mainloop()
     if not resultado:
         raise RuntimeError("Ativacao cancelada.")
@@ -739,6 +743,22 @@ class PonteLocal:
         sincronizar_eventos_dispositivo(self.config)
         registrar_evento_dispositivo("bootstrap", {"status": "reconectado"})
         return {"status": "ok", "url": f"{self.config['servidor_base_url']}/pdv/"}
+
+    def readSupervisorCredential(self, leitor_preferido: str = "") -> dict:
+        try:
+            credencial = ler_uid_pcsc(str(leitor_preferido or "").strip())
+        except ErroLeitorCartao as erro:
+            return {
+                "status": "erro",
+                "mensagem": str(erro),
+                "fallback": "Use o leitor em modo teclado ou informe login e senha.",
+            }
+        return {
+            "status": "ok",
+            "credencial": credencial,
+            "origem": "PCSC",
+            "mensagem": "Cartao lido com sucesso.",
+        }
 
     def listar_impressoras(self) -> dict:
         try:
@@ -952,7 +972,8 @@ class PonteLocal:
             dados = montar_cupom_escpos(payload)
             if len(dados) > 256 * 1024:
                 raise ErroImpressao("Cupom excede o limite local de 256 KB.")
-            total_bytes = sum(imprimir_raw_windows(impressora, dados, f"Venda {payload.get('venda', {}).get('id', '')}") for _ in range(vias))
+            titulo = f"Comanda entrega {payload.get('pedido', {}).get('id', '')}" if payload.get("tipo") == "comanda_entrega" else f"Venda {payload.get('venda', {}).get('id', '')}"
+            total_bytes = sum(imprimir_raw_windows(impressora, dados, titulo) for _ in range(vias))
         except (ErroImpressao, AttributeError, TypeError) as erro:
             return {"status": "erro", "mensagem": str(erro), "impresso": False}
         return {"status": "ok", "impresso": True, "impressora": impressora, "vias": vias, "bytes": total_bytes}
@@ -1356,6 +1377,17 @@ def _executar_interface_pdv(config: dict) -> None:
         "closeApplication: function() { return window.pywebview.api.closeApplication(); }"
         "};"
         "document.documentElement.classList.add('desktop-pdv');"
+        "if (!window.__deigoDesktopQuitInstalled) {"
+        "window.__deigoDesktopQuitInstalled = true;"
+        "document.addEventListener('keydown', function(event) {"
+        "if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'q') {"
+        "event.preventDefault(); event.stopPropagation();"
+        "if (window.confirm('Fechar o aplicativo PDV? Operações ainda não salvas serão descartadas.')) {"
+        "window.SupermercadoDesktop.closeApplication();"
+        "}"
+        "}"
+        "}, true);"
+        "}"
         "document.dispatchEvent(new CustomEvent('supermercado:desktop-ready'));"
     )
     thread_sincronizacao.start()

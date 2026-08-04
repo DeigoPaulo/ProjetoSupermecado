@@ -23,6 +23,14 @@
     <strong>{{ resumo.parciais }}</strong>
     <span>Em andamento</span>
   </div>
+  <div class="project-summary">
+    <strong>{{ resumo.trabalho_interno }}</strong>
+    <span>Trabalho interno</span>
+  </div>
+  <div class="project-summary project-summary-pending">
+    <strong>{{ resumo.dependencias_externas }}</strong>
+    <span>Homologações externas</span>
+  </div>
   <div class="project-summary project-summary-pending">
     <strong>{{ resumo.pendentes }}</strong>
     <span>Pendentes</span>
@@ -56,7 +64,7 @@
     </div>
     <b>{{ resumo.percentual_ponderado }}%</b>
   </div>
-  <p>O percentual concluído continua separado do andamento: ele só sobe quando um item muda para concluído; o ponderado mostra o quanto os itens em andamento já avançaram.</p>
+  <p>O percentual concluído continua separado do andamento: ele só sobe quando um item muda para concluído; o ponderado mostra o quanto os itens em andamento já avançaram. As próximas etapas priorizam desenvolvimento interno e separam o que aguarda fornecedor, equipamento ou homologação externa.</p>
 </section>
 
 <form method="get" class="toolbar checklist-filter">
@@ -84,14 +92,19 @@
       <option value="{{ prioridade }}" {% if filtros.prioridade == prioridade %}selected{% endif %}>{{ prioridade }}</option>
     {% endfor %}
   </select>
+  <select name="dependencia">
+    <option value="">Todas as dependências</option>
+    <option value="interno" {% if filtros.dependencia == "interno" %}selected{% endif %}>Desenvolvimento interno</option>
+    <option value="externo" {% if filtros.dependencia == "externo" %}selected{% endif %}>Homologação externa</option>
+  </select>
   <button type="submit">Filtrar</button>
   <a class="secondary-button" href="{% url 'configuracoes:checklist_csv' %}?{{ request.GET.urlencode }}">Excel/CSV</a>
-  {% if filtros.q or filtros.status or filtros.grupo or filtros.trilha or filtros.prioridade %}
+  {% if filtros.q or filtros.status or filtros.grupo or filtros.trilha or filtros.prioridade or filtros.dependencia %}
     <a class="secondary-button" href="{% url 'configuracoes:checklist' %}">Limpar</a>
   {% endif %}
 </form>
 
-{% if filtros.q or filtros.status or filtros.grupo or filtros.trilha or filtros.prioridade %}
+{% if filtros.q or filtros.status or filtros.grupo or filtros.trilha or filtros.prioridade or filtros.dependencia %}
   <section class="checklist-filter-summary">
     <strong>{{ resumo_filtrado.total }}</strong>
     <span>item(ns) encontrado(s): {{ resumo_filtrado.concluidos }} concluídos, {{ resumo_filtrado.parciais }} em andamento e {{ resumo_filtrado.pendentes }} pendentes.</span>
@@ -141,6 +154,7 @@
           <span>{{ item.grupo }}</span>
           <b>{{ item.trilha }}</b>
           <em>{{ item.prioridade }}</em>
+          <i class="roadmap-dependency roadmap-dependency-{{ item.codigo }}">{{ item.dependencia }}</i>
         </div>
         <strong>{{ item.titulo }}</strong>
         <p>{{ item.descricao|truncatechars:220 }}</p>

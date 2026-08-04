@@ -6,16 +6,16 @@
 <header class="page-header">
   <div>
     <h1>Dashboard</h1>
-    <p>Visao geral da operacao interna.</p>
+    <p>Visão geral da operação interna.</p>
   </div>
   <div class="actions">
     <a class="secondary-button" href="{% url 'relatorios:vendas' %}">Vendas</a>
     <a class="secondary-button" href="{% url 'relatorios:curva_abc' %}">Curva ABC</a>
     <a class="secondary-button" href="{% url 'relatorios:estoque_baixo' %}">Estoque baixo</a>
-    <a class="secondary-button" href="{% url 'relatorios:sugestao_reposicao' %}">Reposicao</a>
+    <a class="secondary-button" href="{% url 'relatorios:sugestao_reposicao' %}">Reposição</a>
     <a class="secondary-button" href="{% url 'relatorios:movimentacoes_estoque' %}">Movimentações</a>
     <a class="secondary-button" href="{% url 'relatorios:perdas' %}">Perdas</a>
-    <a class="secondary-button" href="{% url 'relatorios:devolucoes' %}">Devolucoes</a>
+    <a class="secondary-button" href="{% url 'relatorios:devolucoes' %}">Devoluções</a>
     <a class="secondary-button" href="{% url 'relatorios:compras' %}">Compras</a>
     <a class="secondary-button" href="{% url 'relatorios:caixas' %}">Caixas</a>
   </div>
@@ -40,7 +40,7 @@
   <article class="metric"><span>Caixas abertos</span><strong>{{ caixas_abertos }}</strong></article>
   <article class="metric"><span>Faturamento bruto</span><strong>R$ {{ faturamento|floatformat:2 }}</strong></article>
   <article class="metric"><span>Faturamento liquido</span><strong>R$ {{ faturamento_liquido|floatformat:2 }}</strong></article>
-  <article class="metric"><span>Devolucoes hoje</span><strong>R$ {{ valor_devolucoes_hoje|floatformat:2 }}</strong></article>
+  <article class="metric"><span>Devoluções hoje</span><strong>R$ {{ valor_devolucoes_hoje|floatformat:2 }}</strong></article>
 </section>
 
 {{ dashboard_charts|json_script:"dashboard-chart-data" }}

@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% load barcode_tags %}
 
 {% block title %}Etiquetas{% endblock %}
 
@@ -7,7 +8,7 @@
   <header class="page-header labels-header">
     <div>
       <h1>Etiquetas</h1>
-      <p>Gere etiquetas de gondola com busca por codigo de barras, SKU ou nome.</p>
+      <p>Gere etiquetas de gôndola com busca por código de barras, SKU ou nome.</p>
     </div>
     <a class="secondary-button" href="{% url 'produtos:lista' %}">Voltar</a>
   </header>
@@ -38,7 +39,14 @@
         <article class="price-label price-label-{{ modelo_etiqueta }}">
           <div class="label-store">SUPERMERCADO</div>
           <div class="label-name">{{ produto.nome }}</div>
-          <div class="label-code">{{ produto.codigo_barras }}</div>
+          {% with codigo_etiqueta=produto.codigo_barras|default:produto.codigo_interno %}
+            {% if codigo_etiqueta %}
+              <div class="label-barcode">
+                {{ codigo_etiqueta|barcode_svg }}
+                <span class="label-code">{{ codigo_etiqueta }}</span>
+              </div>
+            {% endif %}
+          {% endwith %}
           <div class="label-price">R$ {{ produto.preco_etiqueta|floatformat:2 }}</div>
           <div class="label-meta">
             {{ produto.unidade }}{% if produto.marca %} - {{ produto.marca }}{% endif %}
@@ -49,9 +57,9 @@
     </section>
     {% if modelo_etiqueta == "configurado" %}
       {% if configuracao_etiqueta %}
-        <p class="labels-print-summary">{% if modelo_salvo %}{{ modelo_salvo.nome }} | {{ modelo_salvo.get_orientacao_display }} | {% endif %}{{ configuracao_etiqueta.impressora_padrao|default:"Impressora nao definida" }} | {{ configuracao_etiqueta.dpi_impressora }} DPI | {{ configuracao_etiqueta.get_tipo_midia_etiqueta_display }} | {{ configuracao_etiqueta.get_linguagem_impressora_display }}</p>
+        <p class="labels-print-summary">{% if modelo_salvo %}{{ modelo_salvo.nome }} | {{ modelo_salvo.get_orientacao_display }} | {% endif %}{{ configuracao_etiqueta.impressora_padrao|default:"Impressora não definida" }} | {{ configuracao_etiqueta.dpi_impressora }} DPI | {{ configuracao_etiqueta.get_tipo_midia_etiqueta_display }} | {{ configuracao_etiqueta.get_linguagem_impressora_display }}</p>
       {% else %}
-        <div class="notice notice-warning">Cadastre uma configuracao de impressao do tipo Etiqueta antes de usar o modelo profissional.</div>
+        <div class="notice notice-warning">Cadastre uma configuração de impressão do tipo Etiqueta antes de usar o modelo profissional.</div>
       {% endif %}
     {% endif %}
   {% elif request.GET %}

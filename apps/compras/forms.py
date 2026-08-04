@@ -78,7 +78,7 @@ class PrecoRespostaCotacaoForm(forms.Form):
     def clean(self):
         cleaned_data = super().clean()
         if cleaned_data.get("disponivel") and cleaned_data.get("custo_unitario") is None:
-            self.add_error("custo_unitario", "Informe o custo do item disponivel.")
+            self.add_error("custo_unitario", "Informe o custo do item disponível.")
         return cleaned_data
 
 
@@ -174,9 +174,9 @@ class EntradaCompraForm(forms.ModelForm):
         if self.instance and self.instance.pk and self.instance.chave_acesso_xml:
             original = EntradaCompra.objects.only("fornecedor_id", "filial_id").get(pk=self.instance.pk)
             if cleaned_data.get("fornecedor") and cleaned_data["fornecedor"].pk != original.fornecedor_id:
-                self.add_error("fornecedor", "O fornecedor identificado pelo XML nao pode ser alterado.")
+                self.add_error("fornecedor", "O fornecedor identificado pelo XML não pode ser alterado.")
             if cleaned_data.get("filial") and cleaned_data["filial"].pk != original.filial_id:
-                self.add_error("filial", "A filial destinataria identificada pelo XML nao pode ser alterada.")
+                self.add_error("filial", "A filial destinataria identificada pelo XML não pode ser alterada.")
         return cleaned_data
 
 
@@ -189,7 +189,7 @@ class ImportarXMLEntradaForm(forms.Form):
     def clean_arquivo_xml(self):
         arquivo = self.cleaned_data["arquivo_xml"]
         if arquivo.size > 5 * 1024 * 1024:
-            raise forms.ValidationError("O arquivo XML deve ter no maximo 5 MB.")
+            raise forms.ValidationError("O arquivo XML deve ter no máximo 5 MB.")
         if not arquivo.name.lower().endswith(".xml"):
             raise forms.ValidationError("Envie um arquivo com extensao .xml.")
         return arquivo
@@ -220,9 +220,9 @@ class ItemEntradaCompraForm(forms.ModelForm):
         if produto and produto.exige_lote and not codigo_lote:
             self.add_error("codigo_lote", "Este produto exige lote nas novas entradas.")
         if (fabricacao or validade) and not codigo_lote:
-            self.add_error("codigo_lote", "Informe o lote ao preencher fabricacao ou validade.")
+            self.add_error("codigo_lote", "Informe o lote ao preencher fabricação ou validade.")
         if fabricacao and validade and fabricacao > validade:
-            self.add_error("validade", "A validade nao pode ser anterior a fabricacao.")
+            self.add_error("validade", "A validade não pode ser anterior a fabricação.")
         return cleaned_data
 
 

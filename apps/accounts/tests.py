@@ -1,14 +1,22 @@
 from django.contrib.auth import get_user_model
 from django.contrib.auth.tokens import default_token_generator
 from django.core import mail
-from django.test import Client, TestCase, override_settings
+from django.core.management import call_command
+from django.core.management.base import CommandError
+from django.core.exceptions import ValidationError
+from django.test import Client, RequestFactory, TestCase, override_settings
 from django.urls import reverse
 from django.utils.encoding import force_bytes
 from django.utils.http import urlsafe_base64_encode
+from django.utils import timezone
+from datetime import timedelta
+from io import StringIO
 
-from apps.empresas.models import Empresa, Filial
+from apps.auditoria.models import LogAuditoria
+from apps.empresas.models import AcaoPinSupervisor, Empresa, Filial
 
-from .models import PerfilUsuario, TipoPerfil
+from .models import CredencialAutorizacao, PerfilUsuario, TipoCredencialAutorizacao, TipoPerfil, UsoCredencialAutorizacao
+from .permissions import supervisor_from_request
 
 
 class UsuariosViewsTests(TestCase):
@@ -59,6 +67,187 @@ class UsuariosViewsTests(TestCase):
         self.assertTrue(usuario.check_password("senha-segura-123"))
         self.assertEqual(usuario.perfil_supermercado.tipo, TipoPerfil.OPERADOR_CAIXA)
         self.assertEqual(usuario.perfil_supermercado.filial, self.filial)
+
+
+class CredenciaisAutorizacaoTests(TestCase):
+    def setUp(self):
+        User = get_user_model()
+        self.empresa = Empresa.objects.create(
+            razao_social="Mercado Credencial Ltda", nome_fantasia="Mercado Credencial", cnpj="31.111.111/0001-31"
+        )
+        self.filial = Filial.objects.create(empresa=self.empresa, nome="Matriz", cnpj=self.empresa.cnpj)
+        self.admin = User.objects.create_user("admin_credencial", password="123")
+        PerfilUsuario.objects.create(usuario=self.admin, filial=self.filial, tipo=TipoPerfil.ADMINISTRADOR)
+        self.supervisor = User.objects.create_user("supervisor_credencial", password="123")
+        PerfilUsuario.objects.create(usuario=self.supervisor, filial=self.filial, tipo=TipoPerfil.GERENTE)
+        self.operador = User.objects.create_user("operador_credencial", password="123")
+        PerfilUsuario.objects.create(usuario=self.operador, filial=self.filial, tipo=TipoPerfil.OPERADOR_CAIXA)
+        outra_empresa = Empresa.objects.create(
+            razao_social="Outro Mercado Ltda", nome_fantasia="Outro Mercado", cnpj="32.222.222/0001-32"
+        )
+        outra_filial = Filial.objects.create(empresa=outra_empresa, nome="Matriz", cnpj=outra_empresa.cnpj)
+        self.supervisor_externo = User.objects.create_user("supervisor_externo", password="123")
+        PerfilUsuario.objects.create(usuario=self.supervisor_externo, filial=outra_filial, tipo=TipoPerfil.GERENTE)
+        self.client = Client(HTTP_HOST="localhost")
+        self.client.force_login(self.admin)
+        self.factory = RequestFactory()
+
+    def criar_credencial(self, usuario=None, token="CARD-SEGREDO-001", pin=""):
+        credencial = CredencialAutorizacao(
+            usuario=usuario or self.supervisor,
+            tipo=TipoCredencialAutorizacao.NFC,
+            nome="Crachá do supervisor",
+            criada_por=self.admin,
+        )
+        credencial.definir_identificador(token)
+        credencial.definir_pin(pin)
+        credencial.save()
+        return credencial
+
+    def test_admin_cadastra_sem_armazenar_identificador_e_pode_revogar(self):
+        response = self.client.post(
+            "/usuarios/credenciais-autorizacao/",
+            {
+                "usuario": self.supervisor.pk,
+                "tipo": TipoCredencialAutorizacao.NFC,
+                "nome": "Cartão azul",
+                "identificador": "UID-NUNCA-GRAVAR-123",
+                "pin": "4321",
+            },
+        )
+
+        self.assertRedirects(response, "/usuarios/credenciais-autorizacao/")
+        credencial = CredencialAutorizacao.objects.get()
+        self.assertNotEqual(credencial.identificador_hash, "UID-NUNCA-GRAVAR-123")
+        self.assertTrue(credencial.validar_pin("4321"))
+        pagina = self.client.get("/usuarios/credenciais-autorizacao/")
+        self.assertContains(pagina, "Cartão azul")
+        self.assertNotContains(pagina, "UID-NUNCA-GRAVAR-123")
+
+        revogada = self.client.post(f"/usuarios/credenciais-autorizacao/{credencial.pk}/revogar/")
+        self.assertRedirects(revogada, "/usuarios/credenciais-autorizacao/")
+        credencial.refresh_from_db()
+        self.assertFalse(credencial.ativa)
+        self.assertIsNotNone(credencial.revogada_em)
+
+    def test_helper_aceita_cartao_com_pin_e_registra_uso(self):
+        credencial = self.criar_credencial(pin="2468")
+        request = self.factory.post(
+            "/pdv/operacao-protegida/",
+            {"supervisor_credencial": "CARD-SEGREDO-001", "supervisor_pin": "2468"},
+        )
+        request.user = self.operador
+        request.META["REMOTE_ADDR"] = "127.0.0.1"
+
+        usuario = supervisor_from_request(request)
+
+        self.assertEqual(usuario, self.supervisor)
+        uso = UsoCredencialAutorizacao.objects.get(credencial=credencial)
+        self.assertEqual(uso.operador, self.operador)
+        self.assertEqual(uso.supervisor, self.supervisor)
+        self.assertEqual(uso.caminho, "/pdv/operacao-protegida/")
+        credencial.refresh_from_db()
+        self.assertIsNotNone(credencial.ultimo_uso_em)
+
+    def test_helper_rejeita_pin_invalido_expirada_revogada_e_outra_empresa(self):
+        self.criar_credencial(token="COM-PIN", pin="1234")
+        expirada = self.criar_credencial(token="EXPIRADA")
+        expirada.valida_ate = timezone.now() - timedelta(minutes=1)
+        expirada.save(update_fields=["valida_ate"])
+        revogada = self.criar_credencial(token="REVOGADA")
+        revogada.revogar()
+        self.criar_credencial(usuario=self.supervisor_externo, token="OUTRA-EMPRESA")
+
+        for dados in (
+            {"supervisor_credencial": "COM-PIN", "supervisor_pin": "errado"},
+            {"supervisor_credencial": "EXPIRADA"},
+            {"supervisor_credencial": "REVOGADA"},
+            {"supervisor_credencial": "OUTRA-EMPRESA"},
+        ):
+            request = self.factory.post("/pdv/protegido/", dados)
+            request.user = self.operador
+            with self.assertRaises(ValidationError):
+                supervisor_from_request(request)
+        self.assertFalse(UsoCredencialAutorizacao.objects.exists())
+
+    def test_admin_nao_cadastra_credencial_para_usuario_de_outra_empresa(self):
+        response = self.client.post(
+            "/usuarios/credenciais-autorizacao/",
+            {
+                "usuario": self.supervisor_externo.pk,
+                "tipo": TipoCredencialAutorizacao.CODIGO_BARRAS,
+                "nome": "Tentativa externa",
+                "identificador": "EXTERNO-001",
+            },
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertFalse(CredencialAutorizacao.objects.exists())
+        self.assertIn("usuario", response.context["form"].errors)
+
+
+    def test_politica_padrao_exige_pin_em_estorno_e_registra_acao(self):
+        credencial_sem_pin = self.criar_credencial(token="SEM-PIN")
+        request = self.factory.post(
+            "/pdv/estorno/",
+            {"supervisor_credencial": "SEM-PIN"},
+        )
+        request.user = self.operador
+        with self.assertRaisesMessage(ValidationError, "credencial cadastrada com PIN"):
+            supervisor_from_request(request, acao=AcaoPinSupervisor.PDV_ESTORNO)
+        self.assertFalse(UsoCredencialAutorizacao.objects.filter(credencial=credencial_sem_pin).exists())
+
+        credencial_com_pin = self.criar_credencial(token="COM-PIN-ESTORNO", pin="7788")
+        request = self.factory.post(
+            "/pdv/estorno/",
+            {"supervisor_credencial": "COM-PIN-ESTORNO", "supervisor_pin": "7788"},
+        )
+        request.user = self.operador
+        usuario = supervisor_from_request(request, acao=AcaoPinSupervisor.PDV_ESTORNO)
+
+        self.assertEqual(usuario, self.supervisor)
+        uso = UsoCredencialAutorizacao.objects.get(credencial=credencial_com_pin)
+        self.assertEqual(uso.acao, AcaoPinSupervisor.PDV_ESTORNO)
+
+    def test_login_e_senha_continuam_como_contingencia_em_acao_com_pin(self):
+        request = self.factory.post(
+            "/pdv/estorno/",
+            {"supervisor_usuario": self.supervisor.username, "supervisor_senha": "123"},
+        )
+        request.user = self.operador
+
+        usuario = supervisor_from_request(request, acao=AcaoPinSupervisor.PDV_ESTORNO)
+
+        self.assertEqual(usuario, self.supervisor)
+        self.assertFalse(UsoCredencialAutorizacao.objects.exists())
+
+    def test_admin_configura_acoes_que_exigem_pin_na_propria_empresa(self):
+        pagina = self.client.get("/usuarios/credenciais-autorizacao/")
+        self.assertContains(pagina, "Política de cartão e PIN")
+
+        resposta = self.client.post(
+            "/usuarios/credenciais-autorizacao/",
+            {
+                "acao_form": "politica_pin",
+                "acoes_credencial_exigem_pin": [
+                    AcaoPinSupervisor.PDV_ESTORNO,
+                    AcaoPinSupervisor.PDV_DESCONTO,
+                ],
+            },
+        )
+
+        self.assertRedirects(resposta, "/usuarios/credenciais-autorizacao/")
+        self.empresa.refresh_from_db()
+        self.assertEqual(
+            self.empresa.acoes_credencial_exigem_pin,
+            [AcaoPinSupervisor.PDV_DESCONTO, AcaoPinSupervisor.PDV_ESTORNO],
+        )
+        self.assertTrue(
+            LogAuditoria.objects.filter(
+                acao="ALTERA_POLITICA_PIN_SUPERVISOR",
+                objeto_tipo="Empresa",
+                objeto_id=str(self.empresa.pk),
+            ).exists()
+        )
 
 
 class RecuperacaoSenhaDiagnosticoTests(TestCase):
@@ -119,6 +308,36 @@ class RecuperacaoSenhaDiagnosticoTests(TestCase):
         self.assertEqual(payload["alertas"], [])
         self.assertNotContains(response, "smtp.example.com")
         self.assertNotContains(response, "segredo")
+
+
+    @override_settings(
+        EMAIL_BACKEND="django.core.mail.backends.console.EmailBackend",
+        EMAIL_HOST="",
+        DEFAULT_FROM_EMAIL="nao-responda@teste.local",
+    )
+    def test_comando_estrito_bloqueia_backend_de_desenvolvimento(self):
+        with self.assertRaises(CommandError):
+            call_command("verificar_prontidao_recuperacao_senha", "--estrito", stdout=StringIO())
+
+    @override_settings(
+        EMAIL_BACKEND="django.core.mail.backends.smtp.EmailBackend",
+        EMAIL_HOST="smtp.example.com",
+        EMAIL_PORT=587,
+        EMAIL_HOST_USER="usuario@example.com",
+        EMAIL_HOST_PASSWORD="segredo",
+        EMAIL_USE_TLS=True,
+        EMAIL_USE_SSL=False,
+        EMAIL_TIMEOUT=8,
+        DEFAULT_FROM_EMAIL="nao-responda@example.com",
+    )
+    def test_comando_estrito_aceita_smtp_sem_expor_credenciais(self):
+        saida = StringIO()
+        call_command("verificar_prontidao_recuperacao_senha", "--estrito", "--json", stdout=saida)
+        conteudo = saida.getvalue()
+        self.assertIn("password_reset_readiness_v1", conteudo)
+        self.assertNotIn("smtp.example.com", conteudo)
+        self.assertNotIn("usuario@example.com", conteudo)
+        self.assertNotIn("segredo", conteudo)
 
 
 

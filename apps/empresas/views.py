@@ -1,5 +1,4 @@
 import csv
-import hmac
 import json
 import re
 import uuid
@@ -24,9 +23,14 @@ from django.views.decorators.http import require_GET, require_POST
 from apps.accounts.permissions import ADMINISTRACAO, CLIENTES, COMPRAS, ESTOQUE, PDV, RELATORIOS, SISTEMA, role_required
 from apps.auditoria.models import LogAuditoria
 
+from .credenciais_sincronizacao import (
+    credencial_sincronizacao_valida,
+    credenciais_sincronizacao_para_cnpj,
+)
 from .forms import EmpresaForm, FilialForm
-from .models import DocumentoFiscalSincronizado, Empresa, EventoEntradaSincronizacao, EventoSincronizacao, Filial, ModoImplantacao, PoliticaConflitoSincronizacao, StatusEventoEntrada, StatusSincronizacao, VendaSincronizada
+from .models import DocumentoFiscalSincronizado, Empresa, EventoEntradaSincronizacao, EventoSincronizacao, Filial, LancamentoFinanceiroSincronizado, ModoImplantacao, PoliticaConflitoSincronizacao, StatusEventoEntrada, StatusSincronizacao, VendaSincronizada
 from .services_snapshots import gerar_carga_inicial_sincronizacao
+from .services_lookup import diagnostico_prontidao_consulta_cadastro
 
 
 def _apenas_digitos(valor):
@@ -175,11 +179,11 @@ def _consultar_provider_cadastro(provider_url, tipo, valor):
     try:
         dados = json.loads(conteudo)
     except json.JSONDecodeError:
-        return {"status": "external_provider_error", "mensagem": "Provedor externo retornou resposta que nao e JSON."}
+        return {"status": "external_provider_error", "mensagem": "Provedor externo retornou resposta que não e JSON."}
     if status_code >= 400:
         return {"status": "external_provider_error", "mensagem": f"Provedor externo respondeu HTTP {status_code}.", "http_status": status_code}
     if isinstance(dados, dict) and (dados.get("erro") is True or str(dados.get("status", "")).lower() in {"erro", "error", "not_found"}):
-        return {"status": "external_not_found", "mensagem": "Provedor externo nao encontrou dados para a consulta.", "provider_payload": dados}
+        return {"status": "external_not_found", "mensagem": "Provedor externo não encontrou dados para a consulta.", "provider_payload": dados}
     if not isinstance(dados, dict):
         return {"status": "external_provider_error", "mensagem": "Provedor externo retornou formato inesperado."}
     return {
@@ -238,24 +242,47 @@ def _erro_api(mensagem, status):
 @csrf_exempt
 @require_POST
 def receber_evento_sincronizacao(request):
-    token_configurado = settings.SINCRONIZACAO_API_TOKEN
-    token_recebido = request.headers.get("Authorization", "").removeprefix("Bearer ").strip()
-    if not token_configurado or not hmac.compare_digest(token_recebido, token_configurado):
-        return _erro_api("Credencial de sincronizacao invalida.", 401)
+    limite = settings.SINCRONIZACAO_MAX_EVENTO_BYTES
     try:
-        dados = json.loads(request.body)
+        tamanho_declarado = int(request.META.get("CONTENT_LENGTH") or 0)
+    except (TypeError, ValueError):
+        tamanho_declarado = 0
+    if tamanho_declarado > limite:
+        return _erro_api("Evento de sincronização excede o limite permitido.", 413)
+
+    corpo = request.body
+    if len(corpo) > limite:
+        return _erro_api("Evento de sincronização excede o limite permitido.", 413)
+    try:
+        dados = json.loads(corpo)
         identificador = uuid.UUID(str(dados["id"]))
         tipo = str(dados["tipo"]).strip()
         empresa_cnpj = str(dados["empresa_cnpj"]).strip()
         payload = dados["payload"]
     except (json.JSONDecodeError, KeyError, TypeError, ValueError):
-        return _erro_api("Evento de sincronizacao malformado.", 400)
+        return _erro_api("Evento de sincronização malformado.", 400)
+
+    token_recebido = request.headers.get("Authorization", "").removeprefix("Bearer ").strip()
+    token_valido, _origem_token = credencial_sincronizacao_valida(
+        empresa_cnpj,
+        token_recebido,
+    )
+    if not token_valido:
+        return _erro_api("Credencial de sincronização inválida para a empresa.", 401)
+
     chave = request.headers.get("Idempotency-Key", "").strip()
-    if not chave or len(chave) > 180 or not tipo or not isinstance(payload, dict):
-        return _erro_api("Tipo, payload e chave idempotente sao obrigatorios.", 400)
+    if (
+        not chave
+        or len(chave) > 180
+        or not tipo
+        or len(tipo) > 100
+        or len(empresa_cnpj) > 18
+        or not isinstance(payload, dict)
+    ):
+        return _erro_api("Tipo, payload e chave idempotente são obrigatórios.", 400)
     empresa = Empresa.objects.filter(cnpj=empresa_cnpj, is_active=True).first()
     if not empresa:
-        return _erro_api("Empresa do evento nao encontrada ou inativa.", 422)
+        return _erro_api("Empresa do evento não encontrada ou inativa.", 422)
 
     existente = EventoEntradaSincronizacao.objects.filter(identificador=identificador).first()
     if not existente:
@@ -319,7 +346,7 @@ def filiais_busca(request):
             "results": [
                 {
                     "id": filial.pk,
-                    "text": f"{filial.empresa.nome_fantasia} - {filial.nome} | {filial.municipio or filial.cnpj or 'sem municipio'}",
+                    "text": f"{filial.empresa.nome_fantasia} - {filial.nome} | {filial.municipio or filial.cnpj or 'sem município'}",
                     "empresa": filial.empresa.nome_fantasia,
                     "nome": filial.nome,
                     "cnpj": filial.cnpj or filial.empresa.cnpj,
@@ -396,7 +423,7 @@ def consulta_cadastro_placeholder(request):
     if cnpj:
         digitos = _apenas_digitos(cnpj)
         if not _cnpj_valido(digitos):
-            return JsonResponse({**payload_base, "status": "invalid", "mensagem": "CNPJ invalido.", "consulta": {"tipo": "cnpj", "valor": digitos}}, status=400)
+            return JsonResponse({**payload_base, "status": "invalid", "mensagem": "CNPJ inválido.", "consulta": {"tipo": "cnpj", "valor": digitos}}, status=400)
         filial = _buscar_filial_por_cnpj(digitos)
         empresa = _buscar_empresa_por_cnpj(digitos)
         if filial:
@@ -407,7 +434,7 @@ def consulta_cadastro_placeholder(request):
             resultado = _consultar_provider_cadastro(provider_cnpj, "cnpj", digitos)
             status_http = 502 if resultado["status"] == "external_provider_error" else 200
             return JsonResponse({**payload_base, "consulta": {"tipo": "cnpj", "valor": digitos}, **resultado}, status=status_http)
-        return JsonResponse({**payload_base, "status": "external_provider_required", "mensagem": "CNPJ valido, mas nao encontrado localmente. Configure um provedor externo para preenchimento automatico.", "consulta": {"tipo": "cnpj", "valor": digitos}})
+        return JsonResponse({**payload_base, "status": "external_provider_required", "mensagem": "CNPJ valido, mas não encontrado localmente. Configure um provedor externo para preenchimento automático.", "consulta": {"tipo": "cnpj", "valor": digitos}})
     if cep:
         digitos = _apenas_digitos(cep)
         if len(digitos) != 8:
@@ -422,11 +449,11 @@ def consulta_cadastro_placeholder(request):
             resultado = _consultar_provider_cadastro(provider_cep, "cep", digitos)
             status_http = 502 if resultado["status"] == "external_provider_error" else 200
             return JsonResponse({**payload_base, "consulta": {"tipo": "cep", "valor": digitos}, **resultado}, status=status_http)
-        return JsonResponse({**payload_base, "status": "external_provider_required", "mensagem": "CEP valido. Configure um provedor externo para preencher endereco, municipio, UF e IBGE.", "consulta": {"tipo": "cep", "valor": digitos}})
+        return JsonResponse({**payload_base, "status": "external_provider_required", "mensagem": "CEP valido. Configure um provedor externo para preencher endereço, município, UF e IBGE.", "consulta": {"tipo": "cep", "valor": digitos}})
     return JsonResponse(
         {**payload_base,
             "status": "integration_pending",
-            "mensagem": "Informe cnpj ou cep na query string. A consulta local ja valida CNPJ e reaproveita cadastros existentes; provedores externos podem ser conectados por configuracao.",
+            "mensagem": "Informe cnpj ou cep na query string. A consulta local ja valida CNPJ e reaproveita cadastros existentes; provedores externos podem ser conectados por configuração.",
         }
     )
 
@@ -434,79 +461,7 @@ def consulta_cadastro_placeholder(request):
 @login_required
 @role_required(*ADMINISTRACAO)
 def consulta_cadastro_diagnostico(request):
-    provider_cnpj = getattr(settings, "CADASTRO_CNPJ_PROVIDER_URL", "")
-    provider_cep = getattr(settings, "CADASTRO_CEP_PROVIDER_URL", "")
-    timeout = getattr(settings, "CADASTRO_LOOKUP_TIMEOUT_SEGUNDOS", 5)
-    cnpj_configurado = bool(provider_cnpj)
-    cep_configurado = bool(provider_cep)
-    alertas = []
-    if not cnpj_configurado:
-        alertas.append("CNPJ opera em validação formal e fallback local até configurar um provedor externo homologado.")
-    if not cep_configurado:
-        alertas.append("CEP opera em fallback local/manual até configurar um provedor externo homologado.")
-
-    provedores_configurados = int(cnpj_configurado) + int(cep_configurado)
-    if provedores_configurados == 2:
-        prontidao_status = "ready_for_provider_homologation"
-        prontidao_resumo = "CNPJ e CEP possuem provedores configurados e mantêm fallback local."
-        recomendacoes = [
-            "Homologar disponibilidade, limites, formato das respostas e tratamento de falhas dos provedores configurados.",
-        ]
-    elif provedores_configurados == 1:
-        prontidao_status = "partially_configured"
-        prontidao_resumo = "Somente uma das consultas possui provedor externo; a outra continua em fallback local/manual."
-        recomendacoes = [
-            "Configurar e homologar o provedor que ainda está pendente.",
-            "Manter o fallback local para indisponibilidade do serviço externo.",
-        ]
-    else:
-        prontidao_status = "local_fallback_only"
-        prontidao_resumo = "As consultas funcionam com validação e dados locais, sem preenchimento público externo."
-        recomendacoes = [
-            "Escolher provedores de produção para CNPJ e CEP.",
-            "Homologar disponibilidade, limites, formato das respostas e tratamento de falhas.",
-        ]
-
-    payload = {
-        "contrato": "cadastro_lookup_v1",
-        "status": "ready_with_external_provider" if cnpj_configurado and cep_configurado else "ready_with_local_fallback",
-        "prontidao": {
-            "contrato": "cadastro_lookup_readiness_v1",
-            "status": prontidao_status,
-            "provedores_configurados": provedores_configurados,
-            "provedores_necessarios": 2,
-            "fallback_local_disponivel": True,
-            "resumo": prontidao_resumo,
-            "recomendacoes": recomendacoes,
-        },
-        "provedores": {
-            "cnpj_configurado": cnpj_configurado,
-            "cep_configurado": cep_configurado,
-            "timeout_segundos": timeout,
-            "modo_operacao": "externo_com_fallback_local" if cnpj_configurado or cep_configurado else "local_offline",
-        },
-        "fallback_local": True,
-        "consultas": {
-            "cnpj": {
-                "validacao": "calculo_digitos_verificadores",
-                "mascara": "00.000.000/0000-00",
-                "provedor_configurado": cnpj_configurado,
-            },
-            "cep": {
-                "validacao": "8_digitos",
-                "mascara": "00000-000",
-                "provedor_configurado": cep_configurado,
-            },
-        },
-        "base_local": {
-            "empresas_com_cnpj": Empresa.objects.exclude(cnpj="").count(),
-            "filiais_com_cnpj": Filial.objects.exclude(cnpj="").count(),
-            "empresas_com_endereco": Empresa.objects.exclude(endereco="").count(),
-            "filiais_com_endereco": Filial.objects.exclude(endereco="").count(),
-        },
-        "alertas": alertas,
-    }
-    return JsonResponse(payload)
+    return JsonResponse(diagnostico_prontidao_consulta_cadastro())
 
 
 def _pagina_nomeada(request, queryset, parametro):
@@ -534,16 +489,19 @@ def _sincronizacao_querysets(request):
     eventos_entrada_qs = EventoEntradaSincronizacao.objects.select_related("empresa")
     vendas_qs = VendaSincronizada.objects.select_related("empresa", "filial")
     documentos_fiscais_qs = DocumentoFiscalSincronizado.objects.select_related("empresa", "filial")
+    lancamentos_financeiros_qs = LancamentoFinanceiroSincronizado.objects.select_related("empresa", "filial")
 
     if empresa_id.isdigit():
         eventos_qs = eventos_qs.filter(empresa_id=empresa_id)
         eventos_entrada_qs = eventos_entrada_qs.filter(empresa_id=empresa_id)
         vendas_qs = vendas_qs.filter(empresa_id=empresa_id)
         documentos_fiscais_qs = documentos_fiscais_qs.filter(empresa_id=empresa_id)
+        lancamentos_financeiros_qs = lancamentos_financeiros_qs.filter(empresa_id=empresa_id)
     if filial_id.isdigit():
         eventos_qs = eventos_qs.filter(filial_id=filial_id)
         vendas_qs = vendas_qs.filter(filial_id=filial_id)
         documentos_fiscais_qs = documentos_fiscais_qs.filter(filial_id=filial_id)
+        lancamentos_financeiros_qs = lancamentos_financeiros_qs.filter(filial_id=filial_id)
     if status_entrada:
         eventos_entrada_qs = eventos_entrada_qs.filter(status=status_entrada)
     if q:
@@ -575,11 +533,21 @@ def _sincronizacao_querysets(request):
             | Q(protocolo__icontains=q)
             | Q(status__icontains=q)
         )
+        lancamentos_financeiros_qs = lancamentos_financeiros_qs.filter(
+            Q(lancamento_externo_id__icontains=q)
+            | Q(origem__icontains=q)
+            | Q(descricao__icontains=q)
+            | Q(conta_movimento__icontains=q)
+            | Q(centro_custo__icontains=q)
+            | Q(conta_contabil__icontains=q)
+            | Q(usuario__icontains=q)
+        )
     return {
         "eventos_qs": eventos_qs,
         "eventos_entrada_qs": eventos_entrada_qs,
         "vendas_qs": vendas_qs,
         "documentos_fiscais_qs": documentos_fiscais_qs,
+        "lancamentos_financeiros_qs": lancamentos_financeiros_qs,
         "filtros": {"q": q, "empresa": empresa_id, "filial": filial_id, "status_entrada": status_entrada},
     }
 
@@ -596,11 +564,36 @@ def _prontidao_sincronizacao_payload(empresas_qs, saida, entrada, esgotados_said
     pausados_saida = saida.get(StatusSincronizacao.PAUSADO, 0)
     pausados_entrada = entrada.get(StatusEventoEntrada.PAUSADO, 0)
     conflitos = entrada.get(StatusEventoEntrada.CONFLITO, 0)
-    token_configurado = bool(settings.SINCRONIZACAO_API_TOKEN)
+    configuracoes_credenciais = [
+        credenciais_sincronizacao_para_cnpj(cnpj)
+        for cnpj in empresas_sync_automaticas.values_list("cnpj", flat=True)
+    ]
+    origens_credenciais = [origem for _tokens, origem in configuracoes_credenciais]
+    credenciais_individuais = origens_credenciais.count("empresa")
+    credenciais_em_rotacao = sum(
+        1
+        for tokens, origem in configuracoes_credenciais
+        if origem == "empresa" and len(tokens) > 1
+    )
+    credenciais_globais_transicao = origens_credenciais.count("global_transicao")
+    empresas_sem_credencial = origens_credenciais.count("ausente")
+    token_configurado = not empresas_sem_credencial
     bloqueios = []
     recomendacoes = []
-    if empresas_sync_automaticas.exists() and not token_configurado:
-        bloqueios.append("Configure SINCRONIZACAO_API_TOKEN no servidor que processa a fila.")
+    if empresas_sem_credencial:
+        bloqueios.append(
+            f"Configure credencial individual de sincronizacao para {empresas_sem_credencial} empresa(s)."
+        )
+    if credenciais_globais_transicao:
+        recomendacoes.append(
+            f"Migrar {credenciais_globais_transicao} empresa(s) do token global de transicao "
+            "para credencial individual."
+        )
+    if credenciais_em_rotacao:
+        recomendacoes.append(
+            f"Concluir a rotacao de credencial em {credenciais_em_rotacao} empresa(s) "
+            "apos todos os servidores adotarem o token atual."
+        )
     if empresas_sync_sem_url:
         bloqueios.append(f"{empresas_sync_sem_url} empresa(s) hibrida/nuvem estao sem URL de sincronizacao.")
     if empresas_sync_url_insegura:
@@ -619,7 +612,7 @@ def _prontidao_sincronizacao_payload(empresas_qs, saida, entrada, esgotados_said
     if not empresas_sync.exists():
         status = "Local puro"
         percentual = 100
-        proximo_passo = "Operacao local liberada; sincronizacao com nuvem nao esta habilitada para as empresas filtradas."
+        proximo_passo = "Operação local liberada; sincronizacao com nuvem não está habilitada para as empresas filtradas."
     elif bloqueios:
         status = "Bloqueada"
         percentual = 45
@@ -631,12 +624,19 @@ def _prontidao_sincronizacao_payload(empresas_qs, saida, entrada, esgotados_said
     else:
         status = "Pronta"
         percentual = 100
-        proximo_passo = "Sincronizacao pronta para operacao assistida local/nuvem."
+        proximo_passo = "Sincronizacao pronta para operação assistida local/nuvem."
     return {
         "contrato": "sync_readiness_v1",
         "status": status,
         "percentual": percentual,
         "token_configurado": token_configurado,
+        "credenciais": {
+            "individuais": credenciais_individuais,
+            "em_rotacao": credenciais_em_rotacao,
+            "global_transicao": credenciais_globais_transicao,
+            "sem_credencial": empresas_sem_credencial,
+            "fallback_global_habilitado": settings.SINCRONIZACAO_PERMITE_TOKEN_GLOBAL,
+        },
         "empresas": {
             "local": empresas_qs.filter(modo_implantacao=ModoImplantacao.LOCAL).count(),
             "hibrido": empresas_qs.filter(modo_implantacao=ModoImplantacao.HIBRIDO).count(),
@@ -665,6 +665,7 @@ def _sincronizacao_diagnostico_payload(request):
     eventos_entrada_qs = dados["eventos_entrada_qs"]
     vendas_qs = dados["vendas_qs"]
     documentos_fiscais_qs = dados["documentos_fiscais_qs"]
+    lancamentos_financeiros_qs = dados["lancamentos_financeiros_qs"]
     saida = dict(eventos_qs.values_list("status").annotate(total=Count("id")))
     entrada = dict(eventos_entrada_qs.values_list("status").annotate(total=Count("id")))
     empresas_ativas_qs = Empresa.objects.filter(is_active=True)
@@ -707,7 +708,7 @@ def _sincronizacao_diagnostico_payload(request):
     if pausados_saida or pausados_entrada:
         alertas.append(f"{pausados_saida + pausados_entrada} evento(s) estão pausados pela política de implantação.")
     if Empresa.objects.filter(is_active=True, sincronizacao_automatica=True, url_sincronizacao="").exists():
-        alertas.append("Existe empresa com sincronizacao automatica sem URL configurada.")
+        alertas.append("Existe empresa com sincronizacao automática sem URL configurada.")
 
     proxima_saida = eventos_qs.filter(status__in=[StatusSincronizacao.PENDENTE, StatusSincronizacao.ERRO]).order_by("proxima_tentativa_em", "criado_em").first()
     proxima_entrada = eventos_entrada_qs.filter(status__in=[StatusEventoEntrada.RECEBIDO, StatusEventoEntrada.ERRO, StatusEventoEntrada.CONFLITO]).order_by("recebido_em").first()
@@ -743,6 +744,9 @@ def _sincronizacao_diagnostico_payload(request):
             "vendas": vendas_qs.count(),
             "valor_vendas": str(vendas_qs.aggregate(total=Sum("total_liquido"))["total"] or 0),
             "documentos_fiscais": documentos_fiscais_qs.count(),
+            "lancamentos_financeiros": lancamentos_financeiros_qs.count(),
+            "entradas_financeiras": str(lancamentos_financeiros_qs.filter(tipo="ENTRADA").aggregate(total=Sum("valor"))["total"] or 0),
+            "saidas_financeiras": str(lancamentos_financeiros_qs.filter(tipo="SAIDA").aggregate(total=Sum("valor"))["total"] or 0),
         },
         "empresas": {
             "total_ativas": empresas_ativas_qs.count(),
@@ -772,13 +776,17 @@ def sincronizacao(request):
     eventos_entrada_qs = dados["eventos_entrada_qs"]
     vendas_qs = dados["vendas_qs"]
     documentos_fiscais_qs = dados["documentos_fiscais_qs"]
+    lancamentos_financeiros_qs = dados["lancamentos_financeiros_qs"]
     eventos = _pagina_nomeada(request, eventos_qs.order_by("-criado_em"), "saida_page")
     eventos_entrada = _pagina_nomeada(request, eventos_entrada_qs.order_by("-recebido_em"), "entrada_page")
     vendas_sincronizadas = _pagina_nomeada(request, vendas_qs.order_by("-realizada_em", "-recebida_em"), "vendas_page")
     documentos_fiscais = _pagina_nomeada(request, documentos_fiscais_qs.order_by("-emitido_em", "-recebido_em"), "fiscais_page")
+    lancamentos_financeiros = _pagina_nomeada(request, lancamentos_financeiros_qs.order_by("-data", "-recebido_em"), "financeiro_page")
     contagens = dict(eventos_qs.values_list("status").annotate(total=Count("id")))
     contagens_entrada = dict(eventos_entrada_qs.values_list("status").annotate(total=Count("id")))
     total_vendas_sync = vendas_qs.aggregate(total=Sum("total_liquido"))["total"] or 0
+    total_entradas_financeiras = lancamentos_financeiros_qs.filter(tipo="ENTRADA").aggregate(total=Sum("valor"))["total"] or 0
+    total_saidas_financeiras = lancamentos_financeiros_qs.filter(tipo="SAIDA").aggregate(total=Sum("valor"))["total"] or 0
     diagnostico_operacional = _sincronizacao_diagnostico_payload(request)
     base_dir = Path(settings.BASE_DIR)
     python_exe = base_dir / ".venv" / "Scripts" / "python.exe"
@@ -793,6 +801,7 @@ def sincronizacao(request):
         "eventos_entrada": eventos_entrada,
         "vendas_sincronizadas": vendas_sincronizadas,
         "documentos_fiscais_sincronizados": documentos_fiscais,
+        "lancamentos_financeiros_sincronizados": lancamentos_financeiros,
         "empresas_opcoes": Empresa.objects.filter(is_active=True).order_by("nome_fantasia"),
         "filiais_opcoes": Filial.objects.filter(is_active=True).select_related("empresa").order_by("empresa__nome_fantasia", "nome"),
         "empresas_carga_opcoes": Empresa.objects.filter(is_active=True, sincronizacao_automatica=True).exclude(
@@ -819,6 +828,10 @@ def sincronizacao(request):
         "total_vendas_sincronizadas": vendas_qs.count(),
         "valor_vendas_sincronizadas": total_vendas_sync,
         "total_documentos_fiscais_sincronizados": documentos_fiscais_qs.count(),
+        "total_lancamentos_financeiros_sincronizados": lancamentos_financeiros_qs.count(),
+        "total_entradas_financeiras_sincronizadas": total_entradas_financeiras,
+        "total_saidas_financeiras_sincronizadas": total_saidas_financeiras,
+        "resultado_financeiro_sincronizado": total_entradas_financeiras - total_saidas_financeiras,
         "diagnostico_operacional": diagnostico_operacional,
         "comando_sincronizacao": comando_sincronizacao,
         "comando_agendador": comando_agendador,
@@ -893,7 +906,7 @@ def vendas_sincronizadas_csv(request):
     response["Content-Disposition"] = 'attachment; filename="vendas_sincronizadas.csv"'
     response.write("\ufeff")
     writer = csv.writer(response, delimiter=";")
-    writer.writerow(["Venda externa", "Empresa", "Filial", "Caixa", "Operador", "Cliente", "Total bruto", "Desconto", "Total liquido", "Pagamentos", "Realizada", "Recebida"])
+    writer.writerow(["Venda externa", "Empresa", "Filial", "Caixa", "Operador", "Cliente", "Total bruto", "Desconto", "Total líquido", "Pagamentos", "Realizada", "Recebida"])
     for venda in vendas_qs.order_by("-realizada_em", "-recebida_em"):
         writer.writerow([
             venda.venda_externa_id,
@@ -953,6 +966,39 @@ def documentos_fiscais_sincronizados_csv(request):
             documento.protocolo,
             documento.emitido_em.strftime("%d/%m/%Y %H:%M:%S") if documento.emitido_em else "",
             documento.recebido_em.strftime("%d/%m/%Y %H:%M:%S") if documento.recebido_em else "",
+        ])
+    return response
+
+
+@login_required
+@role_required(*SISTEMA)
+def lancamentos_financeiros_sincronizados_csv(request):
+    _exigir_super_admin(request.user)
+    lancamentos_qs = _sincronizacao_querysets(request)["lancamentos_financeiros_qs"].select_related("empresa", "filial")
+    response = HttpResponse(content_type="text/csv; charset=utf-8")
+    response["Content-Disposition"] = 'attachment; filename="lancamentos_financeiros_sincronizados.csv"'
+    response.write("\ufeff")
+    writer = csv.writer(response, delimiter=";")
+    writer.writerow([
+        "Lancamento externo", "Empresa", "Filial", "Data", "Tipo", "Origem", "Descricao",
+        "Valor", "Conta de movimento", "Centro de custo", "Conta contabil", "Usuario", "Estorno de", "Recebido em",
+    ])
+    for lancamento in lancamentos_qs.order_by("-data", "-recebido_em"):
+        writer.writerow([
+            lancamento.lancamento_externo_id,
+            lancamento.empresa.nome_fantasia,
+            lancamento.filial.nome if lancamento.filial else "",
+            lancamento.data.strftime("%d/%m/%Y"),
+            lancamento.tipo,
+            lancamento.origem,
+            lancamento.descricao,
+            str(lancamento.valor).replace(".", ","),
+            lancamento.conta_movimento,
+            lancamento.centro_custo,
+            lancamento.conta_contabil,
+            lancamento.usuario,
+            lancamento.estorno_de_externo_id,
+            lancamento.recebido_em.strftime("%d/%m/%Y %H:%M:%S"),
         ])
     return response
 

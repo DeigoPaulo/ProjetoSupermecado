@@ -1,3 +1,4 @@
+from django.conf import settings
 from django.db import models
 
 
@@ -8,9 +9,9 @@ class ModeloPapel(models.TextChoices):
 
 
 class TipoDocumentoImpressao(models.TextChoices):
-    CUPOM_NAO_FISCAL = "CUPOM_NAO_FISCAL", "Cupom nao fiscal"
+    CUPOM_NAO_FISCAL = "CUPOM_NAO_FISCAL", "Cupom não fiscal"
     CUPOM_FISCAL = "CUPOM_FISCAL", "Cupom fiscal"
-    PEDIDO_SEPARACAO = "PEDIDO_SEPARACAO", "Pedido de separacao"
+    PEDIDO_SEPARACAO = "PEDIDO_SEPARACAO", "Pedido de separação"
     ETIQUETA = "ETIQUETA", "Etiqueta"
     RELATORIO = "RELATORIO", "Relatorio"
     FECHAMENTO_CAIXA = "FECHAMENTO_CAIXA", "Fechamento de caixa"
@@ -91,5 +92,33 @@ class ModeloEtiqueta(models.Model):
 
     def __str__(self):
         return f"{self.nome} - {self.largura_mm} x {self.altura_mm} mm"
+
+
+class ResultadoHomologacaoServidor(models.TextChoices):
+    APROVADA = "APROVADA", "Aprovada"
+    REPROVADA = "REPROVADA", "Reprovada"
+
+
+class HomologacaoServidorLocal(models.Model):
+    maquina = models.CharField(max_length=120)
+    sistema_operacional = models.CharField(max_length=120)
+    versao_artefato = models.CharField(max_length=50)
+    hash_evidencia = models.CharField(max_length=64, unique=True)
+    resultado = models.CharField(max_length=12, choices=ResultadoHomologacaoServidor.choices)
+    observacoes = models.TextField(blank=True)
+    registrada_por = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.PROTECT,
+        related_name="homologacoes_servidor_local",
+    )
+    criada_em = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["-criada_em", "-id"]
+        verbose_name = "homologação de servidor local"
+        verbose_name_plural = "homologações de servidor local"
+
+    def __str__(self):
+        return f"{self.maquina} - {self.get_resultado_display()} - {self.versao_artefato}"
 
 # Create your models here.

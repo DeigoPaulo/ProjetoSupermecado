@@ -12,7 +12,7 @@ from unittest.mock import MagicMock, patch
 import app
 from devices.printers import ErroDescobertaImpressoras, listar_impressoras_windows
 from devices.labels import montar_etiquetas_epl, montar_etiquetas_nativas, montar_etiquetas_ppla, montar_etiquetas_zpl
-from devices.printing import ErroImpressao, montar_cupom_escpos, montar_pulso_gaveta_escpos, montar_texto_cupom, montar_texto_danfe_nfce
+from devices.printing import ErroImpressao, montar_cupom_escpos, montar_pulso_gaveta_escpos, montar_texto_comanda_entrega, montar_texto_cupom, montar_texto_danfe_nfce
 from devices.scales import ErroBalanca, extrair_peso_resposta, ler_peso_balanca, normalizar_configuracao_balanca
 
 
@@ -58,6 +58,17 @@ class AppDesktopTests(unittest.TestCase):
             self.assertTrue(caminho.exists())
             self.assertEqual(carregada["servidor_base_url"], "http://servidor.local")
             self.assertEqual(carregada["terminal_chave"], "segredo")
+
+    def test_executavel_instalado_ignora_config_ao_lado_do_app(self):
+        with tempfile.TemporaryDirectory() as pasta:
+            raiz = Path(pasta)
+            (raiz / "config.json").write_text('{"servidor_base_url": "http://outro-computador"}', encoding="utf-8")
+            app_data = raiz / "perfil"
+            ambiente = {"LOCALAPPDATA": str(app_data), "DEIGO_PDV_CONFIG": "", "SUPERMERCADO_PDV_CONFIG": ""}
+            with patch.dict(os.environ, ambiente), patch.object(app, "APP_DIR", raiz), patch.object(app.sys, "frozen", True, create=True):
+                caminho = app.caminho_configuracao()
+
+            self.assertEqual(caminho, app_data / "DeigoPDV" / "config.json")
 
     def test_migra_configuracao_legada_para_deigo_pdv(self):
         with tempfile.TemporaryDirectory() as pasta:
@@ -317,6 +328,23 @@ class AppDesktopTests(unittest.TestCase):
                     app.avisar_atualizacao(situacao, {"terminal_id": "1"})
 
         messagebox.showinfo.assert_called_once()
+    def test_ponte_le_credencial_pcsc_sem_registrar_uid(self):
+        ponte = app.PonteLocal({"terminal": {"nome": "Caixa 01"}}, {})
+        with patch("app.ler_uid_pcsc", return_value="04A1B2C3") as leitor:
+            resultado = ponte.readSupervisorCredential("ACR")
+        self.assertEqual(resultado["status"], "ok")
+        self.assertEqual(resultado["credencial"], "04A1B2C3")
+        self.assertEqual(resultado["origem"], "PCSC")
+        leitor.assert_called_once_with("ACR")
+
+    def test_ponte_orienta_fallback_quando_pcsc_falha(self):
+        ponte = app.PonteLocal({"terminal": {"nome": "Caixa 01"}}, {})
+        with patch("app.ler_uid_pcsc", side_effect=app.ErroLeitorCartao("Sem cartao")):
+            resultado = ponte.readSupervisorCredential()
+        self.assertEqual(resultado["status"], "erro")
+        self.assertNotIn("credencial", resultado)
+        self.assertIn("modo teclado", resultado["fallback"])
+
     @patch("devices.printers.platform.system", return_value="Windows")
     @patch("devices.printers.subprocess.run")
     def test_lista_impressoras_instaladas_no_windows(self, executar_mock, _sistema_mock):
@@ -821,7 +849,7 @@ class AppDesktopTests(unittest.TestCase):
                 "total_pago": "20,00",
                 "troco": "8,00",
             },
-            "itens": [{"sequencia": 1, "produto": "MAÇÃ", "codigo_barras": "123", "quantidade": "2", "preco_unitario": "6,25", "total": "12,50"}],
+            "itens": [{"sequencia": 1, "produto": "MA\u00c7\u00c3", "codigo_barras": "123", "quantidade": "2", "preco_unitario": "6,25", "total": "12,50"}],
             "pagamentos": [{"forma": "Dinheiro", "valor": "12,00"}],
             "impressao": {"mensagem_rodape": "Obrigado pela preferencia"},
             "gaveta": {"abrir": True},
@@ -831,18 +859,53 @@ class AppDesktopTests(unittest.TestCase):
         dados = montar_cupom_escpos(payload)
 
         self.assertIn("Supermercado Modelo", texto)
-        self.assertIn("MAÇÃ", texto)
-        self.assertIn("CUPOM NÃO FISCAL", texto)
+        self.assertIn("MA\u00c7\u00c3", texto)
+        self.assertIn("CUPOM NAO FISCAL", texto)
         self.assertIn("R$ 6,25", texto)
         self.assertIn("TROCO:", texto)
         self.assertIn("R$ 8,00", texto)
-        self.assertIn("NÃO É DOCUMENTO FISCAL", texto)
+        self.assertIn("NAO E DOCUMENTO FISCAL", texto)
         self.assertNotIn("logo_url", texto)
         self.assertTrue(dados.startswith(b"\x1b@"))
-        self.assertIn("MAÇÃ".encode("cp850"), dados)
+        self.assertIn("MA\u00c7\u00c3".encode("cp850"), dados)
         self.assertIn(b"\x1bp\x00\x19\xfa", dados)
         self.assertTrue(dados.endswith(b"\x1dV\x42\x00"))
 
+    def test_monta_comanda_entrega_com_endereco_itens_e_pagamento(self):
+        payload = {
+            "tipo": "comanda_entrega",
+            "pedido": {
+                "id": 31,
+                "empresa": "Supermercado Modelo",
+                "filial": "Matriz",
+                "criado_em": "2026-07-30T14:00:00",
+                "status": "Pronto",
+                "cliente": "Cliente Entrega",
+                "telefone": "(62) 99999-0000",
+                "endereco": "Rua 18, QD 81, LT 12",
+                "bairro": "Santos Dumont",
+                "observacoes": "Tocar o interfone",
+                "total": "25,90",
+                "pagamento": "Pago",
+                "forma_pagamento": "PIX",
+            },
+            "itens": [{"produto": "ARROZ 5KG", "quantidade": "2", "unidade": "UN"}],
+            "impressao": {"modelo_papel": "80MM"},
+            "gaveta": {"abrir": False},
+        }
+
+        texto = montar_texto_comanda_entrega(payload)
+        dados = montar_cupom_escpos(payload)
+
+        self.assertIn("COMANDA DE ENTREGA #31", texto)
+        self.assertIn("Cliente Entrega", texto)
+        self.assertIn("Rua 18, QD 81, LT 12", texto)
+        self.assertIn("ARROZ 5KG", texto)
+        self.assertIn("PAGAMENTO:", texto)
+        self.assertIn("Pago", texto)
+        self.assertNotIn("NAO E DOCUMENTO FISCAL", texto)
+        self.assertTrue(dados.startswith(b"\x1b@"))
+        self.assertTrue(dados.endswith(b"\x1dV\x42\x00"))
     def test_monta_danfe_nfce_com_qrcode_nativo_e_sem_marca_nao_fiscal(self):
         chave = "35260712345678000190650010000001001123456780"
         qrcode_url = f"https://nfce.example.com/qrcode?p={chave}|3|2"
@@ -1143,5 +1206,14 @@ class AppDesktopTests(unittest.TestCase):
         evidencia = registrar.call_args.args[1]
         self.assertNotIn("documento", evidencia)
         self.assertNotIn("52998224725", json.dumps(evidencia))
+    def test_ctrl_q_global_existe_no_shell_desktop_com_confirmacao(self):
+        fonte = Path(app.__file__).read_text(encoding="utf-8")
+
+        self.assertIn("window.__deigoDesktopQuitInstalled", fonte)
+        self.assertIn("event.key.toLowerCase() === 'q'", fonte)
+        self.assertIn("Operações ainda não salvas serão descartadas", fonte)
+        self.assertIn('raiz.bind_all("<Control-q>"', fonte)
+        self.assertIn("window.SupermercadoDesktop.closeApplication();", fonte)
+
 if __name__ == "__main__":
     unittest.main()

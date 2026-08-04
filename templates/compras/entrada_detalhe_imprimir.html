@@ -40,7 +40,7 @@
     <div><span>Total</span><strong>R$ {{ entrada.total_produtos|floatformat:2 }}</strong></div>
     <div><span>Recebimento</span><strong>{{ entrada.data_recebimento|date:"d/m/Y H:i" }}</strong></div>
     <div><span>Vencimento</span><strong>{{ entrada.vencimento_financeiro|date:"d/m/Y"|default:"Ao finalizar" }}</strong></div>
-    <div><span>Responsavel</span><strong>{{ entrada.usuario }}</strong></div>
+    <div><span>Responsável</span><strong>{{ entrada.usuario }}</strong></div>
   </section>
 
   <h2>Itens recebidos</h2>
@@ -48,7 +48,7 @@
     <thead><tr><th>Produto</th><th>Quantidade</th><th>Custo unitario</th><th>Total</th><th>Atualiza custo</th></tr></thead>
     <tbody>
       {% for item in entrada.itens.all %}
-        <tr><td>{{ item.produto }}</td><td>{{ item.quantidade|quantidade_br }}</td><td class="money">R$ {{ item.custo_unitario|floatformat:2 }}</td><td class="money">R$ {{ item.total|floatformat:2 }}</td><td>{{ item.atualizar_preco_custo|yesno:"Sim,Nao" }}</td></tr>
+        <tr><td>{{ item.produto }}</td><td>{{ item.quantidade|quantidade_br }}</td><td class="money">R$ {{ item.custo_unitario|floatformat:2 }}</td><td class="money">R$ {{ item.total|floatformat:2 }}</td><td>{{ item.atualizar_preco_custo|yesno:"Sim,Não" }}</td></tr>
       {% empty %}
         <tr><td colspan="5">Nenhum item informado.</td></tr>
       {% endfor %}
@@ -69,13 +69,13 @@
 
   <h2>Rastreio financeiro</h2>
   <table>
-    <thead><tr><th>Data</th><th>Conta movimento</th><th>Tipo</th><th>Origem</th><th>Valor</th><th>Usuario</th></tr></thead>
+    <thead><tr><th>Data</th><th>Conta movimento</th><th>Tipo</th><th>Origem</th><th>Valor</th><th>Usuário</th></tr></thead>
     <tbody>
       {% for conta in entrada.contas_financeiras.all %}
         {% for lancamento in conta.lancamentos.all %}
           <tr><td>{{ lancamento.data|date:"d/m/Y" }}</td><td>{{ lancamento.conta.nome }} - {{ lancamento.conta.filial }}</td><td>{{ lancamento.get_tipo_display }}</td><td>{{ lancamento.origem }}</td><td class="money">R$ {{ lancamento.valor|floatformat:2 }}</td><td>{{ lancamento.usuario|default:"-" }}</td></tr>
         {% empty %}
-          <tr><td colspan="6">Conta {{ conta.id }} ainda nao gerou lancamento no livro financeiro.</td></tr>
+          <tr><td colspan="6">Conta {{ conta.id }} ainda não gerou lançamento no livro financeiro.</td></tr>
         {% endfor %}
       {% empty %}
         <tr><td colspan="6">Nenhuma conta financeira vinculada.</td></tr>
@@ -85,7 +85,7 @@
 
   <h2>Rastreio no estoque</h2>
   <table>
-    <thead><tr><th>Data</th><th>Tipo</th><th>Produto</th><th>Quantidade</th><th>Custo total</th><th>Usuario</th></tr></thead>
+    <thead><tr><th>Data</th><th>Tipo</th><th>Produto</th><th>Quantidade</th><th>Custo total</th><th>Usuário</th></tr></thead>
     <tbody>
       {% for mov in movimentacoes_estoque %}
           <tr><td>{{ mov.data|date:"d/m/Y H:i" }}</td><td>{{ mov.get_tipo_display }}</td><td>{{ mov.produto }}</td><td>{{ mov.quantidade|quantidade_br }}</td><td class="money">R$ {{ mov.custo_total|default:0|floatformat:2 }}</td><td>{{ mov.usuario|default:"-" }}</td></tr>

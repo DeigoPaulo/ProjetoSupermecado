@@ -287,14 +287,14 @@ class EstoqueViewsTests(TestCase):
     def test_relatorio_rendimento_filtra_alertas_e_exporta_csv(self):
         destino_baixo = Produto.objects.create(
             codigo_barras="7893333333323",
-            nome="Corte baixo relatorio",
+            nome="Corte baixo relatório",
             categoria=self.categoria,
             preco_custo="0.00",
             preco_venda="19.00",
         )
         destino_ok = Produto.objects.create(
             codigo_barras="7893333333324",
-            nome="Corte ok relatorio",
+            nome="Corte ok relatório",
             categoria=self.categoria,
             preco_custo="0.00",
             preco_venda="17.00",
@@ -313,7 +313,7 @@ class EstoqueViewsTests(TestCase):
                 }
             ],
             usuario=self.user,
-            motivo="Relatorio abaixo",
+            motivo="Relatório abaixo",
             tipo="ACOUGUE",
         )
         confirmar_desmembramento_multidestino(
@@ -329,7 +329,7 @@ class EstoqueViewsTests(TestCase):
                 }
             ],
             usuario=self.user,
-            motivo="Relatorio ok",
+            motivo="Relatório ok",
             tipo="ACOUGUE",
         )
 
@@ -337,20 +337,20 @@ class EstoqueViewsTests(TestCase):
         csv_response = self.client.get("/estoque/desmembramentos/relatorio/exportar.csv", {"alerta": "abaixo"})
 
         self.assertEqual(pagina.status_code, 200)
-        self.assertContains(pagina, "Relatorio de rendimento")
+        self.assertContains(pagina, "Relatório de rendimento")
         self.assertContains(pagina, "rendimento-chart-data")
         self.assertContains(pagina, "rendimento-destinos-chart")
         self.assertContains(pagina, "rendimento-custos-chart")
         self.assertContains(pagina, "rendimento-alertas-chart")
-        self.assertContains(pagina, "Corte baixo relatorio")
+        self.assertContains(pagina, "Corte baixo relatório")
         self.assertContains(pagina, "Abaixo do esperado")
-        self.assertNotContains(pagina, "Corte ok relatorio")
+        self.assertNotContains(pagina, "Corte ok relatório")
         self.assertEqual(csv_response.status_code, 200)
         conteudo = csv_response.content.decode("utf-8-sig")
         self.assertIn("Diferenca %", conteudo)
-        self.assertIn("Corte baixo relatorio", conteudo)
+        self.assertIn("Corte baixo relatório", conteudo)
         self.assertIn("Abaixo do esperado", conteudo)
-        self.assertNotIn("Corte ok relatorio", conteudo)
+        self.assertNotIn("Corte ok relatório", conteudo)
 
     def test_desmembramento_hortifruti_reembalado_movimenta_e_filtra_relatorio(self):
         destino = Produto.objects.create(
@@ -604,7 +604,7 @@ class EstoqueViewsTests(TestCase):
         lista = self.client.get("/estoque/composicoes/")
         form = self.client.get("/estoque/composicoes/nova/")
         self.assertContains(lista, "Composições")
-        self.assertContains(form, "Nova composicao")
+        self.assertContains(form, "Nova composição")
         self.assertContains(form, "componentes-0-produto_componente")
 
         response = self.client.post(
@@ -763,12 +763,12 @@ class EstoqueViewsTests(TestCase):
             follow=True,
         )
 
-        self.assertContains(programacao, "ordem(ns) de producao programada(s) por demanda")
+        self.assertContains(programacao, "ordem(ns) de produção programada(s) por demanda")
         ordem = OrdemProducaoComposicao.objects.get(composicao=composicao)
         self.assertEqual(ordem.quantidade_planejada, Decimal("3.000"))
         self.assertEqual(ordem.data_programada, data_programada)
         self.assertEqual(ordem.status, StatusOrdemProducaoComposicao.PLANEJADA)
-        self.assertEqual(ordem.motivo, "Reposicao automatica ate estoque minimo")
+        self.assertEqual(ordem.motivo, "Reposicao automática ate estoque mínimo")
         self.assertTrue(
             LogAuditoria.objects.filter(
                 acao="ORDEM_PRODUCAO_COMPOSICAO_SUGERIDA",
@@ -903,7 +903,7 @@ class EstoqueViewsTests(TestCase):
             etapa_operacional="CONFERENCIA",
             status=StatusOrdemProducaoComposicao.PRODUZIDA,
             usuario=self.user,
-            motivo="Producao relatorio alvo",
+            motivo="Producao relatório alvo",
             concluido_em=timezone.now(),
         )
         historico_separacao = HistoricoEtapaOrdemProducaoComposicao.objects.create(
@@ -971,7 +971,7 @@ class EstoqueViewsTests(TestCase):
                 "filial": self.filial.id,
                 "setor": "Padaria",
                 "meta_minutos": 75,
-                "observacao": "Meta para producao diaria",
+                "observacao": "Meta para produção diaria",
                 "is_active": "on",
             },
             follow=True,
@@ -983,7 +983,7 @@ class EstoqueViewsTests(TestCase):
         self.assertEqual(configuracao.meta_minutos, 75)
 
         lista = self.client.get("/estoque/composicoes/slas-setor/", {"q": "Padaria"})
-        self.assertContains(lista, "SLAs de producao por setor")
+        self.assertContains(lista, "SLAs de produção por setor")
         self.assertContains(lista, "75 min")
         self.assertContains(lista, self.filial.nome)
 
@@ -1222,7 +1222,7 @@ class EstoqueViewsTests(TestCase):
                 produto_destino=destino,
                 quantidade_destino=Decimal("10.000"),
                 usuario=self.user,
-                motivo="Tentativa invalida",
+                motivo="Tentativa inválida",
             )
 
         self.assertEqual(DesmembramentoProduto.objects.count(), 0)
@@ -1291,7 +1291,7 @@ class EstoqueViewsTests(TestCase):
         self.assertFalse(previa["conservacao_massa_valida"])
         self.assertEqual(previa["excesso_quantidade"], Decimal("0.001"))
         self.assertEqual(previa["rendimento_total"], Decimal("100.02"))
-        with self.assertRaisesMessage(ValidationError, "Conservacao de massa invalida"):
+        with self.assertRaisesMessage(ValidationError, "Conservacao de massa inválida"):
             confirmar_desmembramento_multidestino(
                 filial=self.filial,
                 produto_origem=self.produto,
@@ -1341,7 +1341,7 @@ class EstoqueViewsTests(TestCase):
 
         self.assertFalse(previa["conservacao_massa_valida"])
         self.assertEqual(previa["quantidade_nao_classificada"], Decimal("0.500"))
-        with self.assertRaisesMessage(ValidationError, "Quantidade nao classificada: 0.500 KG"):
+        with self.assertRaisesMessage(ValidationError, "Quantidade não classificada: 0.500 KG"):
             confirmar_desmembramento_multidestino(
                 filial=self.filial,
                 produto_origem=self.produto,
@@ -1446,7 +1446,7 @@ class EstoqueViewsTests(TestCase):
 
         self.assertEqual(lista.status_code, 200)
         self.assertContains(lista, "Desmembramentos")
-        self.assertContains(lista, "Relatorio de rendimento")
+        self.assertContains(lista, "Relatório de rendimento")
         self.assertEqual(form.status_code, 200)
         self.assertContains(form, "Produto origem")
         self.assertContains(form, "Produto destino")
@@ -1526,7 +1526,7 @@ class EstoqueViewsTests(TestCase):
         )
 
         self.assertEqual(response.status_code, 200)
-        self.assertContains(response, "Previa da operacao")
+        self.assertContains(response, "Previa da operação")
         self.assertContains(response, "Estoque suficiente para confirmar")
         self.assertEqual(DesmembramentoProduto.objects.count(), 0)
         self.assertEqual(MovimentacaoEstoque.objects.count(), 0)
@@ -1695,7 +1695,7 @@ class EstoqueViewsTests(TestCase):
                 "quantidade_destino": "30.000",
                 "tipo": "SIMPLES",
                 "tipo_saida": "SUBPRODUTO",
-                "observacao": "Pacote padrao com trinta unidades",
+                "observacao": "Pacote padrão com trinta unidades",
                 "is_active": "on",
             },
             follow=True,
@@ -1715,7 +1715,7 @@ class EstoqueViewsTests(TestCase):
         response = self.client.get("/estoque/receitas-desmembramento/nova/")
 
         self.assertEqual(response.status_code, 200)
-        self.assertContains(response, "Conversao padrao")
+        self.assertContains(response, "Conversao padrão")
         self.assertContains(response, 'data-ajax-url="/estoque/produtos/busca.json"')
 
     def test_receita_desmembramento_nao_permite_origem_igual_destino(self):
@@ -2114,7 +2114,7 @@ class RastreioLoteEstoqueTests(TestCase):
         cancelar_producao_composicao(
             producao=producao,
             usuario=self.usuario,
-            motivo="Cancelar producao rastreada",
+            motivo="Cancelar produção rastreada",
         )
 
         lote.refresh_from_db()
@@ -2150,7 +2150,7 @@ class RastreioLoteEstoqueTests(TestCase):
     def test_producao_com_lote_obrigatorio_cria_camada_e_cancelamento_baixa_a_mesma_camada(self):
         produto_final = Produto.objects.create(
             codigo_barras="7896345678977",
-            nome="Produto final com lote obrigatorio",
+            nome="Produto final com lote obrigatório",
             categoria=self.categoria,
             preco_custo=Decimal("0.00"),
             preco_venda=Decimal("12.00"),
@@ -2210,7 +2210,7 @@ class RastreioLoteEstoqueTests(TestCase):
         cancelar_producao_composicao(
             producao=producao,
             usuario=self.usuario,
-            motivo="Cancelar producao identificada",
+            motivo="Cancelar produção identificada",
         )
         lote_final.refresh_from_db()
         lote_homonimo.refresh_from_db()
@@ -2220,7 +2220,7 @@ class RastreioLoteEstoqueTests(TestCase):
     def test_desmembramento_exige_lote_somente_no_destino_controlado(self):
         destino = Produto.objects.create(
             codigo_barras="7896345678966",
-            nome="Destino com lote obrigatorio",
+            nome="Destino com lote obrigatório",
             categoria=self.categoria,
             preco_custo=Decimal("0.00"),
             preco_venda=Decimal("3.00"),
@@ -2228,7 +2228,7 @@ class RastreioLoteEstoqueTests(TestCase):
         )
         self._entrada_lote("ORIGEM-OBRIG-01", "2.000", date(2026, 9, 30), "5.00")
 
-        with self.assertRaisesMessage(ValidationError, "destino Destino com lote obrigatorio exige lote"):
+        with self.assertRaisesMessage(ValidationError, "destino Destino com lote obrigatório exige lote"):
             confirmar_desmembramento_multidestino(
                 filial=self.filial,
                 produto_origem=self.produto,

@@ -6,7 +6,7 @@
 <header class="page-header">
   <div>
     <h1>{{ titulo }}</h1>
-    <p>Parametros usados na preparacao fiscal da loja.</p>
+    <p>Parametros usados na preparação fiscal da loja.</p>
   </div>
   <div class="actions">
     <a class="secondary-button" href="{% url 'fiscal:documentos' %}">Voltar</a>
@@ -40,13 +40,20 @@
         <div class="form-grid form-grid-inner">
           <label class="form-field"><span>{{ form.filial.label }}</span>{{ form.filial }}{{ form.filial.errors }}</label>
           <label class="form-field"><span>{{ form.ambiente.label }}</span>{{ form.ambiente }}{{ form.ambiente.errors }}</label>
-          <label class="form-field"><span>{{ form.regime_tributario.label }}</span>{{ form.regime_tributario }}{{ form.regime_tributario.errors }}</label>
+          <label class="form-field"><span>{{ form.regime_tributario.label }}</span>{{ form.regime_tributario }}{{ form.regime_tributario.errors }}<small>Descrição contábil, como Lucro Real ou Lucro Presumido.</small></label>
+          <label class="form-field"><span>{{ form.crt.label }}</span>{{ form.crt }}{{ form.crt.errors }}<small>Código oficial enviado no XML. Lucro Real e Presumido usam CRT 3.</small></label>
           <label class="toggle-field">{{ form.ativo }} <span>{{ form.ativo.label }}</span>{{ form.ativo.errors }}</label>
         </div>
       </section>
 
       <section class="form-section form-field-wide">
         <h2>NFC-e</h2>
+        {% if form.perfil_fiscal %}
+          <div class="form-note form-field-wide">
+            <strong>Perfil estadual detectado: {{ form.perfil_fiscal.nome }}</strong>
+            <span>Os endpoints oficiais são preenchidos por ambiente e validados antes da emissão. Fonte técnica: {{ form.perfil_fiscal.fonte }}.</span>
+          </div>
+        {% endif %}
         <div class="form-grid form-grid-inner">
           <label class="form-field"><span>{{ form.inscricao_estadual.label }}</span>{{ form.inscricao_estadual }}{{ form.inscricao_estadual.errors }}</label>
           <label class="form-field"><span>{{ form.csc_id.label }}</span>{{ form.csc_id }}{{ form.csc_id.errors }}</label>
@@ -72,18 +79,25 @@
           <label class="form-field"><span>{{ form.filial.label }}</span>{{ form.filial }}{{ form.filial.errors }}</label>
           <label class="form-field"><span>{{ form.tipo_documento.label }}</span>{{ form.tipo_documento }}{{ form.tipo_documento.errors }}</label>
           <label class="form-field"><span>{{ form.serie.label }}</span>{{ form.serie }}{{ form.serie.errors }}</label>
-          <label class="form-field"><span>{{ form.proximo_numero.label }}</span>{{ form.proximo_numero }}{{ form.proximo_numero.errors }}<small>O numero e reservado quando a NFC-e e preparada.</small></label>
+          <label class="form-field"><span>{{ form.proximo_numero.label }}</span>{{ form.proximo_numero }}{{ form.proximo_numero.errors }}<small>O número é reservado quando a NFC-e é preparada.</small></label>
           <label class="toggle-field">{{ form.ativo }} <span>{{ form.ativo.label }}</span>{{ form.ativo.errors }}</label>
         </div>
       </section>
     {% elif form.cfop and form.movimenta_estoque %}
       <section class="form-section form-field-wide">
-        <h2>Operacao fiscal</h2>
+        <h2>Operação fiscal</h2>
         <div class="form-grid form-grid-inner">
           <label class="form-field form-field-wide"><span>{{ form.descricao.label }}</span>{{ form.descricao }}{{ form.descricao.errors }}</label>
           <label class="form-field"><span>{{ form.cfop.label }}</span>{{ form.cfop }}{{ form.cfop.errors }}<small>Use CFOP com 4 digitos, como 5102.</small></label>
           <label class="form-field"><span>{{ form.tipo_documento.label }}</span>{{ form.tipo_documento }}{{ form.tipo_documento.errors }}</label>
           <label class="toggle-field">{{ form.movimenta_estoque }} <span>{{ form.movimenta_estoque.label }}</span>{{ form.movimenta_estoque.errors }}</label>
+          <div class="form-note form-field-wide">
+            <strong>Tratamento do IPI tributado</strong>
+            <span>Configure somente com orienta??o do contador. Sem confirma??o expl?cita, o emissor bloqueia CST de IPI tributado.</span>
+          </div>
+          <label class="toggle-field">{{ form.ipi_incluso_preco }} <span>{{ form.ipi_incluso_preco.label }}</span>{{ form.ipi_incluso_preco.errors }}</label>
+          <label class="toggle-field">{{ form.ipi_compoe_base_icms }} <span>{{ form.ipi_compoe_base_icms.label }}</span>{{ form.ipi_compoe_base_icms.errors }}</label>
+          <label class="toggle-field">{{ form.ipi_compoe_base_pis_cofins }} <span>{{ form.ipi_compoe_base_pis_cofins.label }}</span>{{ form.ipi_compoe_base_pis_cofins.errors }}</label>
           <label class="toggle-field">{{ form.ativo }} <span>{{ form.ativo.label }}</span>{{ form.ativo.errors }}</label>
         </div>
       </section>

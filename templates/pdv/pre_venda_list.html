@@ -14,7 +14,7 @@
 </header>
 
 <form method="get" class="toolbar">
-  <input type="search" name="q" value="{{ request.GET.q }}" placeholder="Buscar por numero ou cliente">
+  <input type="search" name="q" value="{{ request.GET.q }}" placeholder="Buscar por número ou cliente">
   <select name="status">
     <option value="">Todos os status</option>
     {% for value,label in status_choices %}

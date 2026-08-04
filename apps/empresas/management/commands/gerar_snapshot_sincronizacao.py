@@ -15,14 +15,14 @@ class Command(BaseCommand):
     def handle(self, *args, **options):
         empresa = Empresa.objects.filter(pk=options["empresa"]).first()
         if not empresa:
-            raise CommandError("Empresa nao encontrada.")
+            raise CommandError("Empresa não encontrada.")
 
         filial = None
         filial_id = options.get("filial")
         if filial_id:
             filial = Filial.objects.filter(pk=filial_id, empresa=empresa).first()
             if not filial:
-                raise CommandError("Filial nao encontrada para a empresa informada.")
+                raise CommandError("Filial não encontrada para a empresa informada.")
 
         try:
             resultado = gerar_carga_inicial_sincronizacao(

@@ -18,8 +18,9 @@ class SerieFiscalAdmin(admin.ModelAdmin):
 
 @admin.register(NaturezaOperacao)
 class NaturezaOperacaoAdmin(admin.ModelAdmin):
-    list_display = ["descricao", "cfop", "tipo_documento", "movimenta_estoque", "ativo"]
-    list_filter = ["tipo_documento", "ativo"]
+    list_display = ["empresa", "descricao", "cfop", "tipo_documento", "padrao", "movimenta_estoque", "ativo"]
+    list_filter = ["empresa", "tipo_documento", "padrao", "ativo"]
+    search_fields = ["empresa__nome_fantasia", "empresa__razao_social", "descricao", "cfop"]
 
 
 @admin.register(DocumentoFiscal)

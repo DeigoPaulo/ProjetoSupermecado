@@ -17,7 +17,7 @@ class Command(BaseCommand):
                 "nome_fantasia": "Supermercado Modelo",
                 "telefone": "(00) 0000-0000",
                 "email": "contato@supermercado.local",
-                "endereco": "Endereco de exemplo",
+                "endereco": "Endereço de exemplo",
                 "regime_tributario": "Simples Nacional",
             },
         )
@@ -46,14 +46,14 @@ class Command(BaseCommand):
         ]:
             Categoria.all_objects.get_or_create(nome=nome, defaults={"descricao": ""})
 
-        for nome in ["Marca propria", "Sem marca", "Fornecedor local"]:
+        for nome in ["Marca própria", "Sem marca", "Fornecedor local"]:
             Marca.all_objects.get_or_create(nome=nome)
 
         formas = [
             ("Dinheiro", "DINHEIRO", True, False),
             ("Pix", "PIX", False, False),
-            ("Cartao de debito", "DEBITO", False, True),
-            ("Cartao de credito", "CREDITO", False, True),
+            ("Cartão de débito", "DEBITO", False, True),
+            ("Cartão de crédito", "CREDITO", False, True),
             ("Crediario", "CREDIARIO", False, True),
         ]
         for nome, tipo, permite_troco, exige_autorizacao in formas:

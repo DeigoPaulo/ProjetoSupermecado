@@ -28,7 +28,7 @@
 </section>
 
 <form method="get" class="toolbar">
-  <input type="search" name="q" value="{{ request.GET.q }}" placeholder="Produto, codigo de barras ou lote">
+  <input type="search" name="q" value="{{ request.GET.q }}" placeholder="Produto, código de barras ou lote">
   <select name="situacao">
     <option value="">Todas as camadas</option>
     <option value="COM_SALDO" {% if request.GET.situacao == "COM_SALDO" %}selected{% endif %}>Com saldo</option>

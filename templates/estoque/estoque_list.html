@@ -17,12 +17,12 @@
   </div>
 </header>
 <form method="get" class="toolbar">
-  <input type="search" name="q" value="{{ request.GET.q }}" placeholder="Buscar produto ou codigo">
+  <input type="search" name="q" value="{{ request.GET.q }}" placeholder="Buscar produto ou código">
   <button type="submit">Buscar</button>
 </form>
 <div class="panel">
   <table>
-    <thead><tr><th>Produto</th><th>Filial</th><th>Fisico</th><th>Reservado</th><th>Disponivel</th><th>Atualizado</th></tr></thead>
+    <thead><tr><th>Produto</th><th>Filial</th><th>Físico</th><th>Reservado</th><th>Disponível</th><th>Atualizado</th></tr></thead>
     <tbody>
       {% for estoque in estoques %}
         <tr>

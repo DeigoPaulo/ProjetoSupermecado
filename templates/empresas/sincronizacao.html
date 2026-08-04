@@ -32,6 +32,13 @@
 </section>
 
 <section class="metrics-grid">
+  <article class="metric"><span>Lançamentos financeiros</span><strong>{{ total_lancamentos_financeiros_sincronizados }}</strong></article>
+  <article class="metric"><span>Entradas</span><strong>R$ {{ total_entradas_financeiras_sincronizadas|floatformat:2 }}</strong></article>
+  <article class="metric"><span>Saídas</span><strong>R$ {{ total_saidas_financeiras_sincronizadas|floatformat:2 }}</strong></article>
+  <article class="metric"><span>Resultado</span><strong>R$ {{ resultado_financeiro_sincronizado|floatformat:2 }}</strong></article>
+</section>
+
+<section class="metrics-grid">
   <article class="metric"><span>Fila saída mais antiga</span><strong>{{ diagnostico_operacional.filas.saida.idade_mais_antigo_minutos }} min</strong></article>
   <article class="metric"><span>Saída esgotada</span><strong>{{ diagnostico_operacional.filas.saida.esgotados }}</strong></article>
   <article class="metric"><span>Saída pausada</span><strong>{{ diagnostico_operacional.filas.saida.pausados }}</strong></article>
@@ -44,13 +51,13 @@
   <article class="metric"><span>Nuvem produtos/estoque</span><strong>{{ diagnostico_operacional.empresas.politica_remoto_produtos_estoque }}</strong></article>
   <article class="metric"><span>Loja produtos/estoque</span><strong>{{ diagnostico_operacional.empresas.politica_local_produtos_estoque }}</strong></article>
   <article class="metric"><span>Empresas filtradas</span><strong>{{ diagnostico_operacional.empresas.total_ativas }}</strong></article>
-  <article class="metric"><span>Prontidao sync</span><strong>{{ diagnostico_operacional.prontidao.percentual }}%</strong></article>
+  <article class="metric"><span>Prontidão sync</span><strong>{{ diagnostico_operacional.prontidao.percentual }}%</strong></article>
 </section>
 
 <section class="operation-notice {% if diagnostico_operacional.prontidao.bloqueios %}operation-notice-warning{% endif %}">
   <i class="fa-solid fa-network-wired"></i>
   <div>
-    <strong>Prontidao da sincronizacao: {{ diagnostico_operacional.prontidao.status }}</strong>
+    <strong>Prontidão da sincronização: {{ diagnostico_operacional.prontidao.status }}</strong>
     <span>{{ diagnostico_operacional.prontidao.proximo_passo }} Contrato {{ diagnostico_operacional.prontidao.contrato }}.</span>
   </div>
 </section>
@@ -59,7 +66,7 @@
   <i class="fa-solid fa-stethoscope"></i>
   <div>
     <strong>Status operacional da sincronizacao</strong>
-    <span>{% if diagnostico_operacional.operacao.alertas %}{{ diagnostico_operacional.operacao.alertas|length }} alerta(s) ativo(s). Veja o diagnostico JSON para suporte.{% else %}Nenhum atraso ou bloqueio critico detectado no filtro atual.{% endif %}</span>
+    <span>{% if diagnostico_operacional.operacao.alertas %}{{ diagnostico_operacional.operacao.alertas|length }} alerta(s) ativo(s). Veja o diagnóstico JSON para suporte.{% else %}Nenhum atraso ou bloqueio crítico detectado no filtro atual.{% endif %}</span>
   </div>
 </section>
 
@@ -67,7 +74,7 @@
   <i class="fa-solid fa-arrows-rotate"></i>
   <div>
     <strong>Cada evento possui chave idempotente.</strong>
-    <span>Uma repeticao de rede nao deve duplicar vendas, produtos ou movimentacoes no destino.</span>
+    <span>Uma repetição de rede não deve duplicar vendas, produtos ou movimentações no destino.</span>
   </div>
 </section>
 
@@ -145,6 +152,7 @@
   <button type="submit" class="primary-button"><i class="fa-solid fa-filter"></i> Filtrar</button>
   <a class="secondary-button" href="{% url 'empresas:vendas_sincronizadas_csv' %}?{{ request.GET.urlencode }}"><i class="fa-solid fa-file-csv"></i> Vendas CSV</a>
   <a class="secondary-button" href="{% url 'empresas:documentos_fiscais_sincronizados_csv' %}?{{ request.GET.urlencode }}"><i class="fa-solid fa-file-csv"></i> Fiscal CSV</a>
+  <a class="secondary-button" href="{% url 'empresas:lancamentos_financeiros_sincronizados_csv' %}?{{ request.GET.urlencode }}"><i class="fa-solid fa-file-csv"></i> Financeiro CSV</a>
   <a class="secondary-button" href="{% url 'empresas:eventos_sincronizacao_csv' %}?{{ request.GET.urlencode }}"><i class="fa-solid fa-file-csv"></i> Saida CSV</a>
   <a class="secondary-button" href="{% url 'empresas:eventos_entrada_sincronizacao_csv' %}?{{ request.GET.urlencode }}"><i class="fa-solid fa-file-csv"></i> Entrada CSV</a>
   <a class="secondary-button" href="{% url 'empresas:sincronizacao_diagnostico' %}?{{ request.GET.urlencode }}"><i class="fa-solid fa-code"></i> Diagnóstico JSON</a>
@@ -180,7 +188,7 @@
   <div class="panel-title">Documentos fiscais sincronizados</div>
   <div class="table-wrap">
     <table>
-      <thead><tr><th>Documento</th><th>Empresa / filial</th><th>Venda</th><th>Status</th><th>Total</th><th>Emissao</th><th>Chave</th></tr></thead>
+      <thead><tr><th>Documento</th><th>Empresa / filial</th><th>Venda</th><th>Status</th><th>Total</th><th>Emissão</th><th>Chave</th></tr></thead>
       <tbody>
         {% for documento in documentos_fiscais_sincronizados %}
           <tr>
@@ -203,7 +211,32 @@
 </section>
 
 <section class="panel table-panel">
-  <div class="panel-title">Saida local para nuvem</div>
+  <div class="panel-title">Livro financeiro sincronizado para retaguarda</div>
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>Data</th><th>Lançamento</th><th>Empresa / filial</th><th>Tipo / origem</th><th>Descrição</th><th>Classificação</th><th>Valor</th></tr></thead>
+      <tbody>
+        {% for lancamento in lancamentos_financeiros_sincronizados %}
+          <tr>
+            <td>{{ lancamento.data|date:"d/m/Y" }}<br><small>{{ lancamento.recebido_em|date:"d/m/Y H:i:s" }}</small></td>
+            <td><strong>#{{ lancamento.lancamento_externo_id }}</strong><br><small>{{ lancamento.usuario|default:"-" }}</small></td>
+            <td>{{ lancamento.empresa }}{% if lancamento.filial %}<br><small>{{ lancamento.filial.nome }}</small>{% endif %}</td>
+            <td><span class="status {% if lancamento.tipo == 'ENTRADA' %}status-success{% else %}status-danger{% endif %}">{{ lancamento.tipo }}</span><br><small>{{ lancamento.origem|default:"-" }}</small></td>
+            <td>{{ lancamento.descricao|default:"-" }}{% if lancamento.estorno_de_externo_id %}<br><small>Estorno de #{{ lancamento.estorno_de_externo_id }}</small>{% endif %}</td>
+            <td>{{ lancamento.conta_movimento|default:"-" }}<br><small>{{ lancamento.conta_contabil|default:lancamento.centro_custo|default:"Sem classificação" }}</small></td>
+            <td><strong>R$ {{ lancamento.valor|floatformat:2 }}</strong></td>
+          </tr>
+        {% empty %}
+          <tr><td colspan="7" class="empty">Nenhum lançamento financeiro sincronizado para a retaguarda.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% include "includes/pagination_named.html" with page_obj=lancamentos_financeiros_sincronizados %}
+</section>
+
+<section class="panel table-panel">
+  <div class="panel-title">Saída local para nuvem</div>
   <div class="table-wrap">
     <table>
       <thead><tr><th>Evento</th><th>Empresa / filial</th><th>Objeto</th><th>Status</th><th>Tentativas</th><th>Criado</th><th></th></tr></thead>

@@ -16,10 +16,11 @@
   {% if form.non_field_errors %}<div class="form-note form-note-danger">{{ form.non_field_errors }}</div>{% endif %}
 
   <section class="form-section form-field-wide">
-    <h2>Classificacao</h2>
+    <h2>Classificação</h2>
     <div class="form-grid form-grid-inner">
       <label class="form-field"><span>{{ form.tipo.label }}</span>{{ form.tipo }}{{ form.tipo.errors }}</label>
       <label class="form-field"><span>{{ form.categoria.label }}</span>{{ form.categoria }}{{ form.categoria.errors }}</label>
+      <label class="form-field"><span>{{ form.centro_custo.label }}</span>{{ form.centro_custo }}{{ form.centro_custo.errors }}</label>
       <label class="form-field form-field-wide"><span>{{ form.descricao.label }}</span>{{ form.descricao }}{{ form.descricao.errors }}</label>
     </div>
   </section>

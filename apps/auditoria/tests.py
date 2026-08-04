@@ -78,7 +78,7 @@ class AuditoriaEscopoEPaginacaoTests(TestCase):
         self.gerente = User.objects.create_user("gerente_auditoria", password="123")
         PerfilUsuario.objects.create(usuario=self.gerente, filial=self.filial, tipo=TipoPerfil.GERENTE)
         LogAuditoria.objects.bulk_create([
-            LogAuditoria(usuario=self.admin, modulo="teste", acao=f"ACAO_PROPRIA_{i:02d}", descricao="Registro da empresa propria")
+            LogAuditoria(usuario=self.admin, modulo="teste", acao=f"ACAO_PROPRIA_{i:02d}", descricao="Registro da empresa pr?pria")
             for i in range(55)
         ])
         LogAuditoria.objects.create(usuario=self.outro_admin, modulo="teste", acao="ACAO_ESTRANGEIRA", descricao="Registro de outra empresa")

@@ -11,26 +11,132 @@
 </header>
 <form method="post" enctype="multipart/form-data" class="form-grid panel">
   {% csrf_token %}
+  <div class="form-note form-field-wide">
+    <strong>Cadastro central do produto.</strong>
+    <span>Salve uma vez: os PDVs ligados a este servidor usam a alteracao imediatamente e instalações híbridas recebem a atualização automática.</span>
+  </div>
   {% if form.non_field_errors %}<div class="form-note form-note-danger">{{ form.non_field_errors }}</div>{% endif %}
 
   <section class="form-section form-field-wide">
-    <h2>Identificacao</h2>
+    <h2>Identificação</h2>
     <div class="form-grid form-grid-inner">
       <label class="form-field"><span>{{ form.nome.label }}</span>{{ form.nome }}{{ form.nome.errors }}</label>
       <label class="form-field"><span>{{ form.codigo_barras.label }}</span>{{ form.codigo_barras }}{{ form.codigo_barras.errors }}</label>
-      <label class="form-field"><span>{{ form.codigo_interno.label }}</span>{{ form.codigo_interno }}{{ form.codigo_interno.errors }}</label>
-      <label class="form-field"><span>{{ form.categoria.label }}</span>{{ form.categoria }}{{ form.categoria.errors }}</label>
+      <label class="form-field">
+        <span>{{ form.codigo_interno.label }}</span>
+        {% if object %}
+          {{ form.codigo_interno }}
+        {% else %}
+          <span class="field-with-icon-action">
+            {{ form.codigo_interno }}
+            <button class="icon-button" type="button" data-product-code-generator data-url="{% url 'produtos:proximo_codigo_interno' %}" title="Gerar próximo código interno" aria-label="Gerar próximo código interno">
+              <i class="fa-solid fa-plus"></i>
+            </button>
+          </span>
+        {% endif %}
+        {{ form.codigo_interno.errors }}
+        {% if not object %}<small data-product-code-feedback>Deixe vazio para gerar automaticamente ao salvar.</small>{% endif %}
+      </label>
+      <label class="form-field"><span>{{ form.tipo_produto.label }}</span>{{ form.tipo_produto }}{{ form.tipo_produto.errors }}</label>
+      <label class="form-field"><span>Classificação comercial</span>{{ form.categoria }}{{ form.categoria.errors }}<small>Selecione o nível mais específico disponível.</small></label>
       <label class="form-field"><span>{{ form.marca.label }}</span>{{ form.marca }}{{ form.marca.errors }}</label>
-      <label class="form-field"><span>{{ form.unidade.label }}</span>{{ form.unidade }}{{ form.unidade.errors }}</label>
       <label class="form-field form-field-wide"><span>{{ form.descricao.label }}</span>{{ form.descricao }}{{ form.descricao.errors }}</label>
     </div>
   </section>
 
   <section class="form-section form-field-wide">
-    <h2>Precos e estoque</h2>
+    <h2>Unidades, embalagens e códigos</h2>
     <div class="form-grid form-grid-inner">
-      <label class="form-field"><span>{{ form.preco_custo.label }}</span>{{ form.preco_custo }}{{ form.preco_custo.errors }}</label>
-      <label class="form-field"><span>{{ form.preco_venda.label }}</span>{{ form.preco_venda }}{{ form.preco_venda.errors }}</label>
+      <label class="form-field"><span>Unidade base do estoque</span>{{ form.unidade }}{{ form.unidade.errors }}<small>Unidade usada no saldo e na venda.</small></label>
+      <label class="form-field"><span>{{ form.unidade_compra.label }}</span>{{ form.unidade_compra }}{{ form.unidade_compra.errors }}</label>
+      <label class="form-field"><span>{{ form.fator_conversao_compra.label }}</span>{{ form.fator_conversao_compra }}{{ form.fator_conversao_compra.errors }}<small>Ex.: caixa com 12 unidades = 12.</small></label>
+      <label class="form-field"><span>{{ form.peso_liquido.label }}</span>{{ form.peso_liquido }}{{ form.peso_liquido.errors }}</label>
+      <label class="form-field"><span>{{ form.peso_bruto.label }}</span>{{ form.peso_bruto }}{{ form.peso_bruto.errors }}</label>
+      <div class="form-note form-field-wide">
+        <strong>EAN principal e apresentações comerciais.</strong>
+        <span>O código principal representa a unidade base. Abaixo, cadastre pacote, fardo ou caixa e informe quantas unidades base cada leitura adiciona ao PDV.</span>
+      </div>
+      <div class="product-codes-editor form-field-wide">
+        <h3>Códigos de barras adicionais</h3>
+        {{ codigos_formset.management_form }}
+        {% if codigos_formset.non_form_errors %}<div class="form-note form-note-danger">{{ codigos_formset.non_form_errors }}</div>{% endif %}
+        <div class="product-codes-grid">
+          {% for codigo_form in codigos_formset %}
+            <div class="product-code-item">
+              {{ codigo_form.id }}
+              <label class="form-field"><span>EAN / código</span>{{ codigo_form.codigo }}{{ codigo_form.codigo.errors }}</label>
+              <label class="form-field"><span>Apresentação</span>{{ codigo_form.tipo }}{{ codigo_form.tipo.errors }}</label>
+              <label class="form-field"><span>Quantidade na unidade base</span>{{ codigo_form.fator_conversao }}{{ codigo_form.fator_conversao.errors }}</label>
+              <label class="toggle-field">{{ codigo_form.permite_venda }} <span>Usar no PDV</span></label>
+              <label class="toggle-field">{{ codigo_form.is_active }} <span>Ativo</span></label>
+              {% if codigo_form.instance.pk %}<label class="toggle-field product-code-delete">{{ codigo_form.DELETE }} <span>Remover código</span></label>{% endif %}
+            </div>
+          {% endfor %}
+        </div>
+      </div>
+    </div>
+  </section>
+  <section class="form-section form-field-wide">
+    <div class="form-section-header">
+      <div>
+        <h2>Balança e PLU</h2>
+        <p>Configuração por empresa para balanças de checkout ou etiquetadoras.</p>
+      </div>
+      <a class="secondary-button" href="{% url 'produtos:setor_balanca_novo' %}"><i class="fa-solid fa-plus"></i> Novo setor</a>
+    </div>
+    <div class="form-note form-field-wide">
+      <strong>PLU não substitui o EAN.</strong>
+      <span>O PLU identifica o produto dentro do setor da balança. Tara e validade seguem para a configuração e impressão de etiquetas do equipamento.</span>
+    </div>
+    {{ balanca_formset.management_form }}
+    {% if balanca_formset.non_form_errors %}<div class="form-note form-note-danger">{{ balanca_formset.non_form_errors }}</div>{% endif %}
+    <div class="product-codes-grid form-field-wide">
+      {% for balanca_form in balanca_formset %}
+        <div class="product-code-item">
+          {{ balanca_form.id }}
+          <label class="form-field"><span>Setor de balança</span>{{ balanca_form.setor }}{{ balanca_form.setor.errors }}</label>
+          <label class="form-field"><span>{{ balanca_form.plu.label }}</span>{{ balanca_form.plu }}{{ balanca_form.plu.errors }}</label>
+          <label class="form-field"><span>{{ balanca_form.tara_kg.label }}</span>{{ balanca_form.tara_kg }}{{ balanca_form.tara_kg.errors }}</label>
+          <label class="form-field"><span>{{ balanca_form.validade_dias.label }}</span>{{ balanca_form.validade_dias }}{{ balanca_form.validade_dias.errors }}</label>
+          <label class="toggle-field">{{ balanca_form.is_active }} <span>Ativo</span></label>
+          {% if balanca_form.instance.pk %}<label class="toggle-field product-code-delete">{{ balanca_form.DELETE }} <span>Remover configuração</span></label>{% endif %}
+        </div>
+      {% endfor %}
+    </div>
+  </section>
+  <section class="form-section form-field-wide">
+    <h2>Fornecedores do produto</h2>
+    <div class="form-note form-field-wide">
+      <strong>Cadastro no mesmo lugar.</strong>
+      <span>Vincule os fornecedores que comercializam este item, o código usado por cada um e o último custo cotado. A lista respeita a empresa do usuário.</span>
+    </div>
+    {{ fornecedores_formset.management_form }}
+    {% if fornecedores_formset.non_form_errors %}<div class="form-note form-note-danger">{{ fornecedores_formset.non_form_errors }}</div>{% endif %}
+    <div class="product-codes-grid form-field-wide">
+      {% for fornecedor_form in fornecedores_formset %}
+        <div class="product-code-item">
+          {{ fornecedor_form.id }}
+          <label class="form-field"><span>Fornecedor</span>{{ fornecedor_form.fornecedor }}{{ fornecedor_form.fornecedor.errors }}</label>
+          <label class="form-field"><span>{{ fornecedor_form.codigo_no_fornecedor.label }}</span>{{ fornecedor_form.codigo_no_fornecedor }}{{ fornecedor_form.codigo_no_fornecedor.errors }}</label>
+          <label class="form-field"><span>{{ fornecedor_form.ultimo_custo.label }}</span><span class="money-input"><span>R$</span>{{ fornecedor_form.ultimo_custo }}</span>{{ fornecedor_form.ultimo_custo.errors }}</label>
+          <label class="toggle-field">{{ fornecedor_form.principal }} <span>Principal</span></label>
+          <label class="toggle-field">{{ fornecedor_form.is_active }} <span>Ativo</span></label>
+          {% if fornecedor_form.instance.pk %}<label class="toggle-field product-code-delete">{{ fornecedor_form.DELETE }} <span>Remover vínculo</span></label>{% endif %}
+        </div>
+      {% endfor %}
+    </div>
+  </section>
+
+  <section class="form-section form-field-wide">
+    <h2>Preços e estoque</h2>
+    <div class="form-grid form-grid-inner">
+      <label class="form-field"><span>{{ form.preco_custo.label }}</span><span class="money-input"><span>R$</span>{{ form.preco_custo }}</span>{{ form.preco_custo.errors }}</label>
+      <label class="form-field"><span>{{ form.margem_desejada_percentual.label }}</span>{{ form.margem_desejada_percentual }}{{ form.margem_desejada_percentual.errors }}<small>Margem sobre o preço de venda, não simples acréscimo sobre o custo.</small></label>
+      <div class="form-note" data-margin-calculator>
+        <strong>Preço sugerido: <span data-suggested-price>{% if object.preco_venda_sugerido != None %}R$ {{ object.preco_venda_sugerido|floatformat:2 }}{% else %}informe custo e margem{% endif %}</span></strong>
+        <span>O cálculo é apenas uma sugestão e não altera automaticamente o preço de venda.</span>
+      </div>
+      <label class="form-field"><span>{{ form.preco_venda.label }}</span><span class="money-input"><span>R$</span>{{ form.preco_venda }}</span>{{ form.preco_venda.errors }}{% if object.margem_atual_percentual != None %}<small>Margem atual: {{ object.margem_atual_percentual|floatformat:2 }}%</small>{% endif %}</label>
       <label class="form-field"><span>{{ form.preco_promocional.label }}</span>{{ form.preco_promocional }}{{ form.preco_promocional.errors }}</label>
       <label class="form-field"><span>{{ form.estoque_minimo.label }}</span>{{ form.estoque_minimo }}{{ form.estoque_minimo.errors }}</label>
     </div>
@@ -81,11 +187,57 @@
     </div>
   </section>
 
+  <details class="form-section form-field-wide product-optional-section">
+    <summary>
+      <span><strong>Nutrição e produtos similares</strong><small>Opcional. Preencha para alimentos embalados, marketplace e sugestões de substituição.</small></span>
+      <i class="fa-solid fa-chevron-down" aria-hidden="true"></i>
+    </summary>
+    <div class="form-grid form-grid-inner product-optional-content">
+      <label class="form-field form-field-wide">
+        <span>{{ form.produtos_similares.label }}</span>
+        {{ form.produtos_similares }}
+        {{ form.produtos_similares.errors }}
+        <small>Pesquise alternativas equivalentes. O vínculo é bidirecional e nunca substitui o item automaticamente no caixa.</small>
+      </label>
+      <div class="form-note form-field-wide">
+        <strong>Informação nutricional opcional no ERP.</strong>
+        <span>Use os valores oficiais fornecidos pelo fabricante. O sistema organiza os dados, mas não calcula nem valida responsabilidade técnica de rotulagem.</span>
+      </div>
+      {{ nutricao_formset.management_form }}
+      {% if nutricao_formset.non_form_errors %}<div class="form-note form-note-danger form-field-wide">{{ nutricao_formset.non_form_errors }}</div>{% endif %}
+      {% for nutricao_form in nutricao_formset %}
+        {{ nutricao_form.id }}
+        <label class="form-field"><span>{{ nutricao_form.base_calculo.label }}</span>{{ nutricao_form.base_calculo }}{{ nutricao_form.base_calculo.errors }}</label>
+        <label class="form-field"><span>{{ nutricao_form.porcao_quantidade.label }}</span>{{ nutricao_form.porcao_quantidade }}{{ nutricao_form.porcao_quantidade.errors }}</label>
+        <label class="form-field"><span>{{ nutricao_form.porcao_unidade.label }}</span>{{ nutricao_form.porcao_unidade }}{{ nutricao_form.porcao_unidade.errors }}</label>
+        <label class="form-field"><span>{{ nutricao_form.medida_caseira.label }}</span>{{ nutricao_form.medida_caseira }}{{ nutricao_form.medida_caseira.errors }}</label>
+        <label class="form-field"><span>{{ nutricao_form.porcoes_por_embalagem.label }}</span>{{ nutricao_form.porcoes_por_embalagem }}{{ nutricao_form.porcoes_por_embalagem.errors }}</label>
+        <div class="product-nutrition-grid form-field-wide">
+          <label class="form-field"><span>{{ nutricao_form.valor_energetico_kcal.label }}</span>{{ nutricao_form.valor_energetico_kcal }}{{ nutricao_form.valor_energetico_kcal.errors }}</label>
+          <label class="form-field"><span>{{ nutricao_form.carboidratos_g.label }}</span>{{ nutricao_form.carboidratos_g }}{{ nutricao_form.carboidratos_g.errors }}</label>
+          <label class="form-field"><span>{{ nutricao_form.acucares_totais_g.label }}</span>{{ nutricao_form.acucares_totais_g }}{{ nutricao_form.acucares_totais_g.errors }}</label>
+          <label class="form-field"><span>{{ nutricao_form.acucares_adicionados_g.label }}</span>{{ nutricao_form.acucares_adicionados_g }}{{ nutricao_form.acucares_adicionados_g.errors }}</label>
+          <label class="form-field"><span>{{ nutricao_form.proteinas_g.label }}</span>{{ nutricao_form.proteinas_g }}{{ nutricao_form.proteinas_g.errors }}</label>
+          <label class="form-field"><span>{{ nutricao_form.gorduras_totais_g.label }}</span>{{ nutricao_form.gorduras_totais_g }}{{ nutricao_form.gorduras_totais_g.errors }}</label>
+          <label class="form-field"><span>{{ nutricao_form.gorduras_saturadas_g.label }}</span>{{ nutricao_form.gorduras_saturadas_g }}{{ nutricao_form.gorduras_saturadas_g.errors }}</label>
+          <label class="form-field"><span>{{ nutricao_form.gorduras_trans_g.label }}</span>{{ nutricao_form.gorduras_trans_g }}{{ nutricao_form.gorduras_trans_g.errors }}</label>
+          <label class="form-field"><span>{{ nutricao_form.fibra_alimentar_g.label }}</span>{{ nutricao_form.fibra_alimentar_g }}{{ nutricao_form.fibra_alimentar_g.errors }}</label>
+          <label class="form-field"><span>{{ nutricao_form.sodio_mg.label }}</span>{{ nutricao_form.sodio_mg }}{{ nutricao_form.sodio_mg.errors }}</label>
+        </div>
+        <label class="form-field form-field-wide"><span>{{ nutricao_form.ingredientes.label }}</span>{{ nutricao_form.ingredientes }}{{ nutricao_form.ingredientes.errors }}</label>
+        <label class="form-field form-field-wide"><span>{{ nutricao_form.alergicos.label }}</span>{{ nutricao_form.alergicos }}{{ nutricao_form.alergicos.errors }}</label>
+        <label class="form-field"><span>{{ nutricao_form.gluten.label }}</span>{{ nutricao_form.gluten }}{{ nutricao_form.gluten.errors }}</label>
+        <label class="form-field"><span>{{ nutricao_form.lactose.label }}</span>{{ nutricao_form.lactose }}{{ nutricao_form.lactose.errors }}</label>
+        {% if nutricao_form.instance.pk %}<label class="toggle-field form-field-wide">{{ nutricao_form.DELETE }} <span>Remover informações nutricionais</span></label>{% endif %}
+      {% endfor %}
+    </div>
+  </details>
+
   <section class="form-section form-field-wide">
     <h2>Dados fiscais</h2>
     <div class="form-grid form-grid-inner">
-      <label class="form-field"><span>{{ form.ncm.label }}</span>{{ form.ncm }}{{ form.ncm.errors }}<small>Obrigatorio para NFC-e, com 8 digitos.</small></label>
-      <label class="form-field"><span>{{ form.cest.label }}</span>{{ form.cest }}{{ form.cest.errors }}<small>Use 7 digitos quando aplicavel.</small></label>
+      <label class="form-field"><span>{{ form.ncm.label }}</span>{{ form.ncm }}{{ form.ncm.errors }}<small>Obrigatório para NFC-e, com 8 dígitos.</small></label>
+      <label class="form-field"><span>{{ form.cest.label }}</span>{{ form.cest }}{{ form.cest.errors }}<small>Use 7 dígitos quando aplicável.</small></label>
       <label class="form-field"><span>{{ form.origem_mercadoria.label }}</span>{{ form.origem_mercadoria }}{{ form.origem_mercadoria.errors }}</label>
       <label class="form-field"><span>{{ form.cst_icms.label }}</span>{{ form.cst_icms }}{{ form.cst_icms.errors }}</label>
       <label class="form-field"><span>{{ form.csosn.label }}</span>{{ form.csosn }}{{ form.csosn.errors }}</label>
@@ -93,9 +245,58 @@
     </div>
   </section>
 
+  <details class="form-section form-field-wide product-optional-section">
+    <summary>
+      <span><i class="fa-solid fa-file-invoice"></i> Perfil fiscal avançado <small>Opcional</small></span>
+      <i class="fa-solid fa-chevron-down"></i>
+    </summary>
+    <div class="form-note">
+      <strong>Preencha conforme orientação do contador ou provedor fiscal.</strong>
+      <span>Estes dados são armazenados e sincronizados, mas somente entrarão no XML após a regra fiscal da empresa e do provedor estar homologada.</span>
+    </div>
+    <div class="form-grid form-grid-inner">
+      <label class="form-field"><span>{{ form.reducao_base_icms.label }}</span>{{ form.reducao_base_icms }}{{ form.reducao_base_icms.errors }}</label>
+      <label class="form-field"><span>{{ form.aliquota_fcp.label }}</span>{{ form.aliquota_fcp }}{{ form.aliquota_fcp.errors }}</label>
+      <label class="form-field"><span>{{ form.codigo_beneficio_fiscal.label }}</span>{{ form.codigo_beneficio_fiscal }}{{ form.codigo_beneficio_fiscal.errors }}<small>Código definido pela UF quando aplicável.</small></label>
+      <label class="form-field"><span>{{ form.cst_pis.label }}</span>{{ form.cst_pis }}{{ form.cst_pis.errors }}</label>
+      <label class="form-field"><span>{{ form.aliquota_pis.label }}</span>{{ form.aliquota_pis }}{{ form.aliquota_pis.errors }}</label>
+      <label class="form-field"><span>{{ form.cst_cofins.label }}</span>{{ form.cst_cofins }}{{ form.cst_cofins.errors }}</label>
+      <label class="form-field"><span>{{ form.aliquota_cofins.label }}</span>{{ form.aliquota_cofins }}{{ form.aliquota_cofins.errors }}</label>
+      <label class="form-field"><span>{{ form.cst_ipi.label }}</span>{{ form.cst_ipi }}{{ form.cst_ipi.errors }}<small>Opcional quando não houver incidência de IPI na saída.</small></label>
+      <label class="form-field"><span>{{ form.codigo_enquadramento_ipi.label }}</span>{{ form.codigo_enquadramento_ipi }}{{ form.codigo_enquadramento_ipi.errors }}<small>Obrigatório quando o CST IPI for informado.</small></label>
+      <label class="form-field"><span>{{ form.aliquota_ipi.label }}</span>{{ form.aliquota_ipi }}{{ form.aliquota_ipi.errors }}</label>
+      <label class="form-field"><span>{{ form.cst_ibs_cbs.label }}</span>{{ form.cst_ibs_cbs }}{{ form.cst_ibs_cbs.errors }}<small>Use a tabela vigente indicada pelo provedor.</small></label>
+      <label class="form-field"><span>{{ form.classificacao_tributaria_ibs_cbs.label }}</span>{{ form.classificacao_tributaria_ibs_cbs }}{{ form.classificacao_tributaria_ibs_cbs.errors }}</label>
+    </div>
+  </details>
+
   <div class="form-actions">
     <a class="secondary-button" href="{% url 'produtos:lista' %}">Cancelar</a>
     <button class="primary-button" type="submit">Salvar</button>
   </div>
 </form>
+{% endblock %}
+{% block extra_js %}
+<script>
+(function () {
+  const custo = document.getElementById("id_preco_custo");
+  const margem = document.getElementById("id_margem_desejada_percentual");
+  const saida = document.querySelector("[data-suggested-price]");
+  if (!custo || !margem || !saida) return;
+  const numero = (valor) => Number(String(valor || "").replace(",", "."));
+  const atualizar = () => {
+    const custoValor = numero(custo.value);
+    const margemValor = numero(margem.value);
+    if (!Number.isFinite(custoValor) || !Number.isFinite(margemValor) || margemValor < 0 || margemValor >= 100) {
+      saida.textContent = "informe custo e margem";
+      return;
+    }
+    const sugerido = custoValor / (1 - margemValor / 100);
+    saida.textContent = sugerido.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
+  };
+  custo.addEventListener("input", atualizar);
+  margem.addEventListener("input", atualizar);
+  atualizar();
+})();
+</script>
 {% endblock %}

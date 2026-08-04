@@ -89,14 +89,14 @@ executavel sera criado em `dist\DeigoPDV.exe`.
 O instalador MSI usa WiX Toolset v4. Para gerar um pacote de desenvolvimento:
 
 ```powershell
-.\build_msi.ps1 -Version 0.1.3
+.\build_msi.ps1 -Version 0.1.5
 ```
 
 Para producao, assine primeiro o executavel e exija a assinatura durante o
 empacotamento. O MSI tambem pode ser assinado no mesmo comando:
 
 ```powershell
-.\build_msi.ps1 -Version 0.1.3 `
+.\build_msi.ps1 -Version 0.1.5 `
   -RequireSignedExecutable `
   -CertificateThumbprint "CERTIFICADO_SHA1"
 ```
@@ -110,7 +110,7 @@ real e teste em uma maquina Windows limpa.
 Depois do build e da assinatura, publique o MSI:
 
 ```powershell
-.\publish_windows.ps1 -Version 0.1.3 -RequireSignature
+.\publish_windows.ps1 -Version 0.1.5 -RequireSignature
 ```
 
 O script prioriza o MSI da versao informada, confere o SHA-256 e publica o
@@ -118,5 +118,34 @@ arquivo de forma atomica em `artifacts\DeigoPDV.msi`, caminho padrao
 usado pelo ERP. O parametro `-Source` permite publicar um artefato especifico e
 `PDV_DESKTOP_INSTALLER_PATH` permite alterar o caminho no ambiente quando
 necessario.
+
+## Credencial NFC de supervisor
+
+O botao Ler cartao das operacoes protegidas usa a ponte readSupervisorCredential no aplicativo desktop. No Windows, o agente consulta leitores NFC compativeis com PC/SC por winscard.dll e solicita o UID pelo comando APDU padrao. O identificador segue diretamente para o formulario e nao e gravado em devices.log.jsonl.
+
+Se o leitor, cartao ou servico de Cartao Inteligente estiver indisponivel, o operador pode usar um leitor configurado como teclado ou informar login e senha. A liberacao continua sendo validada e auditada pelo servidor; o UID bruto nunca deve ser usado como senha ou registrado em suporte.
+
+## Deploy do instalador no servidor
+
+O servidor web nao executa nem recompila o MSI. Gere o pacote em uma maquina Windows e transfira estes dois arquivos para o diretorio de artefatos da aplicacao:
+
+- `artifacts/DeigoPDV.msi`
+- `artifacts/DeigoPDV.msi.version.json`
+
+No ambiente do servidor, mantenha `PDV_DESKTOP_VERSION` igual a versao publicada e aponte `PDV_DESKTOP_INSTALLER_PATH` para o caminho absoluto do MSI. Exemplo Linux:
+
+```env
+PDV_DESKTOP_VERSION=0.1.5
+PDV_DESKTOP_INSTALLER_PATH=/srv/deigo-varejo/artifacts/DeigoPDV.msi
+PDV_DESKTOP_REQUIRE_SIGNED_INSTALLER=false
+```
+
+A ultima opcao deve permanecer `true` em producao depois da contratacao do certificado de assinatura. O usuario do Gunicorn, Uvicorn ou servico Windows precisa de permissao de leitura no MSI e no manifesto. Em Docker, monte o diretorio `artifacts` como volume persistente somente leitura. Reinicie os processos Django depois de alterar a versao ou o caminho.
+
+Nunca compile o PDV no servidor Linux. O build deve rodar no Windows com `build_windows.ps1`, `build_msi.ps1` e `publish_windows.ps1`; o resultado publicado e entao enviado ao servidor ou ao armazenamento de releases.
 O empacotamento Windows sera feito a partir deste projeto separado. O ERP web
 continua sendo a fonte unica da interface, dos atalhos e das regras de venda.
+
+## Encerramento pelo teclado
+
+No aplicativo instalado, `Ctrl+Q` solicita o encerramento em qualquer tela carregada pelo shell desktop. O sistema pede confirmação antes de fechar porque formulários e operações ainda não salvas serão descartados. O atalho também funciona na ativação inicial e na contingência sem conexão; no navegador comum, o ERP não intercepta esse comando.

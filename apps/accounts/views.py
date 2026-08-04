@@ -1,25 +1,33 @@
-from django.conf import settings
 from django.contrib import messages
 from django.contrib.auth.decorators import login_required
 from django.contrib.auth.mixins import LoginRequiredMixin
 from django.contrib.auth.models import User
-from django.db.models import Q
+from django.db.models import Count, Q
+from django.core.paginator import Paginator
 from django.http import JsonResponse
 from django.shortcuts import get_object_or_404, redirect, render
+from django.views.decorators.http import require_POST
 from django.views.generic import ListView
 
+from apps.auditoria.models import LogAuditoria
 from apps.empresas.models import Filial
 
-from .forms import UsuarioPerfilForm
-from .models import TipoPerfil
+from .forms import CredencialAutorizacaoForm, PoliticaPinSupervisorForm, UsuarioPerfilForm
+from .models import CredencialAutorizacao, TipoPerfil
 from .permissions import SISTEMA, RoleRequiredMixin, role_required
+from .services import diagnostico_prontidao_recuperacao_senha
 
 
-def _empresa_id_do_usuario(user):
+def _empresa_do_usuario(user):
     if user.is_superuser:
         return None
     perfil = getattr(user, "perfil_supermercado", None)
-    return perfil.filial.empresa_id if perfil and perfil.is_active and perfil.filial_id else 0
+    return perfil.filial.empresa if perfil and perfil.is_active and perfil.filial_id else None
+
+
+def _empresa_id_do_usuario(user):
+    empresa = _empresa_do_usuario(user)
+    return empresa.pk if empresa else (None if user.is_superuser else 0)
 
 
 def _usuarios_visiveis(user):
@@ -38,6 +46,31 @@ def _filiais_permitidas(user):
     if user.is_superuser:
         return queryset
     return queryset.filter(empresa_id=_empresa_id_do_usuario(user))
+
+
+def _credenciais_visiveis(user):
+    queryset = CredencialAutorizacao.objects.select_related(
+        "usuario", "usuario__perfil_supermercado", "usuario__perfil_supermercado__filial"
+    )
+    if user.is_superuser:
+        return queryset
+    return queryset.filter(
+        usuario__is_superuser=False,
+        usuario__perfil_supermercado__is_active=True,
+        usuario__perfil_supermercado__filial__empresa_id=_empresa_id_do_usuario(user),
+    )
+
+
+def _supervisores_permitidos(user):
+    queryset = _usuarios_visiveis(user).filter(is_active=True)
+    if user.is_superuser:
+        return queryset.filter(
+            Q(is_superuser=True)
+            | Q(perfil_supermercado__is_active=True, perfil_supermercado__tipo__in=[TipoPerfil.ADMINISTRADOR, TipoPerfil.GERENTE])
+        ).distinct().order_by("username")
+    return queryset.filter(
+        perfil_supermercado__tipo__in=[TipoPerfil.ADMINISTRADOR, TipoPerfil.GERENTE]
+    ).order_by("username")
 
 
 class UsuarioListView(LoginRequiredMixin, RoleRequiredMixin, ListView):
@@ -73,106 +106,96 @@ def usuario_form(request, pk=None):
         form = UsuarioPerfilForm(request.POST, **parametros_form)
         if form.is_valid():
             user = form.save()
-            messages.success(request, "Usuario salvo com sucesso.")
+            messages.success(request, "Usuário salvo com sucesso.")
             return redirect("accounts:usuario_editar", pk=user.pk)
     else:
         form = UsuarioPerfilForm(**parametros_form)
 
     return render(request, "accounts/usuario_form.html", {"form": form, "usuario_obj": usuario})
 
+
+@login_required
+@role_required(TipoPerfil.ADMINISTRADOR)
+def credenciais_autorizacao(request):
+    supervisores = _supervisores_permitidos(request.user)
+    empresa = _empresa_do_usuario(request.user)
+    acao_form = request.POST.get("acao_form", "") if request.method == "POST" else ""
+    politica_form = PoliticaPinSupervisorForm(instance=empresa) if empresa else None
+
+    if request.method == "POST" and acao_form == "politica_pin":
+        if not empresa:
+            messages.error(request, "Selecione a empresa antes de alterar a política de PIN.")
+            return redirect("accounts:credenciais_autorizacao")
+        politica_form = PoliticaPinSupervisorForm(request.POST, instance=empresa)
+        if politica_form.is_valid():
+            politica_form.save()
+            LogAuditoria.objects.create(
+                usuario=request.user,
+                modulo="accounts",
+                acao="ALTERA_POLITICA_PIN_SUPERVISOR",
+                descricao="Política de cartão e PIN das operações protegidas atualizada.",
+                objeto_tipo="Empresa",
+                objeto_id=str(empresa.pk),
+                ip=request.META.get("REMOTE_ADDR") or None,
+            )
+            messages.success(request, "Política de cartão e PIN atualizada.")
+            return redirect("accounts:credenciais_autorizacao")
+        form = CredencialAutorizacaoForm(usuarios_queryset=supervisores)
+    elif request.method == "POST":
+        form = CredencialAutorizacaoForm(request.POST, usuarios_queryset=supervisores)
+        if form.is_valid():
+            credencial = form.save(criada_por=request.user)
+            LogAuditoria.objects.create(
+                usuario=request.user,
+                modulo="accounts",
+                acao="CRIA_CREDENCIAL_AUTORIZACAO",
+                descricao=f"Credencial {credencial.nome} vinculada a {credencial.usuario.username}.",
+                objeto_tipo="CredencialAutorizacao",
+                objeto_id=str(credencial.pk),
+                ip=request.META.get("REMOTE_ADDR") or None,
+            )
+            messages.success(request, "Credencial cadastrada. O identificador original não foi armazenado.")
+            return redirect("accounts:credenciais_autorizacao")
+    else:
+        form = CredencialAutorizacaoForm(usuarios_queryset=supervisores)
+
+    queryset = _credenciais_visiveis(request.user).annotate(total_usos=Count("usos")).order_by(
+        "-ativa", "usuario__username", "nome"
+    )
+    pagina = Paginator(queryset, 50).get_page(request.GET.get("page"))
+    return render(
+        request,
+        "accounts/credenciais_autorizacao.html",
+        {
+            "form": form,
+            "politica_form": politica_form,
+            "page_obj": pagina,
+            "credenciais": pagina.object_list,
+        },
+    )
+
+
+@login_required
+@role_required(TipoPerfil.ADMINISTRADOR)
+@require_POST
+def credencial_autorizacao_revogar(request, pk):
+    credencial = get_object_or_404(_credenciais_visiveis(request.user), pk=pk)
+    if credencial.ativa:
+        credencial.revogar()
+        LogAuditoria.objects.create(
+            usuario=request.user,
+            modulo="accounts",
+            acao="REVOGA_CREDENCIAL_AUTORIZACAO",
+            descricao=f"Credencial {credencial.nome} de {credencial.usuario.username} revogada.",
+            objeto_tipo="CredencialAutorizacao",
+            objeto_id=str(credencial.pk),
+            ip=request.META.get("REMOTE_ADDR") or None,
+        )
+        messages.success(request, "Credencial revogada com sucesso.")
+    return redirect("accounts:credenciais_autorizacao")
+
 @login_required
 @role_required(TipoPerfil.ADMINISTRADOR)
 def recuperacao_senha_diagnostico(request):
-    backend = getattr(settings, "EMAIL_BACKEND", "")
-    smtp_backend = backend.endswith("smtp.EmailBackend")
-    console_backend = backend.endswith("console.EmailBackend")
-    locmem_backend = backend.endswith("locmem.EmailBackend")
-    host_configurado = bool(getattr(settings, "EMAIL_HOST", ""))
-    usuario_configurado = bool(getattr(settings, "EMAIL_HOST_USER", ""))
-    senha_configurada = bool(getattr(settings, "EMAIL_HOST_PASSWORD", ""))
-    remetente = getattr(settings, "DEFAULT_FROM_EMAIL", "")
-    remetente_configurado = bool(remetente and "@" in remetente)
-    tls = bool(getattr(settings, "EMAIL_USE_TLS", False))
-    ssl = bool(getattr(settings, "EMAIL_USE_SSL", False))
-    timeout = getattr(settings, "EMAIL_TIMEOUT", None)
-    porta = getattr(settings, "EMAIL_PORT", None)
-    alertas = []
-
-    if console_backend or locmem_backend:
-        alertas.append("Backend de desenvolvimento ativo; os e-mails nao saem para usuarios reais.")
-    if smtp_backend and not host_configurado:
-        alertas.append("SMTP sem host configurado.")
-    if smtp_backend and not remetente_configurado:
-        alertas.append("Remetente padrao invalido ou ausente.")
-    if smtp_backend and not usuario_configurado:
-        alertas.append("Usuario SMTP nao configurado; confirme se o provedor aceita envio sem autenticacao.")
-    if smtp_backend and usuario_configurado and not senha_configurada:
-        alertas.append("Senha SMTP ausente para o usuario configurado.")
-    if tls and ssl:
-        alertas.append("TLS e SSL estao ativos ao mesmo tempo; escolha apenas uma opcao conforme o provedor.")
-
-    pronto_producao = smtp_backend and host_configurado and remetente_configurado and not (tls and ssl)
-    if usuario_configurado:
-        pronto_producao = pronto_producao and senha_configurada
-
-    if console_backend or locmem_backend:
-        prontidao_status = "development_only"
-        prontidao_percentual = 55
-        bloqueios = ["Ative um backend SMTP para enviar mensagens a usuarios reais."]
-    elif not smtp_backend:
-        prontidao_status = "unsupported_backend"
-        prontidao_percentual = 35
-        bloqueios = ["Configure um backend SMTP suportado para a recuperacao de senha."]
-    elif not pronto_producao:
-        prontidao_status = "configuration_required"
-        prontidao_percentual = 70
-        bloqueios = list(alertas)
-    else:
-        prontidao_status = "ready_for_homologation"
-        prontidao_percentual = 90
-        bloqueios = []
-
-    recomendacoes = []
-    if pronto_producao:
-        recomendacoes.extend(
-            [
-                "Executar envio real de recuperacao para uma caixa de teste.",
-                "Validar SPF, DKIM, DMARC, remetente e entrega sem cair em spam.",
-            ]
-        )
-    payload = {
-        "contrato": "password_reset_email_v1",
-        "status": "ready_for_production" if pronto_producao else "needs_configuration",
-        "prontidao": {
-            "contrato": "password_reset_readiness_v1",
-            "status": prontidao_status,
-            "percentual": prontidao_percentual,
-            "configuracao_smtp_completa": pronto_producao,
-            "homologacao_real_pendente": pronto_producao,
-            "bloqueios": bloqueios,
-            "recomendacoes": recomendacoes,
-        },
-        "backend": {
-            "smtp": smtp_backend,
-            "console": console_backend,
-            "memoria_teste": locmem_backend,
-        },
-        "smtp": {
-            "host_configurado": host_configurado,
-            "porta": porta,
-            "usuario_configurado": usuario_configurado,
-            "senha_configurada": senha_configurada,
-            "tls": tls,
-            "ssl": ssl,
-            "timeout_segundos": timeout,
-        },
-        "remetente_configurado": remetente_configurado,
-        "seguranca": {
-            "resposta_publica_neutra": True,
-            "token_temporario_uso_unico": True,
-            "nao_expoe_credenciais": True,
-        },
-        "alertas": alertas,
-    }
-    return JsonResponse(payload)
+    return JsonResponse(diagnostico_prontidao_recuperacao_senha())
 

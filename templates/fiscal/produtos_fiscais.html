@@ -9,6 +9,8 @@
     <p>Conferencia dos campos tributarios exigidos antes de preparar NFC-e.</p>
   </div>
   <div class="actions">
+    <a class="secondary-button" href="{% url 'fiscal:produtos_fiscais_exportar_csv' %}?q={{ q|urlencode }}&filtro={{ filtro }}"><i class="fa-solid fa-file-export"></i> Exportar filtro</a>
+    <a class="secondary-button" href="{% url 'produtos:importar_csv' %}"><i class="fa-solid fa-file-csv"></i> Corrigir por CSV</a>
     <a class="secondary-button" href="{% url 'fiscal:documentos' %}">Voltar</a>
   </div>
 </header>
@@ -19,8 +21,26 @@
   <article class="metric"><span>Prontos</span><strong>{{ total_prontos }}</strong></article>
 </section>
 
+<section class="operation-notice">
+  <i class="fa-solid fa-shield-halved"></i>
+  <div>
+    <strong>Capacidade tributária do emissor local</strong>
+    <span>
+      Regime normal:
+      {% for cst in capacidade_tributaria.regime_normal.cst_suportados %}
+        <code>CST {{ cst }}</code>{% if not forloop.last %}, {% endif %}
+      {% endfor %}.
+      Simples Nacional:
+      {% for csosn in capacidade_tributaria.simples_nacional.csosn_suportados %}
+        <code>CSOSN {{ csosn }}</code>{% if not forloop.last %}, {% endif %}
+      {% endfor %}.
+      Demais códigos permanecem bloqueados para evitar XML ou tributação incompatível.
+    </span>
+  </div>
+</section>
+
 <form method="get" class="toolbar report-filter">
-  <label><span>Produto</span><input type="search" name="q" value="{{ q }}" placeholder="Nome ou codigo"></label>
+  <label><span>Produto</span><input type="search" name="q" value="{{ q }}" placeholder="Nome ou código"></label>
   <label>
     <span>Filtro</span>
     <select name="filtro">
@@ -45,7 +65,7 @@
           <th>Origem</th>
           <th>CST/CSOSN</th>
           <th>Aliquota</th>
-          <th>Situacao</th>
+          <th>Situação</th>
           <th></th>
         </tr>
       </thead>

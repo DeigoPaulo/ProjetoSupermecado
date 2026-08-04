@@ -23,7 +23,7 @@ def descriptografar(valor):
     try:
         return _fernet().decrypt(bytes(valor))
     except InvalidToken as exc:
-        raise ValidationError("Nao foi possivel abrir o certificado protegido. Verifique a chave fiscal do ambiente.") from exc
+        raise ValidationError("Não foi possível abrir o certificado protegido. Verifique a chave fiscal do ambiente.") from exc
 
 
 def _validade_certificado(conteudo, senha):
@@ -31,9 +31,9 @@ def _validade_certificado(conteudo, senha):
     try:
         _, certificado, _ = load_key_and_certificates(conteudo, senha_bytes)
     except Exception as exc:
-        raise ValidationError("Certificado A1 invalido ou senha incorreta.") from exc
+        raise ValidationError("Certificado A1 inválido ou senha incorreta.") from exc
     if not certificado:
-        raise ValidationError("O arquivo informado nao contem um certificado valido.")
+        raise ValidationError("O arquivo informado não contem um certificado valido.")
     validade = certificado.not_valid_after_utc
     return timezone.localtime(validade).date()
 
@@ -60,7 +60,7 @@ def salvar_certificado_a1(configuracao, arquivo, senha):
 
 def abrir_certificado_a1(configuracao):
     if not configuracao.certificado_configurado:
-        raise ValidationError("Certificado A1 nao configurado.")
+        raise ValidationError("Certificado A1 não configurado.")
     return (
         descriptografar(configuracao.certificado_a1_criptografado),
         descriptografar(configuracao.certificado_senha_criptografada).decode("utf-8"),
