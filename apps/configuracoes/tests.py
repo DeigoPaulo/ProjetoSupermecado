@@ -1401,7 +1401,7 @@ class ConfiguracoesOperacionaisTests(TestCase):
 
     def test_central_informa_quando_instalador_ainda_nao_foi_publicado(self):
         with tempfile.TemporaryDirectory() as pasta:
-            caminho = Path(pasta) / "DeigoPDV.exe"
+            caminho = Path(pasta) / "DeTecPDV.exe"
             with override_settings(PDV_DESKTOP_INSTALLER_PATH=caminho):
                 central = self.client.get("/configuracoes/pdv-desktop/")
                 manifest = self.client.get("/configuracoes/pdv-desktop/manifest.json")
@@ -1414,7 +1414,7 @@ class ConfiguracoesOperacionaisTests(TestCase):
     def test_admin_master_baixa_instalador_publicado_com_integridade_e_auditoria(self):
         conteudo = b"executavel-pdv-teste"
         with tempfile.TemporaryDirectory() as pasta:
-            caminho = Path(pasta) / "DeigoPDV.exe"
+            caminho = Path(pasta) / "DeTecPDV.exe"
             criar_artefato_pdv_teste(caminho, conteudo)
             with override_settings(PDV_DESKTOP_INSTALLER_PATH=caminho, PDV_DESKTOP_REQUIRE_SIGNED_INSTALLER=False):
                 central = self.client.get("/configuracoes/pdv-desktop/")
@@ -1437,7 +1437,7 @@ class ConfiguracoesOperacionaisTests(TestCase):
     def test_instalador_alterado_apos_publicacao_e_bloqueado(self):
         conteudo = b"msi-original"
         with tempfile.TemporaryDirectory() as pasta:
-            caminho = Path(pasta) / "DeigoPDV.msi"
+            caminho = Path(pasta) / "DeTecPDV.msi"
             criar_artefato_pdv_teste(caminho, conteudo)
             caminho.write_bytes(conteudo + b"-alterado")
             with override_settings(
@@ -1459,7 +1459,7 @@ class ConfiguracoesOperacionaisTests(TestCase):
     def test_producao_exige_assinaturas_validas_do_executavel_e_msi(self):
         conteudo = b"msi-sem-assinatura"
         with tempfile.TemporaryDirectory() as pasta:
-            caminho = Path(pasta) / "DeigoPDV.msi"
+            caminho = Path(pasta) / "DeTecPDV.msi"
             criar_artefato_pdv_teste(caminho, conteudo, assinado=False)
             with override_settings(
                 PDV_DESKTOP_INSTALLER_PATH=caminho,
@@ -1478,7 +1478,7 @@ class ConfiguracoesOperacionaisTests(TestCase):
         PerfilUsuario.objects.create(usuario=gerente, filial=self.filial, tipo=TipoPerfil.GERENTE)
         self.client.force_login(gerente)
         with tempfile.TemporaryDirectory() as pasta:
-            caminho = Path(pasta) / "DeigoPDV.exe"
+            caminho = Path(pasta) / "DeTecPDV.exe"
             caminho.write_bytes(b"arquivo")
             with override_settings(PDV_DESKTOP_INSTALLER_PATH=caminho):
                 response = self.client.get("/configuracoes/pdv-desktop/download/windows/")

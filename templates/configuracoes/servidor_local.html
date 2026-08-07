@@ -30,6 +30,16 @@
   </div>
 </section>
 
+{% if homologacao_status %}
+<section class="operation-notice {% if not homologacao_status.pronta %}operation-notice-warning{% endif %}">
+  <i class="fa-solid {% if homologacao_status.pronta %}fa-circle-check{% else %}fa-flask{% endif %}"></i>
+  <div>
+    <strong>{{ homologacao_status.titulo }}</strong>
+    <span>{{ homologacao_status.descricao }} Contrato {{ homologacao_status.contrato }}.</span>
+  </div>
+</section>
+{% endif %}
+
 <section class="metrics-grid">
   <article class="metric"><span>Contrato</span><strong>{{ payload.contrato }}</strong></article>
   <article class="metric"><span>Prontidão local</span><strong>{{ prontidao.percentual }}%</strong></article>
@@ -218,8 +228,8 @@
       <h2>Homologação em máquina limpa</h2>
       <p>Registre somente testes executados fora da estação de desenvolvimento e vincule o SHA-256 da evidência técnica.</p>
     </div>
-    <span class="status {% if resumo_homologacoes.aprovadas %}status-success{% else %}status-warning{% endif %}">
-      {{ resumo_homologacoes.aprovadas }} aprovada(s)
+    <span class="status {% if homologacao_status.pronta %}status-success{% else %}status-warning{% endif %}">
+      {{ homologacao_status.status|title }}
     </span>
   </div>
 
@@ -229,6 +239,14 @@
     <article class="metric"><span>Reprovadas</span><strong>{{ resumo_homologacoes.reprovadas }}</strong></article>
   </div>
 
+  <div class="operation-notice {% if homologacao_status.pronta %}operation-notice-success{% else %}operation-notice-warning{% endif %}">
+    <i class="fa-solid fa-terminal"></i>
+    <div>
+      <strong>Validação antes da publicação</strong>
+      <span>Versão analisada: <code>{{ homologacao_status.versao_vigente }}</code>. Execute <code>python manage.py verificar_homologacao_servidor_local --estrito</code> no instalador ou pipeline.</span>
+    </div>
+  </div>
+
   <form method="post" enctype="multipart/form-data" class="form-grid">
     {% csrf_token %}
     {% for field in formulario_homologacao %}
@@ -236,7 +254,7 @@
         {{ field }}
         {% for error in field.errors %}<small class="field-error form-field-full">{{ error }}</small>{% endfor %}
       {% else %}
-        <div class="{% if field.name == 'observacoes' %}form-field-full{% endif %}">
+        <div class="{% if field.name == 'observacoes' or field.name == 'itens_validados' %}form-field-full{% endif %}">
           {{ field.label_tag }}
           {{ field }}
           {% if field.help_text %}<small class="form-help">{{ field.help_text }}</small>{% endif %}
@@ -261,6 +279,7 @@
           <th>Versão</th>
           <th>Evidência</th>
           <th>Resultado</th>
+          <th>Testes</th>
           <th>Responsável</th>
         </tr>
       </thead>
@@ -278,10 +297,17 @@
               </span>
               {% if homologacao.observacoes %}<small class="d-block mt-1">{{ homologacao.observacoes }}</small>{% endif %}
             </td>
+            <td>
+              {% if homologacao.itens_validados_labels %}
+                <small>{{ homologacao.itens_validados_labels|join:", " }}</small>
+              {% else %}
+                <small class="text-muted">Não informado</small>
+              {% endif %}
+            </td>
             <td>{{ homologacao.registrada_por.username }}</td>
           </tr>
         {% empty %}
-          <tr><td colspan="7" class="empty">Nenhuma homologação em máquina limpa registrada.</td></tr>
+          <tr><td colspan="8" class="empty">Nenhuma homologação em máquina limpa registrada.</td></tr>
         {% endfor %}
       </tbody>
     </table>

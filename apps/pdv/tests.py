@@ -1721,6 +1721,8 @@ class PdvEntregaTests(TestCase):
         self.assertContains(resposta, 'data-client-search-url="/clientes/busca.json"')
         self.assertContains(resposta, 'aria-autocomplete="list"')
         self.assertContains(resposta, "Salvar cliente para pr")
+        self.assertContains(resposta, "Alt+S")
+        self.assertContains(resposta, "Espaço")
 
     def test_entrega_do_pdv_calcula_frete_com_politica_da_filial(self):
         politica = PoliticaEntrega.objects.create(

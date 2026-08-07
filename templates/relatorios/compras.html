@@ -27,7 +27,7 @@
 <section class="metrics-grid">
   <article class="metric"><span>Entradas</span><strong>{{ total_entradas }}</strong></article>
   <article class="metric"><span>Total comprado</span><strong>R$ {{ total_compras|floatformat:2 }}</strong></article>
-  <article class="metric"><span>Inicio</span><strong>{{ data_inicio|date:"d/m/Y" }}</strong></article>
+  <article class="metric"><span>Início</span><strong>{{ data_inicio|date:"d/m/Y" }}</strong></article>
   <article class="metric"><span>Fim</span><strong>{{ data_fim|date:"d/m/Y" }}</strong></article>
 </section>
 
@@ -46,7 +46,7 @@
             <td>R$ {{ entrada.total_produtos|floatformat:2 }}</td>
           </tr>
         {% empty %}
-          <tr><td colspan="5" class="empty">Nenhuma entrada finalizada no periodo.</td></tr>
+          <tr><td colspan="5" class="empty">Nenhuma entrada finalizada no período.</td></tr>
         {% endfor %}
       </tbody>
     </table>

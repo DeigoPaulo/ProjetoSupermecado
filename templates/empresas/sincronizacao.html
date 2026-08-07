@@ -1,11 +1,11 @@
 {% extends "base.html" %}
 
-{% block title %}Sincronizacao loja-nuvem{% endblock %}
+{% block title %}Sincronização loja-nuvem{% endblock %}
 
 {% block content %}
 <header class="page-header">
   <div>
-    <h1>Sincronizacao loja-nuvem</h1>
+    <h1>Sincronização loja-nuvem</h1>
     <p>Fila local resiliente para troca de dados por API, sem acesso direto ao banco da loja.</p>
   </div>
 </header>
@@ -65,7 +65,7 @@
 <section class="operation-notice {% if diagnostico_operacional.operacao.alertas %}operation-notice-warning{% endif %}">
   <i class="fa-solid fa-stethoscope"></i>
   <div>
-    <strong>Status operacional da sincronizacao</strong>
+    <strong>Status operacional da sincronização</strong>
     <span>{% if diagnostico_operacional.operacao.alertas %}{{ diagnostico_operacional.operacao.alertas|length }} alerta(s) ativo(s). Veja o diagnóstico JSON para suporte.{% else %}Nenhum atraso ou bloqueio crítico detectado no filtro atual.{% endif %}</span>
   </div>
 </section>
@@ -252,7 +252,7 @@
             <td>{% if evento.status == 'ERRO' %}<form method="post" action="{% url 'empresas:sincronizacao_reprocessar' evento.pk %}">{% csrf_token %}<button class="icon-button" type="submit" title="Reprocessar"><i class="fa-solid fa-rotate"></i></button></form>{% endif %}</td>
           </tr>
         {% empty %}
-          <tr><td colspan="7" class="empty">Nenhum evento aguardando sincronizacao.</td></tr>
+          <tr><td colspan="7" class="empty">Nenhum evento aguardando sincronização.</td></tr>
         {% endfor %}
       </tbody>
     </table>
@@ -278,7 +278,7 @@
             <td>{% if evento.status == 'ERRO' or evento.status == 'CONFLITO' %}<form method="post" action="{% url 'empresas:sincronizacao_entrada_reprocessar' evento.pk %}">{% csrf_token %}<button class="icon-button" type="submit" title="Reprocessar entrada"><i class="fa-solid fa-rotate"></i></button></form>{% endif %}</td>
           </tr>
         {% empty %}
-          <tr><td colspan="7" class="empty">Nenhum evento recebido pela entrada de sincronizacao.</td></tr>
+          <tr><td colspan="7" class="empty">Nenhum evento recebido pela entrada de sincronização.</td></tr>
         {% endfor %}
       </tbody>
     </table>

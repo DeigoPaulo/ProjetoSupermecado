@@ -52,7 +52,7 @@
 
 <section class="two-column">
   <div class="panel">
-    <div class="panel-title">Vendas do periodo</div>
+    <div class="panel-title">Vendas do período</div>
     <table>
       <thead><tr><th>ID</th><th>Data</th><th>Filial</th><th>Cliente</th><th>Operador</th><th>Total</th></tr></thead>
       <tbody>
@@ -66,7 +66,7 @@
             <td>R$ {{ venda.total_liquido|floatformat:2 }}</td>
           </tr>
         {% empty %}
-          <tr><td colspan="6" class="empty">Nenhuma venda finalizada no periodo.</td></tr>
+          <tr><td colspan="6" class="empty">Nenhuma venda finalizada no período.</td></tr>
         {% endfor %}
       </tbody>
     </table>
@@ -83,7 +83,7 @@
             <td>R$ {{ item.total|floatformat:2 }}</td>
           </tr>
         {% empty %}
-          <tr><td colspan="3" class="empty">Sem itens vendidos no periodo.</td></tr>
+          <tr><td colspan="3" class="empty">Sem itens vendidos no período.</td></tr>
         {% endfor %}
       </tbody>
     </table>

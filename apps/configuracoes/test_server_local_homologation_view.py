@@ -3,12 +3,16 @@ import json
 
 from django.contrib.auth.models import User
 from django.core.files.uploadedfile import SimpleUploadedFile
-from django.test import TestCase
+from django.test import TestCase, override_settings
 from django.urls import reverse
 
 from apps.accounts.models import PerfilUsuario, TipoPerfil
 from apps.auditoria.models import LogAuditoria
 
+from .homologation import (
+    CODIGOS_CRITICOS_HOMOLOGACAO_SERVIDOR_LOCAL,
+    diagnostico_homologacao_servidor_local,
+)
 from .models import HomologacaoServidorLocal, ResultadoHomologacaoServidor
 
 
@@ -86,6 +90,7 @@ class ServidorLocalHomologacaoViewTests(TestCase):
             "homologacao-sistema_operacional": "Windows Server 2022",
             "homologacao-versao_artefato": "1.0.0",
             "homologacao-resultado": ResultadoHomologacaoServidor.APROVADA,
+            "homologacao-itens_validados": list(CODIGOS_CRITICOS_HOMOLOGACAO_SERVIDOR_LOCAL),
             "homologacao-arquivo_evidencia": arquivos["json"],
             "homologacao-arquivo_sha256": arquivos["sha256"],
             "homologacao-observacoes": "Instalação, backup e restauração validados.",
@@ -139,6 +144,20 @@ class ServidorLocalHomologacaoViewTests(TestCase):
 
         self.assertEqual(response.status_code, 200)
         self.assertContains(response, "exige evidência com status liberável")
+        self.assertFalse(HomologacaoServidorLocal.objects.exists())
+
+
+    def test_aprovacao_exige_todos_os_testes_criticos(self):
+        self.client.force_login(self.superadmin)
+        dados, _ = self.payload()
+        dados["homologacao-itens_validados"] = ["INSTALACAO_LIMPA"]
+        response = self.client.post(self.url, dados)
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(
+            response,
+            "Uma aprovação exige todos os testes críticos da máquina limpa.",
+        )
         self.assertFalse(HomologacaoServidorLocal.objects.exists())
 
     def test_reprovacao_exige_observacao(self):
@@ -227,6 +246,8 @@ class ServidorLocalHomologacaoViewTests(TestCase):
         self.assertContains(response, "Máquina homologada")
         self.assertContains(response, "Evidência de aceite (JSON)")
         self.assertContains(response, "Checksum da evidência (SHA-256)")
+        self.assertContains(response, "Validação antes da publicação")
+        self.assertContains(response, "verificar_homologacao_servidor_local --estrito")
         self.assertContains(response, "Nenhuma homologação em máquina limpa registrada")
 
     def test_administrador_da_empresa_nao_visualiza_bloco_de_homologacao(self):
@@ -236,3 +257,78 @@ class ServidorLocalHomologacaoViewTests(TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertNotContains(response, "Homologação em máquina limpa")
         self.assertNotContains(response, 'name="homologacao-arquivo_evidencia"')
+
+
+class HomologacaoServidorLocalReadinessTests(TestCase):
+    def setUp(self):
+        self.superadmin = User.objects.create_superuser(
+            username="master_readiness",
+            email="readiness@example.com",
+            password="senha-forte",
+        )
+
+    def criar(self, versao, resultado):
+        return HomologacaoServidorLocal.objects.create(
+            maquina="SRV-TESTE",
+            sistema_operacional="Windows Server 2022",
+            versao_artefato=versao,
+            hash_evidencia=(versao + resultado).encode().hex().ljust(64, "0")[:64],
+            resultado=resultado,
+            itens_validados=(
+                list(CODIGOS_CRITICOS_HOMOLOGACAO_SERVIDOR_LOCAL)
+                if resultado == ResultadoHomologacaoServidor.APROVADA
+                else []
+            ),
+            registrada_por=self.superadmin,
+        )
+
+    @override_settings(LOCAL_SERVER_VERSION="1.2.0")
+    def test_sem_registro_permanece_pendente(self):
+        diagnostico = diagnostico_homologacao_servidor_local()
+
+        self.assertEqual(diagnostico["status"], "PENDENTE")
+        self.assertFalse(diagnostico["pronta"])
+
+    @override_settings(LOCAL_SERVER_VERSION="1.2.0")
+    def test_aprovacao_da_versao_vigente_libera_diagnostico(self):
+        self.criar("1.2.0", ResultadoHomologacaoServidor.APROVADA)
+
+        diagnostico = diagnostico_homologacao_servidor_local()
+
+        self.assertEqual(diagnostico["status"], "APROVADA")
+        self.assertTrue(diagnostico["pronta"])
+
+
+    @override_settings(LOCAL_SERVER_VERSION="1.2.0")
+    def test_aprovacao_antiga_sem_checklist_fica_incompleta(self):
+        HomologacaoServidorLocal.objects.create(
+            maquina="SRV-LEGADO",
+            sistema_operacional="Windows Server 2022",
+            versao_artefato="1.2.0",
+            hash_evidencia="f" * 64,
+            resultado=ResultadoHomologacaoServidor.APROVADA,
+            registrada_por=self.superadmin,
+        )
+
+        diagnostico = diagnostico_homologacao_servidor_local()
+
+        self.assertEqual(diagnostico["status"], "INCOMPLETA")
+        self.assertFalse(diagnostico["pronta"])
+
+    @override_settings(LOCAL_SERVER_VERSION="1.2.0")
+    def test_reprovacao_da_versao_vigente_bloqueia_diagnostico(self):
+        self.criar("1.2.0", ResultadoHomologacaoServidor.REPROVADA)
+
+        diagnostico = diagnostico_homologacao_servidor_local()
+
+        self.assertEqual(diagnostico["status"], "REPROVADA")
+        self.assertFalse(diagnostico["pronta"])
+
+    @override_settings(LOCAL_SERVER_VERSION="1.2.0")
+    def test_aprovacao_de_outra_versao_fica_desatualizada(self):
+        self.criar("1.1.0", ResultadoHomologacaoServidor.APROVADA)
+
+        diagnostico = diagnostico_homologacao_servidor_local()
+
+        self.assertEqual(diagnostico["status"], "DESATUALIZADA")
+        self.assertFalse(diagnostico["pronta"])

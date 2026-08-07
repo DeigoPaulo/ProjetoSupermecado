@@ -90,7 +90,7 @@
       {% for mov in movimentacoes_estoque %}
           <tr><td>{{ mov.data|date:"d/m/Y H:i" }}</td><td>{{ mov.get_tipo_display }}</td><td>{{ mov.produto }}</td><td>{{ mov.quantidade|quantidade_br }}</td><td class="money">R$ {{ mov.custo_total|default:0|floatformat:2 }}</td><td>{{ mov.usuario|default:"-" }}</td></tr>
       {% empty %}
-        <tr><td colspan="6">Nenhuma movimentacao de estoque vinculada.</td></tr>
+        <tr><td colspan="6">Nenhuma movimentação de estoque vinculada.</td></tr>
       {% endfor %}
     </tbody>
   </table>

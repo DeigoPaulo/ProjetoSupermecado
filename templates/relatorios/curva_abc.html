@@ -6,7 +6,7 @@
 <header class="page-header">
   <div>
     <h1>Curva ABC</h1>
-    <p>Classificacao dos produtos por participacao no faturamento liquido do periodo.</p>
+    <p>Classificacao dos produtos por participacao no faturamento liquido do período.</p>
   </div>
   <div class="actions">
     <a class="secondary-button" href="{% url 'relatorios:curva_abc_csv' %}?data_inicio={{ data_inicio|date:'Y-m-d' }}&amp;data_fim={{ data_fim|date:'Y-m-d' }}{% if filial_id %}&amp;filial={{ filial_id }}{% endif %}"><i class="fa-solid fa-file-csv"></i> Excel/CSV</a>
@@ -34,7 +34,7 @@
       {% for horario in horarios_pico %}
         <tr><td>{{ horario.hora|stringformat:"02d" }}:00 - {{ horario.hora|stringformat:"02d" }}:59</td><td>{{ horario.vendas }}</td><td>R$ {{ horario.faturamento|floatformat:2 }}</td></tr>
       {% empty %}
-        <tr><td colspan="3" class="empty">Sem vendas no periodo.</td></tr>
+        <tr><td colspan="3" class="empty">Sem vendas no período.</td></tr>
       {% endfor %}
     </tbody>
   </table>
@@ -68,7 +68,7 @@
           <td>{{ item.acumulado|floatformat:2 }}%</td>
         </tr>
       {% empty %}
-        <tr><td colspan="8" class="empty">Sem vendas no periodo para calcular curva ABC.</td></tr>
+        <tr><td colspan="8" class="empty">Sem vendas no período para calcular curva ABC.</td></tr>
       {% endfor %}
     </tbody>
   </table>

@@ -18,7 +18,7 @@
 </header>
 
 <form method="get" class="toolbar report-filter">
-  <label><span>Inicio</span><input type="date" name="data_inicio" value="{{ data_inicio|date:'Y-m-d' }}"></label>
+  <label><span>Início</span><input type="date" name="data_inicio" value="{{ data_inicio|date:'Y-m-d' }}"></label>
   <label><span>Fim</span><input type="date" name="data_fim" value="{{ data_fim|date:'Y-m-d' }}"></label>
   <label>
     <span>Filial</span>
@@ -37,7 +37,7 @@
     <i class="fa-solid fa-book"></i>
     <div>
       <strong>Base realizado</strong>
-      <span>Considera apenas lancamentos do livro financeiro no periodo filtrado.</span>
+      <span>Considera apenas lancamentos do livro financeiro no período filtrado.</span>
     </div>
   </article>
   <article class="finance-insight">
@@ -96,7 +96,7 @@
             <td><strong>R$ {{ linha.resultado|floatformat:2 }}</strong></td>
           </tr>
         {% empty %}
-          <tr><td colspan="4" class="empty">Nenhum lançamento realizado no periodo.</td></tr>
+          <tr><td colspan="4" class="empty">Nenhum lançamento realizado no período.</td></tr>
         {% endfor %}
       </tbody>
     </table>
@@ -118,7 +118,7 @@
             <td><strong>R$ {{ linha.resultado|floatformat:2 }}</strong></td>
           </tr>
         {% empty %}
-          <tr><td colspan="5" class="empty">Nenhum lançamento categorizado no periodo.</td></tr>
+          <tr><td colspan="5" class="empty">Nenhum lançamento categorizado no período.</td></tr>
         {% endfor %}
       </tbody>
     </table>
@@ -185,7 +185,7 @@
             <td><strong>R$ {{ linha.resultado|floatformat:2 }}</strong></td>
           </tr>
         {% empty %}
-          <tr><td colspan="5" class="empty">Nenhum lançamento realizado no periodo.</td></tr>
+          <tr><td colspan="5" class="empty">Nenhum lançamento realizado no período.</td></tr>
         {% endfor %}
       </tbody>
     </table>
@@ -320,7 +320,7 @@
 </section>
 <section class="panel table-panel">
   <div class="panel-title">Balancete gerencial</div>
-  <p class="muted">Conferencia do saldo anterior, entradas, saidas e saldo final de cada conta no periodo. Transferencias internas entram aqui porque alteram o saldo real de caixa, banco ou PIX.</p>
+  <p class="muted">Conferência do saldo anterior, entradas, saidas e saldo final de cada conta no período. Transferencias internas entram aqui porque alteram o saldo real de caixa, banco ou PIX.</p>
   <div class="table-wrap">
     <table>
       <thead><tr><th>Filial</th><th>Conta</th><th>Tipo</th><th>Saldo anterior</th><th>Entradas</th><th>Saidas</th><th>Saldo final</th></tr></thead>

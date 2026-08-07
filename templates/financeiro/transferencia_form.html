@@ -5,7 +5,7 @@
 {% block content %}
 <header class="page-header">
   <div>
-    <h1>Transferencia entre contas</h1>
+    <h1>Transferência entre contas</h1>
     <p>Movimente valores entre caixa, banco e PIX com registros de saida e entrada no livro financeiro.</p>
   </div>
   <a class="secondary-button" href="{% url 'financeiro:livro' %}">Voltar ao livro</a>
@@ -41,7 +41,7 @@
             <td>{{ transferencia.data|date:"d/m/Y" }}</td>
             <td><strong>{{ transferencia.conta_origem.nome }}</strong><br><small>{{ transferencia.conta_origem.filial }}</small></td>
             <td><strong>{{ transferencia.conta_destino.nome }}</strong><br><small>{{ transferencia.conta_destino.filial }}</small></td>
-            <td>{{ transferencia.descricao|default:"Transferencia entre contas" }}</td>
+            <td>{{ transferencia.descricao|default:"Transferência entre contas" }}</td>
             <td><strong>R$ {{ transferencia.valor|floatformat:2 }}</strong></td>
             <td>{{ transferencia.usuario }}</td>
           </tr>

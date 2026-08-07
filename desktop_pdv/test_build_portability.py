@@ -9,13 +9,13 @@ PROJECT_ROOT = ROOT.parent
 
 class BuildPortabilityTests(unittest.TestCase):
     def test_spec_nao_depende_de_caminho_de_outro_computador(self):
-        spec = (ROOT / "DeigoPDV.spec").read_text(encoding="utf-8")
+        spec = (ROOT / "DeTecPDV.spec").read_text(encoding="utf-8")
 
         self.assertIn("SPECPATH", spec)
         self.assertNotRegex(spec, r"[A-Za-z]:\\Users\\")
         self.assertIn('root / "app.py"', spec)
         self.assertIn('root / "assets" / "deigo-pdv.ico"', spec)
-        self.assertIn('name="DeigoPDV"', spec)
+        self.assertIn('name="DeTecPDV"', spec)
         self.assertIn('icon=[str(icon)]', spec)
 
     def test_spec_legado_nao_pode_voltar_ao_pacote(self):
@@ -30,10 +30,10 @@ class BuildPortabilityTests(unittest.TestCase):
         desktop_ignore = (ROOT / ".gitignore").read_text(encoding="utf-8")
 
         self.assertIn('Join-Path $Root ".build-venv"', script)
-        self.assertIn('Join-Path $Root "DeigoPDV.spec"', script)
+        self.assertIn('Join-Path $Root "DeTecPDV.spec"', script)
         self.assertNotIn("pip install --upgrade pip", script)
         self.assertIn("desktop_pdv/.build-venv/", ignore)
-        self.assertIn("!DeigoPDV.spec", desktop_ignore)
+        self.assertIn("!DeTecPDV.spec", desktop_ignore)
 
     def test_versao_padrao_e_unica_no_app_servidor_e_publicacao(self):
         version_source = (ROOT / "version.py").read_text(encoding="utf-8")
@@ -58,7 +58,7 @@ class BuildPortabilityTests(unittest.TestCase):
         readme = (ROOT / "README.md").read_text(encoding="utf-8")
 
         self.assertIn("## Deploy do instalador no servidor", readme)
-        self.assertIn("artifacts/DeigoPDV.msi.version.json", readme)
+        self.assertIn("artifacts/DeTecPDV.msi.version.json", readme)
         self.assertIn("Nunca compile o PDV no servidor Linux", readme)
 
 

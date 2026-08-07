@@ -45,7 +45,7 @@
       {% for venda in vendas %}
         <tr><td>{{ venda.id }}</td><td>{{ venda.data|date:"d/m/Y H:i" }}</td><td>{{ venda.filial }}</td><td>{{ venda.cliente|default:"Cliente avulso" }}</td><td>{{ venda.usuario }}</td><td>R$ {{ venda.total_bruto|floatformat:2 }}</td><td>R$ {{ venda.desconto|floatformat:2 }}</td><td>R$ {{ venda.total_liquido|floatformat:2 }}</td></tr>
       {% empty %}
-        <tr><td colspan="8">Nenhuma venda finalizada no periodo.</td></tr>
+        <tr><td colspan="8">Nenhuma venda finalizada no período.</td></tr>
       {% endfor %}
     </tbody>
   </table>

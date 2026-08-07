@@ -381,7 +381,20 @@ Falha critica ou dossie nao liberavel impede o aceite e a entrada em producao.
 
 Como alternativa aos comandos, o super admin pode acessar **Sistema > Servidor local > Baixar evidências**. O ZIP gerado contém o dossiê, a evidência de aceite e seus arquivos SHA-256; o evento fica registrado na auditoria. O pacote também é gerado quando houver bloqueios, para documentar as correções necessárias antes da liberação.
 
-Após executar os testes em uma máquina limpa, registre o resultado em **Sistema > Servidor local > Homologação em máquina limpa**. Informe a máquina, o sistema operacional e a versão do artefato; envie **evidencia_aceite.json** e o arquivo **.sha256** produzido junto com ela. O sistema compara o checksum, valida contrato, perfil, alvo de produção, diagnóstico pós-instalação e flags de segurança, e calcula o hash sem entrada manual. Uma aprovação exige evidência liberável. Reprovações exigem a descrição da falha e da correção necessária; o sistema impede reutilizar a mesma evidência e registra o responsável na auditoria.
+Após executar os testes em uma máquina limpa, registre o resultado em **Sistema > Servidor local > Homologação em máquina limpa**. Informe a máquina, o sistema operacional e a versão do artefato; envie **evidencia_aceite.json** e o arquivo **.sha256** produzido junto com ela. O sistema compara o checksum, valida contrato, perfil, alvo de produção, diagnóstico pós-instalação e flags de segurança, e calcula o hash sem entrada manual. Uma aprovação exige evidência liberável e só vale para a versão vigente do servidor; após publicar uma nova versão, a tela sinaliza a homologação anterior como desatualizada. Registros criados antes do roteiro de testes críticos aparecem como incompletos e devem ser refeitos uma vez. Reprovações exigem a descrição da falha e da correção necessária; o sistema impede reutilizar a mesma evidência e registra o responsável na auditoria.
+
+
+### Verificacao automatica da versao homologada
+
+Confirme a homologacao da mesma versao que sera instalada:
+
+~~~powershell
+python manage.py verificar_homologacao_servidor_local --versao 1.2.0 --estrito
+~~~
+
+Nao prossiga se o comando informar que a versao esta bloqueada. O diagnostico
+usa o mesmo registro e o mesmo checklist critico exibidos na tela **Servidor
+local** do ERP.
 
 ## 17. Entrega ao cliente
 

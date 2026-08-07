@@ -6,7 +6,7 @@
 <header class="page-header">
   <div>
     <h1>{{ documento.get_tipo_documento_display }} {{ documento.serie }}/{{ documento.numero|default:"-" }}</h1>
-    <p>Espelho de conferencia do documento fiscal antes da transmissao oficial.</p>
+    <p>Espelho de conferência do documento fiscal antes da transmissão oficial.</p>
   </div>
   <div class="actions">
     <a class="secondary-button" href="{% url 'fiscal:documentos' %}">Voltar</a>

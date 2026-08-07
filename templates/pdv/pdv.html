@@ -91,9 +91,9 @@
 
       <div class="pdv-quick-grid">
         <button type="button" data-pdv-modal-open="products"><i class="fa-solid fa-star"></i><span>Produtos</span></button>
-        <button type="button" data-pdv-modal-open="price"><i class="fa-solid fa-tag"></i><span>Preco</span></button>
+        <button type="button" data-pdv-modal-open="price"><i class="fa-solid fa-tag"></i><span>Preço</span></button>
         <button type="button" data-pdv-modal-open="clients"><i class="fa-solid fa-user"></i><span>Clientes</span></button>
-        <button type="button" data-pdv-modal-open="promos"><i class="fa-solid fa-percent"></i><span>Promocoes</span></button>
+        <button type="button" data-pdv-modal-open="promos"><i class="fa-solid fa-percent"></i><span>Promoções</span></button>
         <button type="button" data-pdv-modal-open="delivery" {% if not items %}disabled{% endif %}><i class="fa-solid fa-truck"></i><span>Entrega</span></button>
       </div>
     </aside>
@@ -317,14 +317,14 @@
         <button class="secondary-button" type="submit" {% if not items %}disabled{% endif %}><i class="fa-regular fa-file-lines"></i> Salvar DAV</button>
       </form>
       <div class="pdv-manufacturer" aria-label="Desenvolvido por Deigo Tecnologia">
-        <img src="{% static 'img/brand/deigo-tecnologia.png' %}" alt="Deigo Tecnologia - Deigo PDV">
+        <img src="{% static 'img/brand/deigo-tecnologia.png' %}" alt="Deigo Tecnologia - DeTec PDV">
       </div>
     </aside>
   </div>
 
   <footer class="pdv-shortcut-bar">
     <button type="button" data-pdv-focus-search><i class="fa-solid fa-magnifying-glass"></i><span><kbd>F2</kbd> Buscar produto</span></button>
-    <button type="button" data-pdv-modal-open="price"><i class="fa-solid fa-tag"></i><span><kbd>F3</kbd> Consulta preco</span></button>
+    <button type="button" data-pdv-modal-open="price"><i class="fa-solid fa-tag"></i><span><kbd>F3</kbd> Consulta de preço</span></button>
     <button type="button" data-pdv-modal-open="clients"><i class="fa-regular fa-user"></i><span><kbd>F4</kbd> Cliente</span></button>
     <button type="button" data-pdv-modal-open="delivery" {% if not items %}disabled{% endif %}><i class="fa-solid fa-truck"></i><span><kbd>Ctrl+E</kbd> Entrega</span></button>
     <button type="button" data-pdv-modal-open="deliveries"><i class="fa-solid fa-truck-ramp-box"></i><span><kbd>Shift+E</kbd> Entregas</span></button>
@@ -357,7 +357,7 @@
     <div class="pdv-modal-dialog">
       <header class="pdv-modal-header"><strong>Entregas pendentes</strong><button type="button" data-pdv-modal-close aria-label="Fechar"><i class="fa-solid fa-xmark"></i></button></header>
       <div class="pdv-modal-list compact-list">
-        <p class="pdv-modal-empty">Use as setas para selecionar uma entrega e Enter para abrir a conferencia.</p>
+        <p class="pdv-modal-empty">Use as setas para selecionar uma entrega e Enter para abrir a conferência.</p>
         {% for pedido in entregas_pendentes %}
           <button type="button" class="pdv-modal-row" data-delivery-order data-delivery-id="{{ pedido.pk }}">
             <strong>Entrega #{{ pedido.pk }} - {{ pedido.nome_cliente }}</strong>
@@ -375,6 +375,7 @@
     <div class="pdv-modal-dialog pdv-delivery-dialog">
       <header class="pdv-modal-header"><strong>Conferência de entrega</strong><button type="button" data-pdv-modal-close aria-label="Fechar"><i class="fa-solid fa-xmark"></i></button></header>
       <div class="pdv-modal-list pdv-delivery-detail-list">
+        <div class="pdv-modal-empty" data-delivery-detail-missing hidden>Pedido não está mais disponível para conferência. Atualize a lista de entregas.</div>
         {% for pedido in entregas_pendentes %}
           <section class="pdv-delivery-detail" data-delivery-detail="{{ pedido.pk }}" hidden>
             <div class="pdv-delivery-summary">
@@ -392,10 +393,10 @@
               <button type="button" class="secondary-button" data-delivery-print-url="{% url 'marketplace:imprimir_separacao' pedido.pk %}?auto=1" data-delivery-desktop-print-url="{% url 'marketplace:impressao_separacao_desktop' pedido.pk %}"><i class="fa-solid fa-print"></i> Imprimir comanda <kbd>F10</kbd></button>
               {% if pedido.status == "RASCUNHO" %}<form method="post" action="{% url 'marketplace:acao' pedido.pk %}">{% csrf_token %}<input type="hidden" name="origem_pdv" value="1"><input type="hidden" name="acao" value="reservar"><button type="submit" class="primary-button" data-delivery-action="reserve"><i class="fa-solid fa-boxes-stacked"></i> Reservar e separar <kbd>F2</kbd></button></form>{% endif %}
               {% if pedido.status == "EM_SEPARACAO" %}<form method="post" action="{% url 'marketplace:acao' pedido.pk %}" class="pdv-delivery-separation-form">{% csrf_token %}<input type="hidden" name="origem_pdv" value="1"><input type="hidden" name="acao" value="separacao">{% for item in pedido.itens.all %}<label><span>{{ item.produto.nome }}:</span><input type="number" name="item_{{ item.pk }}" value="{{ item.quantidade|stringformat:'s' }}" min="0" max="{{ item.quantidade|stringformat:'s' }}" step="0.001" required></label>{% endfor %}<button type="submit" class="primary-button" data-delivery-action="separate"><i class="fa-solid fa-check"></i> Confirmar separação <kbd>Ctrl+Enter</kbd></button></form><form method="post" action="{% url 'marketplace:acao' pedido.pk %}">{% csrf_token %}<input type="hidden" name="origem_pdv" value="1"><input type="hidden" name="acao" value="avancar"><input type="hidden" name="destino" value="PRONTO"><button type="submit" class="secondary-button" data-delivery-action="ready"><i class="fa-solid fa-box"></i> Marcar pronto <kbd>F3</kbd></button></form>{% endif %}
-              {% if pedido.status == "PRONTO" and pedido.status_pagamento == "PENDENTE" %}<form method="post" action="{% url 'marketplace:acao' pedido.pk %}" class="pdv-delivery-payment-form">{% csrf_token %}<input type="hidden" name="origem_pdv" value="1"><input type="hidden" name="acao" value="pagamento"><label><span>Pagamento agora:</span><select name="forma_pagamento">{% for codigo, nome in formas_pagamento_antecipado %}<option value="{{ codigo }}">{{ nome }}</option>{% endfor %}</select></label><label><span>Valor (R$):</span><input type="number" name="valor_pago" value="{{ pedido.total|stringformat:'s' }}" min="0.01" step="0.01" required></label><label><span>NSU / referência:</span><input name="referencia_pagamento" placeholder="Obrigatório para cartão"></label><button type="submit" class="secondary-button" data-delivery-action="payment"><i class="fa-solid fa-cash-register"></i> Registrar pagamento <kbd>Alt+Enter</kbd></button></form>{% endif %}
+              {% if pedido.status == "PRONTO" and pedido.status_pagamento == "PENDENTE" %}<form method="post" action="{% url 'marketplace:acao' pedido.pk %}" class="pdv-delivery-payment-form">{% csrf_token %}<input type="hidden" name="origem_pdv" value="1"><input type="hidden" name="acao" value="pagamento"><label><span>Pagamento agora:</span><select name="forma_pagamento">{% for codigo, nome in formas_pagamento_antecipado %}<option value="{{ codigo }}">{{ nome }}</option>{% endfor %}</select></label><label><span>Valor (R$):</span><input type="number" name="valor_pago" value="{{ pedido.total|stringformat:'s' }}" min="0.01" step="0.01" required></label><label><span>NSU / referência da maquininha:</span><input name="referencia_pagamento" autocomplete="off" placeholder="Obrigatório para cartão na entrega"></label><button type="submit" class="secondary-button" data-delivery-action="payment"><i class="fa-solid fa-cash-register"></i> Registrar pagamento <kbd>Alt+Enter</kbd></button></form>{% endif %}
               {% if pedido.status == "PRONTO" and pedido.status_pagamento == "PAGO" %}<div class="pdv-delivery-payment-confirmed"><i class="fa-solid fa-circle-check"></i><span>Pagamento confirmado: {{ pedido.get_forma_pagamento_display }} - R$ {{ pedido.valor_pago|floatformat:2 }}</span></div>{% endif %}
               {% if pedido.status == "PRONTO" %}<form method="post" action="{% url 'marketplace:acao' pedido.pk %}">{% csrf_token %}<input type="hidden" name="origem_pdv" value="1"><input type="hidden" name="acao" value="avancar"><input type="hidden" name="destino" value="SAIU_ENTREGA"><button type="submit" class="primary-button" data-delivery-action="dispatch"><i class="fa-solid fa-truck"></i> Saiu para entrega <kbd>F4</kbd></button></form>{% endif %}
-              {% if pedido.status == "SAIU_ENTREGA" and pedido.status_pagamento == "PENDENTE" %}<form method="post" action="{% url 'marketplace:acao' pedido.pk %}" class="pdv-delivery-payment-form">{% csrf_token %}<input type="hidden" name="origem_pdv" value="1"><input type="hidden" name="acao" value="pagamento"><label><span>Pagamento:</span><select name="forma_pagamento">{% for codigo, nome in formas_pagamento_pedido %}<option value="{{ codigo }}">{{ nome }}</option>{% endfor %}</select></label><label><span>Valor (R$):</span><input type="number" name="valor_pago" value="{{ pedido.total|stringformat:'s' }}" min="0.01" step="0.01" required></label><label><span>NSU / referência:</span><input name="referencia_pagamento" placeholder="Obrigatório para cartão na entrega"></label><button type="submit" class="primary-button" data-delivery-action="payment"><i class="fa-solid fa-credit-card"></i> Confirmar pagamento <kbd>Alt+Enter</kbd></button></form>{% endif %}
+              {% if pedido.status == "SAIU_ENTREGA" and pedido.status_pagamento == "PENDENTE" %}<form method="post" action="{% url 'marketplace:acao' pedido.pk %}" class="pdv-delivery-payment-form">{% csrf_token %}<input type="hidden" name="origem_pdv" value="1"><input type="hidden" name="acao" value="pagamento"><label><span>Pagamento:</span><select name="forma_pagamento">{% for codigo, nome in formas_pagamento_pedido %}<option value="{{ codigo }}">{{ nome }}</option>{% endfor %}</select></label><label><span>Valor (R$):</span><input type="number" name="valor_pago" value="{{ pedido.total|stringformat:'s' }}" min="0.01" step="0.01" required></label><label><span>NSU / referência da maquininha:</span><input name="referencia_pagamento" autocomplete="off" placeholder="Obrigatório para cartão na entrega"></label><button type="submit" class="primary-button" data-delivery-action="payment"><i class="fa-solid fa-credit-card"></i> Confirmar pagamento <kbd>Alt+Enter</kbd></button></form>{% endif %}
               {% if pedido.status == "SAIU_ENTREGA" and pedido.status_pagamento == "PAGO" %}<div class="pdv-delivery-payment-confirmed"><i class="fa-solid fa-circle-check"></i><span>Pagamento confirmado: {{ pedido.get_forma_pagamento_display }} - R$ {{ pedido.valor_pago|floatformat:2 }}</span></div><form method="post" action="{% url 'marketplace:acao' pedido.pk %}">{% csrf_token %}<input type="hidden" name="origem_pdv" value="1"><input type="hidden" name="acao" value="avancar"><input type="hidden" name="destino" value="CONCLUIDO"><button type="submit" class="primary-button" data-delivery-action="complete"><i class="fa-solid fa-circle-check"></i> Confirmar entrega <kbd>F5</kbd></button></form>{% endif %}
             </div>
           </section>
@@ -428,7 +429,7 @@
           {% for field in entrega_form %}
             {% if field.name != "cliente" and field.name != "nome_cliente" %}
               {% if field.name == "salvar_cliente" %}
-                <label class="form-field pdv-delivery-save-client">{{ field }}<span>{{ field.label }}</span>{% if field.help_text %}<small class="form-help">{{ field.help_text }}</small>{% endif %}{% if field.errors %}<small class="field-error">{{ field.errors|striptags }}</small>{% endif %}</label>
+                <label class="form-field pdv-delivery-save-client">{{ field }}<span>{{ field.label }} <kbd>Alt+S</kbd></span>{% if field.help_text %}<small class="form-help">{{ field.help_text }} Use <kbd>Espaço</kbd> ou <kbd>Alt+S</kbd> para alternar.</small>{% endif %}{% if field.errors %}<small class="field-error">{{ field.errors|striptags }}</small>{% endif %}</label>
               {% else %}
                 <label class="form-field"><span>{{ field.label }}</span>{{ field }}{% if field.help_text %}<small class="form-help">{{ field.help_text }}</small>{% endif %}{% if field.errors %}<small class="field-error">{{ field.errors|striptags }}</small>{% endif %}</label>
               {% endif %}
@@ -459,7 +460,7 @@
 
   <div class="pdv-modal" id="pdv-modal-price" aria-hidden="true">
     <div class="pdv-modal-dialog">
-      <header class="pdv-modal-header"><strong>Consulta de preco</strong><button type="button" data-pdv-modal-close aria-label="Fechar"><i class="fa-solid fa-xmark"></i></button></header>
+      <header class="pdv-modal-header"><strong>Consulta de preço</strong><button type="button" data-pdv-modal-close aria-label="Fechar"><i class="fa-solid fa-xmark"></i></button></header>
       <input class="pdv-modal-search" type="search" placeholder="Buscar por nome ou código" data-pdv-modal-filter>
       <div class="pdv-modal-list">
         {% for produto in produtos_rapidos %}
@@ -495,8 +496,8 @@
 
   <div class="pdv-modal" id="pdv-modal-promos" aria-hidden="true">
     <div class="pdv-modal-dialog">
-      <header class="pdv-modal-header"><strong>Promocoes</strong><button type="button" data-pdv-modal-close aria-label="Fechar"><i class="fa-solid fa-xmark"></i></button></header>
-      <input class="pdv-modal-search" type="search" placeholder="Filtrar promocoes" data-pdv-modal-filter>
+      <header class="pdv-modal-header"><strong>Promoções</strong><button type="button" data-pdv-modal-close aria-label="Fechar"><i class="fa-solid fa-xmark"></i></button></header>
+      <input class="pdv-modal-search" type="search" placeholder="Filtrar promoções" data-pdv-modal-filter>
       <div class="pdv-modal-list">
         {% for promocao in promocoes_rapidas %}
           <button type="button" class="pdv-modal-row" data-pdv-copy-product="{{ promocao.produto.codigo_barras|default:promocao.produto.nome }}">
@@ -504,7 +505,7 @@
             <b>R$ {{ promocao.preco_promocional|floatformat:2 }}</b>
           </button>
         {% empty %}
-          <div class="pdv-modal-empty">Nenhuma promocao ativa agora.</div>
+          <div class="pdv-modal-empty">Nenhuma promoção ativa agora.</div>
         {% endfor %}
       </div>
     </div>
@@ -662,7 +663,7 @@
         </section>
       {% endif %}
 
-      <div class="pdv-modal-subtitle">Aguardando conferencia</div>
+      <div class="pdv-modal-subtitle">Aguardando conferência</div>
       <div class="pdv-modal-list compact-list">
         {% for caixa in caixas_aguardando_conferencia %}
           <a class="pdv-modal-row" href="{% url 'pdv:caixa_detalhe' caixa.id %}">
@@ -670,7 +671,7 @@
             <b>Conferir</b>
           </a>
         {% empty %}
-          <div class="pdv-modal-empty">Nenhum caixa aguardando conferencia.</div>
+          <div class="pdv-modal-empty">Nenhum caixa aguardando conferência.</div>
         {% endfor %}
       </div>
 

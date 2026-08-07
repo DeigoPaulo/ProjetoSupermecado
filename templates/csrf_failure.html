@@ -1,0 +1,30 @@
+{% load static %}
+<!doctype html>
+<html lang="pt-br">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Formul&aacute;rio desatualizado</title>
+  <link rel="stylesheet" href="{% static 'css/bootstrap.min.css' %}">
+  <link rel="stylesheet" href="{% static 'fontawesome/css/all.min.css' %}">
+  <link rel="stylesheet" href="{% static 'css/custom.css' %}">
+</head>
+<body>
+  <main class="login-page">
+    <section class="login-panel text-center">
+      <i class="fa-solid fa-rotate-right fs-1 text-primary"></i>
+      <h1>Formul&aacute;rio desatualizado</h1>
+      <p class="text-muted">A sess&atilde;o ou a p&aacute;gina foi atualizada enquanto este formul&aacute;rio estava aberto.</p>
+      <p class="text-muted">Volte, atualize a p&aacute;gina e envie novamente. Nenhuma altera&ccedil;&atilde;o foi realizada.</p>
+      <div class="access-actions">
+        <button type="button" class="primary-button" onclick="history.back()">
+          <i class="fa-solid fa-arrow-left"></i> Voltar e atualizar
+        </button>
+        <a href="{% url 'login' %}" class="secondary-button">
+          <i class="fa-solid fa-right-to-bracket"></i> Abrir login
+        </a>
+      </div>
+    </section>
+  </main>
+</body>
+</html>

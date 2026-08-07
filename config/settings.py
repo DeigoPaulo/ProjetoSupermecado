@@ -61,6 +61,7 @@ if not DEBUG and SECRET_KEY == "django-insecure-dev-supermercado":
 
 ALLOWED_HOSTS = env_list("ALLOWED_HOSTS", "127.0.0.1,localhost")
 CSRF_TRUSTED_ORIGINS = env_list("CSRF_TRUSTED_ORIGINS")
+CSRF_FAILURE_VIEW = "config.views.csrf_failure"
 
 
 # Application definition
@@ -226,11 +227,13 @@ EMAIL_TIMEOUT = int(os.getenv("EMAIL_TIMEOUT", "10"))
 DEFAULT_FROM_EMAIL = os.getenv("DEFAULT_FROM_EMAIL", "nao-responda@supermercado.local")
 
 PDV_NUVEM_REQUER_APROVACAO = env_bool("PDV_NUVEM_REQUER_APROVACAO", False)
-PDV_DESKTOP_VERSION = os.getenv("PDV_DESKTOP_VERSION", "0.1.5")
+PDV_DESKTOP_VERSION = os.getenv("PDV_DESKTOP_VERSION", "0.1.9")
 PDV_DESKTOP_MIN_VERSION = os.getenv("PDV_DESKTOP_MIN_VERSION", PDV_DESKTOP_VERSION)
 PDV_DESKTOP_RELEASE_CHANNEL = os.getenv("PDV_DESKTOP_RELEASE_CHANNEL", "ESTAVEL").upper()
-PDV_TEF_SIMULATOR_ENABLED = env_bool("PDV_TEF_SIMULATOR_ENABLED", DEBUG)
-PDV_DESKTOP_INSTALLER_PATH = env_path("PDV_DESKTOP_INSTALLER_PATH", BASE_DIR / "artifacts" / "DeigoPDV.msi")
+# A simulacao TEF precisa ser uma escolha explicita ate em desenvolvimento.
+# Assim, um terminal sem adquirente configurada nunca aprova pagamento por acaso.
+PDV_TEF_SIMULATOR_ENABLED = env_bool("PDV_TEF_SIMULATOR_ENABLED", False)
+PDV_DESKTOP_INSTALLER_PATH = env_path("PDV_DESKTOP_INSTALLER_PATH", BASE_DIR / "artifacts" / "DeTecPDV.msi")
 PDV_DESKTOP_REQUIRE_SIGNED_INSTALLER = env_bool("PDV_DESKTOP_REQUIRE_SIGNED_INSTALLER", not DEBUG)
 LOCAL_SERVER_VERSION = os.getenv("LOCAL_SERVER_VERSION", "0.1.0")
 LOCAL_SERVER_PACKAGE_PATH = env_path("LOCAL_SERVER_PACKAGE_PATH", BASE_DIR / "artifacts" / "DeigoVarejoServidorLocal.zip")
@@ -318,3 +321,6 @@ LOGGING = {
         },
     },
 }
+
+ADMIN_DESKTOP_VERSION = os.getenv('ADMIN_DESKTOP_VERSION', '0.1.0')
+ADMIN_DESKTOP_INSTALLER_PATH = env_path('ADMIN_DESKTOP_INSTALLER_PATH', BASE_DIR / 'artifacts' / 'DeTecAdmin.exe')

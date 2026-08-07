@@ -56,7 +56,7 @@ confirmação do operador.
 
 O app valida a licença em `/pdv/api/terminal/bootstrap/` antes de abrir o PDV.
 A ativação é validada antes de ser salva. No Windows, a configuração fica em
-`%LOCALAPPDATA%\DeigoPDV\config.json` (a configuracao legada em `%LOCALAPPDATA%\SupermercadoPDV` e migrada automaticamente); para reconfigurar, execute o app
+`%LOCALAPPDATA%\DeTecPDV\config.json` (a configuracao legada em `%LOCALAPPDATA%\SupermercadoPDV` e migrada automaticamente); para reconfigurar, execute o app
 com `--configurar`. A chave fica apenas na máquina do caixa, protegida pelo DPAPI
 do usuário do Windows, e não é versionada. Configurações antigas com chave em texto
 são migradas automaticamente na primeira abertura; copiar somente o arquivo para outro
@@ -84,7 +84,7 @@ Uma recusa explícita do servidor nunca usa o cache como alternativa.
 O build usa Python 3.12 para manter compatibilidade com o PyInstaller fixado. Para gerar MSI, a máquina de build precisa também do .NET SDK 8 e do WiX Toolset 4 (dotnet tool install --global wix --version 4.0.6). Esses componentes são necessários somente na máquina que compila, não nos caixas que instalam o aplicativo.
 
 Execute `powershell -ExecutionPolicy Bypass -File .\build_windows.ps1`. O
-executavel sera criado em `dist\DeigoPDV.exe`.
+executavel sera criado em `dist\DeTecPDV.exe`.
 
 O instalador MSI usa WiX Toolset v4. Para gerar um pacote de desenvolvimento:
 
@@ -114,7 +114,7 @@ Depois do build e da assinatura, publique o MSI:
 ```
 
 O script prioriza o MSI da versao informada, confere o SHA-256 e publica o
-arquivo de forma atomica em `artifacts\DeigoPDV.msi`, caminho padrao
+arquivo de forma atomica em `artifacts\DeTecPDV.msi`, caminho padrao
 usado pelo ERP. O parametro `-Source` permite publicar um artefato especifico e
 `PDV_DESKTOP_INSTALLER_PATH` permite alterar o caminho no ambiente quando
 necessario.
@@ -129,14 +129,14 @@ Se o leitor, cartao ou servico de Cartao Inteligente estiver indisponivel, o ope
 
 O servidor web nao executa nem recompila o MSI. Gere o pacote em uma maquina Windows e transfira estes dois arquivos para o diretorio de artefatos da aplicacao:
 
-- `artifacts/DeigoPDV.msi`
-- `artifacts/DeigoPDV.msi.version.json`
+- `artifacts/DeTecPDV.msi`
+- `artifacts/DeTecPDV.msi.version.json`
 
 No ambiente do servidor, mantenha `PDV_DESKTOP_VERSION` igual a versao publicada e aponte `PDV_DESKTOP_INSTALLER_PATH` para o caminho absoluto do MSI. Exemplo Linux:
 
 ```env
 PDV_DESKTOP_VERSION=0.1.5
-PDV_DESKTOP_INSTALLER_PATH=/srv/deigo-varejo/artifacts/DeigoPDV.msi
+PDV_DESKTOP_INSTALLER_PATH=/srv/deigo-varejo/artifacts/DeTecPDV.msi
 PDV_DESKTOP_REQUIRE_SIGNED_INSTALLER=false
 ```
 
@@ -148,4 +148,4 @@ continua sendo a fonte unica da interface, dos atalhos e das regras de venda.
 
 ## Encerramento pelo teclado
 
-No aplicativo instalado, `Ctrl+Q` solicita o encerramento em qualquer tela carregada pelo shell desktop. O sistema pede confirmação antes de fechar porque formulários e operações ainda não salvas serão descartados. O atalho também funciona na ativação inicial e na contingência sem conexão; no navegador comum, o ERP não intercepta esse comando.
+No aplicativo instalado, `Ctrl+F5 (Ctrl+Q tambem aceito)` solicita o encerramento em qualquer tela carregada pelo shell desktop. O sistema pede confirmação antes de fechar porque formulários e operações ainda não salvas serão descartados. O atalho também funciona na ativação inicial e na contingência sem conexão; no navegador comum, o ERP não intercepta esse comando.

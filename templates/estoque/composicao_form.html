@@ -1,6 +1,6 @@
 {% extends "base.html" %}
 
-{% block title %}Composicao{% endblock %}
+{% block title %}Composição{% endblock %}
 
 {% block content %}
 <header class="page-header">
@@ -15,7 +15,7 @@
   <section class="form-section">
     <div class="form-section-header">
       <h2>Produto final</h2>
-      <p>Use para kits, cestas, bandejas, producao interna e composicoes vendaveis.</p>
+      <p>Use para kits, cestas, bandejas, produção interna e composições vendáveis.</p>
     </div>
     <div class="form-grid">
       {% for field in form %}
@@ -61,7 +61,7 @@
   {{ form.non_field_errors }}
   <div class="form-actions">
     <a class="secondary-button" href="{% url 'estoque:composicoes' %}">Cancelar</a>
-    <button class="primary-button" type="submit">Salvar composicao</button>
+    <button class="primary-button" type="submit">Salvar composição</button>
   </div>
 </form>
 {% endblock %}

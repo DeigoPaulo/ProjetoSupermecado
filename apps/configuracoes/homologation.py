@@ -3,6 +3,33 @@ import hmac
 import json
 import re
 
+from django.conf import settings
+
+
+
+ITENS_HOMOLOGACAO_SERVIDOR_LOCAL = (
+    ("INSTALACAO_LIMPA", "Instalação do pacote em máquina limpa"),
+    ("SERVICO_HEALTH", "Serviço Windows, inicialização e healthcheck"),
+    ("BANCO_MIGRACOES", "PostgreSQL, migrations e acesso administrativo"),
+    ("BACKUP_RESTAURACAO", "Backup e restauração testados"),
+    ("ATUALIZACAO_ROLLBACK", "Atualização e rollback testados"),
+    ("SEGURANCA_ACESSO", "Permissões, auditoria e acesso restrito"),
+    ("PDV_REDE_LOCAL", "Ativação e acesso do PDV pela rede local"),
+)
+CODIGOS_CRITICOS_HOMOLOGACAO_SERVIDOR_LOCAL = frozenset(
+    codigo for codigo, _ in ITENS_HOMOLOGACAO_SERVIDOR_LOCAL
+)
+ROTULOS_ITENS_HOMOLOGACAO_SERVIDOR_LOCAL = dict(
+    ITENS_HOMOLOGACAO_SERVIDOR_LOCAL
+)
+
+
+def rotulos_itens_homologacao(codigos):
+    return [
+        ROTULOS_ITENS_HOMOLOGACAO_SERVIDOR_LOCAL.get(codigo, codigo)
+        for codigo in (codigos or [])
+    ]
+
 
 CONTRATO_ACEITE = "local_installation_acceptance_evidence_v1"
 TAMANHO_MAXIMO_JSON = 1024 * 1024
@@ -134,4 +161,86 @@ def validar_arquivos_evidencia(arquivo_json, arquivo_sha256):
             else []
         ),
         "gerado_em": str(payload.get("gerado_em") or ""),
+    }
+
+def diagnostico_homologacao_servidor_local(*, versao_vigente=None):
+    """Indica se a versão distribuída possui aceite técnico em máquina limpa."""
+    from .models import HomologacaoServidorLocal, ResultadoHomologacaoServidor
+
+    versao_vigente = str(versao_vigente or settings.LOCAL_SERVER_VERSION).strip()
+    atual = HomologacaoServidorLocal.objects.filter(
+        versao_artefato=versao_vigente
+    ).first()
+    ultimo = HomologacaoServidorLocal.objects.first()
+    registro = atual or ultimo
+    resumo_registro = None
+    if registro:
+        resumo_registro = {
+            "id": registro.pk,
+            "maquina": registro.maquina,
+            "versao": registro.versao_artefato,
+            "resultado": registro.resultado,
+            "criada_em": registro.criada_em,
+        }
+
+    base = {
+        "contrato": "local_server_homologation_readiness_v1",
+        "versao_vigente": versao_vigente,
+        "registro": resumo_registro,
+    }
+    if atual and atual.resultado == ResultadoHomologacaoServidor.APROVADA:
+        faltantes = (
+            CODIGOS_CRITICOS_HOMOLOGACAO_SERVIDOR_LOCAL
+            - set(atual.itens_validados or [])
+        )
+        if faltantes:
+            return {
+                **base,
+                "status": "INCOMPLETA",
+                "pronta": False,
+                "titulo": "Homologação aprovada sem checklist completo",
+                "descricao": (
+                    f"A versão {versao_vigente} possui um aceite anterior em "
+                    f"{atual.maquina}, mas precisa repetir os testes críticos."
+                ),
+            }
+        return {
+            **base,
+            "status": "APROVADA",
+            "pronta": True,
+            "titulo": "Homologação aprovada para a versão vigente",
+            "descricao": (
+                f"A versão {versao_vigente} foi aprovada em {atual.maquina}."
+            ),
+        }
+    if atual:
+        return {
+            **base,
+            "status": "REPROVADA",
+            "pronta": False,
+            "titulo": "Homologação reprovada para a versão vigente",
+            "descricao": (
+                f"A versão {versao_vigente} possui uma reprovação registrada em "
+                f"{atual.maquina}. Corrija a ocorrência e execute novo aceite."
+            ),
+        }
+    if ultimo:
+        return {
+            **base,
+            "status": "DESATUALIZADA",
+            "pronta": False,
+            "titulo": "Homologação de outra versão",
+            "descricao": (
+                f"O último registro é da versão {ultimo.versao_artefato}. "
+                f"Homologue a versão vigente {versao_vigente}."
+            ),
+        }
+    return {
+        **base,
+        "status": "PENDENTE",
+        "pronta": False,
+        "titulo": "Homologação em máquina limpa pendente",
+        "descricao": (
+            f"Ainda não existe aceite técnico para a versão {versao_vigente}."
+        ),
     }

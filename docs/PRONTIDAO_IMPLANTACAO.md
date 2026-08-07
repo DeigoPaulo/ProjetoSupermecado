@@ -98,5 +98,35 @@ A evidência local_installation_acceptance_evidence_v1 grava somente o hash do d
 
 O super admin também pode gerar esses documentos em **Sistema > Servidor local > Baixar evidências**. A ação entrega um ZIP com o dossiê, a evidência de aceite, os dois arquivos SHA-256 e as instruções de arquivamento. O download é auditado e permanece disponível quando o aceite estiver bloqueado, para registrar as pendências encontradas.
 
-A homologação executada em uma máquina limpa deve ser registrada na mesma tela. O histórico é exclusivo do super admin, paginado em 20 registros e vincula máquina, sistema operacional, versão testada, resultado, responsável e SHA-256 único da evidência. O registro recebe o JSON e seu arquivo SHA-256, compara a integridade e valida o contrato de aceite antes de persistir somente o hash e os metadados; uma aprovação exige status liberável. Uma reprovação exige observações para manter explícita a ação corretiva.
+A homologação executada em uma máquina limpa deve ser registrada na mesma tela. O histórico é exclusivo do super admin, paginado em 20 registros e vincula máquina, sistema operacional, versão testada, resultado, responsável e SHA-256 único da evidência. O registro recebe o JSON e seu arquivo SHA-256, compara a integridade e valida o contrato de aceite antes de persistir somente o hash e os metadados; uma aprovação exige status liberável. O diagnóstico operacional compara o aceite à versão vigente e apresenta pendente, reprovada, desatualizada, incompleta ou aprovada; aceites legados sem todos os testes críticos nunca liberam uma versão. Uma reprovação exige observações para manter explícita a ação corretiva.
 
+
+
+## Verificacao automatica da homologacao do servidor local
+
+Antes de publicar ou instalar uma versao, valide se o artefato possui uma
+homologacao aprovada e com todo o checklist critico concluido:
+
+~~~powershell
+python manage.py verificar_homologacao_servidor_local
+python manage.py verificar_homologacao_servidor_local --json
+python manage.py verificar_homologacao_servidor_local --estrito
+python manage.py verificar_homologacao_servidor_local --versao 1.2.0 --estrito
+~~~
+
+O modo `--estrito` encerra com erro quando a versao esta pendente, reprovada,
+incompleta ou desatualizada. Ele deve ser usado pelo instalador e pelo pipeline
+para impedir a distribuicao de um servidor local ainda nao homologado.
+
+
+## Regressao automatizada
+
+Antes de gerar um pacote, execute o roteiro de regressao. O perfil rapido separa
+os grupos de modulos para mostrar com clareza onde ocorreu uma falha; o completo
+deve ser usado pela maquina de build ou CI, com uma janela de execucao maior.
+
+~~~powershell
+.\scripts\test_regression.ps1
+.\scripts\test_regression.ps1 -Perfil rapido -KeepDb
+.\scripts\test_regression.ps1 -Perfil completo
+~~~

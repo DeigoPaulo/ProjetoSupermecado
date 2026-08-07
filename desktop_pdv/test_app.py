@@ -68,7 +68,7 @@ class AppDesktopTests(unittest.TestCase):
             with patch.dict(os.environ, ambiente), patch.object(app, "APP_DIR", raiz), patch.object(app.sys, "frozen", True, create=True):
                 caminho = app.caminho_configuracao()
 
-            self.assertEqual(caminho, app_data / "DeigoPDV" / "config.json")
+            self.assertEqual(caminho, app_data / "DeTecPDV" / "config.json")
 
     def test_migra_configuracao_legada_para_deigo_pdv(self):
         with tempfile.TemporaryDirectory() as pasta:
@@ -81,7 +81,7 @@ class AppDesktopTests(unittest.TestCase):
             with patch.dict(os.environ, ambiente):
                 caminho = app.caminho_configuracao()
 
-            self.assertEqual(caminho, local_app_data / "DeigoPDV" / "config.json")
+            self.assertEqual(caminho, local_app_data / "DeTecPDV" / "config.json")
             self.assertTrue(caminho.exists())
             self.assertEqual(json.loads(caminho.read_text(encoding="utf-8"))["terminal_id"], "caixa-legado")
     def test_bootstrap_envia_identidade_e_chave_do_terminal(self):
@@ -168,7 +168,8 @@ class AppDesktopTests(unittest.TestCase):
         self.assertIn("F5", pagina)
         self.assertIn("reconnect", pagina)
         self.assertIn("Sair do aplicativo", pagina)
-        self.assertIn("Ctrl+Q", pagina)
+        self.assertIn("Ctrl+F5", pagina)
+        self.assertIn("event.key.toLowerCase() === 'q'", pagina)
         self.assertIn("closeApplication", pagina)
         self.assertIn("vendas, pagamentos e alteracoes de estoque permanecem bloqueados", pagina)
         self.assertNotIn("`n", pagina)
@@ -268,7 +269,7 @@ class AppDesktopTests(unittest.TestCase):
                 "atualizacao_disponivel": True,
                 "pacote": {
                     "disponivel": True,
-                    "nome": "DeigoPDV.exe",
+                    "nome": "DeTecPDV.exe",
                     "sha256": sha256,
                     "url": "http://servidor.local/pdv/api/terminal/update/",
                 },
@@ -296,7 +297,7 @@ class AppDesktopTests(unittest.TestCase):
                 "atualizacao_disponivel": True,
                 "pacote": {
                     "disponivel": True,
-                    "nome": "DeigoPDV.exe",
+                    "nome": "DeTecPDV.exe",
                     "sha256": "0" * 64,
                     "url": "http://servidor.local/pdv/api/terminal/update/",
                 },
@@ -309,8 +310,8 @@ class AppDesktopTests(unittest.TestCase):
                 with patch("app.urlopen", return_value=RespostaBinaria(b"pacote-adulterado")):
                     with self.assertRaisesRegex(RuntimeError, "SHA-256"):
                         app.preparar_atualizacao(config, app.verificar_versao(bootstrap))
-                self.assertFalse((config_path.parent / "updates" / "DeigoPDV.exe").exists())
-                self.assertFalse((config_path.parent / "updates" / "DeigoPDV.exe.part").exists())
+                self.assertFalse((config_path.parent / "updates" / "DeTecPDV.exe").exists())
+                self.assertFalse((config_path.parent / "updates" / "DeTecPDV.exe.part").exists())
     def test_atualizacao_obrigatoria_preparada_bloqueia_abertura_do_pdv(self):
         messagebox = MagicMock()
         messagebox.askyesno.return_value = True
@@ -323,7 +324,7 @@ class AppDesktopTests(unittest.TestCase):
             "pacote_disponivel": True,
         }
         with patch.dict("sys.modules", {"tkinter": modulo_tkinter}):
-            with patch("app.preparar_atualizacao", return_value={"arquivo": "C:/update/DeigoPDV.exe"}):
+            with patch("app.preparar_atualizacao", return_value={"arquivo": "C:/update/DeTecPDV.exe"}):
                 with self.assertRaisesRegex(RuntimeError, "instale o pacote"):
                     app.avisar_atualizacao(situacao, {"terminal_id": "1"})
 
@@ -613,6 +614,7 @@ class AppDesktopTests(unittest.TestCase):
         self.assertTrue(pendente["pix_simulado"])
         self.assertEqual(aprovado["status"], "ok")
         self.assertTrue(aprovado["aprovado"])
+        self.assertTrue(aprovado["simulado"])
         self.assertTrue(aprovado["transacao_externa_id"].startswith("TEF-SIM-"))
         self.assertTrue(aprovado["nsu"])
         self.assertTrue(aprovado["codigo_autorizacao"])
@@ -1206,11 +1208,13 @@ class AppDesktopTests(unittest.TestCase):
         evidencia = registrar.call_args.args[1]
         self.assertNotIn("documento", evidencia)
         self.assertNotIn("52998224725", json.dumps(evidencia))
-    def test_ctrl_q_global_existe_no_shell_desktop_com_confirmacao(self):
+    def test_atalhos_globais_de_saida_existem_no_shell_desktop_com_confirmacao(self):
         fonte = Path(app.__file__).read_text(encoding="utf-8")
 
         self.assertIn("window.__deigoDesktopQuitInstalled", fonte)
         self.assertIn("event.key.toLowerCase() === 'q'", fonte)
+        self.assertIn("event.key === 'F5'", fonte)
+        self.assertIn('raiz.bind_all("<Control-F5>"', fonte)
         self.assertIn("Operações ainda não salvas serão descartadas", fonte)
         self.assertIn('raiz.bind_all("<Control-q>"', fonte)
         self.assertIn("window.SupermercadoDesktop.closeApplication();", fonte)

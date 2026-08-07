@@ -62,6 +62,23 @@ class VendaServiceTests(TestCase):
         self.assertFalse(Venda.objects.exists())
         self.estoque.refresh_from_db()
         self.assertEqual(self.estoque.quantidade_atual, Decimal("10.000"))
+    def test_finalizacao_sem_registro_de_estoque_retorna_erro_operacional(self):
+        filial_sem_estoque = Filial.objects.create(empresa=self.empresa, nome="Loja sem saldo", cnpj="11.111.111/0002-00")
+        caixa_sem_estoque = Caixa.objects.create(
+            filial=filial_sem_estoque,
+            usuario_abertura=self.usuario,
+            valor_inicial=Decimal("50.00"),
+        )
+
+        with self.assertRaisesMessage(ValidationError, "Estoque insuficiente"):
+            finalizar_venda(
+                caixa=caixa_sem_estoque,
+                usuario=self.usuario,
+                itens=[{"produto": self.produto, "quantidade": Decimal("1.000")}],
+                pagamentos=[{"forma_pagamento": self.dinheiro, "valor": Decimal("25.00")}],
+            )
+
+        self.assertFalse(Estoque.objects.filter(produto=self.produto, filial=filial_sem_estoque).exists())
     def test_nova_forma_global_e_inicializada_na_filial_automaticamente(self):
         formas_pagamento_disponiveis(self.filial)
         nova_forma = FormaPagamento.objects.create(nome="Cartão loja", tipo="CARTAO")

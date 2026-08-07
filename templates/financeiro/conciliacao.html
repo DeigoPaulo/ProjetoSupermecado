@@ -17,7 +17,7 @@
 </header>
 
 <form method="get" class="toolbar report-filter">
-  <label><span>Inicio</span><input type="date" name="data_inicio" value="{{ data_inicio|date:'Y-m-d' }}"></label>
+  <label><span>Início</span><input type="date" name="data_inicio" value="{{ data_inicio|date:'Y-m-d' }}"></label>
   <label><span>Fim</span><input type="date" name="data_fim" value="{{ data_fim|date:'Y-m-d' }}"></label>
   <label>
     <span>Filial</span>
@@ -39,7 +39,7 @@
   <article class="finance-insight">
     <i class="fa-solid fa-scale-balanced"></i>
     <div>
-      <strong>Conferencia diaria</strong>
+      <strong>Conferência diaria</strong>
       <span>Use este painel junto com fechamento de caixa e relatórios de contas pagas.</span>
     </div>
   </article>
@@ -74,7 +74,7 @@
             <td><strong>R$ {{ linha.saldo_operacional|floatformat:2 }}</strong></td>
           </tr>
         {% empty %}
-          <tr><td colspan="5" class="empty">Nenhum movimento no periodo.</td></tr>
+          <tr><td colspan="5" class="empty">Nenhum movimento no período.</td></tr>
         {% endfor %}
       </tbody>
     </table>

@@ -1,0 +1,7 @@
+{% extends "base.html" %}
+{% block title %}DeTec Admin{% endblock %}
+{% block content %}
+<header class="page-header"><div><h1>DeTec Admin</h1><p>Acesso administrativo ao ERP em uma janela própria, sem navegador.</p></div></header>
+<section class="operation-notice"><i class="fa-solid fa-user-gear"></i><div><strong>Aplicativo para administrador e supervisor</strong><span>Não possui TEF, balança, gaveta ou permissões de operador de caixa. O login continua sendo feito com a conta do ERP.</span></div></section>
+<section class="panel"><h2>Instalador Windows</h2>{% if instalador_admin.disponivel %}<p>Versão {{ instalador_admin.versao }} pronta para download.</p><a class="primary-button" href="{% url 'configuracoes:admin_desktop_download_windows' %}"><i class="fa-solid fa-download"></i> Baixar DeTec Admin</a>{% else %}<p>O instalador {{ instalador_admin.nome }} ainda não foi publicado nesta instalação.</p><span class="status status-warning">Aguardando build</span>{% endif %}</section>
+{% endblock %}

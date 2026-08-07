@@ -33,7 +33,7 @@ class PromocaoCreateView(LoginRequiredMixin, RoleRequiredMixin, CreateView):
 
     def form_valid(self, form):
         form.instance.criado_por = self.request.user
-        messages.success(self.request, "Promocao criada com sucesso.")
+        messages.success(self.request, "Promoção criada com sucesso.")
         return super().form_valid(form)
 
 
@@ -45,5 +45,5 @@ class PromocaoUpdateView(LoginRequiredMixin, RoleRequiredMixin, UpdateView):
     success_url = reverse_lazy("promocoes:lista")
 
     def form_valid(self, form):
-        messages.success(self.request, "Promocao atualizada com sucesso.")
+        messages.success(self.request, "Promoção atualizada com sucesso.")
         return super().form_valid(form)

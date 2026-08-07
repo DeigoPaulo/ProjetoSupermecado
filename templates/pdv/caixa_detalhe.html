@@ -42,7 +42,7 @@
       {% endif %}
       <dt>Abertura</dt><dd>{{ caixa.data_abertura|date:"d/m/Y H:i" }}</dd>
       <dt>Fechamento</dt><dd>{{ caixa.data_fechamento|date:"d/m/Y H:i"|default:"-" }}</dd>
-      <dt>Conferencia</dt><dd>{{ caixa.data_conferencia|date:"d/m/Y H:i"|default:"-" }}</dd>
+      <dt>Conferência</dt><dd>{{ caixa.data_conferencia|date:"d/m/Y H:i"|default:"-" }}</dd>
     </dl>
     <div class="panel-title">Pagamentos por forma</div>
     <table>
@@ -71,7 +71,7 @@
         <button class="primary-button" type="submit">Fechar caixa</button>
       </form>
     {% elif caixa.status == "FECHADO" %}
-      <div class="empty p-3">Fechado por {{ caixa.usuario_fechamento|default:"-" }}. Aguardando conferencia do supervisor.</div>
+      <div class="empty p-3">Fechado por {{ caixa.usuario_fechamento|default:"-" }}. Aguardando conferência do supervisor.</div>
       <form method="post" action="{% url 'pdv:conferir_caixa' caixa.id %}" class="compact-form form-confirm" data-msg="Conferir este caixa?">
         {% csrf_token %}
         {% for field in conferir_form %}

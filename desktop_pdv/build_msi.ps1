@@ -14,12 +14,12 @@ param(
 $ErrorActionPreference = "Stop"
 $Root = Split-Path -Parent $MyInvocation.MyCommand.Path
 $Template = Join-Path $Root "installer\Product.wxs.template"
-if (-not $Icon) { $Icon = Join-Path $Root "assets\deigo-pdv.ico" }
+if (-not $Icon) { $Icon = Join-Path $Root "assets\deigo-pdv-cart.ico" }
 if (-not $Source) {
-    $Source = Join-Path $Root "dist\DeigoPDV.exe"
+    $Source = Join-Path $Root "dist\DeTecPDV.exe"
 }
 if (-not $Output) {
-    $Output = Join-Path $Root "dist\DeigoPDV-$Version-x64.msi"
+    $Output = Join-Path $Root "dist\DeTecPDV-$Version-x64.msi"
 }
 $Source = [System.IO.Path]::GetFullPath($Source)
 $Output = [System.IO.Path]::GetFullPath($Output)

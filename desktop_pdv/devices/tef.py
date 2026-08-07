@@ -51,6 +51,7 @@ class SimuladorTef(AdaptadorTef):
         aprovado = {
             "status": "ok",
             "aprovado": True,
+            "simulado": True,
             "tipo": tipo,
             "valor": valor,
             "provedor": self.provedor,
@@ -98,6 +99,7 @@ class SimuladorTef(AdaptadorTef):
         return {
             "status": "ok",
             "estornado": True,
+            "simulado": True,
             "tipo": payload.get("tipo", ""),
             "valor": payload["valor"],
             "provedor": self.provedor,

@@ -1475,7 +1475,11 @@ document.addEventListener("DOMContentLoaded", function () {
           }
           aplicarAutorizacaoPagamento(row, resultado);
           ocultarPixPanel();
-          informarPagamentoFeedback("Pagamento " + tipoTef.replaceAll("_", " ") + " aprovado. Aut. " + resultado.codigo_autorizacao + ".");
+          if (resultado.simulado) {
+            informarPagamentoFeedback("SIMULACAO TEF: " + tipoTef.replaceAll("_", " ") + " aprovado para teste. Nenhuma cobranca foi enviada.");
+          } else {
+            informarPagamentoFeedback("Pagamento " + tipoTef.replaceAll("_", " ") + " aprovado. Aut. " + resultado.codigo_autorizacao + ".");
+          }
           select.focus();
         })
         .catch(function (erro) {
@@ -1525,11 +1529,15 @@ document.addEventListener("DOMContentLoaded", function () {
     function abrirConferenciaEntrega(deliveryId) {
       var detailModal = document.getElementById("pdv-modal-delivery-detail");
       if (!detailModal || !deliveryId) return;
+      var selectedDetail = detailModal.querySelector('[data-delivery-detail="' + String(deliveryId) + '"]');
+      var missingDetail = detailModal.querySelector("[data-delivery-detail-missing]");
       detailModal.querySelectorAll("[data-delivery-detail]").forEach(function (detail) {
-        detail.hidden = detail.getAttribute("data-delivery-detail") !== String(deliveryId);
+        detail.hidden = detail !== selectedDetail;
       });
+      if (missingDetail) missingDetail.hidden = Boolean(selectedDetail);
       abrirModalPdv("delivery-detail");
-      var focusTarget = detailModal.querySelector('[data-delivery-detail="' + deliveryId + '"] button, [data-delivery-detail="' + deliveryId + '"] input, [data-delivery-detail="' + deliveryId + '"] select');
+      if (!selectedDetail) return;
+      var focusTarget = selectedDetail.querySelector("button, input, select");
       if (focusTarget) focusTarget.focus();
     }
 
@@ -2046,6 +2054,17 @@ document.addEventListener("DOMContentLoaded", function () {
       }
       if (activeModal && activeModal.id === "pdv-modal-delivery") {
         var focoEmEntrega = document.activeElement && document.activeElement.closest && document.activeElement.closest("#pdv-modal-delivery form");
+        if (event.altKey && !event.ctrlKey && !event.metaKey && key.toLowerCase() === "s") {
+          event.preventDefault();
+          if (!deliverySaveClient || deliverySaveClient.disabled) {
+            if (deliveryClientStatus) deliveryClientStatus.textContent = "Cliente cadastrado selecionado. Esta opção não precisa ser marcada.";
+            return;
+          }
+          deliverySaveClient.checked = !deliverySaveClient.checked;
+          deliverySaveClient.focus();
+          if (deliveryClientStatus) deliveryClientStatus.textContent = deliverySaveClient.checked ? "Cliente sera salvo para proximas entregas." : "Pedido sera criado como cliente avulso.";
+          return;
+        }
         if (key === "Tab" && focoEmEntrega) {
           var camposEntrega = Array.prototype.slice.call(
             activeModal.querySelectorAll('input:not([type=hidden]):not([disabled]), select:not([disabled]), textarea:not([disabled]), button:not([disabled])')
@@ -2321,7 +2340,7 @@ document.addEventListener("DOMContentLoaded", function () {
           window.deigoSupervisorCredential(resultado.credencial);
           return;
         }
-        window.alert((resultado && resultado.mensagem) || "Nao foi possivel ler o cartao. Use o leitor em modo teclado.");
+        window.alert((resultado && resultado.mensagem) || "Não foi possível ler o cartão. Use o leitor em modo teclado.");
         credential.focus();
       }).catch(function () {
         window.alert("Leitor NFC indisponivel. Use o leitor em modo teclado ou informe login e senha.");

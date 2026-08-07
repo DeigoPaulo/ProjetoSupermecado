@@ -113,7 +113,7 @@ def caminho_configuracao() -> Path:
     if not getattr(sys, "frozen", False) and config_desenvolvimento.exists():
         return config_desenvolvimento
     local_app_data = Path(os.environ.get("LOCALAPPDATA", Path.home()))
-    novo = local_app_data / "DeigoPDV" / "config.json"
+    novo = local_app_data / "DeTecPDV" / "config.json"
     legado = local_app_data / "SupermercadoPDV" / "config.json"
     if legado.exists() and not novo.exists():
         novo.parent.mkdir(parents=True, exist_ok=True)
@@ -293,7 +293,7 @@ def montar_pagina_contingencia(bootstrap: dict) -> str:
     <p class="safety">Por seguranca, novas vendas, pagamentos e alteracoes de estoque permanecem bloqueados ate a licenca e os dados operacionais serem validados novamente.</p>
     <div class="actions">
       <button id="retry" type="button">Tentar novamente <kbd>F5</kbd></button>
-      <button class="secondary" id="exit" type="button">Sair do aplicativo <kbd>Ctrl+Q</kbd></button>
+      <button class="secondary" id="exit" type="button">Sair do aplicativo <kbd>Ctrl+F5</kbd></button>
     </div>
     <p class="detail" id="detail">{mensagem}</p>
     <footer>Ultima configuracao autorizada: {cache_salvo_em}</footer>
@@ -325,7 +325,7 @@ def montar_pagina_contingencia(bootstrap: dict) -> str:
     button.addEventListener('click', reconnect);
     exitButton.addEventListener('click', exitApplication);
     document.addEventListener('keydown', function (event) {{
-      if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'q') {{ event.preventDefault(); exitApplication(); return; }}
+      if ((event.ctrlKey || event.metaKey) && (event.key.toLowerCase() === 'q' || event.key === 'F5' || event.code === 'F5')) {{ event.preventDefault(); exitApplication(); return; }}
       if (event.key === 'F5' || (event.key === 'Enter' && document.activeElement !== exitButton)) {{ event.preventDefault(); reconnect(); }}
     }});
     button.focus();
@@ -521,7 +521,7 @@ def verificar_versao(bootstrap: dict) -> dict:
 def preparar_atualizacao(config: dict, situacao: dict) -> dict:
     if not situacao.get("pacote_disponivel"):
         raise RuntimeError("O pacote de atualizacao ainda nao foi publicado.")
-    nome = situacao.get("pacote_nome") or "DeigoPDV.exe"
+    nome = situacao.get("pacote_nome") or "DeTecPDV.exe"
     sha_esperado = situacao.get("pacote_sha256", "")
     if len(sha_esperado) != 64:
         raise RuntimeError("O pacote publicado nao possui SHA-256 valido.")
@@ -599,7 +599,7 @@ def ativar_terminal(config_atual: dict | None = None) -> dict:
 
     resultado: dict = {}
     raiz = tk.Tk()
-    raiz.title("Ativar Deigo PDV")
+    raiz.title("Ativar DeTec PDV")
     raiz.geometry("520x330")
     raiz.resizable(False, False)
     icone = caminho_recurso("assets/deigo-pdv.ico")
@@ -608,7 +608,7 @@ def ativar_terminal(config_atual: dict | None = None) -> dict:
 
     corpo = ttk.Frame(raiz, padding=24)
     corpo.pack(fill="both", expand=True)
-    ttk.Label(corpo, text="Ativacao do Deigo PDV", font=("Segoe UI", 16, "bold")).pack(anchor="w")
+    ttk.Label(corpo, text="Ativacao do DeTec PDV", font=("Segoe UI", 16, "bold")).pack(anchor="w")
     ttk.Label(corpo, text="Informe a credencial gerada pelo admin master no ERP.").pack(anchor="w", pady=(2, 18))
 
     campos = [
@@ -650,6 +650,7 @@ def ativar_terminal(config_atual: dict | None = None) -> dict:
     raiz.protocol("WM_DELETE_WINDOW", raiz.destroy)
     raiz.bind_all("<Control-q>", lambda _event: raiz.destroy())
     raiz.bind_all("<Control-Q>", lambda _event: raiz.destroy())
+    raiz.bind_all("<Control-F5>", lambda _event: raiz.destroy())
     raiz.mainloop()
     if not resultado:
         raise RuntimeError("Ativacao cancelada.")
@@ -1117,6 +1118,7 @@ class PonteLocal:
             "nsu",
             "codigo_autorizacao",
             "pix_simulado",
+            "simulado",
         )
         evidencia = {campo: resultado[campo] for campo in campos if resultado.get(campo) not in (None, "")}
         evidencia.setdefault("status", "erro")
@@ -1349,7 +1351,7 @@ def _executar_interface_pdv(config: dict) -> None:
     ponte = PonteLocal(bootstrap, config)
     conteudo = {"html": montar_pagina_contingencia(bootstrap)} if bootstrap.get("status_conexao") == "offline" else {"url": url_pdv}
     janela = webview.create_window(
-        "Deigo PDV",
+        "DeTec PDV",
         js_api=ponte,
         fullscreen=bool(config.get("tela_cheia", True)),
         resizable=bool(config.get("permitir_redimensionar", False)),
@@ -1380,7 +1382,7 @@ def _executar_interface_pdv(config: dict) -> None:
         "if (!window.__deigoDesktopQuitInstalled) {"
         "window.__deigoDesktopQuitInstalled = true;"
         "document.addEventListener('keydown', function(event) {"
-        "if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'q') {"
+        "if ((event.ctrlKey || event.metaKey) && (event.key.toLowerCase() === 'q' || event.key === 'F5' || event.code === 'F5')) {"
         "event.preventDefault(); event.stopPropagation();"
         "if (window.confirm('Fechar o aplicativo PDV? Operações ainda não salvas serão descartadas.')) {"
         "window.SupermercadoDesktop.closeApplication();"
@@ -1401,7 +1403,7 @@ def _executar_interface_pdv(config: dict) -> None:
 
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="Deigo PDV Desktop")
+    parser = argparse.ArgumentParser(description="DeTec PDV Desktop")
     parser.add_argument("--configurar", action="store_true", help="Abre novamente a ativacao deste terminal.")
     argumentos = parser.parse_args()
     try:

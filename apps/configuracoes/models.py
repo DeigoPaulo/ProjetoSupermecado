@@ -106,6 +106,7 @@ class HomologacaoServidorLocal(models.Model):
     hash_evidencia = models.CharField(max_length=64, unique=True)
     resultado = models.CharField(max_length=12, choices=ResultadoHomologacaoServidor.choices)
     observacoes = models.TextField(blank=True)
+    itens_validados = models.JSONField(default=list, blank=True)
     registrada_por = models.ForeignKey(
         settings.AUTH_USER_MODEL,
         on_delete=models.PROTECT,
@@ -117,6 +118,12 @@ class HomologacaoServidorLocal(models.Model):
         ordering = ["-criada_em", "-id"]
         verbose_name = "homologação de servidor local"
         verbose_name_plural = "homologações de servidor local"
+
+    @property
+    def itens_validados_labels(self):
+        from .homologation import rotulos_itens_homologacao
+
+        return rotulos_itens_homologacao(self.itens_validados)
 
     def __str__(self):
         return f"{self.maquina} - {self.get_resultado_display()} - {self.versao_artefato}"

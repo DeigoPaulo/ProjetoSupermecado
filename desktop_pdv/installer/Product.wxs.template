@@ -27,7 +27,7 @@
           Description="PDV operacional do supermercado"
           WorkingDirectory="INSTALLFOLDER"
           Icon="DeigoPdvIcon"
-          Advertise="yes" />
+          Advertise="no" />
         <Shortcut
           Id="DesktopShortcut"
           Directory="DesktopFolder"
@@ -35,7 +35,7 @@
           Description="PDV operacional do supermercado"
           WorkingDirectory="INSTALLFOLDER"
           Icon="DeigoPdvIcon"
-          Advertise="yes" />
+          Advertise="no" />
       </File>
       <RemoveFolder Id="RemoveProgramMenuFolder" Directory="PROGRAMMENUDIR" On="uninstall" />
     </Component>

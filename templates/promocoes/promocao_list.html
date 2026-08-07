@@ -1,24 +1,24 @@
 {% extends "base.html" %}
 
-{% block title %}Promocoes{% endblock %}
+{% block title %}Promoções{% endblock %}
 
 {% block content %}
 <header class="page-header">
   <div>
-    <h1>Promocoes</h1>
-    <p>Precos promocionais programados por produto.</p>
+    <h1>Promoções</h1>
+    <p>Preços promocionais programados por produto.</p>
   </div>
-  <a class="primary-button" href="{% url 'promocoes:nova' %}">Nova promocao</a>
+  <a class="primary-button" href="{% url 'promocoes:nova' %}">Nova promoção</a>
 </header>
 
 <form method="get" class="toolbar">
-  <input type="search" name="q" value="{{ request.GET.q }}" placeholder="Buscar promocao ou produto">
+  <input type="search" name="q" value="{{ request.GET.q }}" placeholder="Buscar promoção ou produto">
   <button type="submit">Buscar</button>
 </form>
 
 <div class="panel">
   <table>
-    <thead><tr><th>Produto</th><th>Nome</th><th>Preco</th><th>Inicio</th><th>Fim</th><th>Status</th><th></th></tr></thead>
+    <thead><tr><th>Produto</th><th>Nome</th><th>Preço</th><th>Início</th><th>Fim</th><th>Status</th><th></th></tr></thead>
     <tbody>
       {% for promocao in promocoes %}
         <tr>
@@ -31,7 +31,7 @@
           <td><a href="{% url 'promocoes:editar' promocao.pk %}">Editar</a></td>
         </tr>
       {% empty %}
-        <tr><td colspan="7" class="empty">Nenhuma promocao cadastrada.</td></tr>
+        <tr><td colspan="7" class="empty">Nenhuma promoção cadastrada.</td></tr>
       {% endfor %}
     </tbody>
   </table>

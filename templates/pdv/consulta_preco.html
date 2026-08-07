@@ -1,11 +1,11 @@
 {% extends "base.html" %}
 
-{% block title %}Consulta de preco{% endblock %}
+{% block title %}Consulta de preço{% endblock %}
 
 {% block content %}
 <header class="page-header">
   <div>
-    <h1>Consulta de preco</h1>
+    <h1>Consulta de preço</h1>
     <p>Busque por código de barras, código interno ou nome do produto.</p>
   </div>
   <div class="actions">
@@ -27,11 +27,11 @@
       {% if apresentacao %}<div class="price-check-promo">{{ apresentacao.get_tipo_display }} com {{ apresentacao.fator_conversao|quantidade_br }} {{ produto.get_unidade_display|lower }}(s)</div>{% endif %}
       <div class="price-check-price">R$ {{ preco_atual|floatformat:2 }}</div>
       {% if promocao %}
-        <div class="price-check-promo">Promocao ativa: {{ promocao.nome }} ate {{ promocao.fim|date:"d/m/Y H:i" }}</div>
+        <div class="price-check-promo">Promoção ativa: {{ promocao.nome }} ate {{ promocao.fim|date:"d/m/Y H:i" }}</div>
       {% elif produto.preco_promocional %}
-        <div class="price-check-promo">Preco promocional cadastrado no produto.</div>
+        <div class="price-check-promo">Preço promocional cadastrado no produto.</div>
       {% else %}
-        <div class="muted">Preco normal de venda.</div>
+        <div class="muted">Preço normal de venda.</div>
       {% endif %}
     </div>
 

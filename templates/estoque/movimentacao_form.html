@@ -4,12 +4,12 @@
 
 {% block content %}
 <header class="page-header"><div><h1>Movimentar estoque</h1><p>Entradas, saidas, ajustes e reservas com trava transacional.</p></div></header>
-<form method="post" class="form-grid panel form-confirm" data-msg="Confirmar movimentacao manual de estoque?">
+<form method="post" class="form-grid panel form-confirm" data-msg="Confirmar movimentação manual de estoque?">
   {% csrf_token %}
   <section class="form-section">
     <div class="form-section-header">
       <h2>Operação</h2>
-      <p>Use movimentacao manual apenas para ajuste autorizado fora dos fluxos de compra, venda e inventario.</p>
+      <p>Use movimentação manual apenas para ajuste autorizado fora dos fluxos de compra, venda e inventário.</p>
     </div>
     <div class="form-grid">
       <div class="field">

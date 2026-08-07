@@ -28,7 +28,7 @@
 
 <section class="two-column">
   <div class="panel">
-    <div class="panel-title">Devoluções do periodo</div>
+    <div class="panel-title">Devoluções do período</div>
     <table>
       <thead><tr><th>Data</th><th>Venda</th><th>Cliente</th><th>Operador</th><th>Motivo</th><th>Valor</th></tr></thead>
       <tbody>
@@ -42,7 +42,7 @@
             <td><strong>R$ {{ devolucao.valor_total|floatformat:2 }}</strong></td>
           </tr>
         {% empty %}
-          <tr><td colspan="6" class="empty">Nenhuma devolucao no periodo.</td></tr>
+          <tr><td colspan="6" class="empty">Nenhuma devolução no período.</td></tr>
         {% endfor %}
       </tbody>
     </table>
@@ -59,7 +59,7 @@
             <td>R$ {{ item.valor|floatformat:2 }}</td>
           </tr>
         {% empty %}
-          <tr><td colspan="3" class="empty">Sem itens devolvidos no periodo.</td></tr>
+          <tr><td colspan="3" class="empty">Sem itens devolvidos no período.</td></tr>
         {% endfor %}
       </tbody>
     </table>

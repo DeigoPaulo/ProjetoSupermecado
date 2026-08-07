@@ -1,12 +1,12 @@
 {% extends "base.html" %}
 
-{% block title %}Promocao{% endblock %}
+{% block title %}Promoção{% endblock %}
 
 {% block content %}
 <header class="page-header">
   <div>
-    <h1>{% if object %}Editar promocao{% else %}Nova promocao{% endif %}</h1>
-    <p>Defina periodo e preco promocional usado automaticamente no PDV.</p>
+    <h1>{% if object %}Editar promoção{% else %}Nova promoção{% endif %}</h1>
+    <p>Defina período e preço promocional usado automaticamente no PDV.</p>
   </div>
 </header>
 
@@ -14,8 +14,8 @@
   {% csrf_token %}
   <section class="form-section">
     <div class="form-section-header">
-      <h2>Produto e preco</h2>
-      <p>O PDV aplica automaticamente o preco promocional quando a promocao esta ativa e dentro da vigencia.</p>
+      <h2>Produto e preço</h2>
+      <p>O PDV aplica automaticamente o preço promocional quando a promoção está ativa e dentro da vigência.</p>
     </div>
     <div class="form-grid">
       <div class="field span-2">
@@ -31,7 +31,7 @@
       <div class="field">
         {{ form.preco_promocional.label_tag }}
         {{ form.preco_promocional }}
-        <span class="help-text">Valor final que sera usado na venda durante a promocao.</span>
+        <span class="help-text">Valor final que será usado na venda durante a promoção.</span>
         {{ form.preco_promocional.errors }}
       </div>
     </div>
@@ -40,7 +40,7 @@
   <section class="form-section">
     <div class="form-section-header">
       <h2>Vigencia</h2>
-      <p>Defina inicio e fim para evitar preco promocional fora do periodo planejado.</p>
+      <p>Defina início e fim para evitar preço promocional fora do período planejado.</p>
     </div>
     <div class="form-grid">
       <div class="field">

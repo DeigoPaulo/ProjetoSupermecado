@@ -8,8 +8,8 @@ $ErrorActionPreference = "Stop"
 $Root = Split-Path -Parent $MyInvocation.MyCommand.Path
 $Venv = Join-Path $Root ".build-venv"
 $Python = Join-Path $Venv "Scripts\python.exe"
-$Output = Join-Path $Root "dist\DeigoPDV.exe"
-$Spec = Join-Path $Root "DeigoPDV.spec"
+$Output = Join-Path $Root "dist\DeTecPDV.exe"
+$Spec = Join-Path $Root "DeTecPDV.spec"
 
 function Assert-LastExitCode {
     param([string]$Step)

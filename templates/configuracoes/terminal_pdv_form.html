@@ -23,7 +23,7 @@
       <label class="form-field"><span>{{ form.modo_integracao_tef.label }}</span>{{ form.modo_integracao_tef }}{{ form.modo_integracao_tef.errors }}</label>
       <div class="form-note form-field-wide">
         <strong>TEF por adaptador.</strong>
-        <span>O PDV envia valor, tipo de pagamento e identificador da venda para o app desktop. O adaptador configurado conversa com a operadora escolhida e devolve aprovado, recusado, NSU e autorizacao.</span>
+        <span>O PDV envia valor, tipo de pagamento e identificador da venda para o app desktop. O adaptador configurado conversa com a operadora escolhida e devolve aprovado, recusado, NSU e autorização.</span>
       </div>
       <label class="toggle-field">{{ form.usa_balanca }} <span>{{ form.usa_balanca.label }}</span>{{ form.usa_balanca.errors }}</label>
       <label class="form-field"><span>{{ form.protocolo_balanca.label }}</span>{{ form.protocolo_balanca }}{{ form.protocolo_balanca.errors }}</label>
@@ -55,7 +55,7 @@
       {% if object %}
         <div class="form-note form-field-wide"><strong>Identificador do aplicativo.</strong><span><code>{{ object.identificador }}</code></span></div>
       {% else %}
-        <div class="form-note form-field-wide"><strong>Identificador automatico.</strong><span>Ao salvar, o sistema gera o codigo que sera usado pelo app PDV instalado nesta máquina.</span></div>
+        <div class="form-note form-field-wide"><strong>Identificador automático.</strong><span>Ao salvar, o sistema gera o código que será usado pelo app PDV instalado nesta máquina.</span></div>
       {% endif %}
     </div>
   </section>

@@ -16,6 +16,6 @@
 {% for conta in contas %}
   <tr><td>{{ conta.vencimento|date:"d/m/Y" }}</td><td>{{ conta.get_tipo_display }}</td><td>{{ conta.descricao }}</td><td>{% if conta.fornecedor %}{{ conta.fornecedor }}{% elif conta.cliente %}{{ conta.cliente }}{% else %}-{% endif %}</td><td>{{ conta.get_status_display }}</td><td class="money">R$ {{ conta.valor|floatformat:2 }}</td><td>{{ conta.data_pagamento|date:"d/m/Y"|default:"-" }}</td><td class="money">{% if conta.valor_pago is not None %}R$ {{ conta.valor_pago|floatformat:2 }}{% else %}-{% endif %}</td></tr>
 {% empty %}
-  <tr><td colspan="8">Nenhuma conta no periodo.</td></tr>
+  <tr><td colspan="8">Nenhuma conta no período.</td></tr>
 {% endfor %}
 </tbody></table><footer>Deigo Varejo · Deigo Tecnologia</footer></body></html>

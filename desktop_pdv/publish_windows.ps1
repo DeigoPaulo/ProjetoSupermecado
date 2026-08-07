@@ -1,5 +1,5 @@
 param(
-    [string]$Version = "0.1.5",
+    [string]$Version = "0.1.9",
     [string]$Source,
     [string]$Destination,
     [switch]$RequireSignature
@@ -9,16 +9,16 @@ $ErrorActionPreference = "Stop"
 $Root = Split-Path -Parent $MyInvocation.MyCommand.Path
 $ProjectRoot = Split-Path -Parent $Root
 if (-not $Source) {
-    $Msi = Join-Path $Root "dist\DeigoPDV-$Version-x64.msi"
+    $Msi = Join-Path $Root "dist\DeTecPDV-$Version-x64.msi"
     $Source = if (Test-Path -LiteralPath $Msi -PathType Leaf) {
         $Msi
     } else {
-        Join-Path $Root "dist\DeigoPDV.exe"
+        Join-Path $Root "dist\DeTecPDV.exe"
     }
 }
 if (-not $Destination) {
     $Extension = [System.IO.Path]::GetExtension($Source)
-    $Destination = Join-Path $ProjectRoot "artifacts\DeigoPDV$Extension"
+    $Destination = Join-Path $ProjectRoot "artifacts\DeTecPDV$Extension"
 }
 
 $Source = [System.IO.Path]::GetFullPath($Source)

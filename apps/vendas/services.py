@@ -112,7 +112,7 @@ def finalizar_venda(*, caixa, usuario, itens, forma_pagamento=None, desconto=Dec
             quantidade = item["quantidade"]
             total_item = calcular_item(produto, quantidade)
             total_bruto += total_item
-            estoque_produto = Estoque.objects.select_for_update().get(produto=produto, filial=caixa.filial)
+            estoque_produto, _ = Estoque.objects.select_for_update().get_or_create(produto=produto, filial=caixa.filial)
             custo_unitario = estoque_produto.custo_medio or produto.preco_custo
 
             ItemVenda.objects.create(

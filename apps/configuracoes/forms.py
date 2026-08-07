@@ -5,7 +5,9 @@ from apps.pdv.models import TerminalPdv
 from apps.vendas.models import FormaPagamento, FormaPagamentoFilial
 
 from .homologation import (
+    CODIGOS_CRITICOS_HOMOLOGACAO_SERVIDOR_LOCAL,
     EvidenciaHomologacaoInvalida,
+    ITENS_HOMOLOGACAO_SERVIDOR_LOCAL,
     validar_arquivos_evidencia,
 )
 
@@ -179,6 +181,14 @@ class HomologacaoServidorLocalForm(forms.ModelForm):
         help_text="Arquivo .sha256 gerado junto com a evidência.",
         widget=forms.FileInput(attrs={"accept": ".sha256,.txt,text/plain"}),
     )
+    itens_validados = forms.MultipleChoiceField(
+        label="Testes executados",
+        choices=ITENS_HOMOLOGACAO_SERVIDOR_LOCAL,
+        required=False,
+        widget=forms.CheckboxSelectMultiple(attrs={"class": "homologation-checklist"}),
+        help_text="Marque os testes realmente executados na máquina homologada.",
+    )
+
     hash_evidencia = forms.CharField(
         required=False,
         widget=forms.HiddenInput(),
@@ -196,6 +206,7 @@ class HomologacaoServidorLocalForm(forms.ModelForm):
             "resultado",
             "arquivo_evidencia",
             "arquivo_sha256",
+            "itens_validados",
             "hash_evidencia",
             "observacoes",
         ]
@@ -250,6 +261,18 @@ class HomologacaoServidorLocalForm(forms.ModelForm):
                 "arquivo_evidencia",
                 "Uma homologação aprovada exige evidência com status liberável.",
             )
+        itens_validados = list(dict.fromkeys(cleaned.get("itens_validados") or []))
+        cleaned["itens_validados"] = itens_validados
+        if resultado == ResultadoHomologacaoServidor.APROVADA:
+            faltantes = (
+                CODIGOS_CRITICOS_HOMOLOGACAO_SERVIDOR_LOCAL
+                - set(itens_validados)
+            )
+            if faltantes:
+                self.add_error(
+                    "itens_validados",
+                    "Uma aprovação exige todos os testes críticos da máquina limpa.",
+                )
         if (
             resultado == ResultadoHomologacaoServidor.REPROVADA
             and not (cleaned.get("observacoes") or "").strip()
