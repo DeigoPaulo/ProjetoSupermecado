@@ -58,6 +58,8 @@ No arquivo `.env`, ao menos ajuste:
 DJANGO_ENV=production
 DEBUG=false
 SECRET_KEY=uma-chave-longa-e-exclusiva
+# Gere uma vez no servidor: python -c "import secrets; print(secrets.token_urlsafe(48))"
+FISCAL_CERTIFICATE_KEY=uma-chave-fiscal-longa-e-exclusiva
 ALLOWED_HOSTS=127.0.0.1,localhost,IP_DO_SERVIDOR,NOME_INTERNO
 CSRF_TRUSTED_ORIGINS=http://IP_DO_SERVIDOR
 POSTGRES_DB=supermercado
@@ -67,7 +69,7 @@ POSTGRES_HOST=127.0.0.1
 POSTGRES_PORT=5432
 PDV_DESKTOP_VERSION=0.1.5
 PDV_DESKTOP_MIN_VERSION=0.1.5
-PDV_DESKTOP_INSTALLER_PATH=artifacts/DeTecPDV.msi
+PDV_DESKTOP_INSTALLER_PATH=artifacts/DeTecPDV.exe
 ```
 
 ### Instalar dependencias e banco

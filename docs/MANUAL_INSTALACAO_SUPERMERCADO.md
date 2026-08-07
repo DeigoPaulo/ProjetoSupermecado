@@ -266,6 +266,10 @@ Antes de emitir documento real:
 - conferir CNPJ, IE, regime e endereco da filial;
 - validar serie, numero inicial, ambiente e natureza de operacao;
 - instalar certificado A1 e proteger sua senha;
+- gerar uma unica `FISCAL_CERTIFICATE_KEY` forte no servidor com `python -c "import secrets; print(secrets.token_urlsafe(48))"`;
+- guardar essa chave fora do Git e do banco; ela criptografa o arquivo e a senha do A1 cadastrados no ERP;
+- nao trocar `FISCAL_CERTIFICATE_KEY` depois de cadastrar certificados, pois os dados protegidos anteriormente nao poderao mais ser abertos;
+- obter o certificado digital A1 (`.pfx` ou `.p12`) da empresa junto a uma Autoridade Certificadora ICP-Brasil; essa chave interna nao substitui o certificado;
 - revisar NCM, CEST, CFOP, CSOSN/CST e aliquotas dos produtos;
 - configurar CSC e identificador quando NFC-e exigir;
 - homologar autorizacao, rejeicao, contingencia, cancelamento e reimpressao;
