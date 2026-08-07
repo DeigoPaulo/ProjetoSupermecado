@@ -13,7 +13,7 @@
 </head>
 <body class="{% block body_class %}{% endblock %}">
   <div class="app-shell">
-    {% if user.is_authenticated %}
+    {% if user.is_authenticated and request.resolver_match.url_name != "login" %}
       <aside class="sidebar">
         <div class="brand">
           <span class="brand-mark"><img src="{% static 'img/brand/deigo-pdv-cart.png' %}" alt=""></span>
@@ -104,7 +104,7 @@
       </aside>
     {% endif %}
     <main class="content">
-      {% if user.is_authenticated %}
+      {% if user.is_authenticated and request.resolver_match.url_name != "login" %}
         <div class="topbar">
           <form class="global-search" action="{% url 'produtos:lista' %}" method="get">
             <i class="fa-solid fa-magnifying-glass"></i>

@@ -37,8 +37,8 @@ urlpatterns = [
     path('configuracoes/', include('apps.configuracoes.urls')),
     path('licenciamento/', include('apps.licenciamento.urls')),
     path('auditoria/', include('apps.auditoria.urls')),
-    path('login/', auth_views.LoginView.as_view(template_name='registration/login.html'), name='login'),
-    path('logout/', auth_views.LogoutView.as_view(), name='logout'),
+    path('login/', auth_views.LoginView.as_view(template_name='registration/login.html', redirect_authenticated_user=True), name='login'),
+    path('logout/', auth_views.LogoutView.as_view(next_page='login'), name='logout'),
     path(
         'recuperar-senha/',
         auth_views.PasswordResetView.as_view(
