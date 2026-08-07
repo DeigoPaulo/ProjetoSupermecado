@@ -11,7 +11,12 @@
   <div class="actions">
     {% if request.user.is_superuser %}
       {% if payload.distribuicao.status == "disponivel" %}
-        <a class="primary-button" href="{% url 'configuracoes:servidor_local_download' %}"><i class="fa-solid fa-download"></i> Baixar pacote</a>
+<a class="primary-button" href="{% url 'configuracoes:servidor_local_download' %}"><i class="fa-solid fa-download"></i> Baixar pacote técnico</a>
+        {% if payload.distribuicao_offline.status == "disponivel" %}
+          <a class="secondary-button" href="{% url 'configuracoes:servidor_local_offline_download' %}"><i class="fa-solid fa-box-archive"></i> Instalador offline</a>
+        {% else %}
+          <span class="secondary-button is-disabled" aria-disabled="true" title="Gere e publique o pacote offline validado."><i class="fa-solid fa-box-archive"></i> Instalador offline pendente</span>
+        {% endif %}
       {% else %}
         <span class="secondary-button is-disabled" aria-disabled="true"><i class="fa-solid fa-clock"></i> Pacote ainda não publicado</span>
       {% endif %}

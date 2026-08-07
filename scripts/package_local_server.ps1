@@ -100,7 +100,7 @@ $Payload = [ordered]@{
     validacao_conteudo = $ContentValidation
     inclui = $Paths
     instalacao = [ordered]@{
-        preparar = ".\scripts\setup_local.ps1"
+        preparar = ".\scripts\install_detech_server.ps1"
         servico = ".\scripts\install_local_server_service.ps1"
         guia = "docs\IMPLANTACAO_SERVIDOR_LOCAL.md"
     }

@@ -39,6 +39,7 @@ from apps.vendas.models import FormaPagamento, FormaPagamentoFilial, PagamentoVe
 from apps.vendas.services import inicializar_formas_pagamento_filial
 
 from .artifacts import artefato_pdv_desktop, artefato_servidor_local
+from .offline_bundle import artefato_servidor_offline
 from .acceptance_evidence import gerar_evidencia_aceite
 from .deployment_evidence import gerar_dossie_implantacao
 from .homologation import diagnostico_homologacao_servidor_local
@@ -1630,6 +1631,7 @@ def _servidor_local_prontidao(base_dir, scripts, pendencias, modos):
 def _servidor_local_payload(request):
     empresas = Empresa.objects.prefetch_related("filiais").order_by("nome_fantasia")
     pacote_servidor = artefato_servidor_local()
+    pacote_offline = artefato_servidor_offline()
     modos = {
         modo: empresas.filter(modo_implantacao=modo).count()
         for modo in ModoImplantacao.values
@@ -1725,7 +1727,16 @@ def _servidor_local_payload(request):
             "url": request.build_absolute_uri("/configuracoes/servidor-local/download/") if pacote_servidor["publicavel"] else "",
             "problemas": pacote_servidor["problemas"],
         },
-        "atualizacao_local": {
+        "distribuicao_offline": {
+            "status": "disponivel" if pacote_offline["publicavel"] else "indisponivel",
+            "versao": settings.LOCAL_SERVER_VERSION,
+            "nome": pacote_offline["nome"],
+            "tamanho_bytes": pacote_offline["tamanho"],
+            "sha256": pacote_offline["sha256"],
+            "integridade_valida": pacote_offline["integridade_valida"],
+            "url": request.build_absolute_uri("/configuracoes/servidor-local/offline/download/") if pacote_offline["publicavel"] else "",
+            "problemas": pacote_offline["problemas"],
+        },        "atualizacao_local": {
             "contrato_validacao": "local_server_update_validation_v1",
             "contrato_rollback": "local_server_rollback_v1",
             "contrato_historico": "local_server_update_history_v1",
@@ -1915,6 +1926,26 @@ def servidor_local_download(request):
         acao="DOWNLOAD_SERVIDOR_LOCAL",
         descricao=f"Download do pacote do servidor local {caminho.name}.",
         objeto_tipo="LocalServerPackage",
+        objeto_id=settings.LOCAL_SERVER_VERSION,
+        ip=request.META.get("REMOTE_ADDR"),
+    )
+    return FileResponse(caminho.open("rb"), as_attachment=True, filename=caminho.name)
+
+
+@login_required
+@role_required(*SISTEMA)
+def servidor_local_offline_download(request):
+    _exigir_admin_master(request.user)
+    pacote = artefato_servidor_offline()
+    if not pacote["publicavel"]:
+        raise Http404("Pacote offline do servidor indisponivel ou reprovado na validacao.")
+    caminho = pacote["caminho"]
+    LogAuditoria.objects.create(
+        usuario=request.user,
+        modulo="configuracoes",
+        acao="DOWNLOAD_SERVIDOR_LOCAL_OFFLINE",
+        descricao=f"Download do pacote offline do servidor local {caminho.name}.",
+        objeto_tipo="LocalServerOfflinePackage",
         objeto_id=settings.LOCAL_SERVER_VERSION,
         ip=request.META.get("REMOTE_ADDR"),
     )

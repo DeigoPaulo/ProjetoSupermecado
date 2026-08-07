@@ -23,6 +23,7 @@ urlpatterns = [
     path("servidor-local/", views.servidor_local, name="servidor_local"),
     path("servidor-local/manifest.json", views.servidor_local_manifest, name="servidor_local_manifest"),
     path("servidor-local/download/", views.servidor_local_download, name="servidor_local_download"),
+    path("servidor-local/offline/download/", views.servidor_local_offline_download, name="servidor_local_offline_download"),
     path("servidor-local/evidencias.zip", views.servidor_local_evidencias, name="servidor_local_evidencias"),
     path("formas-pagamento/", views.formas_pagamento, name="formas_pagamento"),
     path("formas-pagamento/nova/", views.forma_pagamento_form, name="forma_pagamento_nova"),

@@ -13,3 +13,6 @@ desktop_pdv/.venv-build/
 desktop_pdv/.build-venv/
 
 dist/protected_modules/
+
+# Instaladores oficiais usados somente para montar o pacote offline.
+installer_sources/

@@ -30,6 +30,13 @@ o sistema ao cliente.
 
 ## 3. Servidor local Windows
 
+### Instalacao guiada recomendada
+
+Depois de instalar Python, PostgreSQL e obter o WinSW oficial, utilize o
+bootstrap `scripts\\install_detech_server.ps1`. Ele configura o ambiente, banco,
+servico Windows e regra de firewall da rede privada em uma unica execucao. O
+roteiro completo esta em `docs\\INSTALADOR_AUTOMATICO_DETEC_SERVER.md`.
+
 ### Baixar e preparar
 
 - [ ] Instalar Python 3.12 x64.
