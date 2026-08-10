@@ -125,11 +125,15 @@ if (($env:Path -split ';') -notcontains $psqlDirectory) {
     $env:Path = "$psqlDirectory;$env:Path"
 }
 
-if (Test-Path -LiteralPath $InstallDirectory) {
-    if (-not $Force) { throw "A pasta de destino ja existe: $InstallDirectory. Use -Force somente em reinstalacao controlada." }
-    Remove-Item -LiteralPath $InstallDirectory -Recurse -Force
+if (Test-Path -LiteralPath $InstallDirectory -PathType Leaf) {
+    throw "O destino da instalacao existe como arquivo, nao como pasta: $InstallDirectory"
+}
+if (Test-Path -LiteralPath $InstallDirectory -PathType Container) {
+    Write-Host "Instalacao existente ou parcial encontrada. Atualizando os arquivos sem remover configuracoes e dados."
 }
 New-Item -ItemType Directory -Path $InstallDirectory -Force | Out-Null
+# Expand-Archive com -Force sobrescreve o codigo do pacote, mas preserva .env, media,
+# backups e demais arquivos locais que nao existem no ZIP.
 Expand-Archive -LiteralPath $serverZip -DestinationPath $InstallDirectory -Force
 $childInstaller = Join-Path $InstallDirectory "scripts\install_detech_server.ps1"
 if (-not (Test-Path -LiteralPath $childInstaller -PathType Leaf)) { throw "Instalador interno ausente no pacote do servidor." }
