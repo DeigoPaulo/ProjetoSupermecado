@@ -12,6 +12,7 @@ param(
     [string]$PythonPath = "python",
     [ValidateRange(1, 65535)]
     [int]$Port = 8000,
+    [string]$LocalServerVersion = "",
     [ValidateSet("PostgreSQL", "SQLite")]
     [string]$DatabaseEngine = "PostgreSQL",
     [string]$PostgresHost = "127.0.0.1",
@@ -194,6 +195,9 @@ Set-EnvValue "DEBUG" "false"
 if (-not (Get-EnvValue "SECRET_KEY")) { Set-EnvValue "SECRET_KEY" (New-SecretKey) }
 Set-EnvValue "ALLOWED_HOSTS" "127.0.0.1,localhost,$ServerIp"
 Set-EnvValue "CSRF_TRUSTED_ORIGINS" "http://$ServerIp`:$Port"
+if ($LocalServerVersion.Trim()) {
+    Set-EnvValue "LOCAL_SERVER_VERSION" $LocalServerVersion.Trim()
+}
 if ($AllowUnsignedDesktopApps) {
     Set-EnvValue "PDV_DESKTOP_REQUIRE_SIGNED_INSTALLER" "false"
 }

@@ -184,6 +184,7 @@ $params = @{
     WinSWSha256 = $winswHash
     PythonPath = $python
     Port = $Port
+    LocalServerVersion = [string]$manifest.versao
     DatabaseEngine = "PostgreSQL"
     PostgresDatabase = $PostgresDatabase
     PostgresUser = $PostgresUser
