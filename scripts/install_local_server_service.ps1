@@ -134,8 +134,13 @@ foreach ($item in $replacements.GetEnumerator()) {
 if ($LASTEXITCODE -ne 0) { throw "A instalacao do servico Windows falhou." }
 
 $sc = Join-Path $env:SystemRoot "System32\sc.exe"
-& $sc config $ServiceName "obj=" $ServiceIdentity "password=" ""
+& $sc config $ServiceName "obj=" $ServiceIdentity
 if ($LASTEXITCODE -ne 0) { throw "Nao foi possivel configurar a identidade dedicada $ServiceIdentity." }
+
+$configuredIdentity = (Get-CimInstance Win32_Service -Filter "Name='$ServiceName'").StartName
+if ($configuredIdentity -ne $ServiceIdentity) {
+    throw "A identidade do servico ficou como '$configuredIdentity', mas era esperado '$ServiceIdentity'."
+}
 
 & icacls.exe $Root /grant:r "${ServiceIdentity}:(OI)(CI)RX" /T /C | Out-Null
 if ($LASTEXITCODE -ne 0) { throw "Nao foi possivel conceder leitura do ERP para $ServiceIdentity." }
