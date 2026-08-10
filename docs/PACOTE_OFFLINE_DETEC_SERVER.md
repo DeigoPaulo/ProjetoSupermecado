@@ -39,3 +39,16 @@ O Python é instalado silenciosamente quando ainda não existir. A primeira
 instalação do PostgreSQL abre o instalador oficial, pois a senha mestre do banco
 precisa ser definida pelo técnico. Ao terminar essa etapa, execute o mesmo
 comando novamente; o restante é automático.
+
+
+## Instalador executavel e GitHub
+
+Antes de montar o pacote, execute:
+
+```powershell
+.\server_installer\build_windows.ps1
+```
+
+O pacote passa a incluir **Instalar DeTec Server.exe**. O modo PowerShell permanece disponivel para suporte tecnico. O PostgreSQL pode solicitar a senha mestre na primeira execucao; depois, execute o instalador novamente para concluir.
+
+O ZIP offline pronto nao deve ser adicionado como arquivo comum do Git: ele ultrapassa o limite de 100 MB do GitHub. Publique-o como ativo de uma **GitHub Release** privada ou transfira-o por armazenamento controlado. O codigo e os scripts de build permanecem no repositorio e permitem reconstruir o pacote em outra maquina.

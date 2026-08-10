@@ -19,6 +19,7 @@ param(
     [Parameter(Mandatory = $true)]
     [ValidatePattern("^[A-Fa-f0-9]{64}$")]
     [string]$WinSWSha256,
+    [string]$InstallerLauncherPath = "server_installer\dist\Instalar DeTec Server.exe",
     [string]$OutputDirectory = "dist\detech_server_offline",
     [switch]$Force
 )
@@ -44,6 +45,8 @@ $serverPackage = Resolve-RequiredFile $ServerPackagePath "Pacote do servidor"
 $pythonInstaller = Resolve-RequiredFile $PythonInstallerPath "Instalador Python"
 $postgresInstaller = Resolve-RequiredFile $PostgreSqlInstallerPath "Instalador PostgreSQL"
 $winsw = Resolve-RequiredFile $WinSWPath "WinSW"
+$launcherPath = if ([IO.Path]::IsPathRooted($InstallerLauncherPath)) { $InstallerLauncherPath } else { Join-Path $Root $InstallerLauncherPath }
+$launcher = Resolve-RequiredFile $launcherPath "Instalador executavel"
 Assert-Hash $pythonInstaller $PythonInstallerSha256 "Python" | Out-Null
 Assert-Hash $postgresInstaller $PostgreSqlInstallerSha256 "PostgreSQL" | Out-Null
 Assert-Hash $winsw $WinSWSha256 "WinSW" | Out-Null
@@ -61,7 +64,8 @@ try {
         @{ origem = $serverPackage; destino = "server.zip"; tipo = "servidor" },
         @{ origem = $pythonInstaller; destino = "python-installer$([IO.Path]::GetExtension($pythonInstaller))"; tipo = "python" },
         @{ origem = $postgresInstaller; destino = "postgresql-installer$([IO.Path]::GetExtension($postgresInstaller))"; tipo = "postgresql" },
-        @{ origem = $winsw; destino = "WinSW$([IO.Path]::GetExtension($winsw))"; tipo = "winsw" }
+        @{ origem = $winsw; destino = "WinSW$([IO.Path]::GetExtension($winsw))"; tipo = "winsw" },
+        @{ origem = $launcher; destino = "..\Instalar DeTec Server.exe"; tipo = "launcher" }
     )
     $manifestFiles = @()
     foreach ($file in $files) {
@@ -69,7 +73,7 @@ try {
         Copy-Item -LiteralPath $file.origem -Destination $destination
         $manifestFiles += [ordered]@{
             tipo = $file.tipo
-            caminho = "payload/$($file.destino)"
+            caminho = if ($file.tipo -eq "launcher") { "Instalar DeTec Server.exe" } else { "payload/$($file.destino)" }
             nome_origem = [IO.Path]::GetFileName($file.origem)
             tamanho_bytes = (Get-Item -LiteralPath $destination).Length
             sha256 = (Get-FileHash -LiteralPath $destination -Algorithm SHA256).Hash
@@ -80,6 +84,7 @@ try {
         contrato = "detech_server_offline_bundle_v1"
         versao = $Version
         gerado_em = (Get-Date).ToUniversalTime().ToString("o")
+        instalador_executavel = "Instalar DeTec Server.exe"
         instalador = "Install-DeTecServer.ps1"
         arquivos = $manifestFiles
         observacao = "Pacote sem banco, arquivos de clientes, .env ou certificados fiscais."

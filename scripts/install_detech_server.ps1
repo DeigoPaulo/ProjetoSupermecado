@@ -1,6 +1,5 @@
 param(
     [Parameter(Mandatory = $true)]
-    [ValidatePattern("^(?:\\d{1,3}\\.){3}\\d{1,3}$")]
     [string]$ServerIp,
 
     [Parameter(Mandatory = $true)]
@@ -29,6 +28,18 @@ param(
 )
 
 $ErrorActionPreference = "Stop"
+function Normalize-IPv4([string]$Value) {
+    $normalized = $Value.Trim().Trim('"').Trim("'")
+    $address = $null
+    if (-not [Net.IPAddress]::TryParse($normalized, [ref]$address) -or
+        $address.AddressFamily -ne [Net.Sockets.AddressFamily]::InterNetwork) {
+        throw "Informe um endereco IPv4 valido para o servidor."
+    }
+    return $address.ToString()
+}
+
+$ServerIp = Normalize-IPv4 $ServerIp
+
 $Root = (Resolve-Path (Join-Path $PSScriptRoot "..")).Path
 $EnvFile = Join-Path $Root ".env"
 $EnvExample = Join-Path $Root ".env.example"

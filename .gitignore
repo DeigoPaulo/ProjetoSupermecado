@@ -17,6 +17,9 @@ desktop_admin/.build-venv/
 desktop_admin/build/
 desktop_admin/dist/
 desktop_admin/*.spec
+server_installer/.build-venv/
+server_installer/build/
+server_installer/dist/
 tmp-*.out
 
 dist/protected_modules/
@@ -24,3 +27,5 @@ dist/protected_modules/
 # Instaladores oficiais usados somente para montar o pacote offline.
 installer_sources/
 /dist/
+
+/pacotes_distribuicao/

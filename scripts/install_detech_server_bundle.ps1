@@ -1,6 +1,5 @@
 param(
     [Parameter(Mandatory = $true)]
-    [ValidatePattern("^(?:\d{1,3}\.){3}\d{1,3}$")]
     [string]$ServerIp,
     [string]$InstallDirectory = "C:\DeTecServer\app",
     [ValidateRange(1, 65535)]
@@ -16,6 +15,18 @@ param(
 )
 
 $ErrorActionPreference = "Stop"
+function Normalize-IPv4([string]$Value) {
+    $normalized = $Value.Trim().Trim('"').Trim("'")
+    $address = $null
+    if (-not [Net.IPAddress]::TryParse($normalized, [ref]$address) -or
+        $address.AddressFamily -ne [Net.Sockets.AddressFamily]::InterNetwork) {
+        throw "Informe um endereco IPv4 valido para o servidor."
+    }
+    return $address.ToString()
+}
+
+$ServerIp = Normalize-IPv4 $ServerIp
+
 $BundleRoot = $PSScriptRoot
 $ManifestPath = Join-Path $BundleRoot "bundle.manifest.json"
 
@@ -35,14 +46,33 @@ function Get-Payload([object]$Manifest, [string]$Type) {
     return $path
 }
 
-function Find-Python312 {
-    foreach ($candidate in @("$env:ProgramFiles\Python312\python.exe", "$env:LocalAppData\Programs\Python\Python312\python.exe")) {
-        if (Test-Path -LiteralPath $candidate -PathType Leaf) { return $candidate }
+function Test-Python312Candidate([string]$Candidate) {
+    if (-not $Candidate -or -not (Test-Path -LiteralPath $Candidate -PathType Leaf)) { return $false }
+    $windowsApps = Join-Path $env:LocalAppData "Microsoft\WindowsApps"
+    if ($Candidate.StartsWith($windowsApps, [StringComparison]::OrdinalIgnoreCase)) { return $false }
+
+    $previousPreference = $ErrorActionPreference
+    try {
+        $ErrorActionPreference = "SilentlyContinue"
+        & $Candidate -c "import sys; raise SystemExit(0 if sys.version_info[:2] == (3, 12) else 1)" 2>$null
+        return $LASTEXITCODE -eq 0
+    } catch {
+        return $false
+    } finally {
+        $ErrorActionPreference = $previousPreference
     }
-    $python = Get-Command python -ErrorAction SilentlyContinue
-    if ($python) {
-        & $python.Source -c "import sys; raise SystemExit(0 if sys.version_info >= (3, 12) else 1)" 2>$null
-        if ($LASTEXITCODE -eq 0) { return $python.Source }
+}
+
+function Find-Python312 {
+    $candidates = @(
+        (Join-Path $env:ProgramFiles "Python312\python.exe"),
+        (Join-Path $env:LocalAppData "Programs\Python\Python312\python.exe")
+    )
+    $commands = @(Get-Command python.exe -All -CommandType Application -ErrorAction SilentlyContinue)
+    $candidates += @($commands | ForEach-Object { $_.Source })
+
+    foreach ($candidate in @($candidates | Where-Object { $_ } | Select-Object -Unique)) {
+        if (Test-Python312Candidate $candidate) { return $candidate }
     }
     return $null
 }
@@ -63,14 +93,36 @@ if (-not $python) {
     if (-not $python) { throw "A instalacao automatica do Python nao foi concluida." }
 }
 
-$psql = Get-Command psql.exe -ErrorAction SilentlyContinue
-if (-not $psql) { $psql = Get-Command psql -ErrorAction SilentlyContinue }
-if (-not $psql) {
+function Find-PostgreSqlClient {
+    $commands = @(Get-Command psql.exe -All -CommandType Application -ErrorAction SilentlyContinue)
+    foreach ($command in $commands) {
+        if ($command.Source -and (Test-Path -LiteralPath $command.Source -PathType Leaf)) {
+            return $command.Source
+        }
+    }
+
+    $postgresRoot = Join-Path $env:ProgramFiles "PostgreSQL"
+    if (Test-Path -LiteralPath $postgresRoot -PathType Container) {
+        $versions = @(Get-ChildItem -LiteralPath $postgresRoot -Directory | Sort-Object Name -Descending)
+        foreach ($version in $versions) {
+            $candidate = Join-Path $version.FullName "bin\psql.exe"
+            if (Test-Path -LiteralPath $candidate -PathType Leaf) { return $candidate }
+        }
+    }
+    return $null
+}
+
+$psqlPath = Find-PostgreSqlClient
+if (-not $psqlPath) {
     if (-not $OpenPostgreSqlInstaller) {
         throw "PostgreSQL ainda nao esta instalado. Execute novamente com -OpenPostgreSqlInstaller, conclua o instalador oficial e repita o comando."
     }
     Start-Process -FilePath $postgresInstaller -Wait
-    throw "Conclua a instalacao do PostgreSQL e execute novamente este mesmo comando."
+    throw "Conclua a instalacao do PostgreSQL e execute novamente este mesmo instalador."
+}
+$psqlDirectory = Split-Path -Parent $psqlPath
+if (($env:Path -split ';') -notcontains $psqlDirectory) {
+    $env:Path = "$psqlDirectory;$env:Path"
 }
 
 if (Test-Path -LiteralPath $InstallDirectory) {
