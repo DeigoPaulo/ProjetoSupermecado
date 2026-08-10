@@ -46,15 +46,12 @@ function Get-Payload([object]$Manifest, [string]$Type) {
     return $path
 }
 
-function Test-Python312Candidate([string]$Candidate) {
+function Test-Python312Runtime([string]$Candidate) {
     if (-not $Candidate -or -not (Test-Path -LiteralPath $Candidate -PathType Leaf)) { return $false }
-    $windowsApps = Join-Path $env:LocalAppData "Microsoft\WindowsApps"
-    if ($Candidate.StartsWith($windowsApps, [StringComparison]::OrdinalIgnoreCase)) { return $false }
-
     $previousPreference = $ErrorActionPreference
     try {
         $ErrorActionPreference = "SilentlyContinue"
-        & $Candidate -c "import sys; raise SystemExit(0 if sys.version_info[:2] == (3, 12) else 1)" 2>$null
+        & $Candidate -c "from pathlib import Path; import ensurepip, ssl, sys, venv; raise SystemExit(0 if sys.version_info[:2] == (3, 12) and (Path(sys.base_prefix) / 'Lib' / 'os.py').is_file() else 1)" 2>$null
         return $LASTEXITCODE -eq 0
     } catch {
         return $false
@@ -63,51 +60,34 @@ function Test-Python312Candidate([string]$Candidate) {
     }
 }
 
-function Find-MachinePython312 {
-    $candidates = @(
-        (Join-Path $env:ProgramFiles "Python312\python.exe")
-    )
-    foreach ($registryPath in @(
-        "HKLM:\SOFTWARE\Python\PythonCore\3.12\InstallPath",
-        "HKLM:\SOFTWARE\WOW6432Node\Python\PythonCore\3.12\InstallPath"
-    )) {
-        $registered = Get-ItemProperty -LiteralPath $registryPath -ErrorAction SilentlyContinue
-        if ($registered.ExecutablePath) { $candidates += [string]$registered.ExecutablePath }
-    }
-    foreach ($candidate in @($candidates | Where-Object { $_ } | Select-Object -Unique)) {
-        if (Test-Python312Candidate $candidate) { return $candidate }
-    }
-    return $null
-}
-
 Assert-Administrator
 if (-not (Test-Path -LiteralPath $ManifestPath -PathType Leaf)) { throw "bundle.manifest.json nao encontrado." }
 $manifest = Get-Content -LiteralPath $ManifestPath -Raw -Encoding UTF8 | ConvertFrom-Json
 if ($manifest.contrato -ne "detech_server_offline_bundle_v1") { throw "Contrato do pacote invalido." }
 $serverZip = Get-Payload $manifest "servidor"
-$pythonInstaller = Get-Payload $manifest "python"
+$pythonRuntime = Get-Payload $manifest "python-runtime"
 $postgresInstaller = Get-Payload $manifest "postgresql"
 $winSW = Get-Payload $manifest "winsw"
 $wheelhouseArchive = Get-Payload $manifest "python-wheelhouse"
 
-$python = Find-MachinePython312
-if (-not $python) {
-    $pythonInstall = Start-Process -FilePath $pythonInstaller -ArgumentList @(
-        "/quiet",
-        "InstallAllUsers=1",
-        "TargetDir=`"$env:ProgramFiles\Python312`"",
-        "PrependPath=1",
-        "Include_test=0",
-        "Include_launcher=1",
-        "InstallLauncherAllUsers=1"
-    ) -Wait -PassThru
-    if ($pythonInstall.ExitCode -notin @(0, 3010)) {
-        throw "O instalador do Python terminou com o codigo $($pythonInstall.ExitCode)."
-    }
-    $python = Find-MachinePython312
-    if (-not $python) {
-        throw "A instalacao do Python 3.12 para todos os usuarios nao foi concluida."
-    }
+$managedPythonRoot = Join-Path $env:ProgramData "DeTecServer\Python312"
+$expectedManagedRoot = Join-Path $env:ProgramData "DeTecServer\Python312"
+if (-not $managedPythonRoot.Equals($expectedManagedRoot, [StringComparison]::OrdinalIgnoreCase)) {
+    throw "Destino do runtime Python fora da area gerenciada."
+}
+$existingService = Get-Service -Name "DeigoVarejoServidorLocal" -ErrorAction SilentlyContinue
+if ($existingService -and $existingService.Status -ne "Stopped") {
+    Stop-Service -Name "DeigoVarejoServidorLocal" -Force
+    (Get-Service -Name "DeigoVarejoServidorLocal").WaitForStatus("Stopped", [TimeSpan]::FromSeconds(30))
+}
+if (Test-Path -LiteralPath $managedPythonRoot) {
+    Remove-Item -LiteralPath $managedPythonRoot -Recurse -Force
+}
+New-Item -ItemType Directory -Path $managedPythonRoot -Force | Out-Null
+Expand-Archive -LiteralPath $pythonRuntime -DestinationPath $managedPythonRoot -Force
+$python = Join-Path $managedPythonRoot "python.exe"
+if (-not (Test-Python312Runtime $python)) {
+    throw "O runtime Python incluido no pacote nao passou na validacao."
 }
 
 function Find-PostgreSqlClient {

@@ -5,10 +5,10 @@ param(
     [Parameter(Mandatory = $true)]
     [string]$ServerPackagePath,
     [Parameter(Mandatory = $true)]
-    [string]$PythonInstallerPath,
+    [string]$PythonRuntimePath,
     [Parameter(Mandatory = $true)]
     [ValidatePattern("^[A-Fa-f0-9]{64}$")]
-    [string]$PythonInstallerSha256,
+    [string]$PythonRuntimeSha256,
     [Parameter(Mandatory = $true)]
     [string]$PostgreSqlInstallerPath,
     [Parameter(Mandatory = $true)]
@@ -43,7 +43,7 @@ function Assert-Hash([string]$Path, [string]$Expected, [string]$Label) {
 }
 
 $serverPackage = Resolve-RequiredFile $ServerPackagePath "Pacote do servidor"
-$pythonInstaller = Resolve-RequiredFile $PythonInstallerPath "Instalador Python"
+$pythonRuntime = Resolve-RequiredFile $PythonRuntimePath "Runtime Python"
 $postgresInstaller = Resolve-RequiredFile $PostgreSqlInstallerPath "Instalador PostgreSQL"
 $winsw = Resolve-RequiredFile $WinSWPath "WinSW"
 $launcherPath = if ([IO.Path]::IsPathRooted($InstallerLauncherPath)) { $InstallerLauncherPath } else { Join-Path $Root $InstallerLauncherPath }
@@ -52,7 +52,7 @@ $wheelhousePath = if ([IO.Path]::IsPathRooted($WheelhouseDirectory)) { $Wheelhou
 if (-not (Test-Path -LiteralPath $wheelhousePath -PathType Container)) { throw "Wheelhouse Python nao encontrado: $wheelhousePath" }
 $wheels = @(Get-ChildItem -LiteralPath $wheelhousePath -Filter "*.whl" -File)
 if (-not $wheels) { throw "Nenhum pacote .whl encontrado em $wheelhousePath" }
-Assert-Hash $pythonInstaller $PythonInstallerSha256 "Python" | Out-Null
+Assert-Hash $pythonRuntime $PythonRuntimeSha256 "Runtime Python" | Out-Null
 Assert-Hash $postgresInstaller $PostgreSqlInstallerSha256 "PostgreSQL" | Out-Null
 Assert-Hash $winsw $WinSWSha256 "WinSW" | Out-Null
 
@@ -70,7 +70,7 @@ try {
     $files = @(
         @{ origem = $wheelhouseArchive; destino = "wheelhouse.zip"; tipo = "python-wheelhouse" },
         @{ origem = $serverPackage; destino = "server.zip"; tipo = "servidor" },
-        @{ origem = $pythonInstaller; destino = "python-installer$([IO.Path]::GetExtension($pythonInstaller))"; tipo = "python" },
+        @{ origem = $pythonRuntime; destino = "python-runtime.zip"; tipo = "python-runtime" },
         @{ origem = $postgresInstaller; destino = "postgresql-installer$([IO.Path]::GetExtension($postgresInstaller))"; tipo = "postgresql" },
         @{ origem = $winsw; destino = "WinSW$([IO.Path]::GetExtension($winsw))"; tipo = "winsw" },
         @{ origem = $launcher; destino = "..\Instalar DeTec Server.exe"; tipo = "launcher" }

@@ -13,13 +13,13 @@ class OfflineBundleTests(SimpleTestCase):
     def _create_bundle(self, path, *, hash_override=None):
         payloads = {
             "payload/server.zip": b"server-package",
-            "payload/python-installer.exe": b"python-installer",
+            "payload/python-runtime.zip": b"python-runtime",
             "payload/postgresql-installer.exe": b"postgres-installer",
             "payload/WinSW.exe": b"winsw",
         }
         types = {
             "servidor": "payload/server.zip",
-            "python": "payload/python-installer.exe",
+            "python-runtime": "payload/python-runtime.zip",
             "postgresql": "payload/postgresql-installer.exe",
             "winsw": "payload/WinSW.exe",
         }

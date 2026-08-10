@@ -50,7 +50,7 @@ O serviço `DeigoVarejoServidorLocal` usa WinSW para executar Waitress, iniciar 
 
 O instalador usa PostgreSQL por padrão e recusa concluir quando o `.env` aponta para outro motor ou quando `pg_dump`/`pg_restore` não estão disponíveis. Ele valida o hash antes de copiar o wrapper, executa `check`, migrations e `collectstatic`, instala/inicia o serviço e só conclui após o healthcheck em `/login/`. A conta virtual `NT SERVICE\DeigoVarejoServidorLocal` não possui senha armazenada; código fica somente leitura, enquanto `media`, estáticos e logs em `%ProgramData%\DeigoVarejo\Dados` recebem modificação.
 
-O pacote offline instala o Python 3.12 para todos os usuários em Program Files. Um ambiente virtual ligado ao perfil particular de um usuário é preservado como backup e recriado antes de instalar o serviço, evitando que a conta virtual dependa de caminhos em C:\Users\....
+O pacote offline inclui um runtime Python 3.12 oficial e exclusivo, extraído em `%ProgramData%\DeTecServer\Python312`; ele não instala nem altera o Python do Windows. Um ambiente virtual ligado ao perfil particular de um usuário é preservado como backup e recriado antes de instalar o serviço, evitando que a conta virtual dependa de caminhos em `C:\Users\...`.
 
 Para uma instalação deliberadamente SQLite de desenvolvimento, use `-DatabaseEngine SQLite -ImportExistingSqlite`. SQLite não é a escolha para o servidor de produção com vários caixas.
 

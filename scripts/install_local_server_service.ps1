@@ -144,6 +144,10 @@ if ($configuredIdentity -ne $ServiceIdentity) {
 
 & icacls.exe $Root /grant:r "${ServiceIdentity}:(OI)(CI)RX" /T /C | Out-Null
 if ($LASTEXITCODE -ne 0) { throw "Nao foi possivel conceder leitura do ERP para $ServiceIdentity." }
+$PythonBase = (& $Python -c "import sys; print(sys._base_executable)" | Select-Object -Last 1).Trim()
+$PythonBaseDirectory = Split-Path -Parent $PythonBase
+& icacls.exe $PythonBaseDirectory /grant:r "${ServiceIdentity}:(OI)(CI)RX" /T /C | Out-Null
+if ($LASTEXITCODE -ne 0) { throw "Nao foi possivel conceder leitura do Python para $ServiceIdentity." }
 foreach ($writable in @($ServiceDirectory, $DataDirectory)) {
     & icacls.exe $writable /grant:r "${ServiceIdentity}:(OI)(CI)M" /T /C | Out-Null
     if ($LASTEXITCODE -ne 0) { throw "Nao foi possivel conceder escrita em $writable para $ServiceIdentity." }

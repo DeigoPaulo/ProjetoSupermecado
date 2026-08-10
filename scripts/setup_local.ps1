@@ -18,8 +18,16 @@ function Test-Python312 {
         return $false
     }
 
-    & $Executable -c "import sys; raise SystemExit(0 if sys.version_info >= (3, 12) else 1)" 2>$null
-    return $LASTEXITCODE -eq 0
+    $previousPreference = $ErrorActionPreference
+    try {
+        $ErrorActionPreference = "SilentlyContinue"
+        & $Executable -c "import sys; raise SystemExit(0 if sys.version_info >= (3, 12) else 1)" 2>$null
+        return $LASTEXITCODE -eq 0
+    } catch {
+        return $false
+    } finally {
+        $ErrorActionPreference = $previousPreference
+    }
 }
 
 Set-Location $Root
