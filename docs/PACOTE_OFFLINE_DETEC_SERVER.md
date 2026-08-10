@@ -52,3 +52,10 @@ Antes de montar o pacote, execute:
 O pacote passa a incluir **Instalar DeTec Server.exe**. O modo PowerShell permanece disponivel para suporte tecnico. O PostgreSQL pode solicitar a senha mestre na primeira execucao; depois, execute o instalador novamente para concluir.
 
 O ZIP offline pronto nao deve ser adicionado como arquivo comum do Git: ele ultrapassa o limite de 100 MB do GitHub. Publique-o como ativo de uma **GitHub Release** privada ou transfira-o por armazenamento controlado. O codigo e os scripts de build permanecem no repositorio e permitem reconstruir o pacote em outra maquina.
+
+
+### Dependencias Python offline
+
+Antes de montar o ZIP, prepare o wheelhouse Windows/Python 3.12 executando `pip download --only-binary=:all:` para `dist/offline_sources/wheelhouse` com o arquivo `requirements.txt`.
+
+O empacotador inclui e valida `payload/wheelhouse.zip`. Durante a instalacao, o pip usa `PIP_NO_INDEX=1`; portanto, nenhuma dependencia e baixada no cliente.

@@ -85,6 +85,7 @@ $serverZip = Get-Payload $manifest "servidor"
 $pythonInstaller = Get-Payload $manifest "python"
 $postgresInstaller = Get-Payload $manifest "postgresql"
 $winSW = Get-Payload $manifest "winsw"
+$wheelhouseArchive = Get-Payload $manifest "python-wheelhouse"
 
 $python = Find-Python312
 if (-not $python) {
@@ -124,6 +125,13 @@ $psqlDirectory = Split-Path -Parent $psqlPath
 if (($env:Path -split ';') -notcontains $psqlDirectory) {
     $env:Path = "$psqlDirectory;$env:Path"
 }
+
+$wheelhouse = Join-Path $BundleRoot "payload\wheelhouse"
+if (Test-Path -LiteralPath $wheelhouse) { Remove-Item -LiteralPath $wheelhouse -Recurse -Force }
+Expand-Archive -LiteralPath $wheelhouseArchive -DestinationPath $wheelhouse -Force
+$env:PIP_NO_INDEX = "1"
+$env:PIP_FIND_LINKS = $wheelhouse
+$env:PIP_DISABLE_PIP_VERSION_CHECK = "1"
 
 if (Test-Path -LiteralPath $InstallDirectory -PathType Leaf) {
     throw "O destino da instalacao existe como arquivo, nao como pasta: $InstallDirectory"

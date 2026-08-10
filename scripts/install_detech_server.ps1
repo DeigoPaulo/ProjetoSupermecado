@@ -110,20 +110,24 @@ function Initialize-PostgreSql {
     $appPassword = Get-PlainSecret $PostgresPassword
     $env:PGPASSWORD = $adminPassword
     try {
-        $roleExists = & $psql.Source -h $PostgresHost -p $PostgresPort -U $PostgresAdminUser -d postgres -tAc "SELECT 1 FROM pg_roles WHERE rolname = '$PostgresUser'"
+        $roleExists = (& $psql.Source -h $PostgresHost -p $PostgresPort -U $PostgresAdminUser -d postgres -tAc "SELECT 1 FROM pg_roles WHERE rolname = '$PostgresUser'" | Out-String).Trim()
         if ($LASTEXITCODE -ne 0) { throw "Nao foi possivel conectar no PostgreSQL com o usuario administrador informado." }
         $safePassword = $appPassword.Replace("'", "''")
-        if ($roleExists -match "1") {
+        if ($roleExists -eq "1") {
             & $psql.Source -h $PostgresHost -p $PostgresPort -U $PostgresAdminUser -d postgres -v ON_ERROR_STOP=1 -c "ALTER ROLE $PostgresUser WITH LOGIN PASSWORD '$safePassword';"
         } else {
             & $psql.Source -h $PostgresHost -p $PostgresPort -U $PostgresAdminUser -d postgres -v ON_ERROR_STOP=1 -c "CREATE ROLE $PostgresUser LOGIN PASSWORD '$safePassword';"
         }
         if ($LASTEXITCODE -ne 0) { throw "Falha ao preparar o usuario do PostgreSQL." }
-        $databaseExists = & $psql.Source -h $PostgresHost -p $PostgresPort -U $PostgresAdminUser -d postgres -tAc "SELECT 1 FROM pg_database WHERE datname = '$PostgresDatabase'"
+        $databaseExists = (& $psql.Source -h $PostgresHost -p $PostgresPort -U $PostgresAdminUser -d postgres -tAc "SELECT 1 FROM pg_database WHERE datname = '$PostgresDatabase'" | Out-String).Trim()
         if ($LASTEXITCODE -ne 0) { throw "Falha ao verificar o banco do ERP." }
-        if ($databaseExists -notmatch "1") {
+        if ($databaseExists -ne "1") {
             & $psql.Source -h $PostgresHost -p $PostgresPort -U $PostgresAdminUser -d postgres -v ON_ERROR_STOP=1 -c "CREATE DATABASE $PostgresDatabase OWNER $PostgresUser ENCODING 'UTF8';"
             if ($LASTEXITCODE -ne 0) { throw "Falha ao criar o banco do ERP." }
+        }
+        $databaseReady = (& $psql.Source -h $PostgresHost -p $PostgresPort -U $PostgresAdminUser -d $PostgresDatabase -tAc "SELECT 1" | Out-String).Trim()
+        if ($LASTEXITCODE -ne 0 -or $databaseReady -ne "1") {
+            throw "O banco do ERP foi preparado, mas a conexao de validacao falhou."
         }
     } finally {
         Remove-Item Env:PGPASSWORD -ErrorAction SilentlyContinue

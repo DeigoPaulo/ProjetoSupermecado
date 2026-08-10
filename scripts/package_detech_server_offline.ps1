@@ -20,6 +20,7 @@ param(
     [ValidatePattern("^[A-Fa-f0-9]{64}$")]
     [string]$WinSWSha256,
     [string]$InstallerLauncherPath = "server_installer\dist\Instalar DeTec Server.exe",
+    [string]$WheelhouseDirectory = "dist\offline_sources\wheelhouse",
     [string]$OutputDirectory = "dist\detech_server_offline",
     [switch]$Force
 )
@@ -47,6 +48,10 @@ $postgresInstaller = Resolve-RequiredFile $PostgreSqlInstallerPath "Instalador P
 $winsw = Resolve-RequiredFile $WinSWPath "WinSW"
 $launcherPath = if ([IO.Path]::IsPathRooted($InstallerLauncherPath)) { $InstallerLauncherPath } else { Join-Path $Root $InstallerLauncherPath }
 $launcher = Resolve-RequiredFile $launcherPath "Instalador executavel"
+$wheelhousePath = if ([IO.Path]::IsPathRooted($WheelhouseDirectory)) { $WheelhouseDirectory } else { Join-Path $Root $WheelhouseDirectory }
+if (-not (Test-Path -LiteralPath $wheelhousePath -PathType Container)) { throw "Wheelhouse Python nao encontrado: $wheelhousePath" }
+$wheels = @(Get-ChildItem -LiteralPath $wheelhousePath -Filter "*.whl" -File)
+if (-not $wheels) { throw "Nenhum pacote .whl encontrado em $wheelhousePath" }
 Assert-Hash $pythonInstaller $PythonInstallerSha256 "Python" | Out-Null
 Assert-Hash $postgresInstaller $PostgreSqlInstallerSha256 "PostgreSQL" | Out-Null
 Assert-Hash $winsw $WinSWSha256 "WinSW" | Out-Null
@@ -60,7 +65,10 @@ $stage = Join-Path $env:TEMP "detech-server-package-$([Guid]::NewGuid().ToString
 $payload = Join-Path $stage "payload"
 New-Item -ItemType Directory -Path $payload -Force | Out-Null
 try {
+    $wheelhouseArchive = Join-Path $stage "wheelhouse.zip"
+    Compress-Archive -Path (Join-Path $wheelhousePath "*") -DestinationPath $wheelhouseArchive -CompressionLevel Optimal -Force
     $files = @(
+        @{ origem = $wheelhouseArchive; destino = "wheelhouse.zip"; tipo = "python-wheelhouse" },
         @{ origem = $serverPackage; destino = "server.zip"; tipo = "servidor" },
         @{ origem = $pythonInstaller; destino = "python-installer$([IO.Path]::GetExtension($pythonInstaller))"; tipo = "python" },
         @{ origem = $postgresInstaller; destino = "postgresql-installer$([IO.Path]::GetExtension($postgresInstaller))"; tipo = "postgresql" },
