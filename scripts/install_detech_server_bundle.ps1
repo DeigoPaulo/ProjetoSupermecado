@@ -63,14 +63,17 @@ function Test-Python312Candidate([string]$Candidate) {
     }
 }
 
-function Find-Python312 {
+function Find-MachinePython312 {
     $candidates = @(
-        (Join-Path $env:ProgramFiles "Python312\python.exe"),
-        (Join-Path $env:LocalAppData "Programs\Python\Python312\python.exe")
+        (Join-Path $env:ProgramFiles "Python312\python.exe")
     )
-    $commands = @(Get-Command python.exe -All -CommandType Application -ErrorAction SilentlyContinue)
-    $candidates += @($commands | ForEach-Object { $_.Source })
-
+    foreach ($registryPath in @(
+        "HKLM:\SOFTWARE\Python\PythonCore\3.12\InstallPath",
+        "HKLM:\SOFTWARE\WOW6432Node\Python\PythonCore\3.12\InstallPath"
+    )) {
+        $registered = Get-ItemProperty -LiteralPath $registryPath -ErrorAction SilentlyContinue
+        if ($registered.ExecutablePath) { $candidates += [string]$registered.ExecutablePath }
+    }
     foreach ($candidate in @($candidates | Where-Object { $_ } | Select-Object -Unique)) {
         if (Test-Python312Candidate $candidate) { return $candidate }
     }
@@ -87,11 +90,24 @@ $postgresInstaller = Get-Payload $manifest "postgresql"
 $winSW = Get-Payload $manifest "winsw"
 $wheelhouseArchive = Get-Payload $manifest "python-wheelhouse"
 
-$python = Find-Python312
+$python = Find-MachinePython312
 if (-not $python) {
-    Start-Process -FilePath $pythonInstaller -ArgumentList @("/quiet", "InstallAllUsers=1", "PrependPath=1", "Include_test=0") -Wait
-    $python = Find-Python312
-    if (-not $python) { throw "A instalacao automatica do Python nao foi concluida." }
+    $pythonInstall = Start-Process -FilePath $pythonInstaller -ArgumentList @(
+        "/quiet",
+        "InstallAllUsers=1",
+        "TargetDir=`"$env:ProgramFiles\Python312`"",
+        "PrependPath=1",
+        "Include_test=0",
+        "Include_launcher=1",
+        "InstallLauncherAllUsers=1"
+    ) -Wait -PassThru
+    if ($pythonInstall.ExitCode -notin @(0, 3010)) {
+        throw "O instalador do Python terminou com o codigo $($pythonInstall.ExitCode)."
+    }
+    $python = Find-MachinePython312
+    if (-not $python) {
+        throw "A instalacao do Python 3.12 para todos os usuarios nao foi concluida."
+    }
 }
 
 function Find-PostgreSqlClient {

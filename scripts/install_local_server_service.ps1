@@ -166,7 +166,14 @@ for ($attempt = 1; $attempt -le 15; $attempt++) {
     }
 }
 if (-not $healthy) {
-    throw "O servico iniciou, mas o healthcheck falhou em $HealthUrl. Consulte $WrapperLogDirectory."
+    & $ServiceExe stop | Out-Null
+    Write-Host ""
+    Write-Host "O servico nao respondeu. Ultimas linhas dos logs:"
+    foreach ($logFile in @(Get-ChildItem -LiteralPath $WrapperLogDirectory -File -ErrorAction SilentlyContinue)) {
+        Write-Host "===== $($logFile.Name) ====="
+        Get-Content -LiteralPath $logFile.FullName -Tail 60 -ErrorAction SilentlyContinue
+    }
+    throw "O servico iniciou, mas o healthcheck falhou em $HealthUrl. O ciclo de reinicializacao foi interrompido."
 }
 
 Write-Host "Servico $ServiceName instalado e saudavel."

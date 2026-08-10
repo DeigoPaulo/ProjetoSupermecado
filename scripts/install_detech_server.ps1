@@ -169,6 +169,11 @@ Set-EnvValue "CSRF_TRUSTED_ORIGINS" "http://$ServerIp`:$Port"
 
 Push-Location $Root
 try {
+    $existingService = Get-Service -Name "DeigoVarejoServidorLocal" -ErrorAction SilentlyContinue
+    if ($existingService -and $existingService.Status -ne "Stopped") {
+        Stop-Service -Name "DeigoVarejoServidorLocal" -Force
+        (Get-Service -Name "DeigoVarejoServidorLocal").WaitForStatus("Stopped", [TimeSpan]::FromSeconds(30))
+    }
     & (Join-Path $Root "scripts\setup_local.ps1") -Python $PythonPath
     & (Join-Path $Root "scripts\install_local_server_service.ps1") -WinSWPath $WinSWPath -ExpectedSha256 $WinSWSha256 -Bind "0.0.0.0" -Port $Port -DatabaseEngine $DatabaseEngine -Force:$Force
     if (-not $SkipFirewall) {

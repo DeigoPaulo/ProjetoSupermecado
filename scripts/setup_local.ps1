@@ -29,6 +29,14 @@ if (-not (Test-Python312 $Python)) {
 }
 
 $VenvValida = Test-Python312 $VenvPython
+if ($VenvValida) {
+    $PythonBase = (& $Python -c "import os,sys; print(os.path.normcase(os.path.realpath(sys.executable)))" | Select-Object -Last 1).Trim()
+    $VenvBase = (& $VenvPython -c "import os,sys; print(os.path.normcase(os.path.realpath(sys._base_executable)))" | Select-Object -Last 1).Trim()
+    if ($PythonBase -ne $VenvBase) {
+        Write-Warning "O ambiente virtual aponta para outro Python ($VenvBase). Ele sera recriado com $PythonBase."
+        $VenvValida = $false
+    }
+}
 if (-not $VenvValida -and (Test-Path -LiteralPath $Venv)) {
     $Sufixo = Get-Date -Format "yyyyMMdd-HHmmss"
     $BackupVenv = Join-Path $Root ".venv.broken-$Sufixo"
