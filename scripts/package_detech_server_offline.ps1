@@ -21,6 +21,10 @@ param(
     [string]$WinSWSha256,
     [string]$InstallerLauncherPath = "server_installer\dist\Instalar DeTec Server.exe",
     [string]$WheelhouseDirectory = "dist\offline_sources\wheelhouse",
+    [string]$PdvDesktopPath = "artifacts\DeTecPDV.exe",
+    [string]$PdvDesktopManifestPath = "artifacts\DeTecPDV.exe.version.json",
+    [string]$AdminDesktopPath = "artifacts\DeTecAdmin.exe",
+    [string]$AdminDesktopManifestPath = "artifacts\DeTecAdmin.exe.version.json",
     [string]$OutputDirectory = "dist\detech_server_offline",
     [switch]$Force
 )
@@ -29,11 +33,20 @@ $ErrorActionPreference = "Stop"
 $Root = (Resolve-Path (Join-Path $PSScriptRoot "..")).Path
 
 function Resolve-RequiredFile([string]$Path, [string]$Label) {
-    $resolved = Resolve-Path -LiteralPath $Path -ErrorAction SilentlyContinue
+    $candidate = if ([IO.Path]::IsPathRooted($Path)) { $Path } else { Join-Path $Root $Path }
+    $resolved = Resolve-Path -LiteralPath $candidate -ErrorAction SilentlyContinue
     if (-not $resolved -or -not (Test-Path -LiteralPath $resolved.Path -PathType Leaf)) {
         throw "$Label nao encontrado: $Path"
     }
     return $resolved.Path
+}
+
+function Assert-DesktopArtifact([string]$ArtifactPath, [string]$ManifestPath, [string]$Label) {
+    $metadata = Get-Content -LiteralPath $ManifestPath -Raw -Encoding UTF8 | ConvertFrom-Json
+    $declaredHash = ([string]$metadata.sha256).Trim().ToUpperInvariant()
+    if ($declaredHash -notmatch '^[A-F0-9]{64}$') { throw "Manifesto sem SHA-256 valido para $Label." }
+    Assert-Hash $ArtifactPath $declaredHash $Label | Out-Null
+    if (-not ([string]$metadata.version).Trim()) { throw "Manifesto sem versao para $Label." }
 }
 
 function Assert-Hash([string]$Path, [string]$Expected, [string]$Label) {
@@ -46,6 +59,10 @@ $serverPackage = Resolve-RequiredFile $ServerPackagePath "Pacote do servidor"
 $pythonRuntime = Resolve-RequiredFile $PythonRuntimePath "Runtime Python"
 $postgresInstaller = Resolve-RequiredFile $PostgreSqlInstallerPath "Instalador PostgreSQL"
 $winsw = Resolve-RequiredFile $WinSWPath "WinSW"
+$pdvDesktop = Resolve-RequiredFile $PdvDesktopPath "App DeTec PDV"
+$pdvDesktopManifest = Resolve-RequiredFile $PdvDesktopManifestPath "Manifesto do DeTec PDV"
+$adminDesktop = Resolve-RequiredFile $AdminDesktopPath "App DeTec Admin"
+$adminDesktopManifest = Resolve-RequiredFile $AdminDesktopManifestPath "Manifesto do DeTec Admin"
 $launcherPath = if ([IO.Path]::IsPathRooted($InstallerLauncherPath)) { $InstallerLauncherPath } else { Join-Path $Root $InstallerLauncherPath }
 $launcher = Resolve-RequiredFile $launcherPath "Instalador executavel"
 $wheelhousePath = if ([IO.Path]::IsPathRooted($WheelhouseDirectory)) { $WheelhouseDirectory } else { Join-Path $Root $WheelhouseDirectory }
@@ -55,6 +72,8 @@ if (-not $wheels) { throw "Nenhum pacote .whl encontrado em $wheelhousePath" }
 Assert-Hash $pythonRuntime $PythonRuntimeSha256 "Runtime Python" | Out-Null
 Assert-Hash $postgresInstaller $PostgreSqlInstallerSha256 "PostgreSQL" | Out-Null
 Assert-Hash $winsw $WinSWSha256 "WinSW" | Out-Null
+Assert-DesktopArtifact $pdvDesktop $pdvDesktopManifest "DeTec PDV"
+Assert-DesktopArtifact $adminDesktop $adminDesktopManifest "DeTec Admin"
 
 $output = if ([IO.Path]::IsPathRooted($OutputDirectory)) { $OutputDirectory } else { Join-Path $Root $OutputDirectory }
 New-Item -ItemType Directory -Path $output -Force | Out-Null
@@ -73,6 +92,10 @@ try {
         @{ origem = $pythonRuntime; destino = "python-runtime.zip"; tipo = "python-runtime" },
         @{ origem = $postgresInstaller; destino = "postgresql-installer$([IO.Path]::GetExtension($postgresInstaller))"; tipo = "postgresql" },
         @{ origem = $winsw; destino = "WinSW$([IO.Path]::GetExtension($winsw))"; tipo = "winsw" },
+        @{ origem = $pdvDesktop; destino = "DeTecPDV.exe"; tipo = "pdv-desktop" },
+        @{ origem = $pdvDesktopManifest; destino = "DeTecPDV.exe.version.json"; tipo = "pdv-desktop-manifest" },
+        @{ origem = $adminDesktop; destino = "DeTecAdmin.exe"; tipo = "admin-desktop" },
+        @{ origem = $adminDesktopManifest; destino = "DeTecAdmin.exe.version.json"; tipo = "admin-desktop-manifest" },
         @{ origem = $launcher; destino = "..\Instalar DeTec Server.exe"; tipo = "launcher" }
     )
     $manifestFiles = @()
@@ -95,7 +118,7 @@ try {
         instalador_executavel = "Instalar DeTec Server.exe"
         instalador = "Install-DeTecServer.ps1"
         arquivos = $manifestFiles
-        observacao = "Pacote sem banco, arquivos de clientes, .env ou certificados fiscais."
+        observacao = "Pacote sem banco, arquivos de clientes, .env ou certificados fiscais. Inclui os apps desktop validados para publicacao local."
     }
     [IO.File]::WriteAllText((Join-Path $stage "bundle.manifest.json"), ($manifest | ConvertTo-Json -Depth 5), [Text.UTF8Encoding]::new($false))
     if (Test-Path -LiteralPath $archive) { Remove-Item -LiteralPath $archive -Force }

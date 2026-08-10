@@ -22,7 +22,9 @@ calcule os respectivos hashes com `Get-FileHash -Algorithm SHA256`.
   -WinSWSha256 "SHA256_DO_WINSW"
 ```
 
-O resultado fica em `dist\detech_server_offline` acompanhado do SHA-256.
+O resultado fica em `dist\detech_server_offline` acompanhado do SHA-256. O pacote tambem inclui os artefatos
+`artifacts\DeTecPDV.exe` e `artifacts\DeTecAdmin.exe`, com seus manifestos de versao e integridade. Ao instalar
+ou atualizar o servidor, os dois aplicativos sao publicados automaticamente nas respectivas Centrais de download.
 
 ## Instalação no cliente
 

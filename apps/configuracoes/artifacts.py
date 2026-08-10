@@ -88,6 +88,54 @@ def artefato_pdv_desktop():
     return resultado
 
 
+def artefato_admin_desktop():
+    caminho = settings.ADMIN_DESKTOP_INSTALLER_PATH
+    metadados_caminho = caminho.with_name(caminho.name + ".version.json")
+    resultado = {
+        "caminho": caminho,
+        "nome": caminho.name,
+        "versao": settings.ADMIN_DESKTOP_VERSION,
+        "tamanho": 0,
+        "sha256": "",
+        "arquivo_encontrado": caminho.is_file(),
+        "metadados_encontrados": metadados_caminho.is_file(),
+        "integridade_valida": False,
+        "versao_valida": False,
+        "publicavel": False,
+        "disponivel": False,
+        "problemas": [],
+    }
+    if not resultado["arquivo_encontrado"]:
+        resultado["problemas"].append("Artefato do DeTec Admin não encontrado.")
+        return resultado
+    if caminho.suffix.lower() not in {".msi", ".exe"}:
+        resultado["problemas"].append("Formato de instalador não permitido; use MSI ou EXE.")
+        return resultado
+    if not resultado["metadados_encontrados"]:
+        resultado["problemas"].append("Manifesto .version.json do DeTec Admin não encontrado.")
+        return resultado
+    try:
+        metadados = json.loads(metadados_caminho.read_text(encoding="utf-8-sig"))
+    except (OSError, UnicodeError, json.JSONDecodeError):
+        resultado["problemas"].append("Manifesto .version.json do DeTec Admin inválido.")
+        return resultado
+    digest = hashlib.sha256()
+    with caminho.open("rb") as arquivo:
+        for bloco in iter(lambda: arquivo.read(1024 * 1024), b""):
+            digest.update(bloco)
+    resultado["sha256"] = digest.hexdigest()
+    resultado["tamanho"] = caminho.stat().st_size
+    resultado["integridade_valida"] = resultado["sha256"] == str(metadados.get("sha256") or "").lower()
+    resultado["versao_valida"] = str(metadados.get("version") or "") == settings.ADMIN_DESKTOP_VERSION
+    if not resultado["integridade_valida"]:
+        resultado["problemas"].append("SHA-256 do DeTec Admin diverge do manifesto.")
+    if not resultado["versao_valida"]:
+        resultado["problemas"].append("Versão do DeTec Admin diverge da versão vigente.")
+    resultado["publicavel"] = resultado["integridade_valida"] and resultado["versao_valida"]
+    resultado["disponivel"] = resultado["publicavel"]
+    return resultado
+
+
 PACOTE_SERVIDOR_ARQUIVOS_OBRIGATORIOS = {
     "manage.py",
     "requirements.txt",

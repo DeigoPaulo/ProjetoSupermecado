@@ -23,6 +23,7 @@ param(
     [string]$PostgresAdminUser = "postgres",
     [securestring]$PostgresAdminPassword,
     [switch]$SkipFirewall,
+    [switch]$AllowUnsignedDesktopApps,
     [switch]$Preflight,
     [switch]$Force
 )
@@ -193,6 +194,9 @@ Set-EnvValue "DEBUG" "false"
 if (-not (Get-EnvValue "SECRET_KEY")) { Set-EnvValue "SECRET_KEY" (New-SecretKey) }
 Set-EnvValue "ALLOWED_HOSTS" "127.0.0.1,localhost,$ServerIp"
 Set-EnvValue "CSRF_TRUSTED_ORIGINS" "http://$ServerIp`:$Port"
+if ($AllowUnsignedDesktopApps) {
+    Set-EnvValue "PDV_DESKTOP_REQUIRE_SIGNED_INSTALLER" "false"
+}
 
 Push-Location $Root
 try {

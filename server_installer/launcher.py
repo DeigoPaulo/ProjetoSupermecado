@@ -83,6 +83,7 @@ class InstallerWindow:
             "-NoLogo", "-NoProfile", "-ExecutionPolicy", "Bypass", "-NoExit",
             "-File", str(installer), "-ServerIp", server_ip, "-Port", str(port),
             "-OpenPostgreSqlInstaller",
+            "-AllowUnsignedDesktopApps",
             "-Force",
         ]
         try:

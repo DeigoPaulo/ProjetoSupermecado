@@ -37,7 +37,7 @@ from apps.pdv.models import AcessoPdvNuvem, CanalAtualizacaoPdv, EventoDispositi
 from apps.vendas.models import FormaPagamento, FormaPagamentoFilial, PagamentoVenda, StatusPagamento
 from apps.vendas.services import inicializar_formas_pagamento_filial
 
-from .artifacts import artefato_pdv_desktop, artefato_servidor_local
+from .artifacts import artefato_admin_desktop, artefato_pdv_desktop, artefato_servidor_local
 from .offline_bundle import artefato_servidor_offline
 from .acceptance_evidence import gerar_evidencia_aceite
 from .deployment_evidence import gerar_dossie_implantacao
@@ -2632,20 +2632,14 @@ def impressao_form(request, pk=None):
 @login_required
 @role_required(*SISTEMA)
 def admin_desktop_download_windows(request):
-    caminho = settings.ADMIN_DESKTOP_INSTALLER_PATH
-    if not caminho.is_file() or caminho.suffix.lower() not in {".msi", ".exe"}:
-        raise Http404("Instalador administrativo ainda nao foi publicado.")
+    instalador = artefato_admin_desktop()
+    if not instalador["publicavel"]:
+        raise Http404("Instalador administrativo ainda não foi publicado ou falhou na validação.")
+    caminho = instalador["caminho"]
     LogAuditoria.objects.create(usuario=request.user, modulo="configuracoes", acao="DOWNLOAD_ADMIN_DESKTOP", descricao=f"Download do instalador administrativo {caminho.name}.", objeto_tipo="AdminDesktopInstaller", objeto_id=settings.ADMIN_DESKTOP_VERSION, ip=request.META.get("REMOTE_ADDR"))
     return FileResponse(caminho.open("rb"), as_attachment=True, filename=caminho.name)
 @login_required
 @role_required(*SISTEMA)
 def admin_desktop(request):
-    caminho = settings.ADMIN_DESKTOP_INSTALLER_PATH
-    contexto = {
-        "instalador_admin": {
-            "disponivel": caminho.is_file() and caminho.suffix.lower() in {".msi", ".exe"},
-            "nome": caminho.name,
-            "versao": settings.ADMIN_DESKTOP_VERSION,
-        }
-    }
+    contexto = {"instalador_admin": artefato_admin_desktop()}
     return render(request, "configuracoes/admin_desktop.html", contexto)

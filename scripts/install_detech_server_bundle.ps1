@@ -11,6 +11,7 @@ param(
     [securestring]$PostgresAdminPassword,
     [switch]$OpenPostgreSqlInstaller,
     [switch]$SkipFirewall,
+    [switch]$AllowUnsignedDesktopApps,
     [switch]$Force
 )
 
@@ -76,6 +77,10 @@ $pythonRuntime = Get-Payload $manifest "python-runtime"
 $postgresInstaller = Get-Payload $manifest "postgresql"
 $winSW = Get-Payload $manifest "winsw"
 $wheelhouseArchive = Get-Payload $manifest "python-wheelhouse"
+$pdvDesktop = Get-Payload $manifest "pdv-desktop"
+$pdvDesktopManifest = Get-Payload $manifest "pdv-desktop-manifest"
+$adminDesktop = Get-Payload $manifest "admin-desktop"
+$adminDesktopManifest = Get-Payload $manifest "admin-desktop-manifest"
 
 $managedPythonRoot = Join-Path $env:ProgramData "DeTecServer\Python312"
 $expectedManagedRoot = Join-Path $env:ProgramData "DeTecServer\Python312"
@@ -164,6 +169,12 @@ New-Item -ItemType Directory -Path $InstallDirectory -Force | Out-Null
 # Expand-Archive com -Force sobrescreve o codigo do pacote, mas preserva .env, media,
 # backups e demais arquivos locais que nao existem no ZIP.
 Expand-Archive -LiteralPath $serverZip -DestinationPath $InstallDirectory -Force
+$artifactsDirectory = Join-Path $InstallDirectory "artifacts"
+New-Item -ItemType Directory -Path $artifactsDirectory -Force | Out-Null
+Copy-Item -LiteralPath $pdvDesktop -Destination (Join-Path $artifactsDirectory "DeTecPDV.exe") -Force
+Copy-Item -LiteralPath $pdvDesktopManifest -Destination (Join-Path $artifactsDirectory "DeTecPDV.exe.version.json") -Force
+Copy-Item -LiteralPath $adminDesktop -Destination (Join-Path $artifactsDirectory "DeTecAdmin.exe") -Force
+Copy-Item -LiteralPath $adminDesktopManifest -Destination (Join-Path $artifactsDirectory "DeTecAdmin.exe.version.json") -Force
 $childInstaller = Join-Path $InstallDirectory "scripts\install_detech_server.ps1"
 if (-not (Test-Path -LiteralPath $childInstaller -PathType Leaf)) { throw "Instalador interno ausente no pacote do servidor." }
 $winswHash = (Get-FileHash -LiteralPath $winSW -Algorithm SHA256).Hash
@@ -178,6 +189,7 @@ $params = @{
     PostgresUser = $PostgresUser
     PostgresAdminUser = $PostgresAdminUser
     SkipFirewall = $SkipFirewall
+    AllowUnsignedDesktopApps = $AllowUnsignedDesktopApps
     Force = $Force
 }
 if ($PostgresPassword) { $params.PostgresPassword = $PostgresPassword }

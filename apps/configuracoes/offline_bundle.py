@@ -62,7 +62,16 @@ def artefato_servidor_offline():
             result["versao_valida"] = str(manifest.get("versao") or "") == settings.LOCAL_SERVER_VERSION
             if not result["versao_valida"]:
                 result["problemas"].append("Versão do pacote offline diverge da versão vigente.")
-            required_types = {"servidor", "python-runtime", "postgresql", "winsw"}
+            required_types = {
+                "servidor",
+                "python-runtime",
+                "postgresql",
+                "winsw",
+                "pdv-desktop",
+                "pdv-desktop-manifest",
+                "admin-desktop",
+                "admin-desktop-manifest",
+            }
             declared_types = set()
             for item in manifest.get("arquivos") or []:
                 item_type = str(item.get("tipo") or "")
