@@ -50,6 +50,8 @@ O serviço `DeigoVarejoServidorLocal` usa WinSW para executar Waitress, iniciar 
 
 O instalador usa PostgreSQL por padrão e recusa concluir quando o `.env` aponta para outro motor ou quando `pg_dump`/`pg_restore` não estão disponíveis. Ele valida o hash antes de copiar o wrapper, executa `check`, migrations e `collectstatic`, instala/inicia o serviço e só conclui após o healthcheck em `/login/`. A conta virtual `NT SERVICE\DeigoVarejoServidorLocal` não possui senha armazenada; código fica somente leitura, enquanto `media`, estáticos e logs em `%ProgramData%\DeigoVarejo\Dados` recebem modificação.
 
+No serviço Windows com Waitress, o WhiteNoise entrega os arquivos produzidos por `collectstatic` diretamente em `/static/`. Isso mantém CSS, JavaScript, ícones e fontes disponíveis sem depender de `runserver` ou de um servidor web externo.
+
 O pacote offline inclui um runtime Python 3.12 oficial e exclusivo, extraído em `%ProgramData%\DeTecServer\Python312`; ele não instala nem altera o Python do Windows. Um ambiente virtual ligado ao perfil particular de um usuário é preservado como backup e recriado antes de instalar o serviço, evitando que a conta virtual dependa de caminhos em `C:\Users\...`.
 
 O instalador é idempotente: em uma atualização ele valida e reutiliza o runtime Python, as dependências e a configuração PostgreSQL existentes. Somente componentes ausentes, incompatíveis ou com versão diferente são substituídos; banco, `.env`, mídia, certificados e backups permanecem preservados.

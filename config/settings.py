@@ -95,6 +95,7 @@ INSTALLED_APPS = [
 
 MIDDLEWARE = [
     'django.middleware.security.SecurityMiddleware',
+    'whitenoise.middleware.WhiteNoiseMiddleware',
     'django.contrib.sessions.middleware.SessionMiddleware',
     'django.middleware.common.CommonMiddleware',
     'django.middleware.csrf.CsrfViewMiddleware',
@@ -235,7 +236,7 @@ PDV_DESKTOP_RELEASE_CHANNEL = os.getenv("PDV_DESKTOP_RELEASE_CHANNEL", "ESTAVEL"
 PDV_TEF_SIMULATOR_ENABLED = env_bool("PDV_TEF_SIMULATOR_ENABLED", False)
 PDV_DESKTOP_INSTALLER_PATH = env_path("PDV_DESKTOP_INSTALLER_PATH", BASE_DIR / "artifacts" / "DeTecPDV.exe")
 PDV_DESKTOP_REQUIRE_SIGNED_INSTALLER = env_bool("PDV_DESKTOP_REQUIRE_SIGNED_INSTALLER", not DEBUG)
-LOCAL_SERVER_VERSION = os.getenv("LOCAL_SERVER_VERSION", "0.1.7")
+LOCAL_SERVER_VERSION = os.getenv("LOCAL_SERVER_VERSION", "0.1.8")
 LOCAL_SERVER_PACKAGE_PATH = env_path("LOCAL_SERVER_PACKAGE_PATH", BASE_DIR / "artifacts" / "DeigoVarejoServidorLocal.zip")
 LOCAL_SERVER_OFFLINE_PACKAGE_PATH = env_path("LOCAL_SERVER_OFFLINE_PACKAGE_PATH", BASE_DIR / "artifacts" / "DeTecServerOffline.zip")
 LOCAL_SERVER_REQUIRE_SIGNED_COMMIT = env_bool("LOCAL_SERVER_REQUIRE_SIGNED_COMMIT", not DEBUG)
