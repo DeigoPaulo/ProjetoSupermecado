@@ -35,8 +35,8 @@ class InstallerWindow:
         )
         ttk.Label(
             frame,
-            text=("Instala o servidor administrativo, PostgreSQL, Python, servico do Windows "
-                  "e libera a porta da rede local."),
+            text=("Instala ou atualiza o servidor administrativo. Componentes, banco e "
+                  "configuracoes validos sao preservados automaticamente."),
             wraplength=470,
         ).grid(row=1, column=0, columnspan=2, sticky="w", pady=(6, 20))
         ttk.Label(frame, text="IP deste servidor").grid(row=2, column=0, sticky="w")
@@ -55,7 +55,7 @@ class InstallerWindow:
             foreground="#4b5f7d",
             wraplength=470,
         ).grid(row=4, column=0, columnspan=2, sticky="w", pady=(0, 20))
-        ttk.Button(frame, text="Instalar", command=self.install).grid(
+        ttk.Button(frame, text="Instalar ou atualizar", command=self.install).grid(
             row=5, column=0, columnspan=2, sticky="ew", ipady=6
         )
         root.bind("<Return>", lambda _event: self.install())

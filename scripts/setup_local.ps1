@@ -60,9 +60,21 @@ if (-not $VenvValida) {
 }
 
 if (-not $SkipInstall) {
-    & $VenvPython -m pip install -r $Requirements
-    if ($LASTEXITCODE -ne 0) {
-        throw "Falha ao instalar as dependencias de requirements.txt."
+    $RequirementsHash = (Get-FileHash -LiteralPath $Requirements -Algorithm SHA256).Hash
+    $RequirementsMarker = Join-Path $Venv ".requirements.sha256"
+    $InstalledRequirementsHash = if (Test-Path -LiteralPath $RequirementsMarker -PathType Leaf) {
+        (Get-Content -LiteralPath $RequirementsMarker -Raw).Trim().ToUpperInvariant()
+    } else {
+        ""
+    }
+    if ($InstalledRequirementsHash -eq $RequirementsHash) {
+        Write-Host "Dependencias Python ja estao atualizadas."
+    } else {
+        & $VenvPython -m pip install -r $Requirements
+        if ($LASTEXITCODE -ne 0) {
+            throw "Falha ao instalar as dependencias de requirements.txt."
+        }
+        Set-Content -LiteralPath $RequirementsMarker -Value $RequirementsHash -Encoding ASCII
     }
 }
 

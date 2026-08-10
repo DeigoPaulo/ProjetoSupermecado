@@ -52,6 +52,8 @@ O instalador usa PostgreSQL por padrão e recusa concluir quando o `.env` aponta
 
 O pacote offline inclui um runtime Python 3.12 oficial e exclusivo, extraído em `%ProgramData%\DeTecServer\Python312`; ele não instala nem altera o Python do Windows. Um ambiente virtual ligado ao perfil particular de um usuário é preservado como backup e recriado antes de instalar o serviço, evitando que a conta virtual dependa de caminhos em `C:\Users\...`.
 
+O instalador é idempotente: em uma atualização ele valida e reutiliza o runtime Python, as dependências e a configuração PostgreSQL existentes. Somente componentes ausentes, incompatíveis ou com versão diferente são substituídos; banco, `.env`, mídia, certificados e backups permanecem preservados.
+
 Para uma instalação deliberadamente SQLite de desenvolvimento, use `-DatabaseEngine SQLite -ImportExistingSqlite`. SQLite não é a escolha para o servidor de produção com vários caixas.
 
 Diagnóstico operacional:

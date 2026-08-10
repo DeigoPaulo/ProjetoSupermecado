@@ -46,6 +46,12 @@ function Get-Payload([object]$Manifest, [string]$Type) {
     return $path
 }
 
+function Get-PayloadItem([object]$Manifest, [string]$Type) {
+    $item = @($Manifest.arquivos | Where-Object { $_.tipo -eq $Type }) | Select-Object -First 1
+    if (-not $item) { throw "Arquivo obrigatorio ausente no manifesto: $Type" }
+    return $item
+}
+
 function Test-Python312Runtime([string]$Candidate) {
     if (-not $Candidate -or -not (Test-Path -LiteralPath $Candidate -PathType Leaf)) { return $false }
     $previousPreference = $ErrorActionPreference
@@ -65,6 +71,7 @@ if (-not (Test-Path -LiteralPath $ManifestPath -PathType Leaf)) { throw "bundle.
 $manifest = Get-Content -LiteralPath $ManifestPath -Raw -Encoding UTF8 | ConvertFrom-Json
 if ($manifest.contrato -ne "detech_server_offline_bundle_v1") { throw "Contrato do pacote invalido." }
 $serverZip = Get-Payload $manifest "servidor"
+$pythonRuntimeItem = Get-PayloadItem $manifest "python-runtime"
 $pythonRuntime = Get-Payload $manifest "python-runtime"
 $postgresInstaller = Get-Payload $manifest "postgresql"
 $winSW = Get-Payload $manifest "winsw"
@@ -80,14 +87,32 @@ if ($existingService -and $existingService.Status -ne "Stopped") {
     Stop-Service -Name "DeigoVarejoServidorLocal" -Force
     (Get-Service -Name "DeigoVarejoServidorLocal").WaitForStatus("Stopped", [TimeSpan]::FromSeconds(30))
 }
-if (Test-Path -LiteralPath $managedPythonRoot) {
-    Remove-Item -LiteralPath $managedPythonRoot -Recurse -Force
-}
-New-Item -ItemType Directory -Path $managedPythonRoot -Force | Out-Null
-Expand-Archive -LiteralPath $pythonRuntime -DestinationPath $managedPythonRoot -Force
 $python = Join-Path $managedPythonRoot "python.exe"
-if (-not (Test-Python312Runtime $python)) {
-    throw "O runtime Python incluido no pacote nao passou na validacao."
+$runtimeMarker = Join-Path $managedPythonRoot ".detech-runtime.sha256"
+$expectedRuntimeHash = ([string]$pythonRuntimeItem.sha256).ToUpperInvariant()
+$installedRuntimeHash = if (Test-Path -LiteralPath $runtimeMarker -PathType Leaf) {
+    (Get-Content -LiteralPath $runtimeMarker -Raw).Trim().ToUpperInvariant()
+} else {
+    ""
+}
+$runtimeValid = Test-Python312Runtime $python
+$runtimeCurrent = $runtimeValid -and (-not $installedRuntimeHash -or $installedRuntimeHash -eq $expectedRuntimeHash)
+if ($runtimeCurrent) {
+    Write-Host "Runtime Python existente e compativel. Reutilizando sem reinstalar."
+    if (-not $installedRuntimeHash) {
+        Set-Content -LiteralPath $runtimeMarker -Value $expectedRuntimeHash -Encoding ASCII
+    }
+} else {
+    if (Test-Path -LiteralPath $managedPythonRoot) {
+        Remove-Item -LiteralPath $managedPythonRoot -Recurse -Force
+    }
+    New-Item -ItemType Directory -Path $managedPythonRoot -Force | Out-Null
+    Expand-Archive -LiteralPath $pythonRuntime -DestinationPath $managedPythonRoot -Force
+    if (-not (Test-Python312Runtime $python)) {
+        throw "O runtime Python incluido no pacote nao passou na validacao."
+    }
+    Set-Content -LiteralPath $runtimeMarker -Value $expectedRuntimeHash -Encoding ASCII
+    Write-Host "Runtime Python instalado ou atualizado pelo pacote."
 }
 
 function Find-PostgreSqlClient {

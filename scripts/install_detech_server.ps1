@@ -134,6 +134,29 @@ function Initialize-PostgreSql {
     }
 }
 
+function Test-ExistingPostgreSqlConfiguration {
+    if (-not (Test-Path -LiteralPath $EnvFile -PathType Leaf)) { return $false }
+    $database = Get-EnvValue "POSTGRES_DB"
+    $user = Get-EnvValue "POSTGRES_USER"
+    $password = Get-EnvValue "POSTGRES_PASSWORD"
+    $hostName = Get-EnvValue "POSTGRES_HOST"
+    $databasePort = Get-EnvValue "POSTGRES_PORT"
+    if (-not $database -or -not $user -or -not $password) { return $false }
+    if (-not $hostName) { $hostName = "127.0.0.1" }
+    if (-not $databasePort) { $databasePort = "5432" }
+    $psql = Get-Command "psql.exe" -ErrorAction SilentlyContinue
+    if (-not $psql) { $psql = Get-Command "psql" -ErrorAction SilentlyContinue }
+    if (-not $psql) { return $false }
+    $env:PGPASSWORD = $password
+    try {
+        $ready = (& $psql.Source -h $hostName -p $databasePort -U $user -d $database -tAc "SELECT 1" 2>$null | Out-String).Trim()
+        return $LASTEXITCODE -eq 0 -and $ready -eq "1"
+    } catch {
+        return $false
+    } finally {
+        Remove-Item Env:PGPASSWORD -ErrorAction SilentlyContinue
+    }
+}
 if (-not $Preflight) { Assert-Administrator }
 if (-not (Test-Python312 $PythonPath)) {
     throw "Python 3.12 ou superior nao encontrado em '$PythonPath'. Instale-o antes de executar este instalador."
@@ -154,12 +177,16 @@ if ($Preflight) {
 if (-not (Test-Path -LiteralPath $EnvFile)) { Copy-Item -LiteralPath $EnvExample -Destination $EnvFile }
 
 if ($DatabaseEngine -eq "PostgreSQL") {
-    Initialize-PostgreSql
-    Set-EnvValue "POSTGRES_DB" $PostgresDatabase
-    Set-EnvValue "POSTGRES_USER" $PostgresUser
-    Set-EnvValue "POSTGRES_PASSWORD" (Get-PlainSecret $PostgresPassword)
-    Set-EnvValue "POSTGRES_HOST" $PostgresHost
-    Set-EnvValue "POSTGRES_PORT" $PostgresPort
+    if (Test-ExistingPostgreSqlConfiguration) {
+        Write-Host "PostgreSQL e banco do ERP ja estao configurados e acessiveis. Reutilizando sem alterar credenciais."
+    } else {
+        Initialize-PostgreSql
+        Set-EnvValue "POSTGRES_DB" $PostgresDatabase
+        Set-EnvValue "POSTGRES_USER" $PostgresUser
+        Set-EnvValue "POSTGRES_PASSWORD" (Get-PlainSecret $PostgresPassword)
+        Set-EnvValue "POSTGRES_HOST" $PostgresHost
+        Set-EnvValue "POSTGRES_PORT" $PostgresPort
+    }
 }
 Set-EnvValue "DJANGO_ENV" "production"
 Set-EnvValue "DEBUG" "false"
