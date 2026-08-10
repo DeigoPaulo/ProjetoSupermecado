@@ -1,8 +1,8 @@
 param(
     [Parameter(Mandatory = $true)]
-    [ValidatePattern("^(?:\\d{1,3}\\.){3}\\d{1,3}$")]
+    [ValidatePattern("^(?:\d{1,3}\.){3}\d{1,3}$")]
     [string]$ServerIp,
-    [string]$InstallDirectory = "C:\\DeTecServer\\app",
+    [string]$InstallDirectory = "C:\DeTecServer\app",
     [ValidateRange(1, 65535)]
     [int]$Port = 8000,
     [string]$PostgresDatabase = "detech_erp",
@@ -28,7 +28,7 @@ function Assert-Administrator {
 function Get-Payload([object]$Manifest, [string]$Type) {
     $item = @($Manifest.arquivos | Where-Object { $_.tipo -eq $Type }) | Select-Object -First 1
     if (-not $item) { throw "Arquivo obrigatorio ausente no manifesto: $Type" }
-    $path = Join-Path $BundleRoot ($item.caminho -replace '/', '\\')
+    $path = Join-Path $BundleRoot ($item.caminho -replace '/', '\')
     if (-not (Test-Path -LiteralPath $path -PathType Leaf)) { throw "Arquivo ausente no pacote: $($item.caminho)" }
     $hash = (Get-FileHash -LiteralPath $path -Algorithm SHA256).Hash
     if ($hash -ne [string]$item.sha256) { throw "Integridade invalida para $Type." }
@@ -36,7 +36,7 @@ function Get-Payload([object]$Manifest, [string]$Type) {
 }
 
 function Find-Python312 {
-    foreach ($candidate in @("$env:ProgramFiles\\Python312\\python.exe", "$env:LocalAppData\\Programs\\Python\\Python312\\python.exe")) {
+    foreach ($candidate in @("$env:ProgramFiles\Python312\python.exe", "$env:LocalAppData\Programs\Python\Python312\python.exe")) {
         if (Test-Path -LiteralPath $candidate -PathType Leaf) { return $candidate }
     }
     $python = Get-Command python -ErrorAction SilentlyContinue
@@ -79,7 +79,7 @@ if (Test-Path -LiteralPath $InstallDirectory) {
 }
 New-Item -ItemType Directory -Path $InstallDirectory -Force | Out-Null
 Expand-Archive -LiteralPath $serverZip -DestinationPath $InstallDirectory -Force
-$childInstaller = Join-Path $InstallDirectory "scripts\\install_detech_server.ps1"
+$childInstaller = Join-Path $InstallDirectory "scripts\install_detech_server.ps1"
 if (-not (Test-Path -LiteralPath $childInstaller -PathType Leaf)) { throw "Instalador interno ausente no pacote do servidor." }
 $winswHash = (Get-FileHash -LiteralPath $winSW -Algorithm SHA256).Hash
 $params = @{

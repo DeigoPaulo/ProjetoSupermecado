@@ -1,6 +1,6 @@
 param(
     [Parameter(Mandatory = $true)]
-    [ValidatePattern("^\\d+\\.\\d+\\.\\d+(?:[-+][0-9A-Za-z.-]+)?$")]
+    [ValidatePattern("^\d+\.\d+\.\d+(?:[-+][0-9A-Za-z.-]+)?$")]
     [string]$Version,
     [Parameter(Mandatory = $true)]
     [string]$ServerPackagePath,
@@ -19,7 +19,7 @@ param(
     [Parameter(Mandatory = $true)]
     [ValidatePattern("^[A-Fa-f0-9]{64}$")]
     [string]$WinSWSha256,
-    [string]$OutputDirectory = "dist\\detech_server_offline",
+    [string]$OutputDirectory = "dist\detech_server_offline",
     [switch]$Force
 )
 
@@ -75,7 +75,7 @@ try {
             sha256 = (Get-FileHash -LiteralPath $destination -Algorithm SHA256).Hash
         }
     }
-    Copy-Item -LiteralPath (Join-Path $Root "scripts\\install_detech_server_bundle.ps1") -Destination (Join-Path $stage "Install-DeTecServer.ps1")
+    Copy-Item -LiteralPath (Join-Path $Root "scripts\install_detech_server_bundle.ps1") -Destination (Join-Path $stage "Install-DeTecServer.ps1")
     $manifest = [ordered]@{
         contrato = "detech_server_offline_bundle_v1"
         versao = $Version

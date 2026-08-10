@@ -23,3 +23,4 @@ dist/protected_modules/
 
 # Instaladores oficiais usados somente para montar o pacote offline.
 installer_sources/
+/dist/
