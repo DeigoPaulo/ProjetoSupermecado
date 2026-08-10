@@ -130,7 +130,7 @@ class FinanceiroTests(TestCase):
         self.assertContains(response, "Compra de mercadorias")
         self.assertContains(response, "Saldo previsto")
         self.assertContains(response, "Vencimentos")
-        self.assertContains(response, "Conferencia e exportacao")
+        self.assertContains(response, "Conferência e exportação")
 
     def test_formularios_financeiros_exibem_secoes_operacionais(self):
         conta_form = self.client.get(f"/financeiro/{self.conta.pk}/editar/")
@@ -221,10 +221,10 @@ class FinanceiroTests(TestCase):
         response_csv = self.client.get("/financeiro/conciliacao/exportar.csv")
 
         self.assertEqual(response.status_code, 200)
-        self.assertContains(response, "Conciliacao financeira")
+        self.assertContains(response, "Conciliação financeira")
         self.assertContains(response, "Entradas PDV")
         self.assertContains(response, "PDV x financeiro")
-        self.assertContains(response, "Conferencia diaria")
+        self.assertContains(response, "Conferência diária")
         self.assertContains(response, "130,00")
         self.assertEqual(response_csv.status_code, 200)
         self.assertEqual(response_csv["Content-Type"], "text/csv; charset=utf-8")
@@ -972,7 +972,7 @@ class FinanceiroTests(TestCase):
             follow=True,
         )
 
-        self.assertContains(formulario, "Transferencia entre contas")
+        self.assertContains(formulario, "Transferência entre contas")
         self.assertContains(formulario, "Transferencias recentes")
         self.assertRedirects(response, "/financeiro/livro/")
         self.assertContains(response, "Transferencia #")

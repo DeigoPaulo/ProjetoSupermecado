@@ -51,7 +51,7 @@
   {% if pendentes.paginator.num_pages > 1 %}
   <nav class="pagination" aria-label="Paginacao de solicitacoes">
     {% if pendentes.has_previous %}<a class="secondary-button" href="?pendentes_page={{ pendentes.previous_page_number }}&historico_page={{ historico.number }}">Anterior</a>{% endif %}
-    <strong>Pagina {{ pendentes.number }} de {{ pendentes.paginator.num_pages }}</strong>
+    <strong>Página {{ pendentes.number }} de {{ pendentes.paginator.num_pages }}</strong>
     {% if pendentes.has_next %}<a class="secondary-button" href="?pendentes_page={{ pendentes.next_page_number }}&historico_page={{ historico.number }}">Próxima</a>{% endif %}
   </nav>
   {% endif %}</section>

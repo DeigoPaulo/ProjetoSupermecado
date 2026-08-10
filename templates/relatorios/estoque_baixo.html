@@ -6,7 +6,7 @@
 <header class="page-header">
   <div>
     <h1>Estoque baixo</h1>
-    <p>Produtos com saldo fisico igual ou abaixo do minimo configurado.</p>
+    <p>Produtos com saldo físico igual ou abaixo do mínimo configurado.</p>
   </div>
   <div class="actions">
     <a class="secondary-button" href="{% url 'relatorios:estoque_baixo_csv' %}{% if filial_id %}?filial={{ filial_id }}{% endif %}"><i class="fa-solid fa-file-csv"></i> Excel/CSV</a>
@@ -47,7 +47,7 @@
           <td>{{ estoque.produto.estoque_minimo|quantidade_br }}</td>
         </tr>
       {% empty %}
-        <tr><td colspan="7" class="empty">Nenhum produto abaixo do minimo.</td></tr>
+        <tr><td colspan="7" class="empty">Nenhum produto abaixo do mínimo.</td></tr>
       {% endfor %}
     </tbody>
   </table>

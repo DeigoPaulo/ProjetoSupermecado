@@ -37,7 +37,7 @@ class Command(BaseCommand):
         parser.add_argument(
             "--redefinir-senhas",
             action="store_true",
-            help="Redefine a senha dos usuarios demonstrativos para Demo@2026.",
+            help="Redefine a senha dos usuários demonstrativos para Demo@2026.",
         )
         parser.add_argument(
             "--simular",
@@ -56,19 +56,19 @@ class Command(BaseCommand):
 
         for chave, valor in resumo.items():
             self.stdout.write(f"- {chave}: {valor}")
-        self.stdout.write("Usuarios demo: demo.admin, demo.supervisor, demo.caixa e demo.estoque")
-        self.stdout.write("Senha inicial dos novos usuarios: Demo@2026")
-        self.stdout.write("Use apenas para demonstracao e testes; nao utilize esses usuarios em producao.")
+        self.stdout.write("Usuários demo: demo.admin, demo.supervisor, demo.caixa e demo.estoque")
+        self.stdout.write("Senha inicial dos novos usuários: Demo@2026")
+        self.stdout.write("Use apenas para demonstração e testes; não utilize esses usuários em produção.")
 
     def _popular(self, *, redefinir_senhas):
         empresa, _ = Empresa.objects.update_or_create(
             cnpj=DEMO_CNPJ,
             defaults={
-                "razao_social": "SuperERP Demonstracao Ltda",
-                "nome_fantasia": "SuperERP Demo",
+                "razao_social": "Deigo Varejo Demonstração Ltda",
+                "nome_fantasia": "Deigo Varejo Demo",
                 "telefone": "(62) 99999-0000",
-                "email": "demo@supererp.local",
-                "endereco": "Rua de Demonstracao, 100 - Goiania/GO",
+                "email": "demo@deigovarejo.local",
+                "endereco": "Rua de Demonstração, 100 - Goiânia/GO",
                 "regime_tributario": "Simples Nacional",
                 "is_active": True,
             },
@@ -79,8 +79,8 @@ class Command(BaseCommand):
             defaults={
                 "cnpj": DEMO_CNPJ,
                 "telefone": "(62) 99999-0000",
-                "endereco": "Rua de Demonstracao, 100 - Setor Central",
-                "municipio": "Goiania",
+                "endereco": "Rua de Demonstração, 100 - Setor Central",
+                "municipio": "Goiânia",
                 "uf": "GO",
                 "codigo_municipio_ibge": "5208707",
                 "is_active": True,
@@ -92,8 +92,8 @@ class Command(BaseCommand):
             defaults={
                 "cnpj": "99.999.999/0002-70",
                 "telefone": "(62) 99999-0001",
-                "endereco": "Avenida Demonstracao, 200 - Setor Oeste",
-                "municipio": "Goiania",
+                "endereco": "Avenida Demonstração, 200 - Setor Oeste",
+                "municipio": "Goiânia",
                 "uf": "GO",
                 "codigo_municipio_ibge": "5208707",
                 "is_active": True,
@@ -109,8 +109,8 @@ class Command(BaseCommand):
                 "nome_fantasia": "DEMO Distribuidora",
                 "cnpj": "99.999.999/0003-51",
                 "telefone": "(62) 98888-0000",
-                "email": "fornecedor.demo@supererp.local",
-                "endereco": "Rodovia de Demonstracao, KM 10 - Goiania/GO",
+                "email": "fornecedor.demo@deigovarejo.local",
+                "endereco": "Rodovia de Demonstração, KM 10 - Goiânia/GO",
                 "condicao_pagamento": "28 dias",
                 "prazo_entrega_dias": 2,
                 "is_active": True,
@@ -122,8 +122,8 @@ class Command(BaseCommand):
             defaults={
                 "cpf_cnpj": "000.000.000-00",
                 "telefone": "(62) 99513-4774",
-                "email": "ana.demo@supererp.local",
-                "endereco": "Rua 18, QD 81, LT 12 - Santos Dumont - Goiania/GO",
+                "email": "ana.demo@deigovarejo.local",
+                "endereco": "Rua 18, QD 81, LT 12 - Santos Dumont - Goiânia/GO",
                 "is_active": True,
             },
         )
@@ -158,7 +158,7 @@ class Command(BaseCommand):
         for chave, (username, first_name, perfil) in definicoes.items():
             usuario, criado = User.objects.get_or_create(
                 username=username,
-                defaults={"first_name": first_name, "email": f"{username}@supererp.local", "is_active": True},
+                defaults={"first_name": first_name, "email": f"{username}@deigovarejo.local", "is_active": True},
             )
             if criado or redefinir_senhas:
                 usuario.set_password(DEMO_PASSWORD)
@@ -186,13 +186,13 @@ class Command(BaseCommand):
         return categorias
 
     def _produtos(self, categorias):
-        marca, _ = Marca.all_objects.get_or_create(nome="DEMO - Marca SuperERP", defaults={"is_active": True})
+        marca, _ = Marca.all_objects.get_or_create(nome="DEMO - Marca Deigo Varejo", defaults={"is_active": True})
         dados = [
             ("7890000001001", "DEMO-1001", "Arroz Tipo 1 5kg", "mercearia", "UN", "18.90", "24.99", "45"),
             ("7890000001002", "DEMO-1002", "Leite Integral 1L", "mercearia", "UN", "3.95", "5.49", "80"),
             ("7890000001003", "DEMO-1003", "Coca-Cola Original 2L", "bebidas", "UN", "6.20", "9.49", "60"),
             ("7890000001004", "DEMO-1004", "Banana Prata", "hortifruti", "KG", "3.10", "6.99", "72.5"),
-            ("7890000001005", "DEMO-1005", "Maca Gala", "hortifruti", "KG", "4.20", "8.99", "55"),
+            ("7890000001005", "DEMO-1005", "Maçã Gala", "hortifruti", "KG", "4.20", "8.99", "55"),
             ("7890000001006", "DEMO-1006", "Detergente Neutro 500ml", "limpeza", "UN", "1.80", "3.49", "70"),
         ]
         produtos = {}
@@ -202,7 +202,7 @@ class Command(BaseCommand):
                 defaults={
                     "codigo_interno": interno,
                     "nome": nome,
-                    "descricao": "Produto ficticio para demonstracao e testes.",
+                    "descricao": "Produto fictício para demonstração e testes.",
                     "categoria": categorias[categoria],
                     "marca": marca,
                     "unidade": unidade,
@@ -223,8 +223,8 @@ class Command(BaseCommand):
         definicoes = [
             ("DEMO - Dinheiro", "DINHEIRO", True),
             ("DEMO - PIX", "PIX", False),
-            ("DEMO - Cartao de debito", "DEBITO", False),
-            ("DEMO - Cartao de credito", "CREDITO", False),
+            ("DEMO - Cartão de débito", "DEBITO", False),
+            ("DEMO - Cartão de crédito", "CREDITO", False),
             ("DEMO - Vale refeicao", "VALE_REFEICAO", False),
         ]
         formas = {}

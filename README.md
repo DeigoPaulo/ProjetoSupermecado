@@ -4,7 +4,7 @@ Projeto Django para gestão interna de supermercado, iniciado a partir dos docum
 
 ## Estado atual
 
-O núcleo operacional do MVP está implementado: autenticação e perfis, empresa e filiais, produtos, clientes, fornecedores, estoque, PDV, vendas, pagamentos combinados, caixa, auditoria e relatórios. O roadmap atualizado fica na tela **Sistema > Checklist** e em `apps/configuracoes/views.py`.
+O núcleo operacional do MVP está implementado: autenticação e perfis, empresa e filiais, produtos, clientes, fornecedores, estoque, PDV, vendas, pagamentos combinados, caixa, auditoria e relatórios. O roadmap atualizado fica na tela **Sistema > Checklist** e em `apps/configuracoes/views.py`. A última auditoria conservadora do repositório está registrada em `docs/LIMPEZA_ESTABILIZACAO.md`.
 
 As próximas frentes concentram-se em homologação de equipamentos, integrações externas, empacotamento do servidor/PDV desktop e itens do escopo original que ainda precisam de decisão.
 
@@ -66,9 +66,9 @@ O projeto lê variáveis do arquivo `.env`. Use `.env.example` como base.
 
 - `DJANGO_ENV=development` mantém o modo local simples.
 - `DEBUG=false` exige `SECRET_KEY` própria.
-- `ALLOWED_HOSTS` deve conter os dominios/IPs liberados.
+- `ALLOWED_HOSTS` deve conter os domínios/IPs liberados.
 - Para PostgreSQL, configure `POSTGRES_DB`, `POSTGRES_USER`, `POSTGRES_PASSWORD`, `POSTGRES_HOST` e `POSTGRES_PORT`.
-- `MEDIA_ROOT`, `STATIC_ROOT` e `LOG_DIR` podem apontar para pastas especificas do servidor.
+- `MEDIA_ROOT`, `STATIC_ROOT` e `LOG_DIR` podem apontar para pastas específicas do servidor.
 - Recuperação de senha usa console no desenvolvimento. Em produção, configure `EMAIL_BACKEND`, `EMAIL_HOST`, `EMAIL_PORT`, `EMAIL_HOST_USER`, `EMAIL_HOST_PASSWORD`, `EMAIL_USE_TLS`/`EMAIL_USE_SSL` e `DEFAULT_FROM_EMAIL`.
 
 ## Próximos passos

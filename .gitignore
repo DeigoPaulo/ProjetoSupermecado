@@ -11,6 +11,13 @@ logs/
 ProjetoLimpoGitHub/
 desktop_pdv/.venv-build/
 desktop_pdv/.build-venv/
+desktop_pdv/build/
+desktop_pdv/dist/
+desktop_admin/.build-venv/
+desktop_admin/build/
+desktop_admin/dist/
+desktop_admin/*.spec
+tmp-*.out
 
 dist/protected_modules/
 

@@ -55,7 +55,7 @@ class AcessoPdvNuvemTests(TestCase):
 
         self.assertEqual(resposta.status_code, 200)
         self.assertContains(resposta, "Deigo Tecnologia")
-        self.assertContains(resposta, "Deigo PDV")
+        self.assertContains(resposta, "DeTec PDV")
         self.assertContains(resposta, "img/brand/deigo-tecnologia.png")
         self.assertContains(resposta, self.filial.empresa.nome_fantasia)
     def test_supervisor_ve_menu_no_pdv(self):
@@ -78,6 +78,7 @@ class AcessoPdvNuvemTests(TestCase):
         self.assertContains(resposta, "Shift+S")
         self.assertContains(resposta, 'action="/logout/"')
         self.assertNotContains(resposta, 'id="pdv-menu-link"')
+    @override_settings(PDV_TEF_SIMULATOR_ENABLED=True)
     def test_terminal_autenticado_inicializa_e_registra_conexao(self):
         terminal = TerminalPdv(
             filial=self.filial,
@@ -1055,7 +1056,7 @@ class AcessoPdvNuvemTests(TestCase):
         self.assertContains(resposta, "Sangria")
         self.assertContains(resposta, "<kbd>F3</kbd>", html=True)
         self.assertContains(resposta, "Ctrl+Enter")
-        self.assertContains(resposta, "Aguardando conferencia")
+        self.assertContains(resposta, "Aguardando conferência")
         self.assertContains(resposta, "Conferir")
 
     def test_pdv_exibe_pagamento_eletronico_e_saida_superior_sem_menu_inferior_duplicado(self):
@@ -1065,7 +1066,7 @@ class AcessoPdvNuvemTests(TestCase):
         resposta = self.client.get("/pdv/")
 
         self.assertEqual(resposta.status_code, 200)
-        self.assertContains(resposta, "<kbd>F3</kbd> Eletronico", html=True)
+        self.assertContains(resposta, "<kbd>F3</kbd> Eletrônico", html=True)
         self.assertContains(resposta, "<kbd>F3</kbd> PIX", html=True)
         self.assertContains(resposta, "Adicionar forma")
         self.assertContains(resposta, "Shift +")

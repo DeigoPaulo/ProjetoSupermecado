@@ -80,7 +80,7 @@
 
   <div class="panel">
     <div class="panel-title">Produzir composição</div>
-    <form method="post" action="{% url 'estoque:composicao_produzir' composicao.pk %}" class="form-grid form-confirm" data-msg="Confirmar producao e atualizar o estoque?">
+    <form method="post" action="{% url 'estoque:composicao_produzir' composicao.pk %}" class="form-grid form-confirm" data-msg="Confirmar produção e atualizar o estoque?">
       {% csrf_token %}
       {% for field in producao_form %}
         <label class="form-field {% if field.name == 'observacao' %}span-2{% endif %}">
@@ -111,7 +111,7 @@
           <td>{{ producao.usuario }}</td>
           <td>
             {% if producao.status == "CONFIRMADO" %}
-              <form method="post" action="{% url 'estoque:composicao_cancelar_producao' producao.pk %}" class="form-confirm compact-form" data-msg="Cancelar esta producao e reverter o estoque?">
+              <form method="post" action="{% url 'estoque:composicao_cancelar_producao' producao.pk %}" class="form-confirm compact-form" data-msg="Cancelar esta produção e reverter o estoque?">
                 {% csrf_token %}
                 <input type="text" name="motivo" placeholder="Motivo" required>
                 <input type="text" name="supervisor_usuario" placeholder="Supervisor" required>

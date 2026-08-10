@@ -22,6 +22,14 @@ class FornecedorForm(forms.ModelForm):
             "prazo_entrega_dias",
             "is_active",
         ]
+        labels = {
+            "razao_social": "Razão social",
+            "cnpj": "CNPJ",
+            "endereco": "Endereço",
+            "condicao_pagamento": "Condição de pagamento",
+            "prazo_entrega_dias": "Prazo de entrega (dias)",
+            "is_active": "Ativo",
+        }
         widgets = {
             "cnpj": forms.TextInput(attrs={"class": "mask-cpf-cnpj"}),
             "telefone": forms.TextInput(attrs={"class": "mask-phone"}),

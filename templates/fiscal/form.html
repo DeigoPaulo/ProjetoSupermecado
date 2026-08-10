@@ -23,7 +23,7 @@
         <div>
           <strong>Certificado A1</strong>
           {% if form.instance.pk and form.instance.certificado_configurado %}
-            <span>{{ form.instance.certificado_nome }}{% if form.instance.certificado_validade %} - valido ate {{ form.instance.certificado_validade|date:"d/m/Y" }}{% endif %}</span>
+            <span>{{ form.instance.certificado_nome }}{% if form.instance.certificado_validade %} - válido até {{ form.instance.certificado_validade|date:"d/m/Y" }}{% endif %}</span>
           {% else %}
             <span>Nenhum certificado protegido enviado.</span>
           {% endif %}

@@ -13,7 +13,6 @@ from urllib.parse import urlencode
 
 from django.apps import apps
 from django.conf import settings
-from django.conf import settings
 from django.contrib import messages
 from django.contrib.auth.decorators import login_required
 from django.contrib.auth.models import User
@@ -66,7 +65,8 @@ CHECKLIST_GRUPOS = [
             ("Identidade Deigo Varejo e DeTec PDV", "partial", "A marca provisória foi alterada para Deigo Varejo na plataforma e DeTec PDV no aplicativo, sempre com Deigo Tecnologia identificada como fabricante. Foram criados símbolo próprio, favicon, assinatura discreta no PDV, ícone multirresolução para Windows e integração do ícone no EXE, MSI e atalhos. Serviços, pacotes, caminhos e documentação deixaram a marca anterior, enquanto o app preserva migração da configuração legada. Falta realizar busca formal por classe no INPI, validar domínio e redes sociais, aprovar a identidade final e depositar o pedido de registro antes do lançamento comercial."),
             ("Liberação emergencial offline", "done", "Contingência comercial concluída com desafio local de uso único válido por 30 minutos, autorização Ed25519 emitida somente pelo super admin, vínculo obrigatório com CNPJ e instalação, validade limitada a 24 horas, 3 dias ou 7 dias, rejeição de código adulterado ou reutilizado, chave privada restrita à central, chave pública nos clientes, auditoria em ambos os lados, histórico operacional e reconciliação automática na primeira renovação após o retorno da internet. A senha do super admin nunca é informada no servidor do supermercado."),
             ("Auditoria de ações críticas", "done", "Logs sensíveis possuem tela de consulta com filtros por período, módulo, acao e usuário, exportação CSV, isolamento pela empresa do administrador e paginação real de 50 registros. Gerentes não acessam a auditoria administrativa e o super admin preserva a visão global."),
-            ("Testes automatizados", "done", "Suíte formal cobre venda com baixa de estoque, pagamento dividido, backup e configuracoes de impressão."),
+            ("Testes automatizados", "done", "Suíte formal cobre venda com baixa de estoque, pagamento dividido, backup e configurações de impressão."),
+            ("Limpeza e estabilização do repositório", "done", "Auditoria conservadora concluída sobre a base bfe40f6: ambientes virtuais e saídas de build indevidamente versionados foram removidos, os artefatos publicados e identificadores legados ainda usados foram preservados, builds desktop ficaram reproduzíveis, referências documentais foram validadas e nomes, caminhos, UTF-8, acentuação, dependências, segurança Django, migrations e regressões automatizadas foram conferidos. Relatório em docs/LIMPEZA_ESTABILIZACAO.md."),
         ],
     },
     {
@@ -210,11 +210,11 @@ def _instalador_pdv_desktop():
 DOCUMENTOS_PROJETO = [
     ("Complementar PDV, usabilidade, cadastros e entrega v2", "docs/protótipos/documento_complementar_pdv_usabilidade_cadastros_entrega_v2.docx"),
     ("Complementar desmembramento e fracionamento de produtos", "docs/protótipos/documento_complementar_desmembramento_fracionamento_produtos.docx"),
-    ("Complementar etiquetas de gôndola e impressoras profissionais v2", "docs/protótipos/documento_complementar_etiquetas_gôndola_impressoras_profissionais_v2.docx"),
+    ("Complementar etiquetas de gôndola e impressoras profissionais v2", "docs/protótipos/documento_complementar_etiquetas_gondola_impressoras_profissionais_v2.docx"),
     ("Índice dos documentos finais", "docs/protótipos/00_indice_documentos_finais_supermercado.docx"),
-    ("Arquitetura técnica", "docs/protótipos/01_arquitetura_técnica_sistema_supermercado.docx"),
+    ("Arquitetura técnica", "docs/protótipos/01_arquitetura_tecnica_sistema_supermercado.docx"),
     ("Modelagem banco de dados", "docs/protótipos/02_modelagem_banco_dados_sistema_supermercado.docx"),
-    ("Regras de negócio", "docs/protótipos/03_regras_negócio_sistema_supermercado.docx"),
+    ("Regras de negócio", "docs/protótipos/03_regras_negocio_sistema_supermercado.docx"),
     ("MVP por fases", "docs/protótipos/04_mvp_por_fases_sistema_supermercado.docx"),
     ("Checklist de desenvolvimento", "docs/protótipos/05_checklist_desenvolvimento_sistema_supermercado.docx"),
     ("Mapa de telas e fluxos", "docs/protótipos/06_mapa_telas_fluxos_sistema_supermercado.docx"),
@@ -1079,7 +1079,7 @@ def super_admin_diagnostico_csv(request):
     prontidao = payload["prontidao_operacional"]
     writer.writerow(["Prontidao", prontidao["status"], prontidao["percentual"], prontidao["alertas"], prontidao["descricao"]])
     for item in payload["perfis_por_tipo"]:
-        writer.writerow(["Perfil", item["tipo"], "Ativo", item["total"], "Usuarios ativos por perfil"])
+        writer.writerow(["Perfil", item["tipo"], "Ativo", item["total"], "Usuários ativos por perfil"])
     return response
 
 

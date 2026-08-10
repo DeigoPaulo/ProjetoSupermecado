@@ -23,7 +23,7 @@
 
 <section class="panel backup-grid">
   <article>
-    <h2>Como usar com seguranca</h2>
+    <h2>Como usar com segurança</h2>
     <ol class="backup-steps">
       <li>Baixe o arquivo JSON e guarde em local protegido.</li>
       <li>Antes de restaurar, suba uma copia do sistema em ambiente separado.</li>
@@ -34,11 +34,11 @@
   </article>
   <article class="backup-warning">
     <h2>Protecao dos dados</h2>
-    <p>O arquivo pode conter dados comerciais, clientes, vendas, estoque, logs e usuarios técnicos do sistema. Não envie esse backup por canais abertos.</p>
+    <p>O arquivo pode conter dados comerciais, clientes, vendas, estoque, logs e usuários técnicos do sistema. Não envie esse backup por canais abertos.</p>
     <p>A restauração direta pela tela fica desativada de propósito: supermercado não pode correr o risco de sobrescrever uma base real por engano.</p>
     <p>Antes da primeira execucao, use <code>{{ backup_local_script }} {{ backup_validacao_flag }}</code> para conferir banco, midia, logs e destino sem gerar arquivos.</p>
     <p>O destino pode ser definido por <code>{{ backup_destino_env }}</code>. A tarefa automática usa a conta <code>{{ backup_conta_tarefa }}</code> e não depende de usuário conectado.</p>
-    <p>Em producao, configure <code>{{ backup_criptografia_env }}</code> para gerar o pacote <code>.zip.aes</code>. Use <code>{{ backup_criptografia_flag }}</code> quando a política exigir apagar o <code>.zip</code> aberto.</p>
+    <p>Em produção, configure <code>{{ backup_criptografia_env }}</code> para gerar o pacote <code>.zip.aes</code>. Use <code>{{ backup_criptografia_flag }}</code> quando a política exigir apagar o <code>.zip</code> aberto.</p>
   </article>
 </section>
 

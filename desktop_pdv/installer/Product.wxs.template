@@ -1,18 +1,18 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <Wix xmlns="http://wixtoolset.org/schemas/v4/wxs">
   <Package
-    Name="Deigo PDV"
+    Name="DeTec PDV"
     Manufacturer="Deigo Tecnologia"
     Version="__VERSION__"
     UpgradeCode="{34CF953A-E0D8-4D2A-A624-F594095EE92A}"
     Scope="perMachine">
-    <MajorUpgrade DowngradeErrorMessage="Uma versao mais recente do Deigo PDV ja esta instalada." />
+    <MajorUpgrade DowngradeErrorMessage="Uma versao mais recente do DeTec PDV ja esta instalada." />
     <MediaTemplate EmbedCab="yes" CompressionLevel="high" />
     <Icon Id="DeigoPdvIcon" SourceFile="__ICON__" />
     <Property Id="ARPPRODUCTICON" Value="DeigoPdvIcon" />
 
     <StandardDirectory Id="ProgramFiles6432Folder">
-      <Directory Id="INSTALLFOLDER" Name="Deigo PDV" />
+      <Directory Id="INSTALLFOLDER" Name="DeTec PDV" />
     </StandardDirectory>
     <StandardDirectory Id="ProgramMenuFolder">
       <Directory Id="PROGRAMMENUDIR" Name="Deigo Varejo" />
@@ -23,7 +23,7 @@
         <Shortcut
           Id="ProgramMenuShortcut"
           Directory="PROGRAMMENUDIR"
-          Name="Deigo PDV"
+          Name="DeTec PDV"
           Description="PDV operacional do supermercado"
           WorkingDirectory="INSTALLFOLDER"
           Icon="DeigoPdvIcon"
@@ -31,7 +31,7 @@
         <Shortcut
           Id="DesktopShortcut"
           Directory="DesktopFolder"
-          Name="Deigo PDV"
+          Name="DeTec PDV"
           Description="PDV operacional do supermercado"
           WorkingDirectory="INSTALLFOLDER"
           Icon="DeigoPdvIcon"
@@ -40,7 +40,7 @@
       <RemoveFolder Id="RemoveProgramMenuFolder" Directory="PROGRAMMENUDIR" On="uninstall" />
     </Component>
 
-    <Feature Id="MainFeature" Title="Deigo PDV" Level="1">
+    <Feature Id="MainFeature" Title="DeTec PDV" Level="1">
       <ComponentRef Id="MainExecutable" />
     </Feature>
   </Package>

@@ -1,11 +1,11 @@
 {% extends "base.html" %}
 
-{% block title %}Movimentacoes de Estoque{% endblock %}
+{% block title %}Movimentações de Estoque{% endblock %}
 
 {% block content %}
 <header class="page-header">
   <div>
-    <h1>Movimentacoes de estoque</h1>
+    <h1>Movimentações de estoque</h1>
     <p>Entradas, saidas, vendas, devolucoes, reservas e ajustes.</p>
   </div>
   <div class="actions">
@@ -48,7 +48,7 @@
 </form>
 
 <section class="metrics-grid">
-  <article class="metric"><span>Movimentacoes</span><strong>{{ total_movimentacoes }}</strong></article>
+  <article class="metric"><span>Movimentações</span><strong>{{ total_movimentacoes }}</strong></article>
   <article class="metric"><span>Quantidade total</span><strong>{{ quantidade_total|quantidade_br }}</strong></article>
   <article class="metric"><span>Início</span><strong>{{ data_inicio|date:"d/m/Y" }}</strong></article>
   <article class="metric"><span>Fim</span><strong>{{ data_fim|date:"d/m/Y" }}</strong></article>

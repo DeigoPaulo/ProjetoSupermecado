@@ -75,9 +75,9 @@ class EstoqueViewsTests(TestCase):
         response = self.client.get("/estoque/movimentar/")
 
         self.assertEqual(response.status_code, 200)
-        self.assertContains(response, "Operacao")
-        self.assertContains(response, "Autorizacao")
-        self.assertContains(response, "Movimentacoes manuais ficam registradas")
+        self.assertContains(response, "Operação")
+        self.assertContains(response, "Autorização")
+        self.assertContains(response, "Movimentações manuais ficam registradas")
         self.assertContains(response, "select2-field")
 
 
@@ -626,7 +626,7 @@ class EstoqueViewsTests(TestCase):
             },
             follow=True,
         )
-        self.assertContains(response, "Composicao salva com sucesso")
+        self.assertContains(response, "Composição salva com sucesso")
         self.assertContains(response, "Visão operacional")
         self.assertContains(response, "Custo previsto")
         self.assertContains(response, "Capacidade atual")
@@ -660,7 +660,7 @@ class EstoqueViewsTests(TestCase):
             },
             follow=True,
         )
-        self.assertContains(response, "Producao cancelada e estoque revertido")
+        self.assertContains(response, "Produção cancelada e estoque revertido")
         producao.refresh_from_db()
         self.assertEqual(producao.status, StatusProducaoComposicao.CANCELADO)
         self.assertEqual(Estoque.objects.get(produto=componente, filial=self.filial).quantidade_atual, Decimal("5.000"))
@@ -832,7 +832,7 @@ class EstoqueViewsTests(TestCase):
         self.assertContains(lista, "Excel/CSV")
         self.assertEqual(csv_response.status_code, 200)
         conteudo = csv_response.content.decode("utf-8-sig")
-        self.assertIn("Producao sugerida", conteudo)
+        self.assertIn("Produção sugerida", conteudo)
         self.assertIn("Demanda reposicao", conteudo)
         self.assertIn("Kit CSV planejamento", conteudo)
         self.assertIn("Produzir", conteudo)
@@ -1291,7 +1291,7 @@ class EstoqueViewsTests(TestCase):
         self.assertFalse(previa["conservacao_massa_valida"])
         self.assertEqual(previa["excesso_quantidade"], Decimal("0.001"))
         self.assertEqual(previa["rendimento_total"], Decimal("100.02"))
-        with self.assertRaisesMessage(ValidationError, "Conservacao de massa inválida"):
+        with self.assertRaisesMessage(ValidationError, "Conservação de massa inválida"):
             confirmar_desmembramento_multidestino(
                 filial=self.filial,
                 produto_origem=self.produto,
@@ -1526,7 +1526,7 @@ class EstoqueViewsTests(TestCase):
         )
 
         self.assertEqual(response.status_code, 200)
-        self.assertContains(response, "Previa da operação")
+        self.assertContains(response, "Prévia da operação")
         self.assertContains(response, "Estoque suficiente para confirmar")
         self.assertEqual(DesmembramentoProduto.objects.count(), 0)
         self.assertEqual(MovimentacaoEstoque.objects.count(), 0)
@@ -1715,7 +1715,7 @@ class EstoqueViewsTests(TestCase):
         response = self.client.get("/estoque/receitas-desmembramento/nova/")
 
         self.assertEqual(response.status_code, 200)
-        self.assertContains(response, "Conversao padrão")
+        self.assertContains(response, "Conversão padrão")
         self.assertContains(response, 'data-ajax-url="/estoque/produtos/busca.json"')
 
     def test_receita_desmembramento_nao_permite_origem_igual_destino(self):

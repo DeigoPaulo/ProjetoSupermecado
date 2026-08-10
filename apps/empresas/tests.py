@@ -1569,7 +1569,7 @@ class EmpresasViewsTests(TestCase):
         self.assertIn("esgotaram as tentativas automaticas", " ".join(diagnostico["operacao"]["alertas"]))
         self.assertContains(painel, "Fila saída mais antiga")
         self.assertContains(painel, "Saída esgotada")
-        self.assertContains(painel, "Status operacional da sincronizacao")
+        self.assertContains(painel, "Status operacional da sincronização")
         self.assertContains(painel, "Politica manual")
         self.assertContains(painel, "Nuvem produtos/estoque")
         self.assertContains(painel, "sync_readiness_v1")

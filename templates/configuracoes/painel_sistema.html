@@ -6,14 +6,14 @@
 <header class="page-header">
   <div>
     <h1>Painel do sistema</h1>
-    <p>Central administrativa propria para operar o ERP sem depender do admin padrao.</p>
+    <p>Central administrativa própria para operar o ERP sem depender do admin padrão.</p>
   </div>
 </header>
 
 <section class="metrics-grid">
   <article class="metric"><span>Empresas</span><strong>{{ total_empresas }}</strong></article>
   <article class="metric"><span>Filiais</span><strong>{{ total_filiais }}</strong></article>
-  <article class="metric"><span>Usuarios ativos</span><strong>{{ usuarios_ativos }}</strong></article>
+  <article class="metric"><span>Usuários ativos</span><strong>{{ usuarios_ativos }}</strong></article>
   {% if is_admin_master %}<article class="metric"><span>Checklist</span><strong>{{ resumo_checklist.percentual }}%</strong></article>{% endif %}
   <article class="metric"><span>Filiais sem IBGE</span><strong>{{ filiais_sem_ibge }}</strong></article>
   <article class="metric"><span>Impressoras pendentes</span><strong>{{ impressoes_sem_impressora }}</strong></article>

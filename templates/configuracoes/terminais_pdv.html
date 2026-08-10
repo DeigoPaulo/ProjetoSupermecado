@@ -93,7 +93,7 @@
             <td>{% if terminal.licenca_liberada %}<span class="status status-success">Liberada</span>{% elif terminal.status_licenca == "PENDENTE" %}<span class="status status-warning">Pendente</span>{% else %}<span class="status status-muted">{{ terminal.get_status_licenca_display }}</span>{% endif %}{% if terminal.licenca_liberada_em %}<br><small>{{ terminal.licenca_liberada_em|date:"d/m/Y H:i" }}</small>{% endif %}</td>
             <td><strong>{{ terminal.get_canal_atualizacao_display }}</strong><br>{% if terminal.bloquear_atualizacoes %}<span class="status status-warning">Congelada</span>{% else %}<span class="status status-success">Liberada pelo canal</span>{% endif %}</td>
             <td>{% if terminal.permite_modo_offline %}<span class="status status-success">Permitido</span>{% else %}<span class="status status-muted">Somente online local</span>{% endif %}</td>
-            <td>{% if terminal.emite_documento_fiscal %}<span class="status status-success">Emite NFC-e</span>{% else %}<span class="status status-warning">Sem fiscal automatico</span>{% endif %}</td>
+            <td>{% if terminal.emite_documento_fiscal %}<span class="status status-success">Emite NFC-e</span>{% else %}<span class="status status-warning">Sem fiscal automático</span>{% endif %}</td>
             <td>{{ terminal.ultima_conexao|date:"d/m/Y H:i"|default:"Nunca" }}</td>
             <td><span class="status-badge {% if terminal.ativo %}success{% else %}muted{% endif %}">{% if terminal.ativo %}Ativo{% else %}Inativo{% endif %}</span></td>
             <td>

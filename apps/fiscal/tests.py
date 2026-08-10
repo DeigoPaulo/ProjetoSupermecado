@@ -1558,7 +1558,7 @@ class FiscalTests(TestCase):
         response_print = self.client.get(f"/fiscal/documentos/{documento.pk}/imprimir/")
 
         self.assertEqual(response.status_code, 200)
-        self.assertContains(response, "Espelho de conferencia")
+        self.assertContains(response, "Espelho de conferência")
         self.assertContains(response, "Arroz Branco 5kg")
         self.assertContains(response, "Dinheiro")
         self.assertContains(response, "Cliente avulso")

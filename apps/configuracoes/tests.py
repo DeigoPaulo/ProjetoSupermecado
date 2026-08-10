@@ -20,7 +20,7 @@ from apps.vendas.models import FormaPagamento, FormaPagamentoFilial, PagamentoVe
 from .models import ConfiguracaoImpressao, ModeloEtiqueta, ModeloPapel, TipoDocumentoImpressao
 from .services import configuracao_impressao_para, criar_configuracoes_padrao, estilos_impressao
 from .templatetags.formatadores import quantidade_br
-from .views import _classificar_dependencia_roadmap, _classificar_etapa_roadmap
+from .views import CHECKLIST_GRUPOS, DOCUMENTOS_PROJETO, _classificar_dependencia_roadmap, _classificar_etapa_roadmap
 
 def criar_artefato_pdv_teste(caminho, conteudo, versao=None, assinado=False):
     versao = versao or settings.PDV_DESKTOP_VERSION
@@ -172,6 +172,12 @@ class ConfiguracoesOperacionaisTests(TestCase):
         backup = self.client.get("/configuracoes/backup/download/")
         checklist = self.client.get("/configuracoes/checklist/")
 
+        for titulo, caminho_relativo in DOCUMENTOS_PROJETO:
+            self.assertTrue(
+                (settings.BASE_DIR / caminho_relativo).is_file(),
+                f"Documento de referência ausente no checklist: {titulo} ({caminho_relativo})",
+            )
+
         self.assertEqual(impressoes.status_code, 200)
         self.assertContains(impressoes, "Central de impressão")
         self.assertContains(impressoes, "Cupom fiscal")
@@ -277,10 +283,18 @@ class ConfiguracoesOperacionaisTests(TestCase):
         self.assertContains(checklist, "Aplicativo desktop/PDF")
         self.assertContains(checklist, "Marketplace / pedido online")
         self.assertContains(checklist, "Homologação de parceiros marketplace")
-        self.assertContains(checklist, "77% finalizado")
-        self.assertEqual(checklist.context["resumo"]["concluidos"], 77)
-        self.assertEqual(checklist.context["resumo"]["total"], 100)
-        self.assertEqual(checklist.context["resumo"]["percentual"], 77)
+        total_esperado = sum(len(grupo["itens"]) for grupo in CHECKLIST_GRUPOS)
+        concluidos_esperados = sum(
+            1
+            for grupo in CHECKLIST_GRUPOS
+            for _, status, _ in grupo["itens"]
+            if status == "done"
+        )
+        percentual_esperado = round((concluidos_esperados / total_esperado) * 100)
+        self.assertContains(checklist, f"{percentual_esperado}% finalizado")
+        self.assertEqual(checklist.context["resumo"]["concluidos"], concluidos_esperados)
+        self.assertEqual(checklist.context["resumo"]["total"], total_esperado)
+        self.assertEqual(checklist.context["resumo"]["percentual"], percentual_esperado)
         self.assertContains(checklist, "pendencia fica auditada")
         self.assertContains(checklist, "Transmissao simulada em homologação")
         self.assertContains(checklist, "fiscal_production_readiness_v1")
@@ -1091,7 +1105,7 @@ class ConfiguracoesOperacionaisTests(TestCase):
         self.assertContains(form_response, str(terminal.identificador))
         self.assertContains(form_response, "Fiscal por terminal")
         self.assertContains(form_response, "TEF por adaptador")
-        self.assertContains(form_response, "Balanca local")
+        self.assertContains(form_response, "Balança local")
         self.assertContains(form_response, "driver genérico")
         self.assertContains(form_response, "endereço:porta")
         self.assertContains(form_response, "Licenciamento do app desktop")
@@ -1241,6 +1255,12 @@ class ConfiguracoesOperacionaisTests(TestCase):
 
         response = self.client.get("/configuracoes/pdv-desktop/")
         checklist = self.client.get("/configuracoes/checklist/")
+
+        for titulo, caminho_relativo in DOCUMENTOS_PROJETO:
+            self.assertTrue(
+                (settings.BASE_DIR / caminho_relativo).is_file(),
+                f"Documento de referência ausente no checklist: {titulo} ({caminho_relativo})",
+            )
 
         self.assertEqual(response.status_code, 200)
         self.assertContains(response, "App PDV desktop")

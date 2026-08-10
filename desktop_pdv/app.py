@@ -602,7 +602,7 @@ def ativar_terminal(config_atual: dict | None = None) -> dict:
     raiz.title("Ativar DeTec PDV")
     raiz.geometry("520x330")
     raiz.resizable(False, False)
-    icone = caminho_recurso("assets/deigo-pdv.ico")
+    icone = caminho_recurso("assets/deigo-pdv-cart.ico")
     if icone.exists():
         raiz.iconbitmap(default=str(icone))
 

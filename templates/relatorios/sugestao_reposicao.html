@@ -6,7 +6,7 @@
 <header class="page-header">
   <div>
     <h1>Sugestao de reposicao</h1>
-    <p>Produtos que precisam de compra/reposicao com base em estoque minimo e venda media.</p>
+    <p>Produtos que precisam de compra/reposição com base em estoque mínimo e venda média.</p>
   </div>
   <div class="actions">
     <a class="secondary-button" href="{% url 'relatorios:sugestao_reposicao_csv' %}?data_inicio={{ data_inicio|date:'Y-m-d' }}&amp;data_fim={{ data_fim|date:'Y-m-d' }}&amp;dias_cobertura={{ dias_cobertura }}{% if filial_id %}&amp;filial={{ filial_id }}{% endif %}"><i class="fa-solid fa-file-csv"></i> Excel/CSV</a>

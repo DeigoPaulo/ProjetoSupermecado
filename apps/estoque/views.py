@@ -356,7 +356,7 @@ def movimentar(request):
             except ValidationError as exc:
                 messages.error(request, " ".join(exc.messages))
             else:
-                messages.success(request, "Movimentacao registrada com sucesso.")
+                messages.success(request, "Movimentação registrada com sucesso.")
                 return redirect("estoque:lista")
     else:
         form = MovimentacaoEstoqueForm(user=request.user)
@@ -747,7 +747,7 @@ def composicoes_programar_sugestoes(request):
         ip=request.META.get("REMOTE_ADDR"),
     )
     if criadas:
-        messages.success(request, f"{len(criadas)} ordem(ns) de producao programada(s) por demanda.")
+        messages.success(request, f"{len(criadas)} ordem(ns) de produção programada(s) por demanda.")
     else:
         messages.info(request, "Nenhuma ordem nova foi gerada pelas sugestoes atuais.")
     duplicadas = sum(1 for _, motivo in ignoradas if motivo == "duplicada")

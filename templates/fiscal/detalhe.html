@@ -29,7 +29,7 @@
       {% endif %}
       {% if sefaz_adapter_configurado and documento.ambiente == "PRODUCAO" %}
         {% if documento.status == "PRONTO" or documento.status == "CONTINGENCIA" %}
-          <form method="post" action="{% url 'fiscal:transmitir_sefaz' documento.pk %}" class="inline-form form-confirm" data-msg="Transmitir este documento para a SEFAZ em producao?">
+          <form method="post" action="{% url 'fiscal:transmitir_sefaz' documento.pk %}" class="inline-form form-confirm" data-msg="Transmitir este documento para a SEFAZ em produção?">
             {% csrf_token %}
             <button class="primary-button" type="submit"><i class="fa-solid fa-cloud-arrow-up"></i> Transmitir SEFAZ</button>
           </form>
@@ -64,11 +64,11 @@
 <section class="operation-notice operation-notice-warning">
   <i class="fa-solid fa-tower-broadcast"></i>
   <div>
-    <strong>Contingencia offline exige justificativa e posterior transmissao.</strong>
-    <form method="post" action="{% url 'fiscal:ativar_contingencia' documento.pk %}" class="stacked-form form-confirm" data-msg="Confirmar emissao desta NFC-e em contingencia offline?">
+    <strong>Contingência offline exige justificativa e posterior transmissão.</strong>
+    <form method="post" action="{% url 'fiscal:ativar_contingencia' documento.pk %}" class="stacked-form form-confirm" data-msg="Confirmar emissão desta NFC-e em contingência offline?">
       {% csrf_token %}
       <label class="form-field"><span>Justificativa tecnica</span><textarea name="justificativa" minlength="15" maxlength="256" rows="2" required placeholder="Ex.: indisponibilidade de comunicacao com a SEFAZ."></textarea></label>
-      <button class="secondary-button" type="submit"><i class="fa-solid fa-triangle-exclamation"></i> Entrar em contingencia offline</button>
+      <button class="secondary-button" type="submit"><i class="fa-solid fa-triangle-exclamation"></i> Entrar em contingência offline</button>
     </form>
   </div>
 </section>
@@ -79,7 +79,7 @@
   <i class="fa-solid fa-clock"></i>
   <div>
     <strong>Documento sem autorização da SEFAZ.</strong>
-    <span>Contingencia iniciada em {{ documento.contingencia_iniciada_em|date:"d/m/Y H:i" }}. Transmitir ate {{ documento.transmissao_limite_em|date:"d/m/Y H:i" }}. Justificativa: {{ documento.contingencia_justificativa }}</span>
+    <span>Contingência iniciada em {{ documento.contingencia_iniciada_em|date:"d/m/Y H:i" }}. Transmitir até {{ documento.transmissao_limite_em|date:"d/m/Y H:i" }}. Justificativa: {{ documento.contingencia_justificativa }}</span>
   </div>
 </section>
 {% endif %}

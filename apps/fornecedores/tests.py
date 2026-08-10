@@ -25,10 +25,10 @@ class FornecedorViewsTests(TestCase):
         response = self.client.get(f"/fornecedores/{self.fornecedor.pk}/editar/")
 
         self.assertEqual(response.status_code, 200)
-        self.assertContains(response, "Identificacao")
+        self.assertContains(response, "Identificação")
         self.assertContains(response, "Contato e entrega")
         self.assertContains(response, "consultar CNPJ automaticamente")
-        self.assertContains(response, "previsao de recebimento")
+        self.assertContains(response, "previsão de recebimento")
 
     def test_busca_json_retorna_fornecedor_para_select2(self):
         response = self.client.get("/fornecedores/busca.json", {"q": "Teste"})

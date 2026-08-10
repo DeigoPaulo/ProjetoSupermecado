@@ -122,7 +122,7 @@ class LicenciamentoTests(TestCase):
         self.assertEqual(pagina.number, 2)
         self.assertEqual(len(pagina.object_list), 2)
         self.assertIn("contratos_page=1", pagina.previous_url)
-        self.assertContains(response, "Pagina 2 de 2")
+        self.assertContains(response, "Página 2 de 2")
 
     def test_diagnostico_central_e_protegido_e_expoe_prontidao(self):
         self.client.force_login(self.admin)

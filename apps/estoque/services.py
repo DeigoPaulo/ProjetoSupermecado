@@ -639,9 +639,9 @@ def confirmar_desmembramento_multidestino(
         if conservacao["excesso"]:
             detalhe = f"Excesso: {conservacao['excesso']:.3f} KG."
         else:
-            detalhe = f"Quantidade nao classificada: {conservacao['nao_classificada']:.3f} KG."
+            detalhe = f"Quantidade não classificada: {conservacao['nao_classificada']:.3f} KG."
         raise ValidationError(
-            f"Conservacao de massa invalida: {quantidade_origem:.3f} KG de origem devem corresponder "
+            f"Conservação de massa inválida: {quantidade_origem:.3f} KG de origem devem corresponder "
             f"aos {quantidade_total_destinos:.3f} KG de destinos, incluindo perdas. {detalhe}"
         )
     custo_unitario_base = custo_total_origem / quantidade_total_destinos

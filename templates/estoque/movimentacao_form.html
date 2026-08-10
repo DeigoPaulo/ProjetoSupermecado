@@ -3,7 +3,7 @@
 {% block title %}Movimentar estoque{% endblock %}
 
 {% block content %}
-<header class="page-header"><div><h1>Movimentar estoque</h1><p>Entradas, saidas, ajustes e reservas com trava transacional.</p></div></header>
+<header class="page-header"><div><h1>Movimentar estoque</h1><p>Entradas, saídas, ajustes e reservas com trava transacional.</p></div></header>
 <form method="post" class="form-grid panel form-confirm" data-msg="Confirmar movimentação manual de estoque?">
   {% csrf_token %}
   <section class="form-section">
@@ -54,7 +54,7 @@
   <section class="form-section">
     <div class="form-section-header">
       <h2>Autorização</h2>
-      <p>Movimentacoes manuais ficam registradas na auditoria com supervisor ou administrador.</p>
+      <p>Movimentações manuais ficam registradas na auditoria com supervisor ou administrador.</p>
     </div>
     <div class="form-grid">
       <label class="form-field"><span>Supervisor ou admin</span><input type="text" name="supervisor_usuario" autocomplete="username" required></label>

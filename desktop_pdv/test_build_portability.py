@@ -14,7 +14,7 @@ class BuildPortabilityTests(unittest.TestCase):
         self.assertIn("SPECPATH", spec)
         self.assertNotRegex(spec, r"[A-Za-z]:\\Users\\")
         self.assertIn('root / "app.py"', spec)
-        self.assertIn('root / "assets" / "deigo-pdv.ico"', spec)
+        self.assertIn('root / "assets" / "deigo-pdv-cart.ico"', spec)
         self.assertIn('name="DeTecPDV"', spec)
         self.assertIn('icon=[str(icon)]', spec)
 
