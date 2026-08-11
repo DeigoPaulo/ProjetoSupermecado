@@ -236,6 +236,35 @@ def _exigir_super_admin(user):
         raise PermissionDenied("Somente o super admin do software pode criar matrizes e filiais licenciadas.")
 
 
+def _garantir_filial_matriz(empresa):
+    cnpj_empresa = _apenas_digitos(empresa.cnpj)
+    for filial in empresa.filiais.filter(deleted_at__isnull=True):
+        if cnpj_empresa and _apenas_digitos(filial.cnpj) == cnpj_empresa:
+            return filial, False
+
+    nome = "Matriz"
+    sequencia = 2
+    while empresa.filiais.filter(nome__iexact=nome).exists():
+        nome = f"Matriz {sequencia}"
+        sequencia += 1
+
+    filial = Filial.objects.create(
+        empresa=empresa,
+        nome=nome,
+        cnpj=empresa.cnpj,
+        telefone=empresa.telefone,
+        cep=empresa.cep,
+        logradouro=empresa.logradouro,
+        numero=empresa.numero,
+        complemento=empresa.complemento,
+        bairro=empresa.bairro,
+        endereco=empresa.endereco,
+        municipio=empresa.municipio,
+        uf=empresa.uf,
+        is_active=empresa.is_active,
+    )
+    return filial, True
+
 def _registrar_cadastro_licenciado(request, objeto, acao):
     LogAuditoria.objects.create(
         usuario=request.user,
@@ -381,10 +410,28 @@ def empresa_form(request, pk=None):
     empresa = get_object_or_404(_empresas_visiveis(request.user), pk=pk) if pk else None
     form = EmpresaForm(request.POST or None, request.FILES or None, instance=empresa)
     if request.method == "POST" and form.is_valid():
-        empresa_salva = form.save()
-        if empresa is None:
-            _registrar_cadastro_licenciado(request, empresa_salva, "empresa_licenciada_criada")
-        messages.success(request, "Empresa salva com sucesso.")
+        nova_empresa = empresa is None
+        with transaction.atomic():
+            empresa_salva = form.save()
+            filial_matriz = None
+            matriz_criada = False
+            if nova_empresa:
+                filial_matriz, matriz_criada = _garantir_filial_matriz(empresa_salva)
+                _registrar_cadastro_licenciado(request, empresa_salva, "empresa_licenciada_criada")
+                if matriz_criada:
+                    LogAuditoria.objects.create(
+                        usuario=request.user,
+                        modulo="empresas",
+                        acao="filial_matriz_criada_automaticamente",
+                        descricao=f"{filial_matriz} criada automaticamente como unidade operacional da matriz.",
+                        objeto_tipo=filial_matriz._meta.label,
+                        objeto_id=str(filial_matriz.pk),
+                        ip=request.META.get("REMOTE_ADDR"),
+                    )
+        if nova_empresa and matriz_criada:
+            messages.success(request, "Empresa e unidade operacional Matriz salvas com sucesso.")
+        else:
+            messages.success(request, "Empresa salva com sucesso.")
         return redirect("empresas:lista")
     return render(request, "empresas/empresa_form.html", {"form": form, "empresa": empresa})
 

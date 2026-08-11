@@ -76,6 +76,41 @@ class EmpresasViewsTests(TestCase):
             codigo_municipio_ibge="3550308",
         )
 
+    def test_nova_empresa_cria_unidade_operacional_matriz(self):
+        response = self.client.post(
+            "/empresas/nova/",
+            {
+                "razao_social": "Nova Rede Ltda",
+                "nome_fantasia": "Nova Rede",
+                "cnpj": "55.555.555/0001-55",
+                "telefone": "(62) 3333-4455",
+                "cep": "74000-000",
+                "logradouro": "Avenida Central",
+                "numero": "100",
+                "bairro": "Centro",
+                "municipio": "Goiânia",
+                "uf": "GO",
+                "regime_tributario": "Simples Nacional",
+                "modo_implantacao": ModoImplantacao.LOCAL,
+                "politica_conflito_sincronizacao": PoliticaConflitoSincronizacao.MANUAL,
+                "is_active": "on",
+            },
+        )
+
+        self.assertRedirects(response, "/empresas/")
+        empresa = Empresa.objects.get(cnpj="55.555.555/0001-55")
+        matriz = Filial.objects.get(empresa=empresa)
+        self.assertEqual(matriz.nome, "Matriz")
+        self.assertEqual(matriz.cnpj, empresa.cnpj)
+        self.assertEqual(matriz.logradouro, "Avenida Central")
+        self.assertEqual(matriz.municipio, "Goiânia")
+        self.assertTrue(matriz.is_active)
+        self.assertTrue(
+            LogAuditoria.objects.filter(
+                acao="filial_matriz_criada_automaticamente",
+                objeto_id=str(matriz.pk),
+            ).exists()
+        )
     def test_empresa_duplicada_exibe_resumo_e_erro_do_cnpj(self):
         response = self.client.post(
             "/empresas/nova/",

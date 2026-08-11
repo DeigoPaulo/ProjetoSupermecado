@@ -1,7 +1,7 @@
 {% extends "base.html" %}
 {% block title %}{% if empresa %}Editar empresa{% else %}Nova empresa{% endif %}{% endblock %}
 {% block content %}
-<header class="page-header"><div><h1>{% if empresa %}Editar empresa{% else %}Nova empresa{% endif %}</h1><p>Dados principais da empresa matriz ou grupo.</p></div><div class="actions"><a class="secondary-button" href="{% url 'empresas:lista' %}">Voltar</a></div></header>
+<header class="page-header"><div><h1>{% if empresa %}Editar empresa{% else %}Nova empresa{% endif %}</h1><p>{% if empresa %}Dados principais da empresa matriz ou grupo.{% else %}A unidade operacional Matriz será criada automaticamente para caixas, estoque e terminais PDV.{% endif %}</p></div><div class="actions"><a class="secondary-button" href="{% url 'empresas:lista' %}">Voltar</a></div></header>
 <section class="panel"><form method="post" enctype="multipart/form-data" class="form-grid" data-cadastro-lookup-url="{% url 'empresas:consulta_cadastro' %}">{% csrf_token %}
 {% if form.non_field_errors %}<div class="form-note form-note-danger">{{ form.non_field_errors }}</div>{% endif %}
 <section class="form-section form-field-wide"><h2>Identificação</h2><div class="form-note"><strong>Consulta de CNPJ</strong><span>Informe o CNPJ e consulte para reaproveitar dados já cadastrados ou dados públicos fornecidos pela integração configurada.</span><button class="secondary-button" type="button" data-cadastro-lookup-button data-lookup-kind="cnpj"><i class="fa-solid fa-magnifying-glass"></i> Consultar CNPJ</button></div><div class="form-note" data-cadastro-lookup-feedback hidden></div><div class="form-grid form-grid-inner">
