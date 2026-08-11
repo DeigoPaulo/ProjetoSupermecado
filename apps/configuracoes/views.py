@@ -2079,7 +2079,8 @@ def terminais_pdv(request):
     pagina = Paginator(terminais, 50).get_page(request.GET.get("page"))
     query = request.GET.copy()
     query.pop("page", None)
-    chave_nova = request.session.pop("terminal_pdv_chave_nova", None)
+    pode_gerenciar_chave = has_role(request.user, ADMINISTRACAO)
+    chave_nova = request.session.pop("terminal_pdv_chave_nova", None) if pode_gerenciar_chave else None
     return render(
         request,
         "configuracoes/terminais_pdv.html",
@@ -2092,7 +2093,7 @@ def terminais_pdv(request):
             "filtro_licenca": filtro_licenca,
             "filtro_status": filtro_status,
             "status_licenca_choices": StatusLicencaTerminal.choices,
-            "pode_gerenciar_chave": has_role(request.user, ADMINISTRACAO),
+            "pode_gerenciar_chave": pode_gerenciar_chave,
         },
     )
 
@@ -2214,7 +2215,7 @@ def terminal_pdv_form(request, pk=None):
             terminal.licenca_liberada_em = timezone.now()
             terminal.licenca_liberada_por = request.user
         chave_nova = None
-        if not terminal.chave_api_hash:
+        if not terminal.chave_api_hash and has_role(request.user, ADMINISTRACAO):
             chave_nova = terminal.gerar_chave_api()
         terminal.save()
         politica_atual = (terminal.canal_atualizacao, terminal.bloquear_atualizacoes)

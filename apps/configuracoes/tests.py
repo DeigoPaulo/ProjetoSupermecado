@@ -1594,6 +1594,9 @@ class ConfiguracoesOperacionaisTests(TestCase):
         self.assertEqual(terminal.observacao_licenca, "Aguardando liberação do admin master.")
         self.assertEqual(terminal.canal_atualizacao, CanalAtualizacaoPdv.ESTAVEL)
         self.assertFalse(terminal.bloquear_atualizacoes)
+        self.assertEqual(terminal.chave_api_hash, "")
+        self.assertEqual(terminal.chave_api_prefixo, "")
+        self.assertNotContains(response, "Nova chave de")
         self.assertFalse(LogAuditoria.objects.filter(acao="POLITICA_ATUALIZACAO_TERMINAL_PDV", objeto_id=str(terminal.pk)).exists())
 
     def test_admin_master_altera_licenca_do_terminal_por_acao_rapida(self):
