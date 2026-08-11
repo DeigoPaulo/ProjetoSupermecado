@@ -298,6 +298,22 @@ Para cada caixa:
 10. testar fechamento e reabertura do aplicativo.
 
 Cada maquina recebe uma credencial propria. Nunca reutilizar a chave de outro caixa.
+### Recuperação quando o PDV não abre
+
+A partir da versão 0.1.13, quando o servidor recusar a credencial salva, o DeTec PDV não encerra silenciosamente: ele mostra o motivo e abre a tela de reativação com o servidor e o identificador atuais preenchidos.
+
+Para forçar a reconfiguração manual no Windows:
+
+```powershell
+& "$env:USERPROFILE\Desktop\DeTecPDV.exe" --configurar
+```
+
+Use o endereço do ambiente que realmente operará o caixa:
+
+- servidor instalado: `http://127.0.0.1:8001`;
+- desenvolvimento: `http://127.0.0.1:8000`.
+
+O terminal e a chave devem ser gerados nesse mesmo servidor. Bancos separados possuem credenciais separadas; uma chave emitida no `:8000` não autentica no `:8001`. Se a mensagem indicar bloqueio ou licença cancelada, não gere outra chave sem antes conferir a situação do terminal no painel do admin master.
 
 ## 12. Homologacao dos dispositivos
 

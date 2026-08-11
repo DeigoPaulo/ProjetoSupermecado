@@ -57,10 +57,10 @@ confirmação do operador.
 O app valida a licença em `/pdv/api/terminal/bootstrap/` antes de abrir o PDV.
 A ativação é validada antes de ser salva. No Windows, a configuração fica em
 `%LOCALAPPDATA%\DeTecPDV\config.json` (a configuracao legada em `%LOCALAPPDATA%\SupermercadoPDV` e migrada automaticamente); para reconfigurar, execute o app
-com `--configurar`. A chave fica apenas na máquina do caixa, protegida pelo DPAPI
+com `--configurar`. Se o servidor recusar a credencial, o app exibe o motivo e abre essa reativação automaticamente. A chave deve ser gerada no mesmo servidor informado; credenciais de bancos ou portas diferentes não são intercambiáveis. A chave fica apenas na máquina do caixa, protegida pelo DPAPI
 do usuário do Windows, e não é versionada. Configurações antigas com chave em texto
 são migradas automaticamente na primeira abertura; copiar somente o arquivo para outro
-usuário não permite recuperar a credencial. Os parâmetros locais do adaptador TEF em`r`n`tef.configuracao` recebem a mesma proteção e existem em texto apenas na memória do app.
+usuário não permite recuperar a credencial. Os parâmetros locais do adaptador TEF em `tef.configuracao` recebem a mesma proteção e existem em texto apenas na memória do app.
 
 O app mantém uma única instância por identidade de terminal na sessão do Windows.
 Uma segunda abertura do mesmo caixa é bloqueada por mutex nomeado; terminais diferentes

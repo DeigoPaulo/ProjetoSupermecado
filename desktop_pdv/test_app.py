@@ -243,7 +243,7 @@ class AppDesktopTests(unittest.TestCase):
                 with patch("app.ativar_terminal", return_value=config_nova) as ativar:
                     app.executar()
 
-        ativar.assert_called_once_with(config_invalida)
+        ativar.assert_called_once_with(config_invalida, motivo="credencial invalida")
         self.assertEqual(executar_interface.call_args_list[1].args[0], config_nova)
 
     def test_bootstrap_offline_nao_esconde_terminal_recusado(self):

@@ -605,14 +605,14 @@ def avisar_atualizacao(situacao: dict, config: dict | None = None) -> None:
         messagebox.showwarning("Atualizacao disponivel", mensagem)
 
 
-def ativar_terminal(config_atual: dict | None = None) -> dict:
+def ativar_terminal(config_atual: dict | None = None, motivo: str = "") -> dict:
     import tkinter as tk
     from tkinter import messagebox, ttk
 
     resultado: dict = {}
     raiz = tk.Tk()
     raiz.title("Ativar DeTec PDV")
-    raiz.geometry("520x330")
+    raiz.geometry("560x420" if motivo else "520x330")
     raiz.resizable(False, False)
     icone = caminho_recurso("assets/deigo-pdv-cart.ico")
     if icone.exists():
@@ -620,13 +620,21 @@ def ativar_terminal(config_atual: dict | None = None) -> dict:
 
     corpo = ttk.Frame(raiz, padding=24)
     corpo.pack(fill="both", expand=True)
-    ttk.Label(corpo, text="Ativacao do DeTec PDV", font=("Segoe UI", 16, "bold")).pack(anchor="w")
-    ttk.Label(corpo, text="Informe a credencial gerada pelo admin master no ERP.").pack(anchor="w", pady=(2, 18))
+    ttk.Label(corpo, text="Ativação do DeTec PDV", font=("Segoe UI", 16, "bold")).pack(anchor="w")
+    ttk.Label(corpo, text="Informe a credencial gerada pelo admin master no ERP.").pack(anchor="w", pady=(2, 10 if motivo else 18))
+    if motivo:
+        ttk.Label(
+            corpo,
+            text=f"Reativação necessária: {motivo}",
+            foreground="#9a3412",
+            justify="left",
+            wraplength=500,
+        ).pack(anchor="w", fill="x", pady=(0, 14))
 
     campos = [
         ("Servidor", "servidor_base_url", False),
         ("Identificador do terminal", "terminal_id", False),
-        ("Chave de ativacao", "terminal_chave", True),
+        ("Chave de ativação", "terminal_chave", True),
     ]
     entradas: dict[str, ttk.Entry] = {}
     for rotulo, nome, secreto in campos:
@@ -646,13 +654,13 @@ def ativar_terminal(config_atual: dict | None = None) -> dict:
             messagebox.showwarning("Dados incompletos", "Preencha servidor, identificador e chave.", parent=raiz)
             return
         config["servidor_base_url"] = config["servidor_base_url"].rstrip("/")
-        status.configure(text="Validando licenca no servidor...")
+        status.configure(text="Validando licença no servidor...")
         raiz.update_idletasks()
         try:
             validar_terminal(config)
         except RuntimeError as erro:
             status.configure(text="")
-            messagebox.showerror("Ativacao recusada", str(erro), parent=raiz)
+            messagebox.showerror("Ativação recusada", str(erro), parent=raiz)
             return
         salvar_configuracao(config)
         resultado.update(config)
@@ -665,7 +673,7 @@ def ativar_terminal(config_atual: dict | None = None) -> dict:
     raiz.bind_all("<Control-F5>", lambda _event: raiz.destroy())
     raiz.mainloop()
     if not resultado:
-        raise RuntimeError("Ativacao cancelada.")
+        raise RuntimeError("Ativação cancelada.")
     return resultado
 
 
@@ -1352,8 +1360,8 @@ def executar(reconfigurar: bool = False) -> None:
                     continue
             try:
                 solicitar_nova_credencial = _executar_interface_pdv(config)
-            except TerminalRecusado:
-                config = ativar_terminal(config)
+            except TerminalRecusado as erro:
+                config = ativar_terminal(config, motivo=str(erro))
                 continue
             if solicitar_nova_credencial:
                 config = ativar_terminal(config)
