@@ -15,7 +15,7 @@
 </header>
 
 <section class="metrics-grid">
-  <article class="metric"><span>Modelos exportaveis</span><strong>{{ total_modelos }}</strong></article>
+  <article class="metric"><span>Modelos exportáveis</span><strong>{{ total_modelos }}</strong></article>
   <article class="metric"><span>Registros atuais</span><strong>{{ total_registros }}</strong></article>
   <article class="metric"><span>Formato</span><strong>JSON</strong></article>
   <article class="metric"><span>Atualizado em</span><strong>{{ gerado_em|date:"d/m/Y H:i" }}</strong></article>
@@ -26,17 +26,17 @@
     <h2>Como usar com segurança</h2>
     <ol class="backup-steps">
       <li>Baixe o arquivo JSON e guarde em local protegido.</li>
-      <li>Antes de restaurar, suba uma copia do sistema em ambiente separado.</li>
+      <li>Antes de restaurar, suba uma cópia do sistema em ambiente separado.</li>
       <li>Execute as migrations nesse ambiente limpo.</li>
       <li>Restaure com <code>python manage.py loaddata caminho_do_backup.json</code>.</li>
       <li>Confira login, produtos, estoque, vendas, caixa e relatórios antes de qualquer uso real.</li>
     </ol>
   </article>
   <article class="backup-warning">
-    <h2>Protecao dos dados</h2>
+    <h2>Proteção dos dados</h2>
     <p>O arquivo pode conter dados comerciais, clientes, vendas, estoque, logs e usuários técnicos do sistema. Não envie esse backup por canais abertos.</p>
     <p>A restauração direta pela tela fica desativada de propósito: supermercado não pode correr o risco de sobrescrever uma base real por engano.</p>
-    <p>Antes da primeira execucao, use <code>{{ backup_local_script }} {{ backup_validacao_flag }}</code> para conferir banco, midia, logs e destino sem gerar arquivos.</p>
+    <p>Antes da primeira execução, use <code>{{ backup_local_script }} {{ backup_validacao_flag }}</code> para conferir banco, mídia, logs e destino sem gerar arquivos.</p>
     <p>O destino pode ser definido por <code>{{ backup_destino_env }}</code>. A tarefa automática usa a conta <code>{{ backup_conta_tarefa }}</code> e não depende de usuário conectado.</p>
     <p>Em produção, configure <code>{{ backup_criptografia_env }}</code> para gerar o pacote <code>.zip.aes</code>. Use <code>{{ backup_criptografia_flag }}</code> quando a política exigir apagar o <code>.zip</code> aberto.</p>
   </article>
@@ -45,8 +45,8 @@
 <section class="panel">
   <header class="section-title">
     <div>
-      <h2>Conteudo previsto</h2>
-      <p>Os itens técnicos abaixo ficam fora do arquivo para reduzir ruido e risco.</p>
+      <h2>Conteúdo previsto</h2>
+      <p>Os itens técnicos abaixo ficam fora do arquivo para reduzir ruído e risco.</p>
     </div>
   </header>
   <div class="tag-list">
@@ -59,11 +59,11 @@
 <section class="panel">
   <header class="section-title">
     <div>
-      <h2>Resumo por modulo</h2>
-      <p>Visao rapida do que existe hoje na base antes do download.</p>
+      <h2>Resumo por módulo</h2>
+      <p>Visão rápida do que existe hoje na base antes do download.</p>
     </div>
   </header>
-  <div class="table-wrapper">
+  <div class="table-wrapper table-wrapper-scroll">
     <table>
       <thead>
         <tr>
@@ -86,4 +86,11 @@
     </table>
   </div>
 </section>
+{% if page_obj.paginator.num_pages > 1 %}
+  <nav class="pagination" aria-label="Paginação do resumo do backup">
+    {% if page_obj.has_previous %}<a class="secondary-button" href="?page={{ page_obj.previous_page_number }}">Anterior</a>{% endif %}
+    <span>Página {{ page_obj.number }} de {{ page_obj.paginator.num_pages }}</span>
+    {% if page_obj.has_next %}<a class="secondary-button" href="?page={{ page_obj.next_page_number }}">Próxima</a>{% endif %}
+  </nav>
+{% endif %}
 {% endblock %}

@@ -100,7 +100,7 @@ class Empresa(models.Model):
         choices=ModoImplantacao.choices,
         default=ModoImplantacao.LOCAL,
     )
-    sincronizacao_automatica = models.BooleanField("Sincronizacao automática", default=False)
+    sincronizacao_automatica = models.BooleanField("Sincronização automática", default=False)
     url_sincronizacao = models.URLField("URL segura da nuvem", blank=True)
     politica_conflito_sincronizacao = models.CharField(
         "Política de conflito",

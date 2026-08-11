@@ -13,7 +13,7 @@ class TipoDocumentoImpressao(models.TextChoices):
     CUPOM_FISCAL = "CUPOM_FISCAL", "Cupom fiscal"
     PEDIDO_SEPARACAO = "PEDIDO_SEPARACAO", "Pedido de separação"
     ETIQUETA = "ETIQUETA", "Etiqueta"
-    RELATORIO = "RELATORIO", "Relatorio"
+    RELATORIO = "RELATORIO", "Relatório"
     FECHAMENTO_CAIXA = "FECHAMENTO_CAIXA", "Fechamento de caixa"
 
 
@@ -27,7 +27,7 @@ class LinguagemImpressora(models.TextChoices):
 
 class TipoMidiaEtiqueta(models.TextChoices):
     GAP = "GAP", "Etiqueta com gap"
-    CONTINUA = "CONTINUA", "Midia continua"
+    CONTINUA = "CONTINUA", "Mídia contínua"
     MARCA_PRETA = "MARCA_PRETA", "Marca preta"
 
 

@@ -304,7 +304,7 @@ def build_document() -> Document:
     add_callout(
         doc,
         "Referência de produção",
-        "Edição 2.0 • Atualizado em 11/08/2026 • DeTec Server 0.1.11 • DeTec PDV 0.1.10",
+        "Edição 2.0 • Atualizado em 11/08/2026 • DeTec Server 0.1.12 • DeTec PDV 0.1.10",
         "info",
     )
     add_body(doc, "Público: técnico de implantação, suporte autorizado e administrador master.")
@@ -388,6 +388,18 @@ def build_document() -> Document:
     add_heading(doc, "Descobrir o endereço da rede", 2)
     add_code(doc, "ipconfig\nGet-NetIPAddress -AddressFamily IPv4 | Where-Object {$_.IPAddress -notlike '169.254*'}")
     add_callout(doc, "IP fixo", "Reserve o IP no roteador ou configure endereço estático. Se o IP mudar, PDVs e acessos administrativos podem deixar de encontrar o servidor.", "info")
+    add_heading(doc, "Liberar o acesso na rede interna", 2)
+    add_body(doc, "Execute como administrador e substitua Ethernet pelo nome real do adaptador, quando necessário. Use somente o IPv4 privado do adaptador com gateway; ignore Loopback, VPN, TEF e adaptadores fiscais.")
+    add_code(doc, "$interface = \"Ethernet\"\n$porta = 8001\nSet-NetConnectionProfile -InterfaceAlias $interface -NetworkCategory Private\n$regra = \"DeTec Server - rede privada - porta $porta\"\nGet-NetFirewallRule -DisplayName $regra -ErrorAction SilentlyContinue | Remove-NetFirewallRule\nNew-NetFirewallRule -DisplayName $regra -Direction Inbound -Action Allow -Protocol TCP -LocalPort $porta -Profile Private -RemoteAddress LocalSubnet\nRestart-Service DeigoVarejoServidorLocal\nGet-Service DeigoVarejoServidorLocal")
+    add_body(doc, "Teste primeiro no servidor e depois em outro computador da mesma rede:")
+    add_code(doc, "Invoke-WebRequest http://IP_DO_SERVIDOR:8001/login/ -UseBasicParsing\nTest-NetConnection IP_DO_SERVIDOR -Port 8001")
+    add_callout(doc, "Endereço incorreto", "Um IP de adaptador Loopback, VPN, TEF ou fiscal pode responder apenas localmente e não representa a rede da loja. Escolha o IPv4 privado do Ethernet/Wi-Fi que possui gateway.", "warning")
+    add_heading(doc, "HTTPS e acesso remoto", 2)
+    add_body(doc, "Não exponha a porta 8001 diretamente à internet. Para produção, publique um nome DNS próprio por proxy reverso HTTPS, como Caddy, ou use uma VPN/túnel corporativo. O proxy recebe HTTPS na porta 443 e encaminha internamente para 127.0.0.1:8001.")
+    add_code(doc, "erp.exemplo.com.br {\n    reverse_proxy 127.0.0.1:8001\n    encode zstd gzip\n}")
+    add_body(doc, "Depois que o domínio e o proxy estiverem validados, configure o ambiente e reinicie o serviço:")
+    add_code(doc, "ALLOWED_HOSTS=127.0.0.1,localhost,IP_DO_SERVIDOR,erp.exemplo.com.br\nCSRF_TRUSTED_ORIGINS=https://erp.exemplo.com.br\nUSE_X_FORWARDED_PROTO=True\nSESSION_COOKIE_SECURE=True\nCSRF_COOKIE_SECURE=True\nSECURE_SSL_REDIRECT=False\n\nRestart-Service DeigoVarejoServidorLocal")
+    add_callout(doc, "Redirecionamento HTTPS", "Neste modelo, o proxy faz o redirecionamento HTTP para HTTPS. O PostgreSQL permanece restrito ao servidor e a porta 5432 nunca deve ser aberta na rede ou na internet.", "danger")
     add_page_break(doc)
 
     add_heading(doc, "3. Instalação e atualização", 1)

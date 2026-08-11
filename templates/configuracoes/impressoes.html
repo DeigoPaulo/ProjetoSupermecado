@@ -9,14 +9,36 @@
     <p>Configure impressoras, papel, vias e impressão automática para PDV, fiscal, DAV, etiquetas, relatórios e caixa.</p>
   </div>
   <div class="actions">
-    <form method="post" action="{% url 'configuracoes:impressoes_padroes' %}" class="inline-form">
-      {% csrf_token %}
-      <button class="secondary-button" type="submit"><i class="fa-solid fa-wand-magic-sparkles"></i> Criar padrões</button>
-    </form>
+    {% if tem_empresas_visiveis %}
+      <form method="post" action="{% url 'configuracoes:impressoes_padroes' %}" class="inline-form">
+        {% csrf_token %}
+        <button class="secondary-button" type="submit"><i class="fa-solid fa-wand-magic-sparkles"></i> Criar pré-configurações</button>
+      </form>
+    {% else %}
+      <a class="secondary-button" href="{% url 'empresas:empresa_nova' %}"><i class="fa-solid fa-building-circle-exclamation"></i> Cadastrar empresa</a>
+    {% endif %}
     <a class="primary-button" href="{% url 'configuracoes:impressao_nova' %}"><i class="fa-solid fa-plus"></i> Nova configuração</a>
     <a class="secondary-button" href="{% url 'configuracoes:modelo_etiqueta_novo' %}"><i class="fa-solid fa-tag"></i> Novo modelo de etiqueta</a>
   </div>
 </header>
+
+{% if not tem_empresas_visiveis %}
+  <section class="operation-notice operation-notice-warning">
+    <i class="fa-solid fa-building-circle-exclamation"></i>
+    <div>
+      <strong>Cadastre uma empresa antes de configurar as impressoras.</strong>
+      <span>Cada perfil de impressão pertence a uma empresa e pode ser especializado por filial. Depois do cadastro, use Criar pré-configurações.</span>
+    </div>
+  </section>
+{% else %}
+  <section class="operation-notice">
+    <i class="fa-solid fa-wand-magic-sparkles"></i>
+    <div>
+      <strong>Pré-configurações disponíveis por empresa.</strong>
+      <span>O sistema prepara cupom fiscal e não fiscal, separação, etiqueta, relatório e fechamento de caixa. A impressora física permanece sem seleção até o app desktop sincronizar as impressoras desta máquina.</span>
+    </div>
+  </section>
+{% endif %}
 
 <section class="metrics-grid">
   <article class="metric"><span>Total configurado</span><strong>{{ resumo.total }}</strong></article>
@@ -38,7 +60,7 @@
 
 <section class="panel">
   <div class="panel-title">Modelos de etiqueta</div>
-  <div class="table-wrapper">
+  <div class="table-wrapper table-wrapper-scroll">
     <table>
       <thead><tr><th>Modelo</th><th>Escopo</th><th>Terminal</th><th>Medidas</th><th>Colunas</th><th>Orientação</th><th>Status</th><th></th></tr></thead>
       <tbody>
@@ -93,7 +115,7 @@
 </section>
 
 <section class="panel">
-  <div class="table-wrapper">
+  <div class="table-wrapper table-wrapper-scroll">
     <table>
       <thead>
         <tr>
@@ -141,7 +163,7 @@
             <td><a class="secondary-button" href="{% url 'configuracoes:impressao_editar' config.pk %}">Editar</a></td>
           </tr>
         {% empty %}
-          <tr><td colspan="9" class="empty">Nenhuma configuração criada. Use Criar padrões para começar.</td></tr>
+          <tr><td colspan="10" class="empty">Nenhuma configuração criada. Use Criar pré-configurações para começar.</td></tr>
         {% endfor %}
       </tbody>
     </table>

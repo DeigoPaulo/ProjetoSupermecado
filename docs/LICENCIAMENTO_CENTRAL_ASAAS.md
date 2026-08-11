@@ -32,11 +32,13 @@ LICENCIAMENTO_CHAVE_PRIVADA_ARQUIVO=C:\ProgramData\DeigoTecnologia\chaves\licenc
 LICENCIAMENTO_PERMITIR_ASSINATURA_COMPARTILHADA=0
 ASAAS_API_URL=https://api-sandbox.asaas.com/v3
 ASAAS_API_KEY=chave-da-conta-asaas
-ASAAS_WEBHOOK_TOKEN=token-exclusivo-do-webhook
+ASAAS_WEBHOOK_TOKEN=token-exclusivo-forte-com-32-ou-mais-caracteres
 ASAAS_TIMEOUT_SEGUNDOS=15
 ```
 
 Cadastre no Asaas o webhook `https://SEU-DOMINIO/licenciamento/webhooks/asaas/`. O endpoint persiste o identificador de cada evento e trata reenvios de forma idempotente.
+
+O token de autenticação do webhook deve ter entre 32 e 255 caracteres, não conter espaços e não pode ser igual à API Key. O Asaas o envia no cabeçalho `asaas-access-token`; guarde-o somente no ambiente seguro da central.
 
 A central possui o diagnóstico protegido `licensing_readiness_v1` em `/licenciamento/central/diagnostico.json`.
 

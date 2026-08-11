@@ -47,6 +47,14 @@ def diagnostico_prontidao_licenciamento():
     asaas_url = str(settings.ASAAS_API_URL or "").strip()
     asaas_https = asaas_url.lower().startswith("https://")
     asaas_sandbox = "sandbox" in asaas_url.lower()
+    asaas_api_key = str(settings.ASAAS_API_KEY or "").strip()
+    webhook_token = str(settings.ASAAS_WEBHOOK_TOKEN or "")
+    webhook_configurado = bool(webhook_token)
+    webhook_token_valido = bool(
+        32 <= len(webhook_token) <= 255
+        and not any(caractere.isspace() for caractere in webhook_token)
+        and webhook_token != asaas_api_key
+    )
     fallback_ativo = bool(settings.LICENCIAMENTO_PERMITIR_ASSINATURA_COMPARTILHADA)
     alertas = []
 
@@ -56,10 +64,15 @@ def diagnostico_prontidao_licenciamento():
         alertas.append("O fallback de assinatura compartilhada está ativo; desative-o em produção.")
     if not asaas_https:
         alertas.append("Configure a URL HTTPS da API do Asaas.")
-    if not settings.ASAAS_API_KEY:
+    if not asaas_api_key:
         alertas.append("Configure a credencial do Asaas para publicar as cobranças.")
-    if not settings.ASAAS_WEBHOOK_TOKEN:
+    if not webhook_configurado:
         alertas.append("Configure o token do webhook do Asaas.")
+    elif not webhook_token_valido:
+        alertas.append(
+            "O token do webhook do Asaas deve ter entre 32 e 255 caracteres, "
+            "não pode conter espaços nem ser igual à chave da API."
+        )
     if not script.is_file():
         alertas.append("O script de agendamento diário do licenciamento não foi encontrado.")
 
@@ -67,18 +80,19 @@ def diagnostico_prontidao_licenciamento():
         privada_disponivel
         and not fallback_ativo
         and asaas_https
-        and settings.ASAAS_API_KEY
-        and settings.ASAAS_WEBHOOK_TOKEN
+        and asaas_api_key
+        and webhook_token_valido
         and script.is_file()
     )
     return {
         "contrato": "licensing_readiness_v1",
         "chave_privada_ed25519": privada_disponivel,
         "fallback_assinatura_compartilhada": fallback_ativo,
-        "asaas_configurado": bool(settings.ASAAS_API_KEY),
+        "asaas_configurado": bool(asaas_api_key),
         "asaas_url_https": asaas_https,
         "asaas_sandbox": asaas_sandbox,
-        "webhook_configurado": bool(settings.ASAAS_WEBHOOK_TOKEN),
+        "webhook_configurado": webhook_configurado,
+        "webhook_token_valido": webhook_token_valido,
         "script_agendamento_disponivel": script.is_file(),
         "comando_agendamento": r".\scripts\register_licensing_billing_task.ps1 -Horario 06:00 -ExecutarSemLogin",
         "pronto_homologacao": pronto_homologacao,

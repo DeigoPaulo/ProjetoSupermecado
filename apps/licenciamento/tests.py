@@ -145,7 +145,7 @@ class LicenciamentoTests(TestCase):
             LICENCIAMENTO_PERMITIR_ASSINATURA_COMPARTILHADA=False,
             ASAAS_API_URL="https://api-sandbox.asaas.com/v3",
             ASAAS_API_KEY="chave-sandbox",
-            ASAAS_WEBHOOK_TOKEN="token-webhook",
+            ASAAS_WEBHOOK_TOKEN="token-webhook-sandbox-asaas-seguro-2026",
         ):
             call_command(
                 "verificar_prontidao_licenciamento",
@@ -158,6 +158,19 @@ class LicenciamentoTests(TestCase):
         self.assertTrue(payload["pronto_homologacao"])
         self.assertFalse(payload["pronto_producao"])
         self.assertTrue(payload["asaas_url_https"])
+
+    def test_comando_prontidao_licenciamento_rejeita_token_webhook_fraco(self):
+        privada_pem, _ = self._chaves_emergenciais()
+        with self.settings(
+            LICENCIAMENTO_CHAVE_PRIVADA_PEM=privada_pem,
+            LICENCIAMENTO_CHAVE_PRIVADA_ARQUIVO="",
+            LICENCIAMENTO_PERMITIR_ASSINATURA_COMPARTILHADA=False,
+            ASAAS_API_URL="https://api-sandbox.asaas.com/v3",
+            ASAAS_API_KEY="chave-sandbox",
+            ASAAS_WEBHOOK_TOKEN="token-curto",
+        ):
+            with self.assertRaisesMessage(CommandError, "não está pronto para homologação"):
+                call_command("verificar_prontidao_licenciamento", "--estrito")
 
     def test_comando_prontidao_licenciamento_bloqueia_configuracao_incompleta(self):
         with self.settings(

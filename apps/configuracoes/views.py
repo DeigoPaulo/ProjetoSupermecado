@@ -566,21 +566,21 @@ def painel_sistema(request):
             "status": f"{filiais_painel.count()} filial(is)",
         },
         {
-            "titulo": "Usuarios",
-            "descricao": "Perfis, permissoes e vínculo de operador com filial.",
+            "titulo": "Usuários",
+            "descricao": "Perfis, permissões e vínculo de operador com filial.",
             "icone": "fa-user-gear",
             "url": "accounts:usuarios",
             "status": f"{usuarios_painel.count()} ativo(s)",
         },
         {
             "titulo": "Fiscal",
-            "descricao": "NFC-e, certificado A1, series, natureza e produtos fiscais.",
+            "descricao": "NFC-e, certificado A1, séries, natureza e produtos fiscais.",
             "icone": "fa-receipt",
             "url": "fiscal:documentos",
-            "status": f"{configs_fiscais.count()} configuracao(oes)",
+            "status": f"{configs_fiscais.count()} configuração(ões)",
         },
         {
-            "titulo": "Impressoes",
+            "titulo": "Impressões",
             "descricao": "Central de impressoras, papel, vias e impressão automática.",
             "icone": "fa-print",
             "url": "configuracoes:impressoes",
@@ -588,14 +588,14 @@ def painel_sistema(request):
         },
         {
             "titulo": "Acessos PDV nuvem",
-            "descricao": "Aprovacao de operadores que tentam acessar o PDV em nuvem.",
+            "descricao": "Aprovação de operadores que tentam acessar o PDV em nuvem.",
             "icone": "fa-user-lock",
             "url": "pdv:acessos_pdv_nuvem",
             "status": f"{acessos_painel.filter(status=StatusAcessoPdvNuvem.PENDENTE).count()} pendente(s)",
         },
         {
             "titulo": "Terminais PDV",
-            "descricao": "Maquinas de caixa autorizadas por filial para o aplicativo local.",
+            "descricao": "Máquinas de caixa autorizadas por filial para o aplicativo local.",
             "icone": "fa-cash-register",
             "url": "configuracoes:terminais_pdv",
             "status": f"{terminais_painel.filter(ativo=True).count()} ativo(s)",
@@ -615,7 +615,7 @@ def painel_sistema(request):
             "status": "Admin local",
         },
         {
-            "titulo": "Sincronizacao",
+            "titulo": "Sincronização",
             "descricao": "Fila segura entre servidores locais e nuvem, com idempotência e tentativas.",
             "icone": "fa-arrows-rotate",
             "url": "empresas:sincronizacao",
@@ -623,7 +623,7 @@ def painel_sistema(request):
         },
         {
             "titulo": "Backup",
-            "descricao": "Exportacao operacional em JSON para contingência.",
+            "descricao": "Exportação operacional em JSON para contingência.",
             "icone": "fa-database",
             "url": "configuracoes:backup",
             "status": f"{len(modelos)} modelos",
@@ -644,7 +644,7 @@ def painel_sistema(request):
         },
         {
             "titulo": "Checklist",
-            "descricao": "Roteiro vivo do projeto e proximas fases.",
+            "descricao": "Roteiro vivo do projeto e próximas fases.",
             "icone": "fa-list-check",
             "url": "configuracoes:checklist",
             "status": f"{resumo_checklist['percentual']}%",
@@ -693,11 +693,11 @@ def _super_admin_payload(request):
         {
             "titulo": "Admin masters",
             "valor": User.objects.filter(is_superuser=True, is_active=True).count(),
-            "descricao": "Usuarios com acesso total ao painel avançado.",
+            "descricao": "Usuários com acesso total ao painel avançado.",
             "status": "Acesso",
         },
         {
-            "titulo": "Usuarios sem perfil",
+            "titulo": "Usuários sem perfil",
             "valor": User.objects.filter(perfil_supermercado__isnull=True).count(),
             "descricao": "Devem receber perfil e filial antes de operar.",
             "status": "Permissões",
@@ -1042,6 +1042,9 @@ def _super_admin_payload(request):
 def super_admin(request):
     _exigir_admin_master(request.user)
     context = _super_admin_payload(request)
+    context["modelos_pagina"] = Paginator(context["modelos"], 25).get_page(
+        request.GET.get("inventory_page")
+    )
     return render(request, "configuracoes/super_admin.html", context)
 
 
@@ -2317,16 +2320,18 @@ def backup_operacional(request):
     _exigir_admin_master(request.user)
     modelos = _modelos_backup()
     total_registros = sum(item["total"] or 0 for item in modelos)
+    pagina_modelos = Paginator(modelos, 50).get_page(request.GET.get("page"))
     context = {
-        "modelos": modelos,
+        "modelos": pagina_modelos,
+        "page_obj": pagina_modelos,
         "total_modelos": len(modelos),
         "total_registros": total_registros,
         "is_admin_master": request.user.is_superuser,
         "gerado_em": timezone.localtime(),
         "exclusoes": [
-            "Permissoes internas do Django",
-            "Tipos de conteudo tecnicos",
-            "Sessoes de login",
+            "Permissões internas do Django",
+            "Tipos de conteúdo técnicos",
+            "Sessões de login",
             "Logs administrativos do painel Django",
         ],
         "backup_local_script": "scripts/backup_local.ps1",
@@ -2378,8 +2383,8 @@ def impressoes(request):
         if nome
     ]
     modelos = _modelos_etiqueta_visiveis(request.user).order_by("configuracao__empresa__nome_fantasia", "nome")
-    pagina_configuracoes = Paginator(configuracoes, 50).get_page(request.GET.get("config_page"))
-    pagina_modelos = Paginator(modelos, 50).get_page(request.GET.get("model_page"))
+    pagina_configuracoes = Paginator(configuracoes, 25).get_page(request.GET.get("config_page"))
+    pagina_modelos = Paginator(modelos, 25).get_page(request.GET.get("model_page"))
     return render(
         request,
         "configuracoes/impressoes.html",
@@ -2390,7 +2395,7 @@ def impressoes(request):
             "resumo": resumo,
             "impressoras_cadastradas": impressoras_cadastradas,
             "modelos_etiqueta": pagina_modelos,
-
+            "tem_empresas_visiveis": _empresas_visiveis(request.user).filter(is_active=True).exists(),
         },
     )
 
@@ -2585,7 +2590,7 @@ def impressoes_desktop(request):
         "percentual": percentual,
         "alertas": alertas_unicos,
         "resumo": resumo,
-        "proximo_passo": alertas_unicos[0] if alertas_unicos else "Impressoes preparadas para o app desktop local.",
+        "proximo_passo": alertas_unicos[0] if alertas_unicos else "Impressões preparadas para o app desktop local.",
     }
     return JsonResponse(
         {
@@ -2602,12 +2607,18 @@ def impressoes_desktop(request):
 def impressoes_padroes(request):
     if request.method != "POST":
         return redirect("configuracoes:impressoes")
-    empresa = None if request.user.is_superuser else _empresas_visiveis(request.user).first()
-    criadas = criar_configuracoes_padrao(empresa=empresa)
+    empresas = list(_empresas_visiveis(request.user).filter(is_active=True).order_by("id"))
+    if not empresas:
+        messages.warning(
+            request,
+            "Cadastre ao menos uma empresa antes de criar os padrões de impressão.",
+        )
+        return redirect("configuracoes:impressoes")
+    criadas = sum(criar_configuracoes_padrao(empresa=empresa) for empresa in empresas)
     if criadas:
-        messages.success(request, f"{criadas} configuracao(oes) de impressão criada(s).")
+        messages.success(request, f"{criadas} configuração(ões) de impressão criada(s).")
     else:
-        messages.info(request, "As configuracoes padrão já estavam criadas.")
+        messages.info(request, "As configurações padrão já estavam criadas para as empresas visíveis.")
     return redirect("configuracoes:impressoes")
 
 

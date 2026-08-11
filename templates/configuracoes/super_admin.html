@@ -242,11 +242,11 @@
 
   <article class="panel">
     <h2>Inventário técnico</h2>
-    <div class="table-wrapper">
+    <div class="table-wrapper table-wrapper-scroll">
       <table>
         <thead><tr><th>App</th><th>Modelo</th><th>Registros</th><th></th></tr></thead>
         <tbody>
-          {% for modelo in modelos %}
+          {% for modelo in modelos_pagina %}
             <tr>
               <td>{{ modelo.app }}</td>
               <td><strong>{{ modelo.modelo }}</strong><br><small>{{ modelo.modelo_tecnico }}</small></td>
@@ -257,6 +257,13 @@
         </tbody>
       </table>
     </div>
+    {% if modelos_pagina.paginator.num_pages > 1 %}
+      <nav class="pagination" aria-label="Paginação do inventário técnico">
+        {% if modelos_pagina.has_previous %}<a class="secondary-button" href="?inventory_page={{ modelos_pagina.previous_page_number }}">Anterior</a>{% endif %}
+        <span>Página {{ modelos_pagina.number }} de {{ modelos_pagina.paginator.num_pages }}</span>
+        {% if modelos_pagina.has_next %}<a class="secondary-button" href="?inventory_page={{ modelos_pagina.next_page_number }}">Próxima</a>{% endif %}
+      </nav>
+    {% endif %}
   </article>
 </section>
 {% endblock %}

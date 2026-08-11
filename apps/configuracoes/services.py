@@ -4,12 +4,12 @@ from .models import ConfiguracaoImpressao, ModeloPapel, TipoDocumentoImpressao
 
 
 DEFAULT_MENSAGENS = {
-    TipoDocumentoImpressao.CUPOM_NAO_FISCAL: "Documento sem valor fiscal. Obrigado pela preferencia.",
+    TipoDocumentoImpressao.CUPOM_NAO_FISCAL: "Documento sem valor fiscal. Obrigado pela preferência.",
     TipoDocumentoImpressao.CUPOM_FISCAL: "Documento fiscal emitido conforme configuração fiscal da filial.",
-    TipoDocumentoImpressao.PEDIDO_SEPARACAO: "Documento auxiliar de venda. Sem baixa de estoque ate a conversao.",
-    TipoDocumentoImpressao.ETIQUETA: "Etiqueta de gondola.",
+    TipoDocumentoImpressao.PEDIDO_SEPARACAO: "Documento auxiliar de venda. Sem baixa de estoque até a conversão.",
+    TipoDocumentoImpressao.ETIQUETA: "Etiqueta de gôndola.",
     TipoDocumentoImpressao.RELATORIO: "Relatório gerado pelo sistema.",
-    TipoDocumentoImpressao.FECHAMENTO_CAIXA: "Conferencia sujeita a aprovação do supervisor.",
+    TipoDocumentoImpressao.FECHAMENTO_CAIXA: "Conferência sujeita à aprovação do supervisor.",
 }
 
 

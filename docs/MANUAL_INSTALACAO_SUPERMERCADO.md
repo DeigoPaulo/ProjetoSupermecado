@@ -77,6 +77,80 @@ desenvolvimento e ao healthcheck local controlado.
 7. Confirmar que os caixas resolvem o IP ou DNS do servidor.
 8. Registrar data, tecnico, maquina, numero de serie e hash do pacote instalado.
 
+### 5.1 Acesso pela rede interna
+
+O endereco usado pelos outros computadores deve ser o IPv4 privado do adaptador
+Ethernet ou Wi-Fi que possui gateway. Nao use enderecos de adaptadores Loopback,
+VPN, TEF ou fiscais. O instalador sugere o endereco roteado, mas o tecnico deve
+conferi-lo com `ipconfig` antes do aceite.
+
+No PowerShell aberto como administrador, ajuste o nome do adaptador e a porta da
+instalacao quando necessario:
+
+```powershell
+$interface = "Ethernet"
+$porta = 8001
+
+Set-NetConnectionProfile -InterfaceAlias $interface -NetworkCategory Private
+
+$regra = "DeTec Server - rede privada - porta $porta"
+Get-NetFirewallRule -DisplayName $regra -ErrorAction SilentlyContinue | Remove-NetFirewallRule
+New-NetFirewallRule `
+  -DisplayName $regra `
+  -Direction Inbound `
+  -Action Allow `
+  -Protocol TCP `
+  -LocalPort $porta `
+  -Profile Private `
+  -RemoteAddress LocalSubnet
+
+Restart-Service DeigoVarejoServidorLocal
+Get-Service DeigoVarejoServidorLocal
+```
+
+Teste no servidor e em outro computador da mesma rede:
+
+```powershell
+Invoke-WebRequest http://IP_DO_SERVIDOR:8001/login/ -UseBasicParsing
+Test-NetConnection IP_DO_SERVIDOR -Port 8001
+```
+
+Os clientes devem estar na mesma rede interna e fora de uma rede de convidados
+com isolamento entre dispositivos. Reserve o IP no roteador ou configure IP fixo.
+Ao alterar `ALLOWED_HOSTS`, `CSRF_TRUSTED_ORIGINS` ou qualquer outra chave do `.env`
+instalado, reinicie `DeigoVarejoServidorLocal` para aplicar a configuracao.
+
+### 5.2 HTTPS e acesso remoto
+
+Nao exponha a porta `8001` diretamente na internet. Em producao, use um dominio
+proprio com proxy reverso HTTPS, como Caddy, ou uma VPN/tunel corporativo. O proxy
+recebe HTTPS na porta 443 e encaminha internamente para `127.0.0.1:8001`.
+
+Exemplo de `Caddyfile`:
+
+```caddyfile
+erp.exemplo.com.br {
+    reverse_proxy 127.0.0.1:8001
+    encode zstd gzip
+}
+```
+
+Depois de validar dominio, DNS e certificado, configure o `.env`:
+
+```dotenv
+ALLOWED_HOSTS=127.0.0.1,localhost,IP_DO_SERVIDOR,erp.exemplo.com.br
+CSRF_TRUSTED_ORIGINS=https://erp.exemplo.com.br
+USE_X_FORWARDED_PROTO=True
+SESSION_COOKIE_SECURE=True
+CSRF_COOKIE_SECURE=True
+SECURE_SSL_REDIRECT=False
+```
+
+Nesse modelo o proxy redireciona HTTP para HTTPS. O PostgreSQL continua restrito
+ao servidor; nunca abra a porta `5432` na rede ou na internet. Para acesso remoto,
+registre dominio, certificado, regras do proxy, responsavel e teste externo no
+dossie da implantacao.
+
 ## 6. PostgreSQL
 
 PostgreSQL e o banco padrao do servidor de producao. SQLite fica restrito a

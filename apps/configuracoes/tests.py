@@ -164,6 +164,48 @@ class ConfiguracoesOperacionaisTests(TestCase):
         self.assertEqual(estilo["largura"], "80mm")
         self.assertIn("mm", estilo["margem_css"])
 
+    def test_padroes_de_impressao_sao_criados_para_todas_as_empresas_visiveis(self):
+        outra_empresa = Empresa.objects.create(
+            razao_social="Mercado Bairro Ltda",
+            nome_fantasia="Mercado Bairro",
+            cnpj="33.333.333/0001-33",
+        )
+        Filial.objects.create(empresa=outra_empresa, nome="Matriz", cnpj=outra_empresa.cnpj)
+
+        response = self.client.post("/configuracoes/impressoes/padroes/", follow=True)
+
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(ConfiguracaoImpressao.objects.filter(empresa=self.empresa).exists())
+        self.assertTrue(ConfiguracaoImpressao.objects.filter(empresa=outra_empresa).exists())
+        self.assertContains(response, "configuração(ões) de impressão criada(s)")
+        self.assertContains(response, "Pré-configurações disponíveis por empresa")
+
+    def test_padroes_de_impressao_orientam_cadastro_quando_nao_ha_empresa(self):
+        self.filial.delete()
+        self.empresa.delete()
+
+        response = self.client.post("/configuracoes/impressoes/padroes/", follow=True)
+
+        self.assertEqual(response.status_code, 200)
+        self.assertFalse(ConfiguracaoImpressao.objects.exists())
+        self.assertContains(response, "Cadastre ao menos uma empresa")
+        self.assertContains(response, "Cadastrar empresa")
+
+    def test_telas_administrativas_paginam_listas_extensas(self):
+        backup = self.client.get("/configuracoes/backup/")
+        super_admin = self.client.get("/configuracoes/super-admin/")
+
+        self.assertEqual(backup.status_code, 200)
+        self.assertEqual(backup.context["page_obj"].paginator.per_page, 50)
+        self.assertGreater(backup.context["page_obj"].paginator.num_pages, 1)
+        self.assertContains(backup, "Paginação do resumo do backup")
+        self.assertContains(backup, "Modelos exportáveis")
+        self.assertContains(backup, "Proteção dos dados")
+
+        self.assertEqual(super_admin.status_code, 200)
+        self.assertEqual(super_admin.context["modelos_pagina"].paginator.per_page, 25)
+        self.assertGreater(super_admin.context["modelos_pagina"].paginator.num_pages, 1)
+        self.assertContains(super_admin, "Paginação do inventário técnico")
     def test_tela_impressoes_e_backup_operacional(self):
         criar_configuracoes_padrao()
 
@@ -507,7 +549,7 @@ class ConfiguracoesOperacionaisTests(TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertContains(response, "Painel do sistema")
         self.assertContains(response, "Empresas e filiais")
-        self.assertContains(response, "Usuarios")
+        self.assertContains(response, "Usuários")
         self.assertContains(response, "Fiscal")
         self.assertContains(response, "Formas de pagamento")
         self.assertContains(response, "Terminais PDV")
