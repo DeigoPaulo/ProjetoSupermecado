@@ -76,6 +76,25 @@ class EmpresasViewsTests(TestCase):
             codigo_municipio_ibge="3550308",
         )
 
+    def test_empresa_duplicada_exibe_resumo_e_erro_do_cnpj(self):
+        response = self.client.post(
+            "/empresas/nova/",
+            {
+                "razao_social": "Outra Razão Social Ltda",
+                "nome_fantasia": "Outra Empresa",
+                "cnpj": self.empresa.cnpj,
+                "regime_tributario": "Simples Nacional",
+                "modo_implantacao": ModoImplantacao.LOCAL,
+                "politica_conflito_sincronizacao": PoliticaConflitoSincronizacao.MANUAL,
+                "is_active": "on",
+            },
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "Não foi possível salvar.")
+        self.assertContains(response, "Empresa com este CNPJ já existe.")
+        self.assertContains(response, 'data-form-error-summary')
+        self.assertEqual(Empresa.objects.count(), 1)
     def test_registrar_lancamento_publica_contrato_financeiro_idempotente(self):
         conta = ContaMovimentoFinanceiro.objects.create(
             filial=self.filial,

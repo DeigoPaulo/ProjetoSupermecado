@@ -959,6 +959,57 @@ tr:last-child td {
   background: #fff1f2;
   color: #be123c;
 }
+.form-error-summary {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  margin-bottom: 14px;
+  border: 1px solid #f59e0b;
+  border-left: 4px solid #dc2626;
+  border-radius: 6px;
+  background: #fff7ed;
+  color: #7f1d1d;
+  padding: 12px 14px;
+  box-shadow: 0 6px 18px rgba(127, 29, 29, 0.08);
+}
+
+.form-error-summary i {
+  margin-top: 2px;
+  color: #dc2626;
+}
+
+.form-error-summary strong,
+.form-error-summary span {
+  display: block;
+}
+
+.form-error-summary span {
+  margin-top: 2px;
+  color: #7c2d12;
+}
+
+.form-field.has-error > span {
+  color: #b91c1c;
+}
+
+.form-field.has-error input,
+.form-field.has-error select,
+.form-field.has-error textarea,
+input[aria-invalid="true"],
+select[aria-invalid="true"],
+textarea[aria-invalid="true"] {
+  border-color: #dc2626;
+  box-shadow: 0 0 0 3px rgba(220, 38, 38, 0.1);
+}
+
+.errorlist {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  color: #b91c1c;
+  font-size: 13px;
+  font-weight: 700;
+}
 
 .form-section {
   display: grid;

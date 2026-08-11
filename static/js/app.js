@@ -1,4 +1,49 @@
 document.addEventListener("DOMContentLoaded", function () {
+  function configureFormErrorFeedback() {
+    if (document.querySelector(".login-page")) return;
+    var errorLists = Array.from(document.querySelectorAll(".errorlist")).filter(function (list) {
+      return list.textContent.trim().length > 0;
+    });
+    if (!errorLists.length) return;
+
+    var summary = document.querySelector("[data-form-error-summary]");
+    if (!summary) {
+      var content = document.querySelector("main.content");
+      if (content) {
+        summary = document.createElement("div");
+        summary.className = "form-error-summary";
+        summary.setAttribute("role", "alert");
+        summary.setAttribute("tabindex", "-1");
+        summary.setAttribute("data-form-error-summary", "");
+        summary.innerHTML = '<i class="fa-solid fa-circle-exclamation" aria-hidden="true"></i><div><strong>Não foi possível salvar.</strong><span>Revise os campos destacados abaixo e tente novamente.</span></div>';
+        content.insertBefore(summary, content.firstElementChild || null);
+      }
+    }
+
+    var firstField = null;
+    errorLists.forEach(function (list) {
+      var container = list.closest(".form-field, label, .form-section");
+      var field = container && container.querySelector("input:not([type='hidden']), select, textarea");
+      if (container) container.classList.add("has-error");
+      if (field) {
+        field.setAttribute("aria-invalid", "true");
+        if (!field.getAttribute("aria-describedby") && list.id) field.setAttribute("aria-describedby", list.id);
+        if (!firstField && !field.disabled) firstField = field;
+      }
+    });
+
+    if (summary) {
+      summary.focus({ preventScroll: true });
+      summary.scrollIntoView({ behavior: "smooth", block: "start" });
+    }
+    if (firstField) {
+      window.setTimeout(function () {
+        firstField.focus({ preventScroll: true });
+      }, 350);
+    }
+  }
+
+  configureFormErrorFeedback();
   var productCodeGenerator = document.querySelector("[data-product-code-generator]");
   if (productCodeGenerator) {
     var productCodeInput = document.getElementById("id_codigo_interno");
