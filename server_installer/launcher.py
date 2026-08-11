@@ -9,9 +9,24 @@ from tkinter import messagebox, ttk
 
 
 def suggested_ip() -> str:
+    # Ask Windows routing which address would be used to leave the machine.
+    # This avoids fiscal/TEF loopback adapters that expose public-looking /32
+    # addresses but have no gateway and cannot serve other computers.
+    route_socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    try:
+        route_socket.connect(("1.1.1.1", 443))
+        routed_ip = route_socket.getsockname()[0]
+        if ipaddress.IPv4Address(routed_ip).is_private:
+            return routed_ip
+    except OSError:
+        pass
+    finally:
+        route_socket.close()
+
     try:
         addresses = socket.gethostbyname_ex(socket.gethostname())[2]
-        return next(address for address in addresses if not address.startswith("127."))
+        valid = [ipaddress.IPv4Address(address) for address in addresses]
+        return str(next(address for address in valid if address.is_private and not address.is_loopback))
     except (OSError, StopIteration):
         return "127.0.0.1"
 
@@ -50,13 +65,20 @@ class InstallerWindow:
         )
         ttk.Label(
             frame,
+            text=("Use o IPv4 da Ethernet/Wi-Fi que possui gateway. "
+                  "Ignore adaptadores Loopback, VPN, TEF ou fiscais."),
+            foreground="#4b5f7d",
+            wraplength=470,
+        ).grid(row=4, column=0, columnspan=2, sticky="w", pady=(0, 12))
+        ttk.Label(
+            frame,
             text=("Na primeira execucao, o instalador oficial do PostgreSQL podera solicitar "
                   "a senha mestre. Depois de conclui-lo, abra este instalador novamente."),
             foreground="#4b5f7d",
             wraplength=470,
-        ).grid(row=4, column=0, columnspan=2, sticky="w", pady=(0, 20))
+        ).grid(row=5, column=0, columnspan=2, sticky="w", pady=(0, 20))
         ttk.Button(frame, text="Instalar ou atualizar", command=self.install).grid(
-            row=5, column=0, columnspan=2, sticky="ew", ipady=6
+            row=6, column=0, columnspan=2, sticky="ew", ipady=6
         )
         root.bind("<Return>", lambda _event: self.install())
         root.bind("<Escape>", lambda _event: root.destroy())
