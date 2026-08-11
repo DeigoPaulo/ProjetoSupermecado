@@ -293,6 +293,7 @@ def montar_pagina_contingencia(bootstrap: dict) -> str:
     <p class="safety">Por seguranca, novas vendas, pagamentos e alteracoes de estoque permanecem bloqueados ate a licenca e os dados operacionais serem validados novamente.</p>
     <div class="actions">
       <button id="retry" type="button">Tentar novamente <kbd>F5</kbd></button>
+      <button class="secondary" id="reconfigure" type="button">Nova chave <kbd>F8</kbd></button>
       <button class="secondary" id="exit" type="button">Sair do aplicativo <kbd>Ctrl+F5</kbd></button>
     </div>
     <p class="detail" id="detail">{mensagem}</p>
@@ -301,6 +302,7 @@ def montar_pagina_contingencia(bootstrap: dict) -> str:
   <script>
     const button = document.getElementById('retry');
     const exitButton = document.getElementById('exit');
+    const reconfigureButton = document.getElementById('reconfigure');
     const detail = document.getElementById('detail');
     async function reconnect() {{
       if (!window.SupermercadoDesktop || !window.SupermercadoDesktop.reconnect) {{ detail.textContent = 'A ponte local ainda esta iniciando. Tente novamente.'; return; }}
@@ -322,10 +324,20 @@ def montar_pagina_contingencia(bootstrap: dict) -> str:
       try {{ await window.SupermercadoDesktop.closeApplication(); }}
       catch (error) {{ exitButton.disabled = false; detail.textContent = 'Nao foi possivel fechar o aplicativo.'; }}
     }}
+    async function reconfigureTerminal() {{
+      if (!window.SupermercadoDesktop || !window.SupermercadoDesktop.reconfigureTerminal) {{ detail.textContent = 'A ponte local ainda esta iniciando. Tente novamente.'; return; }}
+      if (!window.confirm('Informar uma nova credencial para este terminal?')) return;
+      reconfigureButton.disabled = true;
+      detail.textContent = 'Abrindo a configuracao do terminal...';
+      try {{ await window.SupermercadoDesktop.reconfigureTerminal(); }}
+      catch (error) {{ reconfigureButton.disabled = false; detail.textContent = 'Nao foi possivel abrir a configuracao.'; }}
+    }}
     button.addEventListener('click', reconnect);
+    reconfigureButton.addEventListener('click', reconfigureTerminal);
     exitButton.addEventListener('click', exitApplication);
     document.addEventListener('keydown', function (event) {{
       if ((event.ctrlKey || event.metaKey) && (event.key.toLowerCase() === 'q' || event.key === 'F5' || event.code === 'F5')) {{ event.preventDefault(); exitApplication(); return; }}
+      if (event.key === 'F8') {{ event.preventDefault(); reconfigureTerminal(); return; }}
       if (event.key === 'F5' || (event.key === 'Enter' && document.activeElement !== exitButton)) {{ event.preventDefault(); reconnect(); }}
     }});
     button.focus();
@@ -667,6 +679,7 @@ class PonteLocal:
         self._tef_pagamentos_pendentes = {}
         self._adaptador_tef = None
         self._janela = None
+        self._reconfiguracao_solicitada = False
 
     def vincular_janela(self, janela) -> None:
         self._janela = janela
@@ -677,6 +690,13 @@ class PonteLocal:
 
         threading.Timer(0.15, self._janela.destroy).start()
         return {"status": "ok", "mensagem": "Encerrando o PDV."}
+
+    def reconfigureTerminal(self) -> dict:
+        if self._janela is None:
+            return {"status": "erro", "mensagem": "Janela do aplicativo indisponível."}
+        self._reconfiguracao_solicitada = True
+        threading.Timer(0.15, self._janela.destroy).start()
+        return {"status": "ok", "mensagem": "Abrindo a configuração do terminal."}
 
     def _reutilizar_operacao_tef(self, operacao: str, chave: str, assinatura: tuple) -> dict | None:
         if not chave:
@@ -1314,27 +1334,22 @@ class PonteLocal:
 
 def executar(reconfigurar: bool = False) -> None:
     try:
-        config_atual = carregar_configuracao()
+        config = carregar_configuracao()
     except (RuntimeError, json.JSONDecodeError):
-        config_atual = None
+        config = None
 
-    if reconfigurar and config_atual:
-        terminal_atual = config_atual["terminal_id"]
-        with instancia_unica_terminal(terminal_atual):
-            config = ativar_terminal(config_atual)
-            if config["terminal_id"] == terminal_atual:
-                _executar_interface_pdv(config)
-            else:
-                with instancia_unica_terminal(config["terminal_id"]):
-                    _executar_interface_pdv(config)
-        return
+    if config is None or reconfigurar:
+        config = ativar_terminal(config)
 
-    config = ativar_terminal(config_atual) if config_atual is None else config_atual
-    with instancia_unica_terminal(config["terminal_id"]):
-        _executar_interface_pdv(config)
+    while True:
+        with instancia_unica_terminal(config["terminal_id"]):
+            solicitar_nova_credencial = _executar_interface_pdv(config)
+        if not solicitar_nova_credencial:
+            return
+        config = ativar_terminal(config)
 
 
-def _executar_interface_pdv(config: dict) -> None:
+def _executar_interface_pdv(config: dict) -> bool:
     bootstrap = obter_bootstrap_operacional(config)
     sincronizar_eventos_dispositivo(config)
     avisar_atualizacao(verificar_versao(bootstrap), config)
@@ -1376,6 +1391,7 @@ def _executar_interface_pdv(config: dict) -> None:
         "listPrinters: function() { return window.pywebview.api.listar_impressoras(); },"
         "status: function() { return window.pywebview.api.status(); },"
         "reconnect: function() { return window.pywebview.api.reconnect(); },"
+        "reconfigureTerminal: function() { return window.pywebview.api.reconfigureTerminal(); },"
         "closeApplication: function() { return window.pywebview.api.closeApplication(); }"
         "};"
         "document.documentElement.classList.add('desktop-pdv');"
@@ -1400,6 +1416,7 @@ def _executar_interface_pdv(config: dict) -> None:
         thread_sincronizacao.join(timeout=2)
     if janela is None:
         raise RuntimeError("Nao foi possivel iniciar a janela do PDV.")
+    return ponte._reconfiguracao_solicitada
 
 
 if __name__ == "__main__":

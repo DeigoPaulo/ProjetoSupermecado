@@ -15,12 +15,16 @@
 </header>
 
 {% if chave_nova %}
-<section class="operation-notice">
+<section class="operation-notice terminal-key-notice">
   <i class="fa-solid fa-key"></i>
   <div>
-    <strong>Credencial criada para {{ chave_nova.terminal }}. Ela será mostrada somente agora.</strong>
-    <span>Identificador: <code>{{ chave_nova.identificador }}</code></span>
-    <span>Chave do aplicativo: <code>{{ chave_nova.chave }}</code></span>
+    <strong>Nova chave de {{ chave_nova.terminal }}</strong>
+    <span>Copie agora. Por segurança, ela será exibida somente nesta página e a chave anterior já foi invalidada.</span>
+    <div class="terminal-key-fields">
+      <label>Identificador<input id="terminal-identificador-novo" type="text" value="{{ chave_nova.identificador }}" readonly autocomplete="off"></label>
+      <label>Chave de ativação<input id="terminal-chave-nova" type="text" value="{{ chave_nova.chave }}" readonly autocomplete="off"></label>
+      <button class="secondary-button" type="button" data-copy-target="terminal-chave-nova"><i class="fa-solid fa-copy"></i> Copiar chave</button>
+    </div>
   </div>
 </section>
 {% endif %}
@@ -62,7 +66,7 @@
 </form>
 
 <section class="panel table-panel">
-  <div class="table-wrap">
+  <div class="table-wrap terminal-pdv-table-wrap">
     <table>
       <thead>
         <tr>
@@ -117,10 +121,12 @@
                 </form>
               {% endif %}
               {% endif %}
+              {% if pode_gerenciar_chave %}
               <form method="post" action="{% url 'configuracoes:terminal_pdv_regenerar_chave' terminal.pk %}" class="inline-form" onsubmit="return confirm('Renovar a chave? O aplicativo atual deixará de conectar até ser reconfigurado.');">
                 {% csrf_token %}
                 <button class="icon-button" type="submit" title="Renovar chave"><i class="fa-solid fa-rotate"></i></button>
               </form>
+              {% endif %}
             </td>
           </tr>
         {% empty %}
@@ -137,4 +143,18 @@
     {% if pagina.has_next %}<a class="secondary-button" href="?{% if query_sem_pagina %}{{ query_sem_pagina }}&{% endif %}page={{ pagina.next_page_number }}">Próxima</a>{% endif %}
   </nav>
 {% endif %}
+<script>
+document.querySelectorAll("[data-copy-target]").forEach(function (button) {
+  button.addEventListener("click", function () {
+    var field = document.getElementById(button.dataset.copyTarget);
+    if (!field) return;
+    field.select();
+    field.setSelectionRange(0, field.value.length);
+    var copy = navigator.clipboard ? navigator.clipboard.writeText(field.value) : Promise.reject();
+    copy.catch(function () { document.execCommand("copy"); }).finally(function () {
+      button.innerHTML = '<i class="fa-solid fa-check"></i> Chave copiada';
+    });
+  });
+});
+</script>
 {% endblock %}

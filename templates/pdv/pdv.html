@@ -42,6 +42,7 @@
     </div>
     <div class="actions pdv-actions">
       {% if access.supervisao %}
+        <button class="secondary-button" id="pdv-reconfigure-terminal" type="button" hidden title="Configurar uma nova chave de ativação"><i class="fa-solid fa-key"></i> <span>Nova chave</span></button>
         <a class="secondary-button" id="pdv-menu-link" href="{% url 'relatorios:dashboard' %}"><i class="fa-solid fa-bars"></i> <span><kbd>Shift+M</kbd> Menu</span></a>
       {% else %}
         <form action="{% url 'logout' %}" method="post" class="pdv-logout-form" id="pdv-logout-form">

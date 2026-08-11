@@ -3,7 +3,7 @@
 Em outro computador Windows, abra PowerShell na raiz do projeto e execute:
 
 ```powershell
-powershell -ExecutionPolicy Bypass -File .\scripts\publicar_pdv_desktop.ps1 -Version 0.1.9
+powershell -ExecutionPolicy Bypass -File .\scripts\publicar_pdv_desktop.ps1 -Version 0.1.10
 ```
 
 O comando usa Python 3.12, gera `desktop_pdv\dist\DeTecPDV.exe` e publica o arquivo em `artifacts\DeTecPDV.exe` com manifesto SHA-256 para a Central do PDV.

@@ -14,6 +14,13 @@ class EmpresaForm(forms.ModelForm):
             "cnpj",
             "telefone",
             "email",
+            "cep",
+            "logradouro",
+            "numero",
+            "complemento",
+            "bairro",
+            "municipio",
+            "uf",
             "endereco",
             "regime_tributario",
             "logo",
@@ -26,7 +33,8 @@ class EmpresaForm(forms.ModelForm):
         widgets = {
             "cnpj": forms.TextInput(attrs={"class": "mask-cpf-cnpj", "data-lookup-target": "cnpj"}),
             "telefone": forms.TextInput(attrs={"class": "mask-phone"}),
-            "endereco": forms.Textarea(attrs={"rows": 3, "data-lookup-target": "endereco"}),
+            "cep": forms.TextInput(attrs={"class": "mask-cep", "data-lookup-target": "cep", "placeholder": "00000-000"}),
+            "endereco": forms.HiddenInput(),
             "logo": forms.ClearableFileInput(attrs={"accept": ".png,.jpg,.jpeg,image/png,image/jpeg"}),
         }
 
@@ -44,9 +52,9 @@ class EmpresaForm(forms.ModelForm):
             cleaned["sincronizacao_automatica"] = False
             cleaned["url_sincronizacao"] = ""
         elif sincroniza and not url:
-            self.add_error("url_sincronizacao", "Informe a URL HTTPS do servidor de sincronizacao.")
+            self.add_error("url_sincronizacao", "Informe a URL HTTPS do servidor de sincronização.")
         elif url and not url.lower().startswith("https://"):
-            self.add_error("url_sincronizacao", "A sincronizacao deve usar uma URL HTTPS.")
+            self.add_error("url_sincronizacao", "A sincronização deve usar uma URL HTTPS.")
         return cleaned
 
 
@@ -58,6 +66,11 @@ class FilialForm(forms.ModelForm):
             "nome",
             "cnpj",
             "telefone",
+            "cep",
+            "logradouro",
+            "numero",
+            "complemento",
+            "bairro",
             "endereco",
             "municipio",
             "uf",
@@ -67,7 +80,8 @@ class FilialForm(forms.ModelForm):
         widgets = {
             "cnpj": forms.TextInput(attrs={"class": "mask-cpf-cnpj", "data-lookup-target": "cnpj"}),
             "telefone": forms.TextInput(attrs={"class": "mask-phone"}),
-            "endereco": forms.Textarea(attrs={"rows": 3, "data-lookup-target": "endereco"}),
+            "cep": forms.TextInput(attrs={"class": "mask-cep", "data-lookup-target": "cep", "placeholder": "00000-000"}),
+            "endereco": forms.HiddenInput(),
         }
 
     def __init__(self, *args, **kwargs):

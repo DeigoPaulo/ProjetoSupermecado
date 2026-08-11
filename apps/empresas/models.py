@@ -11,6 +11,25 @@ VALIDAR_IMAGEM_PNG_JPEG = FileExtensionValidator(
 )
 
 
+UF_CHOICES = [
+    ("AC", "AC"), ("AL", "AL"), ("AP", "AP"), ("AM", "AM"), ("BA", "BA"), ("CE", "CE"), ("DF", "DF"),
+    ("ES", "ES"), ("GO", "GO"), ("MA", "MA"), ("MT", "MT"), ("MS", "MS"), ("MG", "MG"), ("PA", "PA"),
+    ("PB", "PB"), ("PR", "PR"), ("PE", "PE"), ("PI", "PI"), ("RJ", "RJ"), ("RN", "RN"), ("RS", "RS"),
+    ("RO", "RO"), ("RR", "RR"), ("SC", "SC"), ("SP", "SP"), ("SE", "SE"), ("TO", "TO"),
+]
+
+
+def montar_endereco_completo(*, logradouro="", numero="", complemento="", bairro="", municipio="", uf="", cep=""):
+    linha = ", ".join(parte for parte in [logradouro.strip(), numero.strip()] if parte)
+    partes = [linha, complemento.strip(), bairro.strip()]
+    cidade_uf = "/".join(parte for parte in [municipio.strip(), uf.strip()] if parte)
+    if cidade_uf:
+        partes.append(cidade_uf)
+    if cep.strip():
+        partes.append(f"CEP {cep.strip()}")
+    return " - ".join(parte for parte in partes if parte)
+
+
 class ModoImplantacao(models.TextChoices):
     LOCAL = "LOCAL", "Somente servidor local"
     HIBRIDO = "HIBRIDO", "Servidor local com sincronização em nuvem"
@@ -60,16 +79,23 @@ def acoes_pin_supervisor_padrao():
 
 
 class Empresa(models.Model):
-    razao_social = models.CharField(max_length=255)
-    nome_fantasia = models.CharField(max_length=255)
-    cnpj = models.CharField(max_length=18, unique=True)
-    telefone = models.CharField(max_length=30, blank=True)
+    razao_social = models.CharField("Razão social", max_length=255)
+    nome_fantasia = models.CharField("Nome fantasia", max_length=255)
+    cnpj = models.CharField("CNPJ", max_length=18, unique=True)
+    telefone = models.CharField("Telefone", max_length=30, blank=True)
     email = models.EmailField(blank=True)
-    endereco = models.TextField(blank=True)
-    regime_tributario = models.CharField(max_length=80, blank=True)
+    cep = models.CharField("CEP", max_length=9, blank=True)
+    logradouro = models.CharField("Logradouro", max_length=255, blank=True)
+    numero = models.CharField("Número", max_length=30, blank=True)
+    complemento = models.CharField("Complemento", max_length=120, blank=True)
+    bairro = models.CharField("Bairro", max_length=120, blank=True)
+    municipio = models.CharField("Município", max_length=120, blank=True)
+    uf = models.CharField("UF", max_length=2, choices=UF_CHOICES, blank=True)
+    endereco = models.TextField("Endereço completo", blank=True)
+    regime_tributario = models.CharField("Regime tributário", max_length=80, blank=True)
     logo = models.ImageField(upload_to="empresas/logos/", blank=True, null=True, validators=[VALIDAR_IMAGEM_PNG_JPEG])
     modo_implantacao = models.CharField(
-        "Modo de implantacao",
+        "Modo de implantação",
         max_length=20,
         choices=ModoImplantacao.choices,
         default=ModoImplantacao.LOCAL,
@@ -87,7 +113,7 @@ class Empresa(models.Model):
         default=acoes_pin_supervisor_padrao,
         blank=True,
     )
-    is_active = models.BooleanField(default=True)
+    is_active = models.BooleanField("Ativa", default=True)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
     deleted_at = models.DateTimeField(null=True, blank=True)
@@ -109,6 +135,22 @@ class Empresa(models.Model):
         )
 
     def save(self, *args, **kwargs):
+        endereco_estruturado = montar_endereco_completo(
+            logradouro=self.logradouro,
+            numero=self.numero,
+            complemento=self.complemento,
+            bairro=self.bairro,
+            municipio=self.municipio,
+            uf=self.uf,
+            cep=self.cep,
+        )
+        tem_endereco_estruturado = any(
+            [self.cep, self.logradouro, self.numero, self.complemento, self.bairro]
+        )
+        if tem_endereco_estruturado and endereco_estruturado:
+            self.endereco = endereco_estruturado
+            if kwargs.get("update_fields") is not None:
+                kwargs["update_fields"] = set(kwargs["update_fields"]) | {"endereco"}
         if self.modo_implantacao == ModoImplantacao.LOCAL:
             self.sincronizacao_automatica = False
             self.url_sincronizacao = ""
@@ -140,21 +182,20 @@ class Empresa(models.Model):
 
 
 class Filial(models.Model):
-    UF_CHOICES = [
-        ("AC", "AC"), ("AL", "AL"), ("AP", "AP"), ("AM", "AM"), ("BA", "BA"), ("CE", "CE"), ("DF", "DF"),
-        ("ES", "ES"), ("GO", "GO"), ("MA", "MA"), ("MT", "MT"), ("MS", "MS"), ("MG", "MG"), ("PA", "PA"),
-        ("PB", "PB"), ("PR", "PR"), ("PE", "PE"), ("PI", "PI"), ("RJ", "RJ"), ("RN", "RN"), ("RS", "RS"),
-        ("RO", "RO"), ("RR", "RR"), ("SC", "SC"), ("SP", "SP"), ("SE", "SE"), ("TO", "TO"),
-    ]
     empresa = models.ForeignKey(Empresa, on_delete=models.PROTECT, related_name="filiais")
     nome = models.CharField(max_length=255)
-    cnpj = models.CharField(max_length=18, blank=True)
-    telefone = models.CharField(max_length=30, blank=True)
-    endereco = models.TextField(blank=True)
-    municipio = models.CharField(max_length=120, blank=True)
+    cnpj = models.CharField("CNPJ", max_length=18, blank=True)
+    telefone = models.CharField("Telefone", max_length=30, blank=True)
+    cep = models.CharField("CEP", max_length=9, blank=True)
+    logradouro = models.CharField("Logradouro", max_length=255, blank=True)
+    numero = models.CharField("Número", max_length=30, blank=True)
+    complemento = models.CharField("Complemento", max_length=120, blank=True)
+    bairro = models.CharField("Bairro", max_length=120, blank=True)
+    endereco = models.TextField("Endereço completo", blank=True)
+    municipio = models.CharField("Município", max_length=120, blank=True)
     uf = models.CharField(max_length=2, choices=UF_CHOICES, blank=True)
-    codigo_municipio_ibge = models.CharField("Código município IBGE", max_length=7, blank=True)
-    is_active = models.BooleanField(default=True)
+    codigo_municipio_ibge = models.CharField("Código do município no IBGE", max_length=7, blank=True)
+    is_active = models.BooleanField("Ativa", default=True)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
     deleted_at = models.DateTimeField(null=True, blank=True)
@@ -165,6 +206,25 @@ class Filial(models.Model):
 
     def __str__(self):
         return f"{self.empresa} - {self.nome}"
+
+    def save(self, *args, **kwargs):
+        endereco_estruturado = montar_endereco_completo(
+            logradouro=self.logradouro,
+            numero=self.numero,
+            complemento=self.complemento,
+            bairro=self.bairro,
+            municipio=self.municipio,
+            uf=self.uf,
+            cep=self.cep,
+        )
+        tem_endereco_estruturado = any(
+            [self.cep, self.logradouro, self.numero, self.complemento, self.bairro]
+        )
+        if tem_endereco_estruturado and endereco_estruturado:
+            self.endereco = endereco_estruturado
+            if kwargs.get("update_fields") is not None:
+                kwargs["update_fields"] = set(kwargs["update_fields"]) | {"endereco"}
+        super().save(*args, **kwargs)
 
 
 class EventoSincronizacao(models.Model):

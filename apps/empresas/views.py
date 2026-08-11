@@ -61,7 +61,14 @@ def _dados_empresa(empresa):
         "cnpj": empresa.cnpj,
         "telefone": empresa.telefone,
         "email": empresa.email,
+        "cep": empresa.cep,
+        "logradouro": empresa.logradouro,
+        "numero": empresa.numero,
+        "complemento": empresa.complemento,
+        "bairro": empresa.bairro,
         "endereco": empresa.endereco,
+        "municipio": empresa.municipio,
+        "uf": empresa.uf,
         "regime_tributario": empresa.regime_tributario,
     }
 
@@ -78,6 +85,11 @@ def _dados_filial(filial):
         "cnpj": filial.cnpj or filial.empresa.cnpj,
         "telefone": filial.telefone,
         "email": filial.empresa.email,
+        "cep": filial.cep,
+        "logradouro": filial.logradouro,
+        "numero": filial.numero,
+        "complemento": filial.complemento,
+        "bairro": filial.bairro,
         "endereco": filial.endereco,
         "municipio": filial.municipio,
         "uf": filial.uf,
@@ -102,14 +114,14 @@ def _buscar_filial_por_cnpj(digitos):
 
 def _buscar_empresa_por_cep(digitos):
     for empresa in Empresa.objects.all():
-        if digitos and digitos in _apenas_digitos(empresa.endereco):
+        if digitos and (digitos == _apenas_digitos(empresa.cep) or digitos in _apenas_digitos(empresa.endereco)):
             return empresa
     return None
 
 
 def _buscar_filial_por_cep(digitos):
     for filial in Filial.objects.select_related("empresa"):
-        if digitos and digitos in _apenas_digitos(filial.endereco):
+        if digitos and (digitos == _apenas_digitos(filial.cep) or digitos in _apenas_digitos(filial.endereco)):
             return filial
     return None
 
@@ -134,15 +146,19 @@ def _normalizar_endereco(dados):
 
 
 def _normalizar_payload_provider(tipo, valor, dados):
+    endereco = {
+        "cep": dados.get("cep") or dados.get("zip_code") or (valor if tipo == "cep" else ""),
+        "logradouro": dados.get("logradouro") or dados.get("endereco") or dados.get("street") or "",
+        "numero": dados.get("numero") or dados.get("number") or "",
+        "complemento": dados.get("complemento") or dados.get("complement") or "",
+        "bairro": dados.get("bairro") or dados.get("district") or "",
+        "endereco": _normalizar_endereco(dados),
+        "municipio": dados.get("municipio") or dados.get("localidade") or dados.get("city") or "",
+        "uf": dados.get("uf") or dados.get("state") or "",
+        "codigo_municipio_ibge": dados.get("codigo_municipio_ibge") or dados.get("ibge") or dados.get("city_ibge") or "",
+    }
     if tipo == "cep":
-        normalizado = {
-            "tipo": "cep",
-            "cep": dados.get("cep") or valor,
-            "endereco": _normalizar_endereco(dados),
-            "municipio": dados.get("municipio") or dados.get("localidade") or dados.get("city") or "",
-            "uf": dados.get("uf") or dados.get("state") or "",
-            "codigo_municipio_ibge": dados.get("codigo_municipio_ibge") or dados.get("ibge") or dados.get("city_ibge") or "",
-        }
+        normalizado = {"tipo": "cep", **endereco}
     else:
         normalizado = {
             "tipo": "cnpj",
@@ -151,10 +167,7 @@ def _normalizar_payload_provider(tipo, valor, dados):
             "nome_fantasia": dados.get("nome_fantasia") or dados.get("fantasia") or dados.get("alias") or "",
             "telefone": dados.get("telefone") or dados.get("phone") or "",
             "email": dados.get("email") or "",
-            "endereco": _normalizar_endereco(dados),
-            "municipio": dados.get("municipio") or dados.get("localidade") or dados.get("city") or "",
-            "uf": dados.get("uf") or dados.get("state") or "",
-            "codigo_municipio_ibge": dados.get("codigo_municipio_ibge") or dados.get("ibge") or dados.get("city_ibge") or "",
+            **endereco,
         }
     return {chave: valor for chave, valor in normalizado.items() if valor not in (None, "")}
 
@@ -414,6 +427,11 @@ def consulta_cadastro_placeholder(request):
             "nome_fantasia",
             "telefone",
             "email",
+            "cep",
+            "logradouro",
+            "numero",
+            "complemento",
+            "bairro",
             "endereco",
             "municipio",
             "uf",

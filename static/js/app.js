@@ -41,6 +41,25 @@ document.addEventListener("DOMContentLoaded", function () {
     });
   }
 
+  var pdvReconfigureButton = document.getElementById("pdv-reconfigure-terminal");
+  if (pdvReconfigureButton) {
+    function atualizarReconfiguracaoDesktop() {
+      pdvReconfigureButton.hidden = !(window.SupermercadoDesktop && window.SupermercadoDesktop.reconfigureTerminal);
+    }
+    pdvReconfigureButton.addEventListener("click", function () {
+      var bridge = window.SupermercadoDesktop && window.SupermercadoDesktop.reconfigureTerminal;
+      if (!bridge) return;
+      if (!window.confirm("Configurar uma nova credencial para este PDV? A chave atual será substituída somente após uma ativação válida.")) return;
+      pdvReconfigureButton.disabled = true;
+      Promise.resolve(bridge.call(window.SupermercadoDesktop)).catch(function () {
+        pdvReconfigureButton.disabled = false;
+        window.alert("Não foi possível abrir a reconfiguração do terminal.");
+      });
+    });
+    document.addEventListener("supermercado:desktop-ready", atualizarReconfiguracaoDesktop, { once: true });
+    atualizarReconfiguracaoDesktop();
+  }
+
   var localPrinterPicker = document.querySelector("[data-local-printer-picker]");
   if (localPrinterPicker) {
     var localPrinterSelect = document.getElementById("local-printer-select");
@@ -612,10 +631,10 @@ document.addEventListener("DOMContentLoaded", function () {
   });
 
   document.querySelectorAll("form[data-cadastro-lookup-url]").forEach(function (form) {
-    var button = form.querySelector("[data-cadastro-lookup-button]");
+    var buttons = Array.from(form.querySelectorAll("[data-cadastro-lookup-button]"));
     var feedback = form.querySelector("[data-cadastro-lookup-feedback]");
     var cnpjInput = form.querySelector("[data-lookup-target='cnpj'], #id_cnpj");
-    var cepInput = form.querySelector("[data-lookup-target='cep'], #id_cep_consulta");
+    var cepInput = form.querySelector("[data-lookup-target='cep'], #id_cep");
     var lookupUrl = form.getAttribute("data-cadastro-lookup-url");
 
     function setFeedback(message, isError) {
@@ -636,27 +655,26 @@ document.addEventListener("DOMContentLoaded", function () {
 
     function applyLookupData(data) {
       if (!data || !data.dados) return;
-      var fields = ["razao_social", "nome_fantasia", "nome", "cnpj", "telefone", "email", "endereco", "municipio", "uf", "codigo_municipio_ibge", "regime_tributario"];
+      var fields = ["razao_social", "nome_fantasia", "nome", "cnpj", "telefone", "email", "cep", "logradouro", "numero", "complemento", "bairro", "endereco", "municipio", "uf", "codigo_municipio_ibge", "regime_tributario"];
       fields.forEach(function (field) {
         fillIfEmpty(field, data.dados[field]);
       });
       setFeedback(data.mensagem || "Cadastro encontrado e aplicado aos campos vazios.", false);
     }
 
-    function runLookup() {
+    function runLookup(event) {
       if (!lookupUrl) return;
-      var cnpjDigits = cnpjInput ? (cnpjInput.value || "").replace(/\D/g, "") : "";
-      var cepDigits = cepInput ? (cepInput.value || "").replace(/\D/g, "") : "";
-      var tipo = cnpjDigits.length === 14 ? "cnpj" : (cepDigits.length === 8 ? "cep" : "");
-      var digits = tipo === "cnpj" ? cnpjDigits : cepDigits;
-      if (!tipo) {
-        setFeedback("Informe um CNPJ com 14 digitos ou um CEP com 8 digitos para consultar.", true);
-        if (cnpjInput && cnpjDigits.length !== 14) cnpjInput.focus();
-        else if (cepInput) cepInput.focus();
+      var tipo = event.currentTarget.getAttribute("data-lookup-kind");
+      var input = tipo === "cnpj" ? cnpjInput : cepInput;
+      var digits = input ? (input.value || "").replace(/\D/g, "") : "";
+      var expectedLength = tipo === "cnpj" ? 14 : 8;
+      if (digits.length !== expectedLength) {
+        setFeedback(tipo === "cnpj" ? "Informe um CNPJ com 14 dígitos." : "Informe um CEP com 8 dígitos.", true);
+        if (input) input.focus();
         return;
       }
-      if (button) button.disabled = true;
-      setFeedback("Consultando cadastro...", false);
+      buttons.forEach(function (button) { button.disabled = true; });
+      setFeedback(tipo === "cnpj" ? "Consultando CNPJ..." : "Consultando CEP...", false);
       fetch(lookupUrl + "?" + tipo + "=" + encodeURIComponent(digits), { headers: { "Accept": "application/json" } })
         .then(function (response) {
           return response.json().then(function (payload) {
@@ -675,11 +693,11 @@ document.addEventListener("DOMContentLoaded", function () {
           setFeedback(error.message, true);
         })
         .finally(function () {
-          if (button) button.disabled = false;
+          buttons.forEach(function (button) { button.disabled = false; });
         });
     }
 
-    if (button) button.addEventListener("click", runLookup);
+    buttons.forEach(function (button) { button.addEventListener("click", runLookup); });
   });
 
   document.querySelectorAll("[data-tef-refund-form]").forEach(function (form) {

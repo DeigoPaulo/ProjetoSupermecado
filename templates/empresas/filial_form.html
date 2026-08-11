@@ -1,55 +1,12 @@
 {% extends "base.html" %}
-
 {% block title %}{% if filial %}Editar filial{% else %}Nova filial{% endif %}{% endblock %}
-
 {% block content %}
-<header class="page-header">
-  <div>
-    <h1>{% if filial %}Editar filial{% else %}Nova filial{% endif %}</h1>
-    <p>Dados da loja usados no PDV, relatórios e preparação fiscal.</p>
-  </div>
-  <div class="actions"><a class="secondary-button" href="{% url 'empresas:lista' %}">Voltar</a></div>
-</header>
-
-<section class="panel">
-  <form method="post" class="form-grid" data-cadastro-lookup-url="{% url 'empresas:consulta_cadastro' %}">
-    {% csrf_token %}
-    {% if form.non_field_errors %}<div class="form-note form-note-danger">{{ form.non_field_errors }}</div>{% endif %}
-
-    <section class="form-section form-field-wide">
-      <h2>Loja</h2>
-      <div class="form-note">
-        <strong>Consulta CNPJ/CEP preparada.</strong>
-        <span>O sistema valida o CNPJ e reaproveita dados locais. Quando o provedor externo for configurado, preencherá endereço, município, UF e código IBGE.</span>
-        <label class="form-field lookup-field"><span>CEP para consulta</span><input type="text" id="id_cep_consulta" class="mask-cep" data-lookup-target="cep" placeholder="00000-000"></label>
-        <button class="secondary-button" type="button" data-cadastro-lookup-button><i class="fa-solid fa-magnifying-glass"></i> Consultar CNPJ/CEP</button>
-        <a class="secondary-button" href="{% url 'empresas:consulta_cadastro' %}" target="_blank">Ver ponto de integração</a>
-        <a class="secondary-button" href="{% url 'empresas:consulta_cadastro_diagnostico' %}" target="_blank">Diagnóstico JSON</a>
-      </div>
-      <div class="form-note" data-cadastro-lookup-feedback hidden></div>
-      <div class="form-grid form-grid-inner">
-        <label class="form-field"><span>{{ form.empresa.label }}</span>{{ form.empresa }}{{ form.empresa.errors }}</label>
-        <label class="form-field"><span>{{ form.nome.label }}</span>{{ form.nome }}{{ form.nome.errors }}</label>
-        <label class="form-field"><span>{{ form.cnpj.label }}</span>{{ form.cnpj }}{{ form.cnpj.errors }}</label>
-        <label class="form-field"><span>{{ form.telefone.label }}</span>{{ form.telefone }}{{ form.telefone.errors }}</label>
-        <label class="form-field form-field-wide"><span>{{ form.endereco.label }}</span>{{ form.endereco }}{{ form.endereco.errors }}</label>
-      </div>
-    </section>
-
-    <section class="form-section form-field-wide">
-      <h2>Dados fiscais da filial</h2>
-      <div class="form-grid form-grid-inner">
-        <label class="form-field"><span>{{ form.municipio.label }}</span>{{ form.municipio }}{{ form.municipio.errors }}</label>
-        <label class="form-field"><span>{{ form.uf.label }}</span>{{ form.uf }}{{ form.uf.errors }}</label>
-        <label class="form-field"><span>{{ form.codigo_municipio_ibge.label }}</span>{{ form.codigo_municipio_ibge }}{{ form.codigo_municipio_ibge.errors }}<small>Necessário para preencher o XML da NFC-e.</small></label>
-        <label class="toggle-field">{{ form.is_active }} <span>{{ form.is_active.label }}</span>{{ form.is_active.errors }}</label>
-      </div>
-    </section>
-
-    <div class="form-actions">
-      <button class="primary-button" type="submit">Salvar</button>
-      <a class="secondary-button" href="{% url 'empresas:lista' %}">Cancelar</a>
-    </div>
-  </form>
-</section>
+<header class="page-header"><div><h1>{% if filial %}Editar filial{% else %}Nova filial{% endif %}</h1><p>Dados da loja usados no PDV, relatórios e preparação fiscal.</p></div><div class="actions"><a class="secondary-button" href="{% url 'empresas:lista' %}">Voltar</a></div></header>
+<section class="panel"><form method="post" class="form-grid" data-cadastro-lookup-url="{% url 'empresas:consulta_cadastro' %}">{% csrf_token %}
+{% if form.non_field_errors %}<div class="form-note form-note-danger">{{ form.non_field_errors }}</div>{% endif %}
+<section class="form-section form-field-wide"><h2>Loja</h2><div class="form-note"><strong>Consulta de CNPJ</strong><span>Informe o CNPJ e consulte para reaproveitar dados já cadastrados ou dados públicos fornecidos pela integração configurada.</span><button class="secondary-button" type="button" data-cadastro-lookup-button data-lookup-kind="cnpj"><i class="fa-solid fa-magnifying-glass"></i> Consultar CNPJ</button></div><div class="form-note" data-cadastro-lookup-feedback hidden></div><div class="form-grid form-grid-inner">
+<label class="form-field"><span>{{ form.empresa.label }}</span>{{ form.empresa }}{{ form.empresa.errors }}</label><label class="form-field"><span>{{ form.nome.label }}</span>{{ form.nome }}{{ form.nome.errors }}</label><label class="form-field"><span>{{ form.cnpj.label }}</span>{{ form.cnpj }}{{ form.cnpj.errors }}</label><label class="form-field"><span>{{ form.telefone.label }}</span>{{ form.telefone }}{{ form.telefone.errors }}</label></div></section>
+<section class="form-section form-field-wide"><h2>Endereço e dados fiscais</h2><div class="form-note"><strong>Consulta de CEP</strong><span>O CEP pode preencher logradouro, bairro, município, UF e código do município no IBGE.</span><button class="secondary-button" type="button" data-cadastro-lookup-button data-lookup-kind="cep"><i class="fa-solid fa-location-dot"></i> Consultar CEP</button></div><div class="form-grid form-grid-inner">
+<label class="form-field"><span>{{ form.cep.label }}</span>{{ form.cep }}{{ form.cep.errors }}</label><label class="form-field"><span>{{ form.logradouro.label }}</span>{{ form.logradouro }}{{ form.logradouro.errors }}</label><label class="form-field"><span>{{ form.numero.label }}</span>{{ form.numero }}{{ form.numero.errors }}</label><label class="form-field"><span>{{ form.complemento.label }}</span>{{ form.complemento }}{{ form.complemento.errors }}</label><label class="form-field"><span>{{ form.bairro.label }}</span>{{ form.bairro }}{{ form.bairro.errors }}</label><label class="form-field"><span>{{ form.municipio.label }}</span>{{ form.municipio }}{{ form.municipio.errors }}</label><label class="form-field"><span>{{ form.uf.label }}</span>{{ form.uf }}{{ form.uf.errors }}</label><label class="form-field"><span>{{ form.codigo_municipio_ibge.label }}</span>{{ form.codigo_municipio_ibge }}{{ form.codigo_municipio_ibge.errors }}<small>Necessário para preencher o XML da NFC-e.</small></label>{{ form.endereco }}<label class="toggle-field">{{ form.is_active }} <span>{{ form.is_active.label }}</span>{{ form.is_active.errors }}</label></div></section>
+<div class="form-actions"><button class="primary-button" type="submit">Salvar</button><a class="secondary-button" href="{% url 'empresas:lista' %}">Cancelar</a></div></form></section>
 {% endblock %}

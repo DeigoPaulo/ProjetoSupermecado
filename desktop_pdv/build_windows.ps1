@@ -23,9 +23,13 @@ Assert-LastExitCode "Validacao do Python $PythonVersion"
 
 $RecreateVenv = -not (Test-Path -LiteralPath $Python -PathType Leaf)
 if (-not $RecreateVenv) {
-    $CurrentVersion = (& $Python -c "import sys; print(f'{sys.version_info.major}.{sys.version_info.minor}')").Trim()
-    Assert-LastExitCode "Leitura da versao do ambiente de build"
-    $RecreateVenv = $CurrentVersion -ne $PythonVersion
+    try {
+        $CurrentVersion = (& $Python -c "import sys; print(f'{sys.version_info.major}.{sys.version_info.minor}')").Trim()
+        $RecreateVenv = $LASTEXITCODE -ne 0 -or $CurrentVersion -ne $PythonVersion
+    } catch {
+        Write-Warning "Ambiente de build invalido; ele sera recriado com Python $PythonVersion."
+        $RecreateVenv = $true
+    }
 }
 
 if ($RecreateVenv) {

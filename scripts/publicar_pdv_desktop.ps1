@@ -1,6 +1,6 @@
 param(
     [ValidatePattern('^\d+\.\d+\.\d+$')]
-    [string]$Version = '0.1.9',
+    [string]$Version = '0.1.10',
     [string]$PythonVersion = '3.12'
 )
 
@@ -10,8 +10,10 @@ $PdvApp = Join-Path $Root 'desktop_pdv'
 
 Push-Location $PdvApp
 try {
-    powershell -ExecutionPolicy Bypass -File .\build_windows.ps1 -PythonVersion $PythonVersion
-    powershell -ExecutionPolicy Bypass -File .\publish_windows.ps1 -Version $Version
+    & powershell -ExecutionPolicy Bypass -File .\build_windows.ps1 -PythonVersion $PythonVersion
+    if ($LASTEXITCODE -ne 0) { throw "Build do PDV falhou com codigo $LASTEXITCODE." }
+    & powershell -ExecutionPolicy Bypass -File .\publish_windows.ps1 -Version $Version
+    if ($LASTEXITCODE -ne 0) { throw "Publicacao do PDV falhou com codigo $LASTEXITCODE." }
 } finally {
     Pop-Location
 }

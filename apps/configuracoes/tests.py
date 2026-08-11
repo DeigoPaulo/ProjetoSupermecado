@@ -1051,7 +1051,7 @@ class ConfiguracoesOperacionaisTests(TestCase):
         )
         self.assertContains(invalida, "Troco deve ser habilitado somente")
 
-    def test_cadastra_terminal_pdv_no_painel_próprio(self):
+    def test_cadastra_terminal_pdv_no_painel_proprio(self):
         response = self.client.post(
             "/configuracoes/terminais-pdv/novo/",
             {
@@ -1088,7 +1088,7 @@ class ConfiguracoesOperacionaisTests(TestCase):
         self.assertContains(response, "Caixa 01")
         self.assertContains(response, "servidor local da loja")
         self.assertContains(response, str(terminal.identificador))
-        self.assertContains(response, "será mostrada somente agora")
+        self.assertContains(response, "será exibida somente nesta página")
         self.assertContains(response, terminal.chave_api_prefixo)
         self.assertContains(response, "Emite NFC-e")
         self.assertContains(response, "PagBank")
@@ -1098,7 +1098,7 @@ class ConfiguracoesOperacionaisTests(TestCase):
         self.assertTrue(LogAuditoria.objects.filter(acao="POLITICA_ATUALIZACAO_TERMINAL_PDV", objeto_id=str(terminal.pk)).exists())
 
         segunda_visualizacao = self.client.get("/configuracoes/terminais-pdv/")
-        self.assertNotContains(segunda_visualizacao, "será mostrada somente agora")
+        self.assertNotContains(segunda_visualizacao, "será exibida somente nesta página")
 
         form_response = self.client.get(f"/configuracoes/terminais-pdv/{terminal.pk}/editar/")
         self.assertContains(form_response, "select2-field")
@@ -1616,7 +1616,28 @@ class ConfiguracoesOperacionaisTests(TestCase):
         self.assertRedirects(response, "/configuracoes/terminais-pdv/")
         self.assertFalse(terminal.validar_chave_api(chave_anterior))
         self.assertContains(response, "Chave do terminal renovada")
-        self.assertContains(response, "será mostrada somente agora")
+        self.assertContains(response, "será exibida somente nesta página")
+        self.assertTrue(
+            LogAuditoria.objects.filter(
+                acao="RENOVACAO_CHAVE_TERMINAL_PDV",
+                objeto_id=str(terminal.pk),
+            ).exists()
+        )
+
+    def test_gerente_nao_renova_chave_do_terminal(self):
+        gerente = get_user_model().objects.create_user("gerente-chave", "gerente-chave@example.com", "123")
+        PerfilUsuario.objects.create(usuario=gerente, filial=self.filial, tipo=TipoPerfil.GERENTE)
+        terminal = TerminalPdv(filial=self.filial, nome="Caixa sem rotação")
+        chave_atual = terminal.gerar_chave_api()
+        terminal.save()
+        self.client.force_login(gerente)
+
+        response = self.client.post(f"/configuracoes/terminais-pdv/{terminal.pk}/regenerar-chave/")
+
+        terminal.refresh_from_db()
+        self.assertEqual(response.status_code, 403)
+        self.assertTrue(terminal.validar_chave_api(chave_atual))
+        self.assertFalse(LogAuditoria.objects.filter(acao="RENOVACAO_CHAVE_TERMINAL_PDV", objeto_id=str(terminal.pk)).exists())
 
     def test_edita_configuracao_impressao(self):
         ConfiguracaoImpressao.objects.create(

@@ -202,23 +202,50 @@ class EmpresasViewsTests(TestCase):
 
         self.assertEqual(empresa_response.status_code, 200)
         self.assertContains(empresa_response, "Identificação")
-        self.assertContains(empresa_response, "Contato e visual")
-        self.assertContains(empresa_response, "Implantacao e conectividade")
+        self.assertContains(empresa_response, "Contato e identidade visual")
+        self.assertContains(empresa_response, "Implantação e conectividade")
         self.assertContains(empresa_response, "Política de conflito")
         self.assertContains(empresa_response, "Nuvem prevalece para produtos e estoque")
         self.assertContains(empresa_response, "modo local não publica o sistema na internet")
-        self.assertContains(empresa_response, "Consulta CNPJ/CEP preparada")
+        self.assertContains(empresa_response, "Consulta de CEP")
         self.assertContains(empresa_response, "Consultar CNPJ")
         self.assertContains(empresa_response, "data-cadastro-lookup-url")
         self.assertContains(empresa_response, "data-lookup-target")
         self.assertEqual(filial_response.status_code, 200)
         self.assertContains(filial_response, "Loja")
-        self.assertContains(filial_response, "Dados fiscais da filial")
+        self.assertContains(filial_response, "Endereço e dados fiscais")
         self.assertContains(filial_response, "Necessário para preencher o XML da NFC-e")
         self.assertContains(filial_response, "select2-field")
         self.assertContains(filial_response, "data-cadastro-lookup-feedback")
-        self.assertContains(filial_response, "Ver ponto de integração")
-        self.assertContains(filial_response, "Diagnóstico JSON")
+        self.assertContains(filial_response, "Consultar CEP")
+        self.assertContains(filial_response, "data-lookup-kind")
+
+    def test_endereco_estruturado_compoe_texto_sem_apagar_endereco_legado(self):
+        empresa = Empresa.objects.create(
+            razao_social="Endereço Estruturado Ltda",
+            nome_fantasia="Endereço Estruturado",
+            cnpj="55.555.555/0001-55",
+            cep="74000-000",
+            logradouro="Avenida Goiás",
+            numero="100",
+            complemento="Sala 2",
+            bairro="Centro",
+            municipio="Goiânia",
+            uf="GO",
+        )
+        self.assertEqual(
+            empresa.endereco,
+            "Avenida Goiás, 100 - Sala 2 - Centro - Goiânia/GO - CEP 74000-000",
+        )
+
+        filial = Filial.objects.create(
+            empresa=empresa,
+            nome="Loja legado",
+            endereco="Rua já cadastrada, 50 - CEP 01001-000",
+            municipio="São Paulo",
+            uf="SP",
+        )
+        self.assertEqual(filial.endereco, "Rua já cadastrada, 50 - CEP 01001-000")
 
     def test_modo_local_desativa_e_remove_sincronizacao_externa(self):
         form = EmpresaForm(
