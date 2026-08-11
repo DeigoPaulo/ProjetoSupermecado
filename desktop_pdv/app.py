@@ -1338,16 +1338,27 @@ def executar(reconfigurar: bool = False) -> None:
     except (RuntimeError, json.JSONDecodeError):
         config = None
 
-    if config is None or reconfigurar:
+    if config is None:
         config = ativar_terminal(config)
 
+    reconfiguracao_pendente = reconfigurar
     while True:
-        with instancia_unica_terminal(config["terminal_id"]):
-            solicitar_nova_credencial = _executar_interface_pdv(config)
-        if not solicitar_nova_credencial:
+        terminal_reservado = config["terminal_id"]
+        with instancia_unica_terminal(terminal_reservado):
+            if reconfiguracao_pendente:
+                config = ativar_terminal(config)
+                reconfiguracao_pendente = False
+                if config["terminal_id"] != terminal_reservado:
+                    continue
+            try:
+                solicitar_nova_credencial = _executar_interface_pdv(config)
+            except TerminalRecusado:
+                config = ativar_terminal(config)
+                continue
+            if solicitar_nova_credencial:
+                config = ativar_terminal(config)
+                continue
             return
-        config = ativar_terminal(config)
-
 
 def _executar_interface_pdv(config: dict) -> bool:
     bootstrap = obter_bootstrap_operacional(config)

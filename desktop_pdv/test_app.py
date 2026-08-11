@@ -223,6 +223,29 @@ class AppDesktopTests(unittest.TestCase):
         self.assertNotIn("url", kwargs)
         self.assertIsInstance(kwargs["js_api"], app.PonteLocal)
         webview.start.assert_called_once_with(private_mode=False)
+
+    def test_executar_reabre_ativacao_quando_credencial_do_terminal_e_recusada(self):
+        config_invalida = {
+            "servidor_base_url": "http://servidor-antigo.local",
+            "terminal_id": "terminal-antigo",
+            "terminal_chave": "chave-invalida",
+        }
+        config_nova = {
+            "servidor_base_url": "http://servidor-novo.local",
+            "terminal_id": "terminal-novo",
+            "terminal_chave": "chave-valida",
+        }
+        with patch("app.carregar_configuracao", return_value=config_invalida):
+            with patch(
+                "app._executar_interface_pdv",
+                side_effect=[app.TerminalRecusado("credencial invalida"), False],
+            ) as executar_interface:
+                with patch("app.ativar_terminal", return_value=config_nova) as ativar:
+                    app.executar()
+
+        ativar.assert_called_once_with(config_invalida)
+        self.assertEqual(executar_interface.call_args_list[1].args[0], config_nova)
+
     def test_bootstrap_offline_nao_esconde_terminal_recusado(self):
         payload = {
             "status": "ok",
