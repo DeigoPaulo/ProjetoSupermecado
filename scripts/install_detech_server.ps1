@@ -13,6 +13,7 @@ param(
     [ValidateRange(1, 65535)]
     [int]$Port = 8000,
     [string]$LocalServerVersion = "",
+    [string]$PdvDesktopVersion = "",
     [ValidateSet("PostgreSQL", "SQLite")]
     [string]$DatabaseEngine = "PostgreSQL",
     [string]$PostgresHost = "127.0.0.1",
@@ -197,6 +198,10 @@ Set-EnvValue "ALLOWED_HOSTS" "127.0.0.1,localhost,$ServerIp"
 Set-EnvValue "CSRF_TRUSTED_ORIGINS" "http://$ServerIp`:$Port"
 if ($LocalServerVersion.Trim()) {
     Set-EnvValue "LOCAL_SERVER_VERSION" $LocalServerVersion.Trim()
+}
+if ($PdvDesktopVersion.Trim()) {
+    Set-EnvValue "PDV_DESKTOP_VERSION" $PdvDesktopVersion.Trim()
+    Set-EnvValue "PDV_DESKTOP_MIN_VERSION" $PdvDesktopVersion.Trim()
 }
 if ($AllowUnsignedDesktopApps) {
     Set-EnvValue "PDV_DESKTOP_REQUIRE_SIGNED_INSTALLER" "false"

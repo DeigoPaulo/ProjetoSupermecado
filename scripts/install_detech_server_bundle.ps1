@@ -173,6 +173,9 @@ $artifactsDirectory = Join-Path $InstallDirectory "artifacts"
 New-Item -ItemType Directory -Path $artifactsDirectory -Force | Out-Null
 Copy-Item -LiteralPath $pdvDesktop -Destination (Join-Path $artifactsDirectory "DeTecPDV.exe") -Force
 Copy-Item -LiteralPath $pdvDesktopManifest -Destination (Join-Path $artifactsDirectory "DeTecPDV.exe.version.json") -Force
+$pdvMetadata = Get-Content -LiteralPath $pdvDesktopManifest -Raw -Encoding UTF8 | ConvertFrom-Json
+$pdvVersion = ([string]$pdvMetadata.version).Trim()
+if ($pdvVersion -notmatch '^\d+\.\d+\.\d+(?:[-+][0-9A-Za-z.-]+)?$') { throw "Manifesto do DeTec PDV sem versao valida." }
 Copy-Item -LiteralPath $adminDesktop -Destination (Join-Path $artifactsDirectory "DeTecAdmin.exe") -Force
 Copy-Item -LiteralPath $adminDesktopManifest -Destination (Join-Path $artifactsDirectory "DeTecAdmin.exe.version.json") -Force
 $childInstaller = Join-Path $InstallDirectory "scripts\install_detech_server.ps1"
@@ -185,6 +188,7 @@ $params = @{
     PythonPath = $python
     Port = $Port
     LocalServerVersion = [string]$manifest.versao
+    PdvDesktopVersion = $pdvVersion
     DatabaseEngine = "PostgreSQL"
     PostgresDatabase = $PostgresDatabase
     PostgresUser = $PostgresUser
