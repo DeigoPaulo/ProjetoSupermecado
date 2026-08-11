@@ -84,12 +84,20 @@ Ethernet ou Wi-Fi que possui gateway. Nao use enderecos de adaptadores Loopback,
 VPN, TEF ou fiscais. O instalador sugere o endereco roteado, mas o tecnico deve
 conferi-lo com `ipconfig` antes do aceite.
 
-No PowerShell aberto como administrador, ajuste o nome do adaptador e a porta da
-instalacao quando necessario:
+No PowerShell aberto como administrador, use o comando abaixo. Ele escolhe o
+adaptador ativo que possui gateway e exibe o IPv4 privado encontrado:
 
 ```powershell
-$interface = "Ethernet"
 $porta = 8001
+$configRede = Get-NetIPConfiguration |
+  Where-Object { $_.NetAdapter.Status -eq "Up" -and $_.IPv4DefaultGateway -and $_.IPv4Address } |
+  Select-Object -First 1
+
+$interface = $configRede.InterfaceAlias
+$ipServidor = $configRede.IPv4Address.IPAddress
+
+Write-Host "Interface: $interface"
+Write-Host "IP do servidor: $ipServidor"
 
 Set-NetConnectionProfile -InterfaceAlias $interface -NetworkCategory Private
 
@@ -106,14 +114,21 @@ New-NetFirewallRule `
 
 Restart-Service DeigoVarejoServidorLocal
 Get-Service DeigoVarejoServidorLocal
+Invoke-WebRequest "http://${ipServidor}:$porta/login/" -UseBasicParsing
 ```
 
-Teste no servidor e em outro computador da mesma rede:
+No outro computador da mesma rede, copie o numero exibido em `IP do servidor`.
+O exemplo abaixo usa `192.168.2.65`; substitua-o quando a loja utilizar outro IP:
 
 ```powershell
-Invoke-WebRequest http://IP_DO_SERVIDOR:8001/login/ -UseBasicParsing
-Test-NetConnection IP_DO_SERVIDOR -Port 8001
+$ipServidor = "192.168.2.65"
+Test-NetConnection $ipServidor -Port 8001
 ```
+
+Se `TcpTestSucceeded` for `True`, abra no navegador:
+`http://192.168.2.65:8001/login/`, substituindo pelo IP real da instalacao.
+Nunca execute literalmente `Test-NetConnection IP_DO_SERVIDOR`, pois esse texto
+era apenas um marcador e nao e um nome de computador valido.
 
 Os clientes devem estar na mesma rede interna e fora de uma rede de convidados
 com isolamento entre dispositivos. Reserve o IP no roteador ou configure IP fixo.
@@ -138,7 +153,7 @@ erp.exemplo.com.br {
 Depois de validar dominio, DNS e certificado, configure o `.env`:
 
 ```dotenv
-ALLOWED_HOSTS=127.0.0.1,localhost,IP_DO_SERVIDOR,erp.exemplo.com.br
+ALLOWED_HOSTS=127.0.0.1,localhost,192.168.2.65,erp.exemplo.com.br  # substitua pelo IPv4 privado real
 CSRF_TRUSTED_ORIGINS=https://erp.exemplo.com.br
 USE_X_FORWARDED_PROTO=True
 SESSION_COOKIE_SECURE=True
@@ -188,7 +203,7 @@ Criar o `.env` de producao a partir do modelo do pacote. Exemplo minimo:
 DJANGO_ENV=production
 DEBUG=false
 SECRET_KEY=GERAR_UMA_CHAVE_EXCLUSIVA
-ALLOWED_HOSTS=127.0.0.1,localhost,IP_DO_SERVIDOR,NOME_DNS
+ALLOWED_HOSTS=127.0.0.1,localhost,192.168.2.65,NOME_DNS  # substitua pelo IPv4 privado real
 CSRF_TRUSTED_ORIGINS=https://NOME_DNS
 
 POSTGRES_DB=deigo_varejo

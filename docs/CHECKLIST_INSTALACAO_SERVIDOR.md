@@ -60,8 +60,8 @@ DEBUG=false
 SECRET_KEY=uma-chave-longa-e-exclusiva
 # Gere uma vez no servidor: python -c "import secrets; print(secrets.token_urlsafe(48))"
 FISCAL_CERTIFICATE_KEY=uma-chave-fiscal-longa-e-exclusiva
-ALLOWED_HOSTS=127.0.0.1,localhost,IP_DO_SERVIDOR,NOME_INTERNO
-CSRF_TRUSTED_ORIGINS=http://IP_DO_SERVIDOR
+ALLOWED_HOSTS=127.0.0.1,localhost,192.168.2.65,NOME_INTERNO  # troque 192.168.2.65 pelo IPv4 privado exibido no servidor
+CSRF_TRUSTED_ORIGINS=http://192.168.2.65:8001  # troque pelo IPv4 e porta reais
 POSTGRES_DB=supermercado
 POSTGRES_USER=deigo_erp
 POSTGRES_PASSWORD=senha-exclusiva-do-banco
@@ -108,7 +108,7 @@ Abra PowerShell como administrador e execute:
 .\scripts\test_local_server_service.ps1
 ```
 
-- [ ] Confirmar que `http://IP_DO_SERVIDOR:8000/login/` abre em outro computador da rede.
+- [ ] Copiar o IPv4 privado exibido no servidor e confirmar que `http://192.168.2.65:8001/login/` abre em outro computador, substituindo o IP do exemplo pelo IP real.
 - [ ] Configurar e testar backup: `./scripts/backup_local.ps1 -ValidarSomente`.
 - [ ] Registrar o agendamento de backup: `./scripts/register_backup_task.ps1 -Horario 02:30 -RetencaoDias 15`.
 - [ ] Homologar a maquina limpa e registrar a evidencia na Central do Servidor Local.
