@@ -58,6 +58,22 @@ class AcessoPdvNuvemTests(TestCase):
         self.assertContains(resposta, "DeTec PDV")
         self.assertContains(resposta, "img/brand/deigo-tecnologia.png")
         self.assertContains(resposta, self.filial.empresa.nome_fantasia)
+    def test_abertura_de_caixa_pelo_pdv_retorna_ao_pdv_com_modal(self):
+        self.client.force_login(self.operador)
+        tela = self.client.get("/pdv/")
+        self.assertEqual(tela.status_code, 200)
+        self.assertContains(tela, 'id="pdv-modal-open-cash"')
+        self.assertContains(tela, 'data-pdv-modal-open="open-cash"')
+        self.assertContains(tela, "Ctrl+Enter")
+
+        resposta = self.client.post(
+            "/pdv/caixas/abrir/",
+            {"filial": self.filial.pk, "valor_inicial": "150.00", "next": "pdv"},
+        )
+
+        self.assertRedirects(resposta, "/pdv/", fetch_redirect_response=False)
+        caixa = Caixa.objects.get(usuario_abertura=self.operador)
+        self.assertEqual(caixa.valor_inicial, Decimal("150.00"))
     def test_supervisor_ve_menu_no_pdv(self):
         self.client.force_login(self.admin)
 

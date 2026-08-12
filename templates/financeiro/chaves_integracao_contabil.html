@@ -1,0 +1,72 @@
+{% extends "base.html" %}
+
+{% block title %}Integração contábil | Deigo Varejo{% endblock %}
+
+{% block content %}
+<div class="page-heading">
+  <div>
+    <h1>Integração contábil</h1>
+    <p>Chaves seguras para o escritório contábil consultar o pacote mensal pela API.</p>
+  </div>
+</div>
+
+{% if token_gerado %}
+  <section class="panel mb-3">
+    <div class="panel-body">
+      <strong>Copie a chave agora.</strong>
+      <p class="muted">Ela não será mostrada novamente. Guarde-a no cofre de senhas do escritório.</p>
+      <code style="display:block;overflow-wrap:anywhere;padding:.8rem">{{ token_gerado }}</code>
+    </div>
+  </section>
+{% endif %}
+
+<section class="panel mb-3">
+  <div class="panel-header"><h2>Nova chave</h2></div>
+  <div class="panel-body">
+    <form method="post" class="form-grid">
+      {% csrf_token %}
+      <input type="hidden" name="acao" value="criar">
+      <label>Empresa
+        <select name="empresa" required>
+          <option value="">Selecione</option>
+          {% for empresa in empresas %}<option value="{{ empresa.pk }}">{{ empresa.nome_fantasia }}</option>{% endfor %}
+        </select>
+      </label>
+      <label>Identificação da chave
+        <input name="nome" maxlength="120" placeholder="Ex.: Escritório Contábil 2026" required>
+      </label>
+      <div><button class="btn-primary" type="submit"><i class="fa-solid fa-key"></i> Gerar chave</button></div>
+    </form>
+  </div>
+</section>
+
+<section class="panel">
+  <div class="panel-header"><h2>Chaves cadastradas</h2></div>
+  <div class="table-responsive">
+    <table>
+      <thead><tr><th>Empresa</th><th>Identificação</th><th>Status</th><th>Último uso</th><th></th></tr></thead>
+      <tbody>
+        {% for chave in chaves %}
+          <tr>
+            <td>{{ chave.empresa.nome_fantasia }}</td>
+            <td>{{ chave.nome }}</td>
+            <td>{% if chave.vigente %}<span class="status-badge active">Ativa</span>{% else %}<span class="status-badge inactive">Revogada/expirada</span>{% endif %}</td>
+            <td>{{ chave.ultima_utilizacao_em|date:"d/m/Y H:i"|default:"Nunca" }}</td>
+            <td>{% if chave.ativa %}<form method="post">{% csrf_token %}<input type="hidden" name="acao" value="revogar"><input type="hidden" name="chave" value="{{ chave.pk }}"><button class="btn-danger btn-sm" type="submit">Revogar</button></form>{% endif %}</td>
+          </tr>
+        {% empty %}
+          <tr><td colspan="5" class="empty-state">Nenhuma chave cadastrada.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</section>
+
+<section class="panel mt-3">
+  <div class="panel-header"><h2>Contrato da API</h2></div>
+  <div class="panel-body">
+    <p><code>GET /api/contabilidade/v1/pacote-mensal/?competencia=AAAA-MM</code></p>
+    <p>Envie a chave no cabeçalho <code>X-Contabilidade-Key</code>. Em produção, utilize exclusivamente HTTPS.</p>
+  </div>
+</section>
+{% endblock %}

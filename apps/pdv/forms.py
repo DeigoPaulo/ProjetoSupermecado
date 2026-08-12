@@ -44,6 +44,14 @@ class AbrirCaixaForm(forms.ModelForm):
             else:
                 filiais = filiais.filter(id=perfil.filial_id)
         self.fields["filial"].queryset = filiais
+        self.fields["valor_inicial"].widget.attrs.update(
+            {
+                "step": "0.01",
+                "min": "0",
+                "inputmode": "decimal",
+                "data-pdv-modal-autofocus": "true",
+            }
+        )
 
 
 class FinalizarVendaForm(forms.Form):

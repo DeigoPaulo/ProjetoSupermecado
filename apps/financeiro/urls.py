@@ -5,6 +5,9 @@ from . import views
 app_name = "financeiro"
 
 urlpatterns = [
+    path("contabilidade/chaves/", views.chaves_integracao_contabil, name="chaves_integracao_contabil"),
+    path("contabilidade/", views.portal_contabilidade, name="portal_contabilidade"),
+    path("contabilidade/pacote-mensal.zip", views.pacote_contabil_mensal_zip, name="pacote_contabil_mensal_zip"),
     path("", views.contas, name="contas"),
     path("exportar.csv", views.contas_csv, name="contas_csv"),
     path("imprimir/", views.contas_imprimir, name="contas_imprimir"),

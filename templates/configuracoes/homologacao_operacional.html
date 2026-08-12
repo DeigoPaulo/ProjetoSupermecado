@@ -1,0 +1,84 @@
+{% extends "base.html" %}
+{% block title %}Homologação operacional{% endblock %}
+{% block content %}
+<div class="page-header">
+  <div>
+    <h1>Homologação operacional</h1>
+    <p>Roteiro por filial para validar a operação antes do uso real.</p>
+  </div>
+</div>
+
+<div class="panel">
+  <div class="panel-header"><h2>Filial e progresso</h2></div>
+  <div class="panel-body">
+    <form method="get" class="form-inline">
+      <label for="filial">Filial</label>
+      <select id="filial" name="filial" onchange="this.form.submit()">
+        {% for item in filiais %}
+          <option value="{{ item.pk }}" {% if item.pk == filial_selecionada.pk %}selected{% endif %}>{{ item.empresa.nome_fantasia }} - {{ item.nome }}</option>
+        {% endfor %}
+      </select>
+      <button class="btn btn-outline" type="submit"><i class="fa-solid fa-filter"></i> Atualizar</button>
+    </form>
+    <div class="alert alert-info" style="margin-top: 1rem;">
+      <i class="fa-solid fa-circle-info"></i>
+      Use uma base demonstrativa apenas em ambiente de teste. Para criar os dados de demonstração, execute o comando <code>popular_demo --redefinir-senhas</code> no servidor de desenvolvimento.
+    </div>
+    <div class="metric-grid" style="margin-top: 1rem;">
+      <div class="metric-card"><span>Filial</span><strong>{{ filial_selecionada.nome }}</strong></div>
+      <div class="metric-card"><span>Progresso</span><strong>{{ homologacao.percentual }}%</strong></div>
+      <div class="metric-card"><span>Atualizado por</span><strong>{{ homologacao.responsavel.get_full_name|default:homologacao.responsavel.username }}</strong></div>
+    </div>
+  </div>
+</div>
+
+<form method="post" class="panel" style="margin-top: 1rem;">
+  {% csrf_token %}
+  <input type="hidden" name="filial" value="{{ filial_selecionada.pk }}">
+  <div class="panel-header"><h2>Roteiro de validação</h2></div>
+  <div class="panel-body">
+    <div class="table-responsive">
+      <table>
+        <thead><tr><th>Concluída</th><th>Etapa</th><th>Como validar</th></tr></thead>
+        <tbody>
+          {% for codigo, titulo, descricao in etapas %}
+            <tr>
+              <td><input id="etapa-{{ codigo }}" type="checkbox" name="etapas" value="{{ codigo }}" {% if codigo in etapas_concluidas %}checked{% endif %}></td>
+              <td><label for="etapa-{{ codigo }}"><strong>{{ titulo }}</strong></label></td>
+              <td>{{ descricao }}</td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    <div class="form-group" style="margin-top: 1rem;">
+      <label for="observacoes">Observações da homologação</label>
+      <textarea id="observacoes" name="observacoes" rows="4" placeholder="Registre pendências, evidências ou condições da liberação.">{{ homologacao.observacoes }}</textarea>
+    </div>
+    <div class="form-actions"><button class="btn btn-primary" type="submit"><i class="fa-solid fa-floppy-disk"></i> Salvar roteiro</button></div>
+  </div>
+</form>
+
+<div class="panel" style="margin-top: 1rem;">
+  <div class="panel-header"><h2>Histórico de homologações</h2></div>
+  <div class="table-responsive">
+    <table>
+      <thead><tr><th>Atualizado em</th><th>Empresa</th><th>Filial</th><th>Progresso</th><th>Responsável</th></tr></thead>
+      <tbody>
+        {% for item in historico_pagina %}
+          <tr><td>{{ item.atualizada_em|date:"d/m/Y H:i" }}</td><td>{{ item.empresa.nome_fantasia }}</td><td>{{ item.filial.nome }}</td><td>{{ item.percentual }}%</td><td>{{ item.responsavel.get_full_name|default:item.responsavel.username }}</td></tr>
+        {% empty %}
+          <tr><td colspan="5" class="empty-state">Nenhuma homologação registrada.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% if historico_pagina.paginator.num_pages > 1 %}
+    <div class="pagination">
+      {% if historico_pagina.has_previous %}<a class="btn btn-outline" href="?filial={{ filial_selecionada.pk }}&pagina={{ historico_pagina.previous_page_number }}">Anterior</a>{% endif %}
+      <span>Página {{ historico_pagina.number }} de {{ historico_pagina.paginator.num_pages }}</span>
+      {% if historico_pagina.has_next %}<a class="btn btn-outline" href="?filial={{ filial_selecionada.pk }}&pagina={{ historico_pagina.next_page_number }}">Próxima</a>{% endif %}
+    </div>
+  {% endif %}
+</div>
+{% endblock %}

@@ -64,6 +64,8 @@ def _escopo_relatorio_contexto(request):
 @login_required
 def dashboard(request):
     if not has_role(request.user, RELATORIOS):
+        if has_role(request.user, {TipoPerfil.CONTABILIDADE}):
+            return redirect("financeiro:portal_contabilidade")
         if has_role(request.user, PDV):
             return redirect("pdv:pdv")
         if has_role(request.user, ESTOQUE):

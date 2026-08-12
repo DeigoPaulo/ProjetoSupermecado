@@ -11,6 +11,7 @@ urlpatterns = [
     path("super-admin/diagnostico.csv", views.super_admin_diagnostico_csv, name="super_admin_diagnostico_csv"),
     path("super-admin/modelos/<str:app_label>/<str:model_name>/", views.super_admin_modelo, name="super_admin_modelo"),
     path("checklist/", views.checklist_projeto, name="checklist"),
+    path("homologacao-operacional/", views.homologacao_operacional, name="homologacao_operacional"),
     path("checklist/exportar.csv", views.checklist_projeto_csv, name="checklist_csv"),
     path("backup/", views.backup_operacional, name="backup"),
     path("backup/download/", views.backup_download, name="backup_download"),

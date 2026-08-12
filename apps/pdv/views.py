@@ -876,6 +876,10 @@ def pdv(request):
     )
     caixa_aberto = caixas_escopo.filter(status=StatusCaixa.ABERTO, usuario_abertura=request.user).first()
     filial_visual = caixa_aberto.filial if caixa_aberto else (_filial_do_usuario(request.user) or filiais_escopo.first())
+    abrir_caixa_form = AbrirCaixaForm(
+        user=request.user,
+        initial={"filial": filial_visual.pk} if filial_visual else None,
+    )
     caixas_recentes = caixas_escopo.order_by("-data_abertura")[:8]
     caixas_aguardando_conferencia = caixas_escopo.filter(status=StatusCaixa.FECHADO).order_by("-data_fechamento")[:5]
     vendas_recentes = vendas_escopo.filter(status="FINALIZADA").order_by("-data")[:8]
@@ -912,6 +916,7 @@ def pdv(request):
             "total": total,
             "terminal_requisicao": terminal_requisicao,
             "caixa_aberto": caixa_aberto,
+            "abrir_caixa_form": abrir_caixa_form,
             "filial_visual": filial_visual,
             "formas_pagamento": formas_pagamento_disponiveis(caixa_aberto.filial) if caixa_aberto else FormaPagamento.objects.none(),
             "pre_venda_origem": pre_venda_origem,
@@ -1748,11 +1753,22 @@ class AbrirCaixaView(LoginRequiredMixin, RoleRequiredMixin, CreateView):
         kwargs["user"] = self.request.user
         return kwargs
 
+    def get_success_url(self):
+        if self.request.POST.get("next") == "pdv":
+            return reverse("pdv:pdv")
+        return super().get_success_url()
+
+    def form_invalid(self, form):
+        if self.request.POST.get("next") == "pdv":
+            erros = "; ".join(" ".join(mensagens) for mensagens in form.errors.values())
+            messages.error(self.request, erros or "Confira os dados da abertura de caixa.")
+            return redirect("pdv:pdv")
+        return super().form_invalid(form)
+
     def form_valid(self, form):
         form.instance.usuario_abertura = self.request.user
         messages.success(self.request, "Caixa aberto com sucesso.")
         response = super().form_valid(form)
         _agendar_abertura_gaveta(self.request, self.object, f"abertura_caixa_{self.object.id}", "abertura")
         return response
-
 # Create your views here.

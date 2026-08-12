@@ -1,10 +1,14 @@
 import csv
 import hashlib
 import json
+from datetime import date
+from io import BytesIO, StringIO
+from zipfile import ZIP_DEFLATED, ZipFile
 from collections import OrderedDict
 from datetime import timedelta
 from decimal import Decimal
 
+from django.conf import settings
 from django.contrib import messages
 from django.contrib.auth.decorators import login_required
 from django.core.exceptions import PermissionDenied, ValidationError
@@ -16,9 +20,10 @@ from django.shortcuts import get_object_or_404, redirect, render
 from django.utils import timezone
 from django.utils.dateparse import parse_date
 from django.utils.http import url_has_allowed_host_and_scheme
+from django.views.decorators.http import require_GET
 
 from apps.accounts.models import PerfilUsuario, TipoPerfil
-from apps.accounts.permissions import RELATORIOS, SISTEMA, has_role, role_required
+from apps.accounts.permissions import ADMINISTRACAO, CONTABILIDADE, RELATORIOS, SISTEMA, has_role, role_required
 from apps.auditoria.models import LogAuditoria
 from apps.empresas.models import Empresa, Filial
 from apps.fiscal.models import DocumentoFiscal, StatusDocumentoFiscal
@@ -26,7 +31,7 @@ from apps.vendas.models import PagamentoVenda, StatusVenda
 
 from .forms import BaixaContaForm, CategoriaFinanceiraForm, CentroCustoForm, ContaContabilForm, ContaFinanceiraForm, ContaMovimentoFinanceiroForm, TransferenciaFinanceiraForm
 from .adapters import carregar_adaptador_contabil, diagnosticar_adaptador_contabil, normalizar_retorno_exportacao
-from .models import CategoriaFinanceira, CentroCusto, ContaContabil, ConciliacaoLancamentoFinanceiro, ContaFinanceira, ContaMovimentoFinanceiro, ExportacaoContabil, LancamentoFinanceiro, StatusContaFinanceira, StatusExportacaoContabil, TipoContaFinanceira, TipoLancamentoFinanceiro, TransferenciaFinanceira
+from .models import CategoriaFinanceira, CentroCusto, ContaContabil, ConciliacaoLancamentoFinanceiro, ContaFinanceira, ContaMovimentoFinanceiro, ChaveIntegracaoContabil, ExportacaoContabil, LancamentoFinanceiro, StatusContaFinanceira, StatusExportacaoContabil, TipoContaFinanceira, TipoLancamentoFinanceiro, TransferenciaFinanceira
 from .services import baixar_conta, cancelar_conta, conciliar_lancamento, estornar_lancamento, realizar_transferencia
 
 
@@ -47,7 +52,7 @@ def _escopo_filiais_financeiro(request):
         ).first()
         if not perfil:
             raise PermissionDenied("Usuário sem filial financeira vinculada.")
-        if perfil.tipo == TipoPerfil.ADMINISTRADOR:
+        if perfil.tipo in {TipoPerfil.ADMINISTRADOR, TipoPerfil.CONTABILIDADE}:
             filiais = filiais.filter(empresa_id=perfil.filial.empresa_id)
             permite_consolidado = True
             empresa_id = perfil.filial.empresa_id
@@ -979,15 +984,263 @@ def _payload_pacote_contabil(data_inicio, data_fim, filiais, filial_id, empresa_
     }
 
 
+def _periodo_competencia(request):
+    competencia = (request.GET.get("competencia") or "").strip()
+    if not competencia:
+        hoje = timezone.localdate()
+        competencia = hoje.strftime("%Y-%m")
+    try:
+        ano, mes = (int(parte) for parte in competencia.split("-", 1))
+        data_inicio = date(ano, mes, 1)
+    except (TypeError, ValueError):
+        raise ValidationError("Competência inválida. Informe no formato AAAA-MM.")
+    if mes == 12:
+        data_fim = date(ano + 1, 1, 1) - timedelta(days=1)
+    else:
+        data_fim = date(ano, mes + 1, 1) - timedelta(days=1)
+    return competencia, data_inicio, data_fim
+
+
+def _documentos_fiscais_periodo(filiais, data_inicio, data_fim):
+    return DocumentoFiscal.objects.select_related("filial").filter(
+        filial__in=filiais,
+        criado_em__date__gte=data_inicio,
+        criado_em__date__lte=data_fim,
+    ).order_by("filial__nome", "tipo_documento", "serie", "numero", "pk")
+
+
+def _csv_text(cabecalho, linhas):
+    buffer = StringIO(newline="")
+    escritor = csv.writer(buffer, delimiter=";")
+    escritor.writerow(cabecalho)
+    escritor.writerows(linhas)
+    return buffer.getvalue()
+
+
+def _csv_excel_bytes(cabecalho, linhas):
+    """Gera CSV que o Excel do Windows abre com codificação UTF-8 correta."""
+    return _csv_text(cabecalho, linhas).encode("utf-8-sig")
+
+
+def _pacote_contabil_zip(competencia, data_inicio, data_fim, filiais, filial_id, empresa_id):
+    resultado = _resultado_financeiro_periodo(data_inicio, data_fim, filial_id, empresa_id)
+    payload = _payload_pacote_contabil(data_inicio, data_fim, filiais, filial_id, empresa_id, resultado)
+    documentos = _documentos_fiscais_periodo(filiais, data_inicio, data_fim)
+    lancamentos = LancamentoFinanceiro.objects.select_related("conta", "conta__filial", "conta_contabil", "centro_custo").filter(
+        conta__filial__in=filiais,
+        data__gte=data_inicio,
+        data__lte=data_fim,
+    ).order_by("data", "pk")
+    empresa = filiais.first().empresa if filiais.exists() else None
+    arquivo = BytesIO()
+    with ZipFile(arquivo, "w", ZIP_DEFLATED) as zip_file:
+        zip_file.writestr(
+            "LEIA-ME.txt",
+            "Pacote contábil gerencial do Deigo Varejo.\n"
+            "Este material apoia a conferência da contabilidade e não substitui SPED, ECD, ECF ou obrigações oficiais.\n"
+            f"Competência: {competencia}.\n"
+            "Os XMLs incluídos são documentos fiscais já gerados no ERP.\n",
+        )
+        zip_file.writestr(
+            "manifesto.json",
+            json.dumps(
+                {
+                    "contrato": "accounting_monthly_package_v1",
+                    "competencia": competencia,
+                    "empresa": payload["empresa"],
+                    "filial": payload["filial"],
+                    "arquivos": ["financeiro/pacote-gerencial.json", "financeiro/lancamentos.csv", "fiscal/documentos.csv", "fiscal/xml/"],
+                    "observacao": "Arquivo gerencial. Valide regras fiscais e obrigações com o contador responsável.",
+                },
+                cls=DjangoJSONEncoder,
+                ensure_ascii=False,
+                indent=2,
+            ),
+        )
+        zip_file.writestr("financeiro/pacote-gerencial.json", json.dumps(payload, cls=DjangoJSONEncoder, ensure_ascii=False, indent=2))
+        zip_file.writestr(
+            "financeiro/lancamentos.csv",
+            _csv_excel_bytes(
+                ["Data", "Filial", "Tipo", "Origem", "Descrição", "Valor", "Conta contábil", "Centro de custo"],
+                [
+                    [
+                        lancamento.data.isoformat(),
+                        lancamento.conta.filial.nome,
+                        lancamento.get_tipo_display(),
+                        lancamento.origem,
+                        lancamento.descricao,
+                        f"{lancamento.valor:.2f}".replace(".", ","),
+                        str(lancamento.conta_contabil or ""),
+                        str(lancamento.centro_custo or ""),
+                    ]
+                    for lancamento in lancamentos
+                ],
+            ),
+        )
+        zip_file.writestr(
+            "fiscal/documentos.csv",
+            _csv_excel_bytes(
+                ["Filial", "Tipo", "Série", "Número", "Chave de acesso", "Status", "Valor total", "Protocolo", "XML incluído"],
+                [
+                    [
+                        documento.filial.nome,
+                        documento.get_tipo_documento_display(),
+                        documento.serie,
+                        documento.numero or "",
+                        documento.chave_acesso,
+                        documento.get_status_display(),
+                        f"{documento.valor_total:.2f}".replace(".", ","),
+                        documento.protocolo,
+                        "Sim" if documento.xml_conteudo else "Não",
+                    ]
+                    for documento in documentos
+                ],
+            ),
+        )
+        for documento in documentos.exclude(xml_conteudo=""):
+            nome = f"{documento.tipo_documento}-{documento.serie}-{documento.numero or documento.pk}.xml"
+            zip_file.writestr(f"fiscal/xml/{nome}", documento.xml_conteudo)
+    return arquivo.getvalue(), resultado, documentos.count(), documentos.exclude(xml_conteudo="").count()
+
 @login_required
 @role_required(*RELATORIOS)
 def resultado_pacote_contabil_json(request):
     data_inicio, data_fim = _periodo_from_request(request)
-    filiais, filial_id, _, empresa_id = _escopo_filiais_financeiro(request)
+    filiais, filial_id, _permite_consolidado, empresa_id = _escopo_filiais_financeiro(request)
     resultado = _resultado_financeiro_periodo(data_inicio, data_fim, filial_id, empresa_id)
     return JsonResponse(_payload_pacote_contabil(data_inicio, data_fim, filiais, filial_id, empresa_id, resultado))
 
 
+@login_required
+@role_required(*CONTABILIDADE)
+def portal_contabilidade(request):
+    competencia, data_inicio, data_fim = _periodo_competencia(request)
+    filiais, filial_id, permite_consolidado, empresa_id = _escopo_filiais_financeiro(request)
+    resultado = _resultado_financeiro_periodo(data_inicio, data_fim, filial_id, empresa_id)
+    documentos = _documentos_fiscais_periodo(filiais, data_inicio, data_fim)
+    documentos_total = documentos.count()
+    xml_total = documentos.exclude(xml_conteudo="").count()
+    return render(
+        request,
+        "financeiro/portal_contabilidade.html",
+        {
+            "competencia": competencia,
+            "filiais": filiais,
+            "filial_id": filial_id,
+            "permite_consolidado": permite_consolidado,
+            "resultado": resultado,
+            "documentos_total": documentos_total,
+            "xml_total": xml_total,
+            "pendencias_xml": documentos_total - xml_total,
+        },
+    )
+
+
+@login_required
+@role_required(*CONTABILIDADE)
+def pacote_contabil_mensal_zip(request):
+    competencia, data_inicio, data_fim = _periodo_competencia(request)
+    filiais, filial_id, _permite_consolidado, empresa_id = _escopo_filiais_financeiro(request)
+    arquivo, _resultado, _documentos_total, _xml_total = _pacote_contabil_zip(
+        competencia, data_inicio, data_fim, filiais, filial_id, empresa_id
+    )
+    LogAuditoria.objects.create(
+        usuario=request.user,
+        modulo="financeiro",
+        acao="DOWNLOAD_PACOTE_CONTABIL",
+        descricao=f"Pacote mensal {competencia} baixado.",
+        objeto_tipo="Empresa",
+        objeto_id=str(empresa_id or ""),
+        ip=request.META.get("REMOTE_ADDR") or None,
+    )
+    resposta = HttpResponse(arquivo, content_type="application/zip")
+    resposta["Content-Disposition"] = f'attachment; filename="pacote-contabil-{competencia}.zip"'
+    return resposta
+
+
+@login_required
+@role_required(*ADMINISTRACAO)
+def chaves_integracao_contabil(request):
+    filiais, _filial_id, _permite_consolidado, empresa_id = _escopo_filiais_financeiro(request)
+    empresas = Empresa.objects.filter(filiais__in=filiais).distinct().order_by("nome_fantasia")
+    token_gerado = ""
+    if request.method == "POST":
+        acao = (request.POST.get("acao") or "").strip()
+        if acao == "criar":
+            empresa = get_object_or_404(empresas, pk=request.POST.get("empresa"))
+            nome = (request.POST.get("nome") or "").strip()
+            if not nome:
+                messages.error(request, "Informe a identificação da chave.")
+            elif ChaveIntegracaoContabil.objects.filter(empresa=empresa, nome=nome).exists():
+                messages.error(request, "Já existe uma chave com esta identificação para a empresa.")
+            else:
+                token_gerado = ChaveIntegracaoContabil.gerar_token()
+                chave = ChaveIntegracaoContabil(empresa=empresa, nome=nome, criada_por=request.user)
+                chave.definir_token(token_gerado)
+                chave.save()
+                LogAuditoria.objects.create(
+                    usuario=request.user,
+                    modulo="financeiro",
+                    acao="CRIAR_CHAVE_CONTABIL",
+                    descricao=f"Chave de integração criada para {empresa.nome_fantasia}.",
+                    objeto_tipo="ChaveIntegracaoContabil",
+                    objeto_id=str(chave.pk),
+                    ip=request.META.get("REMOTE_ADDR") or None,
+                )
+                messages.success(request, "Chave de integração criada. Copie o token exibido agora.")
+        elif acao == "revogar":
+            chave = get_object_or_404(ChaveIntegracaoContabil, pk=request.POST.get("chave"), empresa__in=empresas)
+            chave.revogar()
+            LogAuditoria.objects.create(
+                usuario=request.user,
+                modulo="financeiro",
+                acao="REVOGAR_CHAVE_CONTABIL",
+                descricao=f"Chave de integração revogada: {chave.nome}.",
+                objeto_tipo="ChaveIntegracaoContabil",
+                objeto_id=str(chave.pk),
+                ip=request.META.get("REMOTE_ADDR") or None,
+            )
+            messages.success(request, "Chave de integração revogada.")
+            return redirect("financeiro:chaves_integracao_contabil")
+    chaves = ChaveIntegracaoContabil.objects.filter(empresa__in=empresas).select_related("empresa")
+    return render(request, "financeiro/chaves_integracao_contabil.html", {"empresas": empresas, "chaves": chaves, "token_gerado": token_gerado})
+
+
+@require_GET
+def api_pacote_contabil_mensal(request):
+    token = (request.headers.get("X-Contabilidade-Key") or "").strip()
+    if not token:
+        return JsonResponse({"detail": "Informe a chave X-Contabilidade-Key."}, status=401)
+    chave = ChaveIntegracaoContabil.objects.select_related("empresa").filter(
+        token_hash=ChaveIntegracaoContabil.calcular_hash(token)
+    ).first()
+    if not chave or not chave.vigente:
+        return JsonResponse({"detail": "Chave de integração inválida, expirada ou revogada."}, status=401)
+    if not settings.DEBUG and not request.is_secure():
+        return JsonResponse({"detail": "A API contábil exige HTTPS em produção."}, status=400)
+    try:
+        competencia, data_inicio, data_fim = _periodo_competencia(request)
+    except ValidationError as erro:
+        return JsonResponse({"detail": str(erro)}, status=400)
+    filiais = Filial.objects.select_related("empresa").filter(empresa=chave.empresa, is_active=True).order_by("nome")
+    filial_parametro = (request.GET.get("filial") or "").strip()
+    filial_id = None
+    if filial_parametro:
+        if not filial_parametro.isdigit() or not filiais.filter(pk=filial_parametro).exists():
+            return JsonResponse({"detail": "Filial fora do escopo da chave."}, status=403)
+        filial_id = int(filial_parametro)
+    resultado = _resultado_financeiro_periodo(data_inicio, data_fim, filial_id, chave.empresa_id)
+    pacote = _payload_pacote_contabil(data_inicio, data_fim, filiais, filial_id, chave.empresa_id, resultado)
+    ChaveIntegracaoContabil.objects.filter(pk=chave.pk).update(ultima_utilizacao_em=timezone.now())
+    LogAuditoria.objects.create(
+        modulo="financeiro",
+        acao="API_PACOTE_CONTABIL",
+        descricao=f"Pacote mensal {competencia} consultado pela API.",
+        objeto_tipo="ChaveIntegracaoContabil",
+        objeto_id=str(chave.pk),
+        ip=request.META.get("REMOTE_ADDR") or None,
+    )
+    return JsonResponse({"contrato": "accounting_monthly_api_v1", "competencia": competencia, "pacote": pacote}, encoder=DjangoJSONEncoder)
 @login_required
 @role_required(*RELATORIOS)
 def diagnostico_contabil_json(request):

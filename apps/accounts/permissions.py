@@ -17,6 +17,7 @@ CLIENTES = PDV | CADASTROS
 ESTOQUE = SUPERVISAO | {TipoPerfil.ESTOQUISTA, TipoPerfil.COMPRAS}
 COMPRAS = SUPERVISAO | {TipoPerfil.COMPRAS}
 RELATORIOS = SUPERVISAO | {TipoPerfil.FINANCEIRO}
+CONTABILIDADE = ADMINISTRACAO | {TipoPerfil.FINANCEIRO, TipoPerfil.CONTABILIDADE}
 SISTEMA = SUPERVISAO
 
 
@@ -122,6 +123,7 @@ def access_flags(user):
         "estoque": has_role(user, ESTOQUE),
         "compras": has_role(user, COMPRAS),
         "relatorios": has_role(user, RELATORIOS),
+        "contabilidade": has_role(user, CONTABILIDADE),
         "sistema": has_role(user, SISTEMA),
     }
 

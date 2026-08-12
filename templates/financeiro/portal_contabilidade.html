@@ -1,0 +1,53 @@
+{% extends "base.html" %}
+
+{% block title %}Portal contábil | Deigo Varejo{% endblock %}
+
+{% block content %}
+<div class="page-heading">
+  <div>
+    <h1>Portal contábil</h1>
+    <p>Conferência mensal, documentos fiscais e pacote gerencial da empresa vinculada.</p>
+  </div>
+</div>
+
+<section class="panel mb-3">
+  <form method="get" class="filter-bar">
+    <label>
+      Competência
+      <input type="month" name="competencia" value="{{ competencia }}">
+    </label>
+    {% if permite_consolidado %}
+      <label>
+        Filial
+        <select name="filial">
+          <option value="">Todas as filiais da empresa</option>
+          {% for filial in filiais %}
+            <option value="{{ filial.pk }}" {% if filial_id == filial.pk %}selected{% endif %}>{{ filial.nome }}</option>
+          {% endfor %}
+        </select>
+      </label>
+    {% endif %}
+    <button type="submit" class="btn-secondary"><i class="fa-solid fa-filter"></i> Atualizar</button>
+    <a class="btn-primary" href="{% url 'financeiro:pacote_contabil_mensal_zip' %}?competencia={{ competencia }}{% if filial_id %}&filial={{ filial_id }}{% endif %}">
+      <i class="fa-solid fa-file-zipper"></i> Baixar pacote mensal
+    </a>
+  </form>
+</section>
+
+<section class="metric-grid mb-3">
+  <article class="metric-card"><span>Receitas:</span><strong>R$ {{ resultado.receitas|floatformat:2 }}</strong></article>
+  <article class="metric-card"><span>Despesas:</span><strong>R$ {{ resultado.despesas|floatformat:2 }}</strong></article>
+  <article class="metric-card"><span>Resultado:</span><strong>R$ {{ resultado.resultado|floatformat:2 }}</strong></article>
+  <article class="metric-card"><span>Documentos fiscais:</span><strong>{{ documentos_total }}</strong></article>
+  <article class="metric-card"><span>XMLs no pacote:</span><strong>{{ xml_total }}</strong></article>
+  <article class="metric-card"><span>Documentos sem XML:</span><strong>{{ pendencias_xml }}</strong></article>
+</section>
+
+<section class="panel">
+  <div class="panel-header"><h2>Conteúdo do pacote</h2></div>
+  <div class="panel-body">
+    <p>O arquivo ZIP contém resumo financeiro, lançamentos, relação de documentos fiscais e os XMLs já registrados no ERP.</p>
+    <p class="muted">Este material é gerencial para conferência. SPED, ECD, ECF e demais obrigações oficiais dependem de validação do contador responsável e de homologação específica.</p>
+  </div>
+</section>
+{% endblock %}

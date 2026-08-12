@@ -129,3 +129,30 @@ class HomologacaoServidorLocal(models.Model):
         return f"{self.maquina} - {self.get_resultado_display()} - {self.versao_artefato}"
 
 # Create your models here.
+
+
+class HomologacaoOperacional(models.Model):
+    empresa = models.ForeignKey("empresas.Empresa", on_delete=models.PROTECT, related_name="homologacoes_operacionais")
+    filial = models.ForeignKey("empresas.Filial", on_delete=models.PROTECT, related_name="homologacoes_operacionais")
+    nome = models.CharField(max_length=120, default="Roteiro de homologação operacional")
+    etapas_concluidas = models.JSONField(default=list, blank=True)
+    observacoes = models.TextField(blank=True)
+    responsavel = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.PROTECT, related_name="homologacoes_operacionais")
+    criada_em = models.DateTimeField(auto_now_add=True)
+    atualizada_em = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ["-atualizada_em", "-pk"]
+        constraints = [
+            models.UniqueConstraint(fields=["filial", "nome"], name="config_homologacao_operacional_filial_nome"),
+        ]
+
+    @property
+    def percentual(self):
+        from .homologacao_operacional import ROTEIRO_HOMOLOGACAO_OPERACIONAL
+
+        total = len(ROTEIRO_HOMOLOGACAO_OPERACIONAL)
+        return round((len(set(self.etapas_concluidas or [])) / total) * 100) if total else 0
+
+    def __str__(self):
+        return f"{self.filial} - {self.nome}"

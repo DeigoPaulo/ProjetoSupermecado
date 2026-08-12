@@ -14,6 +14,7 @@ class TipoPerfil(models.TextChoices):
     ESTOQUISTA = "ESTOQUISTA", "Estoquista"
     COMPRAS = "COMPRAS", "Compras"
     FINANCEIRO = "FINANCEIRO", "Financeiro"
+    CONTABILIDADE = "CONTABILIDADE", "Contabilidade"
 
 
 class PerfilUsuario(models.Model):

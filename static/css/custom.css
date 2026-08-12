@@ -2223,6 +2223,47 @@ input[type="checkbox"] {
   box-shadow: 0 24px 80px rgba(0, 32, 96, 0.24);
 }
 
+.pdv-open-cash-dialog {
+  width: min(560px, 100%);
+}
+
+.pdv-open-cash-form {
+  display: grid;
+  grid-template-rows: minmax(0, 1fr) auto;
+}
+
+.pdv-open-cash-fields {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px;
+  padding: 18px 16px;
+}
+
+@media (max-width: 620px) {
+  .pdv-open-cash-fields {
+    grid-template-columns: 1fr;
+  }
+}
+.pdv-boxes-dialog {
+  width: min(1080px, calc(100vw - 44px)) !important;
+  grid-template-rows: auto minmax(0, 1fr) auto !important;
+}
+
+.pdv-boxes-content {
+  min-height: 0;
+  overflow-y: auto;
+  padding: 14px 16px;
+}
+
+.pdv-boxes-content .pdv-cash-panel {
+  margin-bottom: 0;
+}
+
+@media (max-width: 720px) {
+  .pdv-boxes-dialog {
+    width: min(100%, calc(100vw - 20px));
+  }
+}
 .pdv-delivery-dialog {
   width: min(1040px, calc(100vw - 44px));
   max-height: calc(100vh - 36px);
@@ -4678,4 +4719,31 @@ button:disabled,
 @media (max-width: 900px) {
   .terminal-key-fields { grid-template-columns: 1fr; }
   .terminal-pdv-table-wrap { max-height: calc(100vh - 300px); }
+}
+
+.metric-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 12px;
+}
+
+.metric-card {
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  min-height: 104px;
+  padding: 16px;
+  border: 1px solid #d5e0f1;
+  border-radius: 6px;
+  background: #ffffff;
+}
+
+.metric-card span {
+  color: #536b91;
+  font-size: 0.9rem;
+}
+
+.metric-card strong {
+  color: #082c6c;
+  font-size: 1.35rem;
 }

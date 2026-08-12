@@ -17,7 +17,7 @@ from apps.financeiro.models import ContaMovimentoFinanceiro, TipoContaMovimento
 from apps.pdv.models import Caixa, CanalAtualizacaoPdv, EventoDispositivoTerminal, ModoIntegracaoTef, ProtocoloBalanca, ProvedorTef, StatusLicencaTerminal, TerminalPdv
 from apps.vendas.models import FormaPagamento, FormaPagamentoFilial, PagamentoVenda, StatusPagamento, Venda
 
-from .models import ConfiguracaoImpressao, ModeloEtiqueta, ModeloPapel, TipoDocumentoImpressao
+from .models import ConfiguracaoImpressao, HomologacaoOperacional, ModeloEtiqueta, ModeloPapel, TipoDocumentoImpressao
 from .services import configuracao_impressao_para, criar_configuracoes_padrao, estilos_impressao
 from .templatetags.formatadores import quantidade_br
 from .views import CHECKLIST_GRUPOS, DOCUMENTOS_PROJETO, _classificar_dependencia_roadmap, _classificar_etapa_roadmap
@@ -152,6 +152,20 @@ class ConfiguracoesOperacionaisTests(TestCase):
         )
         self.filial = Filial.objects.create(empresa=self.empresa, nome="Matriz", cnpj=self.empresa.cnpj)
 
+
+    def test_homologacao_operacional_persiste_por_filial_e_pagina_historico(self):
+        resposta = self.client.post(
+            "/configuracoes/homologacao-operacional/",
+            {"filial": self.filial.pk, "etapas": ["cadastro", "pdv"], "observacoes": "Teste de aceitação."},
+            follow=True,
+        )
+
+        self.assertEqual(resposta.status_code, 200)
+        homologacao = HomologacaoOperacional.objects.get(filial=self.filial)
+        self.assertEqual(homologacao.etapas_concluidas, ["cadastro", "pdv"])
+        self.assertEqual(homologacao.observacoes, "Teste de aceitação.")
+        self.assertEqual(resposta.context["historico_pagina"].paginator.per_page, 50)
+        self.assertTrue(LogAuditoria.objects.filter(acao="ATUALIZAR_HOMOLOGACAO_OPERACIONAL").exists())
     def test_cria_configuracoes_padrao_e_resolve_por_filial(self):
         criadas = criar_configuracoes_padrao()
 
@@ -2035,6 +2049,18 @@ class EscopoConfiguracoesOperacionaisTests(TestCase):
         self.assertEqual(impressoras["impressoras_cadastradas"], ["Impressora Alfa"])
         self.assertEqual([item["empresa_id"] for item in desktop["configuracoes"]], [self.empresa.pk])
 
+    def test_admin_homologa_somente_filiais_da_propria_empresa(self):
+        resposta = self.client.get("/configuracoes/homologacao-operacional/")
+        self.assertEqual(resposta.status_code, 200)
+        self.assertContains(resposta, "Matriz Alfa")
+        self.assertNotContains(resposta, "Matriz Beta")
+
+        resposta_outra_empresa = self.client.post(
+            "/configuracoes/homologacao-operacional/",
+            {"filial": self.outra_filial.pk, "etapas": ["cadastro"]},
+        )
+        self.assertEqual(resposta_outra_empresa.status_code, 404)
+        self.assertFalse(HomologacaoOperacional.objects.filter(filial=self.outra_filial).exists())
     def test_admin_nao_acessa_nem_referencia_objetos_de_outra_empresa(self):
         urls_protegidas = [
             f"/configuracoes/terminais-pdv/{self.outro_terminal.pk}/editar/",

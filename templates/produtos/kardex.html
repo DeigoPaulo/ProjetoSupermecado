@@ -15,17 +15,17 @@
 </header>
 
 <section class="metrics-grid">
-  <article class="metric"><span>Saldo fisico</span><strong>{{ saldo_total|quantidade_br }}</strong></article>
+  <article class="metric"><span>Saldo físico</span><strong>{{ saldo_total|quantidade_br }}</strong></article>
   <article class="metric"><span>Reservado</span><strong>{{ reservado_total|quantidade_br }}</strong></article>
   <article class="metric"><span>Entradas/Ajustes</span><strong>{{ entradas|quantidade_br }}</strong></article>
-  <article class="metric"><span>Saidas/Perdas</span><strong>{{ saidas|quantidade_br }}</strong></article>
+  <article class="metric"><span>Saídas/Perdas</span><strong>{{ saidas|quantidade_br }}</strong></article>
 </section>
 
 <section class="two-column">
   <div class="panel">
     <div class="panel-title">Movimentações recentes</div>
     <table>
-      <thead><tr><th>Data</th><th>Tipo</th><th>Filial</th><th>Qtd</th><th>Referencia</th><th>Usuário</th></tr></thead>
+      <thead><tr><th>Data</th><th>Tipo</th><th>Filial</th><th>Qtd.</th><th>Referência</th><th>Usuário</th></tr></thead>
       <tbody>
         {% for mov in movimentacoes %}
           <tr>

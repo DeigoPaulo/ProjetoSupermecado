@@ -12,6 +12,8 @@ Class-based views
     2. Add a URL to urlpatterns:  path('', Home.as_view(), name='home')
 Including another URLconf
     1. Import the include() function: from django.urls import include, path
+
+from apps.financeiro import views as financeiro_views
     2. Add a URL to urlpatterns:  path('blog/', include('blog.urls'))
 """
 from django.contrib import admin
@@ -19,6 +21,8 @@ from django.contrib.auth import views as auth_views
 from django.conf import settings
 from django.conf.urls.static import static
 from django.urls import include, path
+
+from apps.financeiro import views as financeiro_views
 
 urlpatterns = [
     path('', include('apps.relatorios.urls')),
@@ -31,6 +35,7 @@ urlpatterns = [
     path('promocoes/', include('apps.promocoes.urls')),
     path('pdv/', include('apps.pdv.urls')),
     path('financeiro/', include('apps.financeiro.urls')),
+    path('api/contabilidade/v1/pacote-mensal/', financeiro_views.api_pacote_contabil_mensal, name='api_pacote_contabil_mensal'),
     path('fiscal/', include('apps.fiscal.urls')),
     path('pedidos-online/', include('apps.marketplace.urls')),
     path('empresas/', include('apps.empresas.urls')),

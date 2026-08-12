@@ -56,7 +56,7 @@ class Command(BaseCommand):
 
         for chave, valor in resumo.items():
             self.stdout.write(f"- {chave}: {valor}")
-        self.stdout.write("Usuários demo: demo.admin, demo.supervisor, demo.caixa e demo.estoque")
+        self.stdout.write("Usuários demo: demo.admin, demo.supervisor, demo.caixa, demo.estoque e demo.contador")
         self.stdout.write("Senha inicial dos novos usuários: Demo@2026")
         self.stdout.write("Use apenas para demonstração e testes; não utilize esses usuários em produção.")
 
@@ -153,6 +153,7 @@ class Command(BaseCommand):
             "supervisor": ("demo.supervisor", "Supervisor", TipoPerfil.GERENTE),
             "caixa": ("demo.caixa", "Operador", TipoPerfil.OPERADOR_CAIXA),
             "estoque": ("demo.estoque", "Estoquista", TipoPerfil.ESTOQUISTA),
+            "contador": ("demo.contador", "Contador", TipoPerfil.CONTABILIDADE),
         }
         usuarios = {}
         for chave, (username, first_name, perfil) in definicoes.items():

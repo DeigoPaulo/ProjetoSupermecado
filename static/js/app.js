@@ -1578,6 +1578,8 @@ document.addEventListener("DOMContentLoaded", function () {
         input.focus();
       } else {
         aplicarPaginacaoModal(modal);
+        var focusTarget = modal.querySelector("[data-pdv-modal-autofocus]") || modal.querySelector("input:not([type='hidden']), select, textarea, button");
+        if (focusTarget) focusTarget.focus();
       }
       selecionarPrimeiraLinhaVisivelModal(modal, false);
     }
@@ -1839,7 +1841,9 @@ document.addEventListener("DOMContentLoaded", function () {
       });
     }
     document.querySelectorAll("[data-pdv-modal-open]").forEach(function (button) {
-      button.addEventListener("click", function () {
+      button.addEventListener("click", function (event) {
+        event.preventDefault();
+        event.stopPropagation();
         abrirModalPdv(button.getAttribute("data-pdv-modal-open"));
       });
     });
@@ -2208,13 +2212,22 @@ document.addEventListener("DOMContentLoaded", function () {
         var actionButton = deliveryAction && activeModal.querySelector('[data-delivery-action="' + deliveryAction + '"]');
         if (actionButton) { event.preventDefault(); actionButton.click(); return; }
       }
+      if (activeModal && activeModal.id === "pdv-modal-open-cash") {
+        var openCashForm = activeModal.querySelector(".pdv-open-cash-form");
+        if (event.ctrlKey && key === "Enter" && openCashForm) {
+          event.preventDefault();
+          if (openCashForm.requestSubmit) openCashForm.requestSubmit();
+          else openCashForm.submit();
+        }
+        return;
+      }
       if (activeModal && activeModal.id === "pdv-modal-boxes") {
         var focoEmCaixaForm = document.activeElement && document.activeElement.closest && document.activeElement.closest(".pdv-cash-close-form, .pdv-cash-movement-form");
         if (key === "F2") {
           event.preventDefault();
           var openCashLink = activeModal.querySelector("#pdv-open-cash-link");
           var suprimentoForm = activeModal.querySelector("[data-cash-movement-form='suprimento']");
-          if (openCashLink) window.location.href = openCashLink.href;
+          if (openCashLink) abrirModalPdv("open-cash");
           else if (suprimentoForm) {
             var suprimentoValor = suprimentoForm.querySelector("input[name='valor']");
             if (suprimentoValor) suprimentoValor.focus();

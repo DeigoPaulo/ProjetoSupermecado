@@ -1,3 +1,6 @@
+import hashlib
+import secrets
+
 from django.conf import settings
 from django.core.exceptions import ValidationError
 from django.db import models
@@ -337,3 +340,41 @@ class ExportacaoContabil(models.Model):
 
     def __str__(self):
         return f"Exportação contábil #{self.pk} - {self.get_status_display()}"
+class ChaveIntegracaoContabil(models.Model):
+    empresa = models.ForeignKey("empresas.Empresa", on_delete=models.PROTECT, related_name="chaves_integracao_contabil")
+    nome = models.CharField(max_length=120)
+    token_hash = models.CharField(max_length=64, unique=True, editable=False)
+    ativa = models.BooleanField(default=True)
+    valida_ate = models.DateTimeField(null=True, blank=True)
+    criada_por = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.PROTECT, related_name="chaves_integracao_contabil_criadas")
+    criada_em = models.DateTimeField(auto_now_add=True)
+    atualizada_em = models.DateTimeField(auto_now=True)
+    ultima_utilizacao_em = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        ordering = ["empresa__nome_fantasia", "nome"]
+        constraints = [
+            models.UniqueConstraint(fields=["empresa", "nome"], name="financeiro_chave_contabil_empresa_nome"),
+        ]
+
+    @staticmethod
+    def calcular_hash(token):
+        return hashlib.sha256(str(token or "").encode("utf-8")).hexdigest()
+
+    @classmethod
+    def gerar_token(cls):
+        return f"dvc_{secrets.token_urlsafe(32)}"
+
+    def definir_token(self, token):
+        self.token_hash = self.calcular_hash(token)
+
+    @property
+    def vigente(self):
+        return self.ativa and (self.valida_ate is None or self.valida_ate > timezone.now())
+
+    def revogar(self):
+        self.ativa = False
+        self.save(update_fields=["ativa", "atualizada_em"])
+
+    def __str__(self):
+        return f"{self.empresa} - {self.nome}"

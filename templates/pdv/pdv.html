@@ -51,7 +51,7 @@
         </form>
       {% endif %}
       {% if not caixa_aberto %}
-        <a class="primary-button" href="{% url 'pdv:abrir_caixa' %}"><i class="fa-solid fa-lock-open"></i> Abrir caixa</a>
+        <button class="primary-button" type="button" data-pdv-modal-open="open-cash"><i class="fa-solid fa-lock-open"></i> Abrir caixa</button>
       {% endif %}
     </div>
   </header>
@@ -614,9 +614,30 @@
       </div>
     </div>
   </div>
+  <div class="pdv-modal" id="pdv-modal-open-cash" aria-hidden="true">
+    <div class="pdv-modal-dialog pdv-open-cash-dialog" role="dialog" aria-modal="true" aria-labelledby="pdv-open-cash-title">
+      <header class="pdv-modal-header">
+        <strong id="pdv-open-cash-title">Abrir caixa</strong>
+        <button type="button" data-pdv-modal-close aria-label="Fechar"><i class="fa-solid fa-xmark"></i></button>
+      </header>
+      <form method="post" action="{% url 'pdv:abrir_caixa' %}" class="pdv-open-cash-form">
+        {% csrf_token %}
+        <input type="hidden" name="next" value="pdv">
+        <div class="pdv-open-cash-fields">
+          <label class="form-field"><span>Filial</span>{{ abrir_caixa_form.filial }}</label>
+          <label class="form-field"><span>Valor inicial</span><div class="money-input"><span>R$</span>{{ abrir_caixa_form.valor_inicial }}</div></label>
+        </div>
+        <div class="pdv-modal-footer">
+          <button class="secondary-button" type="button" data-pdv-modal-close>Cancelar <kbd>Esc</kbd></button>
+          <button class="primary-button" type="submit"><i class="fa-solid fa-lock-open"></i> Abrir caixa <kbd>Ctrl+Enter</kbd></button>
+        </div>
+      </form>
+    </div>
+  </div>
   <div class="pdv-modal" id="pdv-modal-boxes" aria-hidden="true">
-    <div class="pdv-modal-dialog">
+    <div class="pdv-modal-dialog pdv-boxes-dialog">
       <header class="pdv-modal-header"><strong>Caixas</strong><button type="button" data-pdv-modal-close aria-label="Fechar"><i class="fa-solid fa-xmark"></i></button></header>
+      <div class="pdv-boxes-content">
       {% if caixa_aberto %}
         <section class="pdv-cash-panel">
           <div>
@@ -660,7 +681,7 @@
             <strong>Nenhum caixa aberto</strong>
             <span>Abra um caixa antes de iniciar vendas no PDV.</span>
           </div>
-          <a class="primary-button" id="pdv-open-cash-link" href="{% url 'pdv:abrir_caixa' %}"><i class="fa-solid fa-lock-open"></i> Abrir caixa <kbd>F2</kbd></a>
+          <button class="primary-button" id="pdv-open-cash-link" type="button" data-pdv-modal-open="open-cash"><i class="fa-solid fa-lock-open"></i> Abrir caixa <kbd>F2</kbd></button>
         </section>
       {% endif %}
 
@@ -686,6 +707,7 @@
         {% empty %}
           <div class="pdv-modal-empty">Nenhum caixa registrado.</div>
         {% endfor %}
+      </div>
       </div>
       <div class="pdv-modal-footer"><a class="secondary-button" id="pdv-manage-cash-link" href="{% url 'pdv:caixas' %}">Gerenciar caixas <kbd>Enter</kbd></a></div>
     </div>

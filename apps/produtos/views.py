@@ -555,6 +555,7 @@ def etiquetas(request):
 def kardex(request, pk):
     produto = get_object_or_404(Produto.all_objects.select_related("categoria", "marca"), pk=pk)
     movimentacoes = MovimentacaoEstoque.objects.filter(produto=produto).select_related("filial", "usuario").order_by("-data")
+    pagina = Paginator(movimentacoes, 25).get_page(request.GET.get("page"))
     estoques = Estoque.objects.filter(produto=produto).select_related("filial").order_by("filial__nome")
     entradas = movimentacoes.filter(tipo__in=[TipoMovimentacaoEstoque.ENTRADA, TipoMovimentacaoEstoque.DEVOLUCAO, TipoMovimentacaoEstoque.AJUSTE]).aggregate(total=Sum("quantidade"))["total"] or 0
     saidas = movimentacoes.filter(tipo__in=[TipoMovimentacaoEstoque.SAIDA, TipoMovimentacaoEstoque.VENDA, TipoMovimentacaoEstoque.PERDA]).aggregate(total=Sum("quantidade"))["total"] or 0

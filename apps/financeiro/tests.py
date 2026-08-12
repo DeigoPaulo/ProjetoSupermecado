@@ -1,4 +1,6 @@
 from decimal import Decimal
+from io import BytesIO
+from zipfile import ZipFile
 
 from django.contrib.auth import get_user_model
 from django.core.exceptions import ValidationError
@@ -13,7 +15,7 @@ from apps.pdv.models import Caixa
 from apps.vendas.models import FormaPagamento, PagamentoVenda, StatusVenda, Venda
 
 from .forms import CategoriaFinanceiraForm, ContaContabilForm, ContaFinanceiraForm
-from .models import CategoriaFinanceira, CentroCusto, ContaContabil, ConciliacaoLancamentoFinanceiro, ContaFinanceira, ContaMovimentoFinanceiro, ExportacaoContabil, LancamentoFinanceiro, StatusContaFinanceira, StatusExportacaoContabil, TipoContaContabil, TipoContaFinanceira, TipoContaMovimento, TipoLancamentoFinanceiro, TransferenciaFinanceira
+from .models import CategoriaFinanceira, CentroCusto, ContaContabil, ConciliacaoLancamentoFinanceiro, ChaveIntegracaoContabil, ContaFinanceira, ContaMovimentoFinanceiro, ExportacaoContabil, LancamentoFinanceiro, StatusContaFinanceira, StatusExportacaoContabil, TipoContaContabil, TipoContaFinanceira, TipoContaMovimento, TipoLancamentoFinanceiro, TransferenciaFinanceira
 from .services import baixar_conta, cancelar_conta, conciliar_lancamento, estornar_lancamento, realizar_transferencia
 
 
@@ -1146,3 +1148,100 @@ class FinanceiroTests(TestCase):
         self.assertFalse(diagnostico.json()["envio_permitido"])
         self.assertEqual(envio.status_code, 403)
         self.assertFalse(ExportacaoContabil.objects.exists())
+    def test_portal_contabilidade_isola_empresa_e_gera_pacote_mensal(self):
+        contador = get_user_model().objects.create_user("contador", password="123")
+        PerfilUsuario.objects.create(usuario=contador, filial=self.filial, tipo=TipoPerfil.CONTABILIDADE)
+        caixa = ContaMovimentoFinanceiro.objects.create(
+            filial=self.filial,
+            nome="Caixa contábil",
+            tipo=TipoContaMovimento.CAIXA,
+        )
+        LancamentoFinanceiro.objects.create(
+            conta=caixa,
+            tipo=TipoLancamentoFinanceiro.ENTRADA,
+            origem="VENDA",
+            descricao="Venda para conferência",
+            valor=Decimal("24.50"),
+            data=timezone.localdate(),
+            usuario=self.user,
+        )
+        DocumentoFiscal.objects.create(
+            filial=self.filial,
+            tipo_documento=TipoDocumentoFiscal.NFCE,
+            ambiente=AmbienteFiscal.HOMOLOGACAO,
+            numero=12,
+            status=StatusDocumentoFiscal.EMITIDO,
+            valor_total=Decimal("24.50"),
+            xml_conteudo="<NFe><infNFe Id='NFe12'/></NFe>",
+            usuario=self.user,
+        )
+        outra_empresa = Empresa.objects.create(
+            razao_social="Mercado Isolado LTDA",
+            nome_fantasia="Mercado Isolado",
+            cnpj="66.666.666/0001-66",
+        )
+        outra_filial = Filial.objects.create(empresa=outra_empresa, nome="Outra matriz", cnpj=outra_empresa.cnpj)
+        DocumentoFiscal.objects.create(
+            filial=outra_filial,
+            tipo_documento=TipoDocumentoFiscal.NFCE,
+            ambiente=AmbienteFiscal.HOMOLOGACAO,
+            numero=1,
+            status=StatusDocumentoFiscal.EMITIDO,
+            valor_total=Decimal("99.99"),
+            xml_conteudo="<NFe><infNFe Id='NFe99'/></NFe>",
+            usuario=self.user,
+        )
+
+        self.client.force_login(contador)
+        portal = self.client.get("/financeiro/contabilidade/")
+        relatorio_financeiro = self.client.get("/financeiro/resultado/")
+        pacote = self.client.get("/financeiro/contabilidade/pacote-mensal.zip")
+
+        self.assertEqual(portal.status_code, 200)
+        self.assertEqual(relatorio_financeiro.status_code, 403)
+        self.assertRedirects(self.client.get('/'), '/financeiro/contabilidade/', fetch_redirect_response=False)
+        self.assertContains(portal, "Portal contábil")
+        self.assertEqual(pacote.status_code, 200)
+        self.assertEqual(pacote["Content-Type"], "application/zip")
+        with ZipFile(BytesIO(pacote.content)) as arquivo:
+            self.assertIn("financeiro/lancamentos.csv", arquivo.namelist())
+            self.assertTrue(arquivo.read("financeiro/lancamentos.csv").startswith(bytes([0xEF, 0xBB, 0xBF])))
+            self.assertIn("fiscal/xml/NFCE-1-12.xml", arquivo.namelist())
+            self.assertNotIn("fiscal/xml/NFCE-1-1.xml", arquivo.namelist())
+        self.assertTrue(LogAuditoria.objects.filter(usuario=contador, acao="DOWNLOAD_PACOTE_CONTABIL").exists())
+
+    def test_operador_nao_acessa_portal_contabilidade(self):
+        operador = get_user_model().objects.create_user("operador-contabil", password="123")
+        PerfilUsuario.objects.create(usuario=operador, filial=self.filial, tipo=TipoPerfil.OPERADOR_CAIXA)
+        self.client.force_login(operador)
+
+        self.assertEqual(self.client.get("/financeiro/contabilidade/").status_code, 403)
+    @override_settings(DEBUG=True)
+    def test_api_contabil_exige_chave_e_isola_empresa(self):
+        token = ChaveIntegracaoContabil.gerar_token()
+        chave = ChaveIntegracaoContabil(empresa=self.empresa, nome="Escritorio Demo", criada_por=self.user)
+        chave.definir_token(token)
+        chave.save()
+        outra_empresa = Empresa.objects.create(
+            razao_social="Mercado API Isolado LTDA",
+            nome_fantasia="Mercado API Isolado",
+            cnpj="77.777.777/0001-77",
+        )
+        outra_filial = Filial.objects.create(empresa=outra_empresa, nome="Matriz API", cnpj=outra_empresa.cnpj)
+        cliente_api = Client(HTTP_HOST="localhost")
+
+        sem_chave = cliente_api.get("/api/contabilidade/v1/pacote-mensal/")
+        valido = cliente_api.get("/api/contabilidade/v1/pacote-mensal/", HTTP_X_CONTABILIDADE_KEY=token)
+        filial_estranha = cliente_api.get(
+            f"/api/contabilidade/v1/pacote-mensal/?filial={outra_filial.pk}",
+            HTTP_X_CONTABILIDADE_KEY=token,
+        )
+
+        self.assertEqual(sem_chave.status_code, 401)
+        self.assertEqual(valido.status_code, 200)
+        self.assertEqual(valido.json()["contrato"], "accounting_monthly_api_v1")
+        self.assertEqual(valido.json()["pacote"]["empresa"]["id"], self.empresa.pk)
+        self.assertEqual(filial_estranha.status_code, 403)
+        chave.refresh_from_db()
+        self.assertIsNotNone(chave.ultima_utilizacao_em)
+        self.assertTrue(LogAuditoria.objects.filter(acao="API_PACOTE_CONTABIL", objeto_id=str(chave.pk)).exists())
