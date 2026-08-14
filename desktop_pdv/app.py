@@ -1348,6 +1348,8 @@ def executar(reconfigurar: bool = False) -> None:
 
     if config is None:
         config = ativar_terminal(config)
+        if not config:
+            return
 
     reconfiguracao_pendente = reconfigurar
     while True:
@@ -1355,6 +1357,8 @@ def executar(reconfigurar: bool = False) -> None:
         with instancia_unica_terminal(terminal_reservado):
             if reconfiguracao_pendente:
                 config = ativar_terminal(config)
+                if not config:
+                    return
                 reconfiguracao_pendente = False
                 if config["terminal_id"] != terminal_reservado:
                     continue
@@ -1362,9 +1366,21 @@ def executar(reconfigurar: bool = False) -> None:
                 solicitar_nova_credencial = _executar_interface_pdv(config)
             except TerminalRecusado as erro:
                 config = ativar_terminal(config, motivo=str(erro))
+                if not config:
+                    return
+                continue
+            except RuntimeError as erro:
+                config = ativar_terminal(
+                    config,
+                    motivo=f"Nao foi possivel conectar ao servidor configurado: {erro}",
+                )
+                if not config:
+                    return
                 continue
             if solicitar_nova_credencial:
                 config = ativar_terminal(config)
+                if not config:
+                    return
                 continue
             return
 
