@@ -304,7 +304,7 @@ def build_document() -> Document:
     add_callout(
         doc,
         "Referência de produção",
-        "Edição 2.1 • Atualizado em 11/08/2026 • DeTec Server 0.1.13 • DeTec PDV 0.1.11",
+        "Edição 2.1 • Atualizado em 11/08/2026 • DeTec Server 0.1.15 • DeTec PDV 0.1.15",
         "info",
     )
     add_body(doc, "Público: técnico de implantação, suporte autorizado e administrador master.")

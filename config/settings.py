@@ -228,7 +228,7 @@ EMAIL_TIMEOUT = int(os.getenv("EMAIL_TIMEOUT", "10"))
 DEFAULT_FROM_EMAIL = os.getenv("DEFAULT_FROM_EMAIL", "nao-responda@supermercado.local")
 
 PDV_NUVEM_REQUER_APROVACAO = env_bool("PDV_NUVEM_REQUER_APROVACAO", False)
-PDV_DESKTOP_VERSION = os.getenv("PDV_DESKTOP_VERSION", "0.1.11")
+PDV_DESKTOP_VERSION = os.getenv("PDV_DESKTOP_VERSION", "0.1.15")
 PDV_DESKTOP_MIN_VERSION = os.getenv("PDV_DESKTOP_MIN_VERSION", PDV_DESKTOP_VERSION)
 PDV_DESKTOP_RELEASE_CHANNEL = os.getenv("PDV_DESKTOP_RELEASE_CHANNEL", "ESTAVEL").upper()
 # A simulacao TEF precisa ser uma escolha explicita ate em desenvolvimento.
@@ -324,5 +324,5 @@ LOGGING = {
     },
 }
 
-ADMIN_DESKTOP_VERSION = os.getenv('ADMIN_DESKTOP_VERSION', '0.1.0')
+ADMIN_DESKTOP_VERSION = os.getenv('ADMIN_DESKTOP_VERSION', '0.1.15')
 ADMIN_DESKTOP_INSTALLER_PATH = env_path('ADMIN_DESKTOP_INSTALLER_PATH', BASE_DIR / 'artifacts' / 'DeTecAdmin.exe')

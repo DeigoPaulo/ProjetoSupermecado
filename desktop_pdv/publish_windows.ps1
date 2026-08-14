@@ -1,5 +1,5 @@
 param(
-    [string]$Version = "0.1.11",
+    [string]$Version = "0.1.15",
     [string]$Source,
     [string]$Destination,
     [switch]$RequireSignature

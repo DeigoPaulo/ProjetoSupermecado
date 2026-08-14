@@ -1,6 +1,6 @@
 param(
     [ValidatePattern('^\d+\.\d+\.\d+$')]
-    [string]$Version = '0.1.11',
+    [string]$Version = '0.1.15',
     [string]$PythonVersion = '3.12'
 )
 
