@@ -17,6 +17,7 @@ urlpatterns = [
     ),
     path("configuracoes/nova/", views.configuracao_form, name="configuracao_nova"),
     path("configuracoes/<int:pk>/editar/", views.configuracao_form, name="configuracao_editar"),
+    path("configuracoes/<int:pk>/homologacao-goias/", views.homologacao_goias, name="homologacao_goias"),
     path("series/nova/", views.serie_form, name="serie_nova"),
     path("series/<int:pk>/editar/", views.serie_form, name="serie_editar"),
     path("naturezas/nova/", views.natureza_form, name="natureza_nova"),

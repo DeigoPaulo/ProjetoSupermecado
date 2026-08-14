@@ -30,6 +30,7 @@ from .models import (
     ConfiguracaoFiscal,
     DocumentoFiscal,
     InutilizacaoNumeracaoFiscal,
+    ModoTransicaoIbsCbs,
     NaturezaOperacao,
     SerieFiscal,
     StatusDocumentoFiscal,
@@ -205,9 +206,26 @@ CST_ICMS_NAO_TRIBUTADOS_SUPORTADOS = {"40", "41", "50"}
 CST_ICMS_SUPORTADOS = CST_ICMS_TRIBUTADOS_SUPORTADOS | CST_ICMS_NAO_TRIBUTADOS_SUPORTADOS
 
 
-def capacidade_tributaria_fiscal():
+def capacidade_tributaria_fiscal(configuracoes=None):
+    configuracoes = list(configuracoes or [])
+    preparacao_ibs_cbs = [
+        configuracao
+        for configuracao in configuracoes
+        if configuracao.modo_transicao_ibs_cbs != ModoTransicaoIbsCbs.LEGADO
+    ]
     return {
         "contrato": "fiscal_tax_capability_v1",
+        "ibs_cbs": {
+            "cadastro_produto_disponivel": True,
+            "campos": ["CST IBS/CBS", "cClassTrib"],
+            "filiais_em_preparacao": len(preparacao_ibs_cbs),
+            "emissao_xml_habilitada": False,
+            "modo_seguro": "legado ou preparação controlada",
+            "bloqueio": (
+                "O emissor continua usando ICMS, PIS e COFINS até que o grupo IBS/CBS do XML "
+                "seja implementado com schema oficial, adaptador e homologação da SEFAZ."
+            ),
+        },
         "regime_normal": {
             "cst_suportados": sorted(CST_ICMS_SUPORTADOS),
             "grupos_xml": {
@@ -278,7 +296,7 @@ CST_IPI_NAO_TRIBUTADO = {"01", "02", "03", "04", "05", "51", "52", "53", "54", "
 CST_IPI_TRIBUTADO = {"00", "49", "50", "99"}
 
 
-def filtro_pendencias_produto_fiscal(regimes_tributarios=None, ufs=None, crts=None):
+def filtro_pendencias_produto_fiscal(regimes_tributarios=None, ufs=None, crts=None, exigir_ibs_cbs=False):
     regimes = [regime.upper() for regime in (regimes_tributarios or []) if regime]
     crts_validos = {str(crt) for crt in (crts or []) if crt}
     if crts_validos:
@@ -327,6 +345,10 @@ def filtro_pendencias_produto_fiscal(regimes_tributarios=None, ufs=None, crts=No
             | Q(**{f"{campo_aliquota}__lte": 0})
         )
 
+    if exigir_ibs_cbs:
+        pendente |= ~Q(cst_ibs_cbs__regex=r"^\d{3}$")
+        pendente |= ~Q(classificacao_tributaria_ibs_cbs__regex=r"^\d{6}$")
+
     csts_ipi = CST_IPI_NAO_TRIBUTADO | CST_IPI_TRIBUTADO
     pendente |= ~Q(cst_ipi="") & ~Q(cst_ipi__in=sorted(csts_ipi))
     pendente |= Q(cst_ipi__in=sorted(CST_IPI_TRIBUTADO)) & (
@@ -342,6 +364,26 @@ def filtro_pendencias_produto_fiscal(regimes_tributarios=None, ufs=None, crts=No
             codigo_beneficio_fiscal__regex=r"^GO\d{6}$"
         )
     return pendente
+
+
+def _pendencias_ibs_cbs_produto(produto, exigido=False):
+    if not exigido:
+        return []
+    pendencias = []
+    if not re.fullmatch(r"\d{3}", produto.cst_ibs_cbs or ""):
+        pendencias.append("CST IBS/CBS com 3 dígitos")
+    if not re.fullmatch(r"\d{6}", produto.classificacao_tributaria_ibs_cbs or ""):
+        pendencias.append("cClassTrib IBS/CBS com 6 dígitos")
+    return pendencias
+
+
+def _pendencias_emissao_ibs_cbs(configuracao):
+    if configuracao.modo_transicao_ibs_cbs != ModoTransicaoIbsCbs.EMISSAO_HOMOLOGADA:
+        return []
+    return [
+        "Emissão XML IBS/CBS bloqueada: instale o schema oficial, implemente o grupo XML vigente "
+        "e homologue o adaptador SEFAZ antes de ativar esta modalidade."
+    ]
 
 
 def _pendencias_contribuicoes_produto(produto):
@@ -494,7 +536,7 @@ def _adicionar_totais_icms(inf_nfe, *, base_icms, valor_icms, valor_fcp, valor_i
     _texto(icmstot, "vOutro", _valor(outros))
     _texto(icmstot, "vNF", _valor(total_nota))
 
-def pendencias_produto_fiscal(produto, regimes_tributarios=None, ufs=None, crts=None):
+def pendencias_produto_fiscal(produto, regimes_tributarios=None, ufs=None, crts=None, exigir_ibs_cbs=False):
     pendencias = []
     regimes = [regime.upper() for regime in (regimes_tributarios or []) if regime]
     crts = {str(crt) for crt in (crts or []) if crt}
@@ -525,6 +567,7 @@ def pendencias_produto_fiscal(produto, regimes_tributarios=None, ufs=None, crts=
     if produto.aliquota_icms is None or produto.aliquota_icms < 0:
         pendencias.append("Aliquota ICMS")
     pendencias.extend(_pendencias_contribuicoes_produto(produto))
+    pendencias.extend(_pendencias_ibs_cbs_produto(produto, exigir_ibs_cbs))
     pendencias.extend(pendencias_produto_por_uf(produto, ufs))
     return pendencias
 
@@ -827,7 +870,7 @@ def salvar_xml_documento(documento):
 
 
 def pendencias_preparacao_fiscal(venda, configuracao, natureza):
-    erros = []
+    erros = _pendencias_emissao_ibs_cbs(configuracao)
     if not configuracao.inscricao_estadual.strip():
         erros.append("Informe a inscricao estadual da filial.")
     if not configuracao.regime_tributario.strip():
@@ -875,6 +918,10 @@ def pendencias_preparacao_fiscal(venda, configuracao, natureza):
         if produto.aliquota_icms is None or produto.aliquota_icms < 0:
             erros.append(f"{prefixo} informe a aliquota de ICMS, inclusive quando for zero.")
         erros.extend(f"{prefixo} {pendencia}." for pendencia in _pendencias_contribuicoes_produto(produto))
+        erros.extend(
+            f"{prefixo} {pendencia}."
+            for pendencia in _pendencias_ibs_cbs_produto(produto, configuracao.ibs_cbs_exigido_em())
+        )
         if produto.cst_ipi in CST_IPI_TRIBUTADO and (not natureza or not natureza.ipi_incluso_preco):
             erros.append(
                 f"{prefixo} confirme na natureza da operacao que o IPI tributado esta incluido no preco."
@@ -890,7 +937,7 @@ def validar_preparacao_fiscal(venda, configuracao, natureza):
 
 
 def pendencias_preparacao_nfe_pedido(pedido, configuracao, natureza):
-    erros = []
+    erros = _pendencias_emissao_ibs_cbs(configuracao)
     if not configuracao.inscricao_estadual.strip():
         erros.append("Informe a inscricao estadual da filial.")
     if not configuracao.regime_tributario.strip():
@@ -940,6 +987,10 @@ def pendencias_preparacao_nfe_pedido(pedido, configuracao, natureza):
         if produto.aliquota_icms is None or produto.aliquota_icms < 0:
             erros.append(f"{prefixo} informe a aliquota de ICMS, inclusive quando for zero.")
         erros.extend(f"{prefixo} {pendencia}." for pendencia in _pendencias_contribuicoes_produto(produto))
+        erros.extend(
+            f"{prefixo} {pendencia}."
+            for pendencia in _pendencias_ibs_cbs_produto(produto, configuracao.ibs_cbs_exigido_em())
+        )
         if produto.cst_ipi in CST_IPI_TRIBUTADO and (not natureza or not natureza.ipi_incluso_preco):
             erros.append(
                 f"{prefixo} confirme na natureza da operacao que o IPI tributado esta incluido no preco."

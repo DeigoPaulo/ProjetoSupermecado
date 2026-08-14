@@ -47,6 +47,19 @@
       </section>
 
       <section class="form-section form-field-wide">
+        <h2>Transição tributária IBS/CBS</h2>
+        <div class="form-note form-field-wide">
+          <strong>Modo híbrido e seguro</strong>
+          <span>O legado continua emitindo ICMS, PIS e COFINS. Em preparação, o sistema passa a exigir CST IBS/CBS e cClassTrib após a vigência definida. A emissão do novo grupo XML permanece bloqueada até a instalação do schema oficial e a homologação do adaptador fiscal.</span>
+        </div>
+        <div class="form-grid form-grid-inner">
+          <label class="form-field form-field-wide"><span>{{ form.modo_transicao_ibs_cbs.label }}</span>{{ form.modo_transicao_ibs_cbs }}{{ form.modo_transicao_ibs_cbs.errors }}<small>{{ form.modo_transicao_ibs_cbs.help_text }}</small></label>
+          <label class="form-field"><span>{{ form.ibs_cbs_vigencia_inicio.label }}</span>{{ form.ibs_cbs_vigencia_inicio }}{{ form.ibs_cbs_vigencia_inicio.errors }}<small>{{ form.ibs_cbs_vigencia_inicio.help_text }}</small></label>
+          <label class="form-field"><span>{{ form.ibs_cbs_versao_leiaute.label }}</span>{{ form.ibs_cbs_versao_leiaute }}{{ form.ibs_cbs_versao_leiaute.errors }}<small>{{ form.ibs_cbs_versao_leiaute.help_text }}</small></label>
+        </div>
+      </section>
+
+      <section class="form-section form-field-wide">
         <h2>NFC-e</h2>
         {% if form.perfil_fiscal %}
           <div class="form-note form-field-wide">

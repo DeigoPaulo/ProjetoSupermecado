@@ -2,7 +2,15 @@ from django import forms
 
 from apps.clientes.escopo import empresa_id_do_usuario
 
-from .models import ConfiguracaoFiscal, InutilizacaoNumeracaoFiscal, NaturezaOperacao, SerieFiscal
+from .models import (
+    ConfiguracaoFiscal,
+    HomologacaoFiscal,
+    InutilizacaoNumeracaoFiscal,
+    ModoTransicaoIbsCbs,
+    NaturezaOperacao,
+    SerieFiscal,
+    StatusHomologacaoFiscal,
+)
 from .perfis_uf import aplicar_endpoints_nfce_uf, pendencias_endpoints_nfce, perfil_fiscal_uf
 
 
@@ -40,12 +48,16 @@ class ConfiguracaoFiscalForm(forms.ModelForm):
             "certificado_nome",
             "certificado_validade",
             "permite_contingencia_offline",
+            "modo_transicao_ibs_cbs",
+            "ibs_cbs_vigencia_inicio",
+            "ibs_cbs_versao_leiaute",
             "certificado_arquivo",
             "certificado_senha",
             "ativo",
         ]
         widgets = {
             "certificado_validade": forms.DateInput(attrs={"type": "date"}),
+            "ibs_cbs_vigencia_inicio": forms.DateInput(attrs={"type": "date"}),
         }
 
     def clean_certificado_arquivo(self):
@@ -68,6 +80,14 @@ class ConfiguracaoFiscalForm(forms.ModelForm):
             self.add_error("certificado_senha", "Informe a senha do certificado A1.")
         if senha and not arquivo:
             self.add_error("certificado_arquivo", "Envie o arquivo do certificado para trocar a senha.")
+        modo_ibs_cbs = cleaned.get("modo_transicao_ibs_cbs") or ModoTransicaoIbsCbs.LEGADO
+        if modo_ibs_cbs != ModoTransicaoIbsCbs.LEGADO:
+            if not cleaned.get("ibs_cbs_vigencia_inicio"):
+                self.add_error("ibs_cbs_vigencia_inicio", "Informe a data de vigência aprovada pelo contador.")
+            if not (cleaned.get("ibs_cbs_versao_leiaute") or "").strip():
+                self.add_error("ibs_cbs_versao_leiaute", "Informe a Nota Técnica ou versão do leiaute homologado.")
+        if modo_ibs_cbs == ModoTransicaoIbsCbs.EMISSAO_HOMOLOGADA:
+            self.add_error("modo_transicao_ibs_cbs", "A emissão IBS/CBS ainda não está disponível nesta versão. Mantenha o modo Preparação até instalar o schema oficial e homologar o adaptador fiscal.")
         filial = cleaned.get("filial")
         if filial and self.perfil_fiscal:
             self.instance.ambiente = cleaned.get("ambiente") or self.instance.ambiente
@@ -162,3 +182,19 @@ class NaturezaOperacaoForm(forms.ModelForm):
             natureza.save()
             self.save_m2m()
         return natureza
+class HomologacaoFiscalForm(forms.ModelForm):
+    class Meta:
+        model = HomologacaoFiscal
+        fields = ["status", "responsavel_tecnico", "evidencia_referencia", "observacoes"]
+        widgets = {
+            "observacoes": forms.Textarea(attrs={"rows": 5}),
+        }
+
+    def clean(self):
+        cleaned = super().clean()
+        if cleaned.get("status") == StatusHomologacaoFiscal.CONCLUIDA:
+            if not (cleaned.get("responsavel_tecnico") or "").strip():
+                self.add_error("responsavel_tecnico", "Informe quem executou a homologação técnica.")
+            if not (cleaned.get("evidencia_referencia") or "").strip():
+                self.add_error("evidencia_referencia", "Informe a referência da evidência ou do chamado técnico.")
+        return cleaned

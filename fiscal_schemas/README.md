@@ -58,3 +58,8 @@ Em 28/07/2026, o Portal Nacional listava pacotes 010d e 010e publicados na
 mesma data para notas tecnicas diferentes. O ERP nao escolhe automaticamente
 entre eles: contador, provedor SEFAZ e cronograma da UF devem aprovar o conjunto
 antes da promocao para homologacao e producao.
+## Transição IBS/CBS
+
+O ERP mantém ICMS, PIS e COFINS no modo legado e prepara a transição sem gerar XML fiscal incompleto. Em **Fiscal > Configuração fiscal**, escolha `Preparação IBS/CBS`, informe a vigência e a versão de leiaute aprovada pelo contador. A partir da vigência, cada produto fiscal exigirá `CST IBS/CBS` (3 dígitos) e `cClassTrib` (6 dígitos).
+
+A opção de emissão IBS/CBS permanece bloqueada nesta versão. Ela somente será liberada após a instalação dos schemas oficiais aplicáveis, implementação integral dos grupos XML, cálculos homologados e validação com o adaptador/ambiente fiscal competente.

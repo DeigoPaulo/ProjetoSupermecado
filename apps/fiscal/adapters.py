@@ -98,6 +98,37 @@ def diagnosticar_adaptador_sefaz():
         "erro": "" if assina_xml else "O adaptador não declarou capacidade de assinatura XML.",
     }
 
+def diagnosticar_contrato_adaptador_sefaz():
+    """Expõe capacidades técnicas sem registrar chaves, XMLs ou credenciais."""
+    diagnostico = diagnosticar_adaptador_sefaz()
+    requisitos = {
+        "transmissao": bool(diagnostico["carregavel"]),
+        "cancelamento": bool(diagnostico["cancela_documento"]),
+        "inutilizacao": bool(diagnostico["inutiliza_numeracao"]),
+        "consulta": bool(diagnostico["consulta_documento"]),
+        "assinatura_pelo_provedor": bool(diagnostico["assina_xml"]),
+        "validacao_schema_pelo_provedor": bool(diagnostico["valida_schema"]),
+    }
+    pendencias = []
+    if not diagnostico["configurado"]:
+        pendencias.append("Defina FISCAL_SEFAZ_ADAPTER com a classe do provedor fiscal.")
+    elif not diagnostico["carregavel"]:
+        pendencias.append(diagnostico["erro"] or "O adaptador fiscal não pôde ser carregado.")
+    for chave, titulo in (
+        ("cancelamento", "cancelamento"),
+        ("inutilizacao", "inutilização"),
+        ("consulta", "consulta de protocolo"),
+    ):
+        if diagnostico["carregavel"] and not requisitos[chave]:
+            pendencias.append(f"O adaptador não implementa {titulo}.")
+    return {
+        "contrato": "sefaz_adapter_contract_v1",
+        "adaptador": diagnostico["adaptador"],
+        "configurado": diagnostico["configurado"],
+        "carregavel": diagnostico["carregavel"],
+        "requisitos": requisitos,
+        "pendencias": pendencias,
+    }
 def normalizar_retorno_transmissao(retorno):
     if not isinstance(retorno, dict):
         raise SefazAdapterError("O adaptador SEFAZ retornou um formato inválido.")

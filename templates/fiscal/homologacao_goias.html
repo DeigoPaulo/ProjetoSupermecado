@@ -1,0 +1,59 @@
+{% extends "base.html" %}
+
+{% block title %}Homologação fiscal Goiás{% endblock %}
+
+{% block content %}
+<header class="page-header">
+  <div>
+    <h1>Homologação fiscal Goiás</h1>
+    <p>Roteiro técnico da filial {{ configuracao.filial }} para NFC-e em Goiás.</p>
+  </div>
+  <div class="actions"><a class="secondary-button" href="{% url 'fiscal:documentos' %}">Voltar para Fiscal</a></div>
+</header>
+
+<section class="operation-notice operation-notice-warning">
+  <i class="fa-solid fa-triangle-exclamation"></i>
+  <div>
+    <strong>Este registro não autoriza emissão em produção.</strong>
+    <span>A transmissão real permanece condicionada a credenciamento, certificado, CSC, schema aprovado, adaptador SEFAZ e validação formal da empresa.</span>
+  </div>
+</section>
+
+<section class="metrics-grid">
+  <article class="metric"><span>Filial</span><strong>{{ configuracao.filial.nome }}</strong></article>
+  <article class="metric"><span>Ambiente atual</span><strong>{{ configuracao.get_ambiente_display }}</strong></article>
+  <article class="metric"><span>Itens técnicos</span><strong>{{ checklist|length }}</strong></article>
+  <article class="metric"><span>Status registrado</span><strong>{{ homologacao.get_status_display }}</strong></article>
+</section>
+
+<section class="panel">
+  <div class="panel-heading"><div><h2>Verificações automáticas</h2><p>O ERP confere estes itens sempre que a tela é aberta.</p></div></div>
+  <div class="table-wrapper">
+    <table>
+      <thead><tr><th>Item</th><th>Situação</th><th>Critério</th></tr></thead>
+      <tbody>
+        {% for item in checklist %}
+        <tr>
+          <td><strong>{{ item.titulo }}</strong></td>
+          <td><span class="status {% if item.pronto %}status-success{% else %}status-danger{% endif %}">{% if item.pronto %}Pronto{% else %}Pendente{% endif %}</span></td>
+          <td>{{ item.detalhe }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</section>
+
+<section class="panel">
+  <div class="panel-heading"><div><h2>Registro técnico</h2><p>Guarde a referência do chamado, XML, protocolo ou evidência protegida. A conclusão exige todos os itens automáticos prontos.</p></div></div>
+  <form method="post" class="form-grid">
+    {% csrf_token %}
+    {% if form.non_field_errors %}<div class="form-note form-note-danger form-field-wide">{{ form.non_field_errors }}</div>{% endif %}
+    <label class="form-field"><span>{{ form.status.label }}</span>{{ form.status }}{{ form.status.errors }}</label>
+    <label class="form-field"><span>{{ form.responsavel_tecnico.label }}</span>{{ form.responsavel_tecnico }}{{ form.responsavel_tecnico.errors }}</label>
+    <label class="form-field form-field-wide"><span>{{ form.evidencia_referencia.label }}</span>{{ form.evidencia_referencia }}{{ form.evidencia_referencia.errors }}<small>{{ form.evidencia_referencia.help_text }}</small></label>
+    <label class="form-field form-field-wide"><span>{{ form.observacoes.label }}</span>{{ form.observacoes }}{{ form.observacoes.errors }}</label>
+    <div class="form-actions form-field-wide"><button class="primary-button" type="submit">Salvar roteiro técnico</button></div>
+  </form>
+</section>
+{% endblock %}

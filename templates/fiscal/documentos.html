@@ -46,6 +46,14 @@
 </section>
 {% endif %}
 
+<section class="operation-notice operation-notice-warning">
+  <i class="fa-solid fa-scale-balanced"></i>
+  <div>
+    <strong>Transição IBS/CBS: {{ diagnostico.capacidade_tributaria.ibs_cbs.filiais_em_preparacao }} filial(is) em preparação.</strong>
+    <span>Cadastro disponível para {{ diagnostico.capacidade_tributaria.ibs_cbs.campos|join:", " }}. {{ diagnostico.capacidade_tributaria.ibs_cbs.bloqueio }}</span>
+  </div>
+</section>
+
 <section class="operation-notice {% if not diagnostico.fila_transmissao.pronta %}operation-notice-warning{% endif %}">
   <i class="fa-solid fa-arrows-rotate"></i>
   <div>
@@ -231,7 +239,7 @@
                   <span class="status status-danger">Não enviado</span>
                 {% endif %}
               </td>
-              <td><a class="secondary-button" href="{% url 'fiscal:configuracao_editar' configuracao.pk %}">Editar</a></td>
+              <td class="row-actions"><a class="secondary-button" href="{% url 'fiscal:configuracao_editar' configuracao.pk %}">Editar</a>{% if configuracao.filial.uf == "GO" %}<a class="secondary-button" href="{% url 'fiscal:homologacao_goias' configuracao.pk %}">Homologação GO</a>{% endif %}</td>
             </tr>
           {% empty %}
             <tr><td colspan="4" class="empty">Nenhuma configuração fiscal cadastrada.</td></tr>

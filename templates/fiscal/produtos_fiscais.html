@@ -39,6 +39,14 @@
   </div>
 </section>
 
+<section class="operation-notice operation-notice-warning">
+  <i class="fa-solid fa-scale-balanced"></i>
+  <div>
+    <strong>Transição IBS/CBS: {{ capacidade_tributaria.ibs_cbs.filiais_em_preparacao }} filial(is) em preparação.</strong>
+    <span>Quando a vigência configurada for alcançada, {{ capacidade_tributaria.ibs_cbs.campos|join:" e " }} passam a ser conferidos neste catálogo. {{ capacidade_tributaria.ibs_cbs.bloqueio }}</span>
+  </div>
+</section>
+
 <form method="get" class="toolbar report-filter">
   <label><span>Produto</span><input type="search" name="q" value="{{ q }}" placeholder="Nome ou código"></label>
   <label>

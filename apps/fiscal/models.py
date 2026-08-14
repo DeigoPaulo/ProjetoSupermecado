@@ -20,6 +20,17 @@ class CodigoRegimeTributario(models.TextChoices):
     MEI = "4", "4 - Simples Nacional, MEI"
 
 
+class ModoTransicaoIbsCbs(models.TextChoices):
+    LEGADO = "LEGADO", "Legado (ICMS, PIS e COFINS)"
+    PREPARACAO = "PREPARACAO", "Preparação IBS/CBS"
+    EMISSAO_HOMOLOGADA = "EMISSAO_HOMOLOGADA", "Emissão IBS/CBS homologada"
+
+
+class StatusHomologacaoFiscal(models.TextChoices):
+    PENDENTE = "PENDENTE", "Pendente"
+    EM_ANDAMENTO = "EM_ANDAMENTO", "Em andamento"
+    CONCLUIDA = "CONCLUIDA", "Concluída"
+
 class StatusDocumentoFiscal(models.TextChoices):
     RASCUNHO = "RASCUNHO", "Rascunho"
     PRONTO = "PRONTO", "Pronto para transmissao"
@@ -73,6 +84,28 @@ class ConfiguracaoFiscal(models.Model):
         default=False,
         help_text="Habilite somente quando a UF e a situação operacional permitirem a contingência offline.",
     )
+    modo_transicao_ibs_cbs = models.CharField(
+        "Modo de transição IBS/CBS",
+        max_length=24,
+        choices=ModoTransicaoIbsCbs.choices,
+        default=ModoTransicaoIbsCbs.LEGADO,
+        help_text=(
+            "Preparação exige CST IBS/CBS e cClassTrib nos produtos após a vigência. "
+            "A emissão somente pode ser ativada depois da homologação do schema e do adaptador fiscal."
+        ),
+    )
+    ibs_cbs_vigencia_inicio = models.DateField(
+        "Início da vigência IBS/CBS",
+        null=True,
+        blank=True,
+        help_text="Data aprovada pelo contador para iniciar a validação da nova classificação tributária.",
+    )
+    ibs_cbs_versao_leiaute = models.CharField(
+        "Versão do leiaute IBS/CBS",
+        max_length=80,
+        blank=True,
+        help_text="Identifique a Nota Técnica e o pacote XSD homologados para esta filial.",
+    )
     atualizado_em = models.DateTimeField(auto_now=True)
 
     class Meta:
@@ -103,6 +136,12 @@ class ConfiguracaoFiscal(models.Model):
         if dias <= 30:
             return "vence_em_breve"
         return "valido"
+
+    def ibs_cbs_exigido_em(self, data_referencia=None):
+        if self.modo_transicao_ibs_cbs == ModoTransicaoIbsCbs.LEGADO:
+            return False
+        data_referencia = data_referencia or timezone.localdate()
+        return not self.ibs_cbs_vigencia_inicio or data_referencia >= self.ibs_cbs_vigencia_inicio
 
 
 class SerieFiscal(models.Model):
@@ -308,3 +347,38 @@ class DocumentoFiscal(models.Model):
     def __str__(self):
         numero = self.numero or "sem número"
         return f"{self.get_tipo_documento_display()} {self.serie}/{numero}"
+class HomologacaoFiscal(models.Model):
+    configuracao = models.OneToOneField(
+        ConfiguracaoFiscal,
+        on_delete=models.CASCADE,
+        related_name="homologacao_tecnica",
+    )
+    status = models.CharField(
+        max_length=20,
+        choices=StatusHomologacaoFiscal.choices,
+        default=StatusHomologacaoFiscal.PENDENTE,
+    )
+    responsavel_tecnico = models.CharField(max_length=160, blank=True)
+    evidencia_referencia = models.CharField(
+        max_length=500,
+        blank=True,
+        help_text="Número de chamado, URL protegida, protocolo ou caminho da evidência de homologação.",
+    )
+    observacoes = models.TextField(blank=True)
+    concluida_em = models.DateTimeField(null=True, blank=True)
+    concluida_por = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="homologacoes_fiscais_concluidas",
+    )
+    atualizado_em = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ["configuracao__filial__nome"]
+        verbose_name = "homologação fiscal"
+        verbose_name_plural = "homologações fiscais"
+
+    def __str__(self):
+        return f"{self.configuracao.filial} - {self.get_status_display()}"

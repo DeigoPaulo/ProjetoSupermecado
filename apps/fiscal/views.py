@@ -29,14 +29,32 @@ from .escopo import (
     series_para_usuario,
     vendas_para_usuario,
 )
-from .forms import ConfiguracaoFiscalForm, InutilizacaoNumeracaoFiscalForm, NaturezaOperacaoForm, SerieFiscalForm
+from .forms import (
+    ConfiguracaoFiscalForm,
+    HomologacaoFiscalForm,
+    InutilizacaoNumeracaoFiscalForm,
+    NaturezaOperacaoForm,
+    SerieFiscalForm,
+)
 from .fila import (
     configuracao_fila_fiscal,
     diagnostico_fila_fiscal,
     reagendar_documento_fiscal,
     retomar_consultas_documento_fiscal,
 )
-from .models import AmbienteFiscal, ConfiguracaoFiscal, DocumentoFiscal, InutilizacaoNumeracaoFiscal, NaturezaOperacao, SerieFiscal, StatusDocumentoFiscal, StatusInutilizacaoFiscal, TipoDocumentoFiscal
+from .models import (
+    AmbienteFiscal,
+    ConfiguracaoFiscal,
+    DocumentoFiscal,
+    HomologacaoFiscal,
+    InutilizacaoNumeracaoFiscal,
+    NaturezaOperacao,
+    SerieFiscal,
+    StatusDocumentoFiscal,
+    StatusHomologacaoFiscal,
+    StatusInutilizacaoFiscal,
+    TipoDocumentoFiscal,
+)
 from .validacoes import diagnosticar_schemas_fiscais
 from .qrcode_nfce import gerar_qrcode_data_uri, obter_url_qrcode_nfce
 from .perfis_uf import pendencias_endpoints_nfce
@@ -77,7 +95,8 @@ def _diagnostico_prontidao_fiscal(user):
     regimes = list(configuracoes_qs.exclude(regime_tributario="").values_list("regime_tributario", flat=True))
     ufs = list(configuracoes_qs.exclude(filial__uf="").values_list("filial__uf", flat=True))
     crts = list(configuracoes_qs.values_list("crt", flat=True))
-    filtro_produtos_pendentes = filtro_pendencias_produto_fiscal(regimes, ufs, crts)
+    exigir_ibs_cbs = any(config.ibs_cbs_exigido_em() for config in configuracoes.values())
+    filtro_produtos_pendentes = filtro_pendencias_produto_fiscal(regimes, ufs, crts, exigir_ibs_cbs)
     produtos_pendentes = Produto.all_objects.filter(filtro_produtos_pendentes).count()
     vendas_pendentes_qs = vendas_para_usuario(
         user, Venda.objects.filter(status=StatusVenda.FINALIZADA, documentos_fiscais__isnull=True)
@@ -190,7 +209,7 @@ def _diagnostico_prontidao_fiscal(user):
         "filiais": filiais,
         "alertas": alertas,
         "producao": producao,
-        "capacidade_tributaria": capacidade_tributaria_fiscal(),
+        "capacidade_tributaria": capacidade_tributaria_fiscal(configuracoes.values()),
         "fila_transmissao": diagnostico_fila_fiscal(documentos_para_usuario(user)),
     }
 
@@ -440,8 +459,9 @@ def _parametros_validacao_produtos_fiscais(user):
     ufs = list(
         configuracoes_qs.exclude(filial__uf="").values_list("filial__uf", flat=True)
     )
-    pendente_q = filtro_pendencias_produto_fiscal(regimes, ufs, crts)
-    return regimes, ufs, crts, pendente_q
+    exigir_ibs_cbs = any(config.ibs_cbs_exigido_em() for config in configuracoes_qs)
+    pendente_q = filtro_pendencias_produto_fiscal(regimes, ufs, crts, exigir_ibs_cbs)
+    return regimes, ufs, crts, exigir_ibs_cbs, pendente_q
 
 
 def _filtrar_catalogo_fiscal(queryset, pendente_q, filtro):
@@ -471,7 +491,7 @@ def produtos_fiscais_exportar_csv(request):
         produtos_qs = produtos_qs.filter(
             Q(nome__icontains=q) | Q(codigo_barras__icontains=q)
         )
-    _regimes, _ufs, _crts, pendente_q = _parametros_validacao_produtos_fiscais(
+    _regimes, _ufs, _crts, _exigir_ibs_cbs, pendente_q = _parametros_validacao_produtos_fiscais(
         request.user
     )
     produtos_qs, filtro = _filtrar_catalogo_fiscal(produtos_qs, pendente_q, filtro)
@@ -568,7 +588,7 @@ def produtos_fiscais(request):
     produtos_qs = Produto.all_objects.select_related("categoria", "marca").order_by("nome")
     if q:
         produtos_qs = produtos_qs.filter(Q(nome__icontains=q) | Q(codigo_barras__icontains=q))
-    regimes, ufs, crts, pendente_q = _parametros_validacao_produtos_fiscais(
+    regimes, ufs, crts, exigir_ibs_cbs, pendente_q = _parametros_validacao_produtos_fiscais(
         request.user
     )
     total_analisados = produtos_qs.count()
@@ -579,7 +599,7 @@ def produtos_fiscais(request):
     pagina = Paginator(produtos_qs, 50).get_page(request.GET.get("page"))
     produtos = list(pagina.object_list)
     for produto in produtos:
-        produto.pendencias_fiscais = pendencias_produto_fiscal(produto, regimes, ufs, crts)
+        produto.pendencias_fiscais = pendencias_produto_fiscal(produto, regimes, ufs, crts, exigir_ibs_cbs)
         produto.pronto_fiscal = not produto.pendencias_fiscais
     context = {
         "produtos": produtos,
@@ -589,7 +609,9 @@ def produtos_fiscais(request):
         "total_analisados": total_analisados,
         "total_pendentes": total_pendentes,
         "total_prontos": total_analisados - total_pendentes,
-        "capacidade_tributaria": capacidade_tributaria_fiscal(),
+        "capacidade_tributaria": capacidade_tributaria_fiscal(
+            configuracoes_para_usuario(request.user, ConfiguracaoFiscal.objects.all())
+        ),
     }
     return render(request, "fiscal/produtos_fiscais.html", context)
 
@@ -679,6 +701,75 @@ def baixar_xml(request, pk):
     response["Content-Disposition"] = f'attachment; filename="{nome}"'
     return response
 
+
+def _checklist_homologacao_goias(configuracao):
+    filial = configuracao.filial
+    adapter = diagnosticar_adaptador_sefaz()
+    schema = diagnosticar_schemas_fiscais()
+    natureza = NaturezaOperacao.objects.filter(empresa_id=filial.empresa_id, tipo_documento=TipoDocumentoFiscal.NFCE, ativo=True, padrao=True).exists()
+    serie = SerieFiscal.objects.filter(filial=filial, tipo_documento=TipoDocumentoFiscal.NFCE, ativo=True).exists()
+    documento_homologacao = DocumentoFiscal.objects.filter(filial=filial, ambiente=AmbienteFiscal.HOMOLOGACAO, status=StatusDocumentoFiscal.EMITIDO).exists()
+    itens = [
+        ("Dados da filial", bool(filial.uf == "GO" and filial.codigo_municipio_ibge and configuracao.inscricao_estadual), "UF Goiás, código IBGE e inscrição estadual configurados."),
+        ("Configuração NFC-e", bool(configuracao.ativo and configuracao.csc_id and configuracao.csc_token), "Configuração fiscal ativa com ID CSC e token CSC."),
+        ("URLs oficiais de Goiás", not pendencias_endpoints_nfce(filial, configuracao), "QR Code e consulta NFC-e coerentes com UF e ambiente."),
+        ("Certificado A1", configuracao.certificado_status == "valido", "Certificado A1 protegido e dentro da validade."),
+        ("Série e natureza", bool(serie and natureza), "Série NFC-e e natureza de operação padrão ativas."),
+        ("Schema XML", bool(schema["pronto"] or adapter["valida_schema"]), "Schema local válido ou validação declarada pelo adaptador."),
+        ("Adaptador SEFAZ", bool(adapter["carregavel"]), "Adaptador oficial configurado e carregável."),
+        ("Evidência de homologação", documento_homologacao, "Existe documento emitido no ambiente de homologação."),
+    ]
+    return [{"titulo": titulo, "pronto": pronto, "detalhe": detalhe} for titulo, pronto, detalhe in itens]
+
+
+@login_required
+@role_required(*SISTEMA)
+def homologacao_goias(request, pk):
+    configuracao = get_object_or_404(
+        configuracoes_para_usuario(request.user, ConfiguracaoFiscal.objects.select_related("filial__empresa")),
+        pk=pk,
+    )
+    if configuracao.filial.uf != "GO":
+        messages.error(request, "O roteiro técnico atual está disponível somente para filiais de Goiás.")
+        return redirect("fiscal:documentos")
+
+    homologacao, _ = HomologacaoFiscal.objects.get_or_create(configuracao=configuracao)
+    checklist = _checklist_homologacao_goias(configuracao)
+    itens_automaticos_prontos = all(item["pronto"] for item in checklist)
+    if request.method == "POST":
+        form = HomologacaoFiscalForm(request.POST, instance=homologacao)
+        if form.is_valid():
+            if form.cleaned_data["status"] == StatusHomologacaoFiscal.CONCLUIDA and not itens_automaticos_prontos:
+                form.add_error("status", "Conclua os itens técnicos automáticos antes de encerrar a homologação.")
+            else:
+                homologacao = form.save(commit=False)
+                if homologacao.status == StatusHomologacaoFiscal.CONCLUIDA:
+                    homologacao.concluida_em = timezone.now()
+                    homologacao.concluida_por = request.user
+                else:
+                    homologacao.concluida_em = None
+                    homologacao.concluida_por = None
+                homologacao.save()
+                LogAuditoria.objects.create(
+                    usuario=request.user,
+                    modulo="fiscal",
+                    acao="ATUALIZA_HOMOLOGACAO_GOIAS",
+                    descricao=f"Homologação técnica de Goiás da filial {configuracao.filial} atualizada para {homologacao.get_status_display()}.",
+                    objeto_tipo="HomologacaoFiscal",
+                    objeto_id=str(homologacao.pk),
+                    ip=request.META.get("REMOTE_ADDR"),
+                )
+                messages.success(request, "Roteiro de homologação técnica atualizado.")
+                return redirect("fiscal:homologacao_goias", pk=configuracao.pk)
+    else:
+        form = HomologacaoFiscalForm(instance=homologacao)
+    return render(request, "fiscal/homologacao_goias.html", {
+        "configuracao": configuracao,
+        "homologacao": homologacao,
+        "form": form,
+        "checklist": checklist,
+        "itens_automaticos_prontos": itens_automaticos_prontos,
+    })
 
 @login_required
 @role_required(*SISTEMA)

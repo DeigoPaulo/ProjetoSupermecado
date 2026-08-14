@@ -7,6 +7,8 @@ from decimal import Decimal
 from django.contrib.auth import get_user_model
 from django.core.exceptions import ValidationError
 from django.core.files.uploadedfile import SimpleUploadedFile
+from django.core.management import call_command
+from io import StringIO
 from django.test import Client, TestCase, override_settings
 from django.utils import timezone as django_timezone
 from cryptography import x509
@@ -22,17 +24,20 @@ from apps.pdv.models import Caixa
 from apps.produtos.models import Categoria, Produto
 from apps.vendas.models import FormaPagamento, ItemVenda, PagamentoVenda, StatusVenda, TipoDocumentoConsumidor, Venda
 
-from .forms import ConfiguracaoFiscalForm
+from .forms import ConfiguracaoFiscalForm, HomologacaoFiscalForm
 from .perfis_uf import endpoints_nfce_uf
 from .models import (
     AmbienteFiscal,
     CodigoRegimeTributario,
     ConfiguracaoFiscal,
     DocumentoFiscal,
+    HomologacaoFiscal,
     InutilizacaoNumeracaoFiscal,
+    ModoTransicaoIbsCbs,
     NaturezaOperacao,
     SerieFiscal,
     StatusDocumentoFiscal,
+    StatusHomologacaoFiscal,
     StatusInutilizacaoFiscal,
     TipoDocumentoFiscal,
 )
@@ -428,6 +433,8 @@ class FiscalTests(TestCase):
             payload["capacidade_tributaria"]["simples_nacional"]["csosn_suportados"],
             ["102", "103", "300", "400"],
         )
+        self.assertTrue(payload["capacidade_tributaria"]["ibs_cbs"]["cadastro_produto_disponivel"])
+        self.assertFalse(payload["capacidade_tributaria"]["ibs_cbs"]["emissao_xml_habilitada"])
         self.assertEqual(payload["producao"]["filiais_em_producao"], 0)
         self.assertFalse(payload["producao"]["transmissao_real_disponivel"])
         self.assertTrue(payload["producao"]["homologacao_simulada_disponivel"])
@@ -453,6 +460,17 @@ class FiscalTests(TestCase):
 
         self.assertEqual(payload["resumo"]["produtos_pendentes"], 501)
 
+    @override_settings(FISCAL_SEFAZ_ADAPTER="apps.fiscal.tests.FakeSefazAdapter")
+    def test_comando_valida_contrato_completo_do_adaptador(self):
+        saida = StringIO()
+
+        call_command("validar_adaptador_sefaz", "--exigir-eventos", "--estrito", stdout=saida)
+
+        resultado = __import__("json").loads(saida.getvalue())
+        self.assertEqual(resultado["contrato"], "sefaz_adapter_validation_v1")
+        self.assertTrue(resultado["adaptador"]["carregavel"])
+        self.assertTrue(resultado["adaptador"]["requisitos"]["consulta"])
+        self.assertTrue(resultado["pronto"])
     def test_diagnostico_json_fiscal_alerta_producao_sem_adaptador_sefaz(self):
         self.configuracao.ambiente = AmbienteFiscal.PRODUCAO
         self.configuracao.save(update_fields=["ambiente"])
@@ -1618,6 +1636,7 @@ class FiscalTests(TestCase):
                 "certificado_validade": "",
                 "certificado_senha": "segredo",
                 "ativo": "on",
+            "modo_transicao_ibs_cbs": ModoTransicaoIbsCbs.LEGADO,
                 "certificado_arquivo": arquivo,
             },
         )
@@ -1646,6 +1665,7 @@ class FiscalTests(TestCase):
             "certificado_nome": self.configuracao.certificado_nome,
             "certificado_validade": self.configuracao.certificado_validade,
             "ativo": "on",
+            "modo_transicao_ibs_cbs": ModoTransicaoIbsCbs.LEGADO,
         }
         dados.update(overrides)
         return dados
@@ -1712,6 +1732,94 @@ class FiscalTests(TestCase):
         pendencias = pendencias_produto_fiscal(self.produto, ["Regime normal"], ["GO"])
         self.assertFalse(any("cBenef" in pendencia for pendencia in pendencias))
 
+    def test_preparacao_ibs_cbs_exige_codigos_no_produto_apos_vigencia(self):
+        self.configuracao.modo_transicao_ibs_cbs = ModoTransicaoIbsCbs.PREPARACAO
+        self.configuracao.ibs_cbs_vigencia_inicio = django_timezone.localdate()
+        self.configuracao.ibs_cbs_versao_leiaute = "NT 2025.002"
+        self.configuracao.save()
+
+        pendencias = pendencias_produto_fiscal(
+            self.produto,
+            ["Regime normal"],
+            ["SP"],
+            exigir_ibs_cbs=self.configuracao.ibs_cbs_exigido_em(),
+        )
+
+        self.assertIn("CST IBS/CBS com 3 dígitos", pendencias)
+        self.assertIn("cClassTrib IBS/CBS com 6 dígitos", pendencias)
+
+        self.produto.cst_ibs_cbs = "000"
+        self.produto.classificacao_tributaria_ibs_cbs = "000000"
+        self.produto.save(update_fields=["cst_ibs_cbs", "classificacao_tributaria_ibs_cbs"])
+        pendencias = pendencias_produto_fiscal(
+            self.produto,
+            ["Regime normal"],
+            ["SP"],
+            exigir_ibs_cbs=self.configuracao.ibs_cbs_exigido_em(),
+        )
+        self.assertFalse(any("IBS/CBS" in pendencia or "cClassTrib" in pendencia for pendencia in pendencias))
+
+    def test_form_ibs_cbs_requer_vigencia_e_leiaute_na_preparacao(self):
+        form = ConfiguracaoFiscalForm(
+            data=self._dados_formulario_fiscal_go(
+                modo_transicao_ibs_cbs=ModoTransicaoIbsCbs.PREPARACAO,
+                ibs_cbs_vigencia_inicio="",
+                ibs_cbs_versao_leiaute="",
+            ),
+            instance=self.configuracao,
+            user=self.user,
+        )
+
+        self.assertFalse(form.is_valid())
+        self.assertIn("ibs_cbs_vigencia_inicio", form.errors)
+        self.assertIn("ibs_cbs_versao_leiaute", form.errors)
+
+    def test_form_bloqueia_emissao_ibs_cbs_sem_homologacao_xml(self):
+        form = ConfiguracaoFiscalForm(
+            data=self._dados_formulario_fiscal_go(
+                modo_transicao_ibs_cbs=ModoTransicaoIbsCbs.EMISSAO_HOMOLOGADA,
+                ibs_cbs_vigencia_inicio=django_timezone.localdate().isoformat(),
+                ibs_cbs_versao_leiaute="NT 2025.002",
+            ),
+            instance=self.configuracao,
+            user=self.user,
+        )
+
+        self.assertFalse(form.is_valid())
+        self.assertIn("modo_transicao_ibs_cbs", form.errors)
+    def test_form_homologacao_exige_responsavel_e_evidencia_na_conclusao(self):
+        form = HomologacaoFiscalForm(
+            data={"status": StatusHomologacaoFiscal.CONCLUIDA},
+        )
+
+        self.assertFalse(form.is_valid())
+        self.assertIn("responsavel_tecnico", form.errors)
+        self.assertIn("evidencia_referencia", form.errors)
+
+    def test_roteiro_homologacao_goias_registra_andamento_e_auditoria(self):
+        self.filial.uf = "GO"
+        self.filial.codigo_municipio_ibge = "5208707"
+        self.filial.save(update_fields=["uf", "codigo_municipio_ibge"])
+
+        response = self.client.post(
+            f"/fiscal/configuracoes/{self.configuracao.pk}/homologacao-goias/",
+            {
+                "status": StatusHomologacaoFiscal.EM_ANDAMENTO,
+                "responsavel_tecnico": "Equipe Deigo Tecnologia",
+                "evidencia_referencia": "CHAMADO-123",
+                "observacoes": "Aguardando credenciamento e validação externa.",
+            },
+        )
+
+        self.assertRedirects(response, f"/fiscal/configuracoes/{self.configuracao.pk}/homologacao-goias/")
+        homologacao = HomologacaoFiscal.objects.get(configuracao=self.configuracao)
+        self.assertEqual(homologacao.status, StatusHomologacaoFiscal.EM_ANDAMENTO)
+        self.assertTrue(
+            LogAuditoria.objects.filter(
+                acao="ATUALIZA_HOMOLOGACAO_GOIAS",
+                objeto_id=str(homologacao.pk),
+            ).exists()
+        )
     def test_form_configuracao_fiscal_exibe_secoes_operacionais(self):
         response = self.client.get(f"/fiscal/configuracoes/{self.configuracao.pk}/editar/")
 
@@ -1721,6 +1829,7 @@ class FiscalTests(TestCase):
         self.assertContains(response, "Certificado digital")
         self.assertContains(response, "Certificado A1")
         self.assertContains(response, "O arquivo será armazenado criptografado")
+        self.assertContains(response, "Transição tributária IBS/CBS")
 
     def test_forms_serie_e_natureza_exibem_secoes_operacionais(self):
         serie = SerieFiscal.objects.get(filial=self.filial)
@@ -1748,6 +1857,7 @@ class FiscalTests(TestCase):
                 "serie": 2,
                 "proximo_numero": 150,
                 "ativo": "on",
+            "modo_transicao_ibs_cbs": ModoTransicaoIbsCbs.LEGADO,
             },
             REMOTE_ADDR="127.0.0.10",
         )
@@ -1760,6 +1870,7 @@ class FiscalTests(TestCase):
                 "tipo_documento": TipoDocumentoFiscal.NFCE,
                 "movimenta_estoque": "on",
                 "ativo": "on",
+            "modo_transicao_ibs_cbs": ModoTransicaoIbsCbs.LEGADO,
             },
             REMOTE_ADDR="127.0.0.11",
         )
@@ -1923,6 +2034,7 @@ class FiscalMultiempresaTests(TestCase):
                 "crt": CodigoRegimeTributario.SIMPLES_NACIONAL,
                 "inscricao_estadual": "FORJADA",
                 "ativo": "on",
+            "modo_transicao_ibs_cbs": ModoTransicaoIbsCbs.LEGADO,
             },
         )
         resposta_serie = self.client.post(
@@ -1933,6 +2045,7 @@ class FiscalMultiempresaTests(TestCase):
                 "serie": 99,
                 "proximo_numero": 1,
                 "ativo": "on",
+            "modo_transicao_ibs_cbs": ModoTransicaoIbsCbs.LEGADO,
             },
         )
 
@@ -1982,6 +2095,7 @@ class FiscalMultiempresaTests(TestCase):
                 "tipo_documento": TipoDocumentoFiscal.NFCE,
                 "movimenta_estoque": "on",
                 "ativo": "on",
+            "modo_transicao_ibs_cbs": ModoTransicaoIbsCbs.LEGADO,
             },
         )
 
