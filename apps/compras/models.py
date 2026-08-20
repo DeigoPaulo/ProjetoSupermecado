@@ -19,6 +19,13 @@ class StatusPedidoCompra(models.TextChoices):
     CANCELADO = "CANCELADO", "Cancelado"
 
 
+class StatusConferenciaEntrada(models.TextChoices):
+    NAO_APLICAVEL = "NAO_APLICAVEL", "Sem pedido vinculado"
+    PENDENTE = "PENDENTE", "Aguardando XML"
+    CONFERIDA = "CONFERIDA", "Conferida"
+    DIVERGENTE = "DIVERGENTE", "Divergente"
+
+
 class StatusCotacaoCompra(models.TextChoices):
     RASCUNHO = "RASCUNHO", "Rascunho"
     ABERTA = "ABERTA", "Aberta para propostas"
@@ -197,6 +204,21 @@ class EntradaCompra(models.Model):
     numero_documento = models.CharField(max_length=80, blank=True)
     chave_acesso_xml = models.CharField(max_length=44, null=True, blank=True, unique=True)
     importada_xml_em = models.DateTimeField(null=True, blank=True)
+    conferencia_status = models.CharField(
+        max_length=20,
+        choices=StatusConferenciaEntrada.choices,
+        default=StatusConferenciaEntrada.NAO_APLICAVEL,
+    )
+    conferencia_resumo = models.TextField(blank=True)
+    conferencia_fisica_em = models.DateTimeField(null=True, blank=True)
+    conferencia_fisica_por = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="conferencias_fisicas_compra",
+    )
+    conferencia_fisica_observacoes = models.TextField(blank=True)
     data_emissao = models.DateField(null=True, blank=True)
     vencimento_financeiro = models.DateField(null=True, blank=True)
     gerar_conta_financeira = models.BooleanField(default=True)

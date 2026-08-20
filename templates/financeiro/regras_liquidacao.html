@@ -1,0 +1,15 @@
+{% extends "base.html" %}
+{% block title %}Regras de liquidação{% endblock %}
+{% block content %}
+<header class="page-header">
+  <div><h1>Regras de liquidação</h1><p>Defina prazo e taxa esperados por filial e forma de pagamento.</p></div>
+  <div class="page-actions"><a class="secondary-button" href="{% url 'financeiro:agenda_recebiveis' %}"><i class="fa-solid fa-arrow-left"></i> Agenda</a><a class="primary-button" href="{% url 'financeiro:regra_liquidacao_nova' %}"><i class="fa-solid fa-plus"></i> Nova regra</a></div>
+</header>
+<section class="operation-notice"><i class="fa-solid fa-circle-info"></i><div><strong>Cadastre a condição contratada com a adquirente.</strong><span>Alterar uma regra afeta somente novos recebíveis; os valores já agendados preservam a previsão original.</span></div></section>
+<section class="panel table-panel">
+  <div class="table-wrap"><table><thead><tr><th>Filial</th><th>Forma</th><th>Prazo</th><th>Taxa percentual</th><th>Taxa fixa</th><th>Status</th><th></th></tr></thead><tbody>
+  {% for regra in regras %}<tr><td>{{ regra.filial }}</td><td>{{ regra.forma_pagamento }}</td><td>{{ regra.prazo_dias }} dia(s)</td><td>{{ regra.taxa_percentual|floatformat:4 }}%</td><td>R$ {{ regra.taxa_fixa|floatformat:2 }}</td><td>{% if regra.ativa %}<span class="status status-success">Ativa</span>{% else %}<span class="status">Inativa</span>{% endif %}</td><td><a class="secondary-button" href="{% url 'financeiro:regra_liquidacao_editar' regra.pk %}"><i class="fa-solid fa-pen"></i> Editar</a></td></tr>
+  {% empty %}<tr><td colspan="7" class="empty">Nenhuma regra cadastrada.</td></tr>{% endfor %}
+  </tbody></table></div>
+</section>
+{% endblock %}

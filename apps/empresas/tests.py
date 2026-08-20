@@ -250,6 +250,12 @@ class EmpresasViewsTests(TestCase):
         self.assertEqual(payload["results"][0]["id"], self.filial.id)
         self.assertIn("Mercado Teste - Matriz", payload["results"][0]["text"])
 
+    def test_busca_json_abre_com_filiais_sem_exigir_texto(self):
+        payload = self.client.get("/empresas/filiais/busca.json").json()
+
+        self.assertEqual(payload["results"][0]["id"], self.filial.id)
+        self.assertFalse(payload["pagination"]["more"])
+
     def test_formularios_exibem_secoes_administrativas(self):
         empresa_response = self.client.get(f"/empresas/{self.empresa.pk}/editar/")
         filial_response = self.client.get(f"/empresas/filiais/{self.filial.pk}/editar/")

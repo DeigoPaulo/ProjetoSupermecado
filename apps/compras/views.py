@@ -51,12 +51,16 @@ from .models import (
 )
 from .services import (
     abrir_cotacao_compra,
+    avaliar_conferencia_entrada,
     cancelar_entrada_compra,
     cancelar_pedido_compra,
+    confirmar_conferencia_fisica,
     converter_pedido_em_entrada,
     enviar_pedido_compra,
+    itens_conferencia_entrada,
     finalizar_entrada_compra,
     gerar_pedido_da_resposta,
+    vincular_xml_a_pedido_manual,
 )
 from .services_xml import importar_xml_entrada
 
@@ -610,6 +614,7 @@ class EntradaCompraDetailView(LoginRequiredMixin, RoleRequiredMixin, DetailView)
         if not url_has_allowed_host_and_scheme(retorno_lista, allowed_hosts={self.request.get_host()}):
             retorno_lista = reverse("compras:lista")
         context["retorno_lista_url"] = retorno_lista
+        context["itens_conferencia"] = itens_conferencia_entrada(entrada)
         bloqueios_cancelamento = []
         if entrada.status == StatusEntradaCompra.FINALIZADA:
             if entrada.contas_financeiras.filter(status=StatusContaFinanceira.PAGA).exists():
@@ -623,6 +628,14 @@ class EntradaCompraDetailView(LoginRequiredMixin, RoleRequiredMixin, DetailView)
                     )
         context["bloqueios_cancelamento"] = bloqueios_cancelamento
         context["pode_cancelar_entrada"] = entrada.status == StatusEntradaCompra.FINALIZADA and not bloqueios_cancelamento
+        context["pedidos_vinculaveis"] = PedidoCompra.objects.none()
+        if entrada.status == StatusEntradaCompra.RASCUNHO and entrada.chave_acesso_xml and not entrada.pedido_origem_id:
+            context["pedidos_vinculaveis"] = pedidos_para_usuario(self.request.user).filter(
+                fornecedor=entrada.fornecedor,
+                filial=entrada.filial,
+                status=StatusPedidoCompra.ENVIADO,
+                entrada_gerada__isnull=True,
+            ).order_by("-enviado_em", "-id")
         context["movimentacoes_estoque"] = MovimentacaoEstoque.objects.select_related("produto", "usuario").filter(
             filial=entrada.filial,
             referencia__in=[f"entrada_compra:{entrada.id}", f"entrada_compra_cancelamento:{entrada.id}"],
@@ -691,6 +704,8 @@ class EntradaCompraFormMixin(LoginRequiredMixin, RoleRequiredMixin, TemplateResp
             for deleted in formset.deleted_objects:
                 deleted.delete()
             formset.save_m2m()
+            avaliar_conferencia_entrada(self.object)
+            self.object.save(update_fields=["conferencia_status", "conferencia_resumo", "updated_at"])
 
         if finalizar_agora:
             try:
@@ -732,6 +747,55 @@ def finalizar_entrada(request, pk):
 
     return redirect("compras:detalhe", pk=entrada.pk)
 
+
+@login_required
+@role_required(*COMPRAS)
+def vincular_xml_pedido_manual(request, pk):
+    entrada = get_object_or_404(entradas_para_usuario(request.user), pk=pk)
+    if request.method != "POST":
+        return redirect("compras:detalhe", pk=entrada.pk)
+    pedido = get_object_or_404(
+        pedidos_para_usuario(request.user),
+        pk=request.POST.get("pedido_id"),
+        fornecedor=entrada.fornecedor,
+        filial=entrada.filial,
+        status=StatusPedidoCompra.ENVIADO,
+        entrada_gerada__isnull=True,
+    )
+    try:
+        supervisor = supervisor_from_request(request, acao=AcaoPinSupervisor.COMPRA_VINCULAR_XML)
+        vincular_xml_a_pedido_manual(
+            entrada,
+            pedido,
+            usuario=request.user,
+            supervisor=supervisor,
+            justificativa=request.POST.get("justificativa", ""),
+            ip=request.META.get("REMOTE_ADDR"),
+        )
+    except ValidationError as exc:
+        messages.error(request, " ".join(exc.messages))
+    else:
+        messages.success(request, "XML vinculado ao pedido. Revise as divergências antes de finalizar a entrada.")
+    return redirect("compras:detalhe", pk=entrada.pk)
+
+@login_required
+@role_required(*COMPRAS)
+def confirmar_conferencia_fisica_entrada(request, pk):
+    entrada = get_object_or_404(entradas_para_usuario(request.user), pk=pk)
+    if request.method != "POST":
+        return redirect("compras:detalhe", pk=entrada.pk)
+    try:
+        confirmar_conferencia_fisica(
+            entrada,
+            usuario=request.user,
+            observacoes=request.POST.get("observacoes", ""),
+            ip=request.META.get("REMOTE_ADDR"),
+        )
+    except ValidationError as exc:
+        messages.error(request, " ".join(exc.messages))
+    else:
+        messages.success(request, "Conferência física registrada e auditada.")
+    return redirect("compras:detalhe", pk=entrada.pk)
 
 @login_required
 @role_required(*COMPRAS)

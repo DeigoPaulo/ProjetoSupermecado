@@ -31,6 +31,7 @@ urlpatterns = [
     path("caixas/", views.CaixaListView.as_view(), name="caixas"),
     path("caixas/abrir/", views.AbrirCaixaView.as_view(), name="abrir_caixa"),
     path("caixas/<int:caixa_id>/", views.caixa_detalhe, name="caixa_detalhe"),
+    path("caixas/<int:caixa_id>/imprimir/", views.caixa_conferencia_imprimir, name="caixa_conferencia_imprimir"),
     path("caixas/<int:caixa_id>/sangria/", views.registrar_sangria, name="registrar_sangria"),
     path("caixas/<int:caixa_id>/suprimento/", views.registrar_suprimento, name="registrar_suprimento"),
     path("caixas/<int:caixa_id>/fechar/", views.fechar_caixa, name="fechar_caixa"),

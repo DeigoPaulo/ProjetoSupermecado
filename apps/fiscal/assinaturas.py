@@ -210,3 +210,96 @@ def verificar_assinatura_xml(xml):
         "certificado_serial": format(certificado.serial_number, "X"),
         "referencia": uri,
     }
+
+
+def assinar_xml_elemento_fiscal(xml, configuracao, *, nome_elemento, prefixo_id):
+    """Assina infEvento ou infInut usando o mesmo padrão XMLDSig da NF-e."""
+    if not settings.FISCAL_LOCAL_XML_SIGNATURE_ENABLED:
+        raise ValidationError("Assinatura XML fiscal local está desabilitada.")
+    try:
+        raiz = etree.fromstring(xml.encode("utf-8"), _parser_seguro())
+    except etree.XMLSyntaxError as exc:
+        raise ValidationError("XML fiscal malformado para assinatura.") from exc
+
+    alvos = raiz.xpath(
+        ".//*[local-name()=$nome]",
+        nome=nome_elemento,
+    )
+    if len(alvos) != 1:
+        raise ValidationError(f"XML fiscal deve possuir exatamente um elemento {nome_elemento}.")
+    alvo = alvos[0]
+    identificador = alvo.get("Id", "")
+    if not identificador.startswith(prefixo_id):
+        raise ValidationError(f"Identificador {nome_elemento} inválido para assinatura fiscal.")
+    parent = alvo.getparent()
+    if parent is None:
+        raise ValidationError("Elemento fiscal sem pai para receber a assinatura.")
+    for assinatura_existente in parent.findall(f"{{{DSIG_NS}}}Signature"):
+        parent.remove(assinatura_existente)
+
+    chave, certificado = _carregar_chave_certificado(configuracao)
+    digest_value = base64.b64encode(
+        hashlib.sha1(_canonicalizar(alvo)).digest()
+    ).decode("ascii")
+    assinatura = etree.SubElement(
+        parent,
+        etree.QName(DSIG_NS, "Signature"),
+        nsmap={"ds": DSIG_NS},
+    )
+    signed_info = etree.SubElement(assinatura, etree.QName(DSIG_NS, "SignedInfo"))
+    etree.SubElement(
+        signed_info,
+        etree.QName(DSIG_NS, "CanonicalizationMethod"),
+        Algorithm=C14N_ALGORITHM,
+    )
+    etree.SubElement(
+        signed_info,
+        etree.QName(DSIG_NS, "SignatureMethod"),
+        Algorithm=RSA_SHA1_ALGORITHM,
+    )
+    referencia = etree.SubElement(
+        signed_info,
+        etree.QName(DSIG_NS, "Reference"),
+        URI=f"#{identificador}",
+    )
+    transformacoes = etree.SubElement(referencia, etree.QName(DSIG_NS, "Transforms"))
+    etree.SubElement(
+        transformacoes,
+        etree.QName(DSIG_NS, "Transform"),
+        Algorithm=ENVELOPED_ALGORITHM,
+    )
+    etree.SubElement(
+        transformacoes,
+        etree.QName(DSIG_NS, "Transform"),
+        Algorithm=C14N_ALGORITHM,
+    )
+    etree.SubElement(
+        referencia,
+        etree.QName(DSIG_NS, "DigestMethod"),
+        Algorithm=SHA1_ALGORITHM,
+    )
+    etree.SubElement(
+        referencia,
+        etree.QName(DSIG_NS, "DigestValue"),
+    ).text = digest_value
+    assinatura_bytes = chave.sign(
+        _canonicalizar(signed_info),
+        padding.PKCS1v15(),
+        hashes.SHA1(),
+    )
+    etree.SubElement(
+        assinatura,
+        etree.QName(DSIG_NS, "SignatureValue"),
+    ).text = base64.b64encode(assinatura_bytes).decode("ascii")
+    key_info = etree.SubElement(assinatura, etree.QName(DSIG_NS, "KeyInfo"))
+    x509_data = etree.SubElement(key_info, etree.QName(DSIG_NS, "X509Data"))
+    certificado_der = certificado.public_bytes(serialization.Encoding.DER)
+    etree.SubElement(
+        x509_data,
+        etree.QName(DSIG_NS, "X509Certificate"),
+    ).text = base64.b64encode(certificado_der).decode("ascii")
+    return etree.tostring(
+        raiz,
+        encoding="utf-8",
+        xml_declaration=True,
+    ).decode("utf-8")

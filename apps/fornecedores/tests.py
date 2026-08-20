@@ -38,6 +38,12 @@ class FornecedorViewsTests(TestCase):
         self.assertEqual(payload["results"][0]["id"], self.fornecedor.id)
         self.assertIn("Fornecedor Teste", payload["results"][0]["text"])
 
+    def test_busca_json_abre_com_fornecedores_sem_exigir_texto(self):
+        payload = self.client.get("/fornecedores/busca.json").json()
+
+        self.assertEqual(payload["results"][0]["id"], self.fornecedor.id)
+        self.assertFalse(payload["pagination"]["more"])
+
 
 class FornecedorIsolamentoEmpresaTests(TestCase):
     def setUp(self):

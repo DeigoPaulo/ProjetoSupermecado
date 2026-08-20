@@ -20,6 +20,7 @@ from cryptography.x509.oid import NameOID
 from apps.accounts.models import PerfilUsuario, TipoPerfil
 from apps.auditoria.models import LogAuditoria
 from apps.empresas.models import Empresa, Filial
+from apps.fornecedores.models import Fornecedor
 from apps.pdv.models import Caixa
 from apps.produtos.models import Categoria, Produto
 from apps.vendas.models import FormaPagamento, ItemVenda, PagamentoVenda, StatusVenda, TipoDocumentoConsumidor, Venda
@@ -30,6 +31,8 @@ from .models import (
     AmbienteFiscal,
     CodigoRegimeTributario,
     ConfiguracaoFiscal,
+    ControleDistribuicaoDFeFilial,
+    DocumentoDFeRecebido,
     DocumentoFiscal,
     HomologacaoFiscal,
     InutilizacaoNumeracaoFiscal,
@@ -45,6 +48,13 @@ from .certificados import abrir_certificado_a1, salvar_certificado_a1
 from .assinaturas import assinar_xml_documento, verificar_assinatura_xml
 from .validacoes import diagnosticar_schemas_fiscais, validar_xml_schema
 from .fila import diagnostico_fila_fiscal, processar_fila_fiscal, retomar_consultas_documento_fiscal
+from .services_dfe import (
+    consultar_distribuicao_dfe,
+    criar_entrada_rascunho_a_partir_dfe,
+    ignorar_dfe_recebido,
+    registrar_resumo_dfe_recebido,
+    registrar_xml_dfe_recebido,
+)
 from .services import (
     _codigo_pagamento,
     ativar_contingencia_offline,
@@ -126,6 +136,24 @@ class FakeSefazAdapter:
             "status": "AUTORIZADO",
             "protocolo": "135260000000299",
             "mensagem": "Autorizado o uso da NF-e.",
+        }
+
+
+class FakeProviderGeneratedKeyAdapter(FakeSefazAdapter):
+    preserva_chave_local = False
+    chave_provedor = "52" + ("1" * 42)
+
+    def transmitir(self, **kwargs):
+        xml_autorizado = kwargs["xml"].replace(
+            kwargs["documento"].chave_acesso,
+            self.chave_provedor,
+        )
+        return {
+            "status": "AUTORIZADO",
+            "chave_acesso": self.chave_provedor,
+            "protocolo": "135260000000777",
+            "mensagem": "Autorizado pelo provedor.",
+            "xml_autorizado": xml_autorizado,
         }
 
 
@@ -1024,6 +1052,23 @@ class FiscalTests(TestCase):
         FISCAL_AUTO_TRANSMIT_ENABLED=True,
         FISCAL_SEFAZ_ADAPTER="apps.fiscal.tests.FakeSefazAdapter",
     )
+    def test_fila_fiscal_transmite_homologacao_real_quando_adaptador_existe(self):
+        documento = preparar_documento_venda(self.venda, self.user)
+        FakeSefazAdapter.last_request = None
+
+        resumo = processar_fila_fiscal()
+
+        documento.refresh_from_db()
+        self.assertEqual(resumo["emitidos"], 1)
+        self.assertEqual(documento.status, StatusDocumentoFiscal.EMITIDO)
+        self.assertEqual(documento.tentativas_transmissao, 1)
+        self.assertIsNotNone(FakeSefazAdapter.last_request)
+        self.assertEqual(FakeSefazAdapter.last_request["ambiente"], "HOMOLOGACAO")
+
+    @override_settings(
+        FISCAL_AUTO_TRANSMIT_ENABLED=True,
+        FISCAL_SEFAZ_ADAPTER="apps.fiscal.tests.FakeSefazAdapter",
+    )
     def test_fila_fiscal_transmite_producao_com_lease(self):
         self.configuracao.ambiente = AmbienteFiscal.PRODUCAO
         self.configuracao.save(update_fields=["ambiente"])
@@ -1406,6 +1451,26 @@ class FiscalTests(TestCase):
         self.assertEqual(FakeSefazAdapter.last_request["ambiente"], AmbienteFiscal.PRODUCAO)
         self.assertNotIn("token-homologacao", str(FakeSefazAdapter.last_request))
         self.assertTrue(LogAuditoria.objects.filter(acao="TRANSMISSAO_SEFAZ_AUTORIZADA").exists())
+
+    @override_settings(
+        FISCAL_SEFAZ_ADAPTER="apps.fiscal.tests.FakeProviderGeneratedKeyAdapter"
+    )
+    def test_provedor_pode_persistir_chave_e_xml_efetivamente_autorizados(self):
+        documento = preparar_documento_venda(self.venda, self.user)
+        chave_local = documento.chave_acesso
+
+        transmitido = transmitir_documento_sefaz(documento, self.user)
+
+        self.assertNotEqual(transmitido.chave_acesso, chave_local)
+        self.assertEqual(
+            transmitido.chave_acesso,
+            FakeProviderGeneratedKeyAdapter.chave_provedor,
+        )
+        self.assertIn(
+            f'Id="NFe{FakeProviderGeneratedKeyAdapter.chave_provedor}"',
+            transmitido.xml_conteudo,
+        )
+        self.assertEqual(transmitido.protocolo, "135260000000777")
 
     @override_settings(FISCAL_SEFAZ_ADAPTER="apps.fiscal.tests.FakeSefazRejectedAdapter")
     def test_adaptador_sefaz_preserva_rejeicao_e_motivo(self):
@@ -2389,3 +2454,263 @@ class ConsultaSituacaoFiscalTests(TestCase):
         )
         self.documento.refresh_from_db()
         self.assertEqual(self.documento.status, StatusDocumentoFiscal.EMITIDO)
+
+
+class FakeDFeDistributionAdapter:
+    nome = "Provedor DF-e de teste"
+    chamadas = []
+
+    def consultar(self, *, cnpj, ultimo_nsu, limite):
+        type(self).chamadas.append(
+            {"cnpj": cnpj, "ultimo_nsu": ultimo_nsu, "limite": limite}
+        )
+        chave = "35260712345678000199550010000001231000001234"
+        xml = f"""<?xml version="1.0"?><nfeProc xmlns="http://www.portalfiscal.inf.br/nfe"><NFe><infNFe Id="NFe{chave}"><ide><nNF>123</nNF><dhEmi>2026-07-25T10:30:00-03:00</dhEmi></ide><emit><CNPJ>12345678000199</CNPJ><xNome>Fornecedor DF-e</xNome></emit><dest><CNPJ>{cnpj}</CNPJ></dest><det nItem="1"><prod><cProd>1</cProd><xProd>Produto</xProd><qCom>1.000</qCom><vProd>10.00</vProd></prod></det><total><ICMSTot><vNF>10.00</vNF></ICMSTot></total></infNFe></NFe><protNFe><infProt><chNFe>{chave}</chNFe><cStat>100</cStat></infProt></protNFe></nfeProc>"""
+        return {
+            "contrato": "fiscal_dfe_distribution_v1",
+            "ultimo_nsu": "15",
+            "max_nsu": "18",
+            "mensagem": "Lote consultado em homologação.",
+            "documentos": [{"nsu": "15", "xml": xml}],
+        }
+
+
+class FakeInvalidDFeDistributionAdapter:
+    def consultar(self, *, cnpj, ultimo_nsu, limite):
+        return {
+            "contrato": "fiscal_dfe_distribution_v1",
+            "ultimo_nsu": "20",
+            "max_nsu": "20",
+            "documentos": [
+                {
+                    "nsu": "19",
+                    "chave_acesso": "35260712345678000199550010000001231000001234",
+                    "destinatario_cnpj": cnpj,
+                },
+                {"nsu": "20", "chave_acesso": "INVALIDA"},
+            ],
+        }
+
+class DFeRecebidoTests(TestCase):
+    def setUp(self):
+        self.usuario = get_user_model().objects.create_superuser("dfe_teste", "dfe@example.com", "123")
+        self.empresa = Empresa.objects.create(razao_social="Mercado DF-e", nome_fantasia="Mercado DF-e", cnpj="98.765.432/0001-10")
+        self.filial = Filial.objects.create(empresa=self.empresa, nome="Matriz DF-e", cnpj="98.765.432/0001-10")
+
+    def _xml(self):
+        chave = "35260712345678000199550010000001231000001234"
+        return f'''<?xml version="1.0"?><nfeProc xmlns="http://www.portalfiscal.inf.br/nfe"><NFe><infNFe Id="NFe{chave}"><ide><nNF>123</nNF><dhEmi>2026-07-25T10:30:00-03:00</dhEmi></ide><emit><CNPJ>12345678000199</CNPJ><xNome>Fornecedor DF-e</xNome></emit><dest><CNPJ>98765432000110</CNPJ></dest><det nItem="1"><prod><cProd>1</cProd><xProd>Produto</xProd><qCom>1.000</qCom><vProd>10.00</vProd></prod></det><total><ICMSTot><vNF>10.00</vNF></ICMSTot></total></infNFe></NFe><protNFe><infProt><chNFe>{chave}</chNFe><cStat>100</cStat></infProt></protNFe></nfeProc>'''.encode()
+
+    def test_armazenar_dfe_nao_cria_entrada_ou_movimentacao(self):
+        documento, criado = registrar_xml_dfe_recebido(self._xml(), usuario=self.usuario)
+        repetido, criado_repetido = registrar_xml_dfe_recebido(self._xml(), usuario=self.usuario)
+
+        self.assertTrue(criado)
+        self.assertFalse(criado_repetido)
+        self.assertEqual(documento.pk, repetido.pk)
+        self.assertEqual(DocumentoDFeRecebido.objects.count(), 1)
+        self.assertEqual(documento.empresa, self.empresa)
+        self.assertEqual(documento.filial_destino, self.filial)
+        self.assertEqual(documento.status, "XML_DISPONIVEL")
+        self.assertTrue(LogAuditoria.objects.filter(acao="IMPORTACAO_DFE_RECEBIDO").exists())
+    def test_administrador_nao_importa_xml_de_outra_empresa(self):
+        outra_empresa = Empresa.objects.create(
+            razao_social="Outro Mercado",
+            nome_fantasia="Outro Mercado",
+            cnpj="11.222.333/0001-44",
+        )
+        outra_filial = Filial.objects.create(
+            empresa=outra_empresa,
+            nome="Matriz Outro Mercado",
+            cnpj="11.222.333/0001-44",
+        )
+        usuario = get_user_model().objects.create_user("admin_dfe", password="123")
+        PerfilUsuario.objects.create(
+            usuario=usuario,
+            filial=outra_filial,
+            tipo=TipoPerfil.ADMINISTRADOR,
+        )
+
+        with self.assertRaisesMessage(ValidationError, "Nenhuma empresa ativa encontrada"):
+            registrar_xml_dfe_recebido(self._xml(), usuario=usuario)
+    def test_encaminhar_dfe_cria_apenas_entrada_em_rascunho(self):
+        categoria = Categoria.objects.create(nome="Categoria DF-e recebida")
+        Produto.objects.create(
+            codigo_barras="7890000000101",
+            codigo_interno="1",
+            nome="Produto DF-e",
+            categoria=categoria,
+            preco_venda=Decimal("15.00"),
+        )
+        Fornecedor.objects.create(
+            empresa=self.empresa,
+            razao_social="Fornecedor DF-e",
+            cnpj="12.345.678/0001-99",
+        )
+        documento, _ = registrar_xml_dfe_recebido(self._xml(), usuario=self.usuario)
+
+        entrada = criar_entrada_rascunho_a_partir_dfe(documento, usuario=self.usuario)
+
+        documento.refresh_from_db()
+        self.assertEqual(documento.status, "VINCULADO")
+        self.assertEqual(documento.entrada_compra_id, entrada.pk)
+        self.assertEqual(entrada.status, "RASCUNHO")
+        self.assertEqual(entrada.chave_acesso_xml, documento.chave_acesso)
+        self.assertTrue(LogAuditoria.objects.filter(acao="DFE_ENCAMINHADO_PARA_ENTRADA").exists())
+
+        with self.assertRaisesMessage(ValidationError, "já foi encaminhado"):
+            criar_entrada_rascunho_a_partir_dfe(documento, usuario=self.usuario)
+    def test_tela_e_download_do_dfe_respeitam_o_escopo(self):
+        documento, _ = registrar_xml_dfe_recebido(self._xml(), usuario=self.usuario)
+        self.client.force_login(self.usuario)
+
+        resposta = self.client.get(f"/fiscal/dfe-recebidos/{documento.pk}/")
+        self.assertEqual(resposta.status_code, 200)
+        self.assertContains(resposta, "Dados fiscais recebidos")
+
+        resposta = self.client.get(f"/fiscal/dfe-recebidos/{documento.pk}/xml/")
+        self.assertEqual(resposta.status_code, 200)
+        self.assertEqual(resposta["Content-Type"], "application/xml; charset=utf-8")
+        self.assertIn(documento.chave_acesso.encode(), resposta.content)
+    def test_desconsiderar_dfe_exige_motivo_e_preserva_historico(self):
+        documento, _ = registrar_xml_dfe_recebido(self._xml(), usuario=self.usuario)
+
+        with self.assertRaisesMessage(ValidationError, "Informe o motivo"):
+            ignorar_dfe_recebido(documento, usuario=self.usuario, motivo="")
+
+        ignorar_dfe_recebido(documento, usuario=self.usuario, motivo="Documento de teste")
+        documento.refresh_from_db()
+        self.assertEqual(documento.status, "IGNORADO")
+        self.assertTrue(LogAuditoria.objects.filter(acao="DFE_DESCONSIDERADO").exists())
+
+        with self.assertRaisesMessage(ValidationError, "já foi desconsiderado"):
+            ignorar_dfe_recebido(documento, usuario=self.usuario, motivo="Repetição")
+    @override_settings(FISCAL_DFE_ADAPTER="apps.fiscal.tests.FakeDFeDistributionAdapter")
+    def test_consulta_distribuicao_avanca_cursor_por_filial_sem_criar_operacao(self):
+        resultado = consultar_distribuicao_dfe(
+            filial=self.filial,
+            usuario=self.usuario,
+        )
+
+        controle = ControleDistribuicaoDFeFilial.objects.get(filial=self.filial)
+        documento = DocumentoDFeRecebido.objects.get()
+        self.assertEqual(resultado["criados"], 1)
+        self.assertEqual(controle.ultimo_nsu, "15")
+        self.assertEqual(controle.max_nsu, "18")
+        self.assertEqual(documento.nsu, "15")
+        self.assertEqual(documento.origem, "DISTRIBUICAO")
+        self.assertEqual(documento.status, "XML_DISPONIVEL")
+        self.assertIsNone(documento.entrada_compra_id)
+        self.assertTrue(
+            LogAuditoria.objects.filter(acao="CONSULTA_DISTRIBUICAO_DFE").exists()
+        )
+
+        repetido = consultar_distribuicao_dfe(
+            filial=self.filial,
+            usuario=self.usuario,
+        )
+        self.assertEqual(repetido["criados"], 0)
+        self.assertEqual(DocumentoDFeRecebido.objects.count(), 1)
+
+    def test_resumo_repetido_atualiza_versao_sem_zerar_total_ausente(self):
+        item = {
+            "chave_acesso": "52260812345678000123550010000001231000001234",
+            "nsu": "41",
+            "destinatario_cnpj": self.filial.cnpj,
+            "emitente_cnpj": "12345678000123",
+            "emitente_nome": "Fornecedor original",
+            "numero_documento": "123",
+            "data_emissao": "2026-08-18",
+            "valor_total": "149.90",
+        }
+        documento, criado = registrar_resumo_dfe_recebido(
+            item, filial=self.filial, usuario=self.usuario
+        )
+        self.assertTrue(criado)
+
+        atualizado = dict(item, nsu="42", emitente_nome="Fornecedor atualizado")
+        atualizado.pop("valor_total")
+        documento_repetido, criado = registrar_resumo_dfe_recebido(
+            atualizado, filial=self.filial, usuario=self.usuario
+        )
+
+        documento_repetido.refresh_from_db()
+        self.assertFalse(criado)
+        self.assertEqual(documento_repetido.pk, documento.pk)
+        self.assertEqual(documento_repetido.nsu, "42")
+        self.assertEqual(documento_repetido.emitente_nome, "Fornecedor atualizado")
+        self.assertEqual(documento_repetido.valor_total, Decimal("149.90"))
+
+    @override_settings(FISCAL_DFE_ADAPTER="apps.fiscal.tests.FakeInvalidDFeDistributionAdapter")
+    def test_lote_invalido_nao_grava_documento_nem_avanca_cursor(self):
+        with self.assertRaisesMessage(ValidationError, "chave de acesso"):
+            consultar_distribuicao_dfe(
+                filial=self.filial,
+                usuario=self.usuario,
+            )
+
+        controle = ControleDistribuicaoDFeFilial.objects.get(filial=self.filial)
+        self.assertEqual(controle.ultimo_nsu, "")
+        self.assertFalse(DocumentoDFeRecebido.objects.exists())
+
+    @override_settings(FISCAL_DFE_ADAPTER="")
+    def test_tela_mostra_integracao_pendente_e_consulta_falha_de_forma_segura(self):
+        self.client.force_login(self.usuario)
+        resposta = self.client.get("/fiscal/dfe-recebidos/")
+        self.assertEqual(resposta.status_code, 200)
+        self.assertContains(resposta, "Distribuição por CNPJ")
+        self.assertContains(resposta, "Integração")
+        self.assertContains(resposta, "disabled")
+
+        resposta = self.client.post(
+            "/fiscal/dfe-recebidos/consultar/",
+            {"filial": self.filial.pk},
+            follow=True,
+        )
+        self.assertContains(resposta, "não possui adaptador fiscal configurado")
+        self.assertFalse(DocumentoDFeRecebido.objects.exists())
+
+    @override_settings(FISCAL_DFE_ADAPTER="apps.fiscal.tests.FakeDFeDistributionAdapter")
+    def test_administrador_nao_consulta_filial_de_outra_empresa(self):
+        outra_empresa = Empresa.objects.create(
+            razao_social="Outra Empresa DF-e",
+            nome_fantasia="Outra Empresa DF-e",
+            cnpj="11.222.333/0001-44",
+        )
+        outra_filial = Filial.objects.create(
+            empresa=outra_empresa,
+            nome="Matriz Outra",
+            cnpj="11.222.333/0001-44",
+        )
+        usuario = get_user_model().objects.create_user("admin_dfe_escopo", password="123")
+        PerfilUsuario.objects.create(
+            usuario=usuario,
+            filial=self.filial,
+            tipo=TipoPerfil.ADMINISTRADOR,
+        )
+        self.client.force_login(usuario)
+
+        resposta = self.client.post(
+            "/fiscal/dfe-recebidos/consultar/",
+            {"filial": outra_filial.pk},
+        )
+        self.assertEqual(resposta.status_code, 404)
+        self.assertFalse(
+            ControleDistribuicaoDFeFilial.objects.filter(filial=outra_filial).exists()
+        )
+    @override_settings(FISCAL_DFE_ADAPTER="apps.fiscal.tests.FakeDFeDistributionAdapter")
+    def test_comando_agendavel_processa_filial_e_registra_cursor(self):
+        saida = StringIO()
+        call_command(
+            "consultar_dfe_recebidos",
+            usuario=self.usuario.username,
+            filial_id=self.filial.pk,
+            estrito=True,
+            stdout=saida,
+        )
+
+        self.assertIn("Consulta concluída", saida.getvalue())
+        self.assertEqual(
+            ControleDistribuicaoDFeFilial.objects.get(filial=self.filial).ultimo_nsu,
+            "15",
+        )

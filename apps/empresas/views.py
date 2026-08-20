@@ -370,19 +370,16 @@ def empresas(request):
 @require_GET
 def filiais_busca(request):
     termo = (request.GET.get("q") or request.GET.get("term") or "").strip()
-    if not termo:
-        return JsonResponse({"results": []})
-    filiais = (
-        _filiais_visiveis(request.user).select_related("empresa")
-        .filter(
+    filiais = _filiais_visiveis(request.user).select_related("empresa")
+    if termo:
+        filiais = filiais.filter(
             Q(nome__icontains=termo)
             | Q(empresa__nome_fantasia__icontains=termo)
             | Q(cnpj__icontains=termo)
             | Q(municipio__icontains=termo)
             | Q(codigo_municipio_ibge__icontains=termo)
         )
-        .order_by("empresa__nome_fantasia", "nome")[:20]
-    )
+    pagina = Paginator(filiais.order_by("empresa__nome_fantasia", "nome"), 20).get_page(request.GET.get("page"))
     return JsonResponse(
         {
             "results": [
@@ -396,11 +393,11 @@ def filiais_busca(request):
                     "uf": filial.uf,
                     "codigo_municipio_ibge": filial.codigo_municipio_ibge,
                 }
-                for filial in filiais
-            ]
+                for filial in pagina.object_list
+            ],
+            "pagination": {"more": pagina.has_next()},
         }
     )
-
 
 @login_required
 @role_required(*ADMINISTRACAO)

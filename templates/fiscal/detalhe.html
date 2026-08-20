@@ -60,6 +60,73 @@
 </section>
 {% endif %}
 
+{% if not imprimir and access.sistema and documento.tipo_documento == "NFE" %}
+<section class="panel">
+  <div class="section-header">
+    <div>
+      <h2>Carta de Correção Eletrônica</h2>
+      <p>Evento 110110. A correção mais recente substitui as anteriores e o limite é de 20 eventos.</p>
+    </div>
+  </div>
+  {% if cce_pode_registrar %}
+    {% if cce_disponivel %}
+      <div class="operation-notice operation-notice-warning">
+        <i class="fa-solid fa-triangle-exclamation"></i>
+        <div>
+          <strong>A CC-e não altera valores, impostos nem partes essenciais da nota.</strong>
+          <span>Não use para base de cálculo, alíquota, preço, quantidade, valor, remetente, destinatário, data de emissão ou data de saída.</span>
+        </div>
+      </div>
+      <form method="post" action="{% url 'fiscal:registrar_cce' documento.pk %}" class="stacked-form form-confirm" data-msg="Transmitir esta Carta de Correção para a SEFAZ? A mais recente substituirá as anteriores.">
+        {% csrf_token %}
+        <label class="form-field">
+          <span>Texto consolidado da correção</span>
+          <textarea name="correcao" minlength="15" maxlength="1000" rows="4" required placeholder="Descreva toda a correção que deve prevalecer, inclusive o conteúdo ainda válido de CC-e anteriores."></textarea>
+          <small>Entre 15 e 1.000 caracteres. Escreva o texto completo que deverá prevalecer.</small>
+        </label>
+        <label class="check-field">
+          <input type="checkbox" name="confirmou_limites" required>
+          <span>Confirmo que revisei os limites legais e que a correção não altera dados proibidos.</span>
+        </label>
+        <button class="secondary-button" type="submit"><i class="fa-solid fa-file-circle-check"></i> Transmitir CC-e</button>
+      </form>
+    {% else %}
+      <div class="operation-notice operation-notice-warning">
+        <i class="fa-solid fa-plug-circle-xmark"></i>
+        <div><strong>CC-e ainda não configurada.</strong><span>{{ cce_diagnostico.mensagem }}</span></div>
+      </div>
+    {% endif %}
+  {% elif documento.status != "EMITIDO" %}
+    <p class="empty">Disponível somente para NF-e autorizada e não cancelada.</p>
+  {% else %}
+    <p class="empty">O limite oficial de 20 Cartas de Correção foi atingido.</p>
+  {% endif %}
+
+  {% if cartas_correcao %}
+    <div class="table-wrapper">
+      <table>
+        <thead><tr><th>Seq.</th><th>Data</th><th>Correção vigente na sequência</th><th>Status</th><th>Protocolo</th><th>XML</th></tr></thead>
+        <tbody>
+          {% for carta in cartas_correcao %}
+            <tr>
+              <td>#{{ carta.sequencia }}</td>
+              <td>{{ carta.criado_em|date:"d/m/Y H:i" }}</td>
+              <td>{{ carta.correcao }}</td>
+              <td>{{ carta.get_status_display }}{% if carta.codigo_status %} ({{ carta.codigo_status }}){% endif %}</td>
+              <td>{{ carta.protocolo|default:"-" }}</td>
+              <td>
+                {% if carta.xml_envio %}<a class="secondary-button" href="{% url 'fiscal:baixar_xml_cce' carta.pk 'envio' %}">Envio</a>{% endif %}
+                {% if carta.xml_retorno %}<a class="secondary-button" href="{% url 'fiscal:baixar_xml_cce' carta.pk 'retorno' %}">Retorno</a>{% endif %}
+              </td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  {% endif %}
+</section>
+{% endif %}
+
 {% if not imprimir and documento.status == "PRONTO" and documento.tipo_documento == "NFCE" and documento.filial.configuracao_fiscal.permite_contingencia_offline %}
 <section class="operation-notice operation-notice-warning">
   <i class="fa-solid fa-tower-broadcast"></i>

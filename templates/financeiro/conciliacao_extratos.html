@@ -1,0 +1,87 @@
+{% extends "base.html" %}
+{% block title %}Extratos e adquirentes{% endblock %}
+{% block content %}
+<header class="page-header">
+  <div>
+    <h1>Extratos e adquirentes</h1>
+    <p>Importe movimentações, evite duplicidades e trate somente as divergências.</p>
+  </div>
+  <div class="page-actions">
+    <a class="secondary-button" href="{% url 'financeiro:agenda_recebiveis' %}"><i class="fa-solid fa-calendar-check"></i> Agenda de recebíveis</a>
+    <a class="secondary-button" href="{% url 'financeiro:conciliacao_bancaria' %}"><i class="fa-solid fa-scale-balanced"></i> Conciliação manual</a>
+  </div>
+</header>
+
+<section class="summary-grid">
+  <article class="metric"><span>Conciliados</span><strong>{{ total_conciliado }}</strong></article>
+  <article class="metric"><span>Pendentes</span><strong>{{ total_pendente }}</strong></article>
+  <article class="metric"><span>Parcialmente alocados</span><strong>{{ total_parcial }}</strong></article>
+  <article class="metric"><span>Ambíguos</span><strong>{{ total_ambiguo }}</strong></article>
+</section>
+
+<section class="operation-notice">
+  <i class="fa-solid fa-shield-halved"></i>
+  <div><strong>Importar não cria movimentação financeira.</strong><span>O sistema normaliza cada layout, prioriza NSU, autorização ou ID da transação e mantém ambiguidades para revisão.</span></div>
+</section>
+
+{% if erros_adaptadores %}
+<section class="notice notice-warning">
+  <strong>Alguns adaptadores privados não puderam ser carregados.</strong>
+  {% for erro in erros_adaptadores %}<span>{{ erro.codigo|default:"Configuração" }}: {{ erro.erro }}</span>{% endfor %}
+</section>
+{% endif %}
+
+{% if pode_importar %}
+<section class="panel">
+  <div class="panel-header">
+    <div><h2>Importar arquivo</h2><p>CSV genérico e OFX são nativos. Layouts de bancos e adquirentes podem ser instalados como adaptadores privados.</p></div>
+    <a class="secondary-button" href="{% url 'financeiro:modelo_extrato_csv' %}"><i class="fa-solid fa-download"></i> Baixar modelo CSV</a>
+  </div>
+  <form method="post" enctype="multipart/form-data" class="form-grid">
+    {% csrf_token %}
+    {% for error in form.non_field_errors %}<div class="form-error">{{ error }}</div>{% endfor %}
+    <label class="form-field"><span>{{ form.adaptador.label }}</span>{{ form.adaptador }}{% for error in form.adaptador.errors %}<small class="form-error">{{ error }}</small>{% endfor %}</label>
+    <label class="form-field"><span>{{ form.conta.label }}</span>{{ form.conta }}{% for error in form.conta.errors %}<small class="form-error">{{ error }}</small>{% endfor %}</label>
+    <label class="form-field"><span>{{ form.arquivo.label }}</span>{{ form.arquivo }}<small>{{ form.arquivo.help_text }}</small>{% for error in form.arquivo.errors %}<small class="form-error">{{ error }}</small>{% endfor %}</label>
+    <div class="form-actions"><button class="primary-button" type="submit"><i class="fa-solid fa-file-import"></i> Importar e conferir</button></div>
+  </form>
+  <p class="muted"><strong>CSV genérico:</strong> data;tipo;valor;descricao;referencia. <strong>OFX:</strong> usa DTPOSTED, TRNAMT, FITID e MEMO/NAME. O identificador externo é obrigatório para deduplicação.</p>
+</section>
+{% endif %}
+
+<form method="get" class="filter-bar panel">
+  <label class="form-field"><span>Buscar</span><input type="search" name="q" value="{{ q }}" placeholder="Descrição, referência ou arquivo"></label>
+  <label class="form-field"><span>Conta</span><select name="conta"><option value="">Todas</option>{% for conta in contas_opcoes %}<option value="{{ conta.pk }}" {% if conta_id == conta.pk|stringformat:'s' %}selected{% endif %}>{{ conta }}</option>{% endfor %}</select></label>
+  <label class="form-field"><span>Status</span><select name="status"><option value="">Todos</option>{% for valor, rotulo in status_opcoes %}<option value="{{ valor }}" {% if status == valor %}selected{% endif %}>{{ rotulo }}</option>{% endfor %}</select></label>
+  <div class="form-actions"><button class="primary-button" type="submit"><i class="fa-solid fa-filter"></i> Filtrar</button><a class="secondary-button" href="{% url 'financeiro:conciliacao_extratos' %}">Limpar</a></div>
+</form>
+
+<section class="panel table-panel">
+  <div class="panel-header"><div><h2>Fila de conferência</h2><p>Até 50 registros por página.</p></div></div>
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>Data</th><th>Conta</th><th>Descrição</th><th>Referência</th><th>Natureza</th><th>Valor</th><th>Status</th><th></th></tr></thead>
+      <tbody>
+        {% for item in pagina %}
+          <tr>
+            <td>{{ item.data|date:"d/m/Y" }}</td>
+            <td><strong>{{ item.conta.nome }}</strong><br><small>{{ item.conta.filial }}</small></td>
+            <td>{{ item.descricao }}<br><small>{{ item.importacao.arquivo_nome }} · {{ item.importacao.adaptador_nome }}</small></td>
+            <td>{{ item.referencia_externa }}</td>
+            <td>{{ item.get_tipo_display }}</td>
+            <td><strong>R$ {{ item.valor|floatformat:2 }}</strong></td>
+            <td>{% if item.status == 'CONCILIADO' %}<span class="status status-success">Conciliado</span>{% elif item.status == 'PARCIAL' %}<span class="status status-info">Parcialmente alocado</span>{% elif item.status == 'AMBIGUO' %}<span class="status status-warning">Ambíguo</span>{% else %}<span class="status status-warning">Pendente</span>{% endif %}</td>
+            <td><a class="secondary-button" href="{% url 'financeiro:item_extrato_detalhe' item.pk %}"><i class="fa-solid fa-magnifying-glass"></i> Revisar</a></td>
+          </tr>
+        {% empty %}<tr><td colspan="8" class="empty">Nenhuma movimentação de extrato encontrada.</td></tr>{% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% if pagina.paginator.num_pages > 1 %}<nav class="pagination" aria-label="Paginação dos extratos">{% if pagina.has_previous %}<a class="secondary-button" href="?{% if query_sem_pagina %}{{ query_sem_pagina }}&{% endif %}page={{ pagina.previous_page_number }}">Anterior</a>{% endif %}<span>Página {{ pagina.number }} de {{ pagina.paginator.num_pages }}</span>{% if pagina.has_next %}<a class="secondary-button" href="?{% if query_sem_pagina %}{{ query_sem_pagina }}&{% endif %}page={{ pagina.next_page_number }}">Próxima</a>{% endif %}</nav>{% endif %}
+</section>
+
+<section class="panel table-panel">
+  <div class="panel-header"><div><h2>Importações recentes</h2><p>Resumo dos dez arquivos mais recentes no seu escopo.</p></div></div>
+  <div class="table-wrap"><table><thead><tr><th>Importado em</th><th>Conta</th><th>Arquivo</th><th>Layout</th><th>Linhas</th><th>Automáticas</th><th>Pendentes</th><th>Ambíguas</th><th>Duplicadas</th></tr></thead><tbody>{% for item in importacoes %}<tr><td>{{ item.criado_em|date:"d/m/Y H:i" }}</td><td>{{ item.conta }}</td><td>{{ item.arquivo_nome }}</td><td>{{ item.adaptador_nome }}<br><small>{{ item.adaptador_codigo }}</small></td><td>{{ item.total_linhas }}</td><td>{{ item.conciliadas_automaticamente }}</td><td>{{ item.pendentes }}</td><td>{{ item.ambiguas }}</td><td>{{ item.duplicadas }}</td></tr>{% empty %}<tr><td colspan="9" class="empty">Nenhum arquivo importado.</td></tr>{% endfor %}</tbody></table></div>
+</section>
+{% endblock %}

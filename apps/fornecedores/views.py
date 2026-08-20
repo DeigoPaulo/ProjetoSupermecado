@@ -1,5 +1,6 @@
 from django.contrib import messages
 from django.contrib.auth.mixins import LoginRequiredMixin
+from django.core.paginator import Paginator
 from django.db.models import Q
 from django.http import JsonResponse
 from django.urls import reverse_lazy
@@ -80,16 +81,14 @@ class FornecedorUpdateView(FornecedorFormMixin, LoginRequiredMixin, RoleRequired
 @require_GET
 def fornecedores_busca(request):
     termo = (request.GET.get("q") or request.GET.get("term") or "").strip()
-    if not termo:
-        return JsonResponse({"results": []})
-    fornecedores = fornecedores_para_usuario(
-        request.user,
-        Fornecedor.objects.filter(
+    fornecedores = fornecedores_para_usuario(request.user, Fornecedor.objects.all())
+    if termo:
+        fornecedores = fornecedores.filter(
             Q(razao_social__icontains=termo)
             | Q(nome_fantasia__icontains=termo)
             | Q(cnpj__icontains=termo)
-        ),
-    ).order_by("razao_social")[:20]
+        )
+    pagina = Paginator(fornecedores.order_by("razao_social"), 20).get_page(request.GET.get("page"))
     return JsonResponse(
         {
             "results": [
@@ -100,7 +99,8 @@ def fornecedores_busca(request):
                     "nome_fantasia": fornecedor.nome_fantasia,
                     "cnpj": fornecedor.cnpj,
                 }
-                for fornecedor in fornecedores
-            ]
+                for fornecedor in pagina.object_list
+            ],
+            "pagination": {"more": pagina.has_next()},
         }
     )

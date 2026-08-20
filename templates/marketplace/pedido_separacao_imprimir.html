@@ -40,7 +40,7 @@
       <p><strong>Status:</strong> {{ pedido.get_status_display }}</p>
       <p><strong>Pagamento:</strong> {{ pedido.get_status_pagamento_display }}{% if pedido.forma_pagamento %} - {{ pedido.get_forma_pagamento_display }}{% endif %}</p>
       <p><strong>Total:</strong> R$ {{ pedido.total|floatformat:2 }}</p>
-      {% if pedido.referencia_pagamento %}<p><strong>Refer?ncia:</strong> {{ pedido.referencia_pagamento }}</p>{% endif %}
+      {% if pedido.referencia_pagamento %}<p><strong>Referência:</strong> {{ pedido.referencia_pagamento }}</p>{% endif %}
     </div>
     {% if pedido.endereco_entrega %}<p><strong>Endereço:</strong> {{ pedido.endereco_entrega }}</p>{% endif %}
     {% if pedido.bairro_entrega %}<p><strong>Bairro:</strong> {{ pedido.bairro_entrega }}</p>{% endif %}

@@ -65,6 +65,7 @@ class AcaoPinSupervisor(models.TextChoices):
     PDV_MOVIMENTO_CAIXA = "PDV_MOVIMENTO_CAIXA", "Sangria, suprimento ou conferência de caixa"
     COMPRA_FINALIZAR = "COMPRA_FINALIZAR", "Finalização de entrada de compra"
     COMPRA_CANCELAR = "COMPRA_CANCELAR", "Cancelamento de entrada de compra"
+    COMPRA_VINCULAR_XML = "COMPRA_VINCULAR_XML", "Vínculo manual de XML de compra"
     ESTOQUE_AJUSTE = "ESTOQUE_AJUSTE", "Ajuste, inventário, perda ou produção"
     ESTOQUE_CANCELAR = "ESTOQUE_CANCELAR", "Cancelamento de produção ou desmembramento"
     PRECO_REAJUSTE = "PRECO_REAJUSTE", "Reajuste de preços em lote"
@@ -107,6 +108,11 @@ class Empresa(models.Model):
         max_length=40,
         choices=PoliticaConflitoSincronizacao.choices,
         default=PoliticaConflitoSincronizacao.MANUAL,
+    )
+    bloquear_finalizacao_entrada_divergente = models.BooleanField(
+        "Bloquear finalização de entrada divergente sem conferência física",
+        default=True,
+        help_text="Mantém estoque e financeiro protegidos até a conferência física registrada.",
     )
     acoes_credencial_exigem_pin = models.JSONField(
         "Ações que exigem cartão e PIN",

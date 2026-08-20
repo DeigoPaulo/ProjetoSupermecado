@@ -1,0 +1,74 @@
+{% extends "base.html" %}
+{% block title %}Revisar item do extrato{% endblock %}
+{% block content %}
+<header class="page-header">
+  <div><h1>Revisar item do extrato</h1><p>Compare a movimentação externa com os lançamentos do livro.</p></div>
+  <div class="page-actions"><a class="secondary-button" href="{% url 'financeiro:conciliacao_extratos' %}"><i class="fa-solid fa-arrow-left"></i> Voltar à fila</a></div>
+</header>
+
+<section class="summary-grid">
+  <article class="metric"><span>Data</span><strong>{{ item.data|date:"d/m/Y" }}</strong></article>
+  <article class="metric"><span>Natureza</span><strong>{{ item.get_tipo_display }}</strong></article>
+  <article class="metric"><span>Valor</span><strong>R$ {{ item.valor|floatformat:2 }}</strong></article>
+  <article class="metric"><span>Alocado</span><strong>R$ {{ valor_alocado|floatformat:2 }}</strong></article>
+  <article class="metric"><span>Saldo a alocar</span><strong>R$ {{ saldo_alocar|floatformat:2 }}</strong></article>
+  <article class="metric"><span>Status</span><strong>{{ item.get_status_display }}</strong></article>
+</section>
+
+<section class="panel">
+  <div class="detail-grid">
+    <div><span>Conta</span><strong>{{ item.conta }}</strong></div>
+    <div><span>Referência externa</span><strong>{{ item.referencia_externa }}</strong></div>
+    <div><span>Descrição</span><strong>{{ item.descricao }}</strong></div>
+    <div><span>Arquivo</span><strong>{{ item.importacao.arquivo_nome }}</strong></div>
+    <div><span>Diagnóstico</span><strong>{{ item.observacao }}</strong></div>
+    {% if item.lancamento %}<div><span>Lançamento conciliado</span><strong>#{{ item.lancamento_id }} · {{ item.lancamento.descricao }}</strong></div>{% endif %}
+  </div>
+</section>
+
+{% if item.movimentos_recebiveis.all %}
+<section class="panel table-panel">
+  <div class="panel-header"><div><h2>Alocações de recebíveis</h2><p>Histórico auditável distribuído a partir desta movimentação externa.</p></div></div>
+  <div class="table-wrap"><table><thead><tr><th>Tipo</th><th>Recebível</th><th>Venda</th><th>Data</th><th>Valor</th><th>Origem</th></tr></thead><tbody>
+  {% for movimento in item.movimentos_recebiveis.all %}<tr><td>{{ movimento.get_tipo_display }}</td><td>#{{ movimento.recebivel_id }}</td><td>#{{ movimento.recebivel.pagamento.venda_id }}</td><td>{{ movimento.data|date:"d/m/Y" }}</td><td>R$ {{ movimento.valor|floatformat:2 }}</td><td>{% if movimento.automatico %}Automática{% else %}Manual{% endif %}</td></tr>{% endfor %}
+  </tbody></table></div>
+</section>
+{% endif %}
+
+{% if item.status != 'CONCILIADO' %}
+<section class="panel table-panel">
+  <div class="panel-header">
+    <div>
+      <h2>Recebíveis eletrônicos candidatos</h2>
+      <p>Informe quanto deste depósito pertence a cada venda. O item será concluído somente quando todo o saldo estiver alocado.</p>
+    </div>
+  </div>
+  <div class="table-wrap"><table><thead><tr><th>Previsto</th><th>Venda</th><th>Forma</th><th>NSU / autorização</th><th>Líquido previsto</th><th>Status</th><th>Valor a alocar</th></tr></thead><tbody>
+  {% for candidato in recebiveis_candidatos %}
+    {% with recebivel=candidato.objeto %}
+    <tr>
+      <td>{{ recebivel.data_prevista|date:"d/m/Y" }}</td>
+      <td>#{{ recebivel.pagamento.venda_id }}</td>
+      <td>{{ recebivel.pagamento.forma_pagamento }}</td>
+      <td>{{ recebivel.pagamento.nsu|default:recebivel.pagamento.transacao_externa_id|default:recebivel.pagamento.codigo_autorizacao|default:"-" }}</td>
+      <td>R$ {{ recebivel.valor_liquido_previsto|floatformat:2 }}</td>
+      <td>{{ recebivel.get_status_display }}</td>
+      <td>{% if pode_conciliar %}<form class="inline-form" method="post" action="{% url 'financeiro:conciliar_item_recebivel' item.pk %}">{% csrf_token %}<input type="hidden" name="recebivel_id" value="{{ recebivel.pk }}"><input type="text" inputmode="decimal" name="valor_alocado" value="{{ candidato.valor_sugerido|floatformat:2 }}" aria-label="Valor a alocar no recebível {{ recebivel.pk }}" required><button class="primary-button" type="submit"><i class="fa-solid fa-link"></i> Alocar</button></form>{% else %}<small>Somente administrador/supervisor</small>{% endif %}</td>
+    </tr>
+    {% endwith %}
+  {% empty %}<tr><td colspan="7" class="empty">Nenhum recebível eletrônico candidato nesta conta e janela de data.</td></tr>{% endfor %}
+  </tbody></table></div>
+</section>
+
+{% if possui_rateios %}
+<section class="notice warning"><strong>Conciliação parcial em andamento.</strong> O vínculo com um lançamento comum fica indisponível para evitar que o mesmo valor seja contabilizado duas vezes.</section>
+{% else %}
+<section class="panel table-panel">
+  <div class="panel-header"><div><h2>Candidatos compatíveis</h2><p>Mesma conta, natureza, valor e data dentro de três dias. A confirmação exige autorização administrativa.</p></div></div>
+  <div class="table-wrap"><table><thead><tr><th>Data</th><th>Lançamento</th><th>Origem</th><th>Valor</th><th>Referência do pagamento</th><th></th></tr></thead><tbody>
+  {% for lancamento in candidatos %}<tr><td>{{ lancamento.data|date:"d/m/Y" }}</td><td><strong>#{{ lancamento.pk }}</strong> · {{ lancamento.descricao }}</td><td>{{ lancamento.origem }}</td><td>R$ {{ lancamento.valor|floatformat:2 }}</td><td>{% if lancamento.pagamento_venda %}{{ lancamento.pagamento_venda.nsu|default:lancamento.pagamento_venda.transacao_externa_id|default:"-" }}{% else %}-{% endif %}</td><td>{% if pode_conciliar %}<form method="post" action="{% url 'financeiro:conciliar_item_extrato' item.pk %}">{% csrf_token %}<input type="hidden" name="lancamento_id" value="{{ lancamento.pk }}"><button class="primary-button" type="submit"><i class="fa-solid fa-link"></i> Conciliar</button></form>{% else %}<small>Somente administrador/supervisor</small>{% endif %}</td></tr>{% empty %}<tr><td colspan="6" class="empty">Nenhum candidato exato. O lançamento deve ser registrado no livro antes da conciliação.</td></tr>{% endfor %}
+  </tbody></table></div>
+</section>
+{% endif %}
+{% endif %}
+{% endblock %}

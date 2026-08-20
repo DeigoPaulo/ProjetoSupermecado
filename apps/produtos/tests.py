@@ -1,9 +1,12 @@
+from datetime import timedelta
 from decimal import Decimal
 from io import BytesIO
 
 from django.contrib.auth import get_user_model
+from django.core.exceptions import ValidationError
 from django.core.files.uploadedfile import SimpleUploadedFile
 from django.test import Client, TestCase
+from django.utils import timezone
 from PIL import Image
 
 from apps.accounts.models import PerfilUsuario, TipoPerfil
@@ -13,10 +16,14 @@ from apps.empresas.models import Empresa, Filial
 from apps.empresas.services_snapshots import produto_snapshot_payload
 from apps.fornecedores.models import Fornecedor
 
-from .forms import CategoriaForm, ProdutoForm, ProdutoFornecedorForm
+from .forms import CategoriaForm, ProdutoForm, ProdutoFornecedorForm, ReajustePrecoForm, VersaoPrecoProdutoForm
 from .models import (
     Categoria, CodigoBarrasProduto, ConfiguracaoBalancaProduto, InformacaoNutricional, NivelCategoriaProduto, Produto,
-    ProdutoFornecedor, ProdutoImagem, SetorBalanca, TipoProduto,
+    ProdutoFornecedor, ProdutoImagem, SetorBalanca, StatusVersaoPreco, TipoProduto, VersaoPrecoProduto,
+)
+from .services import (
+    aplicar_reajuste_precos, cancelar_versao_preco, criar_versao_preco, preco_base_atual_produto,
+    simular_reajuste_precos,
 )
 
 
@@ -792,6 +799,18 @@ class ProdutoViewsTests(TestCase):
         self.assertEqual(marca_response.status_code, 200)
         self.assertEqual(marca_response.json()["results"][0]["id"], marca.id)
 
+    def test_busca_json_abre_com_categorias_e_marcas_sem_exigir_texto(self):
+        from .models import Marca
+
+        marca = Marca.objects.create(nome="Marca Inicial")
+        categorias_iniciais = self.client.get("/produtos/categorias/busca.json").json()
+        marcas_iniciais = self.client.get("/produtos/marcas/busca.json").json()
+
+        self.assertIn(self.categoria.id, [item["id"] for item in categorias_iniciais["results"]])
+        self.assertIn(marca.id, [item["id"] for item in marcas_iniciais["results"]])
+        self.assertIn("pagination", categorias_iniciais)
+        self.assertIn("pagination", marcas_iniciais)
+
     def test_margem_e_preco_sugerido_usam_margem_sobre_venda(self):
         self.produto.preco_custo = Decimal("80.00")
         self.produto.preco_venda = Decimal("100.00")
@@ -1021,3 +1040,246 @@ class ProdutoViewsTests(TestCase):
         self.assertIn("aliquota_fcp", form.errors)
         self.assertIn("cst_ibs_cbs", form.errors)
         self.assertIn("classificacao_tributaria_ibs_cbs", form.errors)
+
+
+class ReajustePrecoMargemTests(TestCase):
+    def setUp(self):
+        self.usuario = get_user_model().objects.create_superuser("precos", "precos@example.com", "123")
+        self.categoria = Categoria.objects.create(nome="Categoria de margem")
+        self.produto = Produto.objects.create(
+            codigo_barras="7890000000777",
+            nome="Produto com margem protegida",
+            categoria=self.categoria,
+            preco_custo=Decimal("10.00"),
+            preco_venda=Decimal("15.00"),
+            margem_desejada_percentual=Decimal("40.00"),
+        )
+
+    def test_formulario_remove_campo_de_etiqueta_e_rejeita_reducao_total(self):
+        form = ReajustePrecoForm(
+            data={
+                "categoria": self.categoria.pk,
+                "percentual": "-100.00",
+                "motivo": "Teste",
+            }
+        )
+
+        self.assertNotIn("modelo_salvo", form.fields)
+        self.assertFalse(form.is_valid())
+        self.assertIn("preservar um preço positivo", form.non_field_errors()[0])
+
+    def test_simulacao_identifica_preco_abaixo_da_margem_desejada(self):
+        preview, total = simular_reajuste_precos(
+            categoria=self.categoria,
+            percentual=Decimal("-10.00"),
+        )
+
+        self.assertEqual(total, 1)
+        self.assertEqual(preview[0]["preco_venda_novo"], Decimal("13.50"))
+        self.assertEqual(preview[0]["margem_nova"], Decimal("25.93"))
+        self.assertTrue(preview[0]["abaixo_margem"])
+
+    def test_aplicacao_bloqueia_margem_sem_excecao(self):
+        with self.assertRaisesMessage(ValidationError, "abaixo da margem desejada"):
+            aplicar_reajuste_precos(
+                usuario=self.usuario,
+                categoria=self.categoria,
+                percentual=Decimal("-10.00"),
+                motivo="Reducao indevida",
+                supervisor=self.usuario,
+            )
+
+        self.produto.refresh_from_db()
+        self.assertEqual(self.produto.preco_venda, Decimal("15.00"))
+        self.assertFalse(LogAuditoria.objects.filter(acao="REAJUSTE_PRECO_MASSA").exists())
+
+    def test_excecao_supervisionada_aplica_e_audita(self):
+        total = aplicar_reajuste_precos(
+            usuario=self.usuario,
+            categoria=self.categoria,
+            percentual=Decimal("-10.00"),
+            motivo="Liquidacao autorizada",
+            permitir_abaixo_margem=True,
+            supervisor=self.usuario,
+        )
+
+        self.produto.refresh_from_db()
+        self.assertEqual(total, 1)
+        self.assertEqual(self.produto.preco_venda, Decimal("13.50"))
+        log = LogAuditoria.objects.get(acao="REAJUSTE_PRECO_MASSA")
+        self.assertIn("Abaixo da margem=1", log.descricao)
+        self.assertIn("Exceção autorizada=Sim", log.descricao)
+
+    def test_tela_trata_preco_arredondado_para_zero_sem_erro_500(self):
+        self.produto.preco_venda = Decimal("0.01")
+        self.produto.save(update_fields=["preco_venda", "updated_at"])
+        self.client.force_login(self.usuario)
+
+        response = self.client.post(
+            "/produtos/reajustar-precos/",
+            {
+                "categoria": self.categoria.pk,
+                "percentual": "-99.99",
+                "motivo": "Teste de arredondamento",
+            },
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "preço menor ou igual a zero")
+
+    def test_tela_exibe_alerta_da_simulacao(self):
+        self.client.force_login(self.usuario)
+        response = self.client.post(
+            "/produtos/reajustar-precos/",
+            {
+                "categoria": self.categoria.pk,
+                "percentual": "-10.00",
+                "motivo": "Simulacao visual",
+            },
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "Abaixo da margem")
+        self.assertContains(response, "A aplicação será bloqueada")
+        self.assertContains(response, "Margem nova")
+
+class VersaoPrecoProdutoTests(TestCase):
+    def setUp(self):
+        self.usuario = get_user_model().objects.create_superuser("agenda", "agenda@example.com", "123")
+        self.categoria = Categoria.objects.create(nome="Categoria com preço programado")
+        self.produto = Produto.objects.create(
+            codigo_barras="7890000000888",
+            nome="Produto com preço futuro",
+            categoria=self.categoria,
+            preco_custo=Decimal("10.00"),
+            preco_venda=Decimal("20.00"),
+            margem_desejada_percentual=Decimal("30.00"),
+        )
+        self.agora = timezone.now()
+
+    def test_preco_futuro_nao_antecipa_e_passa_a_valer_na_vigencia(self):
+        vigencia = self.agora + timedelta(days=1)
+        versao = criar_versao_preco(
+            produto=self.produto,
+            preco_novo=Decimal("22.00"),
+            vigencia_inicio=vigencia,
+            motivo="Tabela de setembro",
+            usuario=self.usuario,
+        )
+
+        self.assertEqual(versao.versao, 1)
+        self.assertEqual(versao.preco_anterior, Decimal("20.00"))
+        self.assertEqual(preco_base_atual_produto(self.produto, self.agora), Decimal("20.00"))
+        self.assertEqual(
+            preco_base_atual_produto(self.produto, vigencia + timedelta(seconds=1)),
+            Decimal("22.00"),
+        )
+        self.assertTrue(LogAuditoria.objects.filter(acao="AGENDAR_PRECO", objeto_id=str(versao.pk)).exists())
+
+    def test_versao_mais_recente_prevalece_e_cancelamento_restaura_anterior(self):
+        primeira = criar_versao_preco(
+            produto=self.produto,
+            preco_novo=Decimal("21.00"),
+            vigencia_inicio=self.agora - timedelta(hours=2),
+            motivo="Primeira tabela",
+            usuario=self.usuario,
+        )
+        segunda = criar_versao_preco(
+            produto=self.produto,
+            preco_novo=Decimal("23.00"),
+            vigencia_inicio=self.agora - timedelta(hours=1),
+            motivo="Segunda tabela",
+            usuario=self.usuario,
+        )
+        self.assertEqual(segunda.versao, 2)
+        self.assertEqual(preco_base_atual_produto(self.produto, self.agora), Decimal("23.00"))
+
+        cancelar_versao_preco(
+            versao=segunda,
+            usuario=self.usuario,
+            motivo="Tabela substituída",
+        )
+        segunda.refresh_from_db()
+        self.assertEqual(segunda.status, StatusVersaoPreco.CANCELADA)
+        self.assertEqual(preco_base_atual_produto(self.produto, self.agora), Decimal("21.00"))
+        self.assertEqual(primeira.status, StatusVersaoPreco.AGENDADA)
+
+    def test_margem_baixa_exige_excecao_supervisionada(self):
+        with self.assertRaisesMessage(ValidationError, "abaixo da margem desejada"):
+            criar_versao_preco(
+                produto=self.produto,
+                preco_novo=Decimal("12.00"),
+                vigencia_inicio=self.agora,
+                motivo="Preço indevido",
+                usuario=self.usuario,
+            )
+
+        versao = criar_versao_preco(
+            produto=self.produto,
+            preco_novo=Decimal("12.00"),
+            vigencia_inicio=self.agora,
+            motivo="Exceção autorizada",
+            usuario=self.usuario,
+            permitir_abaixo_margem=True,
+            supervisor=self.usuario,
+        )
+        self.assertEqual(versao.preco_novo, Decimal("12.00"))
+
+    def test_promocao_tem_prioridade_sobre_preco_normal_programado(self):
+        from apps.promocoes.models import PromocaoProduto
+        from apps.promocoes.services import preco_atual_produto
+
+        criar_versao_preco(
+            produto=self.produto,
+            preco_novo=Decimal("22.00"),
+            vigencia_inicio=self.agora - timedelta(minutes=1),
+            motivo="Preço normal",
+            usuario=self.usuario,
+        )
+        PromocaoProduto.objects.create(
+            produto=self.produto,
+            nome="Oferta",
+            preco_promocional=Decimal("18.00"),
+            inicio=self.agora - timedelta(hours=1),
+            fim=self.agora + timedelta(hours=1),
+            ativa=True,
+            criado_por=self.usuario,
+        )
+        self.assertEqual(preco_atual_produto(self.produto, self.agora), Decimal("18.00"))
+
+    def test_telas_agendam_listam_e_cancelam_sem_apagar_historico(self):
+        self.produto.margem_desejada_percentual = None
+        self.produto.save(update_fields=["margem_desejada_percentual", "updated_at"])
+        self.client.force_login(self.usuario)
+        vigencia = self.agora + timedelta(days=1)
+        response = self.client.post(
+            "/produtos/precos-programados/novo/",
+            {
+                "produto": self.produto.pk,
+                "preco_novo": "24.90",
+                "vigencia_inicio": vigencia.strftime("%Y-%m-%dT%H:%M"),
+                "motivo": "Nova tabela",
+            },
+        )
+        self.assertRedirects(response, "/produtos/precos-programados/")
+        versao = VersaoPrecoProduto.objects.get(produto=self.produto)
+
+        lista = self.client.get("/produtos/precos-programados/", {"q": "preço futuro"})
+        self.assertEqual(lista.status_code, 200)
+        self.assertContains(lista, "R$ 24,90")
+        self.assertContains(lista, "Programada")
+
+        cancelamento = self.client.post(
+            f"/produtos/precos-programados/{versao.pk}/cancelar/",
+            {"motivo": "Tabela cancelada"},
+        )
+        self.assertRedirects(cancelamento, "/produtos/precos-programados/")
+        self.assertEqual(VersaoPrecoProduto.objects.filter(pk=versao.pk).count(), 1)
+        self.assertEqual(
+            VersaoPrecoProduto.objects.get(pk=versao.pk).status,
+            StatusVersaoPreco.CANCELADA,
+        )
+
+    def test_formulario_usa_busca_assincrona_de_produtos(self):
+        form = VersaoPrecoProdutoForm()
+        self.assertEqual(form.fields["produto"].widget.attrs["data-ajax-url"], "/estoque/produtos/busca.json")

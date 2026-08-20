@@ -198,3 +198,17 @@ class HomologacaoFiscalForm(forms.ModelForm):
             if not (cleaned.get("evidencia_referencia") or "").strip():
                 self.add_error("evidencia_referencia", "Informe a referência da evidência ou do chamado técnico.")
         return cleaned
+
+class ImportarDFeRecebidoForm(forms.Form):
+    arquivo_xml = forms.FileField(
+        label="XML autorizado da NF-e",
+        help_text="Armazena o documento na caixa fiscal. Não cria entrada, estoque, financeiro ou manifestação.",
+    )
+
+    def clean_arquivo_xml(self):
+        arquivo = self.cleaned_data["arquivo_xml"]
+        if not arquivo.name.lower().endswith(".xml"):
+            raise forms.ValidationError("Envie um arquivo XML de NF-e.")
+        if arquivo.size > 5 * 1024 * 1024:
+            raise forms.ValidationError("O XML deve ter no máximo 5 MB.")
+        return arquivo

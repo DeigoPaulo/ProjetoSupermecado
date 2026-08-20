@@ -230,16 +230,19 @@ document.addEventListener("DOMContentLoaded", function () {
         },
       };
       if ($field.data("ajax-url")) {
-        options.minimumInputLength = 2;
+        options.minimumInputLength = Number($field.data("minimum-input-length") || 0);
         options.ajax = {
           url: $field.data("ajax-url"),
           dataType: "json",
           delay: 180,
           data: function (params) {
-            return { q: params.term || "" };
+            return { q: params.term || "", page: params.page || 1 };
           },
           processResults: function (data) {
-            return { results: data.results || [] };
+            return {
+              results: data.results || [],
+              pagination: data.pagination || { more: false },
+            };
           },
         };
       }

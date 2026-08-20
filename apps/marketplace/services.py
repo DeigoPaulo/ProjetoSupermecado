@@ -130,7 +130,7 @@ def alterar_status_pedido(*, pedido, destino, usuario, ip=None):
         StatusPedido.SAIU_ENTREGA: {StatusPedido.CONCLUIDO},
     }
     if destino not in permitidos.get(pedido.status, set()):
-        raise ValidationError("Mudan?a de status não permitida para este pedido.")
+        raise ValidationError("Mudança de status não permitida para este pedido.")
     if destino == StatusPedido.PRONTO and pedido.itens.exclude(quantidade_separada=models.F("quantidade")).exists():
         raise ValidationError("Conclua a separação de todos os itens antes de marcar o pedido como pronto.")
     if destino == StatusPedido.CONCLUIDO and pedido.status_pagamento != StatusPagamentoPedido.PAGO:
@@ -155,9 +155,9 @@ def registrar_pagamento(*, pedido, forma_pagamento, valor_pago, referencia_pagam
         if pedido.tipo_entrega != TipoEntrega.ENTREGA:
             raise ValidationError("Cartão pago na entrega é permitido somente para pedidos de entrega.")
         if pedido.status != StatusPedido.SAIU_ENTREGA:
-            raise ValidationError("Confirme cart?o pago na entrega somente depois que o pedido sair para entrega.")
+            raise ValidationError("Confirme cartão pago na entrega somente depois que o pedido sair para entrega.")
     if forma_pagamento in {"CARTAO", *cartoes_na_entrega} and not referencia_pagamento:
-        raise ValidationError("Informe o NSU ou a referência da maquininha para confirmar o cart?o.")
+        raise ValidationError("Informe o NSU ou a referência da maquininha para confirmar o cartão.")
     if pedido.status in {StatusPedido.CONCLUIDO, StatusPedido.CANCELADO}:
         raise ValidationError("O pagamento deste pedido não pode mais ser alterado.")
     if valor_pago < pedido.total:

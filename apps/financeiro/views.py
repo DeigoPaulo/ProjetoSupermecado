@@ -29,10 +29,12 @@ from apps.empresas.models import Empresa, Filial
 from apps.fiscal.models import DocumentoFiscal, StatusDocumentoFiscal
 from apps.vendas.models import PagamentoVenda, StatusVenda
 
-from .forms import BaixaContaForm, CategoriaFinanceiraForm, CentroCustoForm, ContaContabilForm, ContaFinanceiraForm, ContaMovimentoFinanceiroForm, TransferenciaFinanceiraForm
+from .forms import AlocacaoRecebivelForm, BaixaContaForm, CategoriaFinanceiraForm, CentroCustoForm, ContaContabilForm, ContaFinanceiraForm, ContaMovimentoFinanceiroForm, ImportacaoExtratoFinanceiroForm, RegraLiquidacaoEletronicaForm, TransferenciaFinanceiraForm
 from .adapters import carregar_adaptador_contabil, diagnosticar_adaptador_contabil, normalizar_retorno_exportacao
-from .models import CategoriaFinanceira, CentroCusto, ContaContabil, ConciliacaoLancamentoFinanceiro, ContaFinanceira, ContaMovimentoFinanceiro, ChaveIntegracaoContabil, ExportacaoContabil, LancamentoFinanceiro, StatusContaFinanceira, StatusExportacaoContabil, TipoContaFinanceira, TipoLancamentoFinanceiro, TransferenciaFinanceira
+from .models import CategoriaFinanceira, CentroCusto, ContaContabil, ConciliacaoLancamentoFinanceiro, ContaFinanceira, ContaMovimentoFinanceiro, ChaveIntegracaoContabil, ExportacaoContabil, ImportacaoExtratoFinanceiro, ItemExtratoFinanceiro, LancamentoFinanceiro, RecebivelEletronico, RegraLiquidacaoEletronica, StatusContaFinanceira, StatusExportacaoContabil, StatusItemExtratoFinanceiro, StatusRecebivelEletronico, TipoContaFinanceira, TipoLancamentoFinanceiro, TransferenciaFinanceira
 from .services import baixar_conta, cancelar_conta, conciliar_lancamento, estornar_lancamento, realizar_transferencia
+from .services_conciliacao import conciliar_item_extrato, importar_extrato
+from .services_recebiveis import candidatos_recebivel_item, conciliar_recebivel_com_item, sincronizar_recebiveis
 
 
 def _periodo_from_request(request):
@@ -338,7 +340,7 @@ def _resultado_financeiro_periodo(data_inicio, data_fim, filial_id=None, empresa
             chave,
             {
                 "codigo": conta_contabil.codigo if conta_contabil else "-",
-                "conta_contabil": conta_contabil.nome if conta_contabil else "Sem conta cont?bil",
+                "conta_contabil": conta_contabil.nome if conta_contabil else "Sem conta contábil",
                 "natureza": conta_contabil.get_natureza_display() if conta_contabil else "-",
                 "receitas": Decimal("0.00"),
                 "despesas": Decimal("0.00"),
@@ -1650,12 +1652,12 @@ def conta_contabil_form(request, pk=None):
                 usuario=request.user,
                 modulo="financeiro",
                 acao="ALTERACAO_CONTA_CONTABIL" if conta else "CADASTRO_CONTA_CONTABIL",
-                descricao=f"Conta cont?bil {conta_salva.codigo} - {conta_salva.nome} salva.",
+                descricao=f"Conta contábil {conta_salva.codigo} - {conta_salva.nome} salva.",
                 objeto_tipo="ContaContabil",
                 objeto_id=str(conta_salva.pk),
                 ip=request.META.get("REMOTE_ADDR"),
             )
-            messages.success(request, "Conta cont?bil salva.")
+            messages.success(request, "Conta contábil salva.")
             return redirect("financeiro:plano_contas")
     else:
         form = ContaContabilForm(instance=conta, user=request.user)
@@ -1715,3 +1717,404 @@ def categoria_form(request, pk=None):
     else:
         form = CategoriaFinanceiraForm(instance=categoria, user=request.user)
     return render(request, "financeiro/categoria_form.html", {"form": form, "categoria": categoria})
+@login_required
+@role_required(*RELATORIOS)
+def conciliacao_extratos(request):
+    filiais, _, _, _ = _escopo_filiais_financeiro(request)
+    pode_importar = has_role(request.user, SISTEMA)
+    form = ImportacaoExtratoFinanceiroForm(request.POST or None, request.FILES or None, user=request.user)
+    if request.method == "POST":
+        if not pode_importar:
+            raise PermissionDenied("Seu perfil não pode importar extratos financeiros.")
+        if form.is_valid():
+            arquivo = form.cleaned_data["arquivo"]
+            try:
+                importacao, criada = importar_extrato(
+                    conta=form.cleaned_data["conta"],
+                    arquivo_nome=arquivo.name,
+                    conteudo=arquivo.read(),
+                    adaptador_codigo=form.cleaned_data.get("adaptador") or "CSV_GENERICO",
+                    usuario=request.user,
+                    ip=request.META.get("REMOTE_ADDR"),
+                )
+            except ValidationError as exc:
+                messages.error(request, " ".join(exc.messages))
+            else:
+                if criada:
+                    messages.success(
+                        request,
+                        f"Extrato importado: {importacao.conciliadas_automaticamente} conciliações automáticas, "
+                        f"{importacao.pendentes} pendências, {importacao.ambiguas} ambiguidades e "
+                        f"{importacao.duplicadas} duplicidades ignoradas.",
+                    )
+                else:
+                    messages.warning(request, "Este mesmo arquivo já havia sido importado nesta conta.")
+                return redirect("financeiro:conciliacao_extratos")
+        else:
+            messages.error(request, "Revise os campos destacados antes de importar o extrato.")
+
+    itens = ItemExtratoFinanceiro.objects.select_related(
+        "conta", "conta__filial", "importacao", "lancamento",
+    ).filter(conta__filial__in=filiais)
+    status = (request.GET.get("status") or "").strip()
+    conta_id = (request.GET.get("conta") or "").strip()
+    q = (request.GET.get("q") or "").strip()
+    if status in StatusItemExtratoFinanceiro.values:
+        itens = itens.filter(status=status)
+    if conta_id.isdigit():
+        itens = itens.filter(conta_id=conta_id)
+    if q:
+        itens = itens.filter(
+            Q(descricao__icontains=q)
+            | Q(referencia_externa__icontains=q)
+            | Q(importacao__arquivo_nome__icontains=q)
+        )
+    pagina = Paginator(itens, 50).get_page(request.GET.get("page"))
+    query = request.GET.copy()
+    query.pop("page", None)
+    importacoes = ImportacaoExtratoFinanceiro.objects.select_related("conta", "conta__filial").filter(
+        conta__filial__in=filiais
+    )[:10]
+    return render(request, "financeiro/conciliacao_extratos.html", {
+        "form": form,
+        "pagina": pagina,
+        "query_sem_pagina": query.urlencode(),
+        "importacoes": importacoes,
+        "contas_opcoes": ContaMovimentoFinanceiro.objects.filter(ativa=True, filial__in=filiais).select_related("filial"),
+        "status_opcoes": StatusItemExtratoFinanceiro.choices,
+        "status": status,
+        "conta_id": conta_id,
+        "q": q,
+        "pode_importar": pode_importar,
+        "erros_adaptadores": getattr(form, "erros_adaptadores", []),
+        "total_pendente": ItemExtratoFinanceiro.objects.filter(conta__filial__in=filiais, status=StatusItemExtratoFinanceiro.PENDENTE).count(),
+        "total_ambiguo": ItemExtratoFinanceiro.objects.filter(conta__filial__in=filiais, status=StatusItemExtratoFinanceiro.AMBIGUO).count(),
+        "total_parcial": ItemExtratoFinanceiro.objects.filter(conta__filial__in=filiais, status=StatusItemExtratoFinanceiro.PARCIAL).count(),
+        "total_conciliado": ItemExtratoFinanceiro.objects.filter(conta__filial__in=filiais, status=StatusItemExtratoFinanceiro.CONCILIADO).count(),
+    })
+
+
+@login_required
+@role_required(*RELATORIOS)
+def item_extrato_detalhe(request, pk):
+    filiais, _, _, _ = _escopo_filiais_financeiro(request)
+    item = get_object_or_404(
+        ItemExtratoFinanceiro.objects.select_related("conta", "conta__filial", "importacao", "lancamento")
+        .prefetch_related("movimentos_recebiveis__recebivel__pagamento__forma_pagamento"),
+        pk=pk,
+        conta__filial__in=filiais,
+    )
+    possui_rateios = item.movimentos_recebiveis.exists()
+    inicio = item.data - timedelta(days=3)
+    fim = item.data + timedelta(days=3)
+    candidatos = []
+    if item.status != StatusItemExtratoFinanceiro.CONCILIADO and not possui_rateios:
+        candidatos = LancamentoFinanceiro.objects.select_related("conta", "pagamento_venda").filter(
+            conta=item.conta,
+            tipo=item.tipo,
+            valor=item.valor,
+            data__range=(inicio, fim),
+            conciliacao_bancaria__isnull=True,
+            item_extrato__isnull=True,
+        )[:20]
+
+    saldo_alocar = item.saldo_alocar_recebiveis
+    recebiveis_candidatos = []
+    if item.status != StatusItemExtratoFinanceiro.CONCILIADO:
+        recebiveis_candidatos = [
+            {
+                "objeto": recebivel,
+                "valor_sugerido": min(recebivel.valor_liquido_previsto, saldo_alocar),
+            }
+            for recebivel in candidatos_recebivel_item(item)
+        ]
+
+    return render(request, "financeiro/item_extrato_detalhe.html", {
+        "item": item,
+        "candidatos": candidatos,
+        "recebiveis_candidatos": recebiveis_candidatos,
+        "valor_alocado": item.valor_alocado_recebiveis,
+        "saldo_alocar": saldo_alocar,
+        "possui_rateios": possui_rateios,
+        "pode_conciliar": has_role(request.user, SISTEMA),
+    })
+
+
+@login_required
+@role_required(*SISTEMA)
+def conciliar_item_extrato_view(request, pk):
+    if request.method != "POST":
+        return redirect("financeiro:item_extrato_detalhe", pk=pk)
+    filiais, _, _, _ = _escopo_filiais_financeiro(request)
+    item = get_object_or_404(ItemExtratoFinanceiro, pk=pk, conta__filial__in=filiais)
+    lancamento = get_object_or_404(
+        LancamentoFinanceiro.objects.filter(conta__filial__in=filiais),
+        pk=request.POST.get("lancamento_id"),
+    )
+    try:
+        conciliar_item_extrato(
+            item=item,
+            lancamento=lancamento,
+            usuario=request.user,
+            ip=request.META.get("REMOTE_ADDR"),
+        )
+    except ValidationError as exc:
+        messages.error(request, " ".join(exc.messages))
+    else:
+        messages.success(request, f"Item do extrato conciliado com o lançamento #{lancamento.pk}.")
+    return redirect("financeiro:item_extrato_detalhe", pk=pk)
+@login_required
+@role_required(*SISTEMA)
+def conciliar_item_recebivel_view(request, pk):
+    if request.method != "POST":
+        return redirect("financeiro:item_extrato_detalhe", pk=pk)
+    filiais, _, _, _ = _escopo_filiais_financeiro(request)
+    item = get_object_or_404(ItemExtratoFinanceiro, pk=pk, conta__filial__in=filiais)
+    recebivel = get_object_or_404(
+        RecebivelEletronico.objects.filter(pagamento__venda__filial__in=filiais),
+        pk=request.POST.get("recebivel_id"),
+    )
+    form = AlocacaoRecebivelForm(request.POST)
+    if not form.is_valid():
+        erros = " ".join(
+            str(mensagem)
+            for mensagens in form.errors.values()
+            for mensagem in mensagens
+        )
+        messages.error(request, erros)
+        return redirect("financeiro:item_extrato_detalhe", pk=pk)
+
+    try:
+        conciliar_recebivel_com_item(
+            item=item,
+            recebivel=recebivel,
+            valor_alocado=form.cleaned_data["valor_alocado"],
+            usuario=request.user,
+            ip=request.META.get("REMOTE_ADDR"),
+        )
+    except ValidationError as exc:
+        messages.error(request, " ".join(exc.messages))
+    else:
+        recebivel.refresh_from_db()
+        messages.success(
+            request,
+            f"R$ {form.cleaned_data['valor_alocado']:.2f} alocados ao recebível "
+            f"#{recebivel.pk}: {recebivel.get_status_display()}.",
+        )
+    return redirect("financeiro:item_extrato_detalhe", pk=pk)
+
+
+@login_required
+@role_required(*RELATORIOS)
+def modelo_extrato_csv(request):
+    response = HttpResponse(content_type="text/csv; charset=utf-8")
+    response["Content-Disposition"] = 'attachment; filename="modelo_conciliacao_extrato.csv"'
+    response.write("\ufeff")
+    writer = csv.writer(response, delimiter=";")
+    writer.writerow(["data", "tipo", "valor", "descricao", "referencia"])
+    writer.writerow([timezone.localdate().strftime("%d/%m/%Y"), "credito", "150,00", "Recebimento identificado", "NSU-EXEMPLO-001"])
+    return response
+
+
+@login_required
+@role_required(*RELATORIOS)
+def agenda_recebiveis(request):
+    filiais, filial_id, permite_consolidado, empresa_id = _escopo_filiais_financeiro(request)
+    if request.method == "POST":
+        if not has_role(request.user, SISTEMA):
+            raise PermissionDenied("Seu perfil não pode sincronizar a agenda de recebíveis.")
+        resultado = sincronizar_recebiveis(filiais=filiais)
+        LogAuditoria.objects.create(
+            usuario=request.user,
+            modulo="financeiro",
+            acao="SINCRONIZA_AGENDA_RECEBIVEIS",
+            descricao=(
+                f"Agenda sincronizada: {resultado['criados']} criado(s) e "
+                f"{resultado['sem_regra']} pagamento(s) sem regra."
+            ),
+            objeto_tipo="RecebivelEletronico",
+            ip=request.META.get("REMOTE_ADDR"),
+        )
+        if resultado["criados"]:
+            messages.success(request, f"{resultado['criados']} recebível(is) incluído(s) na agenda.")
+        if resultado["sem_regra"]:
+            messages.warning(
+                request,
+                f"{resultado['sem_regra']} pagamento(s) eletrônico(s) continuam sem regra ativa de liquidação.",
+            )
+        if not resultado["criados"] and not resultado["sem_regra"]:
+            messages.info(request, "A agenda já estava atualizada.")
+        return redirect("financeiro:agenda_recebiveis")
+
+    data_inicio, data_fim = _periodo_from_request(request)
+    status = (request.GET.get("status") or "").strip()
+    forma_id = (request.GET.get("forma") or "").strip()
+    q = (request.GET.get("q") or "").strip()
+    recebiveis = RecebivelEletronico.objects.select_related(
+        "pagamento__venda__filial__empresa", "pagamento__forma_pagamento", "regra"
+    ).filter(
+        pagamento__venda__filial__in=filiais,
+        data_prevista__range=(data_inicio, data_fim),
+    )
+    if filial_id:
+        recebiveis = recebiveis.filter(pagamento__venda__filial_id=filial_id)
+    if status == "ATRASADO":
+        recebiveis = recebiveis.filter(
+            status=StatusRecebivelEletronico.PENDENTE,
+            data_prevista__lt=timezone.localdate(),
+        )
+    elif status in StatusRecebivelEletronico.values:
+        recebiveis = recebiveis.filter(status=status)
+    if forma_id.isdigit():
+        recebiveis = recebiveis.filter(pagamento__forma_pagamento_id=forma_id)
+    if q:
+        busca = (
+            Q(pagamento__nsu__icontains=q)
+            | Q(pagamento__transacao_externa_id__icontains=q)
+            | Q(pagamento__codigo_autorizacao__icontains=q)
+        )
+        if q.isdigit():
+            busca |= Q(pagamento__venda_id=int(q))
+        recebiveis = recebiveis.filter(busca)
+
+    resumo = recebiveis.aggregate(
+        bruto=Sum("valor_bruto"),
+        taxas=Sum("taxa_prevista"),
+        liquido=Sum("valor_liquido_previsto"),
+    )
+    pagina = Paginator(recebiveis, 50).get_page(request.GET.get("page"))
+    query = request.GET.copy()
+    query.pop("page", None)
+    from apps.vendas.models import FormaPagamento, PagamentoVenda, StatusPagamento
+
+    eletronicos = ["PIX", "CARTAO", "DEBITO", "CREDITO", "VALE_ALIMENTACAO", "VALE_REFEICAO"]
+    pagamentos_sem_regra = PagamentoVenda.objects.filter(
+        venda__filial__in=filiais,
+        status=StatusPagamento.CONFIRMADO,
+        forma_pagamento__tipo__in=eletronicos,
+        recebivel_eletronico__isnull=True,
+    ).count()
+    return render(request, "financeiro/agenda_recebiveis.html", {
+        "pagina": pagina,
+        "query_sem_pagina": query.urlencode(),
+        "data_inicio": data_inicio,
+        "data_fim": data_fim,
+        "filiais_opcoes": filiais,
+        "filial_id": str(filial_id or ""),
+        "permite_consolidado": permite_consolidado,
+        "status": status,
+        "status_opcoes": StatusRecebivelEletronico.choices,
+        "forma_id": forma_id,
+        "formas_opcoes": FormaPagamento.objects.filter(tipo__in=eletronicos, ativo=True).order_by("nome"),
+        "q": q,
+        "total_bruto": resumo["bruto"] or Decimal("0.00"),
+        "total_taxas": resumo["taxas"] or Decimal("0.00"),
+        "total_liquido": resumo["liquido"] or Decimal("0.00"),
+        "total_atrasados": recebiveis.filter(
+            status=StatusRecebivelEletronico.PENDENTE,
+            data_prevista__lt=timezone.localdate(),
+        ).count(),
+        "pagamentos_sem_regra": pagamentos_sem_regra,
+        "pode_configurar": has_role(request.user, SISTEMA),
+    })
+
+
+@login_required
+@role_required(*RELATORIOS)
+def agenda_recebiveis_csv(request):
+    filiais, filial_id, _, _ = _escopo_filiais_financeiro(request)
+    data_inicio, data_fim = _periodo_from_request(request)
+    recebiveis = RecebivelEletronico.objects.select_related(
+        "pagamento__venda__filial", "pagamento__forma_pagamento"
+    ).filter(
+        pagamento__venda__filial__in=filiais,
+        data_prevista__range=(data_inicio, data_fim),
+    )
+    if filial_id:
+        recebiveis = recebiveis.filter(pagamento__venda__filial_id=filial_id)
+    status = (request.GET.get("status") or "").strip()
+    forma_id = (request.GET.get("forma") or "").strip()
+    q = (request.GET.get("q") or "").strip()
+    if status == "ATRASADO":
+        recebiveis = recebiveis.filter(
+            status=StatusRecebivelEletronico.PENDENTE,
+            data_prevista__lt=timezone.localdate(),
+        )
+    elif status in StatusRecebivelEletronico.values:
+        recebiveis = recebiveis.filter(status=status)
+    if forma_id.isdigit():
+        recebiveis = recebiveis.filter(pagamento__forma_pagamento_id=forma_id)
+    if q:
+        busca = (
+            Q(pagamento__nsu__icontains=q)
+            | Q(pagamento__transacao_externa_id__icontains=q)
+            | Q(pagamento__codigo_autorizacao__icontains=q)
+        )
+        if q.isdigit():
+            busca |= Q(pagamento__venda_id=int(q))
+        recebiveis = recebiveis.filter(busca)
+    response = HttpResponse(content_type="text/csv; charset=utf-8")
+    response["Content-Disposition"] = f'attachment; filename="agenda_recebiveis_{data_inicio}_{data_fim}.csv"'
+    response.write("﻿")
+    writer = csv.writer(response, delimiter=";")
+    writer.writerow([
+        "Venda", "Filial", "Forma", "NSU", "Data da venda", "Data prevista",
+        "Valor bruto", "Taxa prevista", "Valor líquido previsto", "Data da liquidação",
+        "Valor liquidado", "Diferença", "Referência da liquidação", "Status",
+    ])
+    for item in recebiveis.iterator():
+        writer.writerow([
+            item.pagamento.venda_id,
+            item.pagamento.venda.filial,
+            item.pagamento.forma_pagamento,
+            item.pagamento.nsu,
+            item.data_venda.strftime("%d/%m/%Y"),
+            item.data_prevista.strftime("%d/%m/%Y"),
+            str(item.valor_bruto).replace(".", ","),
+            str(item.taxa_prevista).replace(".", ","),
+            str(item.valor_liquido_previsto).replace(".", ","),
+            item.data_liquidacao.strftime("%d/%m/%Y") if item.data_liquidacao else "",
+            str(item.valor_liquidado).replace(".", ",") if item.valor_liquidado is not None else "",
+            str((item.valor_liquidado - item.valor_liquido_previsto)).replace(".", ",") if item.valor_liquidado is not None else "",
+            item.referencia_liquidacao,
+            "Atrasado" if item.esta_atrasado else item.get_status_display(),
+        ])
+    return response
+
+
+@login_required
+@role_required(*SISTEMA)
+def regras_liquidacao(request):
+    filiais, _, _, _ = _escopo_filiais_financeiro(request)
+    regras = RegraLiquidacaoEletronica.objects.select_related(
+        "filial__empresa", "forma_pagamento"
+    ).filter(filial__in=filiais)
+    return render(request, "financeiro/regras_liquidacao.html", {"regras": regras})
+
+
+@login_required
+@role_required(*SISTEMA)
+def regra_liquidacao_form(request, pk=None):
+    filiais, _, _, _ = _escopo_filiais_financeiro(request)
+    regra = get_object_or_404(RegraLiquidacaoEletronica.objects.filter(filial__in=filiais), pk=pk) if pk else None
+    form = RegraLiquidacaoEletronicaForm(request.POST or None, instance=regra, user=request.user)
+    if request.method == "POST" and form.is_valid():
+        regra_salva = form.save(commit=False)
+        regra_salva.full_clean()
+        regra_salva.save()
+        LogAuditoria.objects.create(
+            usuario=request.user,
+            modulo="financeiro",
+            acao="CONFIGURA_REGRA_LIQUIDACAO",
+            descricao=(
+                f"Regra #{regra_salva.pk} salva para {regra_salva.filial} / "
+                f"{regra_salva.forma_pagamento}: D+{regra_salva.prazo_dias}, "
+                f"{regra_salva.taxa_percentual}% + R$ {regra_salva.taxa_fixa}."
+            ),
+            objeto_tipo="RegraLiquidacaoEletronica",
+            objeto_id=str(regra_salva.pk),
+            ip=request.META.get("REMOTE_ADDR"),
+        )
+        messages.success(request, "Regra de liquidação salva.")
+        return redirect("financeiro:regras_liquidacao")
+    return render(request, "financeiro/regra_liquidacao_form.html", {"form": form, "regra": regra})

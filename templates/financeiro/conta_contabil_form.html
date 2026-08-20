@@ -1,14 +1,14 @@
 {% extends "base.html" %}
-{% block title %}Conta cont?bil{% endblock %}
+{% block title %}Conta contábil{% endblock %}
 {% block content %}
 <header class="page-header">
-  <div><h1>{% if conta_contabil %}Editar conta cont?bil{% else %}Nova conta cont?bil{% endif %}</h1><p>Cadastre contas sint?ticas para agrupamento e anal?ticas para classifica??o dos lan?amentos.</p></div>
+  <div><h1>{% if conta_contabil %}Editar conta contábil{% else %}Nova conta contábil{% endif %}</h1><p>Cadastre contas sintéticas para agrupamento e analíticas para classificação dos lançamentos.</p></div>
   <a class="secondary-button" href="{% url 'financeiro:plano_contas' %}">Voltar</a>
 </header>
 <form method="post" class="form-grid panel">
   {% csrf_token %}
   {% if form.non_field_errors %}<div class="form-note form-note-danger">{{ form.non_field_errors }}</div>{% endif %}
-  <section class="form-section form-field-wide"><h2>Identifica??o cont?bil</h2><div class="form-grid form-grid-inner">
+  <section class="form-section form-field-wide"><h2>Identificação contábil</h2><div class="form-grid form-grid-inner">
     {% if form.empresa %}<label class="form-field"><span>{{ form.empresa.label }}</span>{{ form.empresa }}{{ form.empresa.errors }}</label>{% endif %}
     <label class="form-field"><span>{{ form.codigo.label }}</span>{{ form.codigo }}{{ form.codigo.errors }}</label>
     <label class="form-field"><span>{{ form.nome.label }}</span>{{ form.nome }}{{ form.nome.errors }}</label>
@@ -17,7 +17,7 @@
     <label class="form-field"><span>{{ form.conta_pai.label }}</span>{{ form.conta_pai }}{{ form.conta_pai.errors }}</label>
     <label class="toggle-field">{{ form.ativa }} <span>{{ form.ativa.label }}</span>{{ form.ativa.errors }}</label>
   </div></section>
-  <div class="form-note"><strong>Conta sint?tica:</strong> agrupa subcontas. <strong>Conta anal?tica:</strong> pode ser vinculada ?s categorias financeiras e receber lan?amentos.</div>
+  <div class="form-note"><strong>Conta sintética:</strong> agrupa subcontas. <strong>Conta analítica:</strong> pode ser vinculada ?s categorias financeiras e receber lançamentos.</div>
   <div class="form-actions"><a class="secondary-button" href="{% url 'financeiro:plano_contas' %}">Cancelar</a><button class="primary-button" type="submit">Salvar</button></div>
 </form>
 {% endblock %}

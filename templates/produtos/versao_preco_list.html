@@ -1,0 +1,31 @@
+{% extends "base.html" %}
+{% block title %}Preços programados{% endblock %}
+{% block content %}
+<header class="page-header">
+  <div><h1>Preços programados</h1><p>Histórico auditável e publicação automática do preço normal de venda.</p></div>
+  <div class="page-actions"><a class="secondary-button" href="{% url 'produtos:lista' %}">Produtos</a><a class="primary-button" href="{% url 'produtos:agendar_preco' %}"><i class="fa-solid fa-calendar-plus"></i> Programar preço</a></div>
+</header>
+<form method="get" class="filter-bar panel">
+  <label class="form-field"><span>Buscar</span><input type="search" name="q" value="{{ request.GET.q }}" placeholder="Produto, código de barras ou código interno"></label>
+  <label class="form-field"><span>Situação</span><select name="status"><option value="">Todas</option><option value="AGENDADA" {% if status_filtro == 'AGENDADA' %}selected{% endif %}>Ativas e programadas</option><option value="CANCELADA" {% if status_filtro == 'CANCELADA' %}selected{% endif %}>Canceladas</option></select></label>
+  <div class="form-actions"><button class="primary-button" type="submit"><i class="fa-solid fa-filter"></i> Filtrar</button><a class="secondary-button" href="{% url 'produtos:versoes_preco' %}">Limpar</a></div>
+</form>
+<section class="panel mt-panel">
+  <div class="table-scroll"><table>
+    <thead><tr><th>Produto</th><th>Versão</th><th>Preço anterior</th><th>Novo preço</th><th>Vigência</th><th>Situação</th><th>Responsável</th><th>Motivo</th><th>Ações</th></tr></thead>
+    <tbody>
+      {% for versao in versoes %}
+      <tr>
+        <td><strong>{{ versao.produto.nome }}</strong><br><small>{{ versao.produto.codigo_interno|default:versao.produto.codigo_barras }}</small></td>
+        <td>v{{ versao.versao }}</td><td>R$ {{ versao.preco_anterior|floatformat:2 }}</td><td><strong>R$ {{ versao.preco_novo|floatformat:2 }}</strong></td>
+        <td>{{ versao.vigencia_inicio|date:"d/m/Y H:i" }}</td>
+        <td>{% if versao.status == 'CANCELADA' %}<span class="status status-danger">Cancelada</span>{% elif versao.esta_vigente %}<span class="status status-success">Vigente</span>{% else %}<span class="status">Programada</span>{% endif %}</td>
+        <td>{{ versao.criado_por.username }}</td><td>{{ versao.motivo }}</td>
+        <td>{% if versao.status != 'CANCELADA' %}<form method="post" action="{% url 'produtos:cancelar_preco_agendado' versao.pk %}" class="inline-form">{% csrf_token %}<input type="text" name="motivo" required placeholder="Motivo do cancelamento"><button class="danger-button" type="submit" title="Cancelar versão"><i class="fa-solid fa-ban"></i></button></form>{% else %}<small>{{ versao.motivo_cancelamento }}</small>{% endif %}</td>
+      </tr>
+      {% empty %}<tr><td colspan="9" class="empty-state">Nenhuma versão de preço encontrada.</td></tr>{% endfor %}
+    </tbody>
+  </table></div>
+</section>
+{% include "includes/pagination.html" %}
+{% endblock %}

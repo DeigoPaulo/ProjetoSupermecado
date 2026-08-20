@@ -6,27 +6,40 @@
 <header class="page-header">
   <div>
     <h1>Caixas</h1>
-    <p>Abertura e acompanhamento dos caixas do PDV.</p>
+    <p>O operador abre e fecha o próprio turno; supervisor ou administrador seleciona, confere e imprime o caixa fechado.</p>
   </div>
-  <a class="primary-button" href="{% url 'pdv:abrir_caixa' %}">Abrir caixa</a>
+  <div class="actions">
+    {% if pode_conferir %}<a class="secondary-button" href="{% url 'relatorios:caixas' %}"><i class="fa-solid fa-chart-column"></i> Relatório e conciliação</a>{% endif %}
+    <a class="primary-button" href="{% url 'pdv:abrir_caixa' %}"><i class="fa-solid fa-lock-open"></i> Abrir caixa</a>
+  </div>
 </header>
-<div class="panel">
+
+<form method="get" class="toolbar report-filter">
+  <label><span>Buscar</span><input type="search" name="q" value="{{ termo }}" placeholder="Número, filial ou operador"></label>
+  <label><span>Status</span><select name="status"><option value="">Todos</option>{% for valor, rotulo in status_opcoes %}<option value="{{ valor }}" {% if status_filtro == valor %}selected{% endif %}>{{ rotulo }}</option>{% endfor %}</select></label>
+  {% if pode_conferir %}
+    <label><span>Filial</span><select name="filial" class="select2-field" data-placeholder="Todas as filiais"><option value="">Todas</option>{% for filial in filiais %}<option value="{{ filial.pk }}" {% if filial_id == filial.pk|stringformat:'s' %}selected{% endif %}>{{ filial }}</option>{% endfor %}</select></label>
+    <label><span>Operador</span><select name="operador" class="select2-field" data-placeholder="Todos os operadores"><option value="">Todos</option>{% for operador in operadores %}<option value="{{ operador.pk }}" {% if operador_id == operador.pk|stringformat:'s' %}selected{% endif %}>{{ operador.username }}</option>{% endfor %}</select></label>
+  {% endif %}
+  <button type="submit"><i class="fa-solid fa-filter"></i> Filtrar</button>
+  <a class="secondary-button" href="{% url 'pdv:caixas' %}">Limpar</a>
+</form>
+
+<div class="panel table-wrapper">
   <table>
-    <thead><tr><th>ID</th><th>Filial</th><th>Operador</th><th>Abertura</th><th>Valor inicial</th><th>Status</th><th></th></tr></thead>
+    <thead><tr><th>ID</th><th>Filial</th><th>Operador</th><th>Abertura</th><th>Fechamento</th><th>Inicial</th><th>Declarado</th><th>Conferido</th><th>Status</th><th>Ações</th></tr></thead>
     <tbody>
       {% for caixa in caixas %}
         <tr>
-          <td>{{ caixa.id }}</td>
-          <td>{{ caixa.filial }}</td>
-          <td>{{ caixa.usuario_abertura }}</td>
-          <td>{{ caixa.data_abertura|date:"d/m/Y H:i" }}</td>
+          <td>#{{ caixa.id }}</td><td>{{ caixa.filial }}</td><td>{{ caixa.usuario_abertura }}</td>
+          <td>{{ caixa.data_abertura|date:"d/m/Y H:i" }}</td><td>{{ caixa.data_fechamento|date:"d/m/Y H:i"|default:"-" }}</td>
           <td>R$ {{ caixa.valor_inicial|floatformat:2 }}</td>
-          <td><span class="status">{{ caixa.status }}</span></td>
-          <td><a href="{% url 'pdv:caixa_detalhe' caixa.id %}">Abrir</a></td>
+          <td>{% if caixa.valor_final is not None %}R$ {{ caixa.valor_final|floatformat:2 }}{% else %}-{% endif %}</td>
+          <td>{% if caixa.valor_conferido is not None %}R$ {{ caixa.valor_conferido|floatformat:2 }}{% else %}-{% endif %}</td>
+          <td><span class="status">{{ caixa.get_status_display }}</span></td>
+          <td><div class="actions"><a class="secondary-button compact-button" href="{% url 'pdv:caixa_detalhe' caixa.id %}">{% if caixa.status == 'FECHADO' and pode_conferir %}Conferir{% else %}Abrir{% endif %}</a>{% if pode_conferir %}<a class="icon-button" href="{% url 'pdv:caixa_conferencia_imprimir' caixa.id %}" target="_blank" title="Imprimir relatório deste caixa"><i class="fa-solid fa-print"></i></a>{% endif %}</div></td>
         </tr>
-      {% empty %}
-        <tr><td colspan="7" class="empty">Nenhum caixa registrado.</td></tr>
-      {% endfor %}
+      {% empty %}<tr><td colspan="10" class="empty">Nenhum caixa encontrado com estes filtros.</td></tr>{% endfor %}
     </tbody>
   </table>
 </div>

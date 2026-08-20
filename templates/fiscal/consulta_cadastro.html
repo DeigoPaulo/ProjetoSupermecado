@@ -1,0 +1,130 @@
+{% extends "base.html" %}
+
+{% block title %}Consulta cadastral fiscal{% endblock %}
+
+{% block content %}
+<header class="page-header">
+  <div>
+    <h1>Consulta cadastro do contribuinte</h1>
+    <p>Consulte o cadastro de contribuintes do ICMS diretamente no serviço fiscal da UF.</p>
+  </div>
+  <div class="actions">
+    <a class="secondary-button" href="{% url 'fiscal:documentos' %}"><i class="fa-solid fa-arrow-left"></i> Central fiscal</a>
+  </div>
+</header>
+
+<section class="operation-notice {% if not diagnostico.disponivel %}operation-notice-warning{% endif %}">
+  <i class="fa-solid fa-building-circle-check"></i>
+  <div>
+    <strong>{% if diagnostico.disponivel %}Consulta cadastral disponível.{% else %}Consulta cadastral protegida e desativada.{% endif %}</strong>
+    <span>{{ diagnostico.mensagem }} O resultado auxilia a conferência, mas não substitui a análise fiscal e cadastral do responsável.</span>
+  </div>
+</section>
+
+<section class="panel">
+  <div class="panel-heading">
+    <div>
+      <h2>Nova consulta</h2>
+      <p>Goiás oferece consulta por CNPJ, CPF ou inscrição estadual no serviço CadConsultaCadastro4.</p>
+    </div>
+  </div>
+  <form method="post" class="form-grid">
+    {% csrf_token %}
+    <label class="form-field form-field-wide">
+      <span>Filial e certificado utilizados</span>
+      <select name="filial" required>
+        <option value="">Selecione</option>
+        {% for filial in filiais %}<option value="{{ filial.pk }}">{{ filial }}</option>{% endfor %}
+      </select>
+    </label>
+    <label class="form-field">
+      <span>UF consultada</span>
+      <select name="uf" required><option value="GO">GO</option></select>
+    </label>
+    <label class="form-field">
+      <span>Documento</span>
+      <select name="tipo_documento" required>
+        {% for valor, rotulo in tipos_documento %}<option value="{{ valor }}">{{ rotulo }}</option>{% endfor %}
+      </select>
+    </label>
+    <label class="form-field form-field-wide">
+      <span>Número</span>
+      <input name="documento" inputmode="numeric" maxlength="18" required placeholder="Digite somente números ou use a formatação habitual">
+    </label>
+    <div class="form-actions form-field-wide">
+      <button class="primary-button" type="submit" {% if not diagnostico.disponivel %}disabled{% endif %}>
+        <i class="fa-solid fa-magnifying-glass"></i> Consultar cadastro
+      </button>
+    </div>
+  </form>
+</section>
+
+{% if selecionada %}
+<section class="panel">
+  <div class="panel-heading">
+    <div>
+      <h2>Resultado da consulta</h2>
+      <p>{{ selecionada.get_tipo_documento_display }} {{ selecionada.documento }} · {{ selecionada.uf }} · {{ selecionada.get_status_display }}</p>
+    </div>
+    <div class="actions">
+      {% if selecionada.xml_envio %}<a class="secondary-button" href="{% url 'fiscal:baixar_xml_consulta_cadastro' selecionada.pk 'envio' %}">XML enviado</a>{% endif %}
+      {% if selecionada.xml_retorno %}<a class="secondary-button" href="{% url 'fiscal:baixar_xml_consulta_cadastro' selecionada.pk 'retorno' %}">XML retornado</a>{% endif %}
+    </div>
+  </div>
+  <div class="operation-notice {% if selecionada.status != 'SUCESSO' %}operation-notice-warning{% endif %}">
+    <i class="fa-solid fa-circle-info"></i>
+    <div><strong>SEFAZ: {{ selecionada.codigo_status|default:"-" }}</strong><span>{{ selecionada.mensagem|default:"Sem mensagem de retorno." }}</span></div>
+  </div>
+  <div class="table-wrapper">
+    <table>
+      <thead><tr><th>Razão social</th><th>IE</th><th>CNPJ/CPF</th><th>Situação</th><th>Credenciamento NF-e</th><th>Regime</th><th>Endereço</th></tr></thead>
+      <tbody>
+        {% for item in selecionada.ocorrencias %}
+          <tr>
+            <td><strong>{{ item.razao_social|default:"-" }}</strong><br><small>CNAE {{ item.cnae|default:"-" }}</small></td>
+            <td>{{ item.ie|default:"-" }}</td>
+            <td>{% if item.cnpj %}{{ item.cnpj }}{% elif item.cpf %}{{ item.cpf }}{% else %}-{% endif %}</td>
+            <td>{{ item.situacao|default:"-" }}<br><small>{{ item.ultima_situacao|default:"-" }}</small></td>
+            <td>{{ item.credenciado_nfe|default:"-" }}</td>
+            <td>{{ item.regime_apuracao|default:"-" }}</td>
+            <td>{{ item.endereco.logradouro|default:"" }} {{ item.endereco.numero|default:"" }}<br><small>{{ item.endereco.bairro|default:"" }} · {{ item.endereco.municipio|default:"" }}/{{ item.uf|default:"" }} · CEP {{ item.endereco.cep|default:"-" }}</small></td>
+          </tr>
+        {% empty %}
+          <tr><td colspan="7" class="empty">A SEFAZ não retornou ocorrência cadastral.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</section>
+{% endif %}
+
+<form method="get" class="toolbar report-filter">
+  <label><span>Buscar histórico</span><input type="search" name="q" value="{{ q }}" placeholder="Documento, empresa ou filial"></label>
+  <button type="submit"><i class="fa-solid fa-filter"></i> Filtrar</button>
+</form>
+
+<section class="panel">
+  <h2>Histórico auditável</h2>
+  <div class="table-wrapper">
+    <table>
+      <thead><tr><th>Data</th><th>Filial</th><th>Consulta</th><th>Status</th><th>Mensagem</th><th>Usuário</th><th>Abrir</th></tr></thead>
+      <tbody>
+        {% for item in pagina %}
+          <tr>
+            <td>{{ item.criado_em|date:"d/m/Y H:i" }}</td>
+            <td>{{ item.filial }}</td>
+            <td>{{ item.get_tipo_documento_display }}<br><strong>{{ item.documento }}</strong></td>
+            <td>{{ item.get_status_display }}{% if item.codigo_status %} ({{ item.codigo_status }}){% endif %}</td>
+            <td>{{ item.mensagem|default:"-" }}</td>
+            <td>{{ item.usuario.username }}</td>
+            <td><a class="secondary-button" href="?resultado={{ item.pk }}"><i class="fa-solid fa-eye"></i></a></td>
+          </tr>
+        {% empty %}
+          <tr><td colspan="7" class="empty">Nenhuma consulta cadastral registrada.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% include "includes/pagination.html" %}
+</section>
+{% endblock %}

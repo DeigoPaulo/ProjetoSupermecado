@@ -28,6 +28,7 @@ class EmpresaForm(forms.ModelForm):
             "sincronizacao_automatica",
             "url_sincronizacao",
             "politica_conflito_sincronizacao",
+            "bloquear_finalizacao_entrada_divergente",
             "is_active",
         ]
         widgets = {

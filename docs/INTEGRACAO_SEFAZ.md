@@ -9,9 +9,27 @@ O ERP possui o contrato `sefaz_adapter_contract_v1` para integrar um provedor fi
 3. Instale o schema XSD aprovado pelo contador e pelo provedor.
 4. Configure a classe do adaptador no servidor:
 
+Para a Focus NFe, o projeto já fornece o adaptador oficial:
+
 ```env
-FISCAL_SEFAZ_ADAPTER=integracoes_fiscais.provedor_escolhido.Adapter
+FISCAL_SEFAZ_ADAPTER=apps.fiscal.focus_sefaz_adapter.FocusNFeSefazAdapter
+FOCUS_NFE_FISCAL_BASE_URL=https://homologacao.focusnfe.com.br
+FOCUS_NFE_FISCAL_TOKEN=TOKEN_SANDBOX
+FOCUS_NFE_FISCAL_ALLOW_PRODUCTION=False
 ```
+
+A estrutura do adaptador SOAP direto para Goiás também está pronta, mas dormente e ainda não homologada:
+
+```env
+# Não habilitar fora de uma homologação controlada.
+FISCAL_SEFAZ_ADAPTER=apps.fiscal.sefaz_direta.SefazDiretaAdapter
+SEFAZ_DIRETA_NETWORK_ENABLED=False
+SEFAZ_DIRETA_ALLOW_PRODUCTION=False
+```
+
+Consulte `docs/SEFAZ_DIRETA_GO.md`. Ter a estrutura implementada não substitui credenciamento, schemas oficiais, testes no ambiente da SEFAZ nem aceite fiscal.
+
+Para outro provedor, implemente o mesmo contrato e configure sua classe no servidor.
 
 5. Execute sem transmitir nada:
 
@@ -38,6 +56,7 @@ class Adapter:
             "chave_acesso": documento.chave_acesso,
             "protocolo": "...",
             "mensagem": "...",
+            "xml_autorizado": "<nfeProc>...</nfeProc>",
         }
 
     def cancelar(self, *, documento, chave_acesso, protocolo_autorizacao,

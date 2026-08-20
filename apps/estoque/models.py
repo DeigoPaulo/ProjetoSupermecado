@@ -153,14 +153,14 @@ class InventarioEstoque(models.Model):
         ordering = ["-criado_em"]
 
     def __str__(self):
-        return f"Inventario {self.id} - {self.filial}"
+        return f"Inventário {self.id} - {self.filial}"
 
 
 class ItemInventarioEstoque(models.Model):
     inventario = models.ForeignKey(InventarioEstoque, on_delete=models.CASCADE, related_name="itens")
     produto = models.ForeignKey("produtos.Produto", on_delete=models.PROTECT, related_name="itens_inventario")
     quantidade_sistema = models.DecimalField(max_digits=12, decimal_places=3, default=0)
-    quantidade_contada = models.DecimalField(max_digits=12, decimal_places=3)
+    quantidade_contada = models.DecimalField(max_digits=12, decimal_places=3, null=True, blank=True)
     diferenca = models.DecimalField(max_digits=12, decimal_places=3, default=0)
     observacao = models.CharField(max_length=255, blank=True)
 
@@ -563,6 +563,7 @@ def consumir_lotes_movimentacao(
     codigo_lote="",
     lote_id=None,
     exigir_lote=False,
+    ignorar_lotes_vencidos=False,
 ):
     restante = quantidade
     codigo_lote = (codigo_lote or "").strip()
@@ -575,6 +576,8 @@ def consumir_lotes_movimentacao(
         lotes = lotes.filter(codigo=codigo_lote)
     if lote_id:
         lotes = lotes.filter(pk=lote_id)
+    if ignorar_lotes_vencidos:
+        lotes = lotes.filter(models.Q(validade__isnull=True) | models.Q(validade__gte=timezone.localdate()))
     lotes = lotes.order_by(models.F("validade").asc(nulls_last=True), "criado_em", "id")
     consumido = 0
     for lote in lotes:
@@ -726,6 +729,8 @@ def movimentar_estoque(
                 movimentacao=movimentacao,
                 quantidade=quantidade,
                 codigo_lote=codigo_lote,
+                exigir_lote=produto.exige_lote and tipo == TipoMovimentacaoEstoque.VENDA,
+                ignorar_lotes_vencidos=tipo == TipoMovimentacaoEstoque.VENDA,
             )
         elif codigo_lote and tipo not in [TipoMovimentacaoEstoque.RESERVA, TipoMovimentacaoEstoque.LIBERACAO_RESERVA]:
             criar_lote_movimentacao(

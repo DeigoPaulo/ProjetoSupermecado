@@ -1275,8 +1275,18 @@ def transmitir_documento_sefaz(documento, usuario, ip=None):
             ambiente=documento.ambiente,
         )
         resultado = normalizar_retorno_transmissao(retorno)
-        if resultado.status == "AUTORIZADO" and resultado.chave_acesso != documento.chave_acesso:
-            raise SefazAdapterError("A SEFAZ autorizou uma chave diferente do documento transmitido.")
+        if resultado.status == "AUTORIZADO":
+            preserva_chave_local = bool(
+                getattr(adapter, "preserva_chave_local", True)
+            )
+            if preserva_chave_local and resultado.chave_acesso != documento.chave_acesso:
+                raise SefazAdapterError(
+                    "A SEFAZ autorizou uma chave diferente do documento transmitido."
+                )
+            if not preserva_chave_local and not resultado.xml_autorizado:
+                raise SefazAdapterError(
+                    "O provedor autorizou uma nova chave sem devolver o XML processado."
+                )
     except Exception as exc:
         mensagem = (
             str(exc)
@@ -1310,6 +1320,9 @@ def transmitir_documento_sefaz(documento, usuario, ip=None):
             documento.status = StatusDocumentoFiscal.EMITIDO
             documento.chave_acesso = resultado.chave_acesso
             documento.protocolo = resultado.protocolo
+            if resultado.xml_autorizado:
+                documento.xml_conteudo = resultado.xml_autorizado
+                documento.xml_gerado_em = timezone.now()
         elif resultado.status == "REJEITADO":
             documento.aguardando_consulta_sefaz = False
             documento.status = StatusDocumentoFiscal.REJEITADO
@@ -1321,6 +1334,8 @@ def transmitir_documento_sefaz(documento, usuario, ip=None):
                 "status",
                 "chave_acesso",
                 "protocolo",
+                "xml_conteudo",
+                "xml_gerado_em",
                 "mensagem_retorno",
                 "aguardando_consulta_sefaz",
                 "tentativas_consulta_sefaz",
@@ -1573,6 +1588,13 @@ def consultar_situacao_documento(documento, usuario, ip=None):
         if resultado.status == "AUTORIZADO":
             documento.aguardando_consulta_sefaz = False
             documento.status = StatusDocumentoFiscal.EMITIDO
+            if resultado.chave_acesso:
+                documento.chave_acesso = resultado.chave_acesso
+                update_fields.append("chave_acesso")
+            if resultado.xml_autorizado:
+                documento.xml_conteudo = resultado.xml_autorizado
+                documento.xml_gerado_em = agora
+                update_fields.extend(["xml_conteudo", "xml_gerado_em"])
             documento.protocolo = resultado.protocolo
             documento.protocolo_cancelamento = ""
             documento.cancelamento_em = None

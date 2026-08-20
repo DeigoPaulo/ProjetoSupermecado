@@ -11,17 +11,22 @@ from django.shortcuts import get_object_or_404, redirect, render
 from django.utils import timezone
 from django.views.decorators.http import require_POST
 
-from apps.accounts.permissions import RELATORIOS, SISTEMA, role_required
+from apps.accounts.permissions import ADMINISTRACAO, RELATORIOS, SISTEMA, role_required
 from apps.auditoria.models import LogAuditoria
 from apps.empresas.models import Filial
 from apps.produtos.models import Produto
 from apps.vendas.models import StatusVenda, Venda
 
 from .adapters import diagnosticar_adaptador_sefaz
+from .dfe_adapters import diagnostico_adaptador_dfe
+from .manifestacao_adapters import diagnostico_adaptador_manifestacao
+from .cce_adapters import diagnostico_adaptador_cce
+from .cadastro_adapters import diagnostico_adaptador_consulta_cadastro
 from .assinaturas import assinatura_local_disponivel
 from .certificados import salvar_certificado_a1
 from .escopo import (
     configuracoes_para_usuario,
+    documentos_dfe_recebidos_para_usuario,
     documentos_para_usuario,
     filiais_para_usuario,
     inutilizacoes_para_usuario,
@@ -31,6 +36,7 @@ from .escopo import (
 )
 from .forms import (
     ConfiguracaoFiscalForm,
+    ImportarDFeRecebidoForm,
     HomologacaoFiscalForm,
     InutilizacaoNumeracaoFiscalForm,
     NaturezaOperacaoForm,
@@ -43,18 +49,35 @@ from .fila import (
     retomar_consultas_documento_fiscal,
 )
 from .models import (
+    AlertaAtualizacaoFiscal,
     AmbienteFiscal,
+    CartaCorrecaoFiscal,
+    ConsultaCadastroContribuinte,
     ConfiguracaoFiscal,
+    ControleDistribuicaoDFeFilial,
+    DocumentoDFeRecebido,
+    EventoDFeRecebido,
     DocumentoFiscal,
+    FonteAtualizacaoFiscal,
     HomologacaoFiscal,
     InutilizacaoNumeracaoFiscal,
+    ManifestacaoDestinatario,
     NaturezaOperacao,
     SerieFiscal,
+    StatusDFeRecebido,
     StatusDocumentoFiscal,
+    StatusAlertaAtualizacaoFiscal,
+    StatusFonteAtualizacaoFiscal,
     StatusHomologacaoFiscal,
     StatusInutilizacaoFiscal,
+    StatusManifestacaoDestinatario,
     TipoDocumentoFiscal,
+    TipoDocumentoConsultaCadastro,
+    TipoManifestacaoDestinatario,
 )
+from .monitor_atualizacoes import resumo_monitor_atualizacoes
+from .services_cce import registrar_carta_correcao
+from .services_cadastro import consultar_cadastro_contribuinte
 from .validacoes import diagnosticar_schemas_fiscais
 from .qrcode_nfce import gerar_qrcode_data_uri, obter_url_qrcode_nfce
 from .perfis_uf import pendencias_endpoints_nfce
@@ -295,8 +318,68 @@ def documentos(request):
         "rejeitados": documentos_qs.filter(status="REJEITADO").count(),
         "em_contingencia": documentos_qs.filter(status=StatusDocumentoFiscal.CONTINGENCIA).count(),
         "pendencias_automaticas": len(logs_pendencia),
+        "monitor_atualizacoes": resumo_monitor_atualizacoes(),
     }
     return render(request, "fiscal/documentos.html", context)
+
+
+@login_required
+@role_required(*ADMINISTRACAO)
+def atualizacoes_fiscais(request):
+    status = request.GET.get("status", StatusAlertaAtualizacaoFiscal.NOVO)
+    fonte_id = request.GET.get("fonte", "")
+    q = request.GET.get("q", "").strip()
+    alertas = AlertaAtualizacaoFiscal.objects.select_related("fonte", "revisado_por")
+    if status:
+        alertas = alertas.filter(status=status)
+    if fonte_id.isdigit():
+        alertas = alertas.filter(fonte_id=fonte_id)
+    if q:
+        alertas = alertas.filter(Q(titulo__icontains=q) | Q(fonte__nome__icontains=q))
+    pagina = Paginator(alertas, 50).get_page(request.GET.get("page"))
+    return render(
+        request,
+        "fiscal/atualizacoes.html",
+        {
+            "alertas": pagina,
+            "page_obj": pagina,
+            "fontes": FonteAtualizacaoFiscal.objects.all(),
+            "status": status,
+            "fonte_id": fonte_id,
+            "q": q,
+            "status_choices": StatusAlertaAtualizacaoFiscal.choices,
+            "resumo_monitor": resumo_monitor_atualizacoes(),
+        },
+    )
+
+
+@login_required
+@role_required(*ADMINISTRACAO)
+@require_POST
+def revisar_atualizacao_fiscal(request, pk):
+    alerta = get_object_or_404(AlertaAtualizacaoFiscal, pk=pk)
+    novo_status = request.POST.get("status", "")
+    permitidos = {
+        StatusAlertaAtualizacaoFiscal.REVISADO,
+        StatusAlertaAtualizacaoFiscal.IGNORADO,
+    }
+    if novo_status not in permitidos:
+        messages.error(request, "Situação de revisão inválida.")
+        return redirect("fiscal:atualizacoes")
+    alerta.status = novo_status
+    alerta.revisado_em = timezone.now()
+    alerta.revisado_por = request.user
+    alerta.save(update_fields=["status", "revisado_em", "revisado_por"])
+    LogAuditoria.objects.create(
+        usuario=request.user,
+        modulo="fiscal",
+        acao="REVISA_ATUALIZACAO_FISCAL",
+        descricao=f"Alerta fiscal marcado como {alerta.get_status_display()}.",
+        objeto_tipo="AlertaAtualizacaoFiscal",
+        objeto_id=str(alerta.pk),
+    )
+    messages.success(request, "Alerta fiscal revisado com sucesso.")
+    return redirect("fiscal:atualizacoes")
 
 
 @login_required
@@ -645,6 +728,8 @@ def detalhe(request, pk):
         and (diagnostico_adapter["valida_schema"] or diagnostico_schema["pronto"])
     )
     fila_configuracao = configuracao_fila_fiscal()
+    cartas_correcao = documento.cartas_correcao.select_related("usuario").all()
+    diagnostico_cce = diagnostico_adaptador_cce()
     return render(
         request,
         "fiscal/detalhe.html",
@@ -665,8 +750,95 @@ def detalhe(request, pk):
                     and documento.protocolo.startswith("HOM")
                 )
             ),
+            "cartas_correcao": cartas_correcao,
+            "cce_disponivel": diagnostico_cce["disponivel"],
+            "cce_diagnostico": diagnostico_cce,
+            "cce_pode_registrar": (
+                documento.tipo_documento == TipoDocumentoFiscal.NFE
+                and documento.status == StatusDocumentoFiscal.EMITIDO
+                and cartas_correcao.count() < 20
+            ),
         },
     )
+
+@login_required
+@role_required(*SISTEMA)
+def consulta_cadastro(request):
+    filiais = filiais_para_usuario(
+        request.user,
+        Filial.objects.select_related("empresa").order_by(
+            "empresa__nome_fantasia", "nome"
+        ),
+    )
+    consultas = ConsultaCadastroContribuinte.objects.select_related(
+        "filial__empresa", "usuario"
+    ).filter(filial__in=filiais)
+    q = request.GET.get("q", "").strip()
+    if q:
+        consultas = consultas.filter(
+            Q(documento__icontains=q)
+            | Q(filial__nome__icontains=q)
+            | Q(filial__empresa__nome_fantasia__icontains=q)
+        )
+
+    if request.method == "POST":
+        filial = get_object_or_404(filiais, pk=request.POST.get("filial"))
+        try:
+            consulta = consultar_cadastro_contribuinte(
+                filial=filial,
+                uf=request.POST.get("uf") or filial.uf,
+                tipo_documento=request.POST.get("tipo_documento"),
+                documento=request.POST.get("documento"),
+                usuario=request.user,
+                ip=request.META.get("REMOTE_ADDR"),
+            )
+        except ValidationError as exc:
+            messages.error(request, " ".join(exc.messages))
+        else:
+            messages.success(
+                request,
+                f"Consulta cadastral concluída: {consulta.get_status_display()}.",
+            )
+            return redirect(f"{request.path}?resultado={consulta.pk}")
+
+    pagina = Paginator(consultas, 50).get_page(request.GET.get("page"))
+    selecionada = None
+    resultado_id = request.GET.get("resultado")
+    if resultado_id:
+        selecionada = consultas.filter(pk=resultado_id).first()
+    return render(
+        request,
+        "fiscal/consulta_cadastro.html",
+        {
+            "filiais": filiais,
+            "pagina": pagina,
+            "page_obj": pagina,
+            "selecionada": selecionada,
+            "q": q,
+            "tipos_documento": TipoDocumentoConsultaCadastro.choices,
+            "diagnostico": diagnostico_adaptador_consulta_cadastro(),
+        },
+    )
+
+
+@login_required
+@role_required(*SISTEMA)
+def baixar_xml_consulta_cadastro(request, pk, direcao):
+    filiais = filiais_para_usuario(request.user)
+    consulta = get_object_or_404(
+        ConsultaCadastroContribuinte.objects.filter(filial__in=filiais), pk=pk
+    )
+    if direcao not in {"envio", "retorno"}:
+        return HttpResponse(status=404)
+    conteudo = consulta.xml_envio if direcao == "envio" else consulta.xml_retorno
+    if not conteudo:
+        messages.error(request, "O XML solicitado ainda não está disponível.")
+        return redirect("fiscal:consulta_cadastro")
+    resposta = HttpResponse(conteudo, content_type="application/xml; charset=utf-8")
+    resposta["Content-Disposition"] = (
+        f'attachment; filename="consulta-cadastro-{consulta.pk}-{direcao}.xml"'
+    )
+    return resposta
 
 def _contexto_danfe_nfce(documento):
     contexto = {"documento": documento, "qrcode_data_uri": "", "qrcode_erro": ""}
@@ -770,6 +942,242 @@ def homologacao_goias(request, pk):
         "checklist": checklist,
         "itens_automaticos_prontos": itens_automaticos_prontos,
     })
+
+@login_required
+@role_required(*SISTEMA)
+def dfe_recebidos(request):
+    form = ImportarDFeRecebidoForm(request.POST or None, request.FILES or None)
+    if request.method == "POST" and form.is_valid():
+        from .services_dfe import registrar_xml_dfe_recebido
+        try:
+            documento, criado = registrar_xml_dfe_recebido(
+                form.cleaned_data["arquivo_xml"].read(), usuario=request.user, ip=request.META.get("REMOTE_ADDR")
+            )
+        except ValidationError as exc:
+            form.add_error("arquivo_xml", exc)
+        else:
+            messages.success(
+                request,
+                "NF-e recebida armazenada na caixa DF-e." if criado else "Esta NF-e já estava armazenada na caixa DF-e.",
+            )
+            return redirect("fiscal:dfe_recebidos")
+
+    documentos = documentos_dfe_recebidos_para_usuario(
+        request.user, DocumentoDFeRecebido.objects.select_related("empresa", "filial_destino")
+    )
+    status = request.GET.get("status", "")
+    q = request.GET.get("q", "").strip()
+    if status:
+        documentos = documentos.filter(status=status)
+    if q:
+        documentos = documentos.filter(
+            Q(chave_acesso__icontains=q) | Q(numero_documento__icontains=q)
+            | Q(emitente_nome__icontains=q) | Q(emitente_cnpj__icontains=q)
+        )
+    pagina = Paginator(documentos, 50).get_page(request.GET.get("page"))
+    filiais = list(
+        filiais_para_usuario(
+            request.user,
+            Filial.objects.filter(is_active=True).select_related("empresa"),
+        ).order_by("empresa__nome_fantasia", "nome")
+    )
+    controles = {
+        controle.filial_id: controle
+        for controle in ControleDistribuicaoDFeFilial.objects.filter(
+            filial_id__in=[filial.pk for filial in filiais]
+        ).select_related("filial")
+    }
+    agora = timezone.now()
+    linhas_distribuicao = [
+        {
+            "filial": filial,
+            "controle": controles.get(filial.pk),
+            "em_espera": bool(
+                controles.get(filial.pk)
+                and controles[filial.pk].proxima_consulta_em
+                and controles[filial.pk].proxima_consulta_em > agora
+            ),
+        }
+        for filial in filiais
+    ]
+    eventos = EventoDFeRecebido.objects.filter(
+        filial_destino_id__in=[filial.pk for filial in filiais]
+    ).select_related("filial_destino").order_by("-recebido_em")
+    diagnostico_dfe = diagnostico_adaptador_dfe()
+    return render(request, "fiscal/dfe_recebidos.html", {
+        "form": form, "documentos": pagina, "page_obj": pagina, "status": status, "q": q,
+        "status_choices": StatusDFeRecebido.choices, "total": documentos.count(),
+        "com_xml": documentos.filter(status=StatusDFeRecebido.XML_DISPONIVEL).count(),
+        "linhas_distribuicao": linhas_distribuicao,
+        "diagnostico_dfe": diagnostico_dfe,
+        "eventos_dfe": eventos[:20],
+        "total_eventos": eventos.count(),
+    })
+
+
+@login_required
+@role_required(*SISTEMA)
+@require_POST
+def dfe_consultar_distribuicao(request):
+    filial = get_object_or_404(
+        filiais_para_usuario(
+            request.user,
+            Filial.objects.filter(is_active=True).select_related("empresa"),
+        ),
+        pk=request.POST.get("filial"),
+    )
+    from .services_dfe import consultar_distribuicao_dfe
+
+    try:
+        resultado = consultar_distribuicao_dfe(
+            filial=filial,
+            usuario=request.user,
+            ip=request.META.get("REMOTE_ADDR"),
+        )
+    except ValidationError as exc:
+        messages.error(request, "; ".join(exc.messages))
+    else:
+        messages.success(
+            request,
+            (
+                f"Consulta de {filial} concluída: {resultado['recebidos']} registro(s), "
+                f"{resultado['criados']} novo(s), {resultado['ja_conhecidos']} já conhecido(s) "
+                f"e {resultado['eventos']} evento(s) fiscal(is)."
+            ),
+        )
+    return redirect("fiscal:dfe_recebidos")
+
+
+@login_required
+@role_required(*SISTEMA)
+def dfe_evento_baixar_xml(request, pk):
+    filiais = filiais_para_usuario(request.user, Filial.objects.filter(is_active=True))
+    evento = get_object_or_404(
+        EventoDFeRecebido.objects.filter(filial_destino_id__in=filiais.values("pk")),
+        pk=pk,
+    )
+    resposta = HttpResponse(evento.xml_conteudo, content_type="application/xml; charset=utf-8")
+    resposta["Content-Disposition"] = f'attachment; filename="evento-dfe-{evento.nsu}.xml"'
+    return resposta
+
+
+@login_required
+@role_required(*SISTEMA)
+def dfe_detalhe(request, pk):
+    documento = get_object_or_404(
+        documentos_dfe_recebidos_para_usuario(request.user).select_related("empresa", "filial_destino", "entrada_compra"),
+        pk=pk,
+    )
+    manifestacoes = documento.manifestacoes_destinatario.select_related("usuario")
+    conclusiva = manifestacoes.filter(
+        status=StatusManifestacaoDestinatario.AUTORIZADA,
+        tipo__in=[
+            TipoManifestacaoDestinatario.CONFIRMACAO,
+            TipoManifestacaoDestinatario.DESCONHECIMENTO,
+            TipoManifestacaoDestinatario.OPERACAO_NAO_REALIZADA,
+        ],
+    ).first()
+    return render(request, "fiscal/dfe_detalhe.html", {
+        "documento": documento,
+        "manifestacoes": manifestacoes,
+        "manifestacao_conclusiva": conclusiva,
+        "tipos_manifestacao": TipoManifestacaoDestinatario.choices,
+        "diagnostico_manifestacao": diagnostico_adaptador_manifestacao(),
+    })
+
+
+@login_required
+@role_required(*SISTEMA)
+@require_POST
+def dfe_manifestar(request, pk):
+    documento = get_object_or_404(
+        documentos_dfe_recebidos_para_usuario(request.user).select_related(
+            "empresa", "filial_destino"
+        ),
+        pk=pk,
+    )
+    from .services_manifestacao import registrar_manifestacao_destinatario
+
+    try:
+        manifestacao = registrar_manifestacao_destinatario(
+            documento,
+            tipo=request.POST.get("tipo"),
+            justificativa=request.POST.get("justificativa"),
+            usuario=request.user,
+            ip=request.META.get("REMOTE_ADDR"),
+        )
+    except ValidationError as exc:
+        messages.error(request, "; ".join(exc.messages))
+    else:
+        messages.success(
+            request,
+            f"{manifestacao.get_tipo_display()}: {manifestacao.get_status_display()}. "
+            f"{manifestacao.mensagem}",
+        )
+    return redirect("fiscal:dfe_detalhe", pk=documento.pk)
+
+
+@login_required
+@role_required(*SISTEMA)
+def dfe_manifestacao_baixar_xml(request, pk, direcao):
+    filiais = filiais_para_usuario(request.user, Filial.objects.filter(is_active=True))
+    manifestacao = get_object_or_404(
+        ManifestacaoDestinatario.objects.filter(filial_id__in=filiais.values("pk")), pk=pk
+    )
+    if direcao not in {"envio", "retorno"}:
+        return HttpResponse("Direção inválida.", status=404, content_type="text/plain; charset=utf-8")
+    conteudo = manifestacao.xml_envio if direcao == "envio" else manifestacao.xml_retorno
+    if not conteudo:
+        return HttpResponse("XML não disponível.", status=404, content_type="text/plain; charset=utf-8")
+    resposta = HttpResponse(conteudo, content_type="application/xml; charset=utf-8")
+    resposta["Content-Disposition"] = f'attachment; filename="manifestacao-{manifestacao.pk}-{direcao}.xml"'
+    return resposta
+
+
+@login_required
+@role_required(*SISTEMA)
+def dfe_baixar_xml(request, pk):
+    documento = get_object_or_404(documentos_dfe_recebidos_para_usuario(request.user), pk=pk)
+    if not documento.xml_conteudo:
+        return HttpResponse("XML não disponível.", status=404, content_type="text/plain; charset=utf-8")
+    resposta = HttpResponse(documento.xml_conteudo, content_type="application/xml; charset=utf-8")
+    resposta["Content-Disposition"] = f'attachment; filename="dfe-{documento.chave_acesso}.xml"'
+    return resposta
+@login_required
+@role_required(*SISTEMA)
+@require_POST
+def dfe_ignorar(request, pk):
+    documento = get_object_or_404(documentos_dfe_recebidos_para_usuario(request.user), pk=pk)
+    from .services_dfe import ignorar_dfe_recebido
+
+    try:
+        ignorar_dfe_recebido(
+            documento,
+            usuario=request.user,
+            motivo=request.POST.get("motivo"),
+            ip=request.META.get("REMOTE_ADDR"),
+        )
+    except ValidationError as exc:
+        messages.error(request, "; ".join(exc.messages))
+    else:
+        messages.success(request, "DF-e desconsiderado e registrado na auditoria.")
+    return redirect("fiscal:dfe_detalhe", pk=documento.pk)
+@login_required
+@role_required(*SISTEMA)
+@require_POST
+def dfe_criar_entrada(request, pk):
+    documento = get_object_or_404(documentos_dfe_recebidos_para_usuario(request.user), pk=pk)
+    from .services_dfe import criar_entrada_rascunho_a_partir_dfe
+
+    try:
+        entrada = criar_entrada_rascunho_a_partir_dfe(
+            documento, usuario=request.user, ip=request.META.get("REMOTE_ADDR")
+        )
+    except ValidationError as exc:
+        messages.error(request, "; ".join(exc.messages))
+        return redirect("fiscal:dfe_recebidos")
+    messages.success(request, f"DF-e encaminhado para a entrada em rascunho #{entrada.id}. Revise antes de finalizar.")
+    return redirect("compras:detalhe", pk=entrada.pk)
 
 @login_required
 @role_required(*SISTEMA)
@@ -906,6 +1314,50 @@ def ativar_contingencia(request, pk):
     return redirect("fiscal:detalhe", pk=pk)
 
 
+
+
+@login_required
+@role_required(*SISTEMA)
+@require_POST
+def registrar_cce(request, pk):
+    documento = get_object_or_404(documentos_para_usuario(request.user), pk=pk)
+    try:
+        carta = registrar_carta_correcao(
+            documento,
+            correcao=request.POST.get("correcao", ""),
+            confirmou_limites=request.POST.get("confirmou_limites") == "on",
+            usuario=request.user,
+            ip=request.META.get("REMOTE_ADDR"),
+        )
+    except ValidationError as exc:
+        messages.error(request, " ".join(exc.messages))
+    else:
+        messages.success(
+            request,
+            f"Carta de Correção #{carta.sequencia}: {carta.get_status_display()}.",
+        )
+    return redirect("fiscal:detalhe", pk=pk)
+
+
+@login_required
+@role_required(*RELATORIOS)
+def baixar_xml_cce(request, pk, direcao):
+    carta = get_object_or_404(
+        CartaCorrecaoFiscal.objects.select_related("documento", "empresa"),
+        pk=pk,
+        documento__in=documentos_para_usuario(request.user),
+    )
+    if direcao not in {"envio", "retorno"}:
+        return HttpResponse(status=404)
+    conteudo = carta.xml_envio if direcao == "envio" else carta.xml_retorno
+    if not conteudo:
+        messages.error(request, "O XML solicitado ainda não está disponível.")
+        return redirect("fiscal:detalhe", pk=carta.documento_id)
+    resposta = HttpResponse(conteudo, content_type="application/xml; charset=utf-8")
+    resposta["Content-Disposition"] = (
+        f'attachment; filename="cce-{carta.documento_id}-{carta.sequencia}-{direcao}.xml"'
+    )
+    return resposta
 
 
 @login_required

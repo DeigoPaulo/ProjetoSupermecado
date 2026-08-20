@@ -13,7 +13,8 @@ from apps.clientes.escopo import empresa_id_do_usuario
 from apps.fornecedores.models import Fornecedor
 from apps.produtos.models import Produto
 
-from .models import EntradaCompra, ItemEntradaCompra, StatusEntradaCompra
+from .models import EntradaCompra, ItemEntradaCompra, PedidoCompra, StatusEntradaCompra, StatusPedidoCompra
+from .services import avaliar_conferencia_entrada
 
 
 LIMITE_XML_BYTES = 5 * 1024 * 1024
@@ -301,7 +302,33 @@ def importar_xml_entrada(conteudo, *, usuario, gerar_conta_financeira=True, ip=N
         if EntradaCompra.objects.select_for_update().filter(chave_acesso_xml=dados["chave"]).exists():
             raise ValidationError("Esta NF-e ja foi importada.")
 
+        itens_xml_por_produto = {}
+        for item, produto in itens_resolvidos:
+            quantidade, total = itens_xml_por_produto.get(produto.pk, (Decimal("0.000"), Decimal("0.00")))
+            itens_xml_por_produto[produto.pk] = (quantidade + item["quantidade"], total + item["total"])
+
+        pedidos_exatos = []
+        pedidos_compativeis = PedidoCompra.objects.select_for_update().filter(
+            fornecedor=fornecedor,
+            filial=filial,
+            status=StatusPedidoCompra.ENVIADO,
+        ).prefetch_related("itens")
+        for pedido in pedidos_compativeis:
+            itens_pedido_por_produto = {}
+            for item in pedido.itens.all():
+                quantidade, total = itens_pedido_por_produto.get(item.produto_id, (Decimal("0.000"), Decimal("0.00")))
+                itens_pedido_por_produto[item.produto_id] = (
+                    quantidade + item.quantidade,
+                    total + item.total_previsto,
+                )
+            if itens_pedido_por_produto == itens_xml_por_produto:
+                pedidos_exatos.append(pedido)
+
+        # Somente um pedido inteiramente igual pode ser associado sem intervenção humana.
+        pedido_origem = pedidos_exatos[0] if len(pedidos_exatos) == 1 else None
+
         entrada = EntradaCompra.objects.create(
+            pedido_origem=pedido_origem,
             fornecedor=fornecedor,
             filial=filial,
             usuario=usuario,
@@ -333,13 +360,20 @@ def importar_xml_entrada(conteudo, *, usuario, gerar_conta_financeira=True, ip=N
             )
             for item, produto in itens_resolvidos
         ])
+        if pedido_origem:
+            pedido_origem.status = StatusPedidoCompra.CONVERTIDO
+            pedido_origem.save(update_fields=["status", "updated_at"])
+        avaliar_conferencia_entrada(entrada)
+        entrada.save(update_fields=["conferencia_status", "conferencia_resumo", "updated_at"])
+
         LogAuditoria.objects.create(
             usuario=usuario,
             modulo="compras",
             acao="IMPORTACAO_XML_ENTRADA",
             descricao=(
                 f"NF-e {dados['chave']} importada na entrada em rascunho {entrada.id}, "
-                f"com {len(itens_resolvidos)} item(ns). Nenhum estoque ou financeiro foi movimentado."
+                f"com {len(itens_resolvidos)} item(ns). Conferencia: {entrada.get_conferencia_status_display()}. "
+                "Nenhum estoque ou financeiro foi movimentado."
             ),
             objeto_tipo="EntradaCompra",
             objeto_id=str(entrada.id),

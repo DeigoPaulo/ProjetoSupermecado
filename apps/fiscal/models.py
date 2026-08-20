@@ -382,3 +382,414 @@ class HomologacaoFiscal(models.Model):
 
     def __str__(self):
         return f"{self.configuracao.filial} - {self.get_status_display()}"
+
+class StatusDFeRecebido(models.TextChoices):
+    NOVO = "NOVO", "Novo"
+    XML_DISPONIVEL = "XML_DISPONIVEL", "XML disponível"
+    VINCULADO = "VINCULADO", "Vinculado à entrada"
+    IGNORADO = "IGNORADO", "Ignorado"
+
+
+class ConfiguracaoDistribuicaoDFe(models.Model):
+    empresa = models.OneToOneField(
+        "empresas.Empresa",
+        on_delete=models.PROTECT,
+        related_name="configuracao_distribuicao_dfe",
+    )
+    ativo = models.BooleanField("Caixa de entrada de DF-e ativa", default=True)
+    ultimo_nsu = models.CharField("Último NSU processado", max_length=20, blank=True)
+    ultima_consulta_em = models.DateTimeField(null=True, blank=True)
+    ultima_mensagem = models.TextField(blank=True)
+    atualizado_em = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        verbose_name = "configuração de distribuição DF-e"
+        verbose_name_plural = "configurações de distribuição DF-e"
+
+    def __str__(self):
+        return f"DF-e recebidos - {self.empresa}"
+
+
+class ControleDistribuicaoDFeFilial(models.Model):
+    configuracao = models.ForeignKey(
+        ConfiguracaoDistribuicaoDFe,
+        on_delete=models.CASCADE,
+        related_name="controles_filiais",
+    )
+    filial = models.OneToOneField(
+        "empresas.Filial",
+        on_delete=models.PROTECT,
+        related_name="controle_distribuicao_dfe",
+    )
+    ultimo_nsu = models.CharField("Último NSU processado", max_length=20, blank=True)
+    max_nsu = models.CharField("Maior NSU disponível", max_length=20, blank=True)
+    ultima_consulta_em = models.DateTimeField(null=True, blank=True)
+    proxima_consulta_em = models.DateTimeField(null=True, blank=True)
+    ultima_mensagem = models.TextField(blank=True)
+    atualizado_em = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ["filial__nome"]
+        verbose_name = "controle de distribuição DF-e por filial"
+        verbose_name_plural = "controles de distribuição DF-e por filial"
+
+    def __str__(self):
+        return f"DF-e {self.filial} - NSU {self.ultimo_nsu or 'inicial'}"
+
+
+class DocumentoDFeRecebido(models.Model):
+    empresa = models.ForeignKey(
+        "empresas.Empresa",
+        on_delete=models.PROTECT,
+        related_name="documentos_dfe_recebidos",
+    )
+    filial_destino = models.ForeignKey(
+        "empresas.Filial",
+        on_delete=models.PROTECT,
+        related_name="documentos_dfe_recebidos",
+        null=True,
+        blank=True,
+    )
+    entrada_compra = models.OneToOneField(
+        "compras.EntradaCompra",
+        on_delete=models.PROTECT,
+        related_name="documento_dfe_recebido",
+        null=True,
+        blank=True,
+    )
+    chave_acesso = models.CharField(max_length=44)
+    nsu = models.CharField(max_length=20, blank=True)
+    schema = models.CharField(max_length=80, blank=True)
+    emitente_cnpj = models.CharField(max_length=14, blank=True)
+    emitente_nome = models.CharField(max_length=255, blank=True)
+    numero_documento = models.CharField(max_length=30, blank=True)
+    data_emissao = models.DateField(null=True, blank=True)
+    valor_total = models.DecimalField(max_digits=14, decimal_places=2, default=0)
+    status = models.CharField(max_length=24, choices=StatusDFeRecebido.choices, default=StatusDFeRecebido.NOVO)
+    origem = models.CharField(max_length=24, default="MANUAL")
+    xml_conteudo = models.TextField(blank=True)
+    recebido_em = models.DateTimeField(auto_now_add=True)
+    atualizado_em = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ["-recebido_em"]
+        constraints = [
+            models.UniqueConstraint(fields=["empresa", "chave_acesso"], name="fiscal_dfe_empresa_chave_uniq"),
+        ]
+        indexes = [
+            models.Index(fields=["empresa", "status", "-recebido_em"], name="fiscal_dfe_empresa_status_idx"),
+        ]
+
+    def __str__(self):
+        return f"DF-e {self.chave_acesso or self.pk}"
+
+class EventoDFeRecebido(models.Model):
+    empresa = models.ForeignKey(
+        "empresas.Empresa",
+        on_delete=models.PROTECT,
+        related_name="eventos_dfe_recebidos",
+    )
+    filial_destino = models.ForeignKey(
+        "empresas.Filial",
+        on_delete=models.PROTECT,
+        related_name="eventos_dfe_recebidos",
+        null=True,
+        blank=True,
+    )
+    nsu = models.CharField(max_length=20)
+    schema = models.CharField(max_length=80, blank=True)
+    chave_acesso = models.CharField(max_length=44, blank=True)
+    tipo_evento = models.CharField(max_length=20, blank=True)
+    sequencia = models.PositiveIntegerField(default=1)
+    data_evento = models.DateTimeField(null=True, blank=True)
+    descricao = models.CharField(max_length=255, blank=True)
+    xml_conteudo = models.TextField()
+    recebido_em = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["-recebido_em", "-id"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["empresa", "nsu"],
+                name="fiscal_evento_dfe_empresa_nsu_uniq",
+            )
+        ]
+        indexes = [
+            models.Index(
+                fields=["empresa", "-recebido_em"],
+                name="fiscal_evt_dfe_emp_data_idx",
+            )
+        ]
+        verbose_name = "evento DF-e recebido"
+        verbose_name_plural = "eventos DF-e recebidos"
+
+    def __str__(self):
+        return f"Evento DF-e {self.tipo_evento or '-'} - NSU {self.nsu}"
+
+
+class TipoManifestacaoDestinatario(models.TextChoices):
+    CONFIRMACAO = "210200", "Confirmação da operação"
+    CIENCIA = "210210", "Ciência da operação"
+    DESCONHECIMENTO = "210220", "Desconhecimento da operação"
+    OPERACAO_NAO_REALIZADA = "210240", "Operação não realizada"
+
+
+class StatusManifestacaoDestinatario(models.TextChoices):
+    PENDENTE = "PENDENTE", "Pendente"
+    AUTORIZADA = "AUTORIZADA", "Autorizada"
+    REJEITADA = "REJEITADA", "Rejeitada"
+    ERRO = "ERRO", "Erro de transmissão"
+
+
+class ManifestacaoDestinatario(models.Model):
+    empresa = models.ForeignKey(
+        "empresas.Empresa", on_delete=models.PROTECT, related_name="manifestacoes_destinatario"
+    )
+    filial = models.ForeignKey(
+        "empresas.Filial", on_delete=models.PROTECT, related_name="manifestacoes_destinatario"
+    )
+    documento = models.ForeignKey(
+        DocumentoDFeRecebido,
+        on_delete=models.PROTECT,
+        related_name="manifestacoes_destinatario",
+    )
+    tipo = models.CharField(max_length=6, choices=TipoManifestacaoDestinatario.choices)
+    status = models.CharField(
+        max_length=16,
+        choices=StatusManifestacaoDestinatario.choices,
+        default=StatusManifestacaoDestinatario.PENDENTE,
+    )
+    justificativa = models.CharField(max_length=255, blank=True)
+    ambiente = models.CharField(max_length=20, choices=AmbienteFiscal.choices)
+    codigo_status = models.CharField(max_length=10, blank=True)
+    protocolo = models.CharField(max_length=80, blank=True)
+    mensagem = models.TextField(blank=True)
+    xml_envio = models.TextField(blank=True)
+    xml_retorno = models.TextField(blank=True)
+    usuario = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.PROTECT,
+        related_name="manifestacoes_destinatario",
+    )
+    criado_em = models.DateTimeField(auto_now_add=True)
+    processado_em = models.DateTimeField(null=True, blank=True)
+    atualizado_em = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ["-criado_em", "-id"]
+        indexes = [
+            models.Index(
+                fields=["empresa", "documento", "-criado_em"],
+                name="fiscal_manif_emp_doc_idx",
+            )
+        ]
+        verbose_name = "manifestação do destinatário"
+        verbose_name_plural = "manifestações do destinatário"
+
+    def __str__(self):
+        return f"{self.get_tipo_display()} - {self.documento.chave_acesso}"
+
+
+class StatusCartaCorrecao(models.TextChoices):
+    PENDENTE = "PENDENTE", "Pendente"
+    AUTORIZADA = "AUTORIZADA", "Autorizada"
+    REJEITADA = "REJEITADA", "Rejeitada"
+    ERRO = "ERRO", "Erro de transmissão"
+
+
+class CartaCorrecaoFiscal(models.Model):
+    empresa = models.ForeignKey(
+        "empresas.Empresa", on_delete=models.PROTECT, related_name="cartas_correcao_fiscais"
+    )
+    filial = models.ForeignKey(
+        "empresas.Filial", on_delete=models.PROTECT, related_name="cartas_correcao_fiscais"
+    )
+    documento = models.ForeignKey(
+        DocumentoFiscal,
+        on_delete=models.PROTECT,
+        related_name="cartas_correcao",
+    )
+    sequencia = models.PositiveSmallIntegerField()
+    correcao = models.CharField(max_length=1000)
+    status = models.CharField(
+        max_length=16,
+        choices=StatusCartaCorrecao.choices,
+        default=StatusCartaCorrecao.PENDENTE,
+    )
+    ambiente = models.CharField(max_length=20, choices=AmbienteFiscal.choices)
+    codigo_status = models.CharField(max_length=10, blank=True)
+    protocolo = models.CharField(max_length=80, blank=True)
+    mensagem = models.TextField(blank=True)
+    xml_envio = models.TextField(blank=True)
+    xml_retorno = models.TextField(blank=True)
+    usuario = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.PROTECT,
+        related_name="cartas_correcao_fiscais",
+    )
+    criado_em = models.DateTimeField(auto_now_add=True)
+    processado_em = models.DateTimeField(null=True, blank=True)
+    atualizado_em = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ["-sequencia", "-id"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["documento", "sequencia"],
+                name="fiscal_cce_documento_seq_uniq",
+            )
+        ]
+        indexes = [
+            models.Index(
+                fields=["empresa", "documento", "-sequencia"],
+                name="fiscal_cce_emp_doc_seq_idx",
+            )
+        ]
+        verbose_name = "Carta de Correção Eletrônica"
+        verbose_name_plural = "Cartas de Correção Eletrônicas"
+
+    def __str__(self):
+        return f"CC-e #{self.sequencia} - {self.documento}"
+
+
+class TipoDocumentoConsultaCadastro(models.TextChoices):
+    CNPJ = "CNPJ", "CNPJ"
+    CPF = "CPF", "CPF"
+    IE = "IE", "Inscrição estadual"
+
+
+class StatusConsultaCadastro(models.TextChoices):
+    PENDENTE = "PENDENTE", "Pendente"
+    SUCESSO = "SUCESSO", "Consultado"
+    REJEITADA = "REJEITADA", "Rejeitada"
+    ERRO = "ERRO", "Erro de comunicação"
+
+
+class ConsultaCadastroContribuinte(models.Model):
+    empresa = models.ForeignKey(
+        "empresas.Empresa", on_delete=models.PROTECT, related_name="consultas_cadastro_fiscais"
+    )
+    filial = models.ForeignKey(
+        "empresas.Filial", on_delete=models.PROTECT, related_name="consultas_cadastro_fiscais"
+    )
+    uf = models.CharField(max_length=2)
+    tipo_documento = models.CharField(
+        max_length=4, choices=TipoDocumentoConsultaCadastro.choices
+    )
+    documento = models.CharField(max_length=14)
+    status = models.CharField(
+        max_length=16,
+        choices=StatusConsultaCadastro.choices,
+        default=StatusConsultaCadastro.PENDENTE,
+    )
+    codigo_status = models.CharField(max_length=10, blank=True)
+    mensagem = models.TextField(blank=True)
+    ocorrencias = models.JSONField(default=list, blank=True)
+    xml_envio = models.TextField(blank=True)
+    xml_retorno = models.TextField(blank=True)
+    usuario = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.PROTECT,
+        related_name="consultas_cadastro_fiscais",
+    )
+    criado_em = models.DateTimeField(auto_now_add=True)
+    processado_em = models.DateTimeField(null=True, blank=True)
+    atualizado_em = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ["-criado_em", "-id"]
+        indexes = [
+            models.Index(
+                fields=["empresa", "filial", "-criado_em"],
+                name="fiscal_cad_emp_fil_data_idx",
+            )
+        ]
+        verbose_name = "consulta de cadastro do contribuinte"
+        verbose_name_plural = "consultas de cadastro dos contribuintes"
+
+    def __str__(self):
+        return f"{self.tipo_documento} {self.documento} - {self.get_status_display()}"
+
+class StatusFonteAtualizacaoFiscal(models.TextChoices):
+    NOVA = "NOVA", "Aguardando primeira consulta"
+    OK = "OK", "Atualizada"
+    ERRO = "ERRO", "Falha na consulta"
+
+
+class FonteAtualizacaoFiscal(models.Model):
+    codigo = models.SlugField(max_length=80, unique=True)
+    nome = models.CharField(max_length=160)
+    url = models.URLField(max_length=500)
+    status = models.CharField(
+        max_length=12,
+        choices=StatusFonteAtualizacaoFiscal.choices,
+        default=StatusFonteAtualizacaoFiscal.NOVA,
+    )
+    etag = models.CharField(max_length=255, blank=True)
+    ultima_modificacao_http = models.CharField(max_length=255, blank=True)
+    conteudo_sha256 = models.CharField(max_length=64, blank=True)
+    itens_snapshot = models.JSONField(default=list, blank=True)
+    ultima_consulta_em = models.DateTimeField(null=True, blank=True)
+    ultima_alteracao_em = models.DateTimeField(null=True, blank=True)
+    ultima_mensagem = models.TextField(blank=True)
+    criado_em = models.DateTimeField(auto_now_add=True)
+    atualizado_em = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ["nome"]
+        verbose_name = "fonte de atualização fiscal"
+        verbose_name_plural = "fontes de atualização fiscal"
+
+    def __str__(self):
+        return self.nome
+
+
+class StatusAlertaAtualizacaoFiscal(models.TextChoices):
+    NOVO = "NOVO", "Novo"
+    REVISADO = "REVISADO", "Revisado"
+    IGNORADO = "IGNORADO", "Ignorado"
+
+
+class AlertaAtualizacaoFiscal(models.Model):
+    fonte = models.ForeignKey(
+        FonteAtualizacaoFiscal,
+        on_delete=models.CASCADE,
+        related_name="alertas",
+    )
+    fingerprint = models.CharField(max_length=64)
+    titulo = models.CharField(max_length=500)
+    url_referencia = models.URLField(max_length=500)
+    status = models.CharField(
+        max_length=12,
+        choices=StatusAlertaAtualizacaoFiscal.choices,
+        default=StatusAlertaAtualizacaoFiscal.NOVO,
+    )
+    detectado_em = models.DateTimeField(auto_now_add=True)
+    revisado_em = models.DateTimeField(null=True, blank=True)
+    revisado_por = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="alertas_atualizacao_fiscal_revisados",
+    )
+
+    class Meta:
+        ordering = ["-detectado_em"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["fonte", "fingerprint"],
+                name="fiscal_alerta_fonte_fingerprint_uniq",
+            )
+        ]
+        indexes = [
+            models.Index(
+                fields=["status", "-detectado_em"],
+                name="fiscal_alerta_status_data_idx",
+            )
+        ]
+        verbose_name = "alerta de atualização fiscal"
+        verbose_name_plural = "alertas de atualização fiscal"
+
+    def __str__(self):
+        return self.titulo

@@ -1,9 +1,11 @@
+from datetime import timedelta
 from decimal import Decimal
 from io import BytesIO
 from zipfile import ZipFile
 
 from django.contrib.auth import get_user_model
 from django.core.exceptions import ValidationError
+from django.core.files.uploadedfile import SimpleUploadedFile
 from django.test import Client, TestCase, override_settings
 from django.utils import timezone
 
@@ -15,8 +17,10 @@ from apps.pdv.models import Caixa
 from apps.vendas.models import FormaPagamento, PagamentoVenda, StatusVenda, Venda
 
 from .forms import CategoriaFinanceiraForm, ContaContabilForm, ContaFinanceiraForm
-from .models import CategoriaFinanceira, CentroCusto, ContaContabil, ConciliacaoLancamentoFinanceiro, ChaveIntegracaoContabil, ContaFinanceira, ContaMovimentoFinanceiro, ExportacaoContabil, LancamentoFinanceiro, StatusContaFinanceira, StatusExportacaoContabil, TipoContaContabil, TipoContaFinanceira, TipoContaMovimento, TipoLancamentoFinanceiro, TransferenciaFinanceira
+from .models import CategoriaFinanceira, CentroCusto, ContaContabil, ConciliacaoLancamentoFinanceiro, ChaveIntegracaoContabil, ContaFinanceira, ContaMovimentoFinanceiro, ExportacaoContabil, ImportacaoExtratoFinanceiro, ItemExtratoFinanceiro, LancamentoFinanceiro, MovimentoRecebivelEletronico, RecebivelEletronico, RegraLiquidacaoEletronica, StatusContaFinanceira, StatusExportacaoContabil, StatusItemExtratoFinanceiro, StatusRecebivelEletronico, TipoContaContabil, TipoContaFinanceira, TipoContaMovimento, TipoLancamentoFinanceiro, TipoMovimentoRecebivelEletronico, TransferenciaFinanceira
 from .services import baixar_conta, cancelar_conta, conciliar_lancamento, estornar_lancamento, realizar_transferencia
+from .services_conciliacao import conciliar_item_extrato, importar_extrato, importar_extrato_csv
+from .services_recebiveis import conciliar_recebivel_com_item, gerar_recebivel_pagamento
 
 
 
@@ -31,6 +35,22 @@ class FakeContabilAdapter:
         type(self).ultimo_payload = payload
         type(self).ultima_chave = chave_idempotencia
         return {"status": "ENVIADO", "protocolo": "CONT-2026-0001", "mensagem": "Recebido"}
+
+class FakeExtratoAdapter:
+    nome = "Adquirente de teste"
+    extensoes = (".ret",)
+
+    def ler(self, *, conteudo, arquivo_nome):
+        return [
+            {
+                "data": timezone.localdate().isoformat(),
+                "tipo": "entrada",
+                "valor": "77.35",
+                "descricao": "Liquidação do lote privado",
+                "referencia_externa": "LOTE-PRIVADO-001",
+            }
+        ]
+
 
 class FinanceiroTests(TestCase):
     def setUp(self):
@@ -287,7 +307,7 @@ class FinanceiroTests(TestCase):
         tela = self.client.get("/financeiro/resultado/")
         csv_texto = self.client.get("/financeiro/resultado/exportar.csv").content.decode("utf-8-sig")
         pacote = self.client.get("/financeiro/resultado/pacote-contabil.json").json()
-        self.assertContains(tela, "Resultado por conta cont?bil")
+        self.assertContains(tela, "Resultado por conta contábil")
         self.assertContains(tela, "Compra de mercadorias")
         self.assertIn("Codigo;Conta contabil;Natureza;Receitas;Despesas;Resultado", csv_texto)
         self.assertIn("3.01.001;Compra de mercadorias;Despesa", csv_texto)
@@ -1245,3 +1265,608 @@ class FinanceiroTests(TestCase):
         chave.refresh_from_db()
         self.assertIsNotNone(chave.ultima_utilizacao_em)
         self.assertTrue(LogAuditoria.objects.filter(acao="API_PACOTE_CONTABIL", objeto_id=str(chave.pk)).exists())
+    def test_importacao_extrato_concilia_unico_e_e_idempotente(self):
+        conta_banco = ContaMovimentoFinanceiro.objects.create(
+            filial=self.filial, nome="Banco conciliação", tipo=TipoContaMovimento.BANCO
+        )
+        lancamento = LancamentoFinanceiro.objects.create(
+            conta=conta_banco,
+            tipo=TipoLancamentoFinanceiro.ENTRADA,
+            origem="TESTE",
+            descricao="Recebimento identificado",
+            valor=Decimal("150.00"),
+            data=timezone.localdate(),
+            usuario=self.user,
+        )
+        conteudo = (
+            "data;tipo;valor;descricao;referencia\n"
+            f"{timezone.localdate().strftime('%d/%m/%Y')};credito;150,00;Recebimento;NSU-1001\n"
+        ).encode("utf-8")
+
+        importacao, criada = importar_extrato_csv(
+            conta=conta_banco,
+            arquivo_nome="extrato.csv",
+            conteudo=conteudo,
+            usuario=self.user,
+        )
+        repetida, criada_novamente = importar_extrato_csv(
+            conta=conta_banco,
+            arquivo_nome="extrato.csv",
+            conteudo=conteudo,
+            usuario=self.user,
+        )
+
+        self.assertTrue(criada)
+        self.assertFalse(criada_novamente)
+        self.assertEqual(repetida.pk, importacao.pk)
+        self.assertEqual(importacao.conciliadas_automaticamente, 1)
+        item = ItemExtratoFinanceiro.objects.get(importacao=importacao)
+        self.assertEqual(item.status, StatusItemExtratoFinanceiro.CONCILIADO)
+        self.assertEqual(item.lancamento, lancamento)
+        self.assertTrue(ConciliacaoLancamentoFinanceiro.objects.filter(lancamento=lancamento).exists())
+        self.assertEqual(ImportacaoExtratoFinanceiro.objects.count(), 1)
+
+    def test_importacao_extrato_mantem_ambiguidade_para_revisao(self):
+        conta_banco = ContaMovimentoFinanceiro.objects.create(
+            filial=self.filial, nome="Banco ambíguo", tipo=TipoContaMovimento.BANCO
+        )
+        for descricao in ("Recebimento A", "Recebimento B"):
+            LancamentoFinanceiro.objects.create(
+                conta=conta_banco,
+                tipo=TipoLancamentoFinanceiro.ENTRADA,
+                origem="TESTE",
+                descricao=descricao,
+                valor=Decimal("90.00"),
+                data=timezone.localdate(),
+                usuario=self.user,
+            )
+        conteudo = (
+            "data;tipo;valor;descricao;referencia\n"
+            f"{timezone.localdate().isoformat()};entrada;90.00;Crédito sem NSU;REF-AMB-1\n"
+        ).encode("utf-8")
+
+        importacao, _ = importar_extrato_csv(
+            conta=conta_banco,
+            arquivo_nome="ambiguo.csv",
+            conteudo=conteudo,
+            usuario=self.user,
+        )
+
+        item = ItemExtratoFinanceiro.objects.get(importacao=importacao)
+        self.assertEqual(item.status, StatusItemExtratoFinanceiro.AMBIGUO)
+        self.assertIsNone(item.lancamento)
+        self.assertEqual(importacao.ambiguas, 1)
+        self.assertEqual(ConciliacaoLancamentoFinanceiro.objects.count(), 0)
+
+    def test_tela_extratos_importa_csv_e_rejeita_conta_de_outra_empresa(self):
+        conta_banco = ContaMovimentoFinanceiro.objects.create(
+            filial=self.filial, nome="Banco da empresa", tipo=TipoContaMovimento.BANCO
+        )
+        outra_empresa = Empresa.objects.create(
+            razao_social="Empresa externa LTDA", nome_fantasia="Externa", cnpj="88.888.888/0001-88"
+        )
+        outra_filial = Filial.objects.create(empresa=outra_empresa, nome="Matriz externa", cnpj=outra_empresa.cnpj)
+        conta_externa = ContaMovimentoFinanceiro.objects.create(
+            filial=outra_filial, nome="Banco externo", tipo=TipoContaMovimento.BANCO
+        )
+        admin_empresa = get_user_model().objects.create_user("admin-empresa-extrato", password="123")
+        PerfilUsuario.objects.create(
+            usuario=admin_empresa, filial=self.filial, tipo=TipoPerfil.ADMINISTRADOR
+        )
+        self.client.force_login(admin_empresa)
+        conteudo = (
+            "data;tipo;valor;descricao;referencia\n"
+            f"{timezone.localdate().isoformat()};saida;12.50;Tarifa;TARIFA-1\n"
+        ).encode("utf-8")
+
+        valida = self.client.post(
+            "/financeiro/conciliacao-extratos/",
+            {"conta": conta_banco.pk, "arquivo": SimpleUploadedFile("extrato.csv", conteudo, content_type="text/csv")},
+            follow=True,
+        )
+        modelo = self.client.get("/financeiro/conciliacao-extratos/modelo.csv")
+        externa = self.client.post(
+            "/financeiro/conciliacao-extratos/",
+            {"conta": conta_externa.pk, "arquivo": SimpleUploadedFile("externo.csv", conteudo, content_type="text/csv")},
+        )
+
+        self.assertEqual(valida.status_code, 200)
+        self.assertContains(valida, "Extrato importado")
+        self.assertEqual(modelo.status_code, 200)
+        self.assertIn("data;tipo;valor;descricao;referencia", modelo.content.decode("utf-8-sig"))
+        self.assertEqual(ImportacaoExtratoFinanceiro.objects.filter(conta=conta_banco).count(), 1)
+        self.assertEqual(externa.status_code, 200)
+        self.assertFormError(externa.context["form"], "conta", "Faça uma escolha válida. Sua escolha não é uma das disponíveis.")
+        self.assertFalse(ImportacaoExtratoFinanceiro.objects.filter(conta=conta_externa).exists())
+
+    def test_agenda_recebivel_calcula_taxa_e_e_idempotente(self):
+        caixa = Caixa.objects.create(filial=self.filial, usuario_abertura=self.user)
+        venda = Venda.objects.create(
+            filial=self.filial,
+            caixa=caixa,
+            usuario=self.user,
+            total_bruto=Decimal("100.00"),
+            total_liquido=Decimal("100.00"),
+            status=StatusVenda.FINALIZADA,
+        )
+        forma = FormaPagamento.objects.create(nome="Crédito teste", tipo="CREDITO")
+        pagamento = PagamentoVenda.objects.create(
+            venda=venda,
+            forma_pagamento=forma,
+            valor=Decimal("100.00"),
+            nsu="NSU-AGENDA-1",
+        )
+        regra = RegraLiquidacaoEletronica.objects.create(
+            filial=self.filial,
+            forma_pagamento=forma,
+            prazo_dias=2,
+            taxa_percentual=Decimal("2.5000"),
+            taxa_fixa=Decimal("1.00"),
+        )
+
+        recebivel, criado = gerar_recebivel_pagamento(pagamento)
+        repetido, criado_novamente = gerar_recebivel_pagamento(pagamento)
+
+        self.assertTrue(criado)
+        self.assertFalse(criado_novamente)
+        self.assertEqual(repetido.pk, recebivel.pk)
+        self.assertEqual(recebivel.regra, regra)
+        self.assertEqual(recebivel.taxa_prevista, Decimal("3.50"))
+        self.assertEqual(recebivel.valor_liquido_previsto, Decimal("96.50"))
+        self.assertEqual(recebivel.data_prevista, recebivel.data_venda + timedelta(days=2))
+        self.assertEqual(RecebivelEletronico.objects.count(), 1)
+
+    def test_pagamento_sem_regra_nao_cria_recebivel_nem_bloqueia(self):
+        caixa = Caixa.objects.create(filial=self.filial, usuario_abertura=self.user)
+        venda = Venda.objects.create(
+            filial=self.filial,
+            caixa=caixa,
+            usuario=self.user,
+            total_bruto=Decimal("25.00"),
+            total_liquido=Decimal("25.00"),
+            status=StatusVenda.FINALIZADA,
+        )
+        forma = FormaPagamento.objects.create(nome="PIX sem regra", tipo="PIX")
+        pagamento = PagamentoVenda.objects.create(
+            venda=venda,
+            forma_pagamento=forma,
+            valor=Decimal("25.00"),
+            nsu="NSU-SEM-REGRA",
+        )
+
+        recebivel, criado = gerar_recebivel_pagamento(pagamento)
+
+        self.assertIsNone(recebivel)
+        self.assertFalse(criado)
+        self.assertFalse(RecebivelEletronico.objects.exists())
+
+    def test_tela_agenda_sincroniza_pagamento_e_exporta_csv(self):
+        caixa = Caixa.objects.create(filial=self.filial, usuario_abertura=self.user)
+        venda = Venda.objects.create(
+            filial=self.filial,
+            caixa=caixa,
+            usuario=self.user,
+            total_bruto=Decimal("50.00"),
+            total_liquido=Decimal("50.00"),
+            status=StatusVenda.FINALIZADA,
+        )
+        forma = FormaPagamento.objects.create(nome="Débito agenda", tipo="DEBITO")
+        PagamentoVenda.objects.create(
+            venda=venda,
+            forma_pagamento=forma,
+            valor=Decimal("50.00"),
+            nsu="NSU-TELA-AGENDA",
+        )
+        RegraLiquidacaoEletronica.objects.create(
+            filial=self.filial,
+            forma_pagamento=forma,
+            prazo_dias=0,
+            taxa_percentual=Decimal("1.0000"),
+        )
+
+        resposta = self.client.post("/financeiro/agenda-recebiveis/", follow=True)
+        csv_response = self.client.get("/financeiro/agenda-recebiveis/exportar.csv")
+
+        self.assertEqual(resposta.status_code, 200)
+        self.assertContains(resposta, "1 recebível(is) incluído(s)")
+        self.assertContains(resposta, "NSU-TELA-AGENDA")
+        self.assertEqual(csv_response.status_code, 200)
+        self.assertIn("Valor líquido previsto", csv_response.content.decode("utf-8-sig"))
+        self.assertEqual(RecebivelEletronico.objects.get().valor_liquido_previsto, Decimal("49.50"))
+        self.assertTrue(LogAuditoria.objects.filter(acao="SINCRONIZA_AGENDA_RECEBIVEIS").exists())
+    def _criar_recebivel_para_conciliacao(self, *, nsu, prazo_dias=2):
+        conta = ContaMovimentoFinanceiro.objects.create(
+            filial=self.filial, nome=f"Adquirente {nsu}", tipo=TipoContaMovimento.BANCO
+        )
+        caixa = Caixa.objects.create(filial=self.filial, usuario_abertura=self.user)
+        venda = Venda.objects.create(
+            filial=self.filial,
+            caixa=caixa,
+            usuario=self.user,
+            total_bruto=Decimal("100.00"),
+            total_liquido=Decimal("100.00"),
+            status=StatusVenda.FINALIZADA,
+        )
+        forma = FormaPagamento.objects.create(
+            nome=f"Crédito {nsu}", tipo="CREDITO", conta_movimento_padrao=conta
+        )
+        pagamento = PagamentoVenda.objects.create(
+            venda=venda,
+            forma_pagamento=forma,
+            valor=Decimal("100.00"),
+            nsu=nsu,
+        )
+        RegraLiquidacaoEletronica.objects.create(
+            filial=self.filial,
+            forma_pagamento=forma,
+            prazo_dias=prazo_dias,
+            taxa_percentual=Decimal("2.5000"),
+            taxa_fixa=Decimal("1.00"),
+        )
+        recebivel, _ = gerar_recebivel_pagamento(pagamento)
+        LancamentoFinanceiro.objects.create(
+            conta=conta,
+            tipo=TipoLancamentoFinanceiro.ENTRADA,
+            origem="PDV_VENDA",
+            descricao=f"Venda #{venda.pk}",
+            valor=pagamento.valor,
+            data=recebivel.data_venda,
+            pagamento_venda=pagamento,
+            usuario=self.user,
+        )
+        return conta, recebivel
+
+    def _importar_movimento_recebivel(self, *, conta, data, tipo, valor, referencia, nome):
+        conteudo = (
+            "data;tipo;valor;descricao;referencia\n"
+            f"{data.isoformat()};{tipo};{valor};Liquidação adquirente;{referencia}\n"
+        ).encode("utf-8")
+        return importar_extrato_csv(
+            conta=conta,
+            arquivo_nome=nome,
+            conteudo=conteudo,
+            usuario=self.user,
+        )[0]
+
+    def test_extrato_liquida_recebivel_por_nsu_com_valor_liquido(self):
+        conta, recebivel = self._criar_recebivel_para_conciliacao(nsu="NSU-LIQ-001")
+
+        importacao = self._importar_movimento_recebivel(
+            conta=conta,
+            data=recebivel.data_prevista,
+            tipo="entrada",
+            valor="96.50",
+            referencia="NSU-LIQ-001",
+            nome="liquidacao.csv",
+        )
+
+        recebivel.refresh_from_db()
+        item = ItemExtratoFinanceiro.objects.get(importacao=importacao)
+        movimento = MovimentoRecebivelEletronico.objects.get(recebivel=recebivel)
+        self.assertEqual(recebivel.status, StatusRecebivelEletronico.LIQUIDADO)
+        self.assertEqual(recebivel.valor_liquidado, Decimal("96.50"))
+        self.assertEqual(item.status, StatusItemExtratoFinanceiro.CONCILIADO)
+        self.assertEqual(movimento.tipo, TipoMovimentoRecebivelEletronico.LIQUIDACAO)
+        self.assertTrue(movimento.automatico)
+        self.assertEqual(importacao.conciliadas_automaticamente, 1)
+
+    def test_extrato_identifica_antecipacao_e_divergencia(self):
+        conta, antecipado = self._criar_recebivel_para_conciliacao(
+            nsu="NSU-ANT-001", prazo_dias=5
+        )
+        self._importar_movimento_recebivel(
+            conta=conta,
+            data=antecipado.data_venda,
+            tipo="entrada",
+            valor="96.50",
+            referencia="NSU-ANT-001",
+            nome="antecipacao.csv",
+        )
+        antecipado.refresh_from_db()
+        self.assertEqual(antecipado.status, StatusRecebivelEletronico.ANTECIPADO)
+        self.assertEqual(
+            antecipado.movimentos.get().tipo,
+            TipoMovimentoRecebivelEletronico.ANTECIPACAO,
+        )
+
+        conta_div, divergente = self._criar_recebivel_para_conciliacao(nsu="NSU-DIV-001")
+        self._importar_movimento_recebivel(
+            conta=conta_div,
+            data=divergente.data_prevista,
+            tipo="entrada",
+            valor="95.00",
+            referencia="NSU-DIV-001",
+            nome="divergencia.csv",
+        )
+        divergente.refresh_from_db()
+        self.assertEqual(divergente.status, StatusRecebivelEletronico.DIVERGENTE)
+        self.assertEqual(divergente.valor_liquidado, Decimal("95.00"))
+        self.assertIn("diferença R$ -1.50", divergente.observacao)
+
+    def test_extrato_registra_chargeback_com_mesmo_nsu(self):
+        conta, recebivel = self._criar_recebivel_para_conciliacao(nsu="NSU-CBK-001")
+        self._importar_movimento_recebivel(
+            conta=conta,
+            data=recebivel.data_prevista,
+            tipo="entrada",
+            valor="96.50",
+            referencia="NSU-CBK-001",
+            nome="liquidacao-chargeback.csv",
+        )
+        self._importar_movimento_recebivel(
+            conta=conta,
+            data=recebivel.data_prevista + timedelta(days=1),
+            tipo="saida",
+            valor="96.50",
+            referencia="NSU-CBK-001",
+            nome="chargeback.csv",
+        )
+
+        recebivel.refresh_from_db()
+        self.assertEqual(recebivel.status, StatusRecebivelEletronico.CHARGEBACK)
+        self.assertEqual(recebivel.movimentos.count(), 2)
+        self.assertTrue(
+            recebivel.movimentos.filter(tipo=TipoMovimentoRecebivelEletronico.CHARGEBACK).exists()
+        )
+        self.assertEqual(
+            ItemExtratoFinanceiro.objects.filter(referencia_externa="NSU-CBK-001").count(), 2
+        )
+        self.assertTrue(LogAuditoria.objects.filter(acao="CONCILIA_RECEBIVEL_EXTRATO").exists())
+    def test_revisao_manual_vincula_item_sem_referencia_ao_recebivel(self):
+        conta, recebivel = self._criar_recebivel_para_conciliacao(nsu="NSU-MANUAL-001")
+        importacao = self._importar_movimento_recebivel(
+            conta=conta,
+            data=recebivel.data_prevista,
+            tipo="entrada",
+            valor="96.50",
+            referencia="REFERENCIA-SEM-NSU",
+            nome="manual.csv",
+        )
+        item = ItemExtratoFinanceiro.objects.get(importacao=importacao)
+        self.assertEqual(item.status, StatusItemExtratoFinanceiro.PENDENTE)
+
+        detalhe = self.client.get(f"/financeiro/conciliacao-extratos/{item.pk}/")
+        resposta = self.client.post(
+            f"/financeiro/conciliacao-extratos/{item.pk}/conciliar-recebivel/",
+            {"recebivel_id": recebivel.pk, "valor_alocado": "96.50"},
+            follow=True,
+        )
+
+        recebivel.refresh_from_db()
+        item.refresh_from_db()
+        self.assertEqual(detalhe.status_code, 200)
+        self.assertContains(detalhe, "Alocar")
+        self.assertEqual(resposta.status_code, 200)
+        self.assertContains(resposta, "Liquidado")
+        self.assertEqual(recebivel.status, StatusRecebivelEletronico.LIQUIDADO)
+        self.assertEqual(item.status, StatusItemExtratoFinanceiro.CONCILIADO)
+        self.assertFalse(recebivel.movimentos.get().automatico)
+
+    def _criar_recebivel_na_conta(self, *, conta, nsu, valor):
+        caixa = Caixa.objects.create(filial=self.filial, usuario_abertura=self.user)
+        venda = Venda.objects.create(
+            filial=self.filial,
+            caixa=caixa,
+            usuario=self.user,
+            total_bruto=valor,
+            total_liquido=valor,
+            status=StatusVenda.FINALIZADA,
+        )
+        forma = FormaPagamento.objects.create(
+            nome=f"Crédito agrupado {nsu}",
+            tipo="CREDITO",
+            conta_movimento_padrao=conta,
+        )
+        pagamento = PagamentoVenda.objects.create(
+            venda=venda,
+            forma_pagamento=forma,
+            valor=valor,
+            nsu=nsu,
+        )
+        RegraLiquidacaoEletronica.objects.create(
+            filial=self.filial,
+            forma_pagamento=forma,
+            prazo_dias=2,
+            taxa_percentual=Decimal("2.5000"),
+            taxa_fixa=Decimal("1.00"),
+        )
+        recebivel, _ = gerar_recebivel_pagamento(pagamento)
+        LancamentoFinanceiro.objects.create(
+            conta=conta,
+            tipo=TipoLancamentoFinanceiro.ENTRADA,
+            origem="PDV_VENDA",
+            descricao=f"Venda #{venda.pk}",
+            valor=pagamento.valor,
+            data=recebivel.data_venda,
+            pagamento_venda=pagamento,
+            usuario=self.user,
+        )
+        return recebivel
+
+    def test_deposito_agrupado_e_alocado_em_varios_recebiveis(self):
+        conta, primeiro = self._criar_recebivel_para_conciliacao(nsu="NSU-LOTE-001")
+        segundo = self._criar_recebivel_na_conta(
+            conta=conta,
+            nsu="NSU-LOTE-002",
+            valor=Decimal("50.00"),
+        )
+        importacao = self._importar_movimento_recebivel(
+            conta=conta,
+            data=max(primeiro.data_prevista, segundo.data_prevista),
+            tipo="entrada",
+            valor="144.25",
+            referencia="LOTE-ADQUIRENTE-001",
+            nome="deposito-agrupado.csv",
+        )
+        item = ItemExtratoFinanceiro.objects.get(importacao=importacao)
+
+        primeira_resposta = self.client.post(
+            f"/financeiro/conciliacao-extratos/{item.pk}/conciliar-recebivel/",
+            {"recebivel_id": primeiro.pk, "valor_alocado": "96.50"},
+            follow=True,
+        )
+        item.refresh_from_db()
+        primeiro.refresh_from_db()
+
+        self.assertEqual(primeira_resposta.status_code, 200)
+        self.assertEqual(item.status, StatusItemExtratoFinanceiro.PARCIAL)
+        self.assertEqual(item.valor_alocado_recebiveis, Decimal("96.50"))
+        self.assertEqual(item.saldo_alocar_recebiveis, Decimal("47.75"))
+        self.assertEqual(primeiro.status, StatusRecebivelEletronico.LIQUIDADO)
+        self.assertContains(primeira_resposta, "Conciliação parcial em andamento")
+
+        segunda_resposta = self.client.post(
+            f"/financeiro/conciliacao-extratos/{item.pk}/conciliar-recebivel/",
+            {"recebivel_id": segundo.pk, "valor_alocado": "47.75"},
+            follow=True,
+        )
+        item.refresh_from_db()
+        segundo.refresh_from_db()
+
+        self.assertEqual(segunda_resposta.status_code, 200)
+        self.assertEqual(item.status, StatusItemExtratoFinanceiro.CONCILIADO)
+        self.assertEqual(item.valor_alocado_recebiveis, Decimal("144.25"))
+        self.assertEqual(item.saldo_alocar_recebiveis, Decimal("0.00"))
+        self.assertEqual(segundo.status, StatusRecebivelEletronico.LIQUIDADO)
+        self.assertEqual(item.movimentos_recebiveis.count(), 2)
+
+    def test_rateio_rejeita_excesso_e_conciliacao_comum_paralela(self):
+        conta, primeiro = self._criar_recebivel_para_conciliacao(nsu="NSU-PARCIAL-001")
+        segundo = self._criar_recebivel_na_conta(
+            conta=conta,
+            nsu="NSU-PARCIAL-002",
+            valor=Decimal("50.00"),
+        )
+        importacao = self._importar_movimento_recebivel(
+            conta=conta,
+            data=max(primeiro.data_prevista, segundo.data_prevista),
+            tipo="entrada",
+            valor="144.25",
+            referencia="LOTE-PARCIAL-001",
+            nome="deposito-parcial.csv",
+        )
+        item = ItemExtratoFinanceiro.objects.get(importacao=importacao)
+        conciliar_recebivel_com_item(
+            item=item,
+            recebivel=primeiro,
+            valor_alocado=Decimal("96.50"),
+            usuario=self.user,
+        )
+        item.refresh_from_db()
+
+        with self.assertRaisesMessage(ValidationError, "excede o saldo disponível"):
+            conciliar_recebivel_com_item(
+                item=item,
+                recebivel=segundo,
+                valor_alocado=Decimal("47.76"),
+                usuario=self.user,
+            )
+
+        lancamento = LancamentoFinanceiro.objects.create(
+            conta=conta,
+            tipo=TipoLancamentoFinanceiro.ENTRADA,
+            origem="AJUSTE_TESTE",
+            descricao="Tentativa de conciliação paralela",
+            valor=item.valor,
+            data=item.data,
+            usuario=self.user,
+        )
+        with self.assertRaisesMessage(ValidationError, "parcialmente alocado"):
+            conciliar_item_extrato(
+                item=item,
+                lancamento=lancamento,
+                usuario=self.user,
+            )
+    def test_importacao_ofx_normaliza_movimentos_e_registra_contrato(self):
+        conta = ContaMovimentoFinanceiro.objects.create(
+            filial=self.filial,
+            nome="Banco OFX",
+            tipo=TipoContaMovimento.BANCO,
+        )
+        data = timezone.localdate().strftime("%Y%m%d")
+        conteudo = (
+            "OFXHEADER:100\nDATA:OFXSGML\nVERSION:102\n\n<OFX><BANKMSGSRSV1>"
+            "<STMTTRNRS><STMTRS><BANKTRANLIST>"
+            f"<STMTTRN><TRNTYPE>CREDIT<DTPOSTED>{data}120000<TRNAMT>125.40"
+            "<FITID>OFX-CRED-001<MEMO>Recebimento cartão</STMTTRN>"
+            f"<STMTTRN><TRNTYPE>DEBIT<DTPOSTED>{data}130000<TRNAMT>-9.90"
+            "<FITID>OFX-DEB-001<NAME>Tarifa bancária</STMTTRN>"
+            "</BANKTRANLIST></STMTRS></STMTTRNRS></BANKMSGSRSV1></OFX>"
+        ).encode("cp1252")
+
+        importacao, criada = importar_extrato(
+            conta=conta,
+            arquivo_nome="banco.ofx",
+            conteudo=conteudo,
+            usuario=self.user,
+            adaptador_codigo="OFX",
+        )
+
+        self.assertTrue(criada)
+        self.assertEqual(importacao.adaptador_codigo, "OFX")
+        self.assertEqual(importacao.adaptador_nome, "OFX bancário")
+        self.assertEqual(importacao.adaptador_contrato, "financial_statement_adapter_v1")
+        self.assertEqual(importacao.total_linhas, 2)
+        credito = importacao.itens.get(referencia_externa="OFX-CRED-001")
+        debito = importacao.itens.get(referencia_externa="OFX-DEB-001")
+        self.assertEqual(credito.tipo, TipoLancamentoFinanceiro.ENTRADA)
+        self.assertEqual(credito.valor, Decimal("125.40"))
+        self.assertEqual(debito.tipo, TipoLancamentoFinanceiro.SAIDA)
+        self.assertEqual(debito.valor, Decimal("9.90"))
+
+    @override_settings(
+        FINANCEIRO_EXTRATO_ADAPTERS={
+            "ADQUIRENTE_TESTE": "apps.financeiro.tests.FakeExtratoAdapter"
+        }
+    )
+    def test_adaptador_privado_configurado_e_usado_sem_expor_caminho(self):
+        conta = ContaMovimentoFinanceiro.objects.create(
+            filial=self.filial,
+            nome="Adquirente privada",
+            tipo=TipoContaMovimento.OUTRA,
+        )
+
+        importacao, criada = importar_extrato(
+            conta=conta,
+            arquivo_nome="liquidacao.ret",
+            conteudo=b"conteudo-controlado-pelo-adaptador",
+            usuario=self.user,
+            adaptador_codigo="ADQUIRENTE_TESTE",
+        )
+
+        self.assertTrue(criada)
+        self.assertEqual(importacao.adaptador_codigo, "ADQUIRENTE_TESTE")
+        self.assertEqual(importacao.adaptador_nome, "Adquirente de teste")
+        self.assertEqual(importacao.itens.get().referencia_externa, "LOTE-PRIVADO-001")
+        auditoria = LogAuditoria.objects.get(
+            acao="IMPORTA_EXTRATO_FINANCEIRO",
+            objeto_id=str(importacao.pk),
+        )
+        self.assertIn("ADQUIRENTE_TESTE", auditoria.descricao)
+
+    def test_tela_extratos_rejeita_layout_nao_registrado(self):
+        conta = ContaMovimentoFinanceiro.objects.create(
+            filial=self.filial,
+            nome="Banco protegido",
+            tipo=TipoContaMovimento.BANCO,
+        )
+        resposta = self.client.post(
+            "/financeiro/conciliacao-extratos/",
+            {
+                "conta": conta.pk,
+                "adaptador": "CLASSE_ENVIADA_PELO_CLIENTE",
+                "arquivo": SimpleUploadedFile(
+                    "extrato.csv",
+                    b"data;tipo;valor;descricao;referencia\n",
+                    content_type="text/csv",
+                ),
+            },
+        )
+
+        self.assertEqual(resposta.status_code, 200)
+        self.assertFormError(
+            resposta.context["form"],
+            "adaptador",
+            "Faça uma escolha válida. CLASSE_ENVIADA_PELO_CLIENTE não é uma das escolhas disponíveis.",
+        )
+        self.assertFalse(ImportacaoExtratoFinanceiro.objects.filter(conta=conta).exists())

@@ -1,0 +1,66 @@
+{% extends "base.html" %}
+
+{% block title %}Inventário orientado a risco{% endblock %}
+
+{% block content %}
+<header class="page-header">
+  <div>
+    <h1>Inventário orientado a risco</h1>
+    <p>Priorize a contagem por validade, perdas, saldo mínimo e histórico de divergências.</p>
+  </div>
+  <a class="secondary-button" href="{% url 'estoque:inventarios' %}">Voltar</a>
+</header>
+
+<form method="get" class="filters panel">
+  <label><span>Filial</span><select name="filial">
+    {% for filial in filiais %}<option value="{{ filial.pk }}"{% if filial_selecionada.pk == filial.pk %} selected{% endif %}>{{ filial }}</option>{% endfor %}
+  </select></label>
+  <label><span>Risco</span><select name="nivel">
+    <option value="">Todos</option>
+    <option value="CRITICO"{% if nivel == "CRITICO" %} selected{% endif %}>Crítico</option>
+    <option value="ALTO"{% if nivel == "ALTO" %} selected{% endif %}>Alto</option>
+    <option value="MEDIO"{% if nivel == "MEDIO" %} selected{% endif %}>Médio</option>
+    <option value="BAIXO"{% if nivel == "BAIXO" %} selected{% endif %}>Baixo</option>
+  </select></label>
+  <label><span>Produto</span><input type="search" name="q" value="{{ busca }}" placeholder="Nome, código de barras ou interno"></label>
+  <button class="primary-button" type="submit"><i class="fa-solid fa-filter"></i> Filtrar</button>
+</form>
+
+<section class="metrics-grid">
+  <article class="metric"><span>Itens priorizados</span><strong>{{ total_priorizado }}</strong></article>
+  <article class="metric"><span>Filial</span><strong>{{ filial_selecionada.nome|default:"-" }}</strong></article>
+</section>
+
+<form method="post" class="panel">
+  {% csrf_token %}
+  <input type="hidden" name="filial" value="{{ filial_selecionada.pk|default:'' }}">
+  <div class="panel-title">Fila de contagem sugerida</div>
+  <div class="table-scroll">
+    <table>
+      <thead><tr><th><span class="sr-only">Selecionar</span></th><th>Risco</th><th>Produto</th><th>Saldo</th><th>Mínimo</th><th>Última contagem</th><th>Motivos</th></tr></thead>
+      <tbody>
+        {% for item in fila %}
+          <tr>
+            <td><input type="checkbox" name="estoques" value="{{ item.estoque.pk }}" aria-label="Selecionar {{ item.estoque.produto.nome }}"></td>
+            <td><span class="status">{{ item.nivel_label }} · {{ item.score }}</span></td>
+            <td><strong>{{ item.estoque.produto.nome }}</strong><br><small>{{ item.estoque.produto.codigo_barras }}</small></td>
+            <td>{{ item.estoque.quantidade_disponivel }}</td>
+            <td>{{ item.estoque.produto.estoque_minimo }}</td>
+            <td>{{ item.ultima_contagem|date:"d/m/Y H:i"|default:"Nunca" }}</td>
+            <td>{{ item.motivos|join:"; " }}</td>
+          </tr>
+        {% empty %}
+          <tr><td colspan="7" class="empty">Nenhum item encontrado para os filtros selecionados.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% if fila %}
+    <div class="form-grid mt-panel">
+      <label class="form-field"><span>Descrição do plano</span><input name="descricao" maxlength="255" placeholder="Ex.: Contagem semanal de perecíveis"></label>
+      <div class="form-actions"><button class="primary-button" type="submit"><i class="fa-solid fa-list-check"></i> Criar plano de contagem</button></div>
+    </div>
+  {% endif %}
+</form>
+{% include "includes/pagination.html" %}
+{% endblock %}

@@ -2,7 +2,7 @@ from apps.clientes.escopo import empresa_id_do_usuario
 from apps.empresas.models import Filial
 from apps.vendas.models import Venda
 
-from .models import ConfiguracaoFiscal, DocumentoFiscal, InutilizacaoNumeracaoFiscal, NaturezaOperacao, SerieFiscal
+from .models import ConfiguracaoFiscal, DocumentoDFeRecebido, DocumentoFiscal, InutilizacaoNumeracaoFiscal, NaturezaOperacao, SerieFiscal
 
 
 def _por_empresa_do_usuario(user, queryset, lookup_empresa):
@@ -45,3 +45,8 @@ def inutilizacoes_para_usuario(user, queryset=None):
 def vendas_para_usuario(user, queryset=None):
     queryset = queryset if queryset is not None else Venda.objects.all()
     return _por_empresa_do_usuario(user, queryset, "filial__empresa_id")
+
+
+def documentos_dfe_recebidos_para_usuario(user, queryset=None):
+    queryset = queryset if queryset is not None else DocumentoDFeRecebido.objects.all()
+    return _por_empresa_do_usuario(user, queryset, "empresa_id")

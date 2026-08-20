@@ -1,0 +1,13 @@
+{% extends "base.html" %}
+{% block title %}Programar preço{% endblock %}
+{% block content %}
+<header class="page-header"><div><h1>Programar preço</h1><p>Crie uma nova versão sem apagar o histórico comercial do produto.</p></div><a class="secondary-button" href="{% url 'produtos:versoes_preco' %}">Voltar</a></header>
+<form method="post" class="form-grid panel">
+  {% if form.non_field_errors %}<div class="form-note form-note-danger form-field-wide">{{ form.non_field_errors }}</div>{% endif %}
+  {% include "includes/form.html" %}
+  <div class="form-note form-field-wide"><strong>Ordem de aplicação:</strong> uma promoção ativa tem prioridade. Fora da promoção, vale a versão normal mais recente cuja vigência já começou.</div>
+  <label class="form-field"><span>Supervisor ou administrador</span><input type="text" name="supervisor_usuario" autocomplete="username"><small>Obrigatório somente para exceção de margem.</small></label>
+  <label class="form-field"><span>Senha</span><input type="password" name="supervisor_senha" autocomplete="current-password"></label>
+  <div class="form-actions form-field-wide"><a class="secondary-button" href="{% url 'produtos:versoes_preco' %}">Cancelar</a><button class="primary-button" type="submit"><i class="fa-solid fa-calendar-check"></i> Programar preço</button></div>
+</form>
+{% endblock %}

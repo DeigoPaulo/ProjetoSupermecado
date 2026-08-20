@@ -1,5 +1,6 @@
 from decimal import Decimal
 
+from django.conf import settings
 from django.core.exceptions import ValidationError
 from django.core.validators import FileExtensionValidator, MaxValueValidator, MinValueValidator
 from django.db import models, transaction
@@ -446,5 +447,47 @@ class ProdutoFornecedor(models.Model):
     def __str__(self):
         return f"{self.produto} - {self.fornecedor}"
 
+
+class StatusVersaoPreco(models.TextChoices):
+    AGENDADA = "AGENDADA", "Agendada"
+    CANCELADA = "CANCELADA", "Cancelada"
+
+
+class VersaoPrecoProduto(models.Model):
+    produto = models.ForeignKey(Produto, on_delete=models.PROTECT, related_name="versoes_preco")
+    versao = models.PositiveIntegerField()
+    preco_anterior = models.DecimalField(max_digits=10, decimal_places=2)
+    preco_novo = models.DecimalField(max_digits=10, decimal_places=2, validators=[MinValueValidator(0.01)])
+    vigencia_inicio = models.DateTimeField("Início da vigência")
+    motivo = models.CharField(max_length=255)
+    status = models.CharField(max_length=12, choices=StatusVersaoPreco.choices, default=StatusVersaoPreco.AGENDADA)
+    criado_por = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.PROTECT, related_name="versoes_preco_criadas"
+    )
+    criado_em = models.DateTimeField(auto_now_add=True)
+    cancelado_por = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.PROTECT, related_name="versoes_preco_canceladas",
+        null=True, blank=True,
+    )
+    cancelado_em = models.DateTimeField(null=True, blank=True)
+    motivo_cancelamento = models.CharField(max_length=255, blank=True)
+
+    class Meta:
+        ordering = ["-vigencia_inicio", "-versao"]
+        constraints = [
+            models.UniqueConstraint(fields=["produto", "versao"], name="produto_versao_preco_unica"),
+            models.CheckConstraint(condition=models.Q(preco_novo__gt=0), name="produto_versao_preco_positivo"),
+        ]
+        indexes = [models.Index(fields=["produto", "status", "vigencia_inicio"], name="produto_preco_vigente_idx")]
+        verbose_name = "Versão de preço do produto"
+        verbose_name_plural = "Versões de preço dos produtos"
+
+    @property
+    def esta_vigente(self):
+        from django.utils import timezone
+        return self.status == StatusVersaoPreco.AGENDADA and self.vigencia_inicio <= timezone.now()
+
+    def __str__(self):
+        return f"{self.produto} - versão {self.versao} - R$ {self.preco_novo}"
 
 # Create your models here.

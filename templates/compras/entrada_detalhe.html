@@ -10,6 +10,7 @@
   </div>
   <div class="actions">
     {% if entrada.status == "RASCUNHO" %}
+
       <a class="secondary-button" href="{% url 'compras:editar' entrada.pk %}?next={{ retorno_lista_url|urlencode }}">Editar</a>
       <form method="post" action="{% url 'compras:excluir_rascunho' entrada.pk %}" class="inline-form form-confirm" data-msg="Excluir este rascunho de compra? Esta ação não mexe no estoque, mas remove o rascunho e seus itens.">
         {% csrf_token %}
@@ -29,24 +30,30 @@
     <article class="metric"><span>Total da NF-e</span><strong>R$ {{ entrada.total_documento|floatformat:2 }}</strong></article>
   {% endif %}
   <article class="metric"><span>Documento</span><strong>{{ entrada.numero_documento|default:"-" }}</strong></article>
+  {% if entrada.pedido_origem %}
+    <article class="metric"><span>Conferência</span><strong>{{ entrada.get_conferencia_status_display }}</strong></article>
+  {% endif %}
   <article class="metric"><span>Vencimento</span><strong>{{ entrada.vencimento_financeiro|date:"d/m/Y"|default:"Ao finalizar" }}</strong></article>
 </section>
 
 {% if entrada.chave_acesso_xml %}
   <section class="operation-notice">
     Entrada importada da NF-e {{ entrada.chave_acesso_xml }} em {{ entrada.importada_xml_em|date:"d/m/Y H:i" }}.
-    O total fiscal da nota e usado no financeiro; os itens abaixo determinam estoque e custo.
+    O total fiscal da nota é usado no financeiro; os itens abaixo determinam estoque e custo.
   </section>
 {% endif %}
 
 {% if entrada.pedido_origem %}
+  <section class="operation-notice">
+    <strong>Conferência em três vias: {{ entrada.get_conferencia_status_display }}</strong><br>
+    {{ entrada.conferencia_resumo }}
+  </section>
   <section class="operation-notice">
     Entrada originada do pedido de compra
     <a href="{% url 'compras:pedido_detalhe' entrada.pedido_origem.pk %}">#{{ entrada.pedido_origem.pk }}</a>.
     Fornecedor e filial permanecem vinculados ao pedido para preservar o rastreio.
   </section>
 {% endif %}
-
 {% if entrada.contas_financeiras.exists %}
   <section class="panel mt-panel">
     <div class="panel-title">Financeiro vinculado</div>
@@ -93,7 +100,39 @@
 {% endif %}
 
 {% if entrada.status == "RASCUNHO" %}
-  <section class="panel mt-panel">
+  {% if pedidos_vinculaveis %}
+    <section class="panel mt-panel">
+      <div class="panel-title">Vincular XML a pedido enviado</div>
+      <p class="panel-subtitle">Use apenas quando a NF-e corresponde a um pedido desta filial e fornecedor, mas possui divergências que exigem conferência física.</p>
+      <form method="post" action="{% url 'compras:vincular_xml_pedido_manual' entrada.pk %}" class="form-grid form-confirm" data-msg="Vincular manualmente este XML ao pedido selecionado? A divergência ficará registrada para revisão.">
+        {% csrf_token %}
+        <label class="form-field span-2"><span>Pedido enviado</span><select name="pedido_id" required>{% for pedido in pedidos_vinculaveis %}<option value="{{ pedido.pk }}">Pedido #{{ pedido.pk }}{% if pedido.referencia %} - {{ pedido.referencia }}{% endif %}</option>{% endfor %}</select></label>
+        <label class="form-field span-2"><span>Justificativa</span><input type="text" name="justificativa" required></label>
+        <label class="form-field"><span>Supervisor ou admin</span><input class="no-upper" type="text" name="supervisor_usuario" autocomplete="username" required></label>
+        <label class="form-field"><span>Senha</span><input class="no-upper" type="password" name="supervisor_senha" autocomplete="current-password" required></label>
+        <div class="form-actions"><button class="secondary-button" type="submit">Vincular e registrar divergência</button></div>
+      </form>
+    </section>
+  {% endif %}
+  {% if entrada.pedido_origem %}
+    <section class="panel mt-panel">
+      <div class="panel-title">Conferência física</div>
+      <p class="panel-subtitle">Compare a mercadoria recebida com o pedido e com os itens importados da NF-e.</p>
+      <table>
+        <thead><tr><th>Produto</th><th>Pedido</th><th>Recebido</th><th>Total previsto</th><th>Total recebido</th><th>Situação</th></tr></thead>
+        <tbody>{% for item in itens_conferencia %}<tr{% if item.divergente %} class="table-row-warning"{% endif %}><td>{{ item.produto }}</td><td>{{ item.quantidade_prevista|quantidade_br }}</td><td>{{ item.quantidade_recebida|quantidade_br }}</td><td>R$ {{ item.total_previsto|floatformat:2 }}</td><td>R$ {{ item.total_recebido|floatformat:2 }}</td><td>{% if item.divergente %}<span class="status status-warning">Divergente</span>{% else %}<span class="status status-success">Conferido</span>{% endif %}</td></tr>{% endfor %}</tbody>
+      </table>
+      {% if entrada.conferencia_fisica_em %}
+        <div class="operation-notice"><strong>Conferida fisicamente em {{ entrada.conferencia_fisica_em|date:"d/m/Y H:i" }}</strong> por {{ entrada.conferencia_fisica_por|default:"-" }}.{% if entrada.conferencia_fisica_observacoes %}<br>{{ entrada.conferencia_fisica_observacoes }}{% endif %}</div>
+      {% else %}
+        <form method="post" action="{% url 'compras:confirmar_conferencia_fisica' entrada.pk %}" class="form-grid form-confirm" data-msg="Confirmar que a mercadoria foi conferida fisicamente?">
+          {% csrf_token %}
+          <label class="form-field span-2"><span>Observações{% if entrada.conferencia_status == "DIVERGENTE" %} (obrigatórias para divergência){% endif %}</span><textarea name="observacoes" rows="3"{% if entrada.conferencia_status == "DIVERGENTE" %} required{% endif %}></textarea></label>
+          <div class="form-actions"><button class="secondary-button" type="submit">Registrar conferência física</button></div>
+        </form>
+      {% endif %}
+    </section>
+  {% endif %}  <section class="panel mt-panel">
     <div class="panel-title">Finalizar entrada</div>
     <form method="post" action="{% url 'compras:finalizar' entrada.pk %}" class="form-grid form-confirm" data-msg="Finalizar esta entrada e atualizar o estoque?">
       {% csrf_token %}

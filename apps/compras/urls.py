@@ -28,6 +28,8 @@ urlpatterns = [
     path("<int:pk>/imprimir/", views.entrada_imprimir, name="detalhe_imprimir"),
     path("<int:pk>/editar/", views.EntradaCompraUpdateView.as_view(), name="editar"),
     path("<int:pk>/finalizar/", views.finalizar_entrada, name="finalizar"),
+    path("<int:pk>/vincular-pedido-xml/", views.vincular_xml_pedido_manual, name="vincular_xml_pedido_manual"),
+    path("<int:pk>/confirmar-conferencia-fisica/", views.confirmar_conferencia_fisica_entrada, name="confirmar_conferencia_fisica"),
     path("<int:pk>/cancelar/", views.cancelar_entrada, name="cancelar"),
     path("<int:pk>/excluir-rascunho/", views.excluir_rascunho, name="excluir_rascunho"),
 ]

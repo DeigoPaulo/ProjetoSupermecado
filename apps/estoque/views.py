@@ -46,6 +46,7 @@ from .forms import (
     DesmembramentoDestinoFormSet,
     DesmembramentoProdutoForm,
     InventarioEstoqueForm,
+    ContagemItemInventarioForm,
     ItemComposicaoProdutoFormSet,
     ItemInventarioEstoqueForm,
     MovimentacaoEstoqueForm,
@@ -62,6 +63,7 @@ from .models import (
     Estoque,
     HistoricoEtapaOrdemProducaoComposicao,
     InventarioEstoque,
+    ItemInventarioEstoque,
     ItemDesmembramentoProduto,
     LoteEstoque,
     OrdemProducaoComposicao,
@@ -77,6 +79,8 @@ from .models import (
 )
 from .services import (
     aplicar_inventario,
+    calcular_fila_inventario_risco,
+    criar_inventario_risco,
     atribuir_saldo_historico_lote,
     cancelar_producao_composicao,
     cancelar_ordem_producao_composicao,
@@ -390,7 +394,7 @@ class CriarInventarioView(LoginRequiredMixin, RoleRequiredMixin, CreateView):
 
     def form_valid(self, form):
         form.instance.usuario = self.request.user
-        messages.success(self.request, "Inventario criado com sucesso.")
+        messages.success(self.request, "Inventário criado com sucesso.")
         return super().form_valid(form)
 
     def get_success_url(self):
@@ -407,7 +411,12 @@ def inventario_detalhe(request, pk):
         ),
         pk=pk,
     )
-    return render(request, "estoque/inventario_detalhe.html", {"inventario": inventario})
+    pendentes = inventario.itens.filter(quantidade_contada__isnull=True).count()
+    return render(
+        request,
+        "estoque/inventario_detalhe.html",
+        {"inventario": inventario, "pendentes": pendentes},
+    )
 
 
 @login_required
@@ -415,7 +424,7 @@ def inventario_detalhe(request, pk):
 def adicionar_item_inventario(request, pk):
     inventario = get_object_or_404(inventarios_para_usuario(request.user), pk=pk)
     if inventario.status != StatusInventario.ABERTO:
-        messages.error(request, "Não e possível editar inventario aplicado ou cancelado.")
+        messages.error(request, "Não é possível editar inventário aplicado ou cancelado.")
         return redirect("estoque:inventario_detalhe", pk=inventario.pk)
 
     if request.method == "POST":
@@ -447,9 +456,106 @@ def aplicar_inventario_view(request, pk):
     except ValidationError as exc:
         messages.error(request, " ".join(exc.messages))
     else:
-        messages.success(request, "Inventario aplicado e estoque ajustado.")
+        messages.success(request, "Inventário aplicado e estoque ajustado.")
     return redirect("estoque:inventario_detalhe", pk=inventario.pk)
 
+
+@login_required
+@role_required(*ESTOQUE)
+def inventario_risco(request):
+    filiais = filiais_para_usuario(request.user).filter(is_active=True).order_by("nome")
+    filial_id = request.GET.get("filial") or request.POST.get("filial")
+    filial = filiais.filter(pk=filial_id).first() if filial_id else filiais.first()
+    nivel = (request.GET.get("nivel") or "").upper()
+    busca = (request.GET.get("q") or "").strip()
+
+    fila = []
+    if filial:
+        estoques = estoques_para_usuario(request.user).filter(filial=filial)
+        if busca:
+            estoques = estoques.filter(
+                Q(produto__nome__icontains=busca)
+                | Q(produto__codigo_barras__icontains=busca)
+                | Q(produto__codigo_interno__icontains=busca)
+            )
+        fila = calcular_fila_inventario_risco(estoques)
+        if nivel in {"CRITICO", "ALTO", "MEDIO", "BAIXO"}:
+            fila = [item for item in fila if item["nivel"] == nivel]
+
+    if request.method == "POST":
+        selecionados = request.POST.getlist("estoques")
+        if not filial:
+            messages.error(request, "Selecione uma filial válida.")
+        elif not selecionados:
+            messages.error(request, "Selecione ao menos um produto para a contagem.")
+        else:
+            estoques_selecionados = list(
+                estoques_para_usuario(request.user).filter(filial=filial, pk__in=selecionados)
+            )
+            try:
+                inventario = criar_inventario_risco(
+                    filial=filial,
+                    estoques=estoques_selecionados,
+                    usuario=request.user,
+                    descricao=(request.POST.get("descricao") or "").strip(),
+                    ip=request.META.get("REMOTE_ADDR"),
+                )
+            except ValidationError as exc:
+                messages.error(request, " ".join(exc.messages))
+            else:
+                messages.success(
+                    request,
+                    f"Plano de contagem criado com {len(estoques_selecionados)} item(ns). Registre as contagens antes de aplicar.",
+                )
+                return redirect("estoque:inventario_detalhe", pk=inventario.pk)
+
+    paginator = Paginator(fila, 50)
+    page_obj = paginator.get_page(request.GET.get("page"))
+    return render(
+        request,
+        "estoque/inventario_risco.html",
+        {
+            "filiais": filiais,
+            "filial_selecionada": filial,
+            "nivel": nivel,
+            "busca": busca,
+            "page_obj": page_obj,
+            "fila": page_obj.object_list,
+            "total_priorizado": len(fila),
+        },
+    )
+
+
+@login_required
+@role_required(*ESTOQUE)
+def contar_item_inventario(request, item_pk):
+    item = get_object_or_404(
+        ItemInventarioEstoque.objects.select_related("inventario", "produto", "inventario__filial"),
+        pk=item_pk,
+        inventario__in=inventarios_para_usuario(request.user),
+    )
+    inventario = item.inventario
+    if inventario.status != StatusInventario.ABERTO:
+        messages.error(request, "Apenas inventários abertos podem receber contagens.")
+        return redirect("estoque:inventario_detalhe", pk=inventario.pk)
+
+    if request.method == "POST":
+        form = ContagemItemInventarioForm(request.POST, instance=item)
+        if form.is_valid():
+            item = form.save(commit=False)
+            estoque = Estoque.objects.filter(produto=item.produto, filial=inventario.filial).first()
+            item.quantidade_sistema = estoque.quantidade_atual if estoque else Decimal("0")
+            item.diferenca = item.quantidade_contada - item.quantidade_sistema
+            item.save()
+            messages.success(request, f"Contagem de {item.produto} registrada.")
+            return redirect("estoque:inventario_detalhe", pk=inventario.pk)
+    else:
+        form = ContagemItemInventarioForm(instance=item)
+    return render(
+        request,
+        "estoque/inventario_item_contar.html",
+        {"form": form, "inventario": inventario, "item": item},
+    )
 
 class PerdaEstoqueListView(LoginRequiredMixin, RoleRequiredMixin, ListView):
     required_roles = ESTOQUE
@@ -2130,20 +2236,29 @@ def _receita_payload(receita):
 @require_GET
 def produtos_busca(request):
     termo = (request.GET.get("q") or request.GET.get("term") or "").strip()
-    if not termo:
-        return JsonResponse({"results": []})
     base_qs = Produto.objects.all()
     if request.GET.get("marketplace") == "1":
         base_qs = base_qs.filter(vendido_no_marketplace=True)
+
+    if not termo:
+        pagina = Paginator(
+            base_qs.select_related("categoria", "marca").order_by("nome"), 20
+        ).get_page(request.GET.get("page"))
+        return JsonResponse(
+            {
+                "results": [_produto_busca_payload(produto) for produto in pagina.object_list],
+                "pagination": {"more": pagina.has_next()},
+            }
+        )
 
     exatos = list(
         base_qs.filter(
             Q(codigo_barras__iexact=termo)
             | Q(codigo_interno__iexact=termo)
             | Q(codigos_adicionais__codigo__iexact=termo)
-        ).distinct().select_related(
-            "categoria", "marca"
-        )[:10]
+        )
+        .distinct()
+        .select_related("categoria", "marca")[:10]
     )
     parciais = list(
         base_qs.filter(
@@ -2157,8 +2272,12 @@ def produtos_busca(request):
         .select_related("categoria", "marca")
         .order_by("nome")[:20]
     )
-    return JsonResponse({"results": [_produto_busca_payload(produto) for produto in exatos + parciais]})
-
+    return JsonResponse(
+        {
+            "results": [_produto_busca_payload(produto) for produto in exatos + parciais],
+            "pagination": {"more": False},
+        }
+    )
 
 @login_required
 @role_required(*ESTOQUE)

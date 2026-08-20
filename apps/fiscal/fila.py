@@ -41,7 +41,8 @@ def documentos_elegiveis_fila(*, simular_homologacao=False, agora=None, queryset
     agora = agora or timezone.now()
     configuracao = configuracao_fila_fiscal()
     ambientes = [AmbienteFiscal.PRODUCAO]
-    if simular_homologacao:
+    adapter = diagnosticar_adaptador_sefaz()
+    if simular_homologacao or adapter["carregavel"]:
         ambientes.append(AmbienteFiscal.HOMOLOGACAO)
     queryset = queryset if queryset is not None else DocumentoFiscal.objects.all()
     return (
@@ -100,7 +101,10 @@ def diagnostico_fila_fiscal(queryset=None):
     agora = timezone.now()
     queryset = queryset if queryset is not None else DocumentoFiscal.objects.all()
     base = queryset.filter(status__in=STATUS_FILA)
-    elegiveis_producao = documentos_elegiveis_fila(agora=agora, queryset=queryset).count()
+    elegiveis_producao = documentos_elegiveis_fila(
+        agora=agora,
+        queryset=queryset.filter(ambiente=AmbienteFiscal.PRODUCAO),
+    ).count()
     reservados = base.filter(
         transmissao_reservada_em__gte=agora - timedelta(seconds=configuracao["lease_segundos"])
     ).count()
@@ -287,10 +291,17 @@ def processar_fila_fiscal(*, limite=50, simular_homologacao=False, forcar=False)
                     )
                     resumo["reagendados"] += 1
                 continue
-            if documento.ambiente == AmbienteFiscal.HOMOLOGACAO:
-                resultado = transmitir_documento_simulado(documento, documento.usuario)
+            if (
+                documento.ambiente == AmbienteFiscal.HOMOLOGACAO
+                and simular_homologacao
+            ):
+                resultado = transmitir_documento_simulado(
+                    documento, documento.usuario
+                )
             else:
-                resultado = transmitir_documento_sefaz(documento, documento.usuario)
+                resultado = transmitir_documento_sefaz(
+                    documento, documento.usuario
+                )
             resumo["processados"] += 1
             if resultado.status == StatusDocumentoFiscal.EMITIDO:
                 resumo["emitidos"] += 1

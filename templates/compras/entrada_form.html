@@ -10,6 +10,11 @@
   </div>
 </header>
 
+{% if object and object.pedido_origem %}
+  <section class="operation-notice">
+    Conferência em três vias: {{ object.get_conferencia_status_display }}. {{ object.conferencia_resumo }}
+  </section>
+{% endif %}
 {% if object.chave_acesso_xml %}
   <section class="operation-notice">
     Rascunho importado da NF-e {{ object.chave_acesso_xml }}. Confira fornecedor, filial, itens, quantidades,

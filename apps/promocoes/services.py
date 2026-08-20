@@ -1,5 +1,7 @@
 from django.utils import timezone
 
+from apps.produtos.services import preco_base_atual_produto
+
 from .models import PromocaoProduto
 
 
@@ -21,4 +23,4 @@ def preco_atual_produto(produto, momento=None):
     promocao = promocao_ativa_para_produto(produto, momento)
     if promocao:
         return promocao.preco_promocional
-    return produto.preco_promocional or produto.preco_venda
+    return produto.preco_promocional or preco_base_atual_produto(produto, momento)

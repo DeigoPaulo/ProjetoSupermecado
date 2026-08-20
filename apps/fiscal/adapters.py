@@ -15,6 +15,7 @@ class SefazTransmissionResult:
     chave_acesso: str = ""
     protocolo: str = ""
     mensagem: str = ""
+    xml_autorizado: str = ""
 
 
 @dataclass(frozen=True)
@@ -34,9 +35,11 @@ class SefazInutilizationResult:
 @dataclass(frozen=True)
 class SefazQueryResult:
     status: str
+    chave_acesso: str = ""
     protocolo: str = ""
     protocolo_cancelamento: str = ""
     mensagem: str = ""
+    xml_autorizado: str = ""
 
 
 def carregar_adaptador_sefaz():
@@ -142,6 +145,7 @@ def normalizar_retorno_transmissao(retorno):
         chave_acesso=str(retorno.get("chave_acesso") or "").strip(),
         protocolo=str(retorno.get("protocolo") or "").strip(),
         mensagem=str(retorno.get("mensagem") or "").strip()[:2000],
+        xml_autorizado=str(retorno.get("xml_autorizado") or "").strip(),
     )
     if status == "AUTORIZADO":
         if len(resultado.chave_acesso) != 44 or not resultado.chave_acesso.isdigit():
@@ -204,10 +208,16 @@ def normalizar_retorno_consulta(retorno):
 
     resultado = SefazQueryResult(
         status=status,
+        chave_acesso=str(retorno.get("chave_acesso") or "").strip(),
         protocolo=str(retorno.get("protocolo") or "").strip(),
         protocolo_cancelamento=str(retorno.get("protocolo_cancelamento") or "").strip(),
         mensagem=str(retorno.get("mensagem") or "").strip()[:2000],
+        xml_autorizado=str(retorno.get("xml_autorizado") or "").strip(),
     )
+    if resultado.chave_acesso and (
+        len(resultado.chave_acesso) != 44 or not resultado.chave_acesso.isdigit()
+    ):
+        raise SefazAdapterError("A consulta SEFAZ retornou uma chave de acesso inválida.")
     if status in {"AUTORIZADO", "DENEGADO"} and not resultado.protocolo:
         raise SefazAdapterError("A consulta SEFAZ não retornou o protocolo do documento.")
     if status == "CANCELADO" and not resultado.protocolo_cancelamento:

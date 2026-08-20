@@ -1,5 +1,6 @@
 import hashlib
 import secrets
+from decimal import Decimal
 
 from django.conf import settings
 from django.core.exceptions import ValidationError
@@ -41,15 +42,15 @@ class StatusExportacaoContabil(models.TextChoices):
 class NaturezaContaContabil(models.TextChoices):
     ATIVO = "ATIVO", "Ativo"
     PASSIVO = "PASSIVO", "Passivo"
-    PATRIMONIO_LIQUIDO = "PATRIMONIO_LIQUIDO", "Patrim?nio l?quido"
+    PATRIMONIO_LIQUIDO = "PATRIMONIO_LIQUIDO", "Patrimônio líquido"
     RECEITA = "RECEITA", "Receita"
     DESPESA = "DESPESA", "Despesa"
-    COMPENSACAO = "COMPENSACAO", "Compensa??o"
+    COMPENSACAO = "COMPENSACAO", "Compensação"
 
 
 class TipoContaContabil(models.TextChoices):
-    SINTETICA = "SINTETICA", "Sint?tica"
-    ANALITICA = "ANALITICA", "Anal?tica"
+    SINTETICA = "SINTETICA", "Sintética"
+    ANALITICA = "ANALITICA", "Analítica"
 
 
 class ContaContabil(models.Model):
@@ -63,7 +64,7 @@ class ContaContabil(models.Model):
 
     class Meta:
         ordering = ["empresa", "codigo"]
-        verbose_name = "Conta cont?bil"
+        verbose_name = "Conta contábil"
         verbose_name_plural = "Plano de contas"
         constraints = [
             models.UniqueConstraint(fields=["empresa", "codigo"], name="financeiro_conta_contabil_codigo_empresa"),
@@ -73,15 +74,15 @@ class ContaContabil(models.Model):
         if self.conta_pai_id and self.conta_pai.empresa_id != self.empresa_id:
             raise ValidationError({"conta_pai": "A conta superior pertence a outra empresa."})
         if self.conta_pai_id and self.conta_pai.tipo != TipoContaContabil.SINTETICA:
-            raise ValidationError({"conta_pai": "A conta superior deve ser sint?tica."})
+            raise ValidationError({"conta_pai": "A conta superior deve ser sintética."})
         if self.pk and self.conta_pai_id == self.pk:
-            raise ValidationError({"conta_pai": "Uma conta n?o pode ser superior a ela mesma."})
+            raise ValidationError({"conta_pai": "Uma conta não pode ser superior a ela mesma."})
         if self.pk and self.tipo == TipoContaContabil.ANALITICA and self.subcontas.exists():
-            raise ValidationError({"tipo": "Uma conta com subcontas deve permanecer sint?tica."})
+            raise ValidationError({"tipo": "Uma conta com subcontas deve permanecer sintética."})
         if self.pk:
             tipo_anterior = ContaContabil.objects.filter(pk=self.pk).values_list("tipo", flat=True).first()
             if tipo_anterior != self.tipo and (self.categorias_financeiras.exists() or self.lancamentos.exists()):
-                raise ValidationError({"tipo": "N?o altere o tipo de uma conta cont?bil j? utilizada."})
+                raise ValidationError({"tipo": "Não altere o tipo de uma conta contábil j? utilizada."})
         pai = self.conta_pai
         visitados = {self.pk} if self.pk else set()
         while pai:
@@ -116,7 +117,7 @@ class CentroCusto(models.Model):
 class CategoriaFinanceira(models.Model):
     empresa = models.ForeignKey("empresas.Empresa", on_delete=models.PROTECT, related_name="categorias_financeiras")
     nome = models.CharField(max_length=120)
-    conta_contabil = models.ForeignKey(ContaContabil, on_delete=models.PROTECT, null=True, blank=True, related_name="categorias_financeiras", verbose_name="Conta cont?bil")
+    conta_contabil = models.ForeignKey(ContaContabil, on_delete=models.PROTECT, null=True, blank=True, related_name="categorias_financeiras", verbose_name="Conta contábil")
     tipo = models.CharField(max_length=20, choices=TipoContaFinanceira.choices)
     is_active = models.BooleanField(default=True)
 
@@ -126,9 +127,9 @@ class CategoriaFinanceira(models.Model):
 
     def clean(self):
         if self.conta_contabil_id and self.conta_contabil.empresa_id != self.empresa_id:
-            raise ValidationError({"conta_contabil": "A conta cont?bil pertence a outra empresa."})
+            raise ValidationError({"conta_contabil": "A conta contábil pertence a outra empresa."})
         if self.conta_contabil_id and self.conta_contabil.tipo != TipoContaContabil.ANALITICA:
-            raise ValidationError({"conta_contabil": "Selecione uma conta cont?bil anal?tica para a categoria."})
+            raise ValidationError({"conta_contabil": "Selecione uma conta contábil analítica para a categoria."})
 
     def __str__(self):
         return self.nome
@@ -250,7 +251,7 @@ class LancamentoFinanceiro(models.Model):
     data = models.DateField(default=timezone.localdate)
     conta_financeira = models.ForeignKey(ContaFinanceira, on_delete=models.PROTECT, null=True, blank=True, related_name="lancamentos")
     centro_custo = models.ForeignKey(CentroCusto, on_delete=models.PROTECT, null=True, blank=True, related_name="lancamentos", verbose_name="Centro de custo")
-    conta_contabil = models.ForeignKey(ContaContabil, on_delete=models.PROTECT, null=True, blank=True, related_name="lancamentos", verbose_name="Conta cont?bil")
+    conta_contabil = models.ForeignKey(ContaContabil, on_delete=models.PROTECT, null=True, blank=True, related_name="lancamentos", verbose_name="Conta contábil")
     transferencia = models.ForeignKey(TransferenciaFinanceira, on_delete=models.PROTECT, null=True, blank=True, related_name="lancamentos")
     estorno_de = models.ForeignKey("self", on_delete=models.PROTECT, null=True, blank=True, related_name="estornos")
     pagamento_venda = models.ForeignKey("vendas.PagamentoVenda", on_delete=models.PROTECT, null=True, blank=True, related_name="lancamentos_financeiros")
@@ -272,9 +273,9 @@ class LancamentoFinanceiro(models.Model):
         if self.centro_custo_id and self.conta_id and self.centro_custo.empresa_id != self.conta.filial.empresa_id:
             raise ValidationError({"centro_custo": "Centro de custo informado pertence a outra empresa."})
         if self.conta_contabil_id and self.conta_id and self.conta_contabil.empresa_id != self.conta.filial.empresa_id:
-            raise ValidationError({"conta_contabil": "Conta cont?bil informada pertence a outra empresa."})
+            raise ValidationError({"conta_contabil": "Conta contábil informada pertence a outra empresa."})
         if self.conta_contabil_id and self.conta_contabil.tipo != TipoContaContabil.ANALITICA:
-            raise ValidationError({"conta_contabil": "Lan?amentos exigem conta cont?bil anal?tica."})
+            raise ValidationError({"conta_contabil": "Lançamentos exigem conta contábil analítica."})
         if self.valor <= 0:
             raise ValidationError("Valor do lançamento deve ser maior que zero.")
         super().save(*args, **kwargs)
@@ -306,6 +307,195 @@ class ConciliacaoLancamentoFinanceiro(models.Model):
 
     def __str__(self):
         return f"Conciliacao do lancamento #{self.lancamento_id} - {self.referencia_externa}"
+
+class StatusItemExtratoFinanceiro(models.TextChoices):
+    PENDENTE = "PENDENTE", "Pendente"
+    AMBIGUO = "AMBIGUO", "Ambíguo"
+    PARCIAL = "PARCIAL", "Parcialmente alocado"
+    CONCILIADO = "CONCILIADO", "Conciliado"
+
+
+class StatusRecebivelEletronico(models.TextChoices):
+    PENDENTE = "PENDENTE", "Pendente"
+    LIQUIDADO = "LIQUIDADO", "Liquidado"
+    ANTECIPADO = "ANTECIPADO", "Antecipado"
+    DIVERGENTE = "DIVERGENTE", "Divergente"
+    CHARGEBACK = "CHARGEBACK", "Chargeback"
+
+
+class TipoMovimentoRecebivelEletronico(models.TextChoices):
+    LIQUIDACAO = "LIQUIDACAO", "Liquidação"
+    ANTECIPACAO = "ANTECIPACAO", "Antecipação"
+    CHARGEBACK = "CHARGEBACK", "Chargeback"
+
+
+class RegraLiquidacaoEletronica(models.Model):
+    filial = models.ForeignKey(
+        "empresas.Filial", on_delete=models.PROTECT, related_name="regras_liquidacao_eletronica"
+    )
+    forma_pagamento = models.ForeignKey(
+        "vendas.FormaPagamento", on_delete=models.PROTECT, related_name="regras_liquidacao_eletronica"
+    )
+    prazo_dias = models.PositiveSmallIntegerField(default=1)
+    taxa_percentual = models.DecimalField(max_digits=7, decimal_places=4, default=0)
+    taxa_fixa = models.DecimalField(max_digits=12, decimal_places=2, default=0)
+    ativa = models.BooleanField(default=True)
+    criado_em = models.DateTimeField(auto_now_add=True)
+    atualizado_em = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ["filial__nome", "forma_pagamento__nome"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["filial", "forma_pagamento"], name="financeiro_regra_liquidacao_unica"
+            )
+        ]
+
+    def clean(self):
+        if self.taxa_percentual < 0 or self.taxa_percentual > 100:
+            raise ValidationError({"taxa_percentual": "A taxa percentual deve ficar entre 0 e 100%."})
+        if self.taxa_fixa < 0:
+            raise ValidationError({"taxa_fixa": "A taxa fixa não pode ser negativa."})
+
+    def __str__(self):
+        return f"{self.filial} - {self.forma_pagamento}"
+
+
+class RecebivelEletronico(models.Model):
+    pagamento = models.OneToOneField(
+        "vendas.PagamentoVenda", on_delete=models.PROTECT, related_name="recebivel_eletronico"
+    )
+    regra = models.ForeignKey(
+        RegraLiquidacaoEletronica, on_delete=models.PROTECT, related_name="recebiveis"
+    )
+    status = models.CharField(
+        max_length=20, choices=StatusRecebivelEletronico.choices, default=StatusRecebivelEletronico.PENDENTE
+    )
+    data_venda = models.DateField()
+    data_prevista = models.DateField()
+    valor_bruto = models.DecimalField(max_digits=14, decimal_places=2)
+    taxa_prevista = models.DecimalField(max_digits=14, decimal_places=2, default=0)
+    valor_liquido_previsto = models.DecimalField(max_digits=14, decimal_places=2)
+    data_liquidacao = models.DateField(null=True, blank=True)
+    valor_liquidado = models.DecimalField(max_digits=14, decimal_places=2, null=True, blank=True)
+    referencia_liquidacao = models.CharField(max_length=120, blank=True)
+    observacao = models.CharField(max_length=255, blank=True)
+    criado_em = models.DateTimeField(auto_now_add=True)
+    atualizado_em = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ["data_prevista", "id"]
+        indexes = [
+            models.Index(fields=["status", "data_prevista"], name="fin_receb_status_data_idx"),
+        ]
+
+    @property
+    def esta_atrasado(self):
+        return self.status == StatusRecebivelEletronico.PENDENTE and self.data_prevista < timezone.localdate()
+
+    def __str__(self):
+        return f"Recebível do pagamento #{self.pagamento_id} - R$ {self.valor_liquido_previsto}"
+
+class ImportacaoExtratoFinanceiro(models.Model):
+    conta = models.ForeignKey(ContaMovimentoFinanceiro, on_delete=models.PROTECT, related_name="importacoes_extrato")
+    arquivo_nome = models.CharField(max_length=255)
+    arquivo_sha256 = models.CharField(max_length=64)
+    adaptador_codigo = models.CharField(max_length=40, default="CSV_GENERICO")
+    adaptador_nome = models.CharField(max_length=120, default="CSV genérico do ERP")
+    adaptador_contrato = models.CharField(max_length=80, default="financial_statement_adapter_v1")
+    total_linhas = models.PositiveIntegerField(default=0)
+    conciliadas_automaticamente = models.PositiveIntegerField(default=0)
+    pendentes = models.PositiveIntegerField(default=0)
+    ambiguas = models.PositiveIntegerField(default=0)
+    duplicadas = models.PositiveIntegerField(default=0)
+    usuario = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.PROTECT, related_name="importacoes_extrato_financeiro")
+    criado_em = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["-criado_em"]
+        constraints = [
+            models.UniqueConstraint(fields=["conta", "arquivo_sha256"], name="financeiro_extrato_arquivo_unico")
+        ]
+
+    def __str__(self):
+        return f"Extrato {self.arquivo_nome} - {self.conta}"
+
+
+class ItemExtratoFinanceiro(models.Model):
+    importacao = models.ForeignKey(ImportacaoExtratoFinanceiro, on_delete=models.PROTECT, related_name="itens")
+    conta = models.ForeignKey(ContaMovimentoFinanceiro, on_delete=models.PROTECT, related_name="itens_extrato")
+    numero_linha = models.PositiveIntegerField()
+    data = models.DateField()
+    tipo = models.CharField(max_length=20, choices=TipoLancamentoFinanceiro.choices)
+    valor = models.DecimalField(max_digits=14, decimal_places=2)
+    descricao = models.CharField(max_length=255)
+    referencia_externa = models.CharField(max_length=120)
+    status = models.CharField(max_length=20, choices=StatusItemExtratoFinanceiro.choices, default=StatusItemExtratoFinanceiro.PENDENTE)
+    lancamento = models.OneToOneField(LancamentoFinanceiro, on_delete=models.PROTECT, null=True, blank=True, related_name="item_extrato")
+    observacao = models.CharField(max_length=255, blank=True)
+    criado_em = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["-data", "-criado_em"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["conta", "referencia_externa", "tipo", "data"],
+                name="financeiro_extrato_movimento_unico",
+            ),
+            models.UniqueConstraint(fields=["importacao", "numero_linha"], name="financeiro_extrato_linha_unica"),
+        ]
+        indexes = [
+            models.Index(fields=["conta", "status", "data"], name="fin_ext_conta_status_idx"),
+        ]
+
+    @property
+    def valor_alocado_recebiveis(self):
+        return self.movimentos_recebiveis.aggregate(total=Sum("valor"))["total"] or Decimal("0.00")
+
+    @property
+    def saldo_alocar_recebiveis(self):
+        saldo = self.valor - self.valor_alocado_recebiveis
+        return max(saldo, Decimal("0.00"))
+
+    def __str__(self):
+        return f"{self.referencia_externa} - {self.get_tipo_display()} R$ {self.valor}"
+
+
+class MovimentoRecebivelEletronico(models.Model):
+    recebivel = models.ForeignKey(
+        RecebivelEletronico, on_delete=models.PROTECT, related_name="movimentos"
+    )
+    item_extrato = models.ForeignKey(
+        ItemExtratoFinanceiro, on_delete=models.PROTECT, related_name="movimentos_recebiveis"
+    )
+    tipo = models.CharField(max_length=20, choices=TipoMovimentoRecebivelEletronico.choices)
+    data = models.DateField()
+    valor = models.DecimalField(max_digits=14, decimal_places=2)
+    referencia = models.CharField(max_length=120)
+    automatico = models.BooleanField(default=False)
+    usuario = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.PROTECT, related_name="movimentos_recebiveis_eletronicos"
+    )
+    criado_em = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["-data", "-criado_em"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["recebivel", "item_extrato", "tipo"],
+                name="financeiro_mov_recebivel_item_tipo_unico",
+            ),
+            models.CheckConstraint(
+                condition=models.Q(valor__gt=0), name="financeiro_mov_recebivel_valor_positivo"
+            ),
+        ]
+        indexes = [
+            models.Index(fields=["tipo", "data"], name="fin_mov_receb_tipo_data_idx"),
+        ]
+
+    def __str__(self):
+        return f"{self.get_tipo_display()} do recebível #{self.recebivel_id} - R$ {self.valor}"
+
 
 class ExportacaoContabil(models.Model):
     empresa = models.ForeignKey("empresas.Empresa", on_delete=models.PROTECT, related_name="exportacoes_contabeis")

@@ -1,59 +1,68 @@
 {% extends "base.html" %}
 
-{% block title %}Inventario {{ inventario.id }}{% endblock %}
+{% block title %}Inventário {{ inventario.id }}{% endblock %}
 
 {% block content %}
 <header class="page-header">
   <div>
-    <h1>Inventario {{ inventario.id }}</h1>
-    <p>{{ inventario.filial }} - {{ inventario.descricao }}</p>
+    <h1>Inventário {{ inventario.id }}</h1>
+    <p>{{ inventario.filial }} · {{ inventario.descricao }}</p>
   </div>
   <div class="actions">
     {% if inventario.status == "ABERTO" %}
-      <a class="secondary-button" href="{% url 'estoque:inventario_item_novo' inventario.pk %}">Adicionar contagem</a>
+      <a class="secondary-button" href="{% url 'estoque:inventario_item_novo' inventario.pk %}">Adicionar produto</a>
     {% endif %}
     <a class="secondary-button" href="{% url 'estoque:inventarios' %}">Voltar</a>
   </div>
 </header>
 
 <section class="metrics-grid">
-  <article class="metric"><span>Status</span><strong>{{ inventario.status }}</strong></article>
+  <article class="metric"><span>Status</span><strong>{{ inventario.get_status_display }}</strong></article>
   <article class="metric"><span>Itens</span><strong>{{ inventario.itens.count }}</strong></article>
-  <article class="metric"><span>Criado</span><strong>{{ inventario.criado_em|date:"d/m H:i" }}</strong></article>
-  <article class="metric"><span>Aplicado</span><strong>{{ inventario.aplicado_em|date:"d/m H:i"|default:"-" }}</strong></article>
+  <article class="metric"><span>Pendentes</span><strong>{{ pendentes }}</strong></article>
+  <article class="metric"><span>Criado</span><strong>{{ inventario.criado_em|date:"d/m/Y H:i" }}</strong></article>
+  <article class="metric"><span>Aplicado</span><strong>{{ inventario.aplicado_em|date:"d/m/Y H:i"|default:"-" }}</strong></article>
 </section>
 
 {% if inventario.status == "ABERTO" %}
-  <section class="panel mt-panel">
-    <div class="panel-title">Aplicar inventario</div>
-    <form method="post" action="{% url 'estoque:inventario_aplicar' inventario.pk %}" class="form-grid form-confirm" data-msg="Aplicar inventario e ajustar estoque?">
-      {% csrf_token %}
-      <label class="form-field"><span>Supervisor ou admin</span><input type="text" name="supervisor_usuario" autocomplete="username" required></label>
-      <label class="form-field"><span>Senha</span><input type="password" name="supervisor_senha" autocomplete="current-password" required></label>
-      <div class="form-actions">
-        <button class="primary-button" type="submit">Aplicar inventario</button>
-      </div>
-    </form>
-  </section>
+  {% if pendentes %}
+    <section class="notice warning mt-panel">
+      <strong>Contagem incompleta.</strong>
+      Registre a quantidade física dos {{ pendentes }} item(ns) pendente(s) antes de aplicar o inventário.
+    </section>
+  {% else %}
+    <section class="panel mt-panel">
+      <div class="panel-title">Aplicar inventário</div>
+      <form method="post" action="{% url 'estoque:inventario_aplicar' inventario.pk %}" class="form-grid form-confirm" data-msg="Aplicar inventário e ajustar estoque?">
+        {% csrf_token %}
+        <label class="form-field"><span>Supervisor ou admin</span><input type="text" name="supervisor_usuario" autocomplete="username" required></label>
+        <label class="form-field"><span>Senha</span><input type="password" name="supervisor_senha" autocomplete="current-password" required></label>
+        <div class="form-actions"><button class="primary-button" type="submit">Aplicar inventário</button></div>
+      </form>
+    </section>
+  {% endif %}
 {% endif %}
 
 <div class="panel">
-  <div class="panel-title">Itens contados</div>
-  <table>
-    <thead><tr><th>Produto</th><th>Sistema</th><th>Contado</th><th>Diferença</th><th>Observação</th></tr></thead>
-    <tbody>
-      {% for item in inventario.itens.all %}
-        <tr>
-          <td>{{ item.produto }}</td>
-          <td>{{ item.quantidade_sistema }}</td>
-          <td>{{ item.quantidade_contada }}</td>
-          <td><strong>{{ item.diferenca }}</strong></td>
-          <td>{{ item.observacao|default:"-" }}</td>
-        </tr>
-      {% empty %}
-        <tr><td colspan="5" class="empty">Nenhum item contado.</td></tr>
-      {% endfor %}
-    </tbody>
-  </table>
+  <div class="panel-title">Itens da contagem</div>
+  <div class="table-scroll">
+    <table>
+      <thead><tr><th>Produto</th><th>Sistema</th><th>Contado</th><th>Diferença</th><th>Observação</th><th></th></tr></thead>
+      <tbody>
+        {% for item in inventario.itens.all %}
+          <tr>
+            <td>{{ item.produto }}</td>
+            <td>{{ item.quantidade_sistema }}</td>
+            <td>{% if item.quantidade_contada is None %}<span class="status">Pendente</span>{% else %}{{ item.quantidade_contada }}{% endif %}</td>
+            <td>{% if item.quantidade_contada is None %}-{% else %}<strong>{{ item.diferenca }}</strong>{% endif %}</td>
+            <td>{{ item.observacao|default:"-" }}</td>
+            <td>{% if inventario.status == "ABERTO" %}<a href="{% url 'estoque:inventario_item_contar' item.pk %}">{% if item.quantidade_contada is None %}Contar{% else %}Recontar{% endif %}</a>{% endif %}</td>
+          </tr>
+        {% empty %}
+          <tr><td colspan="6" class="empty">Nenhum item adicionado.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
 </div>
 {% endblock %}

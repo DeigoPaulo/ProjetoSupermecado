@@ -37,13 +37,13 @@
     <i class="fa-solid fa-book"></i>
     <div>
       <strong>Base realizado</strong>
-      <span>Considera apenas lancamentos do livro financeiro no período filtrado.</span>
+      <span>Considera apenas lançamentos do livro financeiro no período filtrado.</span>
     </div>
   </article>
   <article class="finance-insight">
     <i class="fa-solid fa-right-left"></i>
     <div>
-      <strong>Transferencias ignoradas</strong>
+      <strong>Transferências ignoradas</strong>
       <span>Movimentações entre contas não entram como receita ou despesa para evitar duplicidade.</span>
     </div>
   </article>
@@ -51,7 +51,7 @@
     <i class="fa-solid fa-layer-group"></i>
     <div>
       <strong>Categoria e saldos</strong>
-      <span>A visao por categoria e por conta ajuda a conferir despesas, receitas e dinheiro disponivel por filial.</span>
+      <span>A visão por categoria e por conta ajuda a conferir despesas, receitas e dinheiro disponível por filial.</span>
     </div>
   </article>
 </section>
@@ -148,10 +148,10 @@
 </section>
 
 <section class="panel table-panel">
-  <div class="panel-title">Resultado por conta cont?bil</div>
+  <div class="panel-title">Resultado por conta contábil</div>
   <div class="table-wrap">
     <table>
-      <thead><tr><th>C?digo</th><th>Conta cont?bil</th><th>Natureza</th><th>Receitas</th><th>Despesas</th><th>Resultado</th></tr></thead>
+      <thead><tr><th>Código</th><th>Conta contábil</th><th>Natureza</th><th>Receitas</th><th>Despesas</th><th>Resultado</th></tr></thead>
       <tbody>
         {% for linha in por_conta_contabil %}
           <tr>
@@ -163,7 +163,7 @@
             <td><strong>R$ {{ linha.resultado|floatformat:2 }}</strong></td>
           </tr>
         {% empty %}
-          <tr><td colspan="6" class="empty">Nenhum lan?amento realizado no per?odo.</td></tr>
+          <tr><td colspan="6" class="empty">Nenhum lançamento realizado no período.</td></tr>
         {% endfor %}
       </tbody>
     </table>
@@ -196,7 +196,7 @@
   <div class="panel-title">Saldos por conta de movimento</div>
   <div class="table-wrap">
     <table>
-      <thead><tr><th>Filial</th><th>Conta</th><th>Tipo</th><th>Saldo inicial</th><th>Entradas</th><th>Saidas</th><th>Saldo atual</th></tr></thead>
+      <thead><tr><th>Filial</th><th>Conta</th><th>Tipo</th><th>Saldo inicial</th><th>Entradas</th><th>Saídas</th><th>Saldo atual</th></tr></thead>
       <tbody>
         {% for linha in saldos_contas %}
           <tr>
@@ -204,8 +204,8 @@
             <td>{{ linha.conta }}</td>
             <td>{{ linha.tipo }}</td>
             <td>R$ {{ linha.saldo_inicial|floatformat:2 }}</td>
-            <td>R$ {{ linha.entradas_periodo|floatformat:2 }}</td>
-            <td>R$ {{ linha.saidas_periodo|floatformat:2 }}</td>
+            <td>R$ {{ linha.entradas_período|floatformat:2 }}</td>
+            <td>R$ {{ linha.saídas_período|floatformat:2 }}</td>
             <td><strong>R$ {{ linha.saldo_atual|floatformat:2 }}</strong></td>
           </tr>
         {% empty %}
@@ -256,8 +256,8 @@
   <div class="panel-title">Pacote contábil gerencial</div>
   <p class="muted">Resumo de conferência para fechamento interno e envio preliminar ao contador. Não substitui SPED, ECD, ECF ou obrigações oficiais.</p>
   <div class="metrics-grid">
-    <article class="metric"><span>Lançamentos no livro</span><strong>{{ pacote_contabil.total_lancamentos }}</strong></article>
-    <article class="metric"><span>Transferências internas</span><strong>{{ pacote_contabil.transferencias }}</strong></article>
+    <article class="metric"><span>Lançamentos no livro</span><strong>{{ pacote_contabil.total_lançamentos }}</strong></article>
+    <article class="metric"><span>Transferências internas</span><strong>{{ pacote_contabil.transferências }}</strong></article>
     <article class="metric"><span>Estornos rastreados</span><strong>{{ pacote_contabil.estornos }}</strong></article>
     <article class="metric"><span>Cobertura conciliada</span><strong>{{ conciliacao_bancaria.percentual|floatformat:2 }}%</strong></article>
     <article class="metric"><span>Valor conciliado</span><strong>R$ {{ conciliacao_bancaria.valor_conciliado|floatformat:2 }}</strong></article>
@@ -320,10 +320,10 @@
 </section>
 <section class="panel table-panel">
   <div class="panel-title">Balancete gerencial</div>
-  <p class="muted">Conferência do saldo anterior, entradas, saidas e saldo final de cada conta no período. Transferencias internas entram aqui porque alteram o saldo real de caixa, banco ou PIX.</p>
+  <p class="muted">Conferência do saldo anterior, entradas, saídas e saldo final de cada conta no período. Transferências internas entram aqui porque alteram o saldo real de caixa, banco ou PIX.</p>
   <div class="table-wrap">
     <table>
-      <thead><tr><th>Filial</th><th>Conta</th><th>Tipo</th><th>Saldo anterior</th><th>Entradas</th><th>Saidas</th><th>Saldo final</th></tr></thead>
+      <thead><tr><th>Filial</th><th>Conta</th><th>Tipo</th><th>Saldo anterior</th><th>Entradas</th><th>Saídas</th><th>Saldo final</th></tr></thead>
       <tbody>
         {% for linha in balancete_contas %}
           <tr>
@@ -332,7 +332,7 @@
             <td>{{ linha.tipo }}</td>
             <td>R$ {{ linha.saldo_anterior|floatformat:2 }}</td>
             <td>R$ {{ linha.entradas|floatformat:2 }}</td>
-            <td>R$ {{ linha.saidas|floatformat:2 }}</td>
+            <td>R$ {{ linha.saídas|floatformat:2 }}</td>
             <td><strong>R$ {{ linha.saldo_final|floatformat:2 }}</strong></td>
           </tr>
         {% empty %}

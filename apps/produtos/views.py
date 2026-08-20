@@ -8,7 +8,7 @@ from django.db.models import Q, Sum
 from django.http import JsonResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse_lazy
-from django.views.decorators.http import require_GET
+from django.views.decorators.http import require_GET, require_POST
 from django.views.generic import CreateView, ListView, UpdateView
 
 from apps.accounts.permissions import CADASTROS, RoleRequiredMixin, role_required, supervisor_from_request
@@ -22,10 +22,16 @@ from apps.promocoes.services import preco_atual_produto
 from .forms import (
     CategoriaForm, CodigoBarrasProdutoFormSet, ConfiguracaoBalancaProdutoFormSet, EtiquetaProdutoForm,
     InformacaoNutricionalFormSet, MarcaForm, ProdutoForm, ProdutoFornecedorFormSet, ProdutoImagemFormSet,
-    ProdutoImportCSVForm, ReajustePrecoForm, SetorBalancaForm,
+    ProdutoImportCSVForm, ReajustePrecoForm, SetorBalancaForm, VersaoPrecoProdutoForm,
 )
-from .models import Categoria, ConfiguracaoBalancaProduto, Marca, Produto, ProdutoFornecedor, SetorBalanca
-from .services import aplicar_reajuste_precos, importar_produtos_csv, simular_reajuste_precos
+from .models import (
+    Categoria, ConfiguracaoBalancaProduto, Marca, Produto, ProdutoFornecedor, SetorBalanca,
+    StatusVersaoPreco, VersaoPrecoProduto,
+)
+from .services import (
+    aplicar_reajuste_precos, cancelar_versao_preco, criar_versao_preco, importar_produtos_csv,
+    simular_reajuste_precos,
+)
 
 
 def _select2_payload(objeto, texto, **extra):
@@ -282,45 +288,50 @@ def setores_balanca_busca(request):
 @require_GET
 def categorias_busca(request):
     termo = (request.GET.get("q") or request.GET.get("term") or "").strip()
-    if not termo:
-        return JsonResponse({"results": []})
-    categorias = (
-        Categoria.objects.select_related("parent", "parent__parent", "parent__parent__parent")
-        .filter(
+    categorias = Categoria.objects.select_related(
+        "parent", "parent__parent", "parent__parent__parent"
+    )
+    if termo:
+        categorias = categorias.filter(
             Q(nome__icontains=termo)
             | Q(descricao__icontains=termo)
             | Q(parent__nome__icontains=termo)
             | Q(parent__parent__nome__icontains=termo)
         )
-        .order_by("nome")[:20]
-    )
+    pagina = Paginator(categorias.order_by("nome"), 20).get_page(request.GET.get("page"))
     return JsonResponse(
         {
             "results": [
-                _select2_payload(categoria, categoria.caminho_completo, descricao=categoria.get_nivel_display(), ativa=categoria.is_active)
-                for categoria in categorias
-            ]
+                _select2_payload(
+                    categoria,
+                    categoria.caminho_completo,
+                    descricao=categoria.get_nivel_display(),
+                    ativa=categoria.is_active,
+                )
+                for categoria in pagina.object_list
+            ],
+            "pagination": {"more": pagina.has_next()},
         }
     )
-
 
 @login_required
 @role_required(*CADASTROS)
 @require_GET
 def marcas_busca(request):
     termo = (request.GET.get("q") or request.GET.get("term") or "").strip()
-    if not termo:
-        return JsonResponse({"results": []})
-    marcas = Marca.objects.filter(nome__icontains=termo).order_by("nome")[:20]
+    marcas = Marca.objects.all()
+    if termo:
+        marcas = marcas.filter(nome__icontains=termo)
+    pagina = Paginator(marcas.order_by("nome"), 20).get_page(request.GET.get("page"))
     return JsonResponse(
         {
             "results": [
                 _select2_payload(marca, marca.nome, ativa=marca.is_active)
-                for marca in marcas
-            ]
+                for marca in pagina.object_list
+            ],
+            "pagination": {"more": pagina.has_next()},
         }
     )
-
 
 @login_required
 @role_required(*CADASTROS)
@@ -382,6 +393,7 @@ def reajustar_precos(request):
                     percentual=dados["percentual"],
                     motivo=dados["motivo"],
                     aplicar_em_promocional=dados["aplicar_em_promocional"],
+                    permitir_abaixo_margem=dados["permitir_abaixo_margem"],
                     supervisor=supervisor,
                     ip=request.META.get("REMOTE_ADDR"),
                 )
@@ -391,12 +403,17 @@ def reajustar_precos(request):
                 messages.success(request, f"Reajuste aplicado em {total} produto(s).")
                 return redirect("produtos:lista")
 
-        preview, total_afetado = simular_reajuste_precos(
-            categoria=dados["categoria"],
-            marca=dados["marca"],
-            percentual=dados["percentual"],
-            aplicar_em_promocional=dados["aplicar_em_promocional"],
-        )
+        try:
+            preview, total_afetado = simular_reajuste_precos(
+                categoria=dados["categoria"],
+                marca=dados["marca"],
+                percentual=dados["percentual"],
+                aplicar_em_promocional=dados["aplicar_em_promocional"],
+            )
+        except ValidationError as exc:
+            form.add_error(None, exc)
+            preview = []
+            total_afetado = 0
 
     return render(
         request,
@@ -405,6 +422,7 @@ def reajustar_precos(request):
             "form": form,
             "preview": preview,
             "total_afetado": total_afetado,
+            "total_abaixo_margem": sum(1 for item in preview if item["abaixo_margem"]),
         },
     )
 
@@ -576,3 +594,81 @@ def kardex(request, pk):
     )
 
 # Create your views here.
+
+
+@login_required
+@role_required(*CADASTROS)
+def versoes_preco(request):
+    queryset = VersaoPrecoProduto.objects.select_related(
+        "produto", "criado_por", "cancelado_por"
+    ).order_by("-vigencia_inicio", "-versao")
+    termo = (request.GET.get("q") or "").strip()
+    status = (request.GET.get("status") or "").strip()
+    if termo:
+        queryset = queryset.filter(
+            Q(produto__nome__icontains=termo)
+            | Q(produto__codigo_barras__icontains=termo)
+            | Q(produto__codigo_interno__icontains=termo)
+        )
+    if status in StatusVersaoPreco.values:
+        queryset = queryset.filter(status=status)
+    pagina = Paginator(queryset, 50).get_page(request.GET.get("page"))
+    return render(
+        request,
+        "produtos/versao_preco_list.html",
+        {"page_obj": pagina, "versoes": pagina.object_list, "status_filtro": status},
+    )
+
+
+@login_required
+@role_required(*CADASTROS)
+def agendar_preco(request):
+    form = VersaoPrecoProdutoForm(request.POST or None)
+    if request.method == "POST" and form.is_valid():
+        dados = form.cleaned_data
+        supervisor = None
+        if dados["permitir_abaixo_margem"]:
+            try:
+                supervisor = supervisor_from_request(request, acao=AcaoPinSupervisor.PRECO_REAJUSTE)
+            except ValidationError as exc:
+                form.add_error(None, exc)
+        if not form.errors:
+            try:
+                versao = criar_versao_preco(
+                    produto=dados["produto"],
+                    preco_novo=dados["preco_novo"],
+                    vigencia_inicio=dados["vigencia_inicio"],
+                    motivo=dados["motivo"],
+                    usuario=request.user,
+                    permitir_abaixo_margem=dados["permitir_abaixo_margem"],
+                    supervisor=supervisor,
+                    ip=request.META.get("REMOTE_ADDR"),
+                )
+            except ValidationError as exc:
+                form.add_error(None, exc)
+            else:
+                messages.success(
+                    request,
+                    f"Preço versão {versao.versao} programado para {versao.vigencia_inicio:%d/%m/%Y %H:%M}.",
+                )
+                return redirect("produtos:versoes_preco")
+    return render(request, "produtos/versao_preco_form.html", {"form": form})
+
+
+@login_required
+@role_required(*CADASTROS)
+@require_POST
+def cancelar_preco_agendado(request, pk):
+    versao = get_object_or_404(VersaoPrecoProduto, pk=pk)
+    motivo = (request.POST.get("motivo") or "").strip()
+    if not motivo:
+        messages.error(request, "Informe o motivo do cancelamento.")
+        return redirect("produtos:versoes_preco")
+    cancelar_versao_preco(
+        versao=versao,
+        usuario=request.user,
+        motivo=motivo,
+        ip=request.META.get("REMOTE_ADDR"),
+    )
+    messages.success(request, f"Versão {versao.versao} cancelada sem apagar o histórico.")
+    return redirect("produtos:versoes_preco")

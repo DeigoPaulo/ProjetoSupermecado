@@ -11,3 +11,4 @@ def aplicar_select2(form, campos, placeholder="Pesquise ou selecione", ajax_urls
         widget.attrs.setdefault("data-placeholder", placeholder)
         if campo in ajax_urls:
             widget.attrs["data-ajax-url"] = ajax_urls[campo]
+            widget.attrs.setdefault("data-minimum-input-length", "0")

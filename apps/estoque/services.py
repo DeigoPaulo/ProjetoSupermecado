@@ -1,9 +1,9 @@
-from datetime import date
+from datetime import date, timedelta
 from decimal import Decimal
 
 from django.core.exceptions import ValidationError
 from django.db import transaction
-from django.db.models import F
+from django.db.models import F, Sum
 from django.utils import timezone
 
 from apps.auditoria.models import LogAuditoria
@@ -13,6 +13,7 @@ from .models import (
     DesmembramentoProduto,
     Estoque,
     InventarioEstoque,
+    ItemInventarioEstoque,
     ItemProducaoComposicaoProduto,
     ItemDesmembramentoProduto,
     LoteEstoque,
@@ -35,6 +36,180 @@ from .models import (
     restaurar_lotes_movimentacao,
 )
 
+
+NIVEIS_RISCO_INVENTARIO = {
+    "CRITICO": "Crítico",
+    "ALTO": "Alto",
+    "MEDIO": "Médio",
+    "BAIXO": "Baixo",
+}
+
+
+def calcular_fila_inventario_risco(estoques, *, momento=None):
+    """Prioriza contagens sem alterar saldo nem materializar dados derivados."""
+    momento = momento or timezone.now()
+    hoje = timezone.localdate(momento)
+    estoques = list(estoques.select_related("produto", "filial"))
+    if not estoques:
+        return []
+
+    filial_ids = {estoque.filial_id for estoque in estoques}
+    produto_ids = {estoque.produto_id for estoque in estoques}
+    chaves = {(estoque.filial_id, estoque.produto_id) for estoque in estoques}
+
+    ultimas_contagens = {}
+    itens_aplicados = (
+        ItemInventarioEstoque.objects.filter(
+            inventario__filial_id__in=filial_ids,
+            inventario__status=StatusInventario.APLICADO,
+            produto_id__in=produto_ids,
+            quantidade_contada__isnull=False,
+        )
+        .select_related("inventario")
+        .order_by("inventario__filial_id", "produto_id", "-inventario__aplicado_em", "-id")
+    )
+    for item in itens_aplicados:
+        chave = (item.inventario.filial_id, item.produto_id)
+        if chave in chaves and chave not in ultimas_contagens:
+            ultimas_contagens[chave] = item
+
+    perdas_recentes = {
+        (row["filial_id"], row["produto_id"]): row["total"] or Decimal("0")
+        for row in PerdaEstoque.objects.filter(
+            filial_id__in=filial_ids,
+            produto_id__in=produto_ids,
+            data__gte=momento - timedelta(days=90),
+        )
+        .values("filial_id", "produto_id")
+        .annotate(total=Sum("quantidade"))
+    }
+
+    lotes_por_chave = {}
+    lotes = LoteEstoque.objects.filter(
+        filial_id__in=filial_ids,
+        produto_id__in=produto_ids,
+        quantidade_atual__gt=0,
+        validade__isnull=False,
+        validade__lte=hoje + timedelta(days=30),
+    ).values("filial_id", "produto_id", "validade")
+    for lote in lotes:
+        chave = (lote["filial_id"], lote["produto_id"])
+        resumo = lotes_por_chave.setdefault(chave, {"vencido": False, "proximo": False})
+        if lote["validade"] < hoje:
+            resumo["vencido"] = True
+        else:
+            resumo["proximo"] = True
+
+    fila = []
+    for estoque in estoques:
+        chave = (estoque.filial_id, estoque.produto_id)
+        score = 0
+        motivos = []
+        disponivel = estoque.quantidade_disponivel
+        minimo = estoque.produto.estoque_minimo
+        ultima = ultimas_contagens.get(chave)
+        lotes_risco = lotes_por_chave.get(chave, {})
+        perda = perdas_recentes.get(chave, Decimal("0"))
+
+        if disponivel < 0:
+            score += 100
+            motivos.append("saldo disponível negativo")
+        elif disponivel <= 0:
+            score += 45
+            motivos.append("produto sem saldo disponível")
+        elif minimo > 0 and disponivel <= minimo:
+            score += 25
+            motivos.append("saldo no mínimo ou abaixo dele")
+
+        if lotes_risco.get("vencido"):
+            score += 80
+            motivos.append("lote vencido com saldo")
+        if lotes_risco.get("proximo"):
+            score += 30
+            motivos.append("lote vence em até 30 dias")
+
+        if perda > 0:
+            score += min(35, 15 + int(perda))
+            motivos.append(f"perdas recentes: {perda}")
+
+        ultima_data = ultima.inventario.aplicado_em if ultima else None
+        ultima_diferenca = abs(ultima.diferenca) if ultima else Decimal("0")
+        if ultima_diferenca > 0:
+            score += min(45, 20 + int(ultima_diferenca))
+            motivos.append(f"última divergência: {ultima.diferenca}")
+        if ultima_data is None:
+            score += 45
+            motivos.append("produto nunca contado")
+            dias_sem_contagem = None
+        else:
+            dias_sem_contagem = (momento.date() - ultima_data.date()).days
+            if dias_sem_contagem >= 90:
+                score += 35
+                motivos.append(f"sem contagem há {dias_sem_contagem} dias")
+            elif dias_sem_contagem >= 30:
+                score += 20
+                motivos.append(f"sem contagem há {dias_sem_contagem} dias")
+
+        if score >= 100:
+            nivel = "CRITICO"
+        elif score >= 60:
+            nivel = "ALTO"
+        elif score >= 30:
+            nivel = "MEDIO"
+        else:
+            nivel = "BAIXO"
+        fila.append(
+            {
+                "estoque": estoque,
+                "score": score,
+                "nivel": nivel,
+                "nivel_label": NIVEIS_RISCO_INVENTARIO[nivel],
+                "motivos": motivos,
+                "ultima_contagem": ultima_data,
+                "dias_sem_contagem": dias_sem_contagem,
+            }
+        )
+
+    return sorted(fila, key=lambda item: (-item["score"], item["estoque"].produto.nome.lower()))
+
+
+@transaction.atomic
+def criar_inventario_risco(*, filial, estoques, usuario, descricao="", ip=None):
+    estoques = list(
+        Estoque.objects.select_for_update()
+        .filter(pk__in=[estoque.pk for estoque in estoques], filial=filial)
+        .select_related("produto")
+    )
+    if not estoques:
+        raise ValidationError("Selecione ao menos um produto da fila de risco.")
+    inventario = InventarioEstoque.objects.create(
+        filial=filial,
+        usuario=usuario,
+        descricao=descricao or f"Contagem orientada a risco - {timezone.localdate():%d/%m/%Y}",
+    )
+    ItemInventarioEstoque.objects.bulk_create(
+        [
+            ItemInventarioEstoque(
+                inventario=inventario,
+                produto=estoque.produto,
+                quantidade_sistema=estoque.quantidade_atual,
+                quantidade_contada=None,
+                diferenca=Decimal("0"),
+                observacao="Sugerido pela fila de risco",
+            )
+            for estoque in estoques
+        ]
+    )
+    LogAuditoria.objects.create(
+        usuario=usuario,
+        modulo="estoque",
+        acao="PLANO_INVENTARIO_RISCO",
+        descricao=f"Inventário {inventario.id} criado com {len(estoques)} item(ns) priorizados por risco.",
+        objeto_tipo="InventarioEstoque",
+        objeto_id=str(inventario.id),
+        ip=ip,
+    )
+    return inventario
 
 def _autorizacao_texto(supervisor):
     return f" Autorizado por: {supervisor}." if supervisor else ""
@@ -189,11 +364,14 @@ def reconciliar_lotes_reducao_inventario(*, produto, filial, saldo_novo, movimen
 def aplicar_inventario(*, inventario, usuario, supervisor=None, ip=None):
     inventario = InventarioEstoque.objects.select_for_update().get(pk=inventario.pk)
     if inventario.status != StatusInventario.ABERTO:
-        raise ValidationError("Apenas inventarios abertos podem ser aplicados.")
+        raise ValidationError("Apenas inventários abertos podem ser aplicados.")
 
     itens = list(inventario.itens.select_related("produto"))
     if not itens:
-        raise ValidationError("Inclua ao menos um item antes de aplicar o inventario.")
+        raise ValidationError("Inclua ao menos um item antes de aplicar o inventário.")
+    pendentes = [item for item in itens if item.quantidade_contada is None]
+    if pendentes:
+        raise ValidationError(f"Existem {len(pendentes)} item(ns) sem contagem física.")
 
     for item in itens:
         estoque, _ = Estoque.objects.select_for_update().get_or_create(produto=item.produto, filial=inventario.filial)

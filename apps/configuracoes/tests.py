@@ -339,6 +339,10 @@ class ConfiguracoesOperacionaisTests(TestCase):
         self.assertContains(checklist, "Aplicativo desktop/PDF")
         self.assertContains(checklist, "Marketplace / pedido online")
         self.assertContains(checklist, "Homologação de parceiros marketplace")
+        self.assertContains(checklist, "Evolução pós-piloto")
+        self.assertContains(checklist, "Integração fiscal real em homologação")
+        self.assertContains(checklist, "Contabilidade por competência")
+        self.assertContains(checklist, "Roteiro de homologação Focus NFe")
         total_esperado = sum(len(grupo["itens"]) for grupo in CHECKLIST_GRUPOS)
         concluidos_esperados = sum(
             1
@@ -525,7 +529,13 @@ class ConfiguracoesOperacionaisTests(TestCase):
         self.assertContains(checklist, "Diferença em andamento")
         self.assertContains(checklist, "Impacto estimado")
         self.assertIn("diferenca_ponderada", checklist.context["resumo"])
-        self.assertEqual(checklist.context["resumo"]["pendentes"], 0)
+        pendentes_esperados = sum(
+            1
+            for grupo in CHECKLIST_GRUPOS
+            for _titulo, status, _descricao in grupo["itens"]
+            if status == "todo"
+        )
+        self.assertEqual(checklist.context["resumo"]["pendentes"], pendentes_esperados)
 
     def test_checklist_filtra_por_status_grupo_e_busca(self):
         response = self.client.get(

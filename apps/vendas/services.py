@@ -254,7 +254,7 @@ def _conta_movimento_para_pagamento(filial, forma_pagamento):
     nome_tipo = {
         TipoContaMovimento.CAIXA: "Caixa PDV",
         TipoContaMovimento.PIX: "PIX PDV",
-        TipoContaMovimento.BANCO: "Banco/cart?o PDV",
+        TipoContaMovimento.BANCO: "Banco/cartão PDV",
         TipoContaMovimento.OUTRA: "Outros recebimentos PDV",
     }[tipo_conta]
     conta, _ = ContaMovimentoFinanceiro.objects.get_or_create(
@@ -272,9 +272,12 @@ def _registrar_lancamentos_pdv_venda(venda, pagamentos):
     from apps.financeiro.models import LancamentoFinanceiro, TipoLancamentoFinanceiro
     from apps.financeiro.services import registrar_lancamento
 
+    from apps.financeiro.services_recebiveis import gerar_recebivel_pagamento
+
     for pagamento in pagamentos:
         if pagamento.status != StatusPagamento.CONFIRMADO or pagamento.forma_pagamento.tipo in FORMAS_PRAZO:
             continue
+        gerar_recebivel_pagamento(pagamento)
         if LancamentoFinanceiro.objects.filter(pagamento_venda=pagamento).exists():
             continue
         conta_movimento = _conta_movimento_para_pagamento(venda.filial, pagamento.forma_pagamento)

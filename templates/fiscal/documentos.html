@@ -9,16 +9,25 @@
     <p>Preparação e acompanhamento de documentos fiscais da operação.</p>
   </div>
   <div class="actions">
+{% if access.administracao %}<a class="secondary-button" href="{% url 'fiscal:atualizacoes' %}"><i class="fa-solid fa-bell"></i> Atualizações{% if monitor_atualizacoes.alertas_novos %} ({{ monitor_atualizacoes.alertas_novos }}){% endif %}</a>{% endif %}
     <a class="secondary-button" href="{% url 'fiscal:diagnostico_json' %}"><i class="fa-solid fa-code"></i> Diagnóstico JSON</a>
     <a class="secondary-button" href="{% url 'fiscal:contingencia_json' %}"><i class="fa-solid fa-file-export"></i> Contingência JSON</a>
     <a class="secondary-button" href="{% url 'fiscal:produtos_fiscais' %}"><i class="fa-solid fa-boxes-stacked"></i> Produtos fiscais</a>
+    <a class="secondary-button" href="{% url 'fiscal:dfe_recebidos' %}"><i class="fa-solid fa-inbox"></i> DF-e recebidos</a>
     <a class="secondary-button" href="{% url 'fiscal:inutilizacoes' %}"><i class="fa-solid fa-ban"></i> Inutilizar numeração</a>
+    {% if access.sistema %}<a class="secondary-button" href="{% url 'fiscal:consulta_cadastro' %}"><i class="fa-solid fa-building-circle-check"></i> Consultar contribuinte</a>{% endif %}
     <a class="secondary-button" href="{% url 'fiscal:configuracao_nova' %}"><i class="fa-solid fa-gear"></i> Configuração</a>
     <a class="secondary-button" href="{% url 'fiscal:serie_nova' %}"><i class="fa-solid fa-hashtag"></i> Série</a>
     <a class="primary-button" href="{% url 'fiscal:natureza_nova' %}"><i class="fa-solid fa-plus"></i> Natureza</a>
   </div>
 </header>
 
+{% if access.administracao and monitor_atualizacoes.fontes_com_erro %}
+<section class="operation-notice operation-notice-warning">
+  <i class="fa-solid fa-triangle-exclamation"></i>
+  <div><strong>Monitor fiscal requer atenção.</strong><span>{{ monitor_atualizacoes.fontes_com_erro }} fonte(s) oficial(is) apresentaram falha na última consulta.</span></div>
+</section>
+{% endif %}
 <section class="metrics-grid">
   <article class="metric"><span>Documentos</span><strong>{{ total_documentos }}</strong></article>
   <article class="metric"><span>Prontos</span><strong>{{ pendentes }}</strong></article>

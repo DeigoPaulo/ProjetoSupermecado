@@ -39,6 +39,8 @@ from apps.estoque.models import (
 )
 from apps.estoque.services import (
     aplicar_inventario,
+    calcular_fila_inventario_risco,
+    criar_inventario_risco,
     atribuir_saldo_historico_lote,
     cancelar_desmembramento_produto,
     cancelar_producao_composicao,
@@ -1818,8 +1820,8 @@ class RastreioLoteEstoqueTests(TestCase):
         self.assertEqual(alocacao.lote, lote)
 
     def test_saida_consumo_fefo_primeiro_lote_a_vencer(self):
-        self._entrada_lote("LOTE-TARDE", "4.000", date(2026, 12, 31), "6.00")
-        self._entrada_lote("LOTE-CEDO", "3.000", date(2026, 8, 15), "5.00")
+        self._entrada_lote("LOTE-TARDE", "4.000", timezone.localdate() + timedelta(days=120), "6.00")
+        self._entrada_lote("LOTE-CEDO", "3.000", timezone.localdate() + timedelta(days=30), "5.00")
 
         saida = movimentar_estoque(
             produto=self.produto,
@@ -1839,6 +1841,43 @@ class RastreioLoteEstoqueTests(TestCase):
             list(saida.alocacoes_lote.values_list("lote__codigo", "quantidade")),
             [("LOTE-CEDO", Decimal("3.000")), ("LOTE-TARDE", Decimal("2.000"))],
         )
+
+    def test_venda_nao_consume_lote_vencido_quando_houver_lote_valido(self):
+        self._entrada_lote("LOTE-VENCIDO", "2.000", timezone.localdate() - timedelta(days=1), "5.00")
+        self._entrada_lote("LOTE-VALIDO", "1.000", timezone.localdate() + timedelta(days=10), "5.00")
+
+        saida = movimentar_estoque(
+            produto=self.produto,
+            filial=self.filial,
+            tipo=TipoMovimentacaoEstoque.VENDA,
+            quantidade=Decimal("1.000"),
+            usuario=self.usuario,
+            referencia="venda:validade",
+            custo_unitario=Decimal("5.00"),
+        )
+
+        self.assertEqual(LoteEstoque.objects.get(codigo="LOTE-VENCIDO").quantidade_atual, Decimal("2.000"))
+        self.assertEqual(LoteEstoque.objects.get(codigo="LOTE-VALIDO").quantidade_atual, Decimal("0.000"))
+        self.assertEqual(list(saida.alocacoes_lote.values_list("lote__codigo", flat=True)), ["LOTE-VALIDO"])
+
+    def test_produto_que_exige_lote_bloqueia_venda_sem_saldo_valido(self):
+        self.produto.exige_lote = True
+        self.produto.save(update_fields=["exige_lote", "updated_at"])
+        self._entrada_lote("LOTE-VENCIDO", "2.000", timezone.localdate() - timedelta(days=1), "5.00")
+
+        with self.assertRaisesMessage(ValidationError, "Saldo insuficiente no lote"):
+            movimentar_estoque(
+                produto=self.produto,
+                filial=self.filial,
+                tipo=TipoMovimentacaoEstoque.VENDA,
+                quantidade=Decimal("1.000"),
+                usuario=self.usuario,
+                referencia="venda:lote-vencido",
+                custo_unitario=Decimal("5.00"),
+            )
+
+        self.assertEqual(Estoque.objects.get(produto=self.produto, filial=self.filial).quantidade_atual, Decimal("2.000"))
+        self.assertEqual(LoteEstoque.objects.get(codigo="LOTE-VENCIDO").quantidade_atual, Decimal("2.000"))
 
     def test_saldo_legado_sem_lote_continua_utilizavel(self):
         Estoque.objects.create(
@@ -2749,3 +2788,126 @@ class EstoqueCoreMultiempresaTests(TestCase):
 
         self.assertEqual({item.pk for item in estoque.context["estoques"]}, {self.estoque_a.pk, self.estoque_b.pk})
         self.assertEqual(detalhe.status_code, 200)
+
+class InventarioOrientadoRiscoTests(TestCase):
+    def setUp(self):
+        self.user = get_user_model().objects.create_superuser("risco.admin", "risco@example.com", "123")
+        self.client = Client(HTTP_HOST="localhost")
+        self.client.force_login(self.user)
+        self.empresa = Empresa.objects.create(
+            razao_social="Mercado Risco Ltda",
+            nome_fantasia="Mercado Risco",
+            cnpj="83.333.333/0001-83",
+        )
+        self.filial = Filial.objects.create(empresa=self.empresa, nome="Matriz Risco", cnpj=self.empresa.cnpj)
+        self.categoria = Categoria.all_objects.create(nome="Inventário de risco")
+        self.produto = Produto.objects.create(
+            codigo_barras="7898333333333",
+            nome="Produto Perecível de Risco",
+            categoria=self.categoria,
+            preco_custo=Decimal("4.00"),
+            preco_venda=Decimal("7.00"),
+            estoque_minimo=Decimal("5.000"),
+            exige_lote=True,
+        )
+        self.estoque = Estoque.objects.create(
+            produto=self.produto,
+            filial=self.filial,
+            quantidade_atual=Decimal("4.000"),
+        )
+
+    def test_fila_prioriza_validade_perda_saldo_e_ausencia_de_contagem(self):
+        LoteEstoque.objects.create(
+            produto=self.produto,
+            filial=self.filial,
+            codigo="RISCO-VENCIDO",
+            validade=timezone.localdate() - timedelta(days=1),
+            quantidade_inicial=Decimal("2.000"),
+            quantidade_atual=Decimal("2.000"),
+            custo_unitario=Decimal("4.00"),
+        )
+        PerdaEstoque.objects.create(
+            produto=self.produto,
+            filial=self.filial,
+            usuario=self.user,
+            tipo="AVARIA",
+            quantidade=Decimal("2.000"),
+            motivo="Teste de risco",
+            custo_unitario_no_momento=Decimal("4.00"),
+            preco_venda_no_momento=Decimal("7.00"),
+            valor_custo_estimado=Decimal("8.00"),
+            valor_venda_estimado=Decimal("14.00"),
+        )
+
+        fila = calcular_fila_inventario_risco(Estoque.objects.filter(pk=self.estoque.pk))
+
+        self.assertEqual(len(fila), 1)
+        self.assertEqual(fila[0]["nivel"], "CRITICO")
+        self.assertIn("lote vencido com saldo", fila[0]["motivos"])
+        self.assertIn("produto nunca contado", fila[0]["motivos"])
+        self.assertTrue(any("perdas recentes" in motivo for motivo in fila[0]["motivos"]))
+
+    def test_plano_cria_item_pendente_e_bloqueia_aplicacao(self):
+        inventario = criar_inventario_risco(
+            filial=self.filial,
+            estoques=[self.estoque],
+            usuario=self.user,
+        )
+        item = inventario.itens.get()
+
+        self.assertIsNone(item.quantidade_contada)
+        self.assertEqual(item.quantidade_sistema, Decimal("4.000"))
+        with self.assertRaisesMessage(ValidationError, "sem contagem física"):
+            aplicar_inventario(inventario=inventario, usuario=self.user)
+        self.estoque.refresh_from_db()
+        self.assertEqual(self.estoque.quantidade_atual, Decimal("4.000"))
+        self.assertTrue(LogAuditoria.objects.filter(acao="PLANO_INVENTARIO_RISCO", objeto_id=str(inventario.pk)).exists())
+
+    def test_painel_cria_plano_e_contagem_libera_aplicacao(self):
+        response = self.client.get(f"/estoque/inventarios/risco/?filial={self.filial.pk}")
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "Produto Perecível de Risco")
+        self.assertContains(response, "produto nunca contado")
+
+        response = self.client.post(
+            "/estoque/inventarios/risco/",
+            {"filial": self.filial.pk, "estoques": [self.estoque.pk], "descricao": "Contagem dirigida"},
+        )
+        inventario = InventarioEstoque.objects.get(descricao="Contagem dirigida")
+        item = inventario.itens.get()
+        self.assertRedirects(response, f"/estoque/inventarios/{inventario.pk}/")
+
+        response = self.client.post(
+            f"/estoque/inventarios/itens/{item.pk}/contar/",
+            {"quantidade_contada": "3.000", "observacao": "Conferido no corredor"},
+        )
+        self.assertRedirects(response, f"/estoque/inventarios/{inventario.pk}/")
+        item.refresh_from_db()
+        self.assertEqual(item.quantidade_contada, Decimal("3.000"))
+        self.assertEqual(item.diferenca, Decimal("-1.000"))
+
+        aplicar_inventario(inventario=inventario, usuario=self.user)
+        self.estoque.refresh_from_db()
+        self.assertEqual(self.estoque.quantidade_atual, Decimal("3.000"))
+
+    def test_post_nao_aceita_estoque_de_outra_filial(self):
+        outra_empresa = Empresa.objects.create(
+            razao_social="Outro Mercado Ltda",
+            nome_fantasia="Outro Mercado",
+            cnpj="84.444.444/0001-84",
+        )
+        outra_filial = Filial.objects.create(empresa=outra_empresa, nome="Outra Matriz", cnpj=outra_empresa.cnpj)
+        outro_estoque = Estoque.objects.create(
+            produto=self.produto,
+            filial=outra_filial,
+            quantidade_atual=Decimal("9.000"),
+        )
+
+        response = self.client.post(
+            "/estoque/inventarios/risco/",
+            {"filial": self.filial.pk, "estoques": [outro_estoque.pk]},
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertFalse(InventarioEstoque.objects.exists())
+        self.assertContains(response, "Selecione ao menos um produto da fila de risco")

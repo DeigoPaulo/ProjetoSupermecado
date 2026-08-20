@@ -1,5 +1,6 @@
 from django.contrib import messages
 from django.contrib.auth.mixins import LoginRequiredMixin
+from django.core.paginator import Paginator
 from django.db.models import Q
 from django.http import JsonResponse
 from django.urls import reverse_lazy
@@ -72,17 +73,12 @@ class ClienteUpdateView(ClienteFormMixin, LoginRequiredMixin, RoleRequiredMixin,
 @require_GET
 def clientes_busca(request):
     termo = (request.GET.get("q") or request.GET.get("term") or "").strip()
-    if not termo:
-        return JsonResponse({"results": []})
-    clientes = (
-        clientes_para_usuario(
-            request.user,
-            Cliente.objects.filter(is_active=True).filter(
-                Q(nome__icontains=termo) | Q(cpf_cnpj__icontains=termo) | Q(telefone__icontains=termo)
-            ),
+    clientes = clientes_para_usuario(request.user, Cliente.objects.filter(is_active=True))
+    if termo:
+        clientes = clientes.filter(
+            Q(nome__icontains=termo) | Q(cpf_cnpj__icontains=termo) | Q(telefone__icontains=termo)
         )
-        .order_by("nome")[:20]
-    )
+    pagina = Paginator(clientes.order_by("nome"), 20).get_page(request.GET.get("page"))
     return JsonResponse(
         {
             "results": [
@@ -95,7 +91,8 @@ def clientes_busca(request):
                     "email": cliente.email,
                     "endereco": cliente.endereco,
                 }
-                for cliente in clientes
-            ]
+                for cliente in pagina.object_list
+            ],
+            "pagination": {"more": pagina.has_next()},
         }
     )

@@ -1,0 +1,203 @@
+{% extends "base.html" %}
+{% block title %}DF-e recebidos{% endblock %}
+{% block content %}
+<header class="page-header">
+  <div>
+    <h1>Caixa de entrada de DF-e</h1>
+    <p>Documentos fiscais recebidos aguardam revisão antes de qualquer entrada operacional.</p>
+  </div>
+  <div class="actions">
+    <a class="secondary-button" href="{% url 'fiscal:documentos' %}">
+      <i class="fa-solid fa-arrow-left"></i> Fiscal
+    </a>
+  </div>
+</header>
+
+<section class="operation-notice operation-notice-warning">
+  <i class="fa-solid fa-shield-halved"></i>
+  <div>
+    <strong>Esta caixa não movimenta estoque nem financeiro.</strong>
+    <span>O XML é somente armazenado e classificado. Manifestação, pedido e entrada continuam exigindo decisão autorizada.</span>
+  </div>
+</section>
+
+<section class="metrics-grid">
+  <article class="metric"><span>Documentos recebidos</span><strong>{{ total }}</strong></article>
+  <article class="metric"><span>XML disponível</span><strong>{{ com_xml }}</strong></article>
+  <article class="metric"><span>Eventos fiscais</span><strong>{{ total_eventos }}</strong></article>
+  <article class="metric"><span>Integração</span><strong>{% if diagnostico_dfe.disponivel %}Pronta{% else %}Pendente{% endif %}</strong></article>
+</section>
+
+<section class="panel">
+  <div class="panel-heading">
+    <div>
+      <h2>Distribuição por CNPJ</h2>
+      <p>Cada filial mantém seu próprio cursor de distribuição para não perder nem repetir documentos.</p>
+    </div>
+    <span class="status {% if diagnostico_dfe.disponivel %}status-success{% else %}status-warning{% endif %}">
+      {{ diagnostico_dfe.provedor|default:diagnostico_dfe.mensagem }}
+    </span>
+  </div>
+  {% if linhas_distribuicao %}
+    <div class="table-wrapper">
+      <table>
+        <thead>
+          <tr>
+            <th>Filial</th>
+            <th>CNPJ consultado</th>
+            <th>Cursor/versão</th>
+            <th>Maior versão</th>
+            <th>Última consulta</th>
+            <th>Próxima consulta</th>
+            <th>Retorno</th>
+            <th>Ação</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for linha in linhas_distribuicao %}
+            <tr>
+              <td><strong>{{ linha.filial.nome }}</strong><br><small>{{ linha.filial.empresa.nome_fantasia }}</small></td>
+              <td>{{ linha.filial.cnpj|default:linha.filial.empresa.cnpj|default:"Não cadastrado" }}</td>
+              <td>{{ linha.controle.ultimo_nsu|default:"Inicial" }}</td>
+              <td>{{ linha.controle.max_nsu|default:"-" }}</td>
+              <td>{{ linha.controle.ultima_consulta_em|date:"d/m/Y H:i"|default:"Nunca" }}</td>
+              <td>{% if linha.em_espera %}{{ linha.controle.proxima_consulta_em|date:"d/m/Y H:i" }}{% else %}Livre{% endif %}</td>
+              <td>{{ linha.controle.ultima_mensagem|default:"Aguardando primeira consulta" }}</td>
+              <td>
+                <form method="post" action="{% url 'fiscal:dfe_consultar_distribuicao' %}" class="inline-form">
+                  {% csrf_token %}
+                  <input type="hidden" name="filial" value="{{ linha.filial.pk }}">
+                  <button class="secondary-button" type="submit" {% if not diagnostico_dfe.disponivel or linha.em_espera %}disabled title="{% if linha.em_espera %}Aguarde até o horário indicado pela SEFAZ.{% else %}{{ diagnostico_dfe.mensagem }}{% endif %}"{% endif %}>
+                    <i class="fa-solid fa-rotate"></i> Consultar
+                  </button>
+                </form>
+              </td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  {% else %}
+    <p class="empty">Cadastre uma filial ativa com CNPJ para habilitar a distribuição de DF-e.</p>
+  {% endif %}
+</section>
+
+<section class="panel">
+  <div class="panel-heading">
+    <div>
+      <h2>Eventos fiscais recebidos</h2>
+      <p>Cancelamentos, cartas de correção e demais eventos são preservados sem alterar compras, estoque ou financeiro.</p>
+    </div>
+  </div>
+  <div class="table-wrapper">
+    <table>
+      <thead><tr><th>Recebido em</th><th>Evento</th><th>Chave da NF-e</th><th>Filial</th><th>NSU</th><th>XML</th></tr></thead>
+      <tbody>
+        {% for evento in eventos_dfe %}
+          <tr>
+            <td>{{ evento.recebido_em|date:"d/m/Y H:i" }}</td>
+            <td><strong>{{ evento.descricao|default:evento.tipo_evento|default:"Evento fiscal" }}</strong><br><small>{{ evento.schema }}</small></td>
+            <td><small>{{ evento.chave_acesso }}</small></td>
+            <td>{{ evento.filial_destino|default:"A definir" }}</td>
+            <td>{{ evento.nsu }}</td>
+            <td><a class="secondary-button" href="{% url 'fiscal:dfe_evento_baixar_xml' evento.pk %}"><i class="fa-solid fa-download"></i> Baixar</a></td>
+          </tr>
+        {% empty %}
+          <tr><td colspan="6" class="empty">Nenhum evento fiscal recebido.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</section>
+
+<section class="panel">
+  <div class="panel-heading">
+    <div>
+      <h2>Importar XML recebido</h2>
+      <p>Alternativa manual para documentos já autorizados, inclusive enquanto o adaptador estiver pendente.</p>
+    </div>
+  </div>
+  <form method="post" enctype="multipart/form-data" class="form-grid">
+    {% csrf_token %}
+    <label class="form-field form-field-wide">
+      <span>{{ form.arquivo_xml.label }}</span>
+      {{ form.arquivo_xml }}
+      {{ form.arquivo_xml.errors }}
+      <small>{{ form.arquivo_xml.help_text }}</small>
+    </label>
+    <div class="form-actions">
+      <button class="primary-button" type="submit">
+        <i class="fa-solid fa-file-arrow-up"></i> Armazenar XML
+      </button>
+    </div>
+  </form>
+</section>
+
+<form method="get" class="toolbar report-filter">
+  <label>
+    <span>Situação</span>
+    <select name="status">
+      <option value="">Todas</option>
+      {% for valor, rotulo in status_choices %}
+        <option value="{{ valor }}" {% if status == valor %}selected{% endif %}>{{ rotulo }}</option>
+      {% endfor %}
+    </select>
+  </label>
+  <label>
+    <span>Busca</span>
+    <input type="search" name="q" value="{{ q }}" placeholder="Chave, número ou emitente">
+  </label>
+  <button type="submit">Filtrar</button>
+</form>
+
+<section class="panel">
+  <div class="table-wrapper">
+    <table>
+      <thead>
+        <tr>
+          <th>Recebido em</th>
+          <th>Emitente</th>
+          <th>Número</th>
+          <th>Filial</th>
+          <th>Total</th>
+          <th>Situação</th>
+          <th>Ação</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for documento in documentos %}
+          <tr>
+            <td>{{ documento.recebido_em|date:"d/m/Y H:i" }}</td>
+            <td><strong>{{ documento.emitente_nome|default:"-" }}</strong><br><small>{{ documento.emitente_cnpj|default:"-" }}</small></td>
+            <td><a href="{% url 'fiscal:dfe_detalhe' documento.pk %}">{{ documento.numero_documento|default:"-" }}</a></td>
+            <td>{{ documento.filial_destino|default:"A definir" }}</td>
+            <td>R$ {{ documento.valor_total|floatformat:2 }}</td>
+            <td>
+              <span class="status {% if documento.status == 'XML_DISPONIVEL' %}status-success{% elif documento.status == 'IGNORADO' %}status-muted{% else %}status-warning{% endif %}">
+                {{ documento.get_status_display }}
+              </span>
+              <br><small>{{ documento.chave_acesso }}</small>
+              {% if documento.nsu %}<br><small>Cursor: {{ documento.nsu }}</small>{% endif %}
+            </td>
+            <td>
+              {% if documento.status == "XML_DISPONIVEL" %}
+                <form method="post" action="{% url 'fiscal:dfe_criar_entrada' documento.pk %}" class="inline-form form-confirm" data-msg="Criar uma entrada em rascunho a partir deste XML? Estoque e financeiro não serão movimentados.">
+                  {% csrf_token %}
+                  <button class="secondary-button" type="submit">Criar rascunho</button>
+                </form>
+              {% elif documento.entrada_compra_id %}
+                <a class="secondary-button" href="{% url 'compras:detalhe' documento.entrada_compra_id %}">Ver entrada</a>
+              {% else %}
+                <span class="muted">Aguardando XML</span>
+              {% endif %}
+            </td>
+          </tr>
+        {% empty %}
+          <tr><td colspan="7" class="empty">Nenhum documento recebido armazenado.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% include "includes/pagination.html" %}
+</section>
+{% endblock %}

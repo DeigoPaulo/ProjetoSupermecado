@@ -27,16 +27,20 @@ from .models import (
     RespostaCotacaoFornecedor,
     StatusCotacaoCompra,
     StatusEntradaCompra,
+    StatusConferenciaEntrada,
     StatusPedidoCompra,
 )
 from .services import (
     abrir_cotacao_compra,
+    avaliar_conferencia_entrada,
     cancelar_entrada_compra,
     cancelar_pedido_compra,
+    confirmar_conferencia_fisica,
     converter_pedido_em_entrada,
     enviar_pedido_compra,
     finalizar_entrada_compra,
     gerar_pedido_da_resposta,
+    vincular_xml_a_pedido_manual,
 )
 from .services_xml import importar_xml_entrada, ler_xml_nfe
 
@@ -1572,6 +1576,166 @@ class ImportacaoXMLEntradaTests(TestCase):
         self.assertEqual(lote.custo_unitario, Decimal("5.50"))
         self.assertEqual(lote.origem_referencia, f"entrada_compra:{entrada.id}")
 
+
+    def _pedido_enviado(self, *, quantidade=Decimal("3.000"), custo=Decimal("5.50"), referencia="PED-XML"):
+        pedido = PedidoCompra.objects.create(
+            fornecedor=self.fornecedor,
+            filial=self.filial,
+            usuario=self.usuario,
+            referencia=referencia,
+            status=StatusPedidoCompra.ENVIADO,
+            total_previsto=quantidade * custo,
+        )
+        ItemPedidoCompra.objects.create(
+            pedido=pedido,
+            produto=self.produto,
+            quantidade=quantidade,
+            custo_unitario_previsto=custo,
+            total_previsto=quantidade * custo,
+        )
+        return pedido
+
+    def test_xml_vincula_pedido_unico_e_confere_tres_vias(self):
+        pedido = self._pedido_enviado()
+
+        entrada = importar_xml_entrada(self._xml(), usuario=self.usuario)
+
+        entrada.refresh_from_db()
+        pedido.refresh_from_db()
+        self.assertEqual(entrada.pedido_origem, pedido)
+        self.assertEqual(entrada.conferencia_status, StatusConferenciaEntrada.CONFERIDA)
+        self.assertIn("sem divergências", entrada.conferencia_resumo)
+        self.assertEqual(pedido.status, StatusPedidoCompra.CONVERTIDO)
+
+    def test_xml_divergente_nao_vincula_pedido_automaticamente(self):
+        pedido = self._pedido_enviado(quantidade=Decimal("2.000"), custo=Decimal("5.50"))
+
+        entrada = importar_xml_entrada(self._xml(), usuario=self.usuario)
+
+        entrada.refresh_from_db()
+        pedido.refresh_from_db()
+        self.assertIsNone(entrada.pedido_origem)
+        self.assertEqual(entrada.conferencia_status, StatusConferenciaEntrada.NAO_APLICAVEL)
+        self.assertEqual(pedido.status, StatusPedidoCompra.ENVIADO)
+        self.assertEqual(Estoque.objects.count(), 0)
+        self.assertEqual(ContaFinanceira.objects.count(), 0)
+
+    def test_supervisor_pode_vincular_xml_divergente_ao_pedido_e_auditar(self):
+        pedido = self._pedido_enviado(quantidade=Decimal("2.000"), custo=Decimal("5.50"))
+        entrada = importar_xml_entrada(self._xml(), usuario=self.usuario)
+
+        vincular_xml_a_pedido_manual(
+            entrada,
+            pedido,
+            usuario=self.usuario,
+            supervisor=self.usuario,
+            justificativa="Fornecedor entregou uma unidade adicional.",
+        )
+
+        entrada.refresh_from_db()
+        pedido.refresh_from_db()
+        self.assertEqual(entrada.pedido_origem, pedido)
+        self.assertEqual(entrada.conferencia_status, StatusConferenciaEntrada.DIVERGENTE)
+        self.assertEqual(pedido.status, StatusPedidoCompra.CONVERTIDO)
+        self.assertTrue(LogAuditoria.objects.filter(acao="VINCULO_MANUAL_XML_PEDIDO").exists())
+        self.assertFalse(Estoque.objects.exists())
+    def test_conferencia_fisica_divergente_exige_observacao_e_gera_auditoria(self):
+        pedido = self._pedido_enviado(quantidade=Decimal("2.000"), custo=Decimal("5.50"))
+        entrada = EntradaCompra.objects.create(
+            pedido_origem=pedido,
+            fornecedor=self.fornecedor,
+            filial=self.filial,
+            usuario=self.usuario,
+            chave_acesso_xml=self.CHAVE,
+            status=StatusEntradaCompra.RASCUNHO,
+            conferencia_status=StatusConferenciaEntrada.DIVERGENTE,
+        )
+        with self.assertRaisesMessage(ValidationError, "Descreva a conferência física"):
+            confirmar_conferencia_fisica(entrada, usuario=self.usuario)
+
+        confirmar_conferencia_fisica(entrada, usuario=self.usuario, observacoes="Uma unidade adicional conferida no recebimento.")
+        entrada.refresh_from_db()
+        self.assertIsNotNone(entrada.conferencia_fisica_em)
+        self.assertEqual(entrada.conferencia_fisica_por, self.usuario)
+        self.assertIn("unidade adicional", entrada.conferencia_fisica_observacoes)
+        self.assertTrue(LogAuditoria.objects.filter(acao="CONFERENCIA_FISICA_ENTRADA").exists())
+        self.assertFalse(Estoque.objects.exists())
+    def test_finalizacao_divergente_exige_conferencia_fisica_pela_politica_padrao(self):
+        pedido = self._pedido_enviado(quantidade=Decimal("2.000"), custo=Decimal("5.50"))
+        entrada = importar_xml_entrada(self._xml(), usuario=self.usuario)
+        vincular_xml_a_pedido_manual(
+            entrada,
+            pedido,
+            usuario=self.usuario,
+            supervisor=self.usuario,
+            justificativa="Recebimento conferido manualmente.",
+        )
+
+        with self.assertRaisesMessage(ValidationError, "Registre a conferência física"):
+            finalizar_entrada_compra(entrada)
+
+        confirmar_conferencia_fisica(
+            entrada,
+            usuario=self.usuario,
+            observacoes="Uma unidade adicional foi aceita no recebimento.",
+        )
+        finalizar_entrada_compra(entrada)
+        entrada.refresh_from_db()
+        self.assertEqual(entrada.status, StatusEntradaCompra.FINALIZADA)
+
+    def test_politica_da_empresa_pode_liberar_finalizacao_divergente_sem_conferencia(self):
+        self.empresa.bloquear_finalizacao_entrada_divergente = False
+        self.empresa.save(update_fields=["bloquear_finalizacao_entrada_divergente", "updated_at"])
+        pedido = self._pedido_enviado(quantidade=Decimal("2.000"), custo=Decimal("5.50"))
+        entrada = importar_xml_entrada(self._xml(), usuario=self.usuario)
+        vincular_xml_a_pedido_manual(
+            entrada,
+            pedido,
+            usuario=self.usuario,
+            supervisor=self.usuario,
+            justificativa="Recebimento liberado conforme política da empresa.",
+        )
+
+        finalizar_entrada_compra(entrada)
+        entrada.refresh_from_db()
+        self.assertEqual(entrada.status, StatusEntradaCompra.FINALIZADA)
+
+    def test_avaliacao_marca_divergencia_em_entrada_com_pedido_e_xml(self):
+        pedido = self._pedido_enviado(quantidade=Decimal("2.000"), custo=Decimal("5.50"))
+        entrada = EntradaCompra.objects.create(
+            pedido_origem=pedido,
+            fornecedor=self.fornecedor,
+            filial=self.filial,
+            usuario=self.usuario,
+            chave_acesso_xml=self.CHAVE,
+            status=StatusEntradaCompra.RASCUNHO,
+        )
+        ItemEntradaCompra.objects.create(
+            entrada=entrada,
+            produto=self.produto,
+            quantidade=Decimal("3.000"),
+            custo_unitario=Decimal("5.50"),
+            total=Decimal("16.50"),
+        )
+
+        avaliar_conferencia_entrada(entrada)
+
+        self.assertEqual(entrada.conferencia_status, StatusConferenciaEntrada.DIVERGENTE)
+        self.assertIn("quantidade prevista", entrada.conferencia_resumo)
+
+    def test_xml_nao_escolhe_pedido_quando_ha_mais_de_um_candidato(self):
+        primeiro = self._pedido_enviado(referencia="PED-XML-1")
+        segundo = self._pedido_enviado(referencia="PED-XML-2")
+
+        entrada = importar_xml_entrada(self._xml(), usuario=self.usuario)
+
+        entrada.refresh_from_db()
+        primeiro.refresh_from_db()
+        segundo.refresh_from_db()
+        self.assertIsNone(entrada.pedido_origem)
+        self.assertEqual(entrada.conferencia_status, StatusConferenciaEntrada.NAO_APLICAVEL)
+        self.assertEqual(primeiro.status, StatusPedidoCompra.ENVIADO)
+        self.assertEqual(segundo.status, StatusPedidoCompra.ENVIADO)
 
 class ComprasIsolamentoEmpresaTests(TestCase):
     def setUp(self):

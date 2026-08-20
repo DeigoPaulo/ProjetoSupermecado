@@ -1,0 +1,24 @@
+{% extends "base.html" %}
+
+{% block title %}Registrar contagem{% endblock %}
+
+{% block content %}
+<header class="page-header">
+  <div>
+    <h1>Registrar contagem</h1>
+    <p>Inventário {{ inventario.id }} · {{ inventario.filial }}</p>
+  </div>
+  <a class="secondary-button" href="{% url 'estoque:inventario_detalhe' inventario.pk %}">Voltar</a>
+</header>
+
+<section class="panel">
+  <div class="panel-title">{{ item.produto }}</div>
+  <p>Saldo registrado antes da contagem: <strong>{{ item.quantidade_sistema }}</strong></p>
+  <form method="post" class="form-grid">
+    {% include "includes/form.html" %}
+    <div class="form-actions">
+      <button class="primary-button" type="submit"><i class="fa-solid fa-check"></i> Salvar contagem</button>
+    </div>
+  </form>
+</section>
+{% endblock %}

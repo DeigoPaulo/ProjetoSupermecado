@@ -1,0 +1,85 @@
+{% extends "base.html" %}
+{% block title %}Agenda de recebíveis{% endblock %}
+{% block content %}
+<header class="page-header">
+  <div>
+    <h1>Agenda de recebíveis</h1>
+    <p>Compare o que foi vendido no pagamento eletrônico com o que deve ser liquidado pela adquirente.</p>
+  </div>
+  <div class="page-actions">
+    {% if pode_configurar %}<a class="secondary-button" href="{% url 'financeiro:regras_liquidacao' %}"><i class="fa-solid fa-sliders"></i> Regras</a>{% endif %}
+    <a class="secondary-button" href="{% url 'financeiro:agenda_recebiveis_csv' %}?{{ request.GET.urlencode }}"><i class="fa-solid fa-file-csv"></i> Excel/CSV</a>
+  </div>
+</header>
+
+<section class="summary-grid">
+  <article class="metric"><span>Valor bruto</span><strong>R$ {{ total_bruto|floatformat:2 }}</strong></article>
+  <article class="metric"><span>Taxas previstas</span><strong>R$ {{ total_taxas|floatformat:2 }}</strong></article>
+  <article class="metric"><span>Líquido previsto</span><strong>R$ {{ total_liquido|floatformat:2 }}</strong></article>
+  <article class="metric"><span>Atrasados no filtro</span><strong>{{ total_atrasados }}</strong></article>
+</section>
+
+<section class="operation-notice">
+  <i class="fa-solid fa-calendar-check"></i>
+  <div>
+    <strong>Esta agenda é uma previsão, não uma confirmação bancária.</strong>
+    <span>Taxas e prazos vêm das regras da filial. A liquidação real dependerá do extrato importado ou do futuro conector da adquirente.</span>
+  </div>
+</section>
+
+{% if pagamentos_sem_regra %}
+<section class="operation-notice warning">
+  <i class="fa-solid fa-triangle-exclamation"></i>
+  <div>
+    <strong>{{ pagamentos_sem_regra }} pagamento(s) eletrônico(s) ainda não entraram na agenda.</strong>
+    <span>Cadastre a regra correspondente e sincronize novamente.</span>
+  </div>
+</section>
+{% endif %}
+
+{% if pode_configurar %}
+<form method="post" class="panel">
+  {% csrf_token %}
+  <div class="panel-header">
+    <div><h2>Atualizar agenda</h2><p>Inclui pagamentos confirmados que possuam uma regra ativa, sem duplicar recebíveis existentes.</p></div>
+    <button class="primary-button" type="submit"><i class="fa-solid fa-rotate"></i> Sincronizar pagamentos</button>
+  </div>
+</form>
+{% endif %}
+
+<form method="get" class="filter-bar panel">
+  <label class="form-field"><span>Início previsto</span><input type="date" name="data_inicio" value="{{ data_inicio|date:'Y-m-d' }}"></label>
+  <label class="form-field"><span>Fim previsto</span><input type="date" name="data_fim" value="{{ data_fim|date:'Y-m-d' }}"></label>
+  {% if permite_consolidado %}<label class="form-field"><span>Filial</span><select name="filial"><option value="">Todas</option>{% for filial in filiais_opcoes %}<option value="{{ filial.pk }}" {% if filial_id == filial.pk|stringformat:'s' %}selected{% endif %}>{{ filial }}</option>{% endfor %}</select></label>{% endif %}
+  <label class="form-field"><span>Forma</span><select name="forma"><option value="">Todas</option>{% for forma in formas_opcoes %}<option value="{{ forma.pk }}" {% if forma_id == forma.pk|stringformat:'s' %}selected{% endif %}>{{ forma }}</option>{% endfor %}</select></label>
+  <label class="form-field"><span>Status</span><select name="status"><option value="">Todos</option><option value="ATRASADO" {% if status == 'ATRASADO' %}selected{% endif %}>Atrasado</option>{% for valor, rotulo in status_opcoes %}<option value="{{ valor }}" {% if status == valor %}selected{% endif %}>{{ rotulo }}</option>{% endfor %}</select></label>
+  <label class="form-field"><span>Venda ou autorização</span><input type="search" name="q" value="{{ q }}" placeholder="Venda, NSU ou transação"></label>
+  <div class="form-actions"><button class="primary-button" type="submit"><i class="fa-solid fa-filter"></i> Filtrar</button><a class="secondary-button" href="{% url 'financeiro:agenda_recebiveis' %}">Limpar</a></div>
+</form>
+
+<section class="panel table-panel">
+  <div class="panel-header"><div><h2>Liquidações previstas</h2><p>Até 50 recebíveis por página.</p></div></div>
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>Previsto</th><th>Venda</th><th>Filial</th><th>Forma</th><th>NSU</th><th>Bruto</th><th>Taxa</th><th>Líquido previsto</th><th>Liquidação real</th><th>Status</th></tr></thead>
+      <tbody>
+        {% for item in pagina %}
+        <tr>
+          <td><strong>{{ item.data_prevista|date:"d/m/Y" }}</strong><br><small>Venda em {{ item.data_venda|date:"d/m/Y" }}</small></td>
+          <td>#{{ item.pagamento.venda_id }}</td>
+          <td>{{ item.pagamento.venda.filial }}</td>
+          <td>{{ item.pagamento.forma_pagamento }}</td>
+          <td>{{ item.pagamento.nsu|default:"-" }}<br><small>{{ item.pagamento.codigo_autorizacao|default:"" }}</small></td>
+          <td>R$ {{ item.valor_bruto|floatformat:2 }}</td>
+          <td>R$ {{ item.taxa_prevista|floatformat:2 }}</td>
+          <td><strong>R$ {{ item.valor_liquido_previsto|floatformat:2 }}</strong></td>
+          <td>{% if item.valor_liquidado != None %}<strong>R$ {{ item.valor_liquidado|floatformat:2 }}</strong><br><small>{{ item.data_liquidacao|date:"d/m/Y" }} · {{ item.referencia_liquidacao }}</small>{% else %}-{% endif %}</td>
+          <td>{% if item.esta_atrasado %}<span class="status status-warning">Atrasado</span>{% elif item.status == 'LIQUIDADO' %}<span class="status status-success">Liquidado</span>{% elif item.status == 'ANTECIPADO' %}<span class="status status-info">Antecipado</span>{% elif item.status == 'DIVERGENTE' or item.status == 'CHARGEBACK' %}<span class="status status-danger">{{ item.get_status_display }}</span>{% else %}<span class="status status-warning">{{ item.get_status_display }}</span>{% endif %}<br><small>{{ item.observacao }}</small></td>
+        </tr>
+        {% empty %}<tr><td colspan="10" class="empty">Nenhum recebível encontrado para o período.</td></tr>{% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% if pagina.paginator.num_pages > 1 %}<nav class="pagination" aria-label="Paginação da agenda">{% if pagina.has_previous %}<a class="secondary-button" href="?{% if query_sem_pagina %}{{ query_sem_pagina }}&{% endif %}page={{ pagina.previous_page_number }}">Anterior</a>{% endif %}<span>Página {{ pagina.number }} de {{ pagina.paginator.num_pages }}</span>{% if pagina.has_next %}<a class="secondary-button" href="?{% if query_sem_pagina %}{{ query_sem_pagina }}&{% endif %}page={{ pagina.next_page_number }}">Próxima</a>{% endif %}</nav>{% endif %}
+</section>
+{% endblock %}

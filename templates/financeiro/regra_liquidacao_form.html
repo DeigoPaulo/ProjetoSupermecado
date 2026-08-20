@@ -1,0 +1,11 @@
+{% extends "base.html" %}
+{% block title %}{% if regra %}Editar{% else %}Nova{% endif %} regra de liquidação{% endblock %}
+{% block content %}
+<header class="page-header"><div><h1>{% if regra %}Editar{% else %}Nova{% endif %} regra de liquidação</h1><p>Condição comercial usada para prever o crédito da adquirente.</p></div><a class="secondary-button" href="{% url 'financeiro:regras_liquidacao' %}">Voltar</a></header>
+<form method="post" class="panel form-grid">
+  {% csrf_token %}
+  {% for error in form.non_field_errors %}<div class="form-error">{{ error }}</div>{% endfor %}
+  {% for field in form %}<label class="form-field"><span>{{ field.label }}</span>{{ field }}{% for error in field.errors %}<small class="form-error">{{ error }}</small>{% endfor %}</label>{% endfor %}
+  <div class="form-actions"><button class="primary-button" type="submit"><i class="fa-solid fa-floppy-disk"></i> Salvar regra</button></div>
+</form>
+{% endblock %}

@@ -3,6 +3,7 @@ from decimal import Decimal, InvalidOperation
 
 from django.conf import settings
 from django.contrib import messages
+from django.contrib.auth import get_user_model
 from django.contrib.auth.decorators import login_required
 from django.contrib.auth.mixins import LoginRequiredMixin
 from django.core.exceptions import ValidationError
@@ -1575,11 +1576,23 @@ def _resumo_caixa(caixa):
 @login_required
 @role_required(*PDV)
 def caixa_detalhe(request, caixa_id):
-    caixas = _escopo_empresa_pdv(
+    caixas = _caixas_operacionais_para_usuario(
         request.user,
-        Caixa.objects.select_related("filial", "usuario_abertura", "usuario_fechamento", "usuario_conferencia").prefetch_related("vendas", "sangrias", "suprimentos"),
+        Caixa.objects.select_related("filial", "usuario_abertura", "usuario_fechamento", "usuario_conferencia"),
     )
     caixa = get_object_or_404(caixas, id=caixa_id)
+    vendas_pagina = Paginator(
+        caixa.vendas.select_related("cliente").order_by("-data", "-id"), 25
+    ).get_page(request.GET.get("vendas_page"))
+    movimentos = [
+        {"tipo": "Suprimento", "data": item.data, "valor": item.valor, "motivo": item.motivo}
+        for item in caixa.suprimentos.all()
+    ] + [
+        {"tipo": "Sangria", "data": item.data, "valor": item.valor, "motivo": item.motivo}
+        for item in caixa.sangrias.all()
+    ]
+    movimentos.sort(key=lambda item: item["data"], reverse=True)
+    movimentos_pagina = Paginator(movimentos, 25).get_page(request.GET.get("movimentos_page"))
     context = {
         "caixa": caixa,
         "resumo": _resumo_caixa(caixa),
@@ -1587,13 +1600,48 @@ def caixa_detalhe(request, caixa_id):
         "suprimento_form": SuprimentoForm(),
         "fechar_form": FecharCaixaForm(instance=caixa),
         "conferir_form": ConferirCaixaForm(instance=caixa),
-        "has_movimentos": caixa.suprimentos.exists() or caixa.sangrias.exists(),
+        "vendas_pagina": vendas_pagina,
+        "movimentos_pagina": movimentos_pagina,
+        "has_movimentos": bool(movimentos),
+        "pode_conferir": has_role(request.user, SUPERVISAO),
     }
     return render(request, "pdv/caixa_detalhe.html", context)
 
 
+@login_required
+@role_required(*SUPERVISAO)
+def caixa_conferencia_imprimir(request, caixa_id):
+    caixa = get_object_or_404(
+        _escopo_empresa_pdv(
+            request.user,
+            Caixa.objects.select_related(
+                "filial", "usuario_abertura", "usuario_fechamento", "usuario_conferencia"
+            ),
+        ),
+        id=caixa_id,
+    )
+    return render(
+        request,
+        "pdv/caixa_conferencia_imprimir.html",
+        {
+            "caixa": caixa,
+            "resumo": _resumo_caixa(caixa),
+            "vendas": caixa.vendas.select_related("cliente").order_by("data", "id"),
+            "sangrias": caixa.sangrias.all().order_by("data", "id"),
+            "suprimentos": caixa.suprimentos.all().order_by("data", "id"),
+            "gerado_em": timezone.localtime(),
+        },
+    )
+
+def _caixas_operacionais_para_usuario(user, queryset):
+    caixas = _escopo_empresa_pdv(user, queryset)
+    if not has_role(user, SUPERVISAO):
+        caixas = caixas.filter(usuario_abertura=user)
+    return caixas
+
+
 def _caixa_aberto_or_redirect(request, caixa_id):
-    caixa = get_object_or_404(_escopo_empresa_pdv(request.user, Caixa.objects.all()), id=caixa_id)
+    caixa = get_object_or_404(_caixas_operacionais_para_usuario(request.user, Caixa.objects.all()), id=caixa_id)
     if caixa.status != StatusCaixa.ABERTO:
         messages.error(request, "Este caixa não está aberto.")
         return caixa, False
@@ -1725,7 +1773,7 @@ def conferir_caixa(request, caixa_id):
         )
         messages.success(request, "Caixa conferido com sucesso.")
     else:
-        messages.error(request, "Confira os dados da conferencia.")
+        messages.error(request, "Confira os dados da conferência.")
     return redirect("pdv:caixa_detalhe", caixa_id=caixa.id)
 
 
@@ -1737,9 +1785,49 @@ class CaixaListView(LoginRequiredMixin, RoleRequiredMixin, ListView):
     paginate_by = 25
 
     def get_queryset(self):
-        queryset = Caixa.objects.select_related("filial", "usuario_abertura", "usuario_fechamento", "usuario_conferencia")
-        return _escopo_empresa_pdv(self.request.user, queryset).order_by("-data_abertura")
+        queryset = _caixas_operacionais_para_usuario(
+            self.request.user,
+            Caixa.objects.select_related(
+                "filial",
+                "filial__empresa",
+                "usuario_abertura",
+                "usuario_fechamento",
+                "usuario_conferencia",
+            ),
+        )
+        self.termo = (self.request.GET.get("q") or "").strip()
+        self.status = (self.request.GET.get("status") or "").strip().upper()
+        self.filial_id = (self.request.GET.get("filial") or "").strip()
+        self.operador_id = (self.request.GET.get("operador") or "").strip()
+        if self.termo:
+            filtros = Q(usuario_abertura__username__icontains=self.termo) | Q(filial__nome__icontains=self.termo)
+            if self.termo.isdigit():
+                filtros |= Q(pk=int(self.termo))
+            queryset = queryset.filter(filtros)
+        if self.status in StatusCaixa.values:
+            queryset = queryset.filter(status=self.status)
+        if self.filial_id.isdigit():
+            queryset = queryset.filter(filial_id=int(self.filial_id))
+        if self.operador_id.isdigit():
+            queryset = queryset.filter(usuario_abertura_id=int(self.operador_id))
+        return queryset.order_by("-data_abertura", "-id")
 
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        escopo = _escopo_empresa_pdv(self.request.user, Caixa.objects.all())
+        context.update(
+            {
+                "termo": self.termo,
+                "status_filtro": self.status,
+                "filial_id": self.filial_id,
+                "operador_id": self.operador_id,
+                "status_opcoes": StatusCaixa.choices,
+                "filiais": Filial.objects.filter(caixas__in=escopo).distinct().order_by("empresa__nome_fantasia", "nome"),
+                "operadores": get_user_model().objects.filter(caixas_abertos__in=escopo).distinct().order_by("username"),
+                "pode_conferir": has_role(self.request.user, SUPERVISAO),
+            }
+        )
+        return context
 
 class AbrirCaixaView(LoginRequiredMixin, RoleRequiredMixin, CreateView):
     required_roles = PDV

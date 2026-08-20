@@ -2,15 +2,15 @@
 {% block title %}Plano de contas{% endblock %}
 {% block content %}
 <header class="page-header">
-  <div><h1>Plano de contas</h1><p>Estrutura cont?bil hier?rquica por empresa.</p></div>
+  <div><h1>Plano de contas</h1><p>Estrutura contábil hierárquica por empresa.</p></div>
   <div class="actions">
     <a class="secondary-button" href="{% url 'financeiro:contas' %}">Financeiro</a>
-    <a class="primary-button" href="{% url 'financeiro:conta_contabil_nova' %}"><i class="fa-solid fa-plus"></i> Nova conta cont?bil</a>
+    <a class="primary-button" href="{% url 'financeiro:conta_contabil_nova' %}"><i class="fa-solid fa-plus"></i> Nova conta contábil</a>
   </div>
 </header>
 <section class="panel">
   <div class="table-wrapper"><table>
-    <thead><tr><th>C?digo</th><th>Conta</th><th>Natureza</th><th>Tipo</th><th>Conta superior</th><th>Status</th><th></th></tr></thead>
+    <thead><tr><th>Código</th><th>Conta</th><th>Natureza</th><th>Tipo</th><th>Conta superior</th><th>Status</th><th></th></tr></thead>
     <tbody>
       {% for conta in contas_contabeis %}
       <tr>
@@ -19,7 +19,7 @@
         <td><span class="status {% if not conta.ativa %}status-muted{% endif %}">{% if conta.ativa %}Ativa{% else %}Inativa{% endif %}</span></td>
         <td><a class="secondary-button" href="{% url 'financeiro:conta_contabil_editar' conta.pk %}">Editar</a></td>
       </tr>
-      {% empty %}<tr><td colspan="7" class="empty">Nenhuma conta cont?bil cadastrada.</td></tr>{% endfor %}
+      {% empty %}<tr><td colspan="7" class="empty">Nenhuma conta contábil cadastrada.</td></tr>{% endfor %}
     </tbody>
   </table></div>
   {% include "includes/pagination.html" with page_obj=page_obj %}

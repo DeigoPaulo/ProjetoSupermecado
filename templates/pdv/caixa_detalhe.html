@@ -10,6 +10,7 @@
   </div>
   <div class="actions">
     <a class="secondary-button" href="{% url 'pdv:caixas' %}">Voltar</a>
+    {% if pode_conferir %}<a class="secondary-button" href="{% url 'pdv:caixa_conferencia_imprimir' caixa.id %}" target="_blank"><i class="fa-solid fa-print"></i> Imprimir conferência</a>{% endif %}
     {% if caixa.status == "ABERTO" %}
       <a class="primary-button" href="{% url 'pdv:pdv' %}">Ir para PDV</a>
     {% endif %}
@@ -34,11 +35,11 @@
       <dt>Valor esperado</dt><dd><strong>R$ {{ resumo.total_esperado|floatformat:2 }}</strong></dd>
       <dt>Valor declarado</dt><dd>{% if caixa.valor_final is not None %}R$ {{ caixa.valor_final|floatformat:2 }}{% else %}-{% endif %}</dd>
       {% if resumo.divergencia_declarada is not None %}
-        <dt>Divergencia declarada</dt><dd>R$ {{ resumo.divergencia_declarada|floatformat:2 }}</dd>
+        <dt>Divergência declarada</dt><dd>R$ {{ resumo.divergencia_declarada|floatformat:2 }}</dd>
       {% endif %}
       <dt>Valor conferido</dt><dd>{% if caixa.valor_conferido is not None %}R$ {{ caixa.valor_conferido|floatformat:2 }}{% else %}-{% endif %}</dd>
       {% if resumo.divergencia_conferida is not None %}
-        <dt>Divergencia conferida</dt><dd>R$ {{ resumo.divergencia_conferida|floatformat:2 }}</dd>
+        <dt>Divergência conferida</dt><dd>R$ {{ resumo.divergencia_conferida|floatformat:2 }}</dd>
       {% endif %}
       <dt>Abertura</dt><dd>{{ caixa.data_abertura|date:"d/m/Y H:i" }}</dd>
       <dt>Fechamento</dt><dd>{{ caixa.data_fechamento|date:"d/m/Y H:i"|default:"-" }}</dd>
@@ -125,7 +126,7 @@
     <table>
       <thead><tr><th>ID</th><th>Data</th><th>Cliente</th><th>Total</th></tr></thead>
       <tbody>
-        {% for venda in caixa.vendas.all %}
+        {% for venda in vendas_pagina %}
           <tr>
             <td><a href="{% url 'pdv:venda_detalhe' venda.id %}">{{ venda.id }}</a></td>
             <td>{{ venda.data|date:"d/m/Y H:i" }}</td>
@@ -136,7 +137,7 @@
           <tr><td colspan="4" class="empty">Nenhuma venda neste caixa.</td></tr>
         {% endfor %}
       </tbody>
-    </table>
+    </table>    {% if vendas_pagina.has_other_pages %}<nav class="pagination"><a class="secondary-button {% if not vendas_pagina.has_previous %}disabled{% endif %}" {% if vendas_pagina.has_previous %}href="?vendas_page={{ vendas_pagina.previous_page_number }}&movimentos_page={{ movimentos_pagina.number }}"{% endif %}>Anterior</a><strong>Vendas: página {{ vendas_pagina.number }} de {{ vendas_pagina.paginator.num_pages }}</strong><a class="secondary-button {% if not vendas_pagina.has_next %}disabled{% endif %}" {% if vendas_pagina.has_next %}href="?vendas_page={{ vendas_pagina.next_page_number }}&movimentos_page={{ movimentos_pagina.number }}"{% endif %}>Próxima</a></nav>{% endif %}
   </div>
 
   <div class="panel">
@@ -144,17 +145,14 @@
     <table>
       <thead><tr><th>Tipo</th><th>Data</th><th>Valor</th><th>Motivo</th></tr></thead>
       <tbody>
-        {% for item in caixa.suprimentos.all %}
-          <tr><td>Suprimento</td><td>{{ item.data|date:"d/m/Y H:i" }}</td><td>R$ {{ item.valor|floatformat:2 }}</td><td>{{ item.motivo }}</td></tr>
-        {% endfor %}
-        {% for item in caixa.sangrias.all %}
-          <tr><td>Sangria</td><td>{{ item.data|date:"d/m/Y H:i" }}</td><td>R$ {{ item.valor|floatformat:2 }}</td><td>{{ item.motivo }}</td></tr>
+{% for item in movimentos_pagina %}
+          <tr><td>{{ item.tipo }}</td><td>{{ item.data|date:"d/m/Y H:i" }}</td><td>R$ {{ item.valor|floatformat:2 }}</td><td>{{ item.motivo }}</td></tr>
         {% endfor %}
         {% if not has_movimentos %}
           <tr><td colspan="4" class="empty">Nenhuma sangria ou suprimento.</td></tr>
         {% endif %}
       </tbody>
-    </table>
+    </table>    {% if movimentos_pagina.has_other_pages %}<nav class="pagination"><a class="secondary-button {% if not movimentos_pagina.has_previous %}disabled{% endif %}" {% if movimentos_pagina.has_previous %}href="?vendas_page={{ vendas_pagina.number }}&movimentos_page={{ movimentos_pagina.previous_page_number }}"{% endif %}>Anterior</a><strong>Movimentos: página {{ movimentos_pagina.number }} de {{ movimentos_pagina.paginator.num_pages }}</strong><a class="secondary-button {% if not movimentos_pagina.has_next %}disabled{% endif %}" {% if movimentos_pagina.has_next %}href="?vendas_page={{ vendas_pagina.number }}&movimentos_page={{ movimentos_pagina.next_page_number }}"{% endif %}>Próxima</a></nav>{% endif %}
   </div>
 </section>
 {% endblock %}

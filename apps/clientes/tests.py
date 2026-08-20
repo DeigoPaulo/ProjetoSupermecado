@@ -35,6 +35,19 @@ class ClienteViewsTests(TestCase):
         self.assertIn("Cliente Teste", payload["results"][0]["text"])
         self.assertEqual(payload["results"][0]["endereco"], self.cliente.endereco)
 
+    def test_busca_json_abre_com_lista_e_pagina_sem_exigir_texto(self):
+        for indice in range(21):
+            Cliente.objects.create(nome=f"Cliente Lista {indice:02d}")
+
+        primeira = self.client.get("/clientes/busca.json", {"page": 1}).json()
+        segunda = self.client.get("/clientes/busca.json", {"page": 2}).json()
+
+        self.assertEqual(len(primeira["results"]), 20)
+        self.assertTrue(primeira["pagination"]["more"])
+        self.assertGreaterEqual(len(segunda["results"]), 1)
+        self.assertFalse(segunda["pagination"]["more"])
+
+
 class ClienteIsolamentoEmpresaTests(TestCase):
     def setUp(self):
         User = get_user_model()

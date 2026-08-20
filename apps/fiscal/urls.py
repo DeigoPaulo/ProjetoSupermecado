@@ -6,10 +6,31 @@ app_name = "fiscal"
 
 urlpatterns = [
     path("", views.documentos, name="documentos"),
+    path("atualizacoes/", views.atualizacoes_fiscais, name="atualizacoes"),
+    path("atualizacoes/<int:pk>/revisar/", views.revisar_atualizacao_fiscal, name="revisar_atualizacao"),
     path("inutilizacoes/", views.inutilizacoes, name="inutilizacoes"),
+    path("consulta-cadastro/", views.consulta_cadastro, name="consulta_cadastro"),
+    path("consulta-cadastro/<int:pk>/<str:direcao>/xml/", views.baixar_xml_consulta_cadastro, name="baixar_xml_consulta_cadastro"),
     path("diagnostico.json", views.diagnostico_json, name="diagnostico_json"),
     path("contingencia.json", views.contingencia_json, name="contingencia_json"),
     path("produtos/", views.produtos_fiscais, name="produtos_fiscais"),
+    path("dfe-recebidos/", views.dfe_recebidos, name="dfe_recebidos"),
+    path("dfe-recebidos/consultar/", views.dfe_consultar_distribuicao, name="dfe_consultar_distribuicao"),
+    path("dfe-recebidos/<int:pk>/", views.dfe_detalhe, name="dfe_detalhe"),
+    path("dfe-recebidos/<int:pk>/xml/", views.dfe_baixar_xml, name="dfe_baixar_xml"),
+    path("dfe-recebidos/<int:pk>/manifestar/", views.dfe_manifestar, name="dfe_manifestar"),
+    path(
+        "dfe-recebidos/manifestacoes/<int:pk>/<str:direcao>/xml/",
+        views.dfe_manifestacao_baixar_xml,
+        name="dfe_manifestacao_baixar_xml",
+    ),
+    path("dfe-recebidos/eventos/<int:pk>/xml/", views.dfe_evento_baixar_xml, name="dfe_evento_baixar_xml"),
+    path("dfe-recebidos/<int:pk>/ignorar/", views.dfe_ignorar, name="dfe_ignorar"),
+    path(
+        "dfe-recebidos/<int:pk>/criar-entrada/",
+        views.dfe_criar_entrada,
+        name="dfe_criar_entrada",
+    ),
     path(
         "produtos/exportar.csv",
         views.produtos_fiscais_exportar_csv,
@@ -34,4 +55,10 @@ urlpatterns = [
     path("documentos/<int:pk>/consultar-sefaz/", views.consultar_sefaz, name="consultar_sefaz"),
     path("documentos/<int:pk>/contingencia/", views.ativar_contingencia, name="ativar_contingencia"),
     path("documentos/<int:pk>/cancelar/", views.cancelar, name="cancelar"),
+    path("documentos/<int:pk>/carta-correcao/", views.registrar_cce, name="registrar_cce"),
+    path(
+        "cartas-correcao/<int:pk>/<str:direcao>/xml/",
+        views.baixar_xml_cce,
+        name="baixar_xml_cce",
+    ),
 ]

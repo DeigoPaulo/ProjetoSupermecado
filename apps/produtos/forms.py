@@ -11,7 +11,7 @@ from apps.fornecedores.escopo import fornecedores_para_usuario
 
 from .models import (
     Categoria, CodigoBarrasProduto, ConfiguracaoBalancaProduto, InformacaoNutricional, Marca, Produto,
-    ProdutoFornecedor, ProdutoImagem, SetorBalanca,
+    ProdutoFornecedor, ProdutoImagem, SetorBalanca, VersaoPrecoProduto,
 )
 
 
@@ -431,24 +431,21 @@ class ProdutoImportCSVForm(forms.Form):
 class ReajustePrecoForm(forms.Form):
     categoria = forms.ModelChoiceField(label="Categoria", queryset=Categoria.objects.none(), required=False)
     marca = forms.ModelChoiceField(label="Marca", queryset=Marca.objects.none(), required=False)
-    modelo_salvo = forms.ModelChoiceField(label="Modelo profissional", queryset=Produto.objects.none(), required=False)
     percentual = forms.DecimalField(label="Percentual de reajuste", max_digits=6, decimal_places=2)
     motivo = forms.CharField(label="Motivo", max_length=255)
-    aplicar_em_promocional = forms.BooleanField(label="Aplicar tambem no preço promocional", required=False)
+    aplicar_em_promocional = forms.BooleanField(label="Aplicar também no preço promocional", required=False)
+    permitir_abaixo_margem = forms.BooleanField(
+        label="Autorizar excepcionalmente preços abaixo da margem desejada",
+        required=False,
+    )
 
     def __init__(self, *args, filial=None, **kwargs):
         super().__init__(*args, **kwargs)
         self.fields["categoria"].queryset = Categoria.objects.all()
         self.fields["marca"].queryset = Marca.objects.all()
-        modelos = ModeloEtiqueta.objects.filter(is_active=True, configuracao__is_active=True).select_related("configuracao")
-        if filial:
-            modelos = modelos.filter(
-                Q(configuracao__filial=filial) | Q(configuracao__filial__isnull=True, configuracao__empresa=filial.empresa)
-            )
-        self.fields["modelo_salvo"].queryset = modelos
         aplicar_select2(
             self,
-            ["categoria", "marca", "modelo_salvo"],
+            ["categoria", "marca"],
             ajax_urls={"categoria": "/produtos/categorias/busca.json", "marca": "/produtos/marcas/busca.json"},
         )
 
@@ -456,10 +453,12 @@ class ReajustePrecoForm(forms.Form):
         cleaned = super().clean()
         if not cleaned.get("categoria") and not cleaned.get("marca"):
             raise forms.ValidationError("Informe ao menos categoria ou marca para limitar o reajuste.")
-        if cleaned.get("percentual") == 0:
+        percentual = cleaned.get("percentual")
+        if percentual == 0:
             raise forms.ValidationError("Percentual não pode ser zero.")
+        if percentual is not None and percentual <= -100:
+            raise forms.ValidationError("A redução deve ser menor que 100% para preservar um preço positivo.")
         return cleaned
-
 
 class EtiquetaProdutoForm(forms.Form):
     MODELO_COMPACTO = "compacto"
@@ -503,3 +502,34 @@ class EtiquetaProdutoForm(forms.Form):
             ["categoria", "marca", "modelo_salvo"],
             ajax_urls={"categoria": "/produtos/categorias/busca.json", "marca": "/produtos/marcas/busca.json"},
         )
+
+
+class VersaoPrecoProdutoForm(forms.ModelForm):
+    permitir_abaixo_margem = forms.BooleanField(
+        label="Autorizar excepcionalmente preço abaixo da margem desejada",
+        required=False,
+    )
+
+    class Meta:
+        model = VersaoPrecoProduto
+        fields = ["produto", "preco_novo", "vigencia_inicio", "motivo", "permitir_abaixo_margem"]
+        widgets = {
+            "vigencia_inicio": forms.DateTimeInput(
+                attrs={"type": "datetime-local"}, format="%Y-%m-%dT%H:%M"
+            ),
+        }
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.fields["vigencia_inicio"].input_formats = ["%Y-%m-%dT%H:%M"]
+        aplicar_select2(
+            self,
+            ["produto"],
+            ajax_urls={"produto": "/estoque/produtos/busca.json"},
+        )
+
+    def clean_preco_novo(self):
+        preco = self.cleaned_data.get("preco_novo")
+        if preco is not None and preco <= 0:
+            raise forms.ValidationError("Informe um preço maior que zero.")
+        return preco

@@ -1,5 +1,5 @@
 from django import forms
-from django.core.exceptions import ValidationError
+from django.core.exceptions import ImproperlyConfigured, ValidationError
 
 from apps.accounts.models import PerfilUsuario, TipoPerfil
 from apps.clientes.escopo import clientes_para_usuario
@@ -7,7 +7,9 @@ from apps.empresas.models import Empresa, Filial
 from apps.core_forms import aplicar_select2
 from apps.fornecedores.escopo import fornecedores_para_usuario
 
-from .models import CategoriaFinanceira, CentroCusto, ContaContabil, ContaFinanceira, ContaMovimentoFinanceiro, TransferenciaFinanceira
+from .extrato_adapters import listar_adaptadores_extrato, validar_arquivo_adaptador
+
+from .models import CategoriaFinanceira, CentroCusto, ContaContabil, ContaFinanceira, ContaMovimentoFinanceiro, RegraLiquidacaoEletronica, TransferenciaFinanceira
 
 
 def _filiais_para_usuario(user):
@@ -53,14 +55,14 @@ class ContaContabilForm(forms.ModelForm):
             empresa = Empresa.objects.filter(pk=self.empresa_id_do_usuario).first()
             cleaned["empresa"] = empresa
         if not empresa:
-            raise ValidationError("N?o foi poss?vel identificar a empresa da conta cont?bil.")
+            raise ValidationError("Não foi possível identificar a empresa da conta contábil.")
         conta_pai = cleaned.get("conta_pai")
         if conta_pai and conta_pai.empresa_id != empresa.pk:
             self.add_error("conta_pai", "A conta superior pertence a outra empresa.")
         if self.instance.pk and self.instance.empresa_id != empresa.pk and (
             self.instance.subcontas.exists() or self.instance.categorias_financeiras.exists() or self.instance.lancamentos.exists()
         ):
-            self.add_error("empresa", "N?o altere a empresa de uma conta cont?bil em uso.")
+            self.add_error("empresa", "Não altere a empresa de uma conta contábil em uso.")
         return cleaned
 
     def save(self, commit=True):
@@ -95,9 +97,9 @@ class CentroCustoForm(forms.ModelForm):
             empresa = Empresa.objects.filter(pk=self.empresa_id_do_usuario).first()
             cleaned_data["empresa"] = empresa
         if not empresa:
-            raise ValidationError("N?o foi poss?vel identificar a empresa do centro de custo.")
+            raise ValidationError("Não foi possível identificar a empresa do centro de custo.")
         if self.instance.pk and self.instance.empresa_id != empresa.id and self.instance.contas_financeiras.exists():
-            self.add_error("empresa", "N?o altere a empresa de um centro de custo que j? possui contas financeiras.")
+            self.add_error("empresa", "Não altere a empresa de um centro de custo que j? possui contas financeiras.")
         return cleaned_data
 
     def save(self, commit=True):
@@ -139,11 +141,11 @@ class CategoriaFinanceiraForm(forms.ModelForm):
             cleaned_data["empresa"] = empresa
         conta_contabil = cleaned_data.get("conta_contabil")
         if conta_contabil and empresa and conta_contabil.empresa_id != empresa.pk:
-            self.add_error("conta_contabil", "A conta cont?bil pertence a outra empresa.")
+            self.add_error("conta_contabil", "A conta contábil pertence a outra empresa.")
         if not empresa:
-            raise ValidationError("N?o foi poss?vel identificar a empresa da categoria financeira.")
+            raise ValidationError("Não foi possível identificar a empresa da categoria financeira.")
         if self.instance.pk and self.instance.empresa_id != empresa.id and self.instance.contas.exists():
-            self.add_error("empresa", "N?o altere a empresa de uma categoria que j? possui contas financeiras.")
+            self.add_error("empresa", "Não altere a empresa de uma categoria que j? possui contas financeiras.")
         return cleaned_data
 
     def save(self, commit=True):
@@ -273,3 +275,81 @@ class TransferenciaFinanceiraForm(forms.ModelForm):
         if origem and destino and origem.filial.empresa_id != destino.filial.empresa_id:
             raise forms.ValidationError("Transferências entre empresas diferentes não são permitidas.")
         return cleaned
+class ImportacaoExtratoFinanceiroForm(forms.Form):
+    adaptador = forms.ChoiceField(label="Layout do arquivo", required=False, initial="CSV_GENERICO")
+    conta = forms.ModelChoiceField(
+        queryset=ContaMovimentoFinanceiro.objects.none(),
+        label="Conta bancária/adquirente",
+    )
+    arquivo = forms.FileField(
+        label="Arquivo do extrato",
+        help_text="CSV genérico e OFX estão disponíveis; layouts privados aparecem quando configurados no servidor.",
+        widget=forms.ClearableFileInput(attrs={"accept": ".csv,.ofx,text/csv,application/x-ofx"}),
+    )
+
+    def __init__(self, *args, user=None, **kwargs):
+        super().__init__(*args, **kwargs)
+        adaptadores, self.erros_adaptadores = listar_adaptadores_extrato()
+        self.fields["adaptador"].choices = [
+            (adaptador.codigo, adaptador.nome) for adaptador in adaptadores
+        ]
+        self.fields["conta"].queryset = ContaMovimentoFinanceiro.objects.filter(
+            ativa=True,
+            filial__in=_filiais_para_usuario(user),
+        ).select_related("filial", "filial__empresa")
+        aplicar_select2(self, ["conta"])
+
+    def clean_arquivo(self):
+        arquivo = self.cleaned_data["arquivo"]
+        if arquivo.size > 5 * 1024 * 1024:
+            raise ValidationError("O arquivo deve ter no máximo 5 MB.")
+        return arquivo
+
+    def clean(self):
+        cleaned = super().clean()
+        adaptador = cleaned.get("adaptador") or "CSV_GENERICO"
+        cleaned["adaptador"] = adaptador
+        arquivo = cleaned.get("arquivo")
+        if adaptador and arquivo:
+            try:
+                validar_arquivo_adaptador(codigo=adaptador, arquivo_nome=arquivo.name)
+            except (ImproperlyConfigured, ValidationError) as exc:
+                self.add_error("arquivo", str(exc))
+        return cleaned
+
+
+class RegraLiquidacaoEletronicaForm(forms.ModelForm):
+    class Meta:
+        model = RegraLiquidacaoEletronica
+        fields = ["filial", "forma_pagamento", "prazo_dias", "taxa_percentual", "taxa_fixa", "ativa"]
+        labels = {
+            "prazo_dias": "Prazo para liquidação (dias corridos)",
+            "taxa_percentual": "Taxa percentual (%)",
+            "taxa_fixa": "Taxa fixa por transação (R$)",
+        }
+        widgets = {
+            "prazo_dias": forms.NumberInput(attrs={"min": "0", "max": "365"}),
+            "taxa_percentual": forms.NumberInput(attrs={"min": "0", "max": "100", "step": "0.0001"}),
+            "taxa_fixa": forms.NumberInput(attrs={"min": "0", "step": "0.01"}),
+        }
+
+    def __init__(self, *args, user=None, **kwargs):
+        super().__init__(*args, **kwargs)
+        from apps.vendas.models import FormaPagamento
+
+        self.fields["filial"].queryset = _filiais_para_usuario(user)
+        self.fields["forma_pagamento"].queryset = FormaPagamento.objects.filter(
+            ativo=True,
+            tipo__in=["PIX", "CARTAO", "DEBITO", "CREDITO", "VALE_ALIMENTACAO", "VALE_REFEICAO"],
+        ).order_by("nome")
+        aplicar_select2(self, ["filial", "forma_pagamento"], ajax_urls={"filial": "/empresas/filiais/busca.json"})
+
+class AlocacaoRecebivelForm(forms.Form):
+    valor_alocado = forms.DecimalField(
+        label="Valor a alocar",
+        max_digits=14,
+        decimal_places=2,
+        min_value=0.01,
+        localize=True,
+        widget=forms.TextInput(attrs={"inputmode": "decimal", "placeholder": "0,00"}),
+    )

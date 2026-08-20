@@ -9,6 +9,7 @@
     <p>Confira o livro com extratos e comprovantes sem alterar os lançamentos originais.</p>
   </div>
   <div class="page-actions">
+    <a class="secondary-button" href="{% url 'financeiro:conciliacao_extratos' %}"><i class="fa-solid fa-file-import"></i> Extratos e adquirentes</a>
     <a class="secondary-button" href="{% url 'financeiro:livro' %}"><i class="fa-solid fa-book"></i> Livro financeiro</a>
     <a class="secondary-button" href="{% url 'financeiro:conciliacao_bancaria_csv' %}?{{ request.GET.urlencode }}"><i class="fa-solid fa-file-csv"></i> Excel/CSV</a>
   </div>

@@ -107,8 +107,27 @@ class ItemInventarioEstoqueForm(forms.ModelForm):
         from apps.produtos.models import Produto
 
         self.fields["produto"].queryset = Produto.objects.all()
+        self.fields["quantidade_contada"].required = True
         aplicar_select2(self, ["produto"])
 
+
+class ContagemItemInventarioForm(forms.ModelForm):
+    class Meta:
+        model = ItemInventarioEstoque
+        fields = ["quantidade_contada", "observacao"]
+        labels = {
+            "quantidade_contada": "Quantidade contada",
+            "observacao": "Observação",
+        }
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.fields["quantidade_contada"].required = True
+    def clean_quantidade_contada(self):
+        quantidade = self.cleaned_data["quantidade_contada"]
+        if quantidade is not None and quantidade < 0:
+            raise forms.ValidationError("A quantidade contada não pode ser negativa.")
+        return quantidade
 
 class PerdaEstoqueForm(forms.ModelForm):
     class Meta:

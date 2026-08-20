@@ -1,0 +1,142 @@
+{% extends "base.html" %}
+{% block title %}DF-e {{ documento.numero_documento|default:documento.pk }}{% endblock %}
+{% block content %}
+<header class="page-header">
+  <div>
+    <h1>DF-e recebido</h1>
+    <p>Revise o documento antes de manifestar ou criar uma entrada de compra.</p>
+  </div>
+  <div class="actions">
+    {% if documento.xml_conteudo %}
+      <a class="secondary-button" href="{% url 'fiscal:dfe_baixar_xml' documento.pk %}"><i class="fa-solid fa-download"></i> Baixar XML</a>
+    {% endif %}
+    <a class="secondary-button" href="{% url 'fiscal:dfe_recebidos' %}">Voltar</a>
+  </div>
+</header>
+
+<section class="operation-notice operation-notice-warning">
+  <i class="fa-solid fa-shield-halved"></i>
+  <div>
+    <strong>Uma manifestação é uma declaração fiscal do destinatário.</strong>
+    <span>Desde 01/06/2026, a manifestação conclusiva deve respeitar o prazo oficial de 90 dias da autorização. A transmissão exige certificado A1 e adaptador homologado.</span>
+  </div>
+</section>
+
+<section class="metrics-grid">
+  <article class="metric"><span>Situação</span><strong>{{ documento.get_status_display }}</strong></article>
+  <article class="metric"><span>Total do documento</span><strong>R$ {{ documento.valor_total|floatformat:2 }}</strong></article>
+  <article class="metric"><span>Recebido em</span><strong>{{ documento.recebido_em|date:"d/m/Y H:i" }}</strong></article>
+  <article class="metric"><span>Manifestação conclusiva</span><strong>{{ manifestacao_conclusiva.get_tipo_display|default:"Pendente" }}</strong></article>
+</section>
+
+<section class="panel">
+  <div class="panel-heading"><div><h2>Dados fiscais recebidos</h2></div></div>
+  <dl class="details-list">
+    <dt>Chave de acesso</dt><dd>{{ documento.chave_acesso }}</dd>
+    <dt>Emitente</dt><dd>{{ documento.emitente_nome|default:"-" }}<br><small>{{ documento.emitente_cnpj|default:"-" }}</small></dd>
+    <dt>Número</dt><dd>{{ documento.numero_documento|default:"-" }}</dd>
+    <dt>Emissão</dt><dd>{{ documento.data_emissao|date:"d/m/Y"|default:"-" }}</dd>
+    <dt>Empresa</dt><dd>{{ documento.empresa }}</dd>
+    <dt>Filial destinatária</dt><dd>{{ documento.filial_destino|default:"A definir" }}</dd>
+    <dt>Origem</dt><dd>{{ documento.origem }}</dd>
+    {% if documento.nsu %}<dt>NSU</dt><dd>{{ documento.nsu }}</dd>{% endif %}
+  </dl>
+</section>
+
+<section class="panel">
+  <div class="panel-heading">
+    <div>
+      <h2>Manifestação do Destinatário</h2>
+      <p>Ciência é provisória. Confirmação, desconhecimento e operação não realizada são conclusivas.</p>
+    </div>
+    <span class="status {% if diagnostico_manifestacao.disponivel %}status-success{% else %}status-warning{% endif %}">
+      {{ diagnostico_manifestacao.provedor|default:diagnostico_manifestacao.mensagem }}
+    </span>
+  </div>
+  {% if manifestacao_conclusiva %}
+    <div class="operation-notice operation-notice-success">
+      <i class="fa-solid fa-circle-check"></i>
+      <div><strong>{{ manifestacao_conclusiva.get_tipo_display }}</strong><span>{{ manifestacao_conclusiva.mensagem }}</span></div>
+    </div>
+  {% else %}
+    <form method="post" action="{% url 'fiscal:dfe_manifestar' documento.pk %}" class="form-grid form-confirm" data-msg="Transmitir esta manifestação ao Ambiente Nacional? A operação ficará registrada na auditoria.">
+      {% csrf_token %}
+      <label class="form-field">
+        <span>Declaração fiscal</span>
+        <select name="tipo" id="id_tipo_manifestacao" required>
+          <option value="">Selecione</option>
+          {% for valor, rotulo in tipos_manifestacao %}<option value="{{ valor }}">{{ rotulo }}</option>{% endfor %}
+        </select>
+      </label>
+      <label class="form-field form-field-wide">
+        <span>Justificativa da operação não realizada</span>
+        <textarea name="justificativa" id="id_justificativa_manifestacao" minlength="15" maxlength="255" rows="3" placeholder="Obrigatória somente para operação não realizada"></textarea>
+      </label>
+      <div class="form-actions">
+        <button class="primary-button" type="submit" {% if not diagnostico_manifestacao.disponivel %}disabled title="{{ diagnostico_manifestacao.mensagem }}"{% endif %}>
+          <i class="fa-solid fa-paper-plane"></i> Transmitir manifestação
+        </button>
+      </div>
+    </form>
+  {% endif %}
+</section>
+
+<section class="panel">
+  <div class="panel-heading"><div><h2>Histórico de manifestações</h2><p>Tentativas, rejeições e autorizações permanecem auditáveis.</p></div></div>
+  <div class="table-wrapper">
+    <table>
+      <thead><tr><th>Data</th><th>Manifestação</th><th>Status</th><th>SEFAZ</th><th>Responsável</th><th>XML</th></tr></thead>
+      <tbody>
+        {% for item in manifestacoes %}
+          <tr>
+            <td>{{ item.criado_em|date:"d/m/Y H:i" }}</td>
+            <td><strong>{{ item.get_tipo_display }}</strong>{% if item.justificativa %}<br><small>{{ item.justificativa }}</small>{% endif %}</td>
+            <td><span class="status {% if item.status == 'AUTORIZADA' %}status-success{% elif item.status == 'PENDENTE' %}status-warning{% else %}status-danger{% endif %}">{{ item.get_status_display }}</span></td>
+            <td>{{ item.codigo_status|default:"-" }}{% if item.protocolo %}<br><small>Protocolo {{ item.protocolo }}</small>{% endif %}<br><small>{{ item.mensagem|default:"-" }}</small></td>
+            <td>{{ item.usuario.get_username }}</td>
+            <td>
+              {% if item.xml_envio %}<a class="secondary-button" href="{% url 'fiscal:dfe_manifestacao_baixar_xml' item.pk 'envio' %}">Envio</a>{% endif %}
+              {% if item.xml_retorno %}<a class="secondary-button" href="{% url 'fiscal:dfe_manifestacao_baixar_xml' item.pk 'retorno' %}">Retorno</a>{% endif %}
+            </td>
+          </tr>
+        {% empty %}
+          <tr><td colspan="6" class="empty">Nenhuma manifestação registrada.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</section>
+
+{% if documento.status == "IGNORADO" %}
+<section class="operation-notice operation-notice-warning"><i class="fa-solid fa-circle-minus"></i><div><strong>DF-e desconsiderado.</strong><span>Consulte a auditoria para ver o responsável e o motivo.</span></div></section>
+{% endif %}
+
+{% if documento.entrada_compra_id %}
+<section class="panel"><div class="panel-heading"><div><h2>Entrada vinculada</h2><p>O XML já foi encaminhado para revisão de compras.</p></div><a class="primary-button" href="{% url 'compras:detalhe' documento.entrada_compra_id %}">Ver entrada #{{ documento.entrada_compra_id }}</a></div></section>
+{% elif documento.status == "XML_DISPONIVEL" %}
+<section class="panel">
+  <div class="panel-heading"><div><h2>Encaminhar para compras</h2><p>Cria uma entrada em rascunho, sem alterar estoque ou financeiro.</p></div></div>
+  <form method="post" action="{% url 'fiscal:dfe_criar_entrada' documento.pk %}" class="form-confirm" data-msg="Criar uma entrada em rascunho a partir deste XML? Estoque e financeiro não serão movimentados.">{% csrf_token %}<button class="primary-button" type="submit">Criar entrada em rascunho</button></form>
+</section>
+<section class="panel">
+  <div class="panel-heading"><div><h2>Desconsiderar documento</h2><p>Esta ação interna não substitui o evento fiscal de desconhecimento da operação.</p></div></div>
+  <form method="post" action="{% url 'fiscal:dfe_ignorar' documento.pk %}" class="form-grid form-confirm" data-msg="Desconsiderar este DF-e? A decisão será registrada na auditoria.">{% csrf_token %}<label class="form-field form-field-wide"><span>Motivo</span><input type="text" name="motivo" required maxlength="500" placeholder="Ex.: documento de teste"></label><div class="form-actions"><button class="danger-button" type="submit">Desconsiderar internamente</button></div></form>
+</section>
+{% endif %}
+
+<script>
+(function () {
+  const tipo = document.getElementById("id_tipo_manifestacao");
+  const justificativa = document.getElementById("id_justificativa_manifestacao");
+  if (!tipo || !justificativa) return;
+  function atualizar() {
+    const obrigatoria = tipo.value === "210240";
+    justificativa.required = obrigatoria;
+    justificativa.disabled = !obrigatoria;
+    if (!obrigatoria) justificativa.value = "";
+  }
+  tipo.addEventListener("change", atualizar);
+  atualizar();
+})();
+</script>
+{% endblock %}

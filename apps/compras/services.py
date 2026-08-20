@@ -16,6 +16,7 @@ from .models import (
     RespostaCotacaoFornecedor,
     StatusCotacaoCompra,
     StatusEntradaCompra,
+    StatusConferenciaEntrada,
     StatusPedidoCompra,
 )
 
@@ -204,6 +205,8 @@ def converter_pedido_em_entrada(pedido, *, usuario, ip=None):
                 + (f"\n{pedido.observacoes}" if pedido.observacoes else "")
             ),
             status=StatusEntradaCompra.RASCUNHO,
+            conferencia_status=StatusConferenciaEntrada.PENDENTE,
+            conferencia_resumo="Pedido vinculado. Aguarda a importação da NF-e para concluir a conferência em três vias.",
             total_produtos=pedido.total_previsto,
         )
         ItemEntradaCompra.objects.bulk_create(
@@ -236,11 +239,173 @@ def converter_pedido_em_entrada(pedido, *, usuario, ip=None):
         return entrada
 
 
+def avaliar_conferencia_entrada(entrada):
+    """Compara pedido, itens recebidos e XML já associado ao rascunho."""
+    if not entrada.pedido_origem_id:
+        entrada.conferencia_status = StatusConferenciaEntrada.NAO_APLICAVEL
+        entrada.conferencia_resumo = (
+            "Sem pedido de compra vinculado; a entrada pode ser revisada normalmente, mas não possui terceira via para comparar."
+        )
+        return entrada
+
+    if not entrada.chave_acesso_xml:
+        entrada.conferencia_status = StatusConferenciaEntrada.PENDENTE
+        entrada.conferencia_resumo = "Pedido vinculado. Aguarda a importação da NF-e para concluir a conferência em três vias."
+        return entrada
+
+    itens_pedido = list(entrada.pedido_origem.itens.select_related("produto"))
+    itens_entrada = list(entrada.itens.select_related("produto"))
+    previstos = {item.produto_id: (item.quantidade, item.total_previsto) for item in itens_pedido}
+    recebidos = {}
+    for item in itens_entrada:
+        quantidade, total = recebidos.get(item.produto_id, (Decimal("0.000"), Decimal("0.00")))
+        recebidos[item.produto_id] = (quantidade + item.quantidade, total + item.total)
+
+    nomes = {item.produto_id: str(item.produto) for item in itens_pedido + itens_entrada}
+    divergencias = []
+    for produto_id in sorted(set(previstos) | set(recebidos)):
+        previsto = previstos.get(produto_id)
+        recebido = recebidos.get(produto_id)
+        nome = nomes.get(produto_id, str(produto_id))
+        if previsto is None:
+            divergencias.append(f"{nome}: item não previsto no pedido")
+            continue
+        if recebido is None:
+            divergencias.append(f"{nome}: item previsto não recebido")
+            continue
+        if previsto[0] != recebido[0]:
+            divergencias.append(f"{nome}: quantidade prevista {previsto[0]} e recebida {recebido[0]}")
+        if previsto[1] != recebido[1]:
+            divergencias.append(f"{nome}: total previsto R$ {previsto[1]:.2f} e XML R$ {recebido[1]:.2f}")
+
+    if divergencias:
+        entrada.conferencia_status = StatusConferenciaEntrada.DIVERGENTE
+        entrada.conferencia_resumo = "Divergências: " + "; ".join(divergencias[:8])
+    else:
+        entrada.conferencia_status = StatusConferenciaEntrada.CONFERIDA
+        entrada.conferencia_resumo = "Pedido, recebimento e NF-e conferidos sem divergências."
+    return entrada
+
+def itens_conferencia_entrada(entrada):
+    """Retorna o comparativo visual entre pedido e recebimento da entrada."""
+    if not entrada.pedido_origem_id:
+        return []
+    previstos = {item.produto_id: item for item in entrada.pedido_origem.itens.select_related("produto")}
+    recebidos = {}
+    for item in entrada.itens.select_related("produto"):
+        atual = recebidos.get(item.produto_id)
+        if atual is None:
+            recebidos[item.produto_id] = {"produto": item.produto, "quantidade": item.quantidade, "total": item.total}
+        else:
+            atual["quantidade"] += item.quantidade
+            atual["total"] += item.total
+    linhas = []
+    for produto_id in sorted(set(previstos) | set(recebidos)):
+        previsto = previstos.get(produto_id)
+        recebido = recebidos.get(produto_id)
+        produto = previsto.produto if previsto else recebido["produto"]
+        quantidade_prevista = previsto.quantidade if previsto else Decimal("0.000")
+        quantidade_recebida = recebido["quantidade"] if recebido else Decimal("0.000")
+        total_previsto = previsto.total_previsto if previsto else Decimal("0.00")
+        total_recebido = recebido["total"] if recebido else Decimal("0.00")
+        linhas.append({
+            "produto": produto,
+            "quantidade_prevista": quantidade_prevista,
+            "quantidade_recebida": quantidade_recebida,
+            "total_previsto": total_previsto,
+            "total_recebido": total_recebido,
+            "divergente": quantidade_prevista != quantidade_recebida or total_previsto != total_recebido,
+        })
+    return linhas
+
+
+def confirmar_conferencia_fisica(entrada, *, usuario, observacoes="", ip=None):
+    with transaction.atomic():
+        entrada = EntradaCompra.objects.select_for_update().select_related("pedido_origem").get(pk=entrada.pk)
+        if entrada.status != StatusEntradaCompra.RASCUNHO:
+            raise ValidationError("Somente entradas em rascunho podem ter a conferência física registrada.")
+        if not entrada.pedido_origem_id:
+            raise ValidationError("A conferência física guiada exige um pedido de compra vinculado.")
+        observacoes = (observacoes or "").strip()
+        if entrada.conferencia_status == StatusConferenciaEntrada.DIVERGENTE and not observacoes:
+            raise ValidationError("Descreva a conferência física quando houver divergências.")
+        entrada.conferencia_fisica_em = timezone.now()
+        entrada.conferencia_fisica_por = usuario
+        entrada.conferencia_fisica_observacoes = observacoes
+        entrada.save(update_fields=["conferencia_fisica_em", "conferencia_fisica_por", "conferencia_fisica_observacoes", "updated_at"])
+        LogAuditoria.objects.create(
+            usuario=usuario,
+            modulo="compras",
+            acao="CONFERENCIA_FISICA_ENTRADA",
+            descricao=(
+                f"Conferência física registrada na entrada {entrada.id}. "
+                f"Situação documental: {entrada.get_conferencia_status_display()}. "
+                f"Observações: {observacoes or '-'}"
+            ),
+            objeto_tipo="EntradaCompra",
+            objeto_id=str(entrada.id),
+            ip=ip,
+        )
+        return entrada
+
+
+def vincular_xml_a_pedido_manual(entrada, pedido, *, usuario, supervisor, justificativa, ip=None):
+    """Vincula uma NF-e divergente ao pedido correto sem movimentar estoque."""
+    justificativa = (justificativa or "").strip()
+    if not justificativa:
+        raise ValidationError("Informe a justificativa para o vínculo manual do XML.")
+
+    with transaction.atomic():
+        entrada = EntradaCompra.objects.select_for_update().select_related("fornecedor", "filial").get(pk=entrada.pk)
+        pedido = PedidoCompra.objects.select_for_update().select_related("fornecedor", "filial").get(pk=pedido.pk)
+        if entrada.status != StatusEntradaCompra.RASCUNHO:
+            raise ValidationError("Somente entradas em rascunho podem receber vínculo manual de XML.")
+        if not entrada.chave_acesso_xml:
+            raise ValidationError("O vínculo manual é exclusivo para entradas importadas de XML.")
+        if entrada.pedido_origem_id:
+            raise ValidationError("Esta entrada já possui pedido de compra vinculado.")
+        if pedido.status != StatusPedidoCompra.ENVIADO:
+            raise ValidationError("Somente pedidos enviados ao fornecedor podem ser vinculados.")
+        if EntradaCompra.objects.filter(pedido_origem=pedido).exists():
+            raise ValidationError("Este pedido já possui uma entrada de compra vinculada.")
+        if pedido.fornecedor_id != entrada.fornecedor_id or pedido.filial_id != entrada.filial_id:
+            raise ValidationError("O pedido deve ter o mesmo fornecedor e a mesma filial da NF-e.")
+
+        entrada.pedido_origem = pedido
+        avaliar_conferencia_entrada(entrada)
+        entrada.save(update_fields=["pedido_origem", "conferencia_status", "conferencia_resumo", "updated_at"])
+        pedido.status = StatusPedidoCompra.CONVERTIDO
+        pedido.save(update_fields=["status", "updated_at"])
+        LogAuditoria.objects.create(
+            usuario=usuario,
+            modulo="compras",
+            acao="VINCULO_MANUAL_XML_PEDIDO",
+            descricao=(
+                f"NF-e da entrada {entrada.id} vinculada manualmente ao pedido {pedido.id}. "
+                f"Conferência: {entrada.get_conferencia_status_display()}. "
+                f"Justificativa: {justificativa}. Autorizado por: {supervisor}."
+            ),
+            objeto_tipo="EntradaCompra",
+            objeto_id=str(entrada.id),
+            ip=ip,
+        )
+        return entrada
+
 def finalizar_entrada_compra(entrada, *, supervisor=None, ip=None):
+    entrada = EntradaCompra.objects.select_related("fornecedor", "filial__empresa").get(pk=entrada.pk)
     if entrada.fornecedor.empresa_id and entrada.fornecedor.empresa_id != entrada.filial.empresa_id:
         raise ValidationError("Fornecedor informado pertence a outra empresa.")
     if entrada.status != StatusEntradaCompra.RASCUNHO:
         raise ValidationError("Apenas entradas em rascunho podem ser finalizadas.")
+    if (
+        entrada.pedido_origem_id
+        and entrada.conferencia_status == StatusConferenciaEntrada.DIVERGENTE
+        and entrada.filial.empresa.bloquear_finalizacao_entrada_divergente
+        and not entrada.conferencia_fisica_em
+    ):
+        raise ValidationError(
+            "A entrada possui divergências. Registre a conferência física antes de finalizar ou ajuste a política da empresa."
+        )
 
     itens = list(entrada.itens.select_related("produto"))
     if not itens:
@@ -296,7 +461,8 @@ def finalizar_entrada_compra(entrada, *, supervisor=None, ip=None):
 
 
 def cancelar_entrada_compra(entrada, *, usuario, motivo, supervisor=None, ip=None):
-    motivo = (motivo or "").strip()
+    entrada = EntradaCompra.objects.get(pk=entrada.pk)
+    motivo = (motivo or "" ).strip()
     if not motivo:
         raise ValidationError("Informe o motivo do cancelamento.")
     if entrada.status != StatusEntradaCompra.FINALIZADA:

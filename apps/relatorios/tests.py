@@ -171,7 +171,7 @@ class DashboardTests(TestCase):
         imprimir = self.client.get(f"/caixas/imprimir/?operador={operador_a.pk}")
 
         self.assertEqual(response.status_code, 200)
-        self.assertContains(response, "Resumo por operador/funcionario")
+        self.assertContains(response, "Resumo por operador/funcionário")
         self.assertContains(response, "caixa_maria")
         self.assertContains(response, "R$ 80,00")
         self.assertContains(response, "R$ 100,00")

@@ -1529,6 +1529,68 @@ class PdvTelaEscopoEmpresaTests(TestCase):
         self.assertIn(self.caixa, caixas.context["caixas"])
         self.assertNotIn(self.caixa_estrangeiro, caixas.context["caixas"])
 
+    def test_operador_lista_e_abre_somente_o_proprio_caixa(self):
+        self.client.force_login(self.operador)
+
+        lista = self.client.get("/pdv/caixas/")
+        detalhe_colega = self.client.get(f"/pdv/caixas/{self.caixa_colega.id}/")
+
+        self.assertIn(self.caixa, lista.context["caixas"])
+        self.assertNotIn(self.caixa_colega, lista.context["caixas"])
+        self.assertEqual(detalhe_colega.status_code, 404)
+
+    def test_supervisor_escolhe_filtra_e_imprime_caixa_da_empresa(self):
+        User = get_user_model()
+        admin = User.objects.create_user("admin_caixa_um", password="123")
+        PerfilUsuario.objects.create(usuario=admin, filial=self.filial, tipo=TipoPerfil.ADMINISTRADOR)
+        fechado = Caixa.objects.create(
+            filial=self.filial,
+            usuario_abertura=self.colega,
+            usuario_fechamento=self.colega,
+            valor_inicial=Decimal("80.00"),
+            valor_final=Decimal("90.00"),
+            status=StatusCaixa.FECHADO,
+        )
+        self.client.force_login(admin)
+
+        lista = self.client.get(
+            "/pdv/caixas/",
+            {"status": StatusCaixa.FECHADO, "operador": self.colega.id},
+        )
+        impressao = self.client.get(f"/pdv/caixas/{fechado.id}/imprimir/")
+        impressao_externa = self.client.get(f"/pdv/caixas/{self.caixa_estrangeiro.id}/imprimir/")
+
+        self.assertEqual(list(lista.context["caixas"]), [fechado])
+        self.assertContains(lista, f'/pdv/caixas/{fechado.id}/imprimir/')
+        self.assertEqual(impressao.status_code, 200)
+        self.assertContains(impressao, f"Conferência do caixa #{fechado.id}")
+        self.assertEqual(impressao_externa.status_code, 404)
+
+    def test_detalhe_do_caixa_pagina_vendas_e_movimentos(self):
+        for indice in range(30):
+            Venda.objects.create(
+                filial=self.filial,
+                caixa=self.caixa,
+                usuario=self.operador,
+                total_bruto=Decimal("1.00"),
+                total_liquido=Decimal("1.00"),
+                status=StatusVenda.FINALIZADA,
+            )
+        for indice in range(26):
+            Sangria.objects.create(
+                caixa=self.caixa,
+                usuario=self.operador,
+                valor=Decimal("1.00"),
+                motivo=f"Sangria {indice:02d}",
+            )
+        self.client.force_login(self.operador)
+
+        detalhe = self.client.get(f"/pdv/caixas/{self.caixa.id}/")
+
+        self.assertEqual(detalhe.context["vendas_pagina"].paginator.count, 31)
+        self.assertEqual(len(detalhe.context["vendas_pagina"]), 25)
+        self.assertEqual(detalhe.context["movimentos_pagina"].paginator.count, 26)
+        self.assertEqual(len(detalhe.context["movimentos_pagina"]), 25)
     def test_operador_nao_acessa_objetos_de_outra_empresa_por_id(self):
         self.client.force_login(self.operador)
         urls = [
