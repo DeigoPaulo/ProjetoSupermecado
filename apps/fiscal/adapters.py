@@ -1,8 +1,15 @@
 from dataclasses import dataclass
+from inspect import signature
 
 from django.conf import settings
-from django.core.exceptions import ImproperlyConfigured
+from django.core.exceptions import ImproperlyConfigured, ObjectDoesNotExist
 from django.utils.module_loading import import_string
+
+
+PROVEDOR_ADAPTER_PATHS = {
+    "FOCUS": "apps.fiscal.focus_sefaz_adapter.FocusNFeSefazAdapter",
+    "SEFAZ_DIRETA_GO": "apps.fiscal.sefaz_direta.SefazDiretaAdapter",
+}
 
 
 class SefazAdapterError(Exception):
@@ -42,8 +49,33 @@ class SefazQueryResult:
     xml_autorizado: str = ""
 
 
-def carregar_adaptador_sefaz():
-    adapter_path = getattr(settings, "FISCAL_SEFAZ_ADAPTER", "").strip()
+def caminho_adaptador_sefaz(*, filial=None):
+    if filial is not None:
+        try:
+            configuracao = filial.configuracao_fiscal
+        except ObjectDoesNotExist:
+            configuracao = None
+        if configuracao is not None:
+            selecao = str(
+                getattr(configuracao, "provedor_emissao", "PADRAO_SERVIDOR")
+                or "PADRAO_SERVIDOR"
+            )
+            if selecao == "DESATIVADO":
+                return ""
+            if selecao in PROVEDOR_ADAPTER_PATHS:
+                if (
+                    selecao == "SEFAZ_DIRETA_GO"
+                    and str(getattr(filial, "uf", "") or "").upper() != "GO"
+                ):
+                    raise ImproperlyConfigured(
+                        "A conexão direta SEFAZ está disponível somente para filiais de Goiás."
+                    )
+                return PROVEDOR_ADAPTER_PATHS[selecao]
+    return getattr(settings, "FISCAL_SEFAZ_ADAPTER", "").strip()
+
+
+def carregar_adaptador_sefaz(*, filial=None):
+    adapter_path = caminho_adaptador_sefaz(filial=filial)
     if not adapter_path:
         raise ImproperlyConfigured("Nenhum adaptador SEFAZ oficial foi configurado.")
     try:
@@ -56,8 +88,78 @@ def carregar_adaptador_sefaz():
     return adapter
 
 
-def diagnosticar_adaptador_sefaz():
-    adapter_path = getattr(settings, "FISCAL_SEFAZ_ADAPTER", "").strip()
+def _diagnosticar_configuracao_operacional(adapter=None, *, filial=None):
+    resultado = {
+        "diagnostico_disponivel": False,
+        "pronto": False,
+        "provedor": "",
+        "ambiente": "",
+        "credenciais_configuradas": None,
+        "rede_habilitada": None,
+        "producao_habilitada": None,
+        "mensagem": "O adaptador não expõe diagnóstico operacional seguro.",
+    }
+    if adapter is None:
+        return resultado
+    diagnosticar = getattr(adapter, "diagnosticar", None)
+    if not callable(diagnosticar):
+        return resultado
+    resultado["diagnostico_disponivel"] = True
+    resultado["provedor"] = str(
+        getattr(adapter, "nome", adapter.__class__.__name__) or ""
+    )[:120]
+    try:
+        parametros = signature(diagnosticar).parameters
+        detalhes = (
+            diagnosticar(filial=filial)
+            if filial is not None and "filial" in parametros
+            else diagnosticar()
+        ) or {}
+    except Exception:
+        resultado["mensagem"] = "O diagnóstico operacional do adaptador falhou."
+        return resultado
+    if not isinstance(detalhes, dict):
+        resultado["mensagem"] = "O adaptador retornou diagnóstico operacional inválido."
+        return resultado
+    resultado["pronto"] = bool(detalhes.get("pronto", False))
+    resultado["provedor"] = str(
+        detalhes.get("provedor") or resultado["provedor"]
+    )[:120]
+    resultado["ambiente"] = str(detalhes.get("ambiente") or "")[:40]
+    for destino, origem in (
+        ("credenciais_configuradas", "token_configurado"),
+        ("rede_habilitada", "rede_habilitada"),
+        ("producao_habilitada", "producao_habilitada"),
+    ):
+        if isinstance(detalhes.get(origem), bool):
+            resultado[destino] = detalhes[origem]
+    if resultado["pronto"]:
+        resultado["mensagem"] = "Configuração operacional declarada pronta pelo adaptador."
+    elif resultado["credenciais_configuradas"] is False:
+        resultado["mensagem"] = "Credenciais do provedor não estão configuradas."
+    elif resultado["rede_habilitada"] is False:
+        resultado["mensagem"] = "A rede do adaptador permanece bloqueada."
+    else:
+        resultado["mensagem"] = "Configuração operacional incompleta."
+    return resultado
+
+
+def diagnosticar_adaptador_sefaz(*, filial=None):
+    try:
+        adapter_path = caminho_adaptador_sefaz(filial=filial)
+    except ImproperlyConfigured as exc:
+        return {
+            "configurado": True,
+            "carregavel": False,
+            "assina_xml": False,
+            "valida_schema": False,
+            "cancela_documento": False,
+            "inutiliza_numeracao": False,
+            "consulta_documento": False,
+            "adaptador": "",
+            "erro": str(exc),
+            "configuracao_operacional": _diagnosticar_configuracao_operacional(),
+        }
     if not adapter_path:
         return {
             "configurado": False,
@@ -69,9 +171,10 @@ def diagnosticar_adaptador_sefaz():
             "consulta_documento": False,
             "adaptador": "",
             "erro": "",
+            "configuracao_operacional": _diagnosticar_configuracao_operacional(),
         }
     try:
-        adapter = carregar_adaptador_sefaz()
+        adapter = carregar_adaptador_sefaz(filial=filial)
     except ImproperlyConfigured as exc:
         return {
             "configurado": True,
@@ -83,6 +186,7 @@ def diagnosticar_adaptador_sefaz():
             "consulta_documento": False,
             "adaptador": adapter_path,
             "erro": str(exc),
+            "configuracao_operacional": _diagnosticar_configuracao_operacional(),
         }
     assina_xml = bool(getattr(adapter, "assina_xml", False))
     valida_schema = bool(getattr(adapter, "valida_schema", False))
@@ -99,6 +203,9 @@ def diagnosticar_adaptador_sefaz():
         "consulta_documento": consulta_documento,
         "adaptador": adapter_path,
         "erro": "" if assina_xml else "O adaptador não declarou capacidade de assinatura XML.",
+        "configuracao_operacional": _diagnosticar_configuracao_operacional(
+            adapter, filial=filial
+        ),
     }
 
 def diagnosticar_contrato_adaptador_sefaz():
@@ -130,6 +237,7 @@ def diagnosticar_contrato_adaptador_sefaz():
         "configurado": diagnostico["configurado"],
         "carregavel": diagnostico["carregavel"],
         "requisitos": requisitos,
+        "configuracao_operacional": diagnostico["configuracao_operacional"],
         "pendencias": pendencias,
     }
 def normalizar_retorno_transmissao(retorno):

@@ -6,6 +6,7 @@ from django.db import models
 from django.contrib.auth.hashers import check_password, make_password
 
 from apps.vendas.models import TipoDocumentoConsumidor
+from apps.clientes.models import IndicadorInscricaoEstadual
 
 
 class CanalPedido(models.TextChoices):
@@ -138,6 +139,22 @@ class PedidoOnline(models.Model):
     canal = models.CharField(max_length=20, choices=CanalPedido.choices, default=CanalPedido.LOJA_ONLINE)
     tipo_entrega = models.CharField(max_length=20, choices=TipoEntrega.choices, default=TipoEntrega.RETIRADA)
     endereco_entrega = models.TextField(blank=True)
+    destinatario_indicador_ie = models.CharField(
+        "Indicador de IE",
+        max_length=1,
+        choices=IndicadorInscricaoEstadual.choices,
+        blank=True,
+        default="",
+    )
+    destinatario_inscricao_estadual = models.CharField("Inscrição estadual", max_length=20, blank=True)
+    destinatario_logradouro = models.CharField("Logradouro fiscal", max_length=120, blank=True)
+    destinatario_numero = models.CharField("Número fiscal", max_length=60, blank=True)
+    destinatario_complemento = models.CharField("Complemento fiscal", max_length=60, blank=True)
+    destinatario_bairro = models.CharField("Bairro fiscal", max_length=60, blank=True)
+    destinatario_codigo_municipio_ibge = models.CharField("Código IBGE do município", max_length=7, blank=True)
+    destinatario_municipio = models.CharField("Município fiscal", max_length=60, blank=True)
+    destinatario_uf = models.CharField("UF fiscal", max_length=2, blank=True)
+    destinatario_cep = models.CharField("CEP fiscal", max_length=9, blank=True)
     bairro_entrega = models.CharField(max_length=120, blank=True)
     distancia_entrega_km = models.DecimalField(max_digits=7, decimal_places=2, null=True, blank=True)
     regra_entrega_aplicada = models.CharField(max_length=180, blank=True)
@@ -171,8 +188,65 @@ class PedidoOnline(models.Model):
             raise ValidationError({"cliente": "Cliente informado pertence a outra empresa."})
         if self.tipo_entrega == TipoEntrega.ENTREGA and not self.endereco_entrega.strip():
             raise ValidationError({"endereco_entrega": "Informe o endereço para pedidos com entrega."})
+        if (
+            self.destinatario_indicador_ie == IndicadorInscricaoEstadual.CONTRIBUINTE
+            and not self.destinatario_inscricao_estadual.strip()
+        ):
+            raise ValidationError(
+                {"destinatario_inscricao_estadual": "Informe a inscrição estadual do contribuinte."}
+            )
+        if (
+            self.destinatario_indicador_ie != IndicadorInscricaoEstadual.CONTRIBUINTE
+            and self.destinatario_inscricao_estadual.strip()
+        ):
+            raise ValidationError(
+                {"destinatario_inscricao_estadual": "A IE só deve ser informada para contribuinte."}
+            )
+        if (
+            self.destinatario_codigo_municipio_ibge
+            and not self.destinatario_codigo_municipio_ibge.isdigit()
+        ) or (
+            self.destinatario_codigo_municipio_ibge
+            and len(self.destinatario_codigo_municipio_ibge) != 7
+        ):
+            raise ValidationError(
+                {"destinatario_codigo_municipio_ibge": "Informe o código IBGE com 7 dígitos."}
+            )
+        if self.destinatario_uf and len(self.destinatario_uf.strip()) != 2:
+            raise ValidationError({"destinatario_uf": "Informe a UF com 2 letras."})
+        cep = "".join(caractere for caractere in self.destinatario_cep if caractere.isdigit())
+        if self.destinatario_cep and len(cep) != 8:
+            raise ValidationError({"destinatario_cep": "Informe o CEP com 8 dígitos."})
         if self.desconto < 0 or self.taxa_entrega < 0:
             raise ValidationError("Desconto e taxa de entrega não podem ser negativos.")
+
+    def preencher_destinatario_do_cliente(self):
+        if not self.cliente_id:
+            return
+        cliente = self.cliente
+        campos = {
+            "nome_cliente": "nome",
+            "documento_cliente": "cpf_cnpj",
+            "destinatario_indicador_ie": "indicador_ie",
+            "destinatario_inscricao_estadual": "inscricao_estadual",
+            "destinatario_logradouro": "logradouro",
+            "destinatario_numero": "numero",
+            "destinatario_complemento": "complemento",
+            "destinatario_bairro": "bairro",
+            "destinatario_codigo_municipio_ibge": "codigo_municipio_ibge",
+            "destinatario_municipio": "municipio",
+            "destinatario_uf": "uf",
+            "destinatario_cep": "cep",
+        }
+        for destino, origem in campos.items():
+            if not str(getattr(self, destino, "") or "").strip():
+                setattr(self, destino, getattr(cliente, origem, "") or "")
+        documento = "".join(caractere for caractere in self.documento_cliente if caractere.isdigit())
+        if self.documento_cliente_tipo == TipoDocumentoConsumidor.NAO_IDENTIFICADO:
+            if len(documento) == 11:
+                self.documento_cliente_tipo = TipoDocumentoConsumidor.CPF
+            elif len(documento) == 14:
+                self.documento_cliente_tipo = TipoDocumentoConsumidor.CNPJ
 
     def recalcular(self):
         self.subtotal = sum((item.total for item in self.itens.all()), Decimal("0.00"))

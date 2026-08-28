@@ -26,6 +26,7 @@ param(
     [string]$AdminDesktopPath = "artifacts\DeTecAdmin.exe",
     [string]$AdminDesktopManifestPath = "artifacts\DeTecAdmin.exe.version.json",
     [string]$OutputDirectory = "dist\detech_server_offline",
+    [string]$PythonPath = ".venv\Scripts\python.exe",
     [switch]$Force
 )
 
@@ -49,12 +50,27 @@ function Assert-DesktopArtifact([string]$ArtifactPath, [string]$ManifestPath, [s
     if (-not ([string]$metadata.version).Trim()) { throw "Manifesto sem versao para $Label." }
 }
 
+function Get-Sha256([string]$Path) {
+    $stream = [IO.File]::OpenRead($Path)
+    try {
+        $sha = [Security.Cryptography.SHA256]::Create()
+        try {
+            return ([BitConverter]::ToString($sha.ComputeHash($stream))).Replace("-", "")
+        } finally {
+            $sha.Dispose()
+        }
+    } finally {
+        $stream.Dispose()
+    }
+}
+
 function Assert-Hash([string]$Path, [string]$Expected, [string]$Label) {
-    $actual = (Get-FileHash -LiteralPath $Path -Algorithm SHA256).Hash
+    $actual = Get-Sha256 $Path
     if ($actual -ne $Expected.ToUpperInvariant()) { throw "SHA-256 invalido para $Label." }
     return $actual
 }
 
+$validationPython = Resolve-RequiredFile $PythonPath "Python de validacao"
 $serverPackage = Resolve-RequiredFile $ServerPackagePath "Pacote do servidor"
 $pythonRuntime = Resolve-RequiredFile $PythonRuntimePath "Runtime Python"
 $postgresInstaller = Resolve-RequiredFile $PostgreSqlInstallerPath "Instalador PostgreSQL"
@@ -82,6 +98,8 @@ if ((Test-Path -LiteralPath $archive) -and -not $Force) { throw "Pacote ja exist
 
 $stage = Join-Path $env:TEMP "detech-server-package-$([Guid]::NewGuid().ToString('N'))"
 $payload = Join-Path $stage "payload"
+$archiveTemp = $null
+$checksumTemp = $null
 New-Item -ItemType Directory -Path $payload -Force | Out-Null
 try {
     $wheelhouseArchive = Join-Path $stage "wheelhouse.zip"
@@ -107,9 +125,10 @@ try {
             caminho = if ($file.tipo -eq "launcher") { "Instalar DeTec Server.exe" } else { "payload/$($file.destino)" }
             nome_origem = [IO.Path]::GetFileName($file.origem)
             tamanho_bytes = (Get-Item -LiteralPath $destination).Length
-            sha256 = (Get-FileHash -LiteralPath $destination -Algorithm SHA256).Hash
+            sha256 = Get-Sha256 $destination
         }
     }
+    Remove-Item -LiteralPath $wheelhouseArchive -Force
     Copy-Item -LiteralPath (Join-Path $Root "scripts\install_detech_server_bundle.ps1") -Destination (Join-Path $stage "Install-DeTecServer.ps1")
     $manifest = [ordered]@{
         contrato = "detech_server_offline_bundle_v1"
@@ -121,12 +140,31 @@ try {
         observacao = "Pacote sem banco, arquivos de clientes, .env ou certificados fiscais. Inclui os apps desktop validados para publicacao local."
     }
     [IO.File]::WriteAllText((Join-Path $stage "bundle.manifest.json"), ($manifest | ConvertTo-Json -Depth 5), [Text.UTF8Encoding]::new($false))
-    if (Test-Path -LiteralPath $archive) { Remove-Item -LiteralPath $archive -Force }
-    Compress-Archive -Path (Join-Path $stage "*") -DestinationPath $archive -CompressionLevel Optimal
-    $hash = (Get-FileHash -LiteralPath $archive -Algorithm SHA256).Hash
-    [IO.File]::WriteAllText("$archive.sha256", "$hash  $([IO.Path]::GetFileName($archive))`n", [Text.UTF8Encoding]::new($false))
-    Write-Host "Pacote offline gerado: $archive"
+    $archiveTemp = "$archive.tmp.zip"
+    Remove-Item -LiteralPath $archiveTemp -Force -ErrorAction SilentlyContinue
+    Compress-Archive -Path (Join-Path $stage "*") -DestinationPath $archiveTemp -CompressionLevel Optimal
+    $validationCode = "import json,sys; from pathlib import Path; from apps.configuracoes.offline_bundle import validar_pacote_servidor_offline; r=validar_pacote_servidor_offline(Path(sys.argv[1]), sys.argv[2]); print(json.dumps({k:v for k,v in r.items() if k != 'caminho'}, ensure_ascii=False, default=str)); sys.exit(0 if r['publicavel'] else 2)"
+    $validationJson = & $validationPython -c $validationCode $archiveTemp $Version
+    if ($LASTEXITCODE -ne 0) {
+        Remove-Item -LiteralPath $archiveTemp -Force -ErrorAction SilentlyContinue
+        throw "Pacote offline recusado pelo contrato de validacao: $validationJson"
+    }
+    $validation = $validationJson | ConvertFrom-Json
+    if ($validation.contrato -ne "detech_server_offline_package_validation_v2" -or $validation.publicavel -ne $true) {
+        Remove-Item -LiteralPath $archiveTemp -Force -ErrorAction SilentlyContinue
+        throw "Resultado inesperado da validacao do pacote offline."
+    }
+    $hash = Get-Sha256 $archiveTemp
+    $checksum = "$archive.sha256"
+    $checksumTemp = "$checksum.tmp"
+    [IO.File]::WriteAllText($checksumTemp, "$hash  $([IO.Path]::GetFileName($archive))`n", [Text.UTF8Encoding]::new($false))
+    Move-Item -LiteralPath $archiveTemp -Destination $archive -Force
+    Move-Item -LiteralPath $checksumTemp -Destination $checksum -Force
+    Write-Host "Pacote offline validado e gerado: $archive"
+    Write-Host "Contrato: $($validation.contrato)"
     Write-Host "SHA-256: $hash"
 } finally {
+    if ($archiveTemp) { Remove-Item -LiteralPath $archiveTemp -Force -ErrorAction SilentlyContinue }
+    if ($checksumTemp) { Remove-Item -LiteralPath $checksumTemp -Force -ErrorAction SilentlyContinue }
     Remove-Item -LiteralPath $stage -Recurse -Force -ErrorAction SilentlyContinue
 }

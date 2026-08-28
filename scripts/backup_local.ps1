@@ -5,6 +5,10 @@ param(
     [switch]$IncluirLogs,
     [string]$SenhaCriptografia = $env:BACKUP_ENCRYPTION_PASSPHRASE,
     [switch]$RemoverOriginalCriptografado,
+    [string]$DestinoSecundario = $env:LOCAL_BACKUP_SECONDARY_DIR,
+    [ValidateRange(1, 3650)]
+    [int]$RetencaoSecundariaDias = 90,
+    [switch]$ConfirmarDestinoSecundario,
     [string]$ServiceDirectory = "$env:ProgramData\DeigoVarejo\ServidorLocal",
     [string]$PgDumpPath = "",
     [switch]$ValidarSomente
@@ -14,10 +18,35 @@ $ErrorActionPreference = "Stop"
 $Root = (Resolve-Path (Join-Path $PSScriptRoot "..")).Path
 $Python = Join-Path $Root ".venv\Scripts\python.exe"
 $Manage = Join-Path $Root "manage.py"
+$EvidenceCommand = Join-Path $Root "apps\fiscal\management\commands\verificar_integridade_evidencias_fiscais.py"
 if (-not $Destino.Trim()) {
     $Destino = if ($env:LOCAL_BACKUP_DIR) { $env:LOCAL_BACKUP_DIR } else { Join-Path $env:ProgramData "DeigoVarejo\Backups" }
 }
 $DestinoPath = if ([IO.Path]::IsPathRooted($Destino)) { [IO.Path]::GetFullPath($Destino) } else { [IO.Path]::GetFullPath((Join-Path $Root $Destino)) }
+$EvidenceLatest = Join-Path $DestinoPath "fiscal-evidence-anchor-latest.json"
+$SecondaryConfirmedByEnvironment = [string]$env:LOCAL_BACKUP_SECONDARY_CONFIRMED -match "^(?i:1|true|yes|sim)$"
+$SecondaryConfirmed = [bool]($ConfirmarDestinoSecundario -or $SecondaryConfirmedByEnvironment)
+$DestinoSecundarioPath = ""
+if ($DestinoSecundario.Trim()) {
+    $DestinoSecundarioPath = if ([IO.Path]::IsPathRooted($DestinoSecundario)) { [IO.Path]::GetFullPath($DestinoSecundario) } else { [IO.Path]::GetFullPath((Join-Path $Root $DestinoSecundario)) }
+    $PrimaryNormalized = $DestinoPath.TrimEnd([IO.Path]::DirectorySeparatorChar, [IO.Path]::AltDirectorySeparatorChar)
+    $SecondaryNormalized = $DestinoSecundarioPath.TrimEnd([IO.Path]::DirectorySeparatorChar, [IO.Path]::AltDirectorySeparatorChar)
+    $PrimaryPrefix = $PrimaryNormalized + [IO.Path]::DirectorySeparatorChar
+    $SecondaryPrefix = $SecondaryNormalized + [IO.Path]::DirectorySeparatorChar
+    if (
+        $PrimaryNormalized.Equals($SecondaryNormalized, [StringComparison]::OrdinalIgnoreCase) -or
+        $SecondaryNormalized.StartsWith($PrimaryPrefix, [StringComparison]::OrdinalIgnoreCase) -or
+        $PrimaryNormalized.StartsWith($SecondaryPrefix, [StringComparison]::OrdinalIgnoreCase)
+    ) {
+        throw "O destino secundario deve ser separado da pasta principal de backup."
+    }
+    if (-not $SecondaryConfirmed) {
+        throw "Confirme explicitamente que o destino secundario pertence a NAS, rede ou disco externo."
+    }
+    if (-not $SenhaCriptografia) {
+        throw "A copia secundaria exige BACKUP_ENCRYPTION_PASSPHRASE; arquivos abertos nao sao enviados ao destino externo."
+    }
+}
 
 $ServiceEnvironmentLoaded = $false
 $ServiceXml = Join-Path $ServiceDirectory "DeigoVarejoServidorLocal.xml"
@@ -36,7 +65,7 @@ if (Test-Path -LiteralPath $ServiceXml -PathType Leaf) {
         throw "Configuracao do servico local invalida em $ServiceXml`: $($_.Exception.Message)"
     }
 }
-foreach ($required in @($Python, $Manage)) {
+foreach ($required in @($Python, $Manage, $EvidenceCommand)) {
     if (-not (Test-Path -LiteralPath $required -PathType Leaf)) {
         throw "Arquivo obrigatorio nao encontrado: $required"
     }
@@ -86,9 +115,37 @@ $Sources = [ordered]@{
     logs_encontrados = [bool]($Logs -and (Test-Path -LiteralPath $Logs -PathType Container))
     destino = $DestinoPath
     criptografia_configurada = [bool]$SenhaCriptografia
+    copia_secundaria_configurada = [bool]$DestinoSecundarioPath
+    copia_secundaria_destino = $DestinoSecundarioPath
+    copia_secundaria_confirmada_externa = $SecondaryConfirmed
+    copia_secundaria_somente_criptografada = $true
+    copia_secundaria_retencao_dias = $RetencaoSecundariaDias
     configuracao_origem = if ($ServiceEnvironmentLoaded) { "winsw_service_xml" } else { "processo_ou_env_local" }
     servico_xml = $ServiceXml
+    evidencia_fiscal_comando = $EvidenceCommand
+    evidencia_fiscal_comando_encontrado = [bool](Test-Path -LiteralPath $EvidenceCommand -PathType Leaf)
+    evidencia_fiscal_ancora_externa = $EvidenceLatest
+    evidencia_fiscal_ancora_externa_encontrada = [bool](Test-Path -LiteralPath $EvidenceLatest -PathType Leaf)
 }
+$EvidenceValidationArgs = @("verificar_integridade_evidencias_fiscais", "--estrito", "--registrar-alerta", "--origem", "backup")
+if (Test-Path -LiteralPath $EvidenceLatest -PathType Leaf) {
+    $EvidenceValidationArgs += @("--comparar-arquivo", $EvidenceLatest)
+}
+$EvidenceValidationOutput = & $Python $Manage @EvidenceValidationArgs
+if ($LASTEXITCODE -ne 0 -or -not $EvidenceValidationOutput) {
+    throw "A cadeia de evidencias fiscais possui divergencia ou nao pode ser verificada."
+}
+try {
+    $EvidenceValidation = $EvidenceValidationOutput | ConvertFrom-Json
+} catch {
+    throw "O verificador de evidencias fiscais nao retornou JSON valido."
+}
+if ($EvidenceValidation.contrato -ne "fiscal_evidence_anchor_v1" -or -not $EvidenceValidation.integra) {
+    throw "O contrato de integridade das evidencias fiscais e invalido ou divergente."
+}
+$Sources.evidencias_fiscais_integras = $true
+$Sources.evidencias_fiscais_total = [int]$EvidenceValidation.total_evidencias
+$Sources.evidencias_fiscais_documentos = [int]$EvidenceValidation.total_documentos
 if ($ValidarSomente) {
     $Sources | ConvertTo-Json -Depth 4
     exit 0
@@ -149,7 +206,101 @@ function Protect-BackupFile {
     }
 }
 
+function Copy-VerifiedEncryptedBackup {
+    param(
+        [Parameter(Mandatory=$true)][string]$SourceFile,
+        [Parameter(Mandatory=$true)][string]$DestinationDirectory,
+        [Parameter(Mandatory=$true)][string]$ExpectedHash
+    )
+    New-Item -ItemType Directory -Force -Path $DestinationDirectory | Out-Null
+    $FileName = [IO.Path]::GetFileName($SourceFile)
+    $FinalFile = Join-Path $DestinationDirectory $FileName
+    $FinalHashFile = "$FinalFile.sha256"
+    if (Test-Path -LiteralPath $FinalFile -PathType Leaf) {
+        throw "O arquivo secundario ja existe e nao sera sobrescrito: $FinalFile"
+    }
+    $Token = [Guid]::NewGuid().ToString("N")
+    $PartialFile = Join-Path $DestinationDirectory ".$FileName.$Token.partial"
+    $PartialHashFile = "$PartialFile.sha256"
+    $Promoted = $false
+    $FinalFileMoved = $false
+    $FinalHashMoved = $false
+    try {
+        Copy-Item -LiteralPath $SourceFile -Destination $PartialFile
+        $CopiedHash = (Get-FileHash -LiteralPath $PartialFile -Algorithm SHA256).Hash
+        if (-not $CopiedHash.Equals($ExpectedHash, [StringComparison]::OrdinalIgnoreCase)) {
+            throw "A copia secundaria falhou na verificacao SHA-256."
+        }
+        [IO.File]::WriteAllText(
+            $PartialHashFile,
+            "$CopiedHash  $FileName`n",
+            [Text.Encoding]::ASCII
+        )
+        Move-Item -LiteralPath $PartialFile -Destination $FinalFile
+        $FinalFileMoved = $true
+        Move-Item -LiteralPath $PartialHashFile -Destination $FinalHashFile
+        $FinalHashMoved = $true
+        $Promoted = $true
+        return [pscustomobject]@{
+            arquivo = $FinalFile
+            sha256 = $CopiedHash
+            checksum = $FinalHashFile
+        }
+    } finally {
+        foreach ($TemporaryFile in @($PartialFile, $PartialHashFile)) {
+            if (Test-Path -LiteralPath $TemporaryFile -PathType Leaf) {
+                Remove-Item -LiteralPath $TemporaryFile -Force
+            }
+        }
+        if (-not $Promoted) {
+            if ($FinalFileMoved -and (Test-Path -LiteralPath $FinalFile -PathType Leaf)) {
+                Remove-Item -LiteralPath $FinalFile -Force
+            }
+            if ($FinalHashMoved -and (Test-Path -LiteralPath $FinalHashFile -PathType Leaf)) {
+                Remove-Item -LiteralPath $FinalHashFile -Force
+            }
+        }
+    }
+}
+
+$SecondaryCopy = $null
+$BackupExecutionId = [Guid]::NewGuid().ToString("N")
+$BackupStage = "integridade_fiscal"
+$BackupHashValidated = $false
+function Register-BackupOperationalResult {
+    param(
+        [Parameter(Mandatory=$true)][ValidateSet("sucesso", "falha")][string]$Status,
+        [Parameter(Mandatory=$true)][string]$Stage,
+        [string]$FailureCode = "erro_operacional"
+    )
+    $HistoryArgs = @(
+        "registrar_resultado_backup_operacional",
+        "--execucao-id", $BackupExecutionId,
+        "--status", $Status,
+        "--etapa", $Stage,
+        "--codigo-falha", $FailureCode
+    )
+    if ($SenhaCriptografia) { $HistoryArgs += "--criptografado" }
+    if ($DestinoSecundarioPath) { $HistoryArgs += "--copia-secundaria" }
+    if ($BackupHashValidated) { $HistoryArgs += "--hash-validado" }
+    try {
+        & $Python $Manage @HistoryArgs 2>$null | Out-Null
+    } catch {
+        # O histórico é auxiliar e nunca deve esconder o resultado real do backup.
+    }
+}
+
 try {
+    try {
+        $EvidenceAnchor = Join-Path $Work "fiscal-evidence-anchor.json"
+    & $Python $Manage verificar_integridade_evidencias_fiscais --estrito --registrar-alerta --origem backup --arquivo $EvidenceLatest | Out-Null
+    if ($LASTEXITCODE -ne 0 -or -not (Test-Path -LiteralPath $EvidenceLatest -PathType Leaf)) {
+        throw "Falha ao validar ou promover a ancora externa das evidencias fiscais."
+    }
+    Copy-Item -LiteralPath $EvidenceLatest -Destination $EvidenceAnchor -Force
+    $EvidenceAnchorHash = (Get-FileHash -LiteralPath $EvidenceAnchor -Algorithm SHA256).Hash
+
+    $BackupStage = "geracao"
     & $Python $Manage dumpdata --exclude auth.permission --exclude contenttypes --indent 2 --output (Join-Path $Work "dados.json")
     if ($LASTEXITCODE -ne 0) { throw "Falha ao gerar o backup logico do Django." }
 
@@ -201,37 +352,100 @@ try {
         sqlite_snapshot_consistente = [bool]$Sources.sqlite_encontrado
         inclui_media = [bool]$Sources.media_encontrada
         inclui_logs = [bool]($IncluirLogs -and $Sources.logs_encontrados)
+        inclui_ancora_evidencias_fiscais = $true
+        evidencias_fiscais_contrato = "fiscal_evidence_anchor_v1"
+        evidencias_fiscais_arquivo = "fiscal-evidence-anchor.json"
+        evidencias_fiscais_sha256 = $EvidenceAnchorHash
         observacao = "Restaure primeiro em ambiente separado e valide o healthcheck antes de promover."
     }
     [IO.File]::WriteAllText((Join-Path $Work "manifesto.json"), ($Manifesto | ConvertTo-Json -Depth 6), [Text.UTF8Encoding]::new($false))
 
+    $EmptyArchiveDirectories = @()
+    foreach ($relativeDirectory in @("media", "logs")) {
+        $directoryPath = Join-Path $Work $relativeDirectory
+        if (
+            (Test-Path -LiteralPath $directoryPath -PathType Container) -and
+            -not (Get-ChildItem -LiteralPath $directoryPath -Force | Select-Object -First 1)
+        ) {
+            $EmptyArchiveDirectories += "$relativeDirectory/"
+        }
+    }
     Compress-Archive -Path (Join-Path $Work "*") -DestinationPath $Zip -Force
+    if ($EmptyArchiveDirectories) {
+        $ArchiveUpdate = [IO.Compression.ZipFile]::Open($Zip, [IO.Compression.ZipArchiveMode]::Update)
+        try {
+            foreach ($entryName in $EmptyArchiveDirectories) {
+                if (-not $ArchiveUpdate.GetEntry($entryName)) {
+                    [void]$ArchiveUpdate.CreateEntry($entryName)
+                }
+            }
+        } finally {
+            $ArchiveUpdate.Dispose()
+        }
+    }
     $Hash = Get-FileHash -LiteralPath $Zip -Algorithm SHA256
     [IO.File]::WriteAllText($Sha, "$($Hash.Hash)  $([IO.Path]::GetFileName($Zip))`n", [Text.Encoding]::ASCII)
+    $BackupHashValidated = $true
 
     if ($SenhaCriptografia) {
+        $BackupStage = "criptografia"
         Protect-BackupFile -InputFile $Zip -OutputFile $Encrypted -Passphrase $SenhaCriptografia
         $EncryptedHash = Get-FileHash -LiteralPath $Encrypted -Algorithm SHA256
         [IO.File]::WriteAllText($EncryptedSha, "$($EncryptedHash.Hash)  $([IO.Path]::GetFileName($Encrypted))`n", [Text.Encoding]::ASCII)
+        $BackupHashValidated = $true
         if ($RemoverOriginalCriptografado) {
             Remove-Item -LiteralPath $Zip, $Sha -Force
         }
     }
-} finally {
-    if (Test-Path -LiteralPath $Work) {
-        Remove-Item -LiteralPath $Work -Recurse -Force
+    if ($DestinoSecundarioPath) {
+        $BackupStage = "copia_secundaria"
+        if (-not $SenhaCriptografia -or -not (Test-Path -LiteralPath $Encrypted -PathType Leaf)) {
+            throw "A copia secundaria exige um pacote criptografado valido."
+        }
+        $SecondaryCopy = Copy-VerifiedEncryptedBackup `
+            -SourceFile $Encrypted `
+            -DestinationDirectory $DestinoSecundarioPath `
+            -ExpectedHash $EncryptedHash.Hash
     }
-}
+    } finally {
+        if (Test-Path -LiteralPath $Work) {
+            Remove-Item -LiteralPath $Work -Recurse -Force
+        }
+    }
 
-Get-ChildItem -LiteralPath $DestinoPath -File -Filter "supermercado-local-*.zip*" |
+    $BackupStage = "retencao"
+    Get-ChildItem -LiteralPath $DestinoPath -File -Filter "supermercado-local-*.zip*" |
     Where-Object { $_.LastWriteTime -lt (Get-Date).AddDays(-$RetencaoDias) } |
     ForEach-Object { Remove-Item -LiteralPath $_.FullName -Force }
+    if ($DestinoSecundarioPath -and (Test-Path -LiteralPath $DestinoSecundarioPath -PathType Container)) {
+        Get-ChildItem -LiteralPath $DestinoSecundarioPath -File -Filter "supermercado-local-*.zip.aes*" |
+            Where-Object { $_.LastWriteTime -lt (Get-Date).AddDays(-$RetencaoSecundariaDias) } |
+            ForEach-Object { Remove-Item -LiteralPath $_.FullName -Force }
+    }
+} catch {
+    $FailureCode = switch ($BackupStage) {
+        "integridade_fiscal" { "integridade_fiscal" }
+        "geracao" { "geracao_pacote" }
+        "criptografia" { "criptografia" }
+        "copia_secundaria" { "copia_secundaria" }
+        "retencao" { "retencao" }
+        default { "erro_operacional" }
+    }
+    Register-BackupOperationalResult -Status "falha" -Stage $BackupStage -FailureCode $FailureCode
+    throw
+}
+$BackupStage = "concluido"
+Register-BackupOperationalResult -Status "sucesso" -Stage $BackupStage
 
 Write-Host "Backup concluido em: $DestinoPath"
 Write-Host "Contrato: erp_local_backup_v2"
 if ($SenhaCriptografia) {
     Write-Host "Arquivo criptografado: $Encrypted"
     Write-Host "SHA-256 criptografado: $($EncryptedHash.Hash)"
+    if ($SecondaryCopy) {
+        Write-Host "Copia secundaria verificada: $($SecondaryCopy.arquivo)"
+        Write-Host "SHA-256 secundario: $($SecondaryCopy.sha256)"
+    }
 } else {
     Write-Host "Arquivo: $Zip"
     Write-Host "SHA-256: $($Hash.Hash)"

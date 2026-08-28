@@ -13,6 +13,10 @@ from .adapter import (
     SefazDiretaHTTPError,
 )
 from .capacidades import matriz_capacidades, resumo_capacidades
+from .resiliencia import (
+    CircuitoSefazDiretaAberto,
+    ResilienciaSefazDireta,
+)
 from .manifestacao import (
     ENDPOINTS_MANIFESTACAO,
     SefazDiretaManifestacaoAdapter,
@@ -45,4 +49,5 @@ __all__ = [
     "SefazDiretaManifestacaoError", "CONDICAO_USO_CCE",
     "SefazDiretaCartaCorrecaoAdapter", "SefazDiretaCartaCorrecaoError",
     "SefazDiretaConsultaCadastroAdapter", "SefazDiretaConsultaCadastroError",
+    "CircuitoSefazDiretaAberto", "ResilienciaSefazDireta",
 ]

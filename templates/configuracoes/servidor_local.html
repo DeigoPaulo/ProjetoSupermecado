@@ -11,21 +11,33 @@
   <div class="actions">
     {% if request.user.is_superuser %}
       {% if payload.distribuicao.status == "disponivel" %}
-<a class="primary-button" href="{% url 'configuracoes:servidor_local_download' %}"><i class="fa-solid fa-download"></i> Baixar pacote técnico</a>
-        {% if payload.distribuicao_offline.status == "disponivel" %}
-          <a class="secondary-button" href="{% url 'configuracoes:servidor_local_offline_download' %}"><i class="fa-solid fa-box-archive"></i> Instalador offline</a>
-        {% else %}
-          <span class="secondary-button is-disabled" aria-disabled="true" title="Gere e publique o pacote offline validado."><i class="fa-solid fa-box-archive"></i> Instalador offline pendente</span>
-        {% endif %}
+        <a class="primary-button" href="{% url 'configuracoes:servidor_local_download' %}"><i class="fa-solid fa-download"></i> Baixar pacote técnico</a>
       {% else %}
-        <span class="secondary-button is-disabled" aria-disabled="true"><i class="fa-solid fa-clock"></i> Pacote ainda não publicado</span>
+        <span class="secondary-button is-disabled" aria-disabled="true"><i class="fa-solid fa-clock"></i> Pacote técnico pendente</span>
+      {% endif %}
+      {% if payload.distribuicao_offline.status == "disponivel" %}
+        <a class="secondary-button" href="{% url 'configuracoes:servidor_local_offline_download' %}"><i class="fa-solid fa-box-archive"></i> Instalador offline</a>
+      {% else %}
+        <span class="secondary-button is-disabled" aria-disabled="true" title="Gere e publique o pacote offline com seu checksum validado."><i class="fa-solid fa-box-archive"></i> Instalador offline pendente</span>
       {% endif %}
       <a class="secondary-button" href="{% url 'configuracoes:servidor_local_manifest' %}"><i class="fa-solid fa-code"></i> Manifesto JSON</a>
-      <a class="secondary-button" href="{% url 'configuracoes:servidor_local_evidencias' %}"><i class="fa-solid fa-file-shield"></i> Baixar evidências</a>
+      <a class="secondary-button" href="{% url 'configuracoes:servidor_local_evidencias' %}"><i class="fa-solid fa-file-shield"></i> Evidências com rede</a>
+      <a class="secondary-button" href="{% url 'configuracoes:servidor_local_evidencias' %}?modo=offline"><i class="fa-solid fa-file-shield"></i> Evidências offline</a>
     {% endif %}
     <a class="secondary-button" href="{% url 'empresas:lista' %}"><i class="fa-solid fa-building"></i> Empresas</a>
   </div>
 </header>
+{% if request.user.is_superuser %}
+<section class="operation-notice {% if payload.distribuicao_offline.publicacao_valida %}operation-notice-success{% else %}operation-notice-warning{% endif %}">
+  <i class="fa-solid fa-shield-halved"></i>
+  <div>
+    <strong>Publicação offline: {% if payload.distribuicao_offline.publicacao_valida %}íntegra{% else %}bloqueada{% endif %}</strong>
+    <span>{% if payload.distribuicao_offline.publicacao_valida %}ZIP e SHA-256 estão íntegros e vinculados ao mesmo arquivo.{% else %}O download permanece indisponível até o ZIP e seu SHA-256 passarem na validação.{% endif %}</span>
+    {% if payload.distribuicao_offline.problemas %}<span>{{ payload.distribuicao_offline.problemas|join:" " }}</span>{% endif %}
+  </div>
+</section>
+{% endif %}
+
 
 <section class="operation-notice">
   <i class="fa-solid fa-server"></i>

@@ -46,6 +46,17 @@
         </div>
       </section>
 
+      {% if form.provedor_emissao %}
+        <section class="form-section form-field-wide">
+          <h2>Canal técnico de emissão</h2>
+          <div class="form-note form-field-wide">
+            <strong>Configuração exclusiva do Master</strong>
+            <span>Escolha como esta filial se comunica para emitir documentos. Credenciais e travas permanecem protegidas no servidor.</span>
+          </div>
+          <label class="form-field form-field-wide"><span>{{ form.provedor_emissao.label }}</span>{{ form.provedor_emissao }}{{ form.provedor_emissao.errors }}<small>{{ form.provedor_emissao.help_text }}</small></label>
+        </section>
+      {% endif %}
+
       <section class="form-section form-field-wide">
         <h2>Transição tributária IBS/CBS</h2>
         <div class="form-note form-field-wide">

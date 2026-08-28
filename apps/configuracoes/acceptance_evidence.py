@@ -12,7 +12,7 @@ def gerar_evidencia_aceite(
     *,
     url=None,
     timeout=5,
-    idade_maxima_backup_horas=36,
+    idade_maxima_backup_horas=None,
     pos_implantacao=None,
 ):
     caminho_dossie = Path(caminho_dossie)

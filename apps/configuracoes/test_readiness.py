@@ -240,3 +240,80 @@ class ProntidaoHttpsTests(SimpleTestCase):
         self.assertFalse(diagnostico["pronto"])
         self.assertFalse(diagnostico["origens_csrf_https"])
         self.assertGreaterEqual(len(diagnostico["alertas"]), 6)
+
+
+class PoliticaMidiaOfflineTests(SimpleTestCase):
+    def _diagnostico(self, *, exigir, pronta):
+        local = {
+            "contrato": "local_admin_readiness_v1",
+            "pronto": True,
+            "bloqueios": [],
+            "recomendacoes": [],
+        }
+        midia = {
+            "contrato": "offline_installation_media_readiness_v1",
+            "pronto": pronta,
+            "alertas": [] if pronta else ["Publicação offline pendente."],
+        }
+        with patch(
+            "apps.configuracoes.readiness._diagnostico_seguranca_django",
+            return_value={"contrato": "django_deployment_security_v1", "pronto": True, "alertas": []},
+        ), patch(
+            "apps.configuracoes.readiness.diagnostico_prontidao_https",
+            return_value=_https(),
+        ), patch(
+            "apps.configuracoes.readiness.diagnostico_prontidao_banco_dados",
+            return_value=_banco(),
+        ), patch(
+            "apps.configuracoes.readiness.diagnostico_prontidao_recuperacao_senha",
+            return_value=_senha(),
+        ), patch(
+            "apps.configuracoes.readiness.diagnostico_prontidao_consulta_cadastro",
+            return_value=_consulta(),
+        ), patch(
+            "apps.configuracoes.readiness.diagnostico_prontidao_servidor_local",
+            return_value=local,
+        ), patch(
+            "apps.configuracoes.readiness.diagnostico_prontidao_midia_offline",
+            return_value=midia,
+        ):
+            return diagnostico_prontidao_implantacao(
+                perfil="servidor-local",
+                exigir_midia_offline=exigir,
+            )
+
+    def test_midia_ausente_e_recomendacao_quando_instalacao_tem_rede(self):
+        diagnostico = self._diagnostico(exigir=False, pronta=False)
+        verificacao = next(
+            item
+            for item in diagnostico["verificacoes"]
+            if item["id"] == "midia_instalacao_offline"
+        )
+
+        self.assertTrue(diagnostico["pronto"])
+        self.assertFalse(verificacao["obrigatoria"])
+        self.assertFalse(diagnostico["politica_instalacao"]["midia_offline_exigida"])
+        self.assertTrue(
+            any("midia_instalacao_offline" in item for item in diagnostico["recomendacoes"])
+        )
+
+    def test_midia_ausente_bloqueia_quando_instalacao_e_offline(self):
+        diagnostico = self._diagnostico(exigir=True, pronta=False)
+
+        self.assertFalse(diagnostico["pronto"])
+        self.assertTrue(diagnostico["politica_instalacao"]["midia_offline_exigida"])
+        self.assertTrue(
+            any("midia_instalacao_offline" in item for item in diagnostico["bloqueios"])
+        )
+
+    def test_midia_integra_libera_prontidao_offline(self):
+        diagnostico = self._diagnostico(exigir=True, pronta=True)
+
+        self.assertTrue(diagnostico["pronto"])
+        verificacao = next(
+            item
+            for item in diagnostico["verificacoes"]
+            if item["id"] == "midia_instalacao_offline"
+        )
+        self.assertTrue(verificacao["obrigatoria"])
+        self.assertTrue(verificacao["pronta"])

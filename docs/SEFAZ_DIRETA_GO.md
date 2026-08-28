@@ -8,23 +8,55 @@ Implementado significa que o ERP já sabe montar envelopes SOAP, usar o certific
 
 Nenhuma chamada real foi executada nesta etapa.
 
+## Seleção no sistema
+
+O Master pode selecionar **Conexão direta SEFAZ - Goiás** no campo **Canal técnico de emissão** da configuração fiscal de cada filial. O campo não é exibido para administradores ou gerentes. O backend também rejeita essa seleção quando a filial não pertence a Goiás.
+
+Essa escolha somente aponta o fluxo fiscal para o adaptador direto. Ela não habilita comunicação externa nem produção: SEFAZ_DIRETA_NETWORK_ENABLED e SEFAZ_DIRETA_ALLOW_PRODUCTION continuam independentes e desligadas por padrão. O valor global FISCAL_SEFAZ_ADAPTER permanece apenas como compatibilidade para filiais ainda marcadas como PADRAO_SERVIDOR.
+
 ## Proteções padrão
 
 ```env
 FISCAL_SEFAZ_ADAPTER=
 SEFAZ_DIRETA_NETWORK_ENABLED=False
 SEFAZ_DIRETA_ALLOW_PRODUCTION=False
+SEFAZ_DIRETA_SVC_ENABLED=False
 SEFAZ_DIRETA_TIMEOUT_SECONDS=30
+SEFAZ_DIRETA_MAX_ATTEMPTS=2
+SEFAZ_DIRETA_RETRY_BASE_MS=200
+SEFAZ_DIRETA_CIRCUIT_FAILURE_THRESHOLD=3
+SEFAZ_DIRETA_CIRCUIT_RESET_SECONDS=60
 SEFAZ_DIRETA_ENDPOINTS_JSON={}
 ```
 
-Há três travas independentes:
+Há quatro travas independentes:
 
-1. O adaptador só é carregado quando sua classe é escolhida em `FISCAL_SEFAZ_ADAPTER`.
-2. Mesmo selecionado, não abre conexão enquanto `SEFAZ_DIRETA_NETWORK_ENABLED=False`.
+1. O Master seleciona o canal técnico da filial; `FISCAL_SEFAZ_ADAPTER` é apenas o fallback das filiais em modo de compatibilidade.
+2. Mesmo selecionado, o adaptador não abre conexão enquanto `SEFAZ_DIRETA_NETWORK_ENABLED=False`.
 3. Produção continua bloqueada enquanto `SEFAZ_DIRETA_ALLOW_PRODUCTION=False`.
+4. A contingência NF-e SVC-RS continua separada e bloqueada enquanto `SEFAZ_DIRETA_SVC_ENABLED=False`.
 
 Não altere essas opções no servidor de produção antes da homologação documentada.
+
+## Contingência NF-e SVC-RS
+
+O Portal Nacional da NF-e lista Goiás entre as UFs atendidas pela SVC-RS. O ERP implementa esse caminho somente para NF-e modelo 55 da filial GO que já esteja no canal técnico direto. NFC-e offline continua sendo outro fluxo e não é roteada para a SVC.
+
+A preparação exige Master, documento pronto, ausência de consulta pendente e justificativa entre 15 e 256 caracteres. O sistema registra a decisão em auditoria, altera o documento para contingência, regenera a chave com `tpEmis=7`, inclui `dhCont` e `xJust`, invalida a assinatura anterior e mantém a nota como não autorizada até receber protocolo oficial.
+
+Autorização, consulta, status e evento passam a usar o catálogo separado da SVC-RS. A chave da nota preserva o roteamento mesmo depois da autorização. Inutilização não é desviada para a SVC. Se a feature flag estiver desligada, o adaptador falha antes de qualquer transporte.
+
+Na tela, somente o Master vê o painel SVC. O envio real só aparece quando feature flag, rede, certificado, schema e adaptador estiverem prontos. Em homologação, uma NF-e SVC não oferece o atalho de transmissão simulada.
+
+Referência oficial de UFs e serviços: https://www.nfe.fazenda.gov.br/portal/webServices.aspx
+
+## Resiliência do transporte
+
+O contrato `sefaz_direct_resilience_v1` protege o transporte SOAP contra indisponibilidade transitória. Somente `consulta`, `status` e `cadastro` podem repetir chamadas automaticamente, com limite e espera exponencial. Autorização, cancelamento e inutilização fazem uma única tentativa quando a resposta é incerta; a situação deve ser reconciliada posteriormente por consulta, evitando repetição cega de operação fiscal.
+
+Após falhas consecutivas, o circuito do host é aberto temporariamente. Encerrado o intervalo, apenas uma sonda controlada testa a recuperação. A telemetria é limitada a 200 eventos em memória e não armazena XML, chave de acesso, CNPJ, certificado, credencial ou mensagem de exceção. Reiniciar o processo limpa esse histórico operacional.
+
+Parâmetros: `SEFAZ_DIRETA_MAX_ATTEMPTS`, `SEFAZ_DIRETA_RETRY_BASE_MS`, `SEFAZ_DIRETA_CIRCUIT_FAILURE_THRESHOLD` e `SEFAZ_DIRETA_CIRCUIT_RESET_SECONDS`. Os valores padrão são conservadores e não alteram as travas de rede e produção.
 
 ## Escopo preparado
 

@@ -28,6 +28,8 @@
         <label class="form-field"><span>{{ form.cliente.label }}</span>{{ form.cliente }}{{ form.cliente.errors }}</label>
         <label class="form-field"><span>{{ form.nome_cliente.label }}</span>{{ form.nome_cliente }}{{ form.nome_cliente.errors }}</label>
         <label class="form-field"><span>{{ form.telefone.label }}</span>{{ form.telefone }}{{ form.telefone.errors }}</label>
+        <label class="form-field"><span>{{ form.documento_cliente_tipo.label }}</span>{{ form.documento_cliente_tipo }}{{ form.documento_cliente_tipo.errors }}</label>
+        <label class="form-field"><span>{{ form.documento_cliente.label }}</span>{{ form.documento_cliente }}{{ form.documento_cliente.errors }}</label>
       </div>
     </section>
 
@@ -40,6 +42,23 @@
         <label class="form-field form-field-wide"><span>{{ form.endereco_entrega.label }}</span>{{ form.endereco_entrega }}{{ form.endereco_entrega.errors }}</label>
         <label class="form-field"><span>{{ form.bairro_entrega.label }}</span>{{ form.bairro_entrega }}{{ form.bairro_entrega.errors }}</label>
         <label class="form-field form-field-wide"><span>{{ form.observacoes.label }}</span>{{ form.observacoes }}{{ form.observacoes.errors }}</label>
+      </div>
+    </section>
+
+    <section class="form-section form-field-wide">
+      <h2>Destinatário fiscal da NF-e</h2>
+      <p class="form-help">Estes dados formam o snapshot fiscal do pedido e não mudam quando o cadastro do cliente for editado.</p>
+      <div class="form-grid form-grid-inner">
+        <label class="form-field"><span>{{ form.destinatario_indicador_ie.label }}</span>{{ form.destinatario_indicador_ie }}{{ form.destinatario_indicador_ie.errors }}</label>
+        <label class="form-field"><span>{{ form.destinatario_inscricao_estadual.label }}</span>{{ form.destinatario_inscricao_estadual }}{{ form.destinatario_inscricao_estadual.errors }}</label>
+        <label class="form-field form-field-wide"><span>{{ form.destinatario_logradouro.label }}</span>{{ form.destinatario_logradouro }}{{ form.destinatario_logradouro.errors }}</label>
+        <label class="form-field"><span>{{ form.destinatario_numero.label }}</span>{{ form.destinatario_numero }}{{ form.destinatario_numero.errors }}</label>
+        <label class="form-field"><span>{{ form.destinatario_complemento.label }}</span>{{ form.destinatario_complemento }}{{ form.destinatario_complemento.errors }}</label>
+        <label class="form-field"><span>{{ form.destinatario_bairro.label }}</span>{{ form.destinatario_bairro }}{{ form.destinatario_bairro.errors }}</label>
+        <label class="form-field"><span>{{ form.destinatario_codigo_municipio_ibge.label }}</span>{{ form.destinatario_codigo_municipio_ibge }}{{ form.destinatario_codigo_municipio_ibge.errors }}</label>
+        <label class="form-field"><span>{{ form.destinatario_municipio.label }}</span>{{ form.destinatario_municipio }}{{ form.destinatario_municipio.errors }}</label>
+        <label class="form-field"><span>{{ form.destinatario_uf.label }}</span>{{ form.destinatario_uf }}{{ form.destinatario_uf.errors }}</label>
+        <label class="form-field"><span>{{ form.destinatario_cep.label }}</span>{{ form.destinatario_cep }}{{ form.destinatario_cep.errors }}</label>
       </div>
     </section>
 

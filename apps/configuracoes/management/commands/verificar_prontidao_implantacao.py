@@ -12,6 +12,11 @@ class Command(BaseCommand):
         parser.add_argument("--json", action="store_true", dest="como_json")
         parser.add_argument("--estrito", action="store_true")
         parser.add_argument("--producao", action="store_true")
+        parser.add_argument(
+            "--exigir-midia-offline",
+            action="store_true",
+            help="Bloqueia o perfil servidor-local sem ZIP offline e SHA-256 publicados.",
+        )
         parser.add_argument("--exigir-recomendados", action="store_true")
         parser.add_argument(
             "--perfil",
@@ -24,6 +29,7 @@ class Command(BaseCommand):
         diagnostico = diagnostico_prontidao_implantacao(
             producao=options["producao"],
             perfil=options["perfil"],
+            exigir_midia_offline=options["exigir_midia_offline"],
         )
         recomendados_prontos = (
             diagnostico["resumo"]["recomendadas_prontas"] == diagnostico["resumo"]["recomendadas"]

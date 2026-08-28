@@ -7,6 +7,8 @@ from pathlib import Path
 
 from django.conf import settings
 
+from .backup_operacional import politica_periodicidade_backup
+from .backup_validation import validar_pacote_backup
 from .readiness import diagnostico_prontidao_banco_dados
 
 
@@ -54,7 +56,9 @@ def _diretorio_backup():
     return None, False
 
 
-def _diagnostico_backup(*, idade_maxima_horas):
+def _diagnostico_backup(*, idade_maxima_horas=None):
+    politica = politica_periodicidade_backup(idade_maxima_horas=idade_maxima_horas)
+    idade_maxima_horas = politica["idade_maxima_horas"]
     diretorio, configurado = _diretorio_backup()
     arquivos = []
     if diretorio and diretorio.is_dir():
@@ -67,14 +71,54 @@ def _diagnostico_backup(*, idade_maxima_horas):
     idade_horas = None
     if ultimo:
         idade_horas = round(max(0, time.time() - ultimo.stat().st_mtime) / 3600, 2)
-    pronto = bool(configurado and ultimo and idade_horas <= idade_maxima_horas)
+    validacao = validar_pacote_backup(ultimo) if ultimo else {
+        "contrato": "local_backup_package_validation_v1",
+        "validado": False,
+        "checksum_encontrado": False,
+        "sha256_valido": False,
+        "conteudo_validado": False,
+        "backup_contrato": "",
+        "estrutura_valida": False,
+        "ancora_fiscal_valida": False,
+        "criptografado": False,
+        "banco_tipo": "",
+        "codigo": "backup_ausente",
+        "caminho_exposto": False,
+        "segredo_exposto": False,
+    }
+    pronto = bool(
+        politica["configurada"]
+        and configurado
+        and ultimo
+        and idade_horas <= idade_maxima_horas
+        and validacao["validado"]
+    )
     alertas = []
+    if not politica["configurada"]:
+        alertas.append(
+            "Configure LOCAL_BACKUP_MAX_AGE_HOURS com o prazo homologado antes do aceite."
+        )
     if not configurado:
         alertas.append("Configure LOCAL_BACKUP_DIR ou o diretório ProgramData do serviço.")
     elif not ultimo:
         alertas.append("Execute e valide ao menos um backup local antes do aceite.")
-    elif idade_horas > idade_maxima_horas:
+    elif politica["configurada"] and idade_horas > idade_maxima_horas:
         alertas.append("O backup local mais recente excede a idade máxima permitida.")
+    if ultimo and not validacao["validado"]:
+        mensagens = {
+            "checksum_ausente": "O backup mais recente não possui o arquivo de integridade SHA-256.",
+            "checksum_invalido": "O arquivo de integridade do backup mais recente é inválido.",
+            "checksum_arquivo_divergente": "O arquivo de integridade não corresponde ao pacote de backup.",
+            "checksum_divergente": "O backup mais recente foi alterado ou está corrompido.",
+            "senha_criptografia_indisponivel": "Configure a senha operacional para validar o conteúdo do backup criptografado.",
+            "contrato_incompativel": "O backup mais recente usa um contrato incompatível.",
+        }
+        alertas.append(
+            mensagens.get(
+                validacao["codigo"],
+                "O conteúdo do backup mais recente não passou na validação de segurança.",
+            )
+        )
     return {
         "contrato": "local_backup_health_v1",
         "pronto": pronto,
@@ -82,6 +126,10 @@ def _diagnostico_backup(*, idade_maxima_horas):
         "backup_encontrado": bool(ultimo),
         "idade_horas": idade_horas,
         "idade_maxima_horas": idade_maxima_horas,
+        "politica_contrato": politica["contrato"],
+        "politica_configurada": politica["configurada"],
+        "politica_origem": politica["origem"],
+        "validacao": validacao,
         "alertas": alertas,
         "caminho_exposto": False,
     }
@@ -91,7 +139,7 @@ def diagnostico_pos_implantacao_local(
     *,
     url=None,
     timeout=5,
-    idade_maxima_backup_horas=36,
+    idade_maxima_backup_horas=None,
     http_resultado=None,
 ):
     url = url or os.getenv("LOCAL_HEALTHCHECK_URL") or "http://127.0.0.1:8000/login/"

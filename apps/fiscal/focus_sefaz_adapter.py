@@ -157,18 +157,30 @@ class FocusNFeSefazAdapter:
             "mensagem": self._mensagem(resposta) or "Inutilização rejeitada.",
         }
 
-    def diagnosticar(self):
+    def diagnosticar(self, *, filial=None):
         try:
             self._validar_url(self.base_url)
-            token = bool(
-                getattr(settings, "FOCUS_NFE_FISCAL_TOKEN", "")
-                or getattr(settings, "FOCUS_NFE_FISCAL_TOKENS", {})
-            )
+            if filial is None:
+                token = bool(
+                    getattr(settings, "FOCUS_NFE_FISCAL_TOKEN", "")
+                    or getattr(settings, "FOCUS_NFE_FISCAL_TOKENS", {})
+                )
+            else:
+                cnpj = getattr(filial, "cnpj", "") or getattr(
+                    getattr(filial, "empresa", None), "cnpj", ""
+                )
+                try:
+                    self._token(filial, cnpj=cnpj)
+                except FocusNFeFiscalError:
+                    token = False
+                else:
+                    token = True
             return {
                 "pronto": token,
                 "provedor": self.nome,
                 "ambiente": "producao" if self._producao() else "homologacao",
                 "token_configurado": token,
+                "producao_habilitada": bool(self.allow_production and self._producao()),
                 "erro": "" if token else "Token fiscal da Focus NFe não configurado.",
             }
         except Exception as exc:

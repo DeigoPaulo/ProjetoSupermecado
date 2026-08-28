@@ -6,10 +6,18 @@ param(
     [string]$ServiceDirectory = "$env:ProgramData\DeigoVarejo\ServidorLocal",
     [string]$RestoreDirectory = "$env:ProgramData\DeigoVarejo\Restauracoes",
     [string]$PgRestorePath = "",
+    [string]$EnsaioPostgresDatabase = $env:RESTORE_REHEARSAL_POSTGRES_DB,
+    [string]$EnsaioPostgresHost = $env:RESTORE_REHEARSAL_POSTGRES_HOST,
+    [ValidateRange(1, 65535)]
+    [int]$EnsaioPostgresPort = 5432,
+    [string]$EnsaioPostgresUser = $env:RESTORE_REHEARSAL_POSTGRES_USER,
+    [string]$EnsaioPostgresPassword = $env:RESTORE_REHEARSAL_POSTGRES_PASSWORD,
+    [switch]$ConfirmarBancoPostgresTemporario,
     [string]$HealthHost = "127.0.0.1",
     [ValidateRange(1, 65535)]
     [int]$Port = 8000,
     [switch]$ValidarSomente,
+    [switch]$EnsaiarIsolado,
     [switch]$ConfirmarRestauracao
 )
 
@@ -156,6 +164,32 @@ try {
     if ($Manifest.inclui_dados_json -ne $true -or -not (Test-Path -LiteralPath (Join-Path $Extracted "dados.json") -PathType Leaf)) {
         throw "Backup logico dados.json ausente."
     }
+    $EvidenceAnchorGlobal = ""
+    if ($Manifest.inclui_ancora_evidencias_fiscais -eq $true) {
+        if ($Manifest.evidencias_fiscais_contrato -ne "fiscal_evidence_anchor_v1") {
+            throw "Contrato da ancora de evidencias fiscais invalido."
+        }
+        $EvidenceAnchorName = [string]$Manifest.evidencias_fiscais_arquivo
+        if (-not $EvidenceAnchorName -or [IO.Path]::GetFileName($EvidenceAnchorName) -ne $EvidenceAnchorName) {
+            throw "Nome do arquivo de ancora fiscal invalido."
+        }
+        $EvidenceAnchorPath = Join-Path $Extracted $EvidenceAnchorName
+        if (-not (Test-Path -LiteralPath $EvidenceAnchorPath -PathType Leaf)) {
+            throw "Ancora de evidencias fiscais ausente."
+        }
+        $EvidenceAnchorHash = (Get-FileHash -LiteralPath $EvidenceAnchorPath -Algorithm SHA256).Hash
+        if ($EvidenceAnchorHash -ne [string]$Manifest.evidencias_fiscais_sha256) {
+            throw "SHA-256 da ancora de evidencias fiscais diverge do manifesto."
+        }
+        try { $EvidenceAnchor = Get-Content -LiteralPath $EvidenceAnchorPath -Raw -Encoding UTF8 | ConvertFrom-Json } catch {
+            throw "Ancora de evidencias fiscais invalida: $($_.Exception.Message)"
+        }
+        if ($EvidenceAnchor.contrato -ne "fiscal_evidence_anchor_v1" -or $EvidenceAnchor.integra -ne $true) {
+            throw "Ancora de evidencias fiscais recusada por contrato ou integridade."
+        }
+        $EvidenceAnchorGlobal = [string]$EvidenceAnchor.ancora_global_sha256
+        if (-not $EvidenceAnchorGlobal) { throw "Ancora global fiscal ausente." }
+    }
     if ($Manifest.inclui_sqlite -eq $true) {
         if ($Manifest.sqlite_snapshot_consistente -ne $true -or -not (Test-Path -LiteralPath (Join-Path $Extracted "db.sqlite3") -PathType Leaf)) {
             throw "Snapshot SQLite consistente ausente."
@@ -196,11 +230,234 @@ try {
         pg_restore_versao = [string]$PgRestoreVersion
         inclui_media = [bool]$Manifest.inclui_media
         inclui_logs = [bool]$Manifest.inclui_logs
+        inclui_ancora_evidencias_fiscais = [bool]$Manifest.inclui_ancora_evidencias_fiscais
+        evidencia_fiscal_ancora_global = $EvidenceAnchorGlobal
         pronto_para_restaurar = [bool]($BackupDatabaseType -in @("sqlite", "postgresql"))
     }
     if ($ValidarSomente) {
         $Validation | ConvertTo-Json -Depth 4
         exit 0
+    }
+    if ($EnsaiarIsolado) {
+        if ($BackupDatabaseType -eq "postgresql") {
+            if (-not $ConfirmarBancoPostgresTemporario) {
+                throw "Confirme explicitamente o banco PostgreSQL temporario com -ConfirmarBancoPostgresTemporario."
+            }
+            if (
+                -not $EnsaioPostgresDatabase -or
+                $EnsaioPostgresDatabase -notmatch "^deigo_rehearsal_[a-z0-9_]{4,48}$"
+            ) {
+                throw "O banco do ensaio deve existir, estar vazio e usar o prefixo deigo_rehearsal_."
+            }
+            if (-not $EnsaioPostgresHost -or -not $EnsaioPostgresUser) {
+                throw "Informe host e usuario exclusivos do ensaio PostgreSQL."
+            }
+            $SourcePostgresDatabase = [string]$Manifest.fontes.postgresql_banco
+            if (
+                ($SourcePostgresDatabase -and $EnsaioPostgresDatabase.Equals($SourcePostgresDatabase, [StringComparison]::OrdinalIgnoreCase)) -or
+                ($env:POSTGRES_DB -and $EnsaioPostgresDatabase.Equals([string]$env:POSTGRES_DB, [StringComparison]::OrdinalIgnoreCase))
+            ) {
+                throw "O banco temporario do ensaio nao pode ser o banco ativo ou o banco de origem do backup."
+            }
+            if (-not $PgRestore) {
+                throw "pg_restore nao foi localizado para o ensaio PostgreSQL."
+            }
+            $ProjectRootPostgres = (Resolve-Path (Join-Path $PSScriptRoot "..")).Path
+            $PythonPostgres = Join-Path $ProjectRootPostgres ".venv\Scripts\python.exe"
+            $ManagePostgres = Join-Path $ProjectRootPostgres "manage.py"
+            foreach ($required in @($PythonPostgres, $ManagePostgres)) {
+                if (-not (Test-Path -LiteralPath $required -PathType Leaf)) {
+                    throw "Runtime local necessario ao ensaio PostgreSQL nao foi encontrado."
+                }
+            }
+            $PostgresRehearsalRoot = Join-Path $ValidationRoot "ensaio-postgresql"
+            $PostgresMedia = Join-Path $PostgresRehearsalRoot "media"
+            $PostgresStatic = Join-Path $PostgresRehearsalRoot "static"
+            $PostgresLogs = Join-Path $PostgresRehearsalRoot "logs"
+            New-Item -ItemType Directory -Path $PostgresRehearsalRoot, $PostgresMedia, $PostgresStatic, $PostgresLogs -Force | Out-Null
+            if ($Manifest.inclui_media -eq $true) {
+                Remove-Item -LiteralPath $PostgresMedia -Recurse -Force
+                Copy-Item -LiteralPath (Join-Path $Extracted "media") -Destination $PostgresMedia -Recurse -Force
+            }
+            $PreviousPostgresEnvironment = @{}
+            foreach ($name in @(
+                "DATABASE_URL", "POSTGRES_DB", "POSTGRES_HOST", "POSTGRES_PORT",
+                "POSTGRES_USER", "POSTGRES_PASSWORD", "PGPASSWORD", "SQLITE_PATH",
+                "MEDIA_ROOT", "STATIC_ROOT", "LOG_DIR"
+            )) {
+                $PreviousPostgresEnvironment[$name] = [Environment]::GetEnvironmentVariable($name, "Process")
+            }
+            try {
+                [Environment]::SetEnvironmentVariable("DATABASE_URL", $null, "Process")
+                [Environment]::SetEnvironmentVariable("POSTGRES_DB", $EnsaioPostgresDatabase, "Process")
+                [Environment]::SetEnvironmentVariable("POSTGRES_HOST", $EnsaioPostgresHost, "Process")
+                [Environment]::SetEnvironmentVariable("POSTGRES_PORT", [string]$EnsaioPostgresPort, "Process")
+                [Environment]::SetEnvironmentVariable("POSTGRES_USER", $EnsaioPostgresUser, "Process")
+                [Environment]::SetEnvironmentVariable("POSTGRES_PASSWORD", $EnsaioPostgresPassword, "Process")
+                [Environment]::SetEnvironmentVariable("PGPASSWORD", $EnsaioPostgresPassword, "Process")
+                [Environment]::SetEnvironmentVariable("SQLITE_PATH", $null, "Process")
+                [Environment]::SetEnvironmentVariable("MEDIA_ROOT", $PostgresMedia, "Process")
+                [Environment]::SetEnvironmentVariable("STATIC_ROOT", $PostgresStatic, "Process")
+                [Environment]::SetEnvironmentVariable("LOG_DIR", $PostgresLogs, "Process")
+                Set-Location $ProjectRootPostgres
+                $PostgresProbeCode = 'import os, psycopg; connection=psycopg.connect(dbname=os.environ["POSTGRES_DB"], host=os.environ["POSTGRES_HOST"], port=os.environ["POSTGRES_PORT"], user=os.environ["POSTGRES_USER"], password=os.environ.get("POSTGRES_PASSWORD", ""), connect_timeout=5); count=connection.execute("select count(*) from pg_catalog.pg_class c join pg_catalog.pg_namespace n on n.oid=c.relnamespace where n.nspname not in (''pg_catalog'',''information_schema'') and n.nspname not like ''pg_toast%'' and c.relkind in (''r'',''p'',''v'',''m'',''S'',''f'')").fetchone()[0]; connection.close(); print(count)'
+                $ObjectsBefore = & $PythonPostgres -c $PostgresProbeCode
+                if ($LASTEXITCODE -ne 0) {
+                    throw "Nao foi possivel confirmar o banco PostgreSQL temporario."
+                }
+                if ([int]$ObjectsBefore -ne 0) {
+                    throw "O banco PostgreSQL temporario deve estar vazio; nenhum objeto foi alterado."
+                }
+                $PostgresRestoreArgs = @(
+                    "--exit-on-error", "--single-transaction", "--no-owner", "--no-acl",
+                    "--host=$EnsaioPostgresHost", "--port=$EnsaioPostgresPort",
+                    "--username=$EnsaioPostgresUser", "--dbname=$EnsaioPostgresDatabase",
+                    (Join-Path $Extracted "database.dump")
+                )
+                & $PgRestore @PostgresRestoreArgs | Out-Null
+                if ($LASTEXITCODE -ne 0) {
+                    throw "pg_restore falhou no banco PostgreSQL temporario."
+                }
+                $ObjectsAfterRestore = & $PythonPostgres -c $PostgresProbeCode
+                if ($LASTEXITCODE -ne 0 -or [int]$ObjectsAfterRestore -le 0) {
+                    throw "O banco PostgreSQL temporario nao apresentou objetos apos a restauracao."
+                }
+                & $PythonPostgres $ManagePostgres migrate --noinput | Out-Null
+                if ($LASTEXITCODE -ne 0) { throw "As migrations falharam no PostgreSQL isolado." }
+                & $PythonPostgres $ManagePostgres check | Out-Null
+                if ($LASTEXITCODE -ne 0) { throw "O Django check falhou sobre o PostgreSQL isolado." }
+                $EvidencePostgresOutput = & $PythonPostgres $ManagePostgres verificar_integridade_evidencias_fiscais --estrito --origem restauracao
+                if ($LASTEXITCODE -ne 0 -or -not $EvidencePostgresOutput) {
+                    throw "A cadeia fiscal do ensaio PostgreSQL nao passou na verificacao estrita."
+                }
+                try { $EvidencePostgres = $EvidencePostgresOutput | ConvertFrom-Json } catch {
+                    throw "O verificador fiscal do ensaio PostgreSQL nao retornou JSON valido."
+                }
+                if (
+                    $EvidenceAnchorGlobal -and
+                    [string]$EvidencePostgres.ancora_global_sha256 -ne $EvidenceAnchorGlobal
+                ) {
+                    throw "A cadeia fiscal do ensaio PostgreSQL diverge da ancora historica do backup."
+                }
+                [ordered]@{
+                    contrato = "local_restore_rehearsal_v1"
+                    pronto = $true
+                    backup_contrato = [string]$Manifest.contrato
+                    validacao_contrato = [string]$Validation.contrato
+                    banco_tipo = "postgresql"
+                    postgresql_banco_vazio_confirmado = $true
+                    postgresql_restore_transacao_unica = $true
+                    postgresql_objetos_restaurados = $true
+                    migrations_aplicadas = $true
+                    django_check = $true
+                    evidencia_fiscal_integra = [bool]$EvidencePostgres.integra
+                    ancora_fiscal_corresponde = [bool](
+                        -not $EvidenceAnchorGlobal -or
+                        [string]$EvidencePostgres.ancora_global_sha256 -eq $EvidenceAnchorGlobal
+                    )
+                    criptografado = [bool]($Extension -eq ".aes")
+                    banco_temporario_preservado = $true
+                    banco_temporario_nome_exposto = $false
+                    servico_alterado = $false
+                    dados_ativos_alterados = $false
+                    caminho_exposto = $false
+                    segredo_exposto = $false
+                } | ConvertTo-Json -Depth 4
+                exit 0
+            } finally {
+                foreach ($name in $PreviousPostgresEnvironment.Keys) {
+                    [Environment]::SetEnvironmentVariable($name, $PreviousPostgresEnvironment[$name], "Process")
+                }
+            }
+        }
+        if ($BackupDatabaseType -ne "sqlite") {
+            throw "O motor do backup nao possui ensaio isolado automatico."
+        }
+        $ProjectRoot = (Resolve-Path (Join-Path $PSScriptRoot "..")).Path
+        $PythonIsolado = Join-Path $ProjectRoot ".venv\Scripts\python.exe"
+        $ManageIsolado = Join-Path $ProjectRoot "manage.py"
+        foreach ($required in @($PythonIsolado, $ManageIsolado)) {
+            if (-not (Test-Path -LiteralPath $required -PathType Leaf)) {
+                throw "Runtime local necessario ao ensaio nao foi encontrado."
+            }
+        }
+        $RehearsalRoot = Join-Path $ValidationRoot "ensaio"
+        $RehearsalDb = Join-Path $RehearsalRoot "db.sqlite3"
+        $RehearsalMedia = Join-Path $RehearsalRoot "media"
+        $RehearsalStatic = Join-Path $RehearsalRoot "static"
+        $RehearsalLogs = Join-Path $RehearsalRoot "logs"
+        New-Item -ItemType Directory -Path $RehearsalRoot, $RehearsalMedia, $RehearsalStatic, $RehearsalLogs -Force | Out-Null
+        Copy-Item -LiteralPath (Join-Path $Extracted "db.sqlite3") -Destination $RehearsalDb -Force
+        if ($Manifest.inclui_media -eq $true) {
+            Remove-Item -LiteralPath $RehearsalMedia -Recurse -Force
+            Copy-Item -LiteralPath (Join-Path $Extracted "media") -Destination $RehearsalMedia -Recurse -Force
+        }
+        $PreviousEnvironment = @{}
+        foreach ($name in @("DATABASE_URL", "POSTGRES_DB", "SQLITE_PATH", "MEDIA_ROOT", "STATIC_ROOT", "LOG_DIR")) {
+            $PreviousEnvironment[$name] = [Environment]::GetEnvironmentVariable($name, "Process")
+        }
+        try {
+            [Environment]::SetEnvironmentVariable("DATABASE_URL", $null, "Process")
+            [Environment]::SetEnvironmentVariable("POSTGRES_DB", $null, "Process")
+            [Environment]::SetEnvironmentVariable("SQLITE_PATH", $RehearsalDb, "Process")
+            [Environment]::SetEnvironmentVariable("MEDIA_ROOT", $RehearsalMedia, "Process")
+            [Environment]::SetEnvironmentVariable("STATIC_ROOT", $RehearsalStatic, "Process")
+            [Environment]::SetEnvironmentVariable("LOG_DIR", $RehearsalLogs, "Process")
+            Set-Location $ProjectRoot
+            $IntegrityCode = 'import sqlite3, sys; db=sqlite3.connect(sys.argv[1]); result=db.execute("PRAGMA integrity_check").fetchone()[0]; db.close(); print(result); raise SystemExit(0 if result == "ok" else 1)'
+            $IntegrityBefore = & $PythonIsolado -c $IntegrityCode $RehearsalDb
+            if ($LASTEXITCODE -ne 0 -or $IntegrityBefore -ne "ok") {
+                throw "O snapshot SQLite falhou na verificacao de integridade antes das migrations."
+            }
+            & $PythonIsolado $ManageIsolado migrate --noinput | Out-Null
+            if ($LASTEXITCODE -ne 0) { throw "As migrations falharam no banco isolado restaurado." }
+            & $PythonIsolado $ManageIsolado check | Out-Null
+            if ($LASTEXITCODE -ne 0) { throw "O Django check falhou sobre a restauracao isolada." }
+            $IntegrityAfter = & $PythonIsolado -c $IntegrityCode $RehearsalDb
+            if ($LASTEXITCODE -ne 0 -or $IntegrityAfter -ne "ok") {
+                throw "O banco isolado falhou na verificacao de integridade apos as migrations."
+            }
+            $EvidenceIsolatedOutput = & $PythonIsolado $ManageIsolado verificar_integridade_evidencias_fiscais --estrito --origem restauracao
+            if ($LASTEXITCODE -ne 0 -or -not $EvidenceIsolatedOutput) {
+                throw "A cadeia fiscal do ensaio isolado nao passou na verificacao estrita."
+            }
+            try { $EvidenceIsolated = $EvidenceIsolatedOutput | ConvertFrom-Json } catch {
+                throw "O verificador fiscal do ensaio isolado nao retornou JSON valido."
+            }
+            if (
+                $EvidenceAnchorGlobal -and
+                [string]$EvidenceIsolated.ancora_global_sha256 -ne $EvidenceAnchorGlobal
+            ) {
+                throw "A cadeia fiscal do ensaio isolado diverge da ancora historica do backup."
+            }
+            $Rehearsal = [ordered]@{
+                contrato = "local_restore_rehearsal_v1"
+                pronto = $true
+                backup_contrato = [string]$Manifest.contrato
+                validacao_contrato = [string]$Validation.contrato
+                banco_tipo = $BackupDatabaseType
+                sqlite_integridade_antes = $true
+                migrations_aplicadas = $true
+                django_check = $true
+                sqlite_integridade_depois = $true
+                evidencia_fiscal_integra = [bool]$EvidenceIsolated.integra
+                ancora_fiscal_corresponde = [bool](
+                    -not $EvidenceAnchorGlobal -or
+                    [string]$EvidenceIsolated.ancora_global_sha256 -eq $EvidenceAnchorGlobal
+                )
+                criptografado = [bool]($Extension -eq ".aes")
+                servico_alterado = $false
+                dados_ativos_alterados = $false
+                caminho_exposto = $false
+                segredo_exposto = $false
+            }
+            $Rehearsal | ConvertTo-Json -Depth 4
+            exit 0
+        } finally {
+            foreach ($name in $PreviousEnvironment.Keys) {
+                [Environment]::SetEnvironmentVariable($name, $PreviousEnvironment[$name], "Process")
+            }
+        }
     }
     if (-not $ConfirmarRestauracao) {
         throw "Restaure somente apos validar. Repita com -ConfirmarRestauracao para autorizar a alteracao dos dados."
@@ -299,6 +556,18 @@ try {
         if ($LASTEXITCODE -ne 0) { throw "Migrations falharam sobre o banco restaurado." }
         & $Python manage.py check
         if ($LASTEXITCODE -ne 0) { throw "Django check falhou apos a restauracao." }
+        if ($EvidenceAnchorGlobal) {
+            $EvidenceRestoredOutput = & $Python manage.py verificar_integridade_evidencias_fiscais --estrito --registrar-alerta --origem restauracao
+            if ($LASTEXITCODE -ne 0 -or -not $EvidenceRestoredOutput) {
+                throw "A cadeia fiscal restaurada nao passou na verificacao estrita."
+            }
+            try { $EvidenceRestored = $EvidenceRestoredOutput | ConvertFrom-Json } catch {
+                throw "O verificador fiscal restaurado nao retornou JSON valido."
+            }
+            if ([string]$EvidenceRestored.ancora_global_sha256 -ne $EvidenceAnchorGlobal) {
+                throw "A cadeia fiscal restaurada diverge da ancora historica do backup."
+            }
+        }
         & $ServiceExe start
         if ($LASTEXITCODE -ne 0 -or -not (Wait-Health -Url $HealthUrl)) { throw "Healthcheck falhou apos a restauracao." }
         $History = [ordered]@{ contrato = "local_restore_history_v1"; restaurado_em = (Get-Date).ToUniversalTime().ToString("o"); arquivo = [IO.Path]::GetFileName($BackupPath); sha256 = $ActualHash; resultado = "sucesso"; backup_seguranca = $SafetyZip.FullName }

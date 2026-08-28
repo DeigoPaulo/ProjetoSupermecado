@@ -67,7 +67,7 @@
   <i class="fa-solid fa-arrows-rotate"></i>
   <div>
     <strong>Fila automática: {% if diagnostico.fila_transmissao.habilitada %}ativa{% else %}desativada{% endif %} · contrato {{ diagnostico.fila_transmissao.contrato }}.</strong>
-    <span>{{ diagnostico.fila_transmissao.elegiveis_producao }} elegível(is) em produção, {{ diagnostico.fila_transmissao.aguardando_consulta_sefaz }} aguardando consulta SEFAZ, {{ diagnostico.fila_transmissao.consultas_esgotadas }} com reconciliação esgotada, {{ diagnostico.fila_transmissao.reservados }} reservado(s) e {{ diagnostico.fila_transmissao.tentativas_esgotadas }} com transmissões esgotadas. Limites: {{ diagnostico.fila_transmissao.max_tentativas }} transmissão(ões) e {{ diagnostico.fila_transmissao.max_consultas }} consulta(s).</span>
+    <span>{{ diagnostico.fila_transmissao.elegiveis_producao }} elegível(is) em produção, {{ diagnostico.fila_transmissao.aguardando_consulta_sefaz }} aguardando consulta SEFAZ, {{ diagnostico.fila_transmissao.consultas_esgotadas }} com reconciliação esgotada, {{ diagnostico.fila_transmissao.reservados }} reservado(s) e {{ diagnostico.fila_transmissao.tentativas_esgotadas }} com transmissões esgotadas. {{ diagnostico.fila_transmissao.contingencias_offline_vencidas }} contingência(s) offline com prazo excedido. Limites: {{ diagnostico.fila_transmissao.max_tentativas }} transmissão(ões), {{ diagnostico.fila_transmissao.max_consultas }} consulta(s) e {{ diagnostico.fila_transmissao.confirmacoes_nao_localizado }} confirmações de ausência antes de retransmitir.</span>
   </div>
 </section>
 
@@ -193,7 +193,7 @@
             <td>{{ documento.get_tipo_documento_display }}<br><small>{{ documento.get_ambiente_display }}</small></td>
             <td><strong>{{ documento.serie }}/{{ documento.numero|default:"-" }}</strong></td>
             <td>{% if documento.venda %}Venda {{ documento.venda_id }}{% elif documento.pedido_online %}Pedido online {{ documento.pedido_online_id }}{% else %}-{% endif %}</td>
-            <td><span class="status {% if documento.status == 'EMITIDO' %}status-success{% elif documento.status == 'CONTINGENCIA' %}status-warning{% elif documento.status == 'REJEITADO' or documento.status == 'CANCELADO' or documento.status == 'DENEGADO' %}status-danger{% endif %}">{{ documento.get_status_display }}</span></td>
+            <td><span class="status {% if documento.status == 'EMITIDO' %}status-success{% elif documento.status == 'CONTINGENCIA' %}status-warning{% elif documento.status == 'REJEITADO' or documento.status == 'CANCELADO' or documento.status == 'DENEGADO' %}status-danger{% endif %}">{% if documento.tipo_documento == "NFE" and documento.status == "CONTINGENCIA" %}Contingência SVC-RS{% else %}{{ documento.get_status_display }}{% endif %}</span></td>
             <td>R$ {{ documento.valor_total|floatformat:2 }}</td>
             <td class="row-actions">
               <a class="secondary-button" href="{% url 'fiscal:detalhe' documento.pk %}">Ver</a>
@@ -201,10 +201,12 @@
               <a class="secondary-button" href="{% url 'fiscal:baixar_xml' documento.pk %}">XML</a>
               {% if documento.ambiente == "HOMOLOGACAO" %}
                 {% if documento.status == "PRONTO" or documento.status == "CONTINGENCIA" %}
-                  <form method="post" action="{% url 'fiscal:transmitir_simulado' documento.pk %}" class="inline-form form-confirm" data-msg="Transmitir em homologacao simulada?">
-                    {% csrf_token %}
-                    <button class="primary-button" type="submit">Transmitir homologação</button>
-                  </form>
+                  {% if documento.tipo_documento != "NFE" or documento.status != "CONTINGENCIA" %}
+                    <form method="post" action="{% url 'fiscal:transmitir_simulado' documento.pk %}" class="inline-form form-confirm" data-msg="Transmitir em homologacao simulada?">
+                      {% csrf_token %}
+                      <button class="primary-button" type="submit">Transmitir homologação</button>
+                    </form>
+                  {% endif %}
                 {% endif %}
               {% endif %}
               {% if documento.status == "PRONTO" or documento.status == "REJEITADO" %}

@@ -5,6 +5,7 @@ from apps.clientes.escopo import empresa_id_do_usuario
 from .models import (
     ConfiguracaoFiscal,
     HomologacaoFiscal,
+    ProvedorEmissaoFiscal,
     InutilizacaoNumeracaoFiscal,
     ModoTransicaoIbsCbs,
     NaturezaOperacao,
@@ -17,10 +18,20 @@ from .perfis_uf import aplicar_endpoints_nfce_uf, pendencias_endpoints_nfce, per
 class ConfiguracaoFiscalForm(forms.ModelForm):
     def __init__(self, *args, user=None, **kwargs):
         super().__init__(*args, **kwargs)
-        self.perfil_fiscal = perfil_fiscal_uf(getattr(getattr(self.instance, "filial", None), "uf", ""))
+        self.user = user
+        self.perfil_fiscal = perfil_fiscal_uf(
+            getattr(getattr(self.instance, "filial", None), "uf", "")
+        )
         empresa_id = empresa_id_do_usuario(user) if user else None
         if empresa_id is not None:
-            self.fields["filial"].queryset = self.fields["filial"].queryset.filter(empresa_id=empresa_id)
+            self.fields["filial"].queryset = self.fields["filial"].queryset.filter(
+                empresa_id=empresa_id
+            )
+        if "provedor_emissao" in self.fields:
+            self.fields["provedor_emissao"].required = False
+        if not user or not user.is_superuser:
+            self.fields.pop("provedor_emissao", None)
+
     certificado_arquivo = forms.FileField(
         required=False,
         label="Certificado A1 (.pfx/.p12)",
@@ -37,6 +48,7 @@ class ConfiguracaoFiscalForm(forms.ModelForm):
         model = ConfiguracaoFiscal
         fields = [
             "filial",
+            "provedor_emissao",
             "ambiente",
             "regime_tributario",
             "crt",
@@ -66,7 +78,9 @@ class ConfiguracaoFiscalForm(forms.ModelForm):
             return arquivo
         nome = arquivo.name.lower()
         if not nome.endswith((".pfx", ".p12")):
-            raise forms.ValidationError("Envie um certificado A1 nos formatos .pfx ou .p12.")
+            raise forms.ValidationError(
+                "Envie um certificado A1 nos formatos .pfx ou .p12."
+            )
         if arquivo.size > 2 * 1024 * 1024:
             raise forms.ValidationError("O certificado deve ter no máximo 2 MB.")
         return arquivo
@@ -77,24 +91,67 @@ class ConfiguracaoFiscalForm(forms.ModelForm):
         arquivo = cleaned.get("certificado_arquivo")
         senha = cleaned.get("certificado_senha")
         if arquivo and not senha:
-            self.add_error("certificado_senha", "Informe a senha do certificado A1.")
+            self.add_error(
+                "certificado_senha", "Informe a senha do certificado A1."
+            )
         if senha and not arquivo:
-            self.add_error("certificado_arquivo", "Envie o arquivo do certificado para trocar a senha.")
-        modo_ibs_cbs = cleaned.get("modo_transicao_ibs_cbs") or ModoTransicaoIbsCbs.LEGADO
+            self.add_error(
+                "certificado_arquivo",
+                "Envie o arquivo do certificado para trocar a senha.",
+            )
+        modo_ibs_cbs = (
+            cleaned.get("modo_transicao_ibs_cbs") or ModoTransicaoIbsCbs.LEGADO
+        )
         if modo_ibs_cbs != ModoTransicaoIbsCbs.LEGADO:
             if not cleaned.get("ibs_cbs_vigencia_inicio"):
-                self.add_error("ibs_cbs_vigencia_inicio", "Informe a data de vigência aprovada pelo contador.")
+                self.add_error(
+                    "ibs_cbs_vigencia_inicio",
+                    "Informe a data de vigência aprovada pelo contador.",
+                )
             if not (cleaned.get("ibs_cbs_versao_leiaute") or "").strip():
-                self.add_error("ibs_cbs_versao_leiaute", "Informe a Nota Técnica ou versão do leiaute homologado.")
+                self.add_error(
+                    "ibs_cbs_versao_leiaute",
+                    "Informe a Nota Técnica ou versão do leiaute homologado.",
+                )
         if modo_ibs_cbs == ModoTransicaoIbsCbs.EMISSAO_HOMOLOGADA:
-            self.add_error("modo_transicao_ibs_cbs", "A emissão IBS/CBS ainda não está disponível nesta versão. Mantenha o modo Preparação até instalar o schema oficial e homologar o adaptador fiscal.")
+            self.add_error(
+                "modo_transicao_ibs_cbs",
+                "A emissão IBS/CBS ainda não está disponível nesta versão. "
+                "Mantenha o modo Preparação até instalar o schema oficial e "
+                "homologar o adaptador fiscal.",
+            )
+
         filial = cleaned.get("filial")
+        provedor = cleaned.get("provedor_emissao") or getattr(
+            self.instance,
+            "provedor_emissao",
+            ProvedorEmissaoFiscal.PADRAO_SERVIDOR,
+        )
+        if (
+            "provedor_emissao" in self.fields
+            and filial
+            and provedor == ProvedorEmissaoFiscal.SEFAZ_DIRETA_GO
+            and filial.uf != "GO"
+        ):
+            self.add_error(
+                "provedor_emissao",
+                "A conexão direta está disponível somente para filiais de Goiás.",
+            )
+
         if filial and self.perfil_fiscal:
-            self.instance.ambiente = cleaned.get("ambiente") or self.instance.ambiente
+            self.instance.ambiente = (
+                cleaned.get("ambiente") or self.instance.ambiente
+            )
             self.instance.url_qrcode_nfce = cleaned.get("url_qrcode_nfce") or ""
-            self.instance.url_consulta_nfce = cleaned.get("url_consulta_nfce") or ""
+            self.instance.url_consulta_nfce = (
+                cleaned.get("url_consulta_nfce") or ""
+            )
             for pendencia in pendencias_endpoints_nfce(filial, self.instance):
-                campo = "url_qrcode_nfce" if "QR Code" in pendencia else "url_consulta_nfce"
+                campo = (
+                    "url_qrcode_nfce"
+                    if "QR Code" in pendencia
+                    else "url_consulta_nfce"
+                )
                 self.add_error(campo, pendencia)
         return cleaned
 

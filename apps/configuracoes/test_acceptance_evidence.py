@@ -42,6 +42,7 @@ class EvidenciaAceiteTests(SimpleTestCase):
         self.assertTrue(evidencia["liberavel"])
         self.assertEqual(evidencia["dossie"]["sha256"], hashlib.sha256(b"dossie").hexdigest())
         self.assertNotIn(str(dossie), json.dumps(evidencia))
+        self.assertIsNone(pos.call_args.kwargs["idade_maxima_backup_horas"])
 
     @patch("apps.configuracoes.management.commands.gerar_evidencia_aceite.gerar_evidencia_aceite")
     def test_comando_estrito_grava_e_recusa_aceite_bloqueado(self, gerar):
@@ -63,3 +64,4 @@ class EvidenciaAceiteTests(SimpleTestCase):
                 )
             self.assertTrue(saida.is_file())
             self.assertTrue(Path(str(saida) + ".sha256").is_file())
+            self.assertIsNone(gerar.call_args.kwargs["idade_maxima_backup_horas"])

@@ -25,6 +25,7 @@ from ..adapters import SefazAdapterError
 from ..assinaturas import assinar_xml_elemento_fiscal
 from ..certificados import abrir_certificado_a1
 from .capacidades import resumo_capacidades
+from .resiliencia import ResilienciaSefazDireta
 
 NFE_NS = "http://www.portalfiscal.inf.br/nfe"
 SOAP_NS = "http://www.w3.org/2003/05/soap-envelope"
@@ -48,6 +49,23 @@ SERVICOS_GO = {
     },
 }
 
+# Goias utiliza a SVC-RS. O catalogo e separado do autorizador normal para
+# impedir desvio acidental quando a contingencia nao foi ativada pelo Master.
+SERVICOS_SVC_RS = {
+    "HOMOLOGACAO": {
+        "autorizacao": "https://nfe-homologacao.svrs.rs.gov.br/ws/NfeAutorizacao/NFeAutorizacao4.asmx",
+        "consulta": "https://nfe-homologacao.svrs.rs.gov.br/ws/NfeConsulta/NfeConsulta4.asmx",
+        "evento": "https://nfe-homologacao.svrs.rs.gov.br/ws/recepcaoevento/recepcaoevento4.asmx",
+        "status": "https://nfe-homologacao.svrs.rs.gov.br/ws/NfeStatusServico/NfeStatusServico4.asmx",
+    },
+    "PRODUCAO": {
+        "autorizacao": "https://nfe.svrs.rs.gov.br/ws/NfeAutorizacao/NFeAutorizacao4.asmx",
+        "consulta": "https://nfe.svrs.rs.gov.br/ws/NfeConsulta/NfeConsulta4.asmx",
+        "evento": "https://nfe.svrs.rs.gov.br/ws/recepcaoevento/recepcaoevento4.asmx",
+        "status": "https://nfe.svrs.rs.gov.br/ws/NfeStatusServico/NfeStatusServico4.asmx",
+    },
+}
+
 WSDL_NS = {
     "autorizacao": "http://www.portalfiscal.inf.br/nfe/wsdl/NFeAutorizacao4",
     "consulta": "http://www.portalfiscal.inf.br/nfe/wsdl/NFeConsultaProtocolo4",
@@ -66,7 +84,12 @@ SOAP_ACTION = {
     "cadastro": f"{WSDL_NS['cadastro']}/consultaCadastro",
 }
 
-HOSTS_OFICIAIS_GO = {"homolog.sefaz.go.gov.br", "nfe.sefaz.go.gov.br"}
+HOSTS_OFICIAIS_GO = {
+    "homolog.sefaz.go.gov.br",
+    "nfe.sefaz.go.gov.br",
+    "nfe-homologacao.svrs.rs.gov.br",
+    "nfe.svrs.rs.gov.br",
+}
 
 
 class SefazDiretaAdapter:
@@ -77,7 +100,7 @@ class SefazDiretaAdapter:
     valida_schema = False
     preserva_chave_local = True
 
-    def __init__(self, transport=None):
+    def __init__(self, transport=None, *, sleeper=None, clock=None):
         self.transport = transport
         self.network_enabled = bool(
             getattr(settings, "SEFAZ_DIRETA_NETWORK_ENABLED", False)
@@ -85,10 +108,25 @@ class SefazDiretaAdapter:
         self.allow_production = bool(
             getattr(settings, "SEFAZ_DIRETA_ALLOW_PRODUCTION", False)
         )
+        self.svc_enabled = bool(
+            getattr(settings, "SEFAZ_DIRETA_SVC_ENABLED", False)
+        )
         self.timeout = max(
             1, int(getattr(settings, "SEFAZ_DIRETA_TIMEOUT_SECONDS", 30))
         )
         self.endpoints = self._endpoints()
+        self.resiliencia = ResilienciaSefazDireta(
+            max_tentativas=getattr(settings, "SEFAZ_DIRETA_MAX_ATTEMPTS", 2),
+            falhas_para_abrir=getattr(
+                settings, "SEFAZ_DIRETA_CIRCUIT_FAILURE_THRESHOLD", 3
+            ),
+            reabrir_apos_segundos=getattr(
+                settings, "SEFAZ_DIRETA_CIRCUIT_RESET_SECONDS", 60
+            ),
+            espera_base_ms=getattr(settings, "SEFAZ_DIRETA_RETRY_BASE_MS", 200),
+            relogio=clock,
+            esperar=sleeper,
+        )
 
     def transmitir(self, *, documento, xml, idempotency_key, ambiente):
         del idempotency_key
@@ -338,6 +376,7 @@ class SefazDiretaAdapter:
             "tempo_medio": self._texto_local(retorno, "tMed"),
             "observacao": self._texto_local(retorno, "xObs"),
         }
+
     def diagnosticar(self):
         return {
             "pronto": False,
@@ -345,7 +384,9 @@ class SefazDiretaAdapter:
             "ufs": sorted(self.endpoints),
             "rede_habilitada": self.network_enabled,
             "producao_habilitada": self.allow_production,
+            "svc_habilitada": self.svc_enabled,
             "capacidades": resumo_capacidades(),
+            "resiliencia": self.resiliencia.diagnosticar(),
             "erro": (
                 "Adaptador dormente: habilite a rede somente durante a homologação."
                 if not self.network_enabled
@@ -360,16 +401,37 @@ class SefazDiretaAdapter:
                 "Habilite SEFAZ_DIRETA_NETWORK_ENABLED somente em homologação controlada."
             )
         envelope = self._envelope(servico, payload)
-        if self.transport:
-            resposta = self.transport(
+
+        def enviar_uma_vez():
+            if self.transport:
+                try:
+                    resposta = self.transport(
+                        servico=servico,
+                        endpoint=endpoint,
+                        envelope=envelope,
+                        timeout=self.timeout,
+                        configuracao=configuracao,
+                    )
+                except (URLError, TimeoutError, OSError, ssl.SSLError) as exc:
+                    raise SefazDiretaConnectionError(
+                        "Não foi possível estabelecer conexão TLS com a SEFAZ."
+                    ) from exc
+                return self._parse_xml(resposta)
+            return self._enviar_http(
                 servico=servico,
                 endpoint=endpoint,
                 envelope=envelope,
-                timeout=self.timeout,
                 configuracao=configuracao,
             )
-            return self._parse_xml(resposta)
 
+        return self.resiliencia.executar(
+            servico=servico,
+            endpoint=endpoint,
+            operacao=enviar_uma_vez,
+            erros_retornaveis=(SefazDiretaConnectionError,),
+        )
+
+    def _enviar_http(self, *, servico, endpoint, envelope, configuracao):
         contexto = self._contexto_tls(configuracao)
         request = Request(
             endpoint,
@@ -444,18 +506,41 @@ class SefazDiretaAdapter:
             raise SefazDiretaError(
                 "Produção da SEFAZ direta permanece bloqueada."
             )
-        try:
-            endpoint = self.endpoints[uf][ambiente][servico]
-        except KeyError as exc:
+        usa_svc = self._usa_svc_rs(objeto)
+        if usa_svc and not self.svc_enabled:
             raise SefazDiretaError(
-                f"Endpoint {servico} não configurado para {uf}/{ambiente}."
+                "A contingência SVC permanece desligada no servidor."
+            )
+        try:
+            endpoint = (
+                SERVICOS_SVC_RS[ambiente][servico]
+                if usa_svc
+                else self.endpoints[uf][ambiente][servico]
+            )
+        except KeyError as exc:
+            canal = "SVC-RS" if usa_svc else uf
+            raise SefazDiretaError(
+                f"Endpoint {servico} não configurado para {canal}/{ambiente}."
             ) from exc
         parsed = urlparse(endpoint)
         if parsed.scheme != "https" or parsed.hostname not in HOSTS_OFICIAIS_GO:
             raise SefazDiretaError(
-                "Endpoint da SEFAZ direta deve usar HTTPS em host oficial de Goiás."
+                "Endpoint da SEFAZ direta deve usar HTTPS em host oficial autorizado."
             )
         return endpoint
+
+    @staticmethod
+    def _usa_svc_rs(objeto):
+        tipo = str(getattr(objeto, "tipo_documento", "") or "").upper()
+        if tipo != "NFE":
+            return False
+        chave = re.sub(r"\D", "", getattr(objeto, "chave_acesso", "") or "")
+        chave_svc = len(chave) == 44 and chave[34] == "7"
+        contingencia_marcada = bool(
+            getattr(objeto, "contingencia_iniciada_em", None)
+            and getattr(objeto, "contingencia_justificativa", "")
+        )
+        return chave_svc or contingencia_marcada
 
     def _endpoints(self):
         endpoints = {"GO": copy.deepcopy(SERVICOS_GO)}

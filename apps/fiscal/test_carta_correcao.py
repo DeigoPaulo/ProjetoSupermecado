@@ -22,6 +22,7 @@ from .models import (
     StatusCartaCorrecao,
     StatusDocumentoFiscal,
     TipoDocumentoFiscal,
+    TipoEvidenciaFiscal,
 )
 from .sefaz_direta.adapter import NFE_NS
 from .sefaz_direta.cce import CONDICAO_USO_CCE, SefazDiretaCartaCorrecaoAdapter
@@ -164,6 +165,17 @@ class CartaCorrecaoServiceTests(TestCase):
         self.assertEqual(segunda.status, StatusCartaCorrecao.AUTORIZADA)
         self.assertEqual(LogAuditoria.objects.filter(acao="CARTA_CORRECAO").count(), 2)
         self.assertEqual(FakeCartaCorrecaoAdapter.chamadas[-1]["sequencia"], 2)
+        self.assertEqual(
+            list(self.documento.evidencias_fiscais.values_list("tipo", flat=True)),
+            [
+                TipoEvidenciaFiscal.EVENTO_CCE_ENVIO,
+                TipoEvidenciaFiscal.EVENTO_CCE_RETORNO,
+                TipoEvidenciaFiscal.EVENTO_CCE_ENVIO,
+                TipoEvidenciaFiscal.EVENTO_CCE_RETORNO,
+            ],
+        )
+        self.assertEqual(self.documento.evidencias_fiscais.get(sequencia=1).conteudo, "<envEvento/>")
+        self.assertEqual(self.documento.evidencias_fiscais.get(sequencia=4).conteudo, "<retEnvEvento/>")
 
     def test_exige_confirmacao_e_texto_valido(self):
         with self.assertRaisesMessage(ValidationError, "15 e 1.000"):

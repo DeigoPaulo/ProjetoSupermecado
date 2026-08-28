@@ -14,6 +14,7 @@ from apps.vendas.models import TipoDocumentoConsumidor
 
 from .adapters import (
     SefazAdapterError,
+    caminho_adaptador_sefaz,
     carregar_adaptador_sefaz,
     normalizar_retorno_cancelamento,
     normalizar_retorno_consulta,
@@ -21,6 +22,9 @@ from .adapters import (
     normalizar_retorno_transmissao,
 )
 from .assinaturas import assinar_xml_documento, verificar_assinatura_xml
+from .evidencias import registrar_evidencia_fiscal
+from .cbenef import codigos_cbenef_go_validos
+from .cenarios_tributarios import pendencias_cenario_fiscal_go
 from .validacoes import validar_xml_pre_transmissao
 from .qrcode_nfce import gerar_url_qrcode_nfce
 from .perfis_uf import pendencias_endpoints_nfce, pendencias_produto_por_uf
@@ -29,6 +33,7 @@ from .models import (
     CodigoRegimeTributario,
     ConfiguracaoFiscal,
     DocumentoFiscal,
+    TipoEvidenciaFiscal,
     InutilizacaoNumeracaoFiscal,
     ModoTransicaoIbsCbs,
     NaturezaOperacao,
@@ -40,6 +45,27 @@ from .models import (
 
 NFE_NS = "http://www.portalfiscal.inf.br/nfe"
 ET.register_namespace("", NFE_NS)
+
+
+def _canal_evidencia_fiscal(documento):
+    try:
+        return documento.filial.configuracao_fiscal.provedor_emissao
+    except ConfiguracaoFiscal.DoesNotExist:
+        return "PADRAO_SERVIDOR"
+
+
+def _resultado_evidencia(resultado):
+    return {
+        campo: getattr(resultado, campo)
+        for campo in (
+            "status",
+            "chave_acesso",
+            "protocolo",
+            "protocolo_cancelamento",
+            "mensagem",
+        )
+        if hasattr(resultado, campo)
+    }
 
 CODIGOS_UF_IBGE = {
     "RO": "11",
@@ -96,6 +122,21 @@ def _chave_acesso_documento(documento, filial, modelo, tipo_emissao):
     codigo_numerico = f"{documento.pk:08d}"[-8:]
     base = f"{codigo_uf}{data}{cnpj}{modelo}{serie}{numero}{tipo_emissao}{codigo_numerico}"
     return f"{base}{_digito_verificador_chave(base)}", codigo_numerico
+
+
+def documento_em_contingencia_offline(documento):
+    """Identifica NFC-e tpEmis 9 mesmo durante correção de rejeição."""
+    chave = _somente_digitos(getattr(documento, "chave_acesso", ""))
+    return bool(
+        documento.tipo_documento == TipoDocumentoFiscal.NFCE
+        and documento.contingencia_iniciada_em
+        and documento.contingencia_justificativa
+        and (
+            documento.status == StatusDocumentoFiscal.CONTINGENCIA
+            or (len(chave) == 44 and chave[34] == "9")
+        )
+    )
+
 
 def _valor(valor, casas=2):
     quantizador = Decimal("1." + ("0" * casas))
@@ -359,10 +400,21 @@ def filtro_pendencias_produto_fiscal(regimes_tributarios=None, ufs=None, crts=No
 
     ufs_validas = {(uf or "").strip().upper() for uf in (ufs or []) if uf}
     if "GO" in ufs_validas:
-        pendente |= Q(reducao_base_icms__gt=0, codigo_beneficio_fiscal="")
-        pendente |= ~Q(codigo_beneficio_fiscal="") & ~Q(
-            codigo_beneficio_fiscal__regex=r"^GO\d{6}$"
-        )
+        if exige_normal:
+            pendente |= Q(reducao_base_icms__gt=0, codigo_beneficio_fiscal="")
+        codigos_catalogados = codigos_cbenef_go_validos()
+        if not codigos_catalogados:
+            pendente |= ~Q(codigo_beneficio_fiscal="")
+        else:
+            pendente |= ~Q(codigo_beneficio_fiscal="") & ~Q(
+                codigo_beneficio_fiscal__in=sorted(codigos_catalogados)
+            )
+            if exige_normal:
+                for cst in sorted(CST_ICMS_SUPORTADOS):
+                    codigos_cst = codigos_cbenef_go_validos(cst)
+                    pendente |= Q(cst_icms=cst) & ~Q(codigo_beneficio_fiscal="") & ~Q(
+                        codigo_beneficio_fiscal__in=sorted(codigos_cst)
+                    )
     return pendente
 
 
@@ -568,7 +620,7 @@ def pendencias_produto_fiscal(produto, regimes_tributarios=None, ufs=None, crts=
         pendencias.append("Aliquota ICMS")
     pendencias.extend(_pendencias_contribuicoes_produto(produto))
     pendencias.extend(_pendencias_ibs_cbs_produto(produto, exigir_ibs_cbs))
-    pendencias.extend(pendencias_produto_por_uf(produto, ufs))
+    pendencias.extend(pendencias_produto_por_uf(produto, ufs, crts))
     return pendencias
 
 
@@ -578,10 +630,20 @@ def gerar_xml_nfce(documento):
     venda = documento.venda
     configuracao = venda.filial.configuracao_fiscal
     natureza = documento.natureza_operacao
+    erros_cenario = pendencias_cenario_fiscal_go(
+        uf_emitente=venda.filial.uf,
+        modelo="65",
+        cfop=getattr(natureza, "cfop", ""),
+        finalidade="1",
+        destinatario_contribuinte=False,
+        possui_frete=False,
+    )
+    if erros_cenario:
+        raise ValidationError(erros_cenario)
     empresa = venda.filial.empresa
     cnpj_emitente = _somente_digitos(venda.filial.cnpj or empresa.cnpj)
     data_emissao = timezone.localtime(documento.criado_em).replace(microsecond=0).isoformat()
-    em_contingencia = documento.status == StatusDocumentoFiscal.CONTINGENCIA
+    em_contingencia = documento_em_contingencia_offline(documento)
     tipo_emissao = "9" if em_contingencia else "1"
     chave_acesso, codigo_numerico = _chave_acesso_documento(documento, venda.filial, "65", tipo_emissao)
     documento.chave_acesso = chave_acesso
@@ -732,6 +794,63 @@ def _documento_destinatario_pedido(pedido):
     raise ValidationError("Pedido online precisa ter CPF, CNPJ ou documento estrangeiro do destinatario para NF-e.")
 
 
+def _pendencias_destinatario_nfe_pedido(pedido):
+    erros = []
+    indicador_ie = str(pedido.destinatario_indicador_ie or "").strip()
+    inscricao_estadual = _somente_digitos(pedido.destinatario_inscricao_estadual)
+    if indicador_ie not in {"1", "2", "9"}:
+        erros.append("Informe o indicador de inscrição estadual do destinatário da NF-e.")
+    elif indicador_ie == "1" and not inscricao_estadual:
+        erros.append("Informe a inscrição estadual do destinatário contribuinte.")
+    elif indicador_ie != "1" and inscricao_estadual:
+        erros.append("Remova a inscrição estadual ou marque o destinatário como contribuinte.")
+
+    campos = (
+        ("logradouro", pedido.destinatario_logradouro),
+        ("número", pedido.destinatario_numero),
+        ("bairro", pedido.destinatario_bairro),
+        ("código IBGE do município", pedido.destinatario_codigo_municipio_ibge),
+        ("município", pedido.destinatario_municipio),
+        ("UF", pedido.destinatario_uf),
+        ("CEP", pedido.destinatario_cep),
+    )
+    for nome, valor in campos:
+        if not str(valor or "").strip():
+            erros.append(f"Informe {nome} do endereço fiscal do destinatário.")
+    if (
+        pedido.destinatario_codigo_municipio_ibge
+        and not re.fullmatch(r"\d{7}", pedido.destinatario_codigo_municipio_ibge.strip())
+    ):
+        erros.append("O código IBGE do município do destinatário deve possuir 7 dígitos.")
+    if pedido.destinatario_uf and not re.fullmatch(r"[A-Za-z]{2}", pedido.destinatario_uf.strip()):
+        erros.append("A UF do destinatário deve possuir 2 letras.")
+    if pedido.destinatario_cep and not re.fullmatch(r"\d{5}-?\d{3}", pedido.destinatario_cep.strip()):
+        erros.append("O CEP do destinatário deve possuir 8 dígitos.")
+    return erros
+
+
+def _dados_destinatario_nfe_pedido(pedido):
+    erros = _pendencias_destinatario_nfe_pedido(pedido)
+    if erros:
+        raise ValidationError(erros)
+    doc_tag, doc_valor = _documento_destinatario_pedido(pedido)
+    return {
+        "doc_tag": doc_tag,
+        "doc_valor": doc_valor,
+        "indicador_ie": str(pedido.destinatario_indicador_ie).strip(),
+        "inscricao_estadual": _somente_digitos(pedido.destinatario_inscricao_estadual),
+        "logradouro": pedido.destinatario_logradouro.strip(),
+        "numero": pedido.destinatario_numero.strip(),
+        "complemento": pedido.destinatario_complemento.strip(),
+        "bairro": pedido.destinatario_bairro.strip(),
+        "codigo_municipio_ibge": pedido.destinatario_codigo_municipio_ibge.strip(),
+        "municipio": pedido.destinatario_municipio.strip(),
+        "uf": pedido.destinatario_uf.strip().upper(),
+        "cep": _somente_digitos(pedido.destinatario_cep),
+        "telefone": _somente_digitos(pedido.telefone),
+    }
+
+
 def gerar_xml_nfe_pedido_online(documento):
     if not documento.pedido_online:
         raise ValidationError("Documento fiscal sem pedido online vinculado.")
@@ -741,8 +860,15 @@ def gerar_xml_nfe_pedido_online(documento):
     empresa = pedido.filial.empresa
     cnpj_emitente = _somente_digitos(pedido.filial.cnpj or empresa.cnpj)
     data_emissao = timezone.localtime(documento.criado_em).replace(microsecond=0).isoformat()
-    doc_tag, doc_valor = _documento_destinatario_pedido(pedido)
-    chave_acesso, codigo_numerico = _chave_acesso_documento(documento, pedido.filial, "55", "1")
+    destinatario = _dados_destinatario_nfe_pedido(pedido)
+    em_svc = bool(
+        documento.status == StatusDocumentoFiscal.CONTINGENCIA
+        and documento.contingencia_iniciada_em
+    )
+    tipo_emissao = "7" if em_svc else "1"
+    chave_acesso, codigo_numerico = _chave_acesso_documento(
+        documento, pedido.filial, "55", tipo_emissao
+    )
     documento.chave_acesso = chave_acesso
 
     nfe = ET.Element(f"{{{NFE_NS}}}NFe")
@@ -759,7 +885,7 @@ def gerar_xml_nfe_pedido_online(documento):
     _texto(ide, "idDest", "1")
     _texto(ide, "cMunFG", pedido.filial.codigo_municipio_ibge)
     _texto(ide, "tpImp", "1")
-    _texto(ide, "tpEmis", "1")
+    _texto(ide, "tpEmis", tipo_emissao)
     _texto(ide, "cDV", chave_acesso[-1])
     _texto(ide, "tpAmb", "2" if configuracao.ambiente == "HOMOLOGACAO" else "1")
     _texto(ide, "finNFe", "1")
@@ -767,6 +893,15 @@ def gerar_xml_nfe_pedido_online(documento):
     _texto(ide, "indPres", "2" if pedido.canal == "LOJA_ONLINE" else "9")
     _texto(ide, "procEmi", "0")
     _texto(ide, "verProc", "SupermercadoERP-0.1")
+    if em_svc:
+        _texto(
+            ide,
+            "dhCont",
+            timezone.localtime(documento.contingencia_iniciada_em)
+            .replace(microsecond=0)
+            .isoformat(),
+        )
+        _texto(ide, "xJust", documento.contingencia_justificativa)
 
     emit = ET.SubElement(inf_nfe, f"{{{NFE_NS}}}emit")
     _texto(emit, "CNPJ", cnpj_emitente)
@@ -776,9 +911,25 @@ def gerar_xml_nfe_pedido_online(documento):
     _texto(emit, "CRT", _crt_configuracao(configuracao))
 
     dest = ET.SubElement(inf_nfe, f"{{{NFE_NS}}}dest")
-    _texto(dest, doc_tag, doc_valor)
+    _texto(dest, destinatario["doc_tag"], destinatario["doc_valor"])
     _texto(dest, "xNome", pedido.nome_cliente[:60])
-    _texto(dest, "indIEDest", "9")
+    ender_dest = ET.SubElement(dest, f"{{{NFE_NS}}}enderDest")
+    _texto(ender_dest, "xLgr", destinatario["logradouro"][:60])
+    _texto(ender_dest, "nro", destinatario["numero"][:60])
+    if destinatario["complemento"]:
+        _texto(ender_dest, "xCpl", destinatario["complemento"][:60])
+    _texto(ender_dest, "xBairro", destinatario["bairro"][:60])
+    _texto(ender_dest, "cMun", destinatario["codigo_municipio_ibge"])
+    _texto(ender_dest, "xMun", destinatario["municipio"][:60])
+    _texto(ender_dest, "UF", destinatario["uf"])
+    _texto(ender_dest, "CEP", destinatario["cep"])
+    _texto(ender_dest, "cPais", "1058")
+    _texto(ender_dest, "xPais", "BRASIL")
+    if destinatario["telefone"]:
+        _texto(ender_dest, "fone", destinatario["telefone"][:14])
+    _texto(dest, "indIEDest", destinatario["indicador_ie"])
+    if destinatario["indicador_ie"] == "1":
+        _texto(dest, "IE", destinatario["inscricao_estadual"])
 
     itens_rateados = _ratear_desconto(
         pedido.itens.select_related("produto"),
@@ -890,6 +1041,16 @@ def pendencias_preparacao_fiscal(venda, configuracao, natureza):
         erros.append("Cadastre uma natureza de operação NFC-e ativa.")
     elif not re.fullmatch(r"[1-7]\d{3}", natureza.cfop.strip()):
         erros.append("A natureza de operação deve possuir CFOP valido com 4 digitos.")
+    erros.extend(
+        pendencias_cenario_fiscal_go(
+            uf_emitente=venda.filial.uf,
+            modelo="65",
+            cfop=getattr(natureza, "cfop", ""),
+            finalidade="1",
+            destinatario_contribuinte=False,
+            possui_frete=False,
+        )
+    )
 
     simples_nacional = _usa_csosn(configuracao)
     itens = list(venda.itens.select_related("produto"))
@@ -926,7 +1087,12 @@ def pendencias_preparacao_fiscal(venda, configuracao, natureza):
             erros.append(
                 f"{prefixo} confirme na natureza da operacao que o IPI tributado esta incluido no preco."
             )
-        erros.extend(f"{prefixo} {pendencia}." for pendencia in pendencias_produto_por_uf(produto, [venda.filial.uf]))
+        erros.extend(
+            f"{prefixo} {pendencia}."
+            for pendencia in pendencias_produto_por_uf(
+                produto, [venda.filial.uf], [_crt_configuracao(configuracao)]
+            )
+        )
     return erros
 
 
@@ -960,6 +1126,20 @@ def pendencias_preparacao_nfe_pedido(pedido, configuracao, natureza):
         _documento_destinatario_pedido(pedido)
     except ValidationError as exc:
         erros.extend(exc.messages)
+    erros.extend(_pendencias_destinatario_nfe_pedido(pedido))
+    erros.extend(
+        pendencias_cenario_fiscal_go(
+            uf_emitente=pedido.filial.uf,
+            modelo="55",
+            cfop=getattr(natureza, "cfop", ""),
+            finalidade="1",
+            destinatario_contribuinte=pedido.destinatario_indicador_ie == "1",
+            possui_frete=(
+                pedido.tipo_entrega == "ENTREGA" or bool(Decimal(pedido.taxa_entrega or 0))
+            ),
+            uf_destinatario=pedido.destinatario_uf,
+        )
+    )
     itens = list(pedido.itens.select_related("produto"))
     if not itens:
         erros.append("O pedido online não possui itens para emissao fiscal.")
@@ -995,7 +1175,12 @@ def pendencias_preparacao_nfe_pedido(pedido, configuracao, natureza):
             erros.append(
                 f"{prefixo} confirme na natureza da operacao que o IPI tributado esta incluido no preco."
             )
-        erros.extend(f"{prefixo} {pendencia}." for pendencia in pendencias_produto_por_uf(produto, [pedido.filial.uf]))
+        erros.extend(
+            f"{prefixo} {pendencia}."
+            for pendencia in pendencias_produto_por_uf(
+                produto, [pedido.filial.uf], [_crt_configuracao(configuracao)]
+            )
+        )
     return erros
 
 
@@ -1170,6 +1355,7 @@ def ativar_contingencia_offline(documento, usuario, justificativa, ip=None):
     documento.contingencia_iniciada_em = agora
     documento.contingencia_justificativa = justificativa
     documento.transmissao_limite_em = agora + timedelta(hours=24)
+    documento.confirmacoes_nao_localizado = 0
     documento.mensagem_retorno = (
         "NFC-e emitida em contingência offline, ainda sem autorização da SEFAZ. "
         "Transmitir assim que a comunicacao for restabelecida."
@@ -1180,6 +1366,7 @@ def ativar_contingencia_offline(documento, usuario, justificativa, ip=None):
             "contingencia_iniciada_em",
             "contingencia_justificativa",
             "transmissao_limite_em",
+            "confirmacoes_nao_localizado",
             "mensagem_retorno",
             "atualizado_em",
         ]
@@ -1200,6 +1387,81 @@ def ativar_contingencia_offline(documento, usuario, justificativa, ip=None):
     )
     return documento
 
+
+
+@transaction.atomic
+def ativar_contingencia_svc(documento, usuario, justificativa, ip=None):
+    """Prepara uma NF-e de Goias para autorizacao na SVC-RS (tpEmis=7)."""
+    if not getattr(usuario, "is_superuser", False):
+        raise ValidationError("Somente o Master pode ativar a contingência SVC.")
+    if not getattr(settings, "SEFAZ_DIRETA_SVC_ENABLED", False):
+        raise ValidationError("A contingência SVC permanece desligada no servidor.")
+
+    documento = (
+        DocumentoFiscal.objects.select_for_update()
+        .select_related("filial")
+        .get(pk=documento.pk)
+    )
+    if documento.tipo_documento != TipoDocumentoFiscal.NFE:
+        raise ValidationError("A contingência SVC é exclusiva para NF-e modelo 55.")
+    if documento.filial.uf != "GO":
+        raise ValidationError("Nesta etapa, a SVC direta está limitada a Goiás.")
+    if documento.status != StatusDocumentoFiscal.PRONTO:
+        raise ValidationError("Somente NF-e pronta pode entrar em contingência SVC.")
+    if documento.aguardando_consulta_sefaz:
+        raise ValidationError(
+            "Consulte a situação da chave na SEFAZ antes de ativar a contingência."
+        )
+    try:
+        configuracao = documento.filial.configuracao_fiscal
+    except ConfiguracaoFiscal.DoesNotExist as exc:
+        raise ValidationError("Configure os dados fiscais da filial antes de usar SVC.") from exc
+    from .models import ProvedorEmissaoFiscal
+
+    if configuracao.provedor_emissao != ProvedorEmissaoFiscal.SEFAZ_DIRETA_GO:
+        raise ValidationError(
+            "A SVC direta exige que a filial esteja no canal técnico SEFAZ direta."
+        )
+    justificativa = (justificativa or "").strip()
+    if not 15 <= len(justificativa) <= 256:
+        raise ValidationError("A justificativa da contingência deve ter entre 15 e 256 caracteres.")
+
+    documento.status = StatusDocumentoFiscal.CONTINGENCIA
+    documento.contingencia_iniciada_em = timezone.now()
+    documento.contingencia_justificativa = justificativa
+    documento.transmissao_limite_em = None
+    documento.xml_assinado_em = None
+    documento.certificado_serial_assinatura = ""
+    documento.mensagem_retorno = (
+        "NF-e preparada para autorização em contingência SVC-RS. "
+        "O documento ainda não está autorizado."
+    )
+    documento.save(
+        update_fields=[
+            "status",
+            "contingencia_iniciada_em",
+            "contingencia_justificativa",
+            "transmissao_limite_em",
+            "xml_assinado_em",
+            "certificado_serial_assinatura",
+            "mensagem_retorno",
+            "atualizado_em",
+        ]
+    )
+    salvar_xml_documento(documento)
+    LogAuditoria.objects.create(
+        usuario=usuario,
+        modulo="fiscal",
+        acao="ATIVA_CONTINGENCIA_SVC_RS",
+        descricao=(
+            f"NF-e {documento.id} preparada para contingência SVC-RS por decisão do Master. "
+            f"Justificativa: {justificativa}"
+        ),
+        objeto_tipo="DocumentoFiscal",
+        objeto_id=str(documento.id),
+        ip=ip,
+    )
+    return documento
 
 
 @transaction.atomic
@@ -1246,6 +1508,14 @@ def transmitir_documento_sefaz(documento, usuario, ip=None):
             .get(pk=documento.pk)
         )
         status_origem = documento.status
+        em_svc = bool(
+            documento.tipo_documento == TipoDocumentoFiscal.NFE
+            and documento.contingencia_iniciada_em
+            and len(documento.chave_acesso) == 44
+            and documento.chave_acesso[34] == "7"
+        )
+        if em_svc and not getattr(usuario, "is_superuser", False):
+            raise ValidationError("Somente o Master pode transmitir uma NF-e pela SVC.")
         if status_origem not in {StatusDocumentoFiscal.PRONTO, StatusDocumentoFiscal.CONTINGENCIA}:
             raise ValidationError("Somente documentos prontos ou em contingência podem ser transmitidos.")
         if documento.aguardando_consulta_sefaz:
@@ -1262,19 +1532,51 @@ def transmitir_documento_sefaz(documento, usuario, ip=None):
             f"{documento.xml_gerado_em.isoformat() if documento.xml_gerado_em else 'sem-xml'}"
         )
 
+    envio_realizado = False
     try:
-        adapter = carregar_adaptador_sefaz()
+        adapter = carregar_adaptador_sefaz(filial=documento.filial)
         if not bool(getattr(adapter, "assina_xml", False)):
             assinar_xml_documento(documento)
             verificar_assinatura_xml(documento.xml_conteudo)
         validar_xml_pre_transmissao(documento, adapter)
+        registrar_evidencia_fiscal(
+            documento=documento,
+            tipo=TipoEvidenciaFiscal.XML_ENVIO,
+            referencia=f"{idempotency_key}:xml-envio",
+            conteudo=documento.xml_conteudo,
+            usuario=usuario,
+            canal=_canal_evidencia_fiscal(documento),
+            chave_acesso=documento.chave_acesso,
+        )
         retorno = adapter.transmitir(
             documento=documento,
             xml=documento.xml_conteudo,
             idempotency_key=idempotency_key,
             ambiente=documento.ambiente,
         )
+        envio_realizado = True
         resultado = normalizar_retorno_transmissao(retorno)
+        registrar_evidencia_fiscal(
+            documento=documento,
+            tipo=TipoEvidenciaFiscal.RETORNO_TRANSMISSAO,
+            referencia=f"{idempotency_key}:retorno",
+            conteudo=_resultado_evidencia(resultado),
+            usuario=usuario,
+            canal=_canal_evidencia_fiscal(documento),
+            chave_acesso=resultado.chave_acesso or documento.chave_acesso,
+            protocolo=resultado.protocolo,
+        )
+        if resultado.xml_autorizado:
+            registrar_evidencia_fiscal(
+                documento=documento,
+                tipo=TipoEvidenciaFiscal.XML_AUTORIZADO,
+                referencia=f"{idempotency_key}:xml-autorizado",
+                conteudo=resultado.xml_autorizado,
+                usuario=usuario,
+                canal=_canal_evidencia_fiscal(documento),
+                chave_acesso=resultado.chave_acesso,
+                protocolo=resultado.protocolo,
+            )
         if resultado.status == "AUTORIZADO":
             preserva_chave_local = bool(
                 getattr(adapter, "preserva_chave_local", True)
@@ -1293,10 +1595,13 @@ def transmitir_documento_sefaz(documento, usuario, ip=None):
             if isinstance(exc, (SefazAdapterError, ValidationError))
             else "Falha na comunicacao com o adaptador SEFAZ."
         )
-        DocumentoFiscal.objects.filter(pk=documento.pk).update(
-            mensagem_retorno=mensagem,
-            atualizado_em=timezone.now(),
-        )
+        campos_falha = {
+            "mensagem_retorno": mensagem,
+            "atualizado_em": timezone.now(),
+        }
+        if envio_realizado:
+            campos_falha["aguardando_consulta_sefaz"] = True
+        DocumentoFiscal.objects.filter(pk=documento.pk).update(**campos_falha)
         LogAuditoria.objects.create(
             usuario=usuario,
             modulo="fiscal",
@@ -1315,6 +1620,7 @@ def transmitir_documento_sefaz(documento, usuario, ip=None):
 
         documento.mensagem_retorno = resultado.mensagem
         documento.tentativas_consulta_sefaz = 0
+        documento.confirmacoes_nao_localizado = 0
         if resultado.status == "AUTORIZADO":
             documento.aguardando_consulta_sefaz = False
             documento.status = StatusDocumentoFiscal.EMITIDO
@@ -1339,6 +1645,7 @@ def transmitir_documento_sefaz(documento, usuario, ip=None):
                 "mensagem_retorno",
                 "aguardando_consulta_sefaz",
                 "tentativas_consulta_sefaz",
+                "confirmacoes_nao_localizado",
                 "atualizado_em",
             ]
         )
@@ -1378,6 +1685,12 @@ def cancelar_documento(documento, usuario, motivo, ip=None):
             StatusDocumentoFiscal.PRONTO,
             StatusDocumentoFiscal.REJEITADO,
         }:
+            if documento_em_contingencia_offline(documento):
+                raise ValidationError(
+                    "NFC-e emitida em contingência offline não pode ser cancelada "
+                    "apenas no sistema. Corrija a rejeição e conclua a regularização "
+                    "na SEFAZ."
+                )
             documento.status = StatusDocumentoFiscal.CANCELADO
             documento.motivo_cancelamento = motivo
             documento.cancelamento_em = timezone.now()
@@ -1441,12 +1754,26 @@ def cancelar_documento(documento, usuario, motivo, ip=None):
         )
 
     try:
-        adapter = carregar_adaptador_sefaz()
+        adapter = carregar_adaptador_sefaz(filial=documento.filial)
         cancelar = getattr(adapter, "cancelar", None)
         if not callable(cancelar):
             raise SefazAdapterError(
                 "O adaptador SEFAZ configurado não implementa cancelamento autorizado."
             )
+        registrar_evidencia_fiscal(
+            documento=documento,
+            tipo=TipoEvidenciaFiscal.EVENTO_CANCELAMENTO_ENVIO,
+            referencia=f"{idempotency_key}:envio",
+            conteudo={
+                "chave_acesso": documento.chave_acesso,
+                "protocolo_autorizacao": documento.protocolo,
+                "justificativa": motivo,
+            },
+            usuario=usuario,
+            canal=_canal_evidencia_fiscal(documento),
+            chave_acesso=documento.chave_acesso,
+            protocolo=documento.protocolo,
+        )
         retorno = cancelar(
             documento=documento,
             chave_acesso=documento.chave_acesso,
@@ -1456,6 +1783,16 @@ def cancelar_documento(documento, usuario, motivo, ip=None):
             ambiente=documento.ambiente,
         )
         resultado = normalizar_retorno_cancelamento(retorno)
+        registrar_evidencia_fiscal(
+            documento=documento,
+            tipo=TipoEvidenciaFiscal.EVENTO_CANCELAMENTO_RETORNO,
+            referencia=f"{idempotency_key}:retorno",
+            conteudo=_resultado_evidencia(resultado),
+            usuario=usuario,
+            canal=_canal_evidencia_fiscal(documento),
+            chave_acesso=documento.chave_acesso,
+            protocolo=resultado.protocolo,
+        )
     except Exception as exc:
         mensagem = (
             str(exc)
@@ -1539,7 +1876,7 @@ def consultar_situacao_documento(documento, usuario, ip=None):
         )
 
     try:
-        adapter = carregar_adaptador_sefaz()
+        adapter = carregar_adaptador_sefaz(filial=documento.filial)
         consultar = getattr(adapter, "consultar", None)
         if not callable(consultar):
             raise SefazAdapterError(
@@ -1553,6 +1890,30 @@ def consultar_situacao_documento(documento, usuario, ip=None):
                 ambiente=documento.ambiente,
             )
         )
+        referencia_consulta = (
+            f"{idempotency_key}:tentativa-{documento.tentativas_consulta_sefaz}:retorno"
+        )
+        registrar_evidencia_fiscal(
+            documento=documento,
+            tipo=TipoEvidenciaFiscal.RETORNO_CONSULTA,
+            referencia=referencia_consulta,
+            conteudo=_resultado_evidencia(resultado),
+            usuario=usuario,
+            canal=_canal_evidencia_fiscal(documento),
+            chave_acesso=resultado.chave_acesso or documento.chave_acesso,
+            protocolo=resultado.protocolo or resultado.protocolo_cancelamento,
+        )
+        if resultado.xml_autorizado:
+            registrar_evidencia_fiscal(
+                documento=documento,
+                tipo=TipoEvidenciaFiscal.XML_AUTORIZADO,
+                referencia=f"{referencia_consulta}:xml-autorizado",
+                conteudo=resultado.xml_autorizado,
+                usuario=usuario,
+                canal=_canal_evidencia_fiscal(documento),
+                chave_acesso=resultado.chave_acesso or documento.chave_acesso,
+                protocolo=resultado.protocolo,
+            )
     except Exception as exc:
         mensagem = (
             str(exc)
@@ -1562,6 +1923,7 @@ def consultar_situacao_documento(documento, usuario, ip=None):
         DocumentoFiscal.objects.filter(pk=documento.pk).update(
             consulta_sefaz_em=timezone.now(),
             mensagem_consulta_sefaz=mensagem,
+            confirmacoes_nao_localizado=0,
             atualizado_em=timezone.now(),
         )
         LogAuditoria.objects.create(
@@ -1580,9 +1942,12 @@ def consultar_situacao_documento(documento, usuario, ip=None):
         documento = DocumentoFiscal.objects.select_for_update().get(pk=documento.pk)
         documento.consulta_sefaz_em = agora
         documento.mensagem_consulta_sefaz = resultado.mensagem
+        confirmacoes_anteriores = documento.confirmacoes_nao_localizado
+        documento.confirmacoes_nao_localizado = 0
         update_fields = [
             "consulta_sefaz_em",
             "mensagem_consulta_sefaz",
+            "confirmacoes_nao_localizado",
             "atualizado_em",
         ]
         if resultado.status == "AUTORIZADO":
@@ -1622,11 +1987,34 @@ def consultar_situacao_documento(documento, usuario, ip=None):
             documento.protocolo = resultado.protocolo
             update_fields.extend(["status", "protocolo", "aguardando_consulta_sefaz"])
         elif resultado.status == "NAO_LOCALIZADO":
-            documento.aguardando_consulta_sefaz = False
-            documento.tentativas_transmissao = 0
-            update_fields.extend(
-                ["aguardando_consulta_sefaz", "tentativas_transmissao"]
-            )
+            if documento_em_contingencia_offline(documento):
+                confirmacoes_exigidas = max(
+                    2,
+                    int(
+                        getattr(
+                            settings,
+                            "FISCAL_CONTINGENCY_NOT_FOUND_CONFIRMATIONS",
+                            2,
+                        )
+                    ),
+                )
+                documento.confirmacoes_nao_localizado = confirmacoes_anteriores + 1
+                if documento.confirmacoes_nao_localizado < confirmacoes_exigidas:
+                    documento.aguardando_consulta_sefaz = True
+                    documento.mensagem_consulta_sefaz = (
+                        f"Documento não localizado; confirmação "
+                        f"{documento.confirmacoes_nao_localizado}/{confirmacoes_exigidas}. "
+                        "A retransmissão continua bloqueada."
+                    )
+                else:
+                    documento.aguardando_consulta_sefaz = False
+                    documento.tentativas_transmissao = 0
+                    update_fields.append("tentativas_transmissao")
+            else:
+                documento.aguardando_consulta_sefaz = False
+                documento.tentativas_transmissao = 0
+                update_fields.append("tentativas_transmissao")
+            update_fields.append("aguardando_consulta_sefaz")
         else:
             documento.aguardando_consulta_sefaz = True
             update_fields.append("aguardando_consulta_sefaz")
@@ -1747,7 +2135,7 @@ def solicitar_inutilizacao_numeracao(
         )
 
     try:
-        adapter_path = getattr(settings, "FISCAL_SEFAZ_ADAPTER", "").strip()
+        adapter_path = caminho_adaptador_sefaz(filial=filial)
         if configuracao.ambiente == AmbienteFiscal.HOMOLOGACAO and not adapter_path:
             resultado = normalizar_retorno_inutilizacao(
                 {
@@ -1757,7 +2145,7 @@ def solicitar_inutilizacao_numeracao(
                 }
             )
         else:
-            adapter = carregar_adaptador_sefaz()
+            adapter = carregar_adaptador_sefaz(filial=filial)
             inutilizar = getattr(adapter, "inutilizar", None)
             if not callable(inutilizar):
                 raise SefazAdapterError(

@@ -382,6 +382,7 @@ Antes de emitir documento real:
 - configurar e homologar `FISCAL_SEFAZ_ADAPTER`, schema e certificado A1;
 - manter `FISCAL_AUTO_TRANSMIT_ENABLED=False` ate a homologacao ser aprovada;
 - ajustar `FISCAL_AUTO_QUERY_MAX_ATTEMPTS` somente com o provedor fiscal; o padrão limita a 12 consultas automáticas antes de exigir análise manual, sem retransmitir a nota;
+- manter `FISCAL_CONTINGENCY_NOT_FOUND_CONFIRMATIONS=2` ou valor superior; a NFC-e offline nunca deve ser retransmitida após uma única resposta de ausência;
 - depois da aprovacao, habilitar a fila e registrar `scripts/register_fiscal_transmission_task.ps1` com conta de servico dedicada;
 - conferir na Central Fiscal documentos elegiveis, leases ativos, retentativas e tentativas esgotadas;
 - quando uma rejeicao ou falha esgotar as tentativas, corrigir primeiro o cadastro de origem e usar `Recolocar na fila` no detalhe do documento;
@@ -411,7 +412,7 @@ Registrar a tarefa diaria:
 ```
 
 O backup PostgreSQL deve conter `database.dump`, manifesto, midia e SHA-256. Em
-producao, habilitar AES-256 e manter copia externa protegida.
+producao, habilitar AES-256 e configurar `LOCAL_BACKUP_SECONDARY_DIR` para NAS, rede ou disco externo. Confirmar o destino com `LOCAL_BACKUP_SECONDARY_CONFIRMED=True`, testar a igualdade SHA-256 e garantir que a conta `SYSTEM` possua acesso sem armazenar senha no comando. Depois da primeira execução real, o Master deve conferir em Sistema > Backup o registro de sucesso, criptografia, destino secundário e SHA-256 validado; nenhum caminho ou segredo deve aparecer. Somente depois desse aceite, configurar `LOCAL_BACKUP_MAX_AGE_HOURS=36` e confirmar que o painel muda de “Em dia” para “Atrasado” quando o último sucesso ultrapassa o prazo; `0` mantém o monitor desligado. Nesse estado, o aceite pós-instalação permanece bloqueado; painel, comando e evidência só ficam alinhados e liberáveis depois que a política for ativada. O comando também aplica `local_backup_package_validation_v1` ao pacote mais recente: exige o `.sha256` correspondente, recalcula a integridade, testa integralmente o ZIP e confere contrato, banco e âncora fiscal. Para instalação que remove o ZIP aberto e conserva apenas `.zip.aes`, disponibilize `BACKUP_ENCRYPTION_PASSPHRASE` à conta do serviço; sem ela, o pacote criptografado não libera o aceite.
 
 Validar restauracao sem alterar dados:
 
@@ -420,6 +421,8 @@ Validar restauracao sem alterar dados:
   -BackupPath "D:\DeigoVarejo\Backups\backup.zip.aes" `
   -ValidarSomente
 ```
+
+Em SQLite, antes da janela real, repetir o comando com `-EnsaiarIsolado`. O JSON `local_restore_rehearsal_v1` deve confirmar integridade antes/depois, migrations, Django check, cadeia fiscal e ausência de alteração do serviço ou dos dados ativos. Em PostgreSQL, preparar um banco vazio `deigo_rehearsal_*`, fornecer host, usuário e senha pelas variáveis `RESTORE_REHEARSAL_POSTGRES_*` e executar também `-ConfirmarBancoPostgresTemporario`. O script não cria nem remove o banco, recusa qualquer objeto pré-existente ou coincidência com a origem e usa `pg_restore --single-transaction`; preserve o alvo para inspeção e descarte-o somente em procedimento manual autorizado.
 
 Antes da entrega, restaurar uma copia em ambiente separado, executar healthcheck e
 conferir dados operacionais. Nunca testar restauracao pela primeira vez no servidor
@@ -488,7 +491,9 @@ Executar e registrar:
 
 Falha critica ou dossie nao liberavel impede o aceite e a entrada em producao.
 
-Como alternativa aos comandos, o super admin pode acessar **Sistema > Servidor local > Baixar evidências**. O ZIP gerado contém o dossiê, a evidência de aceite e seus arquivos SHA-256; o evento fica registrado na auditoria. O pacote também é gerado quando houver bloqueios, para documentar as correções necessárias antes da liberação.
+Como alternativa aos comandos, o super admin pode acessar **Sistema > Servidor local** e escolher **Evidências com rede** ou **Evidências offline**. O ZIP gerado contém o dossiê, a evidência de aceite e seus arquivos SHA-256; o evento e a política escolhida ficam registrados na auditoria. No modo com rede, a ausência da mídia offline é recomendação. No modo offline, o contrato `local_installation_media_policy_v1` exige ZIP e SHA-256 publicados e íntegros, bloqueando prontidão e aceite enquanto houver pendência. O pacote de evidências continua sendo gerado quando houver bloqueios, para documentar as correções necessárias antes da liberação.
+
+Na máquina de build, o empacotador deve concluir `detech_server_offline_package_validation_v2` antes de promover o ZIP e criar seu SHA-256; falha não pode substituir a última mídia válida. Publique com `publish_detech_server_offline.ps1`: ele revalida origem e cópia, vincula o checksum ao nome final e restaura automaticamente a publicação anterior em falha. Antes de transportar a mídia, confirme no Master que `detech_server_offline_publication_validation_v1` aprovou presença, hash e nome do `.zip.sha256`. Use somente o instalador offline liberado pelo Master após `detech_server_offline_package_validation_v2`. O aceite confere servidor, runtime, wheelhouse, PostgreSQL, WinSW, iniciador, apps e manifestos, além dos ZIPs internos e de arquivos duplicados ou não declarados; falha mantém o download bloqueado antes de qualquer mudança na máquina.
 
 Após executar os testes em uma máquina limpa, registre o resultado em **Sistema > Servidor local > Homologação em máquina limpa**. Informe a máquina, o sistema operacional e a versão do artefato; envie **evidencia_aceite.json** e o arquivo **.sha256** produzido junto com ela. O sistema compara o checksum, valida contrato, perfil, alvo de produção, diagnóstico pós-instalação e flags de segurança, e calcula o hash sem entrada manual. Uma aprovação exige evidência liberável e só vale para a versão vigente do servidor; após publicar uma nova versão, a tela sinaliza a homologação anterior como desatualizada. Registros criados antes do roteiro de testes críticos aparecem como incompletos e devem ser refeitos uma vez. Reprovações exigem a descrição da falha e da correção necessária; o sistema impede reutilizar a mesma evidência e registra o responsável na auditoria.
 

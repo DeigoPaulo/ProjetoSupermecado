@@ -30,7 +30,7 @@ Para servidor local da loja, use o script operacional:
 .\scripts\backup_local.ps1
 ```
 
-Primeiro execute `.\scripts\backup_local.ps1 -ValidarSomente`. O diagnóstico informa as fontes efetivas sem gerar arquivos. Quando o WinSW estiver instalado, o script lê seu XML para usar o banco, a mídia e os logs de `%ProgramData%`; sem o serviço, usa a configuração do Django. O contrato `erp_local_backup_v2` gera `.zip` com `dados.json`, pasta `media/`, manifesto e checksum SHA-256. Para SQLite inclui snapshot consistente; para PostgreSQL inclui `database.dump` custom criado por `pg_dump`. Para incluir logs:
+Primeiro execute `.\scripts\backup_local.ps1 -ValidarSomente`. O diagnóstico informa as fontes efetivas sem gerar arquivos. Quando o WinSW estiver instalado, o script lê seu XML para usar o banco, a mídia e os logs de `%ProgramData%`; sem o serviço, usa a configuração do Django. O contrato `erp_local_backup_v2` gera `.zip` com `dados.json`, pasta `media/`, manifesto e checksum SHA-256. Para SQLite inclui snapshot consistente; para PostgreSQL inclui `database.dump` custom criado por `pg_dump`. Diretórios declarados de mídia ou logs também recebem entrada explícita no ZIP quando vazios, evitando manifesto incompatível com a restauração. A execução também verifica as cadeias fiscais em modo estrito, compara a âncora externa anterior, preserva `fiscal-evidence-anchor-latest.json` no destino e inclui uma cópia validada no ZIP; divergência impede a conclusão do backup. Cada execução operacional registra na auditoria apenas o estado sanitizado, a origem e os totais, sem conteúdo fiscal ou credenciais; o alerta fica visível somente ao Master e estados idênticos consecutivos não geram duplicação. Para incluir logs:
 
 ```powershell
 .\scripts\backup_local.ps1 -IncluirLogs
@@ -50,6 +50,19 @@ $env:BACKUP_ENCRYPTION_PASSPHRASE = "senha-forte-fora-do-git"
 ```
 
 O script cria um `.zip.aes` com AES-256 e checksum proprio. Quando a politica da empresa exigir somente o arquivo criptografado, use `-RemoverOriginalCriptografado` para apagar o `.zip` aberto ao final da geracao.
+
+A cópia secundária fica desligada por padrão. Para NAS, compartilhamento de rede ou disco externo, configure um destino diferente da pasta principal e confirme explicitamente a natureza externa:
+
+```powershell
+$env:BACKUP_ENCRYPTION_PASSPHRASE = "senha-forte-fora-do-git"
+.\scripts\backup_local.ps1 `
+  -DestinoSecundario "\\nas-loja\backup\DeigoVarejo" `
+  -ConfirmarDestinoSecundario `
+  -RetencaoSecundariaDias 90 `
+  -RemoverOriginalCriptografado
+```
+
+Somente o `.zip.aes` e seu `.sha256` são copiados. O arquivo usa nome temporário no segundo destino, tem o hash recalculado e só é promovido após igualdade com a origem. Cada execução real registra no banco um resultado idempotente e sanitizado com data, sucesso ou falha, etapa, uso de criptografia, presença de cópia secundária e confirmação do SHA-256; caminhos, nomes de rede, arquivos, senhas e conteúdo não são armazenados. O histórico e o alerta da última falha aparecem somente ao Master. Destino igual, interno à pasta principal, sem confirmação ou sem criptografia é recusado. Para a tarefa diária, passe as mesmas opções a `register_backup_task.ps1` ou configure `LOCAL_BACKUP_SECONDARY_DIR` e `LOCAL_BACKUP_SECONDARY_CONFIRMED=True` no ambiente protegido da conta de serviço. O monitor de periodicidade também é exclusivo do Master e usa somente o último resultado bem-sucedido. Ele fica desligado com `LOCAL_BACKUP_MAX_AGE_HOURS=0`; após homologar a tarefa diária, recomenda-se definir `36` horas. Ausência de sucesso ou idade superior ao limite gera pendência alta sem revelar destino ou conteúdo. O pós-instalação e a evidência de aceite usam a mesma política `backup_age_policy_v1`; com valor `0`, o aceite permanece bloqueado até o agendamento e o prazo serem homologados. O aceite não considera mais suficiente apenas o nome e a data do arquivo: `local_backup_package_validation_v1` recalcula o SHA-256, abre e testa todo o ZIP, recusa caminhos inseguros ou duplicados e valida contrato, dump lógico, banco e âncora fiscal. Se somente o `.zip.aes` for mantido, a conta que executa o aceite precisa receber `BACKUP_ENCRYPTION_PASSPHRASE`; a descriptografia ocorre em diretório temporário e o diagnóstico permanece sanitizado.
 
 ## 3. Banco e arquivos
 
@@ -72,6 +85,8 @@ O fluxo recomendado e:
 4. Conferir login, empresas, produtos, estoque, vendas, caixa e relatorios.
 5. Fazer uma copia atual de producao.
 6. Planejar uma janela de restauracao.
+
+Para o backup operacional completo, valide primeiro. Em SQLite, depois da validação execute também `-EnsaiarIsolado`: ele abre uma cópia temporária do snapshot, aplica migrations, roda o Django check e confere a âncora fiscal sem alterar serviço ou dados ativos. O resultado sanitizado usa `local_restore_rehearsal_v1`. PostgreSQL exige um banco já criado, vazio e com prefixo `deigo_rehearsal_`. Configure `RESTORE_REHEARSAL_POSTGRES_DB`, `RESTORE_REHEARSAL_POSTGRES_HOST`, `RESTORE_REHEARSAL_POSTGRES_USER` e `RESTORE_REHEARSAL_POSTGRES_PASSWORD`, então execute `-EnsaiarIsolado -ConfirmarBancoPostgresTemporario`. O script recusa banco ativo/origem e banco com objetos, não usa `--clean`, restaura em transação única e preserva o alvo para inspeção e descarte manual autorizado.
 
 Para o backup operacional completo, valide primeiro:
 

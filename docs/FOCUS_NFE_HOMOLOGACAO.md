@@ -77,6 +77,19 @@ FISCAL_AUTO_TRANSMIT_ENABLED=False
 ```
 
 Quando cada CNPJ possuir um token próprio, deixe `FOCUS_NFE_FISCAL_TOKEN` vazio e use `FOCUS_NFE_FISCAL_TOKENS_JSON`. A fila automática deve permanecer desligada até a emissão manual de homologação ser aprovada. Não use token de produção no ambiente de desenvolvimento.
+Antes de qualquer chamada ao sandbox, execute o diagnóstico local estrito:
+
+```powershell
+python manage.py validar_adaptador_sefaz --exigir-eventos --exigir-configuracao --estrito
+```
+
+A checagem não usa a rede nem valida o token na Focus. Ela confirma somente que a credencial está presente, que o endpoint é oficial e que produção continua bloqueada. O valor do token nunca aparece na saída.
+
+Depois de cadastrar a configuração fiscal da filial piloto, execute o preflight por filial:
+
+    python manage.py verificar_prontidao_fiscal --cnpj CNPJ_DA_FILIAL --estrito
+
+O preflight confere dados da filial, CSC, endpoints, certificado, série, natureza, schema, adaptador, credencial específica do CNPJ e evidência de homologação. Ele é exclusivamente local e não retorna token, CSC, certificado ou senha. Um token configurado para outra filial não libera a filial piloto.
 
 Antes da primeira emissão devem estar homologados:
 

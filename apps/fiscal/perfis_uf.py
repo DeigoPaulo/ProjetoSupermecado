@@ -4,8 +4,9 @@ O catálogo não calcula tributação. Ele guarda parâmetros técnicos publicad
 pelas UFs e valida regras objetivas antes da geração do documento.
 """
 
-import re
 from decimal import Decimal
+
+from .cbenef import validar_cbenef_go
 
 
 PERFIS_FISCAIS_UF = {
@@ -74,16 +75,24 @@ def pendencias_endpoints_nfce(filial, configuracao):
     return pendencias
 
 
-def pendencias_produto_por_uf(produto, ufs=None):
+def pendencias_produto_por_uf(produto, ufs=None, crts=None, data_referencia=None):
     ufs = {(uf or "").strip().upper() for uf in (ufs or []) if uf}
     pendencias = []
     if "GO" not in ufs:
         return pendencias
 
+    crts = {str(crt) for crt in (crts or []) if crt}
+    exige_regime_normal = not crts or bool(crts & {"2", "3"})
     cbenef = (produto.codigo_beneficio_fiscal or "").strip().upper()
     reducao = produto.reducao_base_icms or Decimal("0")
-    if cbenef and not re.fullmatch(PERFIS_FISCAIS_UF["GO"]["cbenef_pattern"], cbenef):
-        pendencias.append("cBenef de Goiás no formato GO + 6 dígitos")
-    if reducao > 0 and not cbenef:
+    if reducao > 0 and not cbenef and exige_regime_normal:
         pendencias.append("cBenef obrigatório em Goiás para redução de base do ICMS")
+    if cbenef:
+        pendencia_catalogo = validar_cbenef_go(
+            cbenef,
+            produto.cst_icms if exige_regime_normal else None,
+            data_referencia,
+        )
+        if pendencia_catalogo:
+            pendencias.append(pendencia_catalogo)
     return pendencias

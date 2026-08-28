@@ -24,6 +24,7 @@ from .cce_adapters import diagnostico_adaptador_cce
 from .cadastro_adapters import diagnostico_adaptador_consulta_cadastro
 from .assinaturas import assinatura_local_disponivel
 from .certificados import salvar_certificado_a1
+from .evidencias import verificar_integridade_evidencias
 from .escopo import (
     configuracoes_para_usuario,
     documentos_dfe_recebidos_para_usuario,
@@ -63,6 +64,7 @@ from .models import (
     InutilizacaoNumeracaoFiscal,
     ManifestacaoDestinatario,
     NaturezaOperacao,
+    ProvedorEmissaoFiscal,
     SerieFiscal,
     StatusDFeRecebido,
     StatusDocumentoFiscal,
@@ -80,11 +82,13 @@ from .services_cce import registrar_carta_correcao
 from .services_cadastro import consultar_cadastro_contribuinte
 from .validacoes import diagnosticar_schemas_fiscais
 from .qrcode_nfce import gerar_qrcode_data_uri, obter_url_qrcode_nfce
+from .readiness import diagnostico_prontidao_homologacao_goias
 from .perfis_uf import pendencias_endpoints_nfce
 from .services import (
     CSOSN_ICMS_SUPORTADOS,
     CST_ICMS_SUPORTADOS,
     ativar_contingencia_offline,
+    ativar_contingencia_svc,
     cancelar_documento,
     capacidade_tributaria_fiscal,
     consultar_situacao_documento,
@@ -173,44 +177,141 @@ def _diagnostico_prontidao_fiscal(user):
                 "status": status,
             }
         )
-    producao_configs = [config for config in configuracoes.values() if config.ambiente == AmbienteFiscal.PRODUCAO]
-    diagnostico_adapter = diagnosticar_adaptador_sefaz()
+    producao_configs = [
+        config
+        for config in configuracoes.values()
+        if config.ambiente == AmbienteFiscal.PRODUCAO
+    ]
+    diagnosticos_producao = [
+        (config, diagnosticar_adaptador_sefaz(filial=config.filial))
+        for config in producao_configs
+    ]
+    diagnosticos_adapter = [item[1] for item in diagnosticos_producao]
+    if not diagnosticos_adapter:
+        diagnosticos_adapter = [diagnosticar_adaptador_sefaz()]
+    operacionais = [
+        diagnostico["configuracao_operacional"]
+        for diagnostico in diagnosticos_adapter
+    ]
+    adapters_configurados = all(
+        diagnostico["configurado"] for diagnostico in diagnosticos_adapter
+    )
+    adapters_carregaveis = all(
+        diagnostico["carregavel"] for diagnostico in diagnosticos_adapter
+    )
+    adapters_assinam_xml = all(
+        diagnostico["assina_xml"] for diagnostico in diagnosticos_adapter
+    )
+    adapters_validam_schema = all(
+        diagnostico["valida_schema"] for diagnostico in diagnosticos_adapter
+    )
+    adapters_consultam_documento = all(
+        diagnostico["consulta_documento"] for diagnostico in diagnosticos_adapter
+    )
+    diagnostico_operacional_disponivel = all(
+        operacional["diagnostico_disponivel"] for operacional in operacionais
+    )
+    configuracao_operacional_pronta = bool(
+        diagnostico_operacional_disponivel
+        and all(operacional["pronto"] for operacional in operacionais)
+    )
+    configuracao_operacional_bloqueada = any(
+        operacional["diagnostico_disponivel"] and not operacional["pronto"]
+        for operacional in operacionais
+    )
+    producao_operacional_bloqueada = any(
+        operacional["diagnostico_disponivel"]
+        and operacional["producao_habilitada"] is False
+        for operacional in operacionais
+    )
+    if all(operacional["producao_habilitada"] is True for operacional in operacionais):
+        producao_habilitada_adapter = True
+    elif any(
+        operacional["producao_habilitada"] is False
+        for operacional in operacionais
+    ):
+        producao_habilitada_adapter = False
+    else:
+        producao_habilitada_adapter = None
+
     diagnostico_schema = diagnosticar_schemas_fiscais()
-    schema_disponivel = diagnostico_adapter["valida_schema"] or diagnostico_schema["pronto"]
+    schema_disponivel = all(
+        diagnostico["valida_schema"] or diagnostico_schema["pronto"]
+        for diagnostico in diagnosticos_adapter
+    )
     assinatura_local_pronta = bool(
         settings.FISCAL_LOCAL_XML_SIGNATURE_ENABLED
         and producao_configs
         and all(config.certificado_status == "valido" for config in producao_configs)
     )
-    assinatura_disponivel = diagnostico_adapter["assina_xml"] or assinatura_local_pronta
+    assinatura_disponivel = bool(
+        producao_configs
+        and all(
+            diagnostico["assina_xml"]
+            or (
+                settings.FISCAL_LOCAL_XML_SIGNATURE_ENABLED
+                and config.certificado_status == "valido"
+            )
+            for config, diagnostico in diagnosticos_producao
+        )
+    )
     alertas_producao = []
-    if producao_configs and not diagnostico_adapter["configurado"]:
-        alertas_producao.append("Existe filial em produção fiscal, mas nenhum adaptador SEFAZ oficial foi configurado.")
-    elif producao_configs and not diagnostico_adapter["carregavel"]:
-        alertas_producao.append("O adaptador SEFAZ configurado não pôde ser carregado.")
+    if producao_configs and not adapters_configurados:
+        alertas_producao.append(
+            "Existe filial em produção fiscal, mas nenhum adaptador SEFAZ oficial foi configurado."
+        )
+    elif producao_configs and not adapters_carregaveis:
+        alertas_producao.append(
+            "O adaptador SEFAZ configurado para uma ou mais filiais não pôde ser carregado."
+        )
+    elif producao_configs and configuracao_operacional_bloqueada:
+        mensagens = {
+            operacional["mensagem"]
+            for operacional in operacionais
+            if operacional["diagnostico_disponivel"] and not operacional["pronto"]
+        }
+        alertas_producao.extend(sorted(mensagens))
+    elif producao_configs and producao_operacional_bloqueada:
+        alertas_producao.append(
+            "Produção fiscal permanece bloqueada na configuração do adaptador."
+        )
     elif producao_configs and not assinatura_disponivel:
-        alertas_producao.append("Não há assinatura XML disponível pelo adaptador nem por certificado A1 local válido.")
+        alertas_producao.append(
+            "Não há assinatura XML disponível pelo adaptador nem por certificado A1 local válido."
+        )
     elif producao_configs and not schema_disponivel:
-        alertas_producao.append("Nenhum schema fiscal local válido ou validação XSD pelo adaptador está disponível.")
+        alertas_producao.append(
+            "Nenhum schema fiscal local válido ou validação XSD pelo adaptador está disponível."
+        )
     if not producao_configs:
-        alertas_producao.append("Nenhuma filial em produção fiscal; transmissão real permanece fora de uso.")
+        alertas_producao.append(
+            "Nenhuma filial em produção fiscal; transmissão real permanece fora de uso."
+        )
 
     producao = {
         "contrato": "fiscal_production_readiness_v1",
         "filiais_em_producao": len(producao_configs),
-        "sefaz_adapter_configurado": diagnostico_adapter["configurado"],
-        "sefaz_adapter_carregavel": diagnostico_adapter["carregavel"],
-        "sefaz_adapter_assina_xml": diagnostico_adapter["assina_xml"],
+        "sefaz_adapter_configurado": adapters_configurados,
+        "sefaz_adapter_carregavel": adapters_carregaveis,
+        "sefaz_adapter_assina_xml": adapters_assinam_xml,
+        "sefaz_adapter_diagnostico_operacional": diagnostico_operacional_disponivel,
+        "sefaz_adapter_configuracao_pronta": configuracao_operacional_pronta,
+        "sefaz_adapter_producao_habilitada": producao_habilitada_adapter,
         "assinatura_local_habilitada": settings.FISCAL_LOCAL_XML_SIGNATURE_ENABLED,
         "assinatura_local_pronta": assinatura_local_pronta,
         "assinatura_xml_disponivel": assinatura_disponivel,
-        "sefaz_adapter_valida_schema": diagnostico_adapter["valida_schema"],
-        "sefaz_adapter_consulta_documento": diagnostico_adapter["consulta_documento"],
+        "sefaz_adapter_valida_schema": adapters_validam_schema,
+        "sefaz_adapter_consulta_documento": adapters_consultam_documento,
         "schema_local_configurado": diagnostico_schema["configurado"],
         "schema_local_pronto": diagnostico_schema["pronto"],
         "schema_local_sha256": diagnostico_schema["sha256"],
         "transmissao_real_disponivel": bool(
-            producao_configs and diagnostico_adapter["carregavel"] and assinatura_disponivel and schema_disponivel
+            producao_configs
+            and adapters_carregaveis
+            and not configuracao_operacional_bloqueada
+            and not producao_operacional_bloqueada
+            and assinatura_disponivel
+            and schema_disponivel
         ),
         "homologacao_simulada_disponivel": True,
         "alertas": alertas_producao,
@@ -498,6 +599,20 @@ def contingencia_json(request):
                     "iniciada_em": timezone.localtime(documento.contingencia_iniciada_em).isoformat() if documento.contingencia_iniciada_em else None,
                     "justificativa": documento.contingencia_justificativa,
                     "transmissao_limite_em": timezone.localtime(documento.transmissao_limite_em).isoformat() if documento.transmissao_limite_em else None,
+                    "prazo_vencido": documento.contingencia_prazo_vencido,
+                    "aguardando_consulta_sefaz": documento.aguardando_consulta_sefaz,
+                    "tentativas_consulta_sefaz": documento.tentativas_consulta_sefaz,
+                    "confirmacoes_nao_localizado": documento.confirmacoes_nao_localizado,
+                    "confirmacoes_exigidas": max(
+                        2,
+                        int(
+                            getattr(
+                                settings,
+                                "FISCAL_CONTINGENCY_NOT_FOUND_CONFIRMATIONS",
+                                2,
+                            )
+                        ),
+                    ),
                     "tentativas_transmissao": documento.tentativas_transmissao,
                     "ultima_tentativa_em": timezone.localtime(documento.ultima_tentativa_em).isoformat() if documento.ultima_tentativa_em else None,
                 },
@@ -715,7 +830,7 @@ def _documento_com_dados(user, pk):
 @role_required(*RELATORIOS)
 def detalhe(request, pk):
     documento = _documento_com_dados(request.user, pk)
-    diagnostico_adapter = diagnosticar_adaptador_sefaz()
+    diagnostico_adapter = diagnosticar_adaptador_sefaz(filial=documento.filial)
     diagnostico_schema = diagnosticar_schemas_fiscais()
     try:
         configuracao_fiscal = documento.filial.configuracao_fiscal
@@ -730,6 +845,34 @@ def detalhe(request, pk):
     fila_configuracao = configuracao_fila_fiscal()
     cartas_correcao = documento.cartas_correcao.select_related("usuario").all()
     diagnostico_cce = diagnostico_adaptador_cce()
+    integridade_evidencias = (
+        verificar_integridade_evidencias(documento)
+        if request.user.is_superuser
+        else None
+    )
+    svc_visivel_master = bool(
+        request.user.is_superuser
+        and documento.tipo_documento == TipoDocumentoFiscal.NFE
+        and documento.filial.uf == "GO"
+        and documento.status == StatusDocumentoFiscal.PRONTO
+        and configuracao_fiscal
+        and configuracao_fiscal.provedor_emissao
+        == ProvedorEmissaoFiscal.SEFAZ_DIRETA_GO
+    )
+    svc_documento_ativo = bool(
+        documento.tipo_documento == TipoDocumentoFiscal.NFE
+        and documento.contingencia_iniciada_em
+        and len(documento.chave_acesso) == 44
+        and documento.chave_acesso[34] == "7"
+    )
+    svc_transmissao_disponivel = bool(
+        request.user.is_superuser
+        and svc_documento_ativo
+        and getattr(settings, "SEFAZ_DIRETA_SVC_ENABLED", False)
+        and diagnostico_adapter["configuracao_operacional"].get("rede_habilitada")
+        is True
+        and sefaz_pronta
+    )
     return render(
         request,
         "fiscal/detalhe.html",
@@ -753,6 +896,13 @@ def detalhe(request, pk):
             "cartas_correcao": cartas_correcao,
             "cce_disponivel": diagnostico_cce["disponivel"],
             "cce_diagnostico": diagnostico_cce,
+            "integridade_evidencias": integridade_evidencias,
+            "svc_visivel_master": svc_visivel_master,
+            "svc_documento_ativo": svc_documento_ativo,
+            "svc_transmissao_disponivel": svc_transmissao_disponivel,
+            "svc_habilitada": bool(
+                getattr(settings, "SEFAZ_DIRETA_SVC_ENABLED", False)
+            ),
             "cce_pode_registrar": (
                 documento.tipo_documento == TipoDocumentoFiscal.NFE
                 and documento.status == StatusDocumentoFiscal.EMITIDO
@@ -875,23 +1025,7 @@ def baixar_xml(request, pk):
 
 
 def _checklist_homologacao_goias(configuracao):
-    filial = configuracao.filial
-    adapter = diagnosticar_adaptador_sefaz()
-    schema = diagnosticar_schemas_fiscais()
-    natureza = NaturezaOperacao.objects.filter(empresa_id=filial.empresa_id, tipo_documento=TipoDocumentoFiscal.NFCE, ativo=True, padrao=True).exists()
-    serie = SerieFiscal.objects.filter(filial=filial, tipo_documento=TipoDocumentoFiscal.NFCE, ativo=True).exists()
-    documento_homologacao = DocumentoFiscal.objects.filter(filial=filial, ambiente=AmbienteFiscal.HOMOLOGACAO, status=StatusDocumentoFiscal.EMITIDO).exists()
-    itens = [
-        ("Dados da filial", bool(filial.uf == "GO" and filial.codigo_municipio_ibge and configuracao.inscricao_estadual), "UF Goiás, código IBGE e inscrição estadual configurados."),
-        ("Configuração NFC-e", bool(configuracao.ativo and configuracao.csc_id and configuracao.csc_token), "Configuração fiscal ativa com ID CSC e token CSC."),
-        ("URLs oficiais de Goiás", not pendencias_endpoints_nfce(filial, configuracao), "QR Code e consulta NFC-e coerentes com UF e ambiente."),
-        ("Certificado A1", configuracao.certificado_status == "valido", "Certificado A1 protegido e dentro da validade."),
-        ("Série e natureza", bool(serie and natureza), "Série NFC-e e natureza de operação padrão ativas."),
-        ("Schema XML", bool(schema["pronto"] or adapter["valida_schema"]), "Schema local válido ou validação declarada pelo adaptador."),
-        ("Adaptador SEFAZ", bool(adapter["carregavel"]), "Adaptador oficial configurado e carregável."),
-        ("Evidência de homologação", documento_homologacao, "Existe documento emitido no ambiente de homologação."),
-    ]
-    return [{"titulo": titulo, "pronto": pronto, "detalhe": detalhe} for titulo, pronto, detalhe in itens]
+    return diagnostico_prontidao_homologacao_goias(configuracao)["checklist"]
 
 
 @login_required
@@ -1182,25 +1316,62 @@ def dfe_criar_entrada(request, pk):
 @login_required
 @role_required(*SISTEMA)
 def configuracao_form(request, pk=None):
-    configuracao = get_object_or_404(configuracoes_para_usuario(request.user), pk=pk) if pk else None
+    configuracao = (
+        get_object_or_404(configuracoes_para_usuario(request.user), pk=pk)
+        if pk
+        else None
+    )
+    provedor_anterior = configuracao.provedor_emissao if configuracao else ""
     if request.method == "POST":
-        form = ConfiguracaoFiscalForm(request.POST, request.FILES, instance=configuracao, user=request.user)
+        form = ConfiguracaoFiscalForm(
+            request.POST,
+            request.FILES,
+            instance=configuracao,
+            user=request.user,
+        )
         if form.is_valid():
             configuracao = form.save()
             arquivo = form.cleaned_data.get("certificado_arquivo")
             senha = form.cleaned_data.get("certificado_senha")
+            if (
+                request.user.is_superuser
+                and provedor_anterior != configuracao.provedor_emissao
+            ):
+                LogAuditoria.objects.create(
+                    usuario=request.user,
+                    modulo="fiscal",
+                    acao="ALTERA_CANAL_EMISSAO_FISCAL",
+                    descricao=(
+                        f"Canal técnico de emissão da filial {configuracao.filial} "
+                        f"alterado de {provedor_anterior or 'não definido'} para "
+                        f"{configuracao.get_provedor_emissao_display()}."
+                    ),
+                    objeto_tipo="ConfiguracaoFiscal",
+                    objeto_id=str(configuracao.pk),
+                    ip=request.META.get("REMOTE_ADDR"),
+                )
             if arquivo:
                 try:
                     salvar_certificado_a1(configuracao, arquivo, senha)
                 except ValidationError as exc:
                     form.add_error("certificado_arquivo", exc)
-                    return render(request, "fiscal/form.html", {"form": form, "titulo": "Configuração fiscal"})
+                    return render(
+                        request,
+                        "fiscal/form.html",
+                        {"form": form, "titulo": "Configuração fiscal"},
+                    )
             messages.success(request, "Configuração fiscal salva.")
             return redirect("fiscal:documentos")
     else:
-        form = ConfiguracaoFiscalForm(instance=configuracao, user=request.user)
-    return render(request, "fiscal/form.html", {"form": form, "titulo": "Configuração fiscal"})
-
+        form = ConfiguracaoFiscalForm(
+            instance=configuracao,
+            user=request.user,
+        )
+    return render(
+        request,
+        "fiscal/form.html",
+        {"form": form, "titulo": "Configuração fiscal"},
+    )
 
 @login_required
 @role_required(*SISTEMA)
@@ -1314,6 +1485,26 @@ def ativar_contingencia(request, pk):
     return redirect("fiscal:detalhe", pk=pk)
 
 
+@login_required
+@role_required(*SISTEMA)
+@require_POST
+def ativar_svc(request, pk):
+    documento = get_object_or_404(documentos_para_usuario(request.user), pk=pk)
+    try:
+        ativar_contingencia_svc(
+            documento,
+            request.user,
+            request.POST.get("justificativa", ""),
+            ip=request.META.get("REMOTE_ADDR"),
+        )
+    except ValidationError as exc:
+        messages.error(request, " ".join(exc.messages))
+    else:
+        messages.warning(
+            request,
+            "NF-e preparada para contingência SVC-RS. Ela ainda precisa ser autorizada pela SEFAZ.",
+        )
+    return redirect("fiscal:detalhe", pk=pk)
 
 
 @login_required

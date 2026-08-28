@@ -10,7 +10,12 @@ from .models import Cliente
 class ClienteForm(forms.ModelForm):
     class Meta:
         model = Cliente
-        fields = ["empresa", "nome", "cpf_cnpj", "telefone", "email", "endereco", "is_active"]
+        fields = [
+            "empresa", "nome", "cpf_cnpj", "telefone", "email", "endereco",
+            "indicador_ie", "inscricao_estadual", "logradouro", "numero",
+            "complemento", "bairro", "codigo_municipio_ibge", "municipio", "uf", "cep",
+            "is_active",
+        ]
         labels = {
             "cpf_cnpj": "CPF/CNPJ",
             "endereco": "Endereço",
@@ -21,6 +26,7 @@ class ClienteForm(forms.ModelForm):
             "cpf_cnpj": forms.TextInput(attrs={"class": "mask-cpf-cnpj"}),
             "telefone": forms.TextInput(attrs={"class": "mask-phone"}),
             "endereco": forms.Textarea(attrs={"rows": 3}),
+            "cep": forms.TextInput(attrs={"class": "mask-cep"}),
         }
 
     def __init__(self, *args, user=None, **kwargs):

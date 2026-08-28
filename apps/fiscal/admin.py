@@ -1,6 +1,38 @@
 from django.contrib import admin
 
-from .models import ConfiguracaoFiscal, DocumentoFiscal, NaturezaOperacao, SerieFiscal
+from .models import (
+    CatalogoBeneficioFiscal,
+    ConfiguracaoFiscal,
+    DocumentoFiscal,
+    ItemBeneficioFiscal,
+    NaturezaOperacao,
+    SerieFiscal,
+)
+
+class ItemBeneficioFiscalInline(admin.TabularInline):
+    model = ItemBeneficioFiscal
+    extra = 0
+    can_delete = False
+    readonly_fields = ["codigo", "csts", "dispositivo_legal", "descricao", "observacao"]
+
+
+@admin.register(CatalogoBeneficioFiscal)
+class CatalogoBeneficioFiscalAdmin(admin.ModelAdmin):
+    list_display = ["uf", "versao", "vigencia_inicio", "vigencia_fim", "quantidade_itens", "ativo"]
+    list_filter = ["uf", "ativo"]
+    search_fields = ["versao", "fonte_nome", "fonte_sha256"]
+    readonly_fields = [
+        "uf", "versao", "fonte_nome", "fonte_url", "fonte_sha256", "publicado_em",
+        "vigencia_inicio", "vigencia_fim", "quantidade_itens", "codigos_duplicados",
+        "importado_em", "importado_por",
+    ]
+    inlines = [ItemBeneficioFiscalInline]
+
+    def has_add_permission(self, request):
+        return False
+
+    def has_delete_permission(self, request, obj=None):
+        return False
 
 
 @admin.register(ConfiguracaoFiscal)

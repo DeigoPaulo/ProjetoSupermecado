@@ -8,14 +8,15 @@ from django.test import TestCase, override_settings
 
 from apps.accounts.models import PerfilUsuario, TipoPerfil
 from apps.auditoria.models import LogAuditoria
+from apps.clientes.models import Cliente
 from apps.empresas.models import Empresa, Filial
 from apps.estoque.models import Estoque
-from apps.fiscal.models import AmbienteFiscal, ConfiguracaoFiscal, DocumentoFiscal, NaturezaOperacao, SerieFiscal, StatusDocumentoFiscal, TipoDocumentoFiscal
-from apps.fiscal.services import preparar_documento_pedido_online
+from apps.fiscal.models import AmbienteFiscal, ConfiguracaoFiscal, DocumentoFiscal, NaturezaOperacao, ProvedorEmissaoFiscal, SerieFiscal, StatusDocumentoFiscal, TipoDocumentoFiscal
+from apps.fiscal.services import ativar_contingencia_svc, preparar_documento_pedido_online, transmitir_documento_sefaz
 from apps.produtos.models import Categoria, Produto
 from apps.vendas.models import TipoDocumentoConsumidor
 
-from .forms import PagamentoPedidoForm
+from .forms import PagamentoPedidoForm, PedidoOnlineForm
 from .models import FaixaTaxaEntrega, FormaPagamentoPedido, IntegracaoMarketplace, ItemPedidoOnline, PedidoOnline, PoliticaEntrega, StatusPagamentoPedido, StatusPedido, TipoEntrega
 from .services import alterar_status_pedido, calcular_entrega_pedido, cancelar_pedido, gerar_token_integracao, registrar_pagamento, reservar_pedido
 
@@ -64,6 +65,34 @@ class FluxoPedidoOnlineTests(TestCase):
         ItemPedidoOnline.objects.create(pedido=self.pedido, produto=self.produto, quantidade=Decimal("2"), preco_unitario=Decimal("15"))
         self.pedido.recalcular()
 
+    def _preencher_destinatario_fiscal(self, uf="SP", codigo_ibge="3550308", municipio="São Paulo"):
+        self.pedido.destinatario_indicador_ie = "9"
+        self.pedido.destinatario_inscricao_estadual = ""
+        self.pedido.destinatario_logradouro = "Rua do Consumidor"
+        self.pedido.destinatario_numero = "100"
+        self.pedido.destinatario_complemento = "Sala 1"
+        self.pedido.destinatario_bairro = "Centro"
+        self.pedido.destinatario_codigo_municipio_ibge = codigo_ibge
+        self.pedido.destinatario_municipio = municipio
+        self.pedido.destinatario_uf = uf
+        self.pedido.destinatario_cep = "01001000" if uf == "SP" else "74000000"
+        self.pedido.telefone = "62999999999"
+        self.pedido.save(
+            update_fields=[
+                "destinatario_indicador_ie",
+                "destinatario_inscricao_estadual",
+                "destinatario_logradouro",
+                "destinatario_numero",
+                "destinatario_complemento",
+                "destinatario_bairro",
+                "destinatario_codigo_municipio_ibge",
+                "destinatario_municipio",
+                "destinatario_uf",
+                "destinatario_cep",
+                "telefone",
+            ]
+        )
+
     def test_reserva_e_cancelamento_liberam_estoque(self):
         reservar_pedido(pedido=self.pedido, usuario=self.usuario)
         self.pedido.refresh_from_db()
@@ -87,6 +116,55 @@ class FluxoPedidoOnlineTests(TestCase):
         self.assertEqual(self.estoque.quantidade_atual, Decimal("8"))
         self.assertEqual(self.estoque.quantidade_reservada, Decimal("0"))
         self.assertEqual(self.pedido.status, StatusPedido.CONCLUIDO)
+
+    def test_formulario_copia_snapshot_fiscal_do_cliente_sem_vinculo_mutavel(self):
+        cliente = Cliente.objects.create(
+            empresa=self.filial.empresa,
+            nome="Cliente Fiscal",
+            cpf_cnpj="12345678909",
+            indicador_ie="9",
+            logradouro="Rua Original",
+            numero="10",
+            bairro="Centro",
+            codigo_municipio_ibge="3550308",
+            municipio="São Paulo",
+            uf="SP",
+            cep="01001000",
+        )
+        form = PedidoOnlineForm(
+            data={
+                "filial": self.filial.pk,
+                "cliente": cliente.pk,
+                "nome_cliente": "Cliente Fiscal",
+                "documento_cliente_tipo": TipoDocumentoConsumidor.NAO_IDENTIFICADO,
+                "documento_cliente": "",
+                "telefone": "",
+                "canal": "LOJA_ONLINE",
+                "tipo_entrega": TipoEntrega.RETIRADA,
+                "endereco_entrega": "",
+                "bairro_entrega": "",
+                "referencia_externa": "",
+                "taxa_entrega": "0",
+                "desconto": "0",
+                "observacoes": "",
+            },
+            user=self.usuario,
+        )
+
+        self.assertTrue(form.is_valid(), form.errors)
+        pedido = form.save(commit=False)
+        pedido.usuario = self.usuario
+        pedido.full_clean()
+        pedido.save()
+        self.assertEqual(pedido.documento_cliente, "12345678909")
+        self.assertEqual(pedido.documento_cliente_tipo, TipoDocumentoConsumidor.CPF)
+        self.assertEqual(pedido.destinatario_logradouro, "Rua Original")
+        self.assertEqual(pedido.destinatario_codigo_municipio_ibge, "3550308")
+
+        cliente.logradouro = "Rua Alterada Depois"
+        cliente.save(update_fields=["logradouro"])
+        pedido.refresh_from_db()
+        self.assertEqual(pedido.destinatario_logradouro, "Rua Original")
 
     def test_nao_fica_pronto_com_separacao_incompleta(self):
         reservar_pedido(pedido=self.pedido, usuario=self.usuario)
@@ -340,6 +418,17 @@ class FluxoPedidoOnlineTests(TestCase):
             "documento_cliente_tipo": "CPF",
             "documento_cliente": "12345678909",
             "tipo_entrega": "RETIRADA",
+            "destinatario": {
+                "indicador_ie": "9",
+                "logradouro": "Rua da API",
+                "numero": "25",
+                "complemento": "Loja",
+                "bairro": "Centro",
+                "codigo_municipio_ibge": "3550308",
+                "municipio": "São Paulo",
+                "uf": "SP",
+                "cep": "01001000",
+            },
             "itens": [{"codigo_barras": self.produto.codigo_barras, "quantidade": "2", "preco_unitario": "14.50"}],
         }
         primeira = self.client.post("/pedidos-online/api/pedidos/", data=json.dumps(payload), content_type="application/json", HTTP_X_INTEGRATION_KEY=token)
@@ -350,6 +439,9 @@ class FluxoPedidoOnlineTests(TestCase):
         self.assertEqual(pedido.integracao, integracao)
         self.assertEqual(pedido.documento_cliente_tipo, TipoDocumentoConsumidor.CPF)
         self.assertEqual(pedido.documento_cliente, "12345678909")
+        self.assertEqual(pedido.destinatario_logradouro, "Rua da API")
+        self.assertEqual(pedido.destinatario_numero, "25")
+        self.assertEqual(pedido.destinatario_cep, "01001000")
 
         repetida = self.client.post("/pedidos-online/api/pedidos/", data=json.dumps(payload), content_type="application/json", HTTP_X_INTEGRATION_KEY=token)
         self.assertEqual(repetida.status_code, 200)
@@ -456,6 +548,18 @@ class FluxoPedidoOnlineTests(TestCase):
         self.pedido.valor_pago = self.pedido.total
         self.pedido.save(update_fields=["documento_cliente_tipo", "documento_cliente", "status_pagamento", "forma_pagamento", "valor_pago"])
 
+        with self.assertRaises(ValidationError) as contexto:
+            preparar_documento_pedido_online(self.pedido, self.usuario)
+        self.assertIn("logradouro do endereço fiscal", " ".join(contexto.exception.messages))
+        self.assertFalse(DocumentoFiscal.objects.exists())
+        self.assertEqual(
+            SerieFiscal.objects.get(
+                filial=self.filial,
+                tipo_documento=TipoDocumentoFiscal.NFE,
+            ).proximo_numero,
+            200,
+        )
+        self._preencher_destinatario_fiscal()
         documento = preparar_documento_pedido_online(self.pedido, self.usuario)
 
         self.assertEqual(documento.tipo_documento, TipoDocumentoFiscal.NFE)
@@ -464,11 +568,113 @@ class FluxoPedidoOnlineTests(TestCase):
         self.assertEqual(documento.pedido_online, self.pedido)
         self.assertIn("<mod>55</mod>", documento.xml_conteudo)
         self.assertIn("<CNPJ>12345678000190</CNPJ>", documento.xml_conteudo)
+        self.assertIn("<enderDest>", documento.xml_conteudo)
+        self.assertIn("<xLgr>Rua do Consumidor</xLgr>", documento.xml_conteudo)
+        self.assertIn("<nro>100</nro>", documento.xml_conteudo)
+        self.assertIn("<xBairro>Centro</xBairro>", documento.xml_conteudo)
+        self.assertIn("<cMun>3550308</cMun>", documento.xml_conteudo)
+        self.assertIn("<xMun>São Paulo</xMun>", documento.xml_conteudo)
+        self.assertIn("<UF>SP</UF>", documento.xml_conteudo)
+        self.assertIn("<CEP>01001000</CEP>", documento.xml_conteudo)
+        self.assertIn("<cPais>1058</cPais>", documento.xml_conteudo)
+        self.assertIn("<indIEDest>9</indIEDest>", documento.xml_conteudo)
+        xml_destinatario = documento.xml_conteudo.split("<dest>", 1)[1].split("</dest>", 1)[0]
+        self.assertNotIn("<IE>", xml_destinatario)
         self.assertIn("<vBC>30.00</vBC>", documento.xml_conteudo)
         self.assertIn("<vICMS>5.40</vICMS>", documento.xml_conteudo)
         self.assertIn("<vNF>30.00</vNF>", documento.xml_conteudo)
         self.assertEqual(DocumentoFiscal.objects.filter(pedido_online=self.pedido).count(), 1)
 
+    @override_settings(SEFAZ_DIRETA_SVC_ENABLED=True)
+    def test_master_prepara_nfe_go_para_svc_rs_com_nova_chave_e_xml(self):
+        self.filial.uf = "GO"
+        self.filial.codigo_municipio_ibge = "5208707"
+        self.filial.save(update_fields=["uf", "codigo_municipio_ibge"])
+        self.produto.ncm = "10063021"
+        self.produto.origem_mercadoria = "0"
+        self.produto.cst_icms = "00"
+        self.produto.aliquota_icms = Decimal("18.00")
+        self.produto.cst_pis = "01"
+        self.produto.aliquota_pis = Decimal("1.6500")
+        self.produto.cst_cofins = "01"
+        self.produto.aliquota_cofins = Decimal("7.6000")
+        self.produto.save(
+            update_fields=[
+                "ncm", "origem_mercadoria", "cst_icms", "aliquota_icms",
+                "cst_pis", "aliquota_pis", "cst_cofins", "aliquota_cofins",
+            ]
+        )
+        ConfiguracaoFiscal.objects.create(
+            filial=self.filial,
+            provedor_emissao=ProvedorEmissaoFiscal.SEFAZ_DIRETA_GO,
+            ambiente=AmbienteFiscal.HOMOLOGACAO,
+            regime_tributario="Regime normal",
+            inscricao_estadual="123456789",
+            certificado_a1_criptografado=b"certificado",
+            certificado_senha_criptografada=b"senha",
+        )
+        SerieFiscal.objects.create(
+            filial=self.filial,
+            tipo_documento=TipoDocumentoFiscal.NFE,
+            serie=55,
+            proximo_numero=200,
+        )
+        NaturezaOperacao.objects.create(
+            empresa=self.filial.empresa,
+            descricao="Venda online de mercadorias",
+            cfop="5102",
+            tipo_documento=TipoDocumentoFiscal.NFE,
+        )
+        self.pedido.documento_cliente_tipo = TipoDocumentoConsumidor.CNPJ
+        self.pedido.documento_cliente = "12345678000190"
+        self.pedido.status_pagamento = StatusPagamentoPedido.PAGO
+        self.pedido.forma_pagamento = FormaPagamentoPedido.GATEWAY
+        self.pedido.valor_pago = self.pedido.total
+        self.pedido.save(
+            update_fields=[
+                "documento_cliente_tipo", "documento_cliente", "status_pagamento",
+                "forma_pagamento", "valor_pago",
+            ]
+        )
+        self._preencher_destinatario_fiscal(uf="GO", codigo_ibge="5208707", municipio="Goiânia")
+        documento = preparar_documento_pedido_online(self.pedido, self.usuario)
+        chave_normal = documento.chave_acesso
+
+        self.client.force_login(self.usuario)
+        detalhe = self.client.get(f"/fiscal/documentos/{documento.pk}/")
+        self.assertContains(detalhe, "Contingência técnica NF-e pela SVC-RS")
+        self.assertNotContains(detalhe, "preço")
+
+        ativado = ativar_contingencia_svc(
+            documento,
+            self.usuario,
+            "Indisponibilidade comprovada do autorizador normal",
+        )
+
+        self.assertEqual(ativado.status, StatusDocumentoFiscal.CONTINGENCIA)
+        self.assertNotEqual(ativado.chave_acesso, chave_normal)
+        self.assertEqual(ativado.chave_acesso[34], "7")
+        self.assertIn("<tpEmis>7</tpEmis>", ativado.xml_conteudo)
+        self.assertIn("<dhCont>", ativado.xml_conteudo)
+        self.assertIn(
+            "<xJust>Indisponibilidade comprovada do autorizador normal</xJust>",
+            ativado.xml_conteudo,
+        )
+        self.assertIsNone(ativado.transmissao_limite_em)
+        self.assertTrue(
+            LogAuditoria.objects.filter(acao="ATIVA_CONTINGENCIA_SVC_RS").exists()
+        )
+
+        detalhe_ativo = self.client.get(f"/fiscal/documentos/{ativado.pk}/")
+        self.assertContains(detalhe_ativo, "O envio permanece bloqueado")
+        self.assertContains(detalhe_ativo, "Contingência SVC-RS")
+        self.assertNotContains(detalhe_ativo, "Transmitir homologação")
+
+        operador = get_user_model().objects.create_user("operador_svc", password="senha")
+        with self.assertRaisesMessage(
+            ValidationError, "Somente o Master pode transmitir uma NF-e pela SVC"
+        ):
+            transmitir_documento_sefaz(ativado, operador)
     def test_nfe_pedido_usa_icms40_para_cst_nao_tributado(self):
         self.filial.uf = "SP"
         self.filial.codigo_municipio_ibge = "3550308"
@@ -528,6 +734,7 @@ class FluxoPedidoOnlineTests(TestCase):
             ]
         )
 
+        self._preencher_destinatario_fiscal()
         documento = preparar_documento_pedido_online(self.pedido, self.usuario)
 
         self.assertIn("<mod>55</mod>", documento.xml_conteudo)

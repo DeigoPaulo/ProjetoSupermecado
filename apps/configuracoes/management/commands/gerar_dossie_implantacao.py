@@ -19,6 +19,11 @@ class Command(BaseCommand):
         )
         parser.add_argument("--producao", action="store_true")
         parser.add_argument(
+            "--exigir-midia-offline",
+            action="store_true",
+            help="Registra e exige a mídia offline íntegra para esta implantação.",
+        )
+        parser.add_argument(
             "--saida",
             default="artifacts/dossie_implantacao.json",
             help="Arquivo JSON de destino.",
@@ -30,6 +35,7 @@ class Command(BaseCommand):
         dossie = gerar_dossie_implantacao(
             perfil=options["perfil"],
             producao=options["producao"],
+            exigir_midia_offline=options["exigir_midia_offline"],
         )
         conteudo = json.dumps(dossie, ensure_ascii=False, indent=2, sort_keys=True) + "\n"
         conteudo_bytes = conteudo.encode("utf-8")

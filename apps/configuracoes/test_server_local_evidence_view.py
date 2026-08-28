@@ -61,3 +61,44 @@ class ServidorLocalEvidenciasViewTests(TestCase):
         resposta = self.client.get(reverse("configuracoes:servidor_local_evidencias"))
 
         self.assertEqual(resposta.status_code, 403)
+
+
+class ServidorLocalEvidenciasOfflineViewTests(TestCase):
+    def setUp(self):
+        self.super_admin = User.objects.create_superuser(
+            "master_offline",
+            "master_offline@example.com",
+            "senha",
+        )
+
+    @patch("apps.configuracoes.views.gerar_evidencia_aceite")
+    @patch("apps.configuracoes.views.diagnostico_pos_implantacao_local")
+    @patch("apps.configuracoes.views.gerar_dossie_implantacao")
+    def test_master_gera_dossie_com_midia_offline_obrigatoria(self, dossie, pos, aceite):
+        dossie.return_value = {
+            "contrato": "deployment_evidence_v1",
+            "perfil": "servidor-local",
+        }
+        pos.return_value = {"contrato": "local_post_deployment_health_v1", "pronto": False}
+        aceite.return_value = {
+            "contrato": "local_installation_acceptance_evidence_v1",
+            "liberavel": False,
+        }
+        self.client.force_login(self.super_admin)
+
+        resposta = self.client.get(
+            reverse("configuracoes:servidor_local_evidencias") + "?modo=offline"
+        )
+
+        self.assertEqual(resposta.status_code, 200)
+        dossie.assert_called_once_with(
+            perfil="servidor-local",
+            producao=True,
+            exigir_midia_offline=True,
+        )
+        self.assertTrue(
+            LogAuditoria.objects.filter(
+                acao="DOWNLOAD_EVIDENCIAS_IMPLANTACAO",
+                descricao__contains="Mídia offline obrigatória",
+            ).exists()
+        )

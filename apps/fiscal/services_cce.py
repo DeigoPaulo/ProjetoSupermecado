@@ -9,6 +9,7 @@ from lxml import etree
 from apps.auditoria.models import LogAuditoria
 
 from .cce_adapters import carregar_adaptador_cce, normalizar_retorno_cce
+from .evidencias import registrar_evidencia_fiscal
 from .models import (
     CartaCorrecaoFiscal,
     ConfiguracaoFiscal,
@@ -16,6 +17,7 @@ from .models import (
     StatusCartaCorrecao,
     StatusDocumentoFiscal,
     TipoDocumentoFiscal,
+    TipoEvidenciaFiscal,
 )
 
 
@@ -125,6 +127,27 @@ def registrar_carta_correcao(
             ip=ip,
         )
         raise ValidationError(f"Falha ao transmitir a Carta de Correção: {exc}") from exc
+
+    registrar_evidencia_fiscal(
+        documento=documento,
+        tipo=TipoEvidenciaFiscal.EVENTO_CCE_ENVIO,
+        referencia=f"cce:{tentativa.pk}:xml-envio",
+        conteudo=resultado["xml_envio"],
+        usuario=usuario,
+        canal=configuracao.provedor_emissao,
+        chave_acesso=documento.chave_acesso,
+        protocolo=documento.protocolo,
+    )
+    registrar_evidencia_fiscal(
+        documento=documento,
+        tipo=TipoEvidenciaFiscal.EVENTO_CCE_RETORNO,
+        referencia=f"cce:{tentativa.pk}:xml-retorno",
+        conteudo=resultado["xml_retorno"],
+        usuario=usuario,
+        canal=configuracao.provedor_emissao,
+        chave_acesso=documento.chave_acesso,
+        protocolo=resultado["protocolo"],
+    )
 
     tentativa.status = resultado["status"]
     tentativa.codigo_status = resultado["codigo_status"]

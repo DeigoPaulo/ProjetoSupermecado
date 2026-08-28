@@ -1,5 +1,7 @@
+import hashlib
 import json
 from io import StringIO
+from pathlib import Path
 from tempfile import TemporaryDirectory
 from unittest.mock import patch
 
@@ -117,3 +119,65 @@ class DossieImplantacaoTests(SimpleTestCase):
                     stdout=StringIO(),
                 )
 
+
+
+class PoliticaMidiaOfflineDossieTests(SimpleTestCase):
+    def _validar(self, payload):
+        conteudo = (json.dumps(payload, ensure_ascii=False, sort_keys=True) + "\n").encode("utf-8")
+        with TemporaryDirectory() as diretorio:
+            caminho = Path(diretorio) / "dossie.json"
+            caminho.write_bytes(conteudo)
+            digest = hashlib.sha256(conteudo).hexdigest()
+            caminho.with_name(caminho.name + ".sha256").write_text(
+                f"{digest}  {caminho.name}\n",
+                encoding="ascii",
+            )
+            return validar_dossie_implantacao(caminho)
+
+    def _payload(self, *, exigir, offline_publicavel):
+        verificacao_offline = {
+            "id": "midia_instalacao_offline",
+            "obrigatoria": exigir,
+            "pronta": offline_publicavel,
+        }
+        return {
+            "contrato": "deployment_evidence_v1",
+            "perfil": "servidor-local",
+            "alvo": "producao",
+            "politica_instalacao": {
+                "contrato": "local_installation_media_policy_v1",
+                "midia_offline_exigida": exigir,
+            },
+            "prontidao": {
+                "contrato": "deployment_readiness_v2",
+                "pronto": not exigir or offline_publicavel,
+                "verificacoes": [verificacao_offline],
+            },
+            "artefatos": {
+                "servidor_local": {"publicavel": True, "sha256": "a" * 64},
+                "servidor_offline": {
+                    "publicavel": offline_publicavel,
+                    "sha256": "b" * 64,
+                    "contrato_publicacao": "detech_server_offline_publication_validation_v1",
+                },
+            },
+        }
+
+    def test_dossie_com_rede_nao_exige_publicacao_offline(self):
+        resultado = self._validar(self._payload(exigir=False, offline_publicavel=False))
+
+        self.assertTrue(resultado["liberavel"])
+        self.assertFalse(resultado["midia_offline_exigida"])
+
+    def test_dossie_offline_bloqueia_publicacao_pendente(self):
+        resultado = self._validar(self._payload(exigir=True, offline_publicavel=False))
+
+        self.assertFalse(resultado["liberavel"])
+        self.assertTrue(resultado["midia_offline_exigida"])
+        self.assertTrue(any("servidor_offline" in item for item in resultado["avisos"]))
+
+    def test_dossie_offline_integro_e_liberavel(self):
+        resultado = self._validar(self._payload(exigir=True, offline_publicavel=True))
+
+        self.assertTrue(resultado["liberavel"])
+        self.assertTrue(resultado["midia_offline_exigida"])

@@ -1,4 +1,8 @@
+import hashlib
+import re
+
 from django.conf import settings
+from django.core.exceptions import ValidationError
 from django.db import models, transaction
 from django.utils import timezone
 
@@ -8,10 +12,16 @@ class AmbienteFiscal(models.TextChoices):
     PRODUCAO = "PRODUCAO", "Producao"
 
 
+class ProvedorEmissaoFiscal(models.TextChoices):
+    DESATIVADO = "DESATIVADO", "Emissão externa desativada"
+    PADRAO_SERVIDOR = "PADRAO_SERVIDOR", "Compatibilidade do servidor"
+    FOCUS = "FOCUS", "Integração Focus NFe"
+    SEFAZ_DIRETA_GO = "SEFAZ_DIRETA_GO", "Conexão direta SEFAZ - Goiás"
+
+
 class TipoDocumentoFiscal(models.TextChoices):
     NFCE = "NFCE", "NFC-e"
     NFE = "NFE", "NF-e"
-
 
 class CodigoRegimeTributario(models.TextChoices):
     SIMPLES_NACIONAL = "1", "1 - Simples Nacional"
@@ -50,6 +60,16 @@ class StatusInutilizacaoFiscal(models.TextChoices):
 
 class ConfiguracaoFiscal(models.Model):
     filial = models.OneToOneField("empresas.Filial", on_delete=models.PROTECT, related_name="configuracao_fiscal")
+    provedor_emissao = models.CharField(
+        "Canal técnico de emissão",
+        max_length=24,
+        choices=ProvedorEmissaoFiscal.choices,
+        default=ProvedorEmissaoFiscal.PADRAO_SERVIDOR,
+        help_text=(
+            "Seleção técnica exclusiva do Master. Credenciais permanecem no ambiente "
+            "seguro do servidor."
+        ),
+    )
     ambiente = models.CharField(max_length=20, choices=AmbienteFiscal.choices, default=AmbienteFiscal.HOMOLOGACAO)
     regime_tributario = models.CharField(max_length=80, blank=True)
     crt = models.CharField(
@@ -329,6 +349,7 @@ class DocumentoFiscal(models.Model):
     mensagem_consulta_sefaz = models.TextField(blank=True)
     aguardando_consulta_sefaz = models.BooleanField(default=False)
     tentativas_consulta_sefaz = models.PositiveIntegerField(default=0)
+    confirmacoes_nao_localizado = models.PositiveIntegerField(default=0)
     contingencia_iniciada_em = models.DateTimeField(null=True, blank=True)
     contingencia_justificativa = models.CharField(max_length=256, blank=True)
     transmissao_limite_em = models.DateTimeField(null=True, blank=True)
@@ -340,6 +361,16 @@ class DocumentoFiscal(models.Model):
     criado_em = models.DateTimeField(auto_now_add=True)
     atualizado_em = models.DateTimeField(auto_now=True)
 
+    @property
+    def contingencia_prazo_vencido(self):
+        return bool(
+            self.tipo_documento == TipoDocumentoFiscal.NFCE
+            and self.contingencia_iniciada_em
+            and self.transmissao_limite_em
+            and self.status != StatusDocumentoFiscal.EMITIDO
+            and self.transmissao_limite_em < timezone.now()
+        )
+
     class Meta:
         ordering = ["-criado_em"]
         unique_together = ["filial", "tipo_documento", "serie", "numero"]
@@ -347,6 +378,106 @@ class DocumentoFiscal(models.Model):
     def __str__(self):
         numero = self.numero or "sem número"
         return f"{self.get_tipo_documento_display()} {self.serie}/{numero}"
+class TipoEvidenciaFiscal(models.TextChoices):
+    XML_ENVIO = "XML_ENVIO", "XML transmitido"
+    RETORNO_TRANSMISSAO = "RETORNO_TRANSMISSAO", "Retorno da transmissão"
+    XML_AUTORIZADO = "XML_AUTORIZADO", "XML autorizado"
+    RETORNO_CONSULTA = "RETORNO_CONSULTA", "Retorno da consulta"
+    EVENTO_CANCELAMENTO_ENVIO = "EVENTO_CANCELAMENTO_ENVIO", "Pedido de cancelamento"
+    EVENTO_CANCELAMENTO_RETORNO = "EVENTO_CANCELAMENTO_RETORNO", "Retorno do cancelamento"
+    EVENTO_CCE_ENVIO = "EVENTO_CCE_ENVIO", "XML da CC-e transmitida"
+    EVENTO_CCE_RETORNO = "EVENTO_CCE_RETORNO", "XML de retorno da CC-e"
+
+
+class EvidenciaFiscalQuerySet(models.QuerySet):
+    def update(self, **kwargs):
+        raise ValueError("Evidências fiscais são imutáveis e não podem ser alteradas.")
+
+    def delete(self):
+        raise ValueError("Evidências fiscais são imutáveis e não podem ser excluídas.")
+
+class EvidenciaFiscal(models.Model):
+    objects = EvidenciaFiscalQuerySet.as_manager()
+
+    documento = models.ForeignKey(
+        DocumentoFiscal,
+        on_delete=models.PROTECT,
+        related_name="evidencias_fiscais",
+    )
+    sequencia = models.PositiveIntegerField()
+    tipo = models.CharField(max_length=40, choices=TipoEvidenciaFiscal.choices)
+    canal = models.CharField(max_length=40, blank=True)
+    referencia = models.CharField(max_length=180)
+    chave_acesso = models.CharField(max_length=44, blank=True)
+    protocolo = models.CharField(max_length=80, blank=True)
+    conteudo = models.TextField()
+    conteudo_sha256 = models.CharField(max_length=64)
+    anterior_sha256 = models.CharField(max_length=64, blank=True)
+    cadeia_sha256 = models.CharField(max_length=64)
+    usuario = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="evidencias_fiscais_registradas",
+    )
+    criado_em = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["sequencia", "id"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["documento", "sequencia"],
+                name="fiscal_evidencia_documento_seq_uniq",
+            ),
+            models.UniqueConstraint(
+                fields=["documento", "tipo", "referencia"],
+                name="fiscal_evidencia_documento_ref_uniq",
+            ),
+        ]
+        indexes = [
+            models.Index(
+                fields=["documento", "tipo"],
+                name="fiscal_evid_doc_tipo_idx",
+            ),
+        ]
+        verbose_name = "evidência fiscal imutável"
+        verbose_name_plural = "evidências fiscais imutáveis"
+
+    @staticmethod
+    def calcular_cadeia(documento_id, sequencia, tipo, referencia, conteudo_sha256, anterior_sha256):
+        base = "|".join(
+            [
+                str(documento_id),
+                str(sequencia),
+                str(tipo),
+                str(referencia),
+                str(conteudo_sha256),
+                str(anterior_sha256 or ""),
+            ]
+        )
+        return hashlib.sha256(base.encode("utf-8")).hexdigest()
+
+    def save(self, *args, **kwargs):
+        if self.pk or not self._state.adding:
+            raise ValueError("Evidências fiscais são imutáveis e não podem ser alteradas.")
+        self.conteudo_sha256 = hashlib.sha256(self.conteudo.encode("utf-8")).hexdigest()
+        self.cadeia_sha256 = self.calcular_cadeia(
+            self.documento_id,
+            self.sequencia,
+            self.tipo,
+            self.referencia,
+            self.conteudo_sha256,
+            self.anterior_sha256,
+        )
+        return super().save(*args, **kwargs)
+
+    def delete(self, *args, **kwargs):
+        raise ValueError("Evidências fiscais são imutáveis e não podem ser excluídas.")
+
+    def __str__(self):
+        return f"Evidência {self.documento_id}/{self.sequencia} - {self.tipo}"
+
 class HomologacaoFiscal(models.Model):
     configuracao = models.OneToOneField(
         ConfiguracaoFiscal,
@@ -793,3 +924,84 @@ class AlertaAtualizacaoFiscal(models.Model):
 
     def __str__(self):
         return self.titulo
+
+class CatalogoBeneficioFiscal(models.Model):
+    uf = models.CharField(max_length=2)
+    versao = models.CharField(max_length=100)
+    fonte_nome = models.CharField(max_length=255)
+    fonte_url = models.URLField(max_length=500)
+    fonte_sha256 = models.CharField(max_length=64)
+    publicado_em = models.DateField(null=True, blank=True)
+    vigencia_inicio = models.DateField()
+    vigencia_fim = models.DateField(null=True, blank=True)
+    ativo = models.BooleanField(default=False)
+    quantidade_itens = models.PositiveIntegerField(default=0)
+    codigos_duplicados = models.JSONField(default=list, blank=True)
+    importado_em = models.DateTimeField(auto_now_add=True)
+    importado_por = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        null=True,
+        blank=True,
+        on_delete=models.PROTECT,
+        related_name="catalogos_beneficio_fiscal_importados",
+    )
+
+    class Meta:
+        ordering = ["uf", "-vigencia_inicio", "-importado_em"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["uf", "versao", "fonte_sha256"],
+                name="fiscal_cbenef_uf_versao_hash_uniq",
+            ),
+        ]
+        indexes = [
+            models.Index(
+                fields=["uf", "ativo", "vigencia_inicio", "vigencia_fim"],
+                name="fiscal_cbenef_vigencia_idx",
+            ),
+        ]
+        verbose_name = "catálogo de benefício fiscal"
+        verbose_name_plural = "catálogos de benefícios fiscais"
+
+    def clean(self):
+        super().clean()
+        self.uf = (self.uf or "").strip().upper()
+        self.fonte_sha256 = (self.fonte_sha256 or "").strip().lower()
+        erros = {}
+        if not re.fullmatch(r"[a-f0-9]{64}", self.fonte_sha256):
+            erros["fonte_sha256"] = "Informe o SHA-256 integral do arquivo oficial."
+        if self.vigencia_fim and self.vigencia_fim < self.vigencia_inicio:
+            erros["vigencia_fim"] = "A vigência final não pode anteceder a inicial."
+        if erros:
+            raise ValidationError(erros)
+
+    def __str__(self):
+        return f"cBenef {self.uf} - {self.versao}"
+
+
+class ItemBeneficioFiscal(models.Model):
+    catalogo = models.ForeignKey(
+        CatalogoBeneficioFiscal,
+        on_delete=models.PROTECT,
+        related_name="itens",
+    )
+    codigo = models.CharField(max_length=20)
+    csts = models.JSONField(default=list)
+    dispositivo_legal = models.TextField(blank=True)
+    descricao = models.TextField(blank=True)
+    observacao = models.TextField(blank=True)
+
+    class Meta:
+        ordering = ["codigo"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["catalogo", "codigo"],
+                name="fiscal_cbenef_catalogo_codigo_uniq",
+            ),
+        ]
+        indexes = [models.Index(fields=["codigo"], name="fiscal_cbenef_codigo_idx")]
+        verbose_name = "item de benefício fiscal"
+        verbose_name_plural = "itens de benefícios fiscais"
+
+    def __str__(self):
+        return f"{self.codigo} ({', '.join(self.csts)})"

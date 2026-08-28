@@ -14,11 +14,54 @@
   </div>
 </header>
 
+<section class="operation-notice {% if integridade_fiscal.alerta %}operation-notice-warning{% endif %}">
+  <i class="fa-solid {% if integridade_fiscal.alerta %}fa-triangle-exclamation{% else %}fa-shield-halved{% endif %}"></i>
+  <div>
+    <strong>Integridade das evidências fiscais: {{ integridade_fiscal.status }}.</strong>
+    <span>{{ integridade_fiscal.descricao }} Última verificação: {{ integridade_fiscal.verificado_em_label }}; origem: {{ integridade_fiscal.origem }}.</span>
+  </div>
+</section>
+<section class="operation-notice {% if periodicidade_backup.alerta %}operation-notice-warning{% endif %}">
+  <i class="fa-solid {% if periodicidade_backup.alerta %}fa-clock-rotate-left{% else %}fa-clock{% endif %}"></i>
+  <div>
+    <strong>Periodicidade do backup: {{ periodicidade_backup.status }}.</strong>
+    <span>{{ periodicidade_backup.descricao }}{% if not periodicidade_backup.configurado %} Ative somente após definir e testar o agendamento, usando <code>{{ periodicidade_backup.configuracao }}</code>.{% endif %}</span>
+  </div>
+</section>
+
 <section class="metrics-grid">
   <article class="metric"><span>Modelos exportáveis</span><strong>{{ total_modelos }}</strong></article>
   <article class="metric"><span>Registros atuais</span><strong>{{ total_registros }}</strong></article>
   <article class="metric"><span>Formato</span><strong>JSON</strong></article>
   <article class="metric"><span>Atualizado em</span><strong>{{ gerado_em|date:"d/m/Y H:i" }}</strong></article>
+</section>
+
+<section class="panel">
+  <header class="section-title">
+    <div>
+      <h2>Histórico operacional</h2>
+      <p>Últimas execuções registradas sem caminhos, nomes de rede, conteúdo do pacote ou credenciais.</p>
+    </div>
+  </header>
+  <div class="table-wrapper table-wrapper-scroll">
+    <table>
+      <thead><tr><th>Data</th><th>Resultado</th><th>Proteção</th><th>Destino</th><th>SHA-256</th><th>Resumo</th></tr></thead>
+      <tbody>
+        {% for item in historico_backup %}
+          <tr>
+            <td>{{ item.criado_em_label }}</td>
+            <td><span class="status {% if item.sucesso %}status-success{% else %}status-danger{% endif %}">{{ item.status }}</span></td>
+            <td>{% if item.criptografado %}Criptografado{% else %}Não criptografado{% endif %}</td>
+            <td>{% if item.copia_secundaria %}Principal e secundário{% else %}Principal{% endif %}</td>
+            <td>{% if item.hash_validado %}Validado{% else %}Não confirmado{% endif %}</td>
+            <td>{{ item.descricao }}</td>
+          </tr>
+        {% empty %}
+          <tr><td colspan="6" class="empty">Nenhuma execução real de backup foi registrada ainda.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
 </section>
 
 <section class="panel backup-grid">
@@ -36,9 +79,11 @@
     <h2>Proteção dos dados</h2>
     <p>O arquivo pode conter dados comerciais, clientes, vendas, estoque, logs e usuários técnicos do sistema. Não envie esse backup por canais abertos.</p>
     <p>A restauração direta pela tela fica desativada de propósito: supermercado não pode correr o risco de sobrescrever uma base real por engano.</p>
-    <p>Antes da primeira execução, use <code>{{ backup_local_script }} {{ backup_validacao_flag }}</code> para conferir banco, mídia, logs e destino sem gerar arquivos.</p>
+    <p>Antes da primeira execução, use <code>{{ backup_local_script }} {{ backup_validacao_flag }}</code> para conferir banco, mídia, logs, destino e a cadeia fiscal sem gerar o pacote. O resultado sanitizado é registrado para o Master pelo comando <code>{{ backup_evidencias_comando }}</code>.</p>
     <p>O destino pode ser definido por <code>{{ backup_destino_env }}</code>. A tarefa automática usa a conta <code>{{ backup_conta_tarefa }}</code> e não depende de usuário conectado.</p>
     <p>Em produção, configure <code>{{ backup_criptografia_env }}</code> para gerar o pacote <code>.zip.aes</code>. Use <code>{{ backup_criptografia_flag }}</code> quando a política exigir apagar o <code>.zip</code> aberto.</p>
+    <p>A cópia secundária fica desligada por padrão. O Master define <code>{{ backup_destino_secundario_env }}</code> para uma pasta de NAS, rede ou disco externo e confirma com <code>{{ backup_destino_secundario_confirmacao_env }}=True</code> ou <code>{{ backup_destino_secundario_confirmacao_flag }}</code>. Somente o pacote criptografado e seu SHA-256 são promovidos.</p>
+    <p>Depois de homologar o agendamento, o Master pode definir <code>{{ backup_idade_maxima_env }}</code> com o prazo máximo em horas. O valor <code>0</code> mantém o alerta de atraso desligado.</p>
   </article>
 </section>
 

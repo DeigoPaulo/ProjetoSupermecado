@@ -9,6 +9,8 @@ from apps.accounts.services import diagnostico_prontidao_recuperacao_senha
 from apps.empresas.services_lookup import diagnostico_prontidao_consulta_cadastro
 from apps.licenciamento.services import diagnostico_prontidao_licenciamento
 
+from .offline_bundle import artefato_servidor_offline
+
 
 SERVIDOR_LOCAL_ARQUIVOS = {
     "subir_servidor": "scripts/run_local_server.ps1",
@@ -21,6 +23,8 @@ SERVIDOR_LOCAL_ARQUIVOS = {
     "remover_servico": "scripts/uninstall_local_server_service.ps1",
     "template_servico": "server_local/windows/DeigoVarejoServidorLocal.xml.template",
     "backup_local": "scripts/backup_local.ps1",
+    "registrar_resultado_backup": "apps/configuracoes/management/commands/registrar_resultado_backup_operacional.py",
+    "verificar_evidencias_fiscais": "apps/fiscal/management/commands/verificar_integridade_evidencias_fiscais.py",
     "restaurar_backup": "scripts/restore_local_backup.ps1",
     "registrar_backup": "scripts/register_backup_task.ps1",
     "registrar_sincronizacao": "scripts/register_sync_task.ps1",
@@ -210,6 +214,27 @@ def diagnostico_prontidao_servidor_local(
     }
 
 
+def diagnostico_prontidao_midia_offline(*, resultado=None) -> dict:
+    resultado = resultado or artefato_servidor_offline()
+    pronta = bool(resultado.get("publicacao_valida"))
+    alertas = list(resultado.get("problemas") or [])
+    if not pronta and not alertas:
+        alertas.append("O instalador offline ainda não possui publicação íntegra.")
+    return {
+        "contrato": "offline_installation_media_readiness_v1",
+        "pronto": pronta,
+        "pacote_contrato": resultado.get("contrato", ""),
+        "publicacao_contrato": resultado.get("contrato_publicacao", ""),
+        "pacote_encontrado": bool(resultado.get("arquivo_encontrado")),
+        "checksum_encontrado": bool(resultado.get("checksum_encontrado")),
+        "checksum_hash_valido": bool(resultado.get("checksum_hash_valido")),
+        "checksum_nome_vinculado": bool(resultado.get("checksum_nome_vinculado")),
+        "publicacao_valida": pronta,
+        "alertas": alertas,
+        "caminho_exposto": False,
+    }
+
+
 def _verificacao(
     *, identificador, diagnostico, obrigatoria, pronta=None, alertas=None, recomendacoes=None
 ):
@@ -235,7 +260,12 @@ def _verificacao(
     }
 
 
-def diagnostico_prontidao_implantacao(*, producao: bool = False, perfil: str = "central") -> dict:
+def diagnostico_prontidao_implantacao(
+    *,
+    producao: bool = False,
+    perfil: str = "central",
+    exigir_midia_offline: bool = False,
+) -> dict:
     if perfil not in {"central", "servidor-local"}:
         raise ValueError("Perfil de implantação inválido.")
 
@@ -280,6 +310,7 @@ def diagnostico_prontidao_implantacao(*, producao: bool = False, perfil: str = "
         )
     else:
         servidor_local = diagnostico_prontidao_servidor_local()
+        midia_offline = diagnostico_prontidao_midia_offline()
         verificacoes.extend(
             [
                 _verificacao(
@@ -295,6 +326,11 @@ def diagnostico_prontidao_implantacao(*, producao: bool = False, perfil: str = "
                     obrigatoria=False,
                     pronta=senha["prontidao"]["configuracao_smtp_completa"],
                     alertas=senha["prontidao"]["bloqueios"],
+                ),
+                _verificacao(
+                    identificador="midia_instalacao_offline",
+                    diagnostico=midia_offline,
+                    obrigatoria=exigir_midia_offline,
                 ),
             ]
         )
@@ -349,6 +385,10 @@ def diagnostico_prontidao_implantacao(*, producao: bool = False, perfil: str = "
         "contrato": "deployment_readiness_v2",
         "perfil": perfil,
         "alvo": alvo,
+        "politica_instalacao": {
+            "contrato": "local_installation_media_policy_v1",
+            "midia_offline_exigida": bool(perfil == "servidor-local" and exigir_midia_offline),
+        },
         "status": "ready" if pronto else "blocked",
         "pronto": pronto,
         "resumo": {

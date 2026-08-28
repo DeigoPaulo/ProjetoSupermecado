@@ -11,7 +11,11 @@ class Command(BaseCommand):
     def add_arguments(self, parser):
         parser.add_argument("--url")
         parser.add_argument("--timeout", type=int, default=5)
-        parser.add_argument("--backup-max-horas", type=int, default=36)
+        parser.add_argument(
+            "--backup-max-horas",
+            type=int,
+            help="Substitui explicitamente LOCAL_BACKUP_MAX_AGE_HOURS nesta execução.",
+        )
         parser.add_argument("--json", action="store_true", dest="como_json")
         parser.add_argument("--estrito", action="store_true")
 
@@ -19,7 +23,11 @@ class Command(BaseCommand):
         diagnostico = diagnostico_pos_implantacao_local(
             url=options["url"],
             timeout=max(1, min(options["timeout"], 30)),
-            idade_maxima_backup_horas=max(1, options["backup_max_horas"]),
+            idade_maxima_backup_horas=(
+                max(1, options["backup_max_horas"])
+                if options["backup_max_horas"] is not None
+                else None
+            ),
         )
         if options["como_json"]:
             self.stdout.write(json.dumps(diagnostico, ensure_ascii=False, sort_keys=True))

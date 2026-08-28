@@ -22,11 +22,16 @@ class PedidoOnlineForm(forms.ModelForm):
         model = PedidoOnline
         fields = [
             "filial", "cliente", "nome_cliente", "documento_cliente_tipo", "documento_cliente",
+            "destinatario_indicador_ie", "destinatario_inscricao_estadual",
+            "destinatario_logradouro", "destinatario_numero", "destinatario_complemento",
+            "destinatario_bairro", "destinatario_codigo_municipio_ibge",
+            "destinatario_municipio", "destinatario_uf", "destinatario_cep",
             "telefone", "canal", "tipo_entrega", "endereco_entrega", "bairro_entrega", "referencia_externa",
             "taxa_entrega", "desconto", "observacoes",
         ]
         widgets = {
             "endereco_entrega": forms.Textarea(attrs={"rows": 2}),
+            "destinatario_cep": forms.TextInput(attrs={"class": "mask-cep"}),
             "observacoes": forms.Textarea(attrs={"rows": 3}),
         }
 
@@ -41,6 +46,14 @@ class PedidoOnlineForm(forms.ModelForm):
             ["filial", "cliente"],
             ajax_urls={"filial": "/empresas/filiais/busca.json", "cliente": "/clientes/busca.json"},
         )
+
+    def save(self, commit=True):
+        pedido = super().save(commit=False)
+        pedido.preencher_destinatario_do_cliente()
+        if commit:
+            pedido.save()
+            self.save_m2m()
+        return pedido
 
 
 class ItemPedidoOnlineForm(forms.ModelForm):

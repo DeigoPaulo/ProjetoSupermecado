@@ -4,7 +4,8 @@ Este pacote concentra o núcleo da integração SOAP direta com a SEFAZ. O objet
 
 ## Estrutura
 
-- `adapter.py`: transporte SOAP, assinatura A1, interpretação de respostas e travas de rede/produção;
+- `adapter.py`: transporte SOAP, assinatura A1, interpretação de respostas, catálogo SVC-RS e travas de rede/produção;
+- `resiliencia.py`: retry conservador, circuit breaker por host e telemetria sanitizada somente em memória;
 - `dfe.py`: distribuição sequencial de notas e eventos por NSU no Ambiente Nacional;
 - `manifestacao.py`: eventos de manifestação do destinatário no Ambiente Nacional;
 - `cce.py`: Carta de Correção Eletrônica para NF-e autorizada em Goiás;

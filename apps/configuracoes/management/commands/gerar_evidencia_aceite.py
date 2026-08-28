@@ -19,7 +19,11 @@ class Command(BaseCommand):
         )
         parser.add_argument("--url")
         parser.add_argument("--timeout", type=int, default=5)
-        parser.add_argument("--backup-max-horas", type=int, default=36)
+        parser.add_argument(
+            "--backup-max-horas",
+            type=int,
+            help="Substitui explicitamente LOCAL_BACKUP_MAX_AGE_HOURS nesta execução.",
+        )
         parser.add_argument("--estrito", action="store_true")
 
     def handle(self, *args, **options):
@@ -27,7 +31,11 @@ class Command(BaseCommand):
             options["dossie"],
             url=options["url"],
             timeout=max(1, min(options["timeout"], 30)),
-            idade_maxima_backup_horas=max(1, options["backup_max_horas"]),
+            idade_maxima_backup_horas=(
+                max(1, options["backup_max_horas"])
+                if options["backup_max_horas"] is not None
+                else None
+            ),
         )
         destino = Path(options["saida"]).expanduser().resolve()
         destino.parent.mkdir(parents=True, exist_ok=True)

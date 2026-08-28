@@ -3,12 +3,15 @@ import io
 import json
 import tempfile
 import zipfile
+from datetime import timedelta
 from decimal import Decimal
 from pathlib import Path
 
 from django.conf import settings
 from django.contrib.auth import get_user_model
+from django.core.management import call_command
 from django.test import Client, SimpleTestCase, TestCase, override_settings
+from django.utils import timezone
 
 from apps.accounts.models import PerfilUsuario, TipoPerfil
 from apps.auditoria.models import LogAuditoria
@@ -220,6 +223,116 @@ class ConfiguracoesOperacionaisTests(TestCase):
         self.assertEqual(super_admin.context["modelos_pagina"].paginator.per_page, 25)
         self.assertGreater(super_admin.context["modelos_pagina"].paginator.num_pages, 1)
         self.assertContains(super_admin, "Paginação do inventário técnico")
+    def test_historico_backup_sanitizado_idempotente_e_visivel_ao_master(self):
+        execucao_sucesso = "a" * 32
+        for _ in range(2):
+            call_command(
+                "registrar_resultado_backup_operacional",
+                execucao_id=execucao_sucesso,
+                status="sucesso",
+                etapa="concluido",
+                criptografado=True,
+                copia_secundaria=True,
+                hash_validado=True,
+                stdout=io.StringIO(),
+            )
+        call_command(
+            "registrar_resultado_backup_operacional",
+            execucao_id="b" * 32,
+            status="falha",
+            etapa="copia_secundaria",
+            criptografado=True,
+            copia_secundaria=True,
+            hash_validado=True,
+            codigo_falha="copia_secundaria",
+            stdout=io.StringIO(),
+        )
+
+        logs = LogAuditoria.objects.filter(modulo="backup")
+        self.assertEqual(logs.count(), 2)
+        sucesso = logs.get(acao="BACKUP_OPERACIONAL_SUCESSO")
+        falha = logs.get(acao="BACKUP_OPERACIONAL_FALHA")
+        self.assertIn("SHA-256 validado", sucesso.descricao)
+        self.assertIn("cópia secundária", falha.descricao)
+        texto = " ".join(logs.values_list("descricao", flat=True)).lower()
+        self.assertNotIn("c:\\", texto)
+        self.assertNotIn("\\\\", texto)
+        self.assertNotIn("senha", texto)
+        self.assertNotIn(".zip", texto)
+
+        pagina = self.client.get("/configuracoes/backup/")
+        painel = self.client.get("/configuracoes/super-admin/")
+        diagnostico = self.client.get("/configuracoes/super-admin/diagnostico.json")
+        self.assertContains(pagina, "Histórico operacional")
+        self.assertContains(pagina, "Principal e secundário")
+        self.assertContains(pagina, "Validado")
+        self.assertContains(pagina, "Falha")
+        self.assertContains(painel, "Últimos backups")
+        payload = diagnostico.json()
+        self.assertEqual(len(payload["historico_backup"]), 2)
+        ultimo = next(
+            item for item in payload["diagnosticos"]
+            if item["titulo"] == "Último backup operacional"
+        )
+        pendencia = next(
+            item for item in payload["pendencias_acionaveis"]
+            if item["titulo"] == "Último backup operacional"
+        )
+        self.assertEqual(ultimo["valor"], "Falha")
+        self.assertEqual(pendencia["prioridade"], "Alta")
+        self.assertEqual(pendencia["total"], 1)
+        self.assertEqual(payload["prontidao_operacional"]["status"], "Crítica")
+
+    @override_settings(LOCAL_BACKUP_MAX_AGE_HOURS=36)
+    def test_periodicidade_backup_distingue_sem_sucesso_em_dia_e_atrasado(self):
+        payload = self.client.get("/configuracoes/super-admin/diagnostico.json").json()
+        monitor = payload["periodicidade_backup"]
+        pendencia = next(
+            item for item in payload["pendencias_acionaveis"]
+            if item["titulo"] == "Periodicidade do backup"
+        )
+        self.assertEqual(monitor["contrato"], "backup_freshness_v1")
+        self.assertEqual(monitor["politica_contrato"], "backup_age_policy_v1")
+        self.assertEqual(monitor["politica_origem"], "ambiente")
+        self.assertEqual(monitor["status"], "Sem sucesso")
+        self.assertTrue(monitor["alerta"])
+        self.assertEqual(pendencia["prioridade"], "Alta")
+        self.assertEqual(pendencia["total"], 1)
+
+        call_command(
+            "registrar_resultado_backup_operacional",
+            execucao_id="c" * 32,
+            status="sucesso",
+            etapa="concluido",
+            criptografado=True,
+            hash_validado=True,
+            stdout=io.StringIO(),
+        )
+        payload = self.client.get("/configuracoes/super-admin/diagnostico.json").json()
+        self.assertEqual(payload["periodicidade_backup"]["status"], "Em dia")
+        self.assertFalse(payload["periodicidade_backup"]["alerta"])
+
+        LogAuditoria.objects.filter(
+            modulo="backup", acao="BACKUP_OPERACIONAL_SUCESSO"
+        ).update(criado_em=timezone.now() - timedelta(hours=37))
+        payload = self.client.get("/configuracoes/super-admin/diagnostico.json").json()
+        monitor = payload["periodicidade_backup"]
+        pendencia = next(
+            item for item in payload["pendencias_acionaveis"]
+            if item["titulo"] == "Periodicidade do backup"
+        )
+        self.assertEqual(monitor["status"], "Atrasado")
+        self.assertTrue(monitor["alerta"])
+        self.assertGreaterEqual(monitor["idade_horas"], 37)
+        self.assertEqual(pendencia["total"], 1)
+        self.assertNotIn("c:\\", monitor["descricao"].lower())
+        self.assertNotIn(".zip", monitor["descricao"].lower())
+
+        pagina = self.client.get("/configuracoes/backup/")
+        painel = self.client.get("/configuracoes/super-admin/")
+        self.assertContains(pagina, "Periodicidade do backup: Atrasado")
+        self.assertContains(pagina, "LOCAL_BACKUP_MAX_AGE_HOURS")
+        self.assertContains(painel, "Periodicidade do backup")
     def test_tela_impressoes_e_backup_operacional(self):
         criar_configuracoes_padrao()
 
@@ -245,6 +358,11 @@ class ConfiguracoesOperacionaisTests(TestCase):
         self.assertContains(backup_pagina, "BACKUP_ENCRYPTION_PASSPHRASE")
         self.assertContains(backup_pagina, "-ValidarSomente")
         self.assertContains(backup_pagina, "LOCAL_BACKUP_DIR")
+        self.assertContains(backup_pagina, "LOCAL_BACKUP_SECONDARY_DIR")
+        self.assertContains(backup_pagina, "LOCAL_BACKUP_SECONDARY_CONFIRMED")
+        self.assertContains(backup_pagina, "LOCAL_BACKUP_MAX_AGE_HOURS")
+        self.assertContains(backup_pagina, "Periodicidade do backup: Desativado")
+        self.assertContains(backup_pagina, "-ConfirmarDestinoSecundario")
         self.assertContains(backup_pagina, "SYSTEM")
         self.assertContains(backup_pagina, ".zip.aes")
         self.assertContains(backup_pagina, "-RemoverOriginalCriptografado")
@@ -668,6 +786,34 @@ class ConfiguracoesOperacionaisTests(TestCase):
         self.assertIn(payload["prontidao_operacional"]["status"], {"Pronta", "Atenção", "Crítica"})
         self.assertGreaterEqual(payload["total_modelos"], 1)
 
+    def test_super_admin_destaca_alerta_fiscal_sanitizado(self):
+        PerfilUsuario.objects.create(usuario=self.user, filial=self.filial, tipo=TipoPerfil.ADMINISTRADOR)
+        LogAuditoria.objects.create(
+            modulo="fiscal",
+            acao="INTEGRIDADE_EVIDENCIAS_DIVERGENTE",
+            descricao="Alerta operacional de integridade fiscal: 1 divergência(s) detectada(s). Revisão técnica do Master obrigatória.",
+            objeto_tipo="integridade_evidencias_fiscais:backup",
+            objeto_id="a" * 64,
+        )
+
+        response = self.client.get("/configuracoes/super-admin/diagnostico.json")
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertEqual(payload["integridade_fiscal"]["status"], "Divergente")
+        self.assertFalse(payload["integridade_fiscal"]["integra"])
+        self.assertEqual(payload["integridade_fiscal"]["origem"], "backup")
+        pendencia = next(
+            item for item in payload["pendencias_acionaveis"]
+            if item["titulo"] == "Integridade das evidências fiscais"
+        )
+        self.assertEqual(pendencia["prioridade"], "Alta")
+        self.assertEqual(pendencia["total"], 1)
+        self.assertEqual(pendencia["url_name"], "configuracoes:backup")
+        self.assertEqual(payload["prontidao_operacional"]["status"], "Crítica")
+        self.assertNotIn("xml", payload["integridade_fiscal"]["descricao"].lower())
+        self.assertNotIn("credencial", payload["integridade_fiscal"]["descricao"].lower())
+
     def test_super_admin_destaca_valor_de_estorno_eletronico_pendente(self):
         PerfilUsuario.objects.create(usuario=self.user, filial=self.filial, tipo=TipoPerfil.ADMINISTRADOR)
         caixa = Caixa.objects.create(filial=self.filial, usuario_abertura=self.user)
@@ -822,10 +968,43 @@ class ConfiguracoesOperacionaisTests(TestCase):
         self.assertContains(response, "Supermercado Modelo")
         self.assertContains(response, "Servidor local com sincronização em nuvem")
         self.assertContains(response, "Prontidão do servidor local")
+        self.assertContains(response, "Publicação offline")
+        self.assertContains(response, "ZIP e seu SHA-256")
+        self.assertContains(response, "Instalador offline pendente")
         self.assertContains(response, "local_admin_readiness_v1")
         self.assertEqual(manifest.status_code, 200)
         payload = manifest.json()
         self.assertEqual(payload["contrato"], "erp_local_admin_v1")
+        self.assertEqual(
+            payload["distribuicao_offline"]["contrato_validacao"],
+            "detech_server_offline_package_validation_v2",
+        )
+        self.assertEqual(
+            payload["distribuicao_offline"]["contrato_publicacao"],
+            "detech_server_offline_publication_validation_v1",
+        )
+        self.assertIn("checksum_encontrado", payload["distribuicao_offline"])
+        self.assertIn("checksum_hash_valido", payload["distribuicao_offline"])
+        self.assertIn("checksum_nome_vinculado", payload["distribuicao_offline"])
+        self.assertIn("publicacao_valida", payload["distribuicao_offline"])
+        self.assertIn("componentes_obrigatorios_validos", payload["distribuicao_offline"])
+        self.assertIn("conteudo_servidor_valido", payload["distribuicao_offline"])
+        self.assertIn("wheelhouse_valido", payload["distribuicao_offline"])
+        self.assertTrue(payload["distribuicao_offline"]["validacao_no_empacotamento"])
+        self.assertTrue(payload["distribuicao_offline"]["promocao_somente_apos_validacao"])
+        self.assertTrue(payload["distribuicao_offline"]["preserva_artefato_anterior_em_falha"])
+        self.assertEqual(
+            payload["scripts"]["empacotar_servidor_offline"],
+            "scripts/package_detech_server_offline.ps1",
+        )
+        self.assertEqual(
+            payload["scripts"]["publicar_servidor_offline"],
+            "scripts/publish_detech_server_offline.ps1",
+        )
+        self.assertTrue(payload["distribuicao_offline"]["publicacao_revalida_origem_e_copia"])
+        self.assertTrue(payload["distribuicao_offline"]["publicacao_checksum_vinculado"])
+        self.assertTrue(payload["distribuicao_offline"]["publicacao_rollback_automatico"])
+        self.assertTrue(payload["distribuicao_offline"]["publicacao_preserva_anterior_em_falha"])
         self.assertEqual(payload["prontidao"]["contrato"], "local_admin_readiness_v1")
         self.assertIn(payload["prontidao"]["status"], ["Homologacao parcial", "Pronta com ressalvas", "Pronta"])
         self.assertTrue(payload["prontidao"]["arquivos"]["backup_local"]["existe"])
@@ -866,16 +1045,72 @@ class ConfiguracoesOperacionaisTests(TestCase):
         self.assertEqual(payload["scripts"]["backup_criptografia_env"], "BACKUP_ENCRYPTION_PASSPHRASE")
         self.assertEqual(payload["scripts"]["backup_criptografia_flag"], "-RemoverOriginalCriptografado")
         self.assertEqual(payload["scripts"]["backup_validacao_flag"], "-ValidarSomente")
+        self.assertEqual(payload["scripts"]["restauracao_ensaio_flag"], "-EnsaiarIsolado")
+        self.assertEqual(
+            payload["scripts"]["restauracao_ensaio_postgres_db_env"],
+            "RESTORE_REHEARSAL_POSTGRES_DB",
+        )
+        self.assertEqual(
+            payload["scripts"]["restauracao_ensaio_postgres_confirmacao_flag"],
+            "-ConfirmarBancoPostgresTemporario",
+        )
         self.assertEqual(payload["scripts"]["backup_destino_env"], "LOCAL_BACKUP_DIR")
+        self.assertEqual(payload["scripts"]["backup_destino_secundario_env"], "LOCAL_BACKUP_SECONDARY_DIR")
+        self.assertEqual(payload["scripts"]["backup_destino_secundario_confirmacao_env"], "LOCAL_BACKUP_SECONDARY_CONFIRMED")
+        self.assertEqual(payload["scripts"]["backup_idade_maxima_env"], "LOCAL_BACKUP_MAX_AGE_HOURS")
         self.assertEqual(payload["scripts"]["backup_conta_tarefa"], "SYSTEM")
         self.assertEqual(payload["backup_local"]["contrato"], "erp_local_backup_v2")
         self.assertEqual(payload["backup_local"]["fontes_contrato"], "local_backup_sources_v1")
         self.assertTrue(payload["backup_local"]["sqlite_snapshot_consistente"])
         self.assertTrue(payload["backup_local"]["postgresql_dump_custom"])
         self.assertEqual(payload["backup_local"]["postgresql_ferramenta"], "pg_dump")
+        self.assertTrue(payload["backup_local"]["evidencias_fiscais_alerta_master"])
+        self.assertTrue(payload["backup_local"]["copia_secundaria_opcional"])
+        self.assertTrue(payload["backup_local"]["copia_secundaria_somente_criptografada"])
+        self.assertTrue(payload["backup_local"]["copia_secundaria_sha256_obrigatorio"])
+        self.assertTrue(payload["backup_local"]["copia_secundaria_promocao_atomica"])
+        self.assertTrue(payload["backup_local"]["copia_secundaria_retencao_independente"])
+        self.assertTrue(payload["backup_local"]["historico_sanitizado_master"])
+        self.assertEqual(payload["backup_local"]["historico_limite_tela"], 20)
+        self.assertEqual(payload["backup_local"]["periodicidade_contrato"], "backup_freshness_v1")
+        self.assertEqual(payload["backup_local"]["politica_idade_contrato"], "backup_age_policy_v1")
+        self.assertTrue(payload["backup_local"]["pos_implantacao_mesma_politica"])
+        self.assertEqual(
+            payload["backup_local"]["aceite_validacao_contrato"],
+            "local_backup_package_validation_v1",
+        )
+        self.assertTrue(payload["backup_local"]["aceite_valida_sha256"])
+        self.assertTrue(payload["backup_local"]["aceite_valida_estrutura"])
+        self.assertTrue(payload["backup_local"]["aceite_valida_contrato_backup"])
+        self.assertTrue(payload["backup_local"]["aceite_valida_ancora_fiscal"])
+        self.assertTrue(payload["backup_local"]["aceite_suporta_aes256"])
+        self.assertEqual(payload["backup_local"]["periodicidade_env"], "LOCAL_BACKUP_MAX_AGE_HOURS")
+        self.assertTrue(payload["backup_local"]["periodicidade_desligada_por_padrao"])
+        self.assertIn("registrar_resultado_backup_operacional", payload["backup_local"]["historico_comando"])
+        self.assertIn("--registrar-alerta", payload["backup_local"]["evidencias_fiscais_verificar_comando"])
         self.assertFalse(payload["backup_local"]["depende_usuario_conectado"])
         self.assertEqual(payload["restauracao_local"]["contrato_validacao"], "local_restore_validation_v1")
         self.assertEqual(payload["restauracao_local"]["contrato_historico"], "local_restore_history_v1")
+        self.assertEqual(
+            payload["restauracao_local"]["ensaio_contrato"],
+            "local_restore_rehearsal_v1",
+        )
+        self.assertTrue(payload["restauracao_local"]["ensaio_sqlite_automatico"])
+        self.assertTrue(
+            payload["restauracao_local"]["ensaio_postgresql_automatico_em_banco_preparado"]
+        )
+        self.assertEqual(
+            payload["restauracao_local"]["ensaio_postgresql_prefixo_banco"],
+            "deigo_rehearsal_",
+        )
+        self.assertTrue(payload["restauracao_local"]["ensaio_postgresql_exige_banco_vazio"])
+        self.assertTrue(payload["restauracao_local"]["ensaio_postgresql_exige_confirmacao"])
+        self.assertTrue(payload["restauracao_local"]["ensaio_postgresql_transacao_unica"])
+        self.assertTrue(
+            payload["restauracao_local"]["ensaio_postgresql_nao_cria_nem_remove_banco"]
+        )
+        self.assertTrue(payload["restauracao_local"]["ensaio_sem_servico"])
+        self.assertTrue(payload["restauracao_local"]["ensaio_sem_dados_ativos"])
         self.assertTrue(payload["restauracao_local"]["confirmacao_explicita"])
         self.assertTrue(payload["restauracao_local"]["rollback_sqlite_media"])
         self.assertIn("postgresql", payload["restauracao_local"]["motores"])
@@ -918,21 +1153,43 @@ class ConfiguracoesOperacionaisTests(TestCase):
         self.assertIn("local_backup_sources_v1", backup_texto)
         self.assertIn("erp_local_backup_v2", backup_texto)
         self.assertIn("source.backup(target)", backup_texto)
+        self.assertIn("EmptyArchiveDirectories", backup_texto)
+        self.assertIn("CreateEntry($entryName)", backup_texto)
         self.assertIn("pg_dump", backup_texto)
         self.assertIn("--format=custom", backup_texto)
         self.assertIn("PGPASSWORD", backup_texto)
         self.assertIn("DeigoVarejoServidorLocal.xml", backup_texto)
+        self.assertIn("--registrar-alerta", backup_texto)
+        self.assertIn("--origem backup", backup_texto)
+        self.assertIn("Copy-VerifiedEncryptedBackup", backup_texto)
+        self.assertIn("ConfirmarDestinoSecundario", backup_texto)
+        self.assertIn("RetencaoSecundariaDias", backup_texto)
+        self.assertIn("Register-BackupOperationalResult", backup_texto)
+        self.assertIn("registrar_resultado_backup_operacional", backup_texto)
         self.assertIn("local_restore_validation_v1", restaurador_texto)
+        self.assertIn("--origem restauracao", restaurador_texto)
         self.assertIn("pg_restore", restaurador_texto)
         self.assertIn("--single-transaction", restaurador_texto)
         self.assertIn("Restauracao cruzada foi recusada", restaurador_texto)
         self.assertIn("erp_local_backup_v2", restaurador_texto)
         self.assertIn("ConfirmarRestauracao", restaurador_texto)
+        self.assertIn("EnsaiarIsolado", restaurador_texto)
+        self.assertIn("local_restore_rehearsal_v1", restaurador_texto)
+        self.assertIn("sqlite_integridade_antes", restaurador_texto)
+        self.assertIn("dados_ativos_alterados = $false", restaurador_texto)
+        self.assertIn("ConfirmarBancoPostgresTemporario", restaurador_texto)
+        self.assertIn("^deigo_rehearsal_", restaurador_texto)
+        self.assertIn("postgresql_banco_vazio_confirmado", restaurador_texto)
+        self.assertIn("postgresql_restore_transacao_unica", restaurador_texto)
+        self.assertIn("ObjectsBefore", restaurador_texto)
+        self.assertNotIn("--clean", restaurador_texto.split("if ($EnsaiarIsolado)", 1)[1].split("if (-not $ConfirmarRestauracao)", 1)[0])
         self.assertIn("backup_local.ps1", restaurador_texto)
         self.assertIn("Wait-Health", restaurador_texto)
         self.assertIn("Restauracao cancelada e dados anteriores recuperados", restaurador_texto)
         self.assertIn("-LogonType ServiceAccount", agendador_backup_texto)
         self.assertIn('"SYSTEM"', agendador_backup_texto)
+        self.assertIn("DestinoSecundario", agendador_backup_texto)
+        self.assertIn("RetencaoSecundariaDias", agendador_backup_texto)
 
     def test_manifesto_servidor_local_exige_admin_master(self):
         gerente = get_user_model().objects.create_user("gerente_local", "gerente_local@example.com", "123")

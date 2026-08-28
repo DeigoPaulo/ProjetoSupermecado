@@ -533,11 +533,15 @@ def build_document() -> Document:
     add_callout(doc, "Operação destrutiva", "A restauração altera dados em uso. Pare os caixas, faça backup do estado atual e valide o arquivo antes de confirmar.", "danger")
     add_heading(doc, "Validar sem restaurar", 2)
     add_code(doc, ".\\scripts\\restore_local_backup.ps1 -BackupPath \"D:\\Backups\\supermercado-local-AAAAMMDD-HHMMSS.zip\" -Port 8001 -ValidarSomente")
+    add_heading(doc, "Ensaiar SQLite em área isolada", 2)
+    add_code(doc, ".\\scripts\\restore_local_backup.ps1 -BackupPath \"D:\\Backups\\supermercado-local-AAAAMMDD-HHMMSS.zip.aes\" -EnsaiarIsolado")
+    add_body(doc, "O ensaio local_restore_rehearsal_v1 aplica migrations, Django check e integridade fiscal sem parar o serviço ou alterar dados ativos. Em PostgreSQL, prepare um banco vazio deigo_rehearsal_*, configure RESTORE_REHEARSAL_POSTGRES_* e confirme com -ConfirmarBancoPostgresTemporario; o script não cria, limpa ou remove o banco.")
     add_heading(doc, "Restaurar", 2)
     add_code(doc, ".\\scripts\\restore_local_backup.ps1 -BackupPath \"D:\\Backups\\supermercado-local-AAAAMMDD-HHMMSS.zip\" -Port 8001 -ConfirmarRestauracao")
     add_body(doc, "Para backup criptografado, informe BACKUP_ENCRYPTION_PASSPHRASE no processo autorizado. Nunca registre a senha em documento público ou histórico de comando compartilhado.")
     add_checklist(doc, [
         "SHA-256 validado.",
+        "Ensaio SQLite aprovado ou PostgreSQL executado em banco deigo_rehearsal_* vazio e confirmado.",
         "Backup do estado atual concluído.",
         "Loja em janela de manutenção.",
         "Serviço voltou a responder.",

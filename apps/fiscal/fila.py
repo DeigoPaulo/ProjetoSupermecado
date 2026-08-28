@@ -9,7 +9,7 @@ from django.utils import timezone
 from apps.auditoria.models import LogAuditoria
 
 from .adapters import diagnosticar_adaptador_sefaz
-from .models import AmbienteFiscal, DocumentoFiscal, StatusDocumentoFiscal
+from .models import AmbienteFiscal, DocumentoFiscal, StatusDocumentoFiscal, TipoDocumentoFiscal
 from .services import (
     consultar_situacao_documento,
     salvar_xml_documento,
@@ -25,6 +25,10 @@ def configuracao_fila_fiscal():
         "habilitada": bool(getattr(settings, "FISCAL_AUTO_TRANSMIT_ENABLED", False)),
         "max_tentativas": max(1, int(getattr(settings, "FISCAL_AUTO_TRANSMIT_MAX_ATTEMPTS", 8))),
         "max_consultas": max(1, int(getattr(settings, "FISCAL_AUTO_QUERY_MAX_ATTEMPTS", 12))),
+        "confirmacoes_nao_localizado": max(
+            2,
+            int(getattr(settings, "FISCAL_CONTINGENCY_NOT_FOUND_CONFIRMATIONS", 2)),
+        ),
         "espera_base_segundos": max(1, int(getattr(settings, "FISCAL_AUTO_TRANSMIT_RETRY_BASE_SECONDS", 60))),
         "espera_maxima_segundos": max(1, int(getattr(settings, "FISCAL_AUTO_TRANSMIT_RETRY_MAX_SECONDS", 3600))),
         "lease_segundos": max(30, int(getattr(settings, "FISCAL_AUTO_TRANSMIT_LEASE_SECONDS", 300))),
@@ -117,6 +121,11 @@ def diagnostico_fila_fiscal(queryset=None):
         aguardando_consulta_sefaz=True,
         tentativas_consulta_sefaz__gte=configuracao["max_consultas"],
     ).count()
+    contingencias_offline_vencidas = base.filter(
+        tipo_documento=TipoDocumentoFiscal.NFCE,
+        contingencia_iniciada_em__isnull=False,
+        transmissao_limite_em__lt=agora,
+    ).count()
     adapter = diagnosticar_adaptador_sefaz()
     return {
         **configuracao,
@@ -126,6 +135,7 @@ def diagnostico_fila_fiscal(queryset=None):
         "tentativas_esgotadas": esgotados,
         "aguardando_consulta_sefaz": aguardando_consulta,
         "consultas_esgotadas": consultas_esgotadas,
+        "contingencias_offline_vencidas": contingencias_offline_vencidas,
         "adaptador_configurado": adapter["configurado"],
         "adaptador_carregavel": adapter["carregavel"],
         "pronta": bool(configuracao["habilitada"] and adapter["carregavel"]),
@@ -156,6 +166,7 @@ def reagendar_documento_fiscal(documento, usuario, motivo, ip=None):
         documento.status = StatusDocumentoFiscal.PRONTO
     documento.tentativas_transmissao = 0
     documento.tentativas_consulta_sefaz = 0
+    documento.confirmacoes_nao_localizado = 0
     documento.proxima_tentativa_em = timezone.now()
     documento.transmissao_reservada_em = None
     documento.xml_assinado_em = None
@@ -165,6 +176,7 @@ def reagendar_documento_fiscal(documento, usuario, motivo, ip=None):
             "status",
             "tentativas_transmissao",
             "tentativas_consulta_sefaz",
+            "confirmacoes_nao_localizado",
             "proxima_tentativa_em",
             "transmissao_reservada_em",
             "xml_assinado_em",
@@ -206,9 +218,10 @@ def retomar_consultas_documento_fiscal(documento, usuario, motivo, ip=None):
         raise ValidationError("Informe um motivo entre 10 e 255 caracteres para retomar as consultas.")
 
     documento.tentativas_consulta_sefaz = 0
+    documento.confirmacoes_nao_localizado = 0
     documento.proxima_tentativa_em = timezone.now()
     documento.transmissao_reservada_em = None
-    documento.save(update_fields=["tentativas_consulta_sefaz", "proxima_tentativa_em", "transmissao_reservada_em", "atualizado_em"])
+    documento.save(update_fields=["tentativas_consulta_sefaz", "confirmacoes_nao_localizado", "proxima_tentativa_em", "transmissao_reservada_em", "atualizado_em"])
     LogAuditoria.objects.create(
         usuario=usuario,
         modulo="fiscal",

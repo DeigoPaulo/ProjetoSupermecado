@@ -21,10 +21,12 @@
       {% endif %}
       {% if documento.ambiente == "HOMOLOGACAO" %}
         {% if documento.status == "PRONTO" or documento.status == "CONTINGENCIA" %}
-          <form method="post" action="{% url 'fiscal:transmitir_simulado' documento.pk %}" class="inline-form form-confirm" data-msg="Transmitir em homologacao simulada?">
-            {% csrf_token %}
-            <button class="primary-button" type="submit"><i class="fa-solid fa-paper-plane"></i> Transmitir homologação</button>
-          </form>
+          {% if not svc_documento_ativo %}
+            <form method="post" action="{% url 'fiscal:transmitir_simulado' documento.pk %}" class="inline-form form-confirm" data-msg="Transmitir em homologacao simulada?">
+              {% csrf_token %}
+              <button class="primary-button" type="submit"><i class="fa-solid fa-paper-plane"></i> Transmitir homologação</button>
+            </form>
+          {% endif %}
         {% endif %}
       {% endif %}
       {% if sefaz_adapter_configurado and documento.ambiente == "PRODUCAO" %}
@@ -127,6 +129,24 @@
 </section>
 {% endif %}
 
+{% if not imprimir and svc_visivel_master %}
+<section class="operation-notice operation-notice-warning">
+  <i class="fa-solid fa-tower-broadcast"></i>
+  <div>
+    <strong>Contingência técnica NF-e pela SVC-RS</strong>
+    <span>Uso restrito ao Master. Esta ação troca a chave e o XML para tpEmis 7 e não autoriza a nota por si só.</span>
+    {% if svc_habilitada %}
+      <form method="post" action="{% url 'fiscal:ativar_svc' documento.pk %}" class="stacked-form form-confirm" data-msg="Preparar esta NF-e para autorização pela SVC-RS? A chave de acesso será regenerada.">
+        {% csrf_token %}
+        <label class="form-field"><span>Justificativa técnica</span><textarea name="justificativa" minlength="15" maxlength="256" rows="2" required placeholder="Ex.: indisponibilidade comprovada do autorizador normal."></textarea></label>
+        <button class="secondary-button" type="submit"><i class="fa-solid fa-triangle-exclamation"></i> Preparar SVC-RS</button>
+      </form>
+    {% else %}
+      <span>A SVC-RS está desligada no servidor e não pode ser ativada por esta tela.</span>
+    {% endif %}
+  </div>
+</section>
+{% endif %}
 {% if not imprimir and documento.status == "PRONTO" and documento.tipo_documento == "NFCE" and documento.filial.configuracao_fiscal.permite_contingencia_offline %}
 <section class="operation-notice operation-notice-warning">
   <i class="fa-solid fa-tower-broadcast"></i>
@@ -146,7 +166,26 @@
   <i class="fa-solid fa-clock"></i>
   <div>
     <strong>Documento sem autorização da SEFAZ.</strong>
-    <span>Contingência iniciada em {{ documento.contingencia_iniciada_em|date:"d/m/Y H:i" }}. Transmitir até {{ documento.transmissao_limite_em|date:"d/m/Y H:i" }}. Justificativa: {{ documento.contingencia_justificativa }}</span>
+    {% if documento.tipo_documento == "NFE" %}
+      <span>NF-e preparada para SVC-RS em {{ documento.contingencia_iniciada_em|date:"d/m/Y H:i" }}. A autorização ainda precisa ser transmitida e confirmada. Justificativa: {{ documento.contingencia_justificativa }}</span>
+      {% if svc_transmissao_disponivel %}
+        <form method="post" action="{% url 'fiscal:transmitir_sefaz' documento.pk %}" class="stacked-form form-confirm" data-msg="Transmitir esta NF-e para autorização pela SVC-RS?">
+          {% csrf_token %}
+          <button class="primary-button" type="submit"><i class="fa-solid fa-cloud-arrow-up"></i> Transmitir SVC-RS</button>
+        </form>
+      {% elif request.user.is_superuser %}
+        <span>O envio permanece bloqueado até rede, certificado, schema e chave SVC estarem habilitados no servidor.</span>
+      {% endif %}
+    {% else %}
+      <span>Contingência iniciada em {{ documento.contingencia_iniciada_em|date:"d/m/Y H:i" }}. Transmitir até {{ documento.transmissao_limite_em|date:"d/m/Y H:i" }}. Justificativa: {{ documento.contingencia_justificativa }}</span>
+      {% if documento.contingencia_prazo_vencido %}
+        <strong>Prazo de transmissão excedido.</strong>
+        <span>A nota continua na reconciliação e não será descartada nem retransmitida sem as consultas de segurança.</span>
+      {% endif %}
+      {% if documento.confirmacoes_nao_localizado %}
+        <span>Confirmações de ausência recebidas: {{ documento.confirmacoes_nao_localizado }}. A retransmissão permanece bloqueada enquanto a reconciliação estiver pendente.</span>
+      {% endif %}
+    {% endif %}
   </div>
 </section>
 {% endif %}
@@ -186,12 +225,23 @@
 {% endif %}
 
 <section class="metrics-grid">
-  <article class="metric"><span>Status</span><strong>{{ documento.get_status_display }}</strong></article>
+  <article class="metric"><span>Status</span><strong>{% if documento.tipo_documento == "NFE" and documento.status == "CONTINGENCIA" %}Contingência SVC-RS{% else %}{{ documento.get_status_display }}{% endif %}</strong></article>
   <article class="metric"><span>Ambiente</span><strong>{{ documento.get_ambiente_display }}</strong></article>
   <article class="metric"><span>Tentativas</span><strong>{{ documento.tentativas_transmissao }}</strong><small>{% if documento.proxima_tentativa_em %}Próxima: {{ documento.proxima_tentativa_em|date:"d/m/Y H:i" }}{% else %}Sem reagendamento{% endif %}</small></article>
   <article class="metric"><span>Total</span><strong>R$ {{ documento.valor_total|floatformat:2 }}</strong></article>
   <article class="metric"><span>Origem</span><strong>{% if documento.venda %}Venda #{{ documento.venda_id }}{% elif documento.pedido_online %}Pedido #{{ documento.pedido_online_id }}{% else %}-{% endif %}</strong></article>
 </section>
+
+{% if not imprimir and request.user.is_superuser and integridade_evidencias %}
+<section class="operation-notice {% if integridade_evidencias.integra %}operation-notice-success{% else %}operation-notice-warning{% endif %}">
+  <i class="fa-solid fa-shield-halved"></i>
+  <div>
+    <strong>Arquivo técnico de evidências fiscais: {% if integridade_evidencias.integra %}íntegro{% else %}divergência detectada{% endif %}.</strong>
+    <span>{{ integridade_evidencias.total }} registro(s) append-only encadeado(s) por SHA-256. O conteúdo não é exposto nesta tela.</span>
+    {% if integridade_evidencias.cadeia_sha256 %}<small>Âncora atual: {{ integridade_evidencias.cadeia_sha256 }}</small>{% endif %}
+  </div>
+</section>
+{% endif %}
 
 <section class="split-grid">
   <article class="panel">

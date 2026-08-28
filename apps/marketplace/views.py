@@ -75,9 +75,14 @@ def novo_pedido(request):
     if request.method == "POST" and form.is_valid():
         pedido = form.save(commit=False)
         pedido.usuario = request.user
-        pedido.save()
-        messages.success(request, "Pedido criado. Agora inclua os produtos.")
-        return redirect("marketplace:detalhe", pk=pedido.pk)
+        try:
+            pedido.full_clean()
+            pedido.save()
+        except ValidationError as exc:
+            form.add_error(None, exc)
+        else:
+            messages.success(request, "Pedido criado. Agora inclua os produtos.")
+            return redirect("marketplace:detalhe", pk=pedido.pk)
     return render(request, "marketplace/pedido_form.html", {"form": form})
 
 
@@ -812,6 +817,7 @@ def api_receber_pedido(request):
         return JsonResponse({"pedido_id": existente.pk, "status": existente.status, "duplicado": True}, status=200)
     try:
         with transaction.atomic():
+            destinatario = dados.get("destinatario") if isinstance(dados.get("destinatario"), dict) else {}
             pedido = PedidoOnline(
                 integracao=integracao,
                 filial=integracao.filial,
@@ -822,6 +828,16 @@ def api_receber_pedido(request):
                 canal=CanalPedido.MARKETPLACE,
                 tipo_entrega=tipo_entrega,
                 endereco_entrega=str(dados.get("endereco_entrega", "")),
+                destinatario_indicador_ie=str(destinatario.get("indicador_ie", dados.get("destinatario_indicador_ie", ""))),
+                destinatario_inscricao_estadual=str(destinatario.get("inscricao_estadual", dados.get("destinatario_inscricao_estadual", ""))),
+                destinatario_logradouro=str(destinatario.get("logradouro", dados.get("destinatario_logradouro", ""))),
+                destinatario_numero=str(destinatario.get("numero", dados.get("destinatario_numero", ""))),
+                destinatario_complemento=str(destinatario.get("complemento", dados.get("destinatario_complemento", ""))),
+                destinatario_bairro=str(destinatario.get("bairro", dados.get("destinatario_bairro", ""))),
+                destinatario_codigo_municipio_ibge=str(destinatario.get("codigo_municipio_ibge", dados.get("destinatario_codigo_municipio_ibge", ""))),
+                destinatario_municipio=str(destinatario.get("municipio", dados.get("destinatario_municipio", ""))),
+                destinatario_uf=str(destinatario.get("uf", dados.get("destinatario_uf", ""))).upper(),
+                destinatario_cep=str(destinatario.get("cep", dados.get("destinatario_cep", ""))),
                 bairro_entrega=str(dados.get("bairro_entrega", "")).strip(),
                 referencia_externa=referencia,
                 taxa_entrega=taxa_entrega,

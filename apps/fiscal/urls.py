@@ -54,6 +54,7 @@ urlpatterns = [
     path("documentos/<int:pk>/transmitir-sefaz/", views.transmitir_sefaz, name="transmitir_sefaz"),
     path("documentos/<int:pk>/consultar-sefaz/", views.consultar_sefaz, name="consultar_sefaz"),
     path("documentos/<int:pk>/contingencia/", views.ativar_contingencia, name="ativar_contingencia"),
+    path("documentos/<int:pk>/contingencia-svc/", views.ativar_svc, name="ativar_svc"),
     path("documentos/<int:pk>/cancelar/", views.cancelar, name="cancelar"),
     path("documentos/<int:pk>/carta-correcao/", views.registrar_cce, name="registrar_cce"),
     path(

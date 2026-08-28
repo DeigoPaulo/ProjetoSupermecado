@@ -73,6 +73,23 @@
     </div>
   </section>
 
+    <section class="form-section form-field-wide">
+      <h2>Dados fiscais para NF-e</h2>
+      <p class="form-help">Preencha estes campos quando o cliente puder receber NF-e modelo 55. Eles serão copiados para o pedido como um registro da operação.</p>
+      <div class="form-grid form-grid-inner">
+        <label class="form-field"><span>{{ form.indicador_ie.label }}</span>{{ form.indicador_ie }}{{ form.indicador_ie.errors }}</label>
+        <label class="form-field"><span>{{ form.inscricao_estadual.label }}</span>{{ form.inscricao_estadual }}{{ form.inscricao_estadual.errors }}</label>
+        <label class="form-field form-field-wide"><span>{{ form.logradouro.label }}</span>{{ form.logradouro }}{{ form.logradouro.errors }}</label>
+        <label class="form-field"><span>{{ form.numero.label }}</span>{{ form.numero }}{{ form.numero.errors }}</label>
+        <label class="form-field"><span>{{ form.complemento.label }}</span>{{ form.complemento }}{{ form.complemento.errors }}</label>
+        <label class="form-field"><span>{{ form.bairro.label }}</span>{{ form.bairro }}{{ form.bairro.errors }}</label>
+        <label class="form-field"><span>{{ form.codigo_municipio_ibge.label }}</span>{{ form.codigo_municipio_ibge }}{{ form.codigo_municipio_ibge.errors }}</label>
+        <label class="form-field"><span>{{ form.municipio.label }}</span>{{ form.municipio }}{{ form.municipio.errors }}</label>
+        <label class="form-field"><span>{{ form.uf.label }}</span>{{ form.uf }}{{ form.uf.errors }}</label>
+        <label class="form-field"><span>{{ form.cep.label }}</span>{{ form.cep }}{{ form.cep.errors }}</label>
+      </div>
+    </section>
+
   {{ form.non_field_errors }}
   <div class="form-actions">
     <a class="secondary-button" href="{% url 'clientes:lista' %}">Cancelar</a>
