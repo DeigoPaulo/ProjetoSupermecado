@@ -1130,7 +1130,11 @@ class ConfiguracoesOperacionaisTests(TestCase):
         self.assertEqual(payload["scripts"]["registrar_manutencao_validade"], "scripts/register_inventory_expiry_maintenance_task.ps1")
         self.assertEqual(payload["manutencao_inventario_validade"]["contrato"], "inventory_expiry_maintenance_status_v1")
         self.assertEqual(payload["manutencao_inventario_validade"]["estado"], "NAO_EXECUTADA")
-        self.assertEqual(payload["ensaio_estoque"]["contrato"], "inventory_pilot_end_to_end_evidence_v2")
+        self.assertEqual(payload["ensaio_estoque"]["contrato"], "inventory_pilot_end_to_end_evidence_v3")
+        self.assertEqual(
+            payload["ensaio_estoque"]["contrato_prontidao_real"],
+            "inventory_real_pilot_readiness_v1",
+        )
         self.assertEqual(
             payload["diagnostico_snapshots_lote"]["contrato"],
             "inventory_lot_snapshot_coverage_v1",

@@ -7,7 +7,10 @@ from django.utils import timezone
 from apps.empresas.models import Empresa, Filial
 from apps.produtos.models import Categoria, Produto
 
-from .diagnostico_snapshots import diagnostico_cobertura_snapshots_lote
+from .diagnostico_snapshots import (
+    diagnostico_cobertura_snapshots_lote,
+    diagnostico_prontidao_piloto_real,
+)
 from .models import (
     LoteEstoque,
     MovimentacaoEstoque,
@@ -118,3 +121,36 @@ class DiagnosticoCoberturaSnapshotsLoteTests(TestCase):
         self.assertEqual(por_filial[self.filial_sem_vendas.pk]["cobertura_display"], "Sem base")
         self.assertTrue(integra.snapshot_integro)
         self.assertTrue(tratamento_bloqueado.snapshot_integro)
+
+        prontidao = diagnostico_prontidao_piloto_real(
+            filial_id=self.filial.pk, diagnostico=diagnostico
+        )
+        self.assertEqual(prontidao["contrato"], "inventory_real_pilot_readiness_v1")
+        self.assertEqual(prontidao["estado"], "BLOQUEADA_INCONSISTENCIA")
+        self.assertFalse(prontidao["pronta_para_aceite"])
+        self.assertTrue(prontidao["somente_leitura"])
+        self.assertEqual(
+            diagnostico_prontidao_piloto_real(
+                filial_id=self.filial_sem_vendas.pk, diagnostico=diagnostico
+            )["estado"],
+            "SEM_BASE",
+        )
+
+    def test_prontidao_exige_base_integra_e_bloqueia_legado(self):
+        self.assertEqual(
+            diagnostico_prontidao_piloto_real(filial_id=self.filial.pk)["estado"],
+            "SEM_BASE",
+        )
+
+        alocacao = self.criar_alocacao("PRONTA")
+        prontidao = diagnostico_prontidao_piloto_real(filial_id=self.filial.pk)
+        self.assertEqual(prontidao["estado"], "PRONTA_ESTRUTURAL")
+        self.assertTrue(prontidao["pronta_para_aceite"])
+        self.assertTrue(all(prontidao["criterios"].values()))
+
+        MovimentacaoLoteEstoque.objects.filter(pk=alocacao.pk).update(
+            lote_codigo_snapshot="", tratamento_status_snapshot="", snapshot_sha256=""
+        )
+        prontidao = diagnostico_prontidao_piloto_real(filial_id=self.filial.pk)
+        self.assertEqual(prontidao["estado"], "BLOQUEADA_LEGADO")
+        self.assertFalse(prontidao["pronta_para_aceite"])

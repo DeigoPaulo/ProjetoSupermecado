@@ -190,7 +190,7 @@ A migration 0033 e o contrato `inventory_expiry_maintenance_run_v1` incorporam a
 
 ## Ensaio ponta a ponta
 
-O contrato `inventory_pilot_end_to_end_evidence_v2` e o roteiro detalhado em `ENSAIO_PILOTO_ESTOQUE.md` fecham o cenário sintético integrado.
+O contrato `inventory_pilot_end_to_end_evidence_v3` e o roteiro detalhado em `ENSAIO_PILOTO_ESTOQUE.md` fecham o cenário sintético integrado e aplicam a prontidão histórica quando os dados são reais.
 
 - [x] Entrada criou dois lotes e preservou quantidades por camada.
 - [x] Venda consumiu somente o lote válido e não criou documento fiscal.
@@ -249,3 +249,19 @@ O contrato `inventory_lot_snapshot_coverage_v1` consolida somente as alocações
 - [x] Administradores das empresas não visualizam o painel nem acessam o manifesto técnico.
 
 O estado **Sem vendas por lote** não representa homologação; indica apenas que ainda não existem movimentos no escopo para avaliar.
+
+## Trava de prontidão do piloto real
+
+O contrato `inventory_real_pilot_readiness_v1` usa o diagnóstico da filial como portão do relatório real, sem corrigir ou selecionar registros automaticamente.
+
+- [x] Sem vendas por lote permanece Sem base e não libera aceite.
+- [x] Qualquer snapshot legado bloqueia o aceite real como pendência explícita.
+- [x] Qualquer snapshot inconsistente bloqueia o aceite real para investigação.
+- [x] Somente base existente e integralmente íntegra fica Pronta estruturalmente.
+- [x] Evidência v3 inclui estado, critérios e contagens no JSON assinado.
+- [x] Modo estrito considera o gate em dados reais.
+- [x] Dados sintéticos declaram que o gate não foi aplicado ao aceite.
+- [x] Central do servidor explica a trava exclusivamente ao Master.
+- [x] Regressão completa de Estoque e Configurações aprovada com 261 testes.
+
+Pronta estruturalmente ainda não significa homologação operacional, fiscal ou contábil. O aceite continua dependendo da execução responsável na filial real e do arquivamento da evidência.

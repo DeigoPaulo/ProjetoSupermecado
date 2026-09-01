@@ -12,6 +12,7 @@ from .models import (
 
 
 CONTRATO_DIAGNOSTICO_SNAPSHOTS_LOTE = "inventory_lot_snapshot_coverage_v1"
+CONTRATO_PRONTIDAO_PILOTO_REAL = "inventory_real_pilot_readiness_v1"
 
 
 def _estado_cobertura(*, total, legadas, inconsistentes):
@@ -146,4 +147,68 @@ def diagnostico_cobertura_snapshots_lote():
         "corrige_automaticamente": False,
         "totais": totais,
         "filiais": resultado_filiais,
+    }
+
+
+def diagnostico_prontidao_piloto_real(*, filial_id, diagnostico=None):
+    """Converte a cobertura histórica em uma trava explícita para o aceite real."""
+    diagnostico = diagnostico or diagnostico_cobertura_snapshots_lote()
+    filial = next(
+        (
+            item
+            for item in diagnostico["filiais"]
+            if item["filial_id"] == filial_id
+        ),
+        None,
+    )
+    if filial is None:
+        raise ValueError("A filial informada não existe no diagnóstico de snapshots.")
+
+    if filial["inconsistentes"]:
+        estado = "BLOQUEADA_INCONSISTENCIA"
+        estado_display = "Bloqueada por inconsistência"
+        motivo = "Investigue os snapshots inconsistentes antes do piloto real."
+        nivel = "danger"
+    elif filial["legadas"]:
+        estado = "BLOQUEADA_LEGADO"
+        estado_display = "Bloqueada por legado"
+        motivo = "Registros legados não possuem prova histórica suficiente para o aceite."
+        nivel = "warning"
+    elif not filial["total"]:
+        estado = "SEM_BASE"
+        estado_display = "Sem base real"
+        motivo = "Ainda não existem vendas por lote para sustentar o aceite real."
+        nivel = "info"
+    else:
+        estado = "PRONTA_ESTRUTURAL"
+        estado_display = "Pronta estruturalmente"
+        motivo = "Todas as vendas por lote da filial possuem snapshots íntegros."
+        nivel = "success"
+
+    return {
+        "contrato": CONTRATO_PRONTIDAO_PILOTO_REAL,
+        "filial_id": filial["filial_id"],
+        "filial_nome": filial["filial_nome"],
+        "estado": estado,
+        "estado_display": estado_display,
+        "nivel": nivel,
+        "motivo": motivo,
+        "pronta_para_aceite": estado == "PRONTA_ESTRUTURAL",
+        "somente_leitura": True,
+        "criterios": {
+            "possui_base_real": filial["total"] > 0,
+            "sem_registros_legados": filial["legadas"] == 0,
+            "sem_registros_inconsistentes": filial["inconsistentes"] == 0,
+        },
+        "cobertura": {
+            chave: filial[chave]
+            for chave in (
+                "total",
+                "integras",
+                "legadas",
+                "inconsistentes",
+                "cobertura_percentual",
+                "cobertura_display",
+            )
+        },
     }

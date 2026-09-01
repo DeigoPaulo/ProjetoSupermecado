@@ -8,7 +8,7 @@ Confirmar, em um único fluxo verificável, que a entrada cria camadas de lote, 
 
 ## Contrato de evidência
 
-O contrato `inventory_pilot_end_to_end_evidence_v2` é somente leitura. Ele recebe os identificadores de uma entrada finalizada, venda finalizada, perda, inventário aplicado e fechamento de estoque. Todos devem pertencer à mesma filial e compartilhar exatamente um produto do cenário analisado.
+O contrato `inventory_pilot_end_to_end_evidence_v3` é somente leitura. Ele recebe os identificadores de uma entrada finalizada, venda finalizada, perda, inventário aplicado e fechamento de estoque. Todos devem pertencer à mesma filial e compartilhar exatamente um produto do cenário analisado.
 
 O relatório verifica:
 
@@ -29,6 +29,8 @@ Nenhuma dessas verificações altera dados ou realiza comunicação externa.
 A Central do servidor também publica ao Master o diagnóstico agregado `inventory_lot_snapshot_coverage_v1`, separando por filial registros íntegros, legados e inconsistentes. O estado Sem vendas por lote não equivale a aceite do piloto.
 A versão v2 não usa o estado atual do lote para provar uma venda passada. Cada nova alocação preserva código, validade e tratamento no instante do movimento e calcula um SHA-256 sobre a identidade do movimento, lote, quantidade, custo e snapshots. Alterar posteriormente o cadastro do lote não altera essa fotografia. Alocações anteriores à migration 0034 permanecem com campos vazios e são tratadas honestamente como legado sem evidência histórica v2.
 
+A versão v3 acrescenta o gate `inventory_real_pilot_readiness_v1`. Para dados reais, a filial só pode produzir evidência válida quando possui vendas por lote e todas as respectivas fotografias históricas estão íntegras. Ausência de base, legado ou inconsistência reprova o aceite em modo estrito. Com `--dados-sinteticos`, o JSON registra explicitamente que o gate não foi aplicado ao aceite; essa opção nunca converte ensaio em homologação real.
+
 ## Comando
 
 ```powershell
@@ -37,7 +39,7 @@ A versão v2 não usa o estado atual do lote para provar uma venda passada. Cada
 
 Use `--dados-sinteticos` somente quando os registros forem de ensaio. Sem essa opção, o relatório não classifica os dados como sintéticos.
 
-O modo `--estrito` retorna falha quando qualquer verificação for reprovada. O JSON é escrito na saída padrão para que a equipe possa arquivá-lo pelo procedimento de implantação escolhido, sem o sistema inventar uma aprovação.
+O modo `--estrito` retorna falha quando qualquer verificação for reprovada, inclusive a prontidão histórica da filial quando o ensaio usa dados reais. O JSON é escrito na saída padrão para que a equipe possa arquivá-lo pelo procedimento de implantação escolhido, sem o sistema inventar uma aprovação.
 
 ## Ensaio automatizado executado
 

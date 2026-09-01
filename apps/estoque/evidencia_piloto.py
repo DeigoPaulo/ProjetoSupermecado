@@ -9,6 +9,7 @@ from apps.compras.models import EntradaCompra, StatusEntradaCompra
 from apps.fiscal.models import DocumentoFiscal
 from apps.vendas.models import StatusVenda, Venda
 
+from .diagnostico_snapshots import diagnostico_prontidao_piloto_real
 from .models import (
     Estoque,
     FechamentoEstoqueContabil,
@@ -23,7 +24,7 @@ from .models import (
 )
 
 
-CONTRATO_EVIDENCIA_PILOTO = "inventory_pilot_end_to_end_evidence_v2"
+CONTRATO_EVIDENCIA_PILOTO = "inventory_pilot_end_to_end_evidence_v3"
 
 
 def _falhar_se(condicao, mensagem):
@@ -169,6 +170,14 @@ def gerar_evidencia_fluxo_estoque_piloto(
         "fechamento_confere_com_saldo_final": item_fechamento.quantidade_fisica == estoque.quantidade_atual,
         "fechamento_possui_hash": len(fechamento.conteudo_sha256 or "") == 64,
     }
+    prontidao_piloto_real = diagnostico_prontidao_piloto_real(
+        filial_id=entrada.filial_id
+    )
+    prontidao_piloto_real["aplicada_ao_aceite"] = not dados_sinteticos
+    if not dados_sinteticos:
+        verificacoes["filial_pronta_para_piloto_real"] = prontidao_piloto_real[
+            "pronta_para_aceite"
+        ]
     payload = {
         "contrato": CONTRATO_EVIDENCIA_PILOTO,
         "gerado_em": momento.isoformat(),
@@ -182,6 +191,7 @@ def gerar_evidencia_fluxo_estoque_piloto(
             "fechamento_id": fechamento.pk,
         },
         "alocacoes_venda_snapshot": snapshots_venda,
+        "prontidao_piloto_real": prontidao_piloto_real,
         "quantidades": {
             "entrada": str(sum((item.quantidade for item in entrada.itens.filter(produto_id=produto_id)), Decimal("0.000"))),
             "venda": str(sum((item.quantidade for item in venda.itens.filter(produto_id=produto_id)), Decimal("0.000"))),

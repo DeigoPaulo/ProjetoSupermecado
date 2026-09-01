@@ -1921,7 +1921,8 @@ def _servidor_local_payload(request):
             diagnostico_cobertura_snapshots_lote() if request.user.is_superuser else None
         ),
         "ensaio_estoque": {
-            "contrato": "inventory_pilot_end_to_end_evidence_v2",
+            "contrato": "inventory_pilot_end_to_end_evidence_v3",
+            "contrato_prontidao_real": "inventory_real_pilot_readiness_v1",
             "somente_leitura": True,
             "comunicacao_externa": False,
             "comando": "manage.py verificar_fluxo_estoque_piloto --entrada-id ID --venda-id ID --perda-id ID --inventario-id ID --fechamento-id ID --estrito",

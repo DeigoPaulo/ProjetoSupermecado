@@ -210,8 +210,15 @@ class FluxoEstoquePilotoPontaAPontaTests(TestCase):
             stdout=saida,
         )
         evidencia = json.loads(saida.getvalue())
-        self.assertEqual(evidencia["contrato"], "inventory_pilot_end_to_end_evidence_v2")
+        self.assertEqual(evidencia["contrato"], "inventory_pilot_end_to_end_evidence_v3")
         self.assertTrue(evidencia["valida"])
+        self.assertEqual(
+            evidencia["prontidao_piloto_real"]["contrato"],
+            "inventory_real_pilot_readiness_v1",
+        )
+        self.assertFalse(
+            evidencia["prontidao_piloto_real"]["aplicada_ao_aceite"]
+        )
         self.assertTrue(evidencia["verificacoes"]["venda_snapshot_lote_preservado"])
         self.assertTrue(evidencia["verificacoes"]["venda_consumiu_somente_tratamento_liberado"])
         self.assertEqual(
@@ -224,6 +231,21 @@ class FluxoEstoquePilotoPontaAPontaTests(TestCase):
         self.assertFalse(evidencia["comunicacao_externa"])
         self.assertTrue(evidencia["dados_sinteticos"])
         self.assertFalse(DocumentoFiscal.objects.exists())
+
+        evidencia_real = gerar_evidencia_fluxo_estoque_piloto(
+            entrada_id=entrada.pk,
+            venda_id=venda.pk,
+            perda_id=perda.pk,
+            inventario_id=inventario.pk,
+            fechamento_id=fechamento.pk,
+        )
+        self.assertTrue(evidencia_real["valida"])
+        self.assertTrue(
+            evidencia_real["prontidao_piloto_real"]["aplicada_ao_aceite"]
+        )
+        self.assertTrue(
+            evidencia_real["verificacoes"]["filial_pronta_para_piloto_real"]
+        )
 
         MovimentacaoLoteEstoque.objects.filter(pk=alocacao_venda.pk).update(
             lote_codigo_snapshot="",
