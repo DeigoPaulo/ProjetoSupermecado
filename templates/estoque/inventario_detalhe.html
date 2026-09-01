@@ -9,7 +9,7 @@
     <p>{{ inventario.filial }} · {{ inventario.descricao }}</p>
   </div>
   <div class="actions">
-    {% if inventario.status == "ABERTO" %}
+    {% if inventario.status == "ABERTO" and inventario.origem != "DIVERGENCIA_VALIDADE" %}
       <a class="secondary-button" href="{% url 'estoque:inventario_item_novo' inventario.pk %}">Adicionar produto</a>
     {% endif %}
     <a class="secondary-button" href="{% url 'estoque:inventarios' %}">Voltar</a>
@@ -17,15 +17,44 @@
 </header>
 
 <section class="metrics-grid">
-  <article class="metric"><span>Status</span><strong>{{ inventario.get_status_display }}</strong></article>
+  <article class="metric"><span>Status</span><strong>{{ inventario.status_operacional_display }}</strong></article>
+  <article class="metric"><span>Origem</span><strong>{{ inventario.get_origem_display }}</strong></article>
   <article class="metric"><span>Itens</span><strong>{{ inventario.itens.count }}</strong></article>
   <article class="metric"><span>Pendentes</span><strong>{{ pendentes }}</strong></article>
   <article class="metric"><span>Criado</span><strong>{{ inventario.criado_em|date:"d/m/Y H:i" }}</strong></article>
+  <article class="metric"><span>Prazo operacional</span><strong>{{ inventario.expira_em|date:"d/m/Y H:i"|default:"Sem expiração" }}</strong></article>
   <article class="metric"><span>Aplicado</span><strong>{{ inventario.aplicado_em|date:"d/m/Y H:i"|default:"-" }}</strong></article>
+  <article class="metric"><span>Encerrado</span><strong>{{ inventario.encerrado_em|date:"d/m/Y H:i"|default:"-" }}</strong></article>
 </section>
 
 {% if inventario.status == "ABERTO" %}
-  {% if pendentes %}
+  {% if inventario.prazo_operacional_expirado %}
+    <section class="notice warning mt-panel">
+      <strong>Prazo operacional expirado.</strong>
+      Este rascunho não aceita novas contagens nem aplicação. Execute a rotina de expiração ou cancele-o com justificativa; nenhum saldo será alterado.
+    </section>
+  {% elif inventario.origem == "DIVERGENCIA_VALIDADE" %}
+    {% if not aplicacao_lote_pronta %}
+      <section class="notice warning mt-panel">
+        <strong>Reconciliação por lote ainda protegida.</strong>
+        Registre a contagem total do produto e a contagem física de cada lote de origem.
+        {% if contagens_lote_pendentes %}Há {{ contagens_lote_pendentes }} lote(s) pendente(s).{% endif %}
+        {% if not somas_lote_validas %}A soma dos lotes deve ser igual à contagem total do produto.{% endif %}
+        Nenhum saldo será alterado enquanto as validações não forem atendidas.
+      </section>
+    {% else %}
+      <section class="panel mt-panel">
+        <div class="panel-title">Aplicar reconciliação direta por lote</div>
+        <p class="muted">As somas conferem. A operação ajustará somente os lotes contados e exige supervisor ou administrador.</p>
+        <form method="post" action="{% url 'estoque:inventario_aplicar' inventario.pk %}" class="form-grid form-confirm" data-msg="Aplicar a reconciliação diretamente nos lotes contados?">
+          {% csrf_token %}
+          <label class="form-field"><span>Supervisor ou admin</span><input type="text" name="supervisor_usuario" autocomplete="username" required></label>
+          <label class="form-field"><span>Senha</span><input type="password" name="supervisor_senha" autocomplete="current-password" required></label>
+          <div class="form-actions"><button class="primary-button" type="submit">Aplicar por lote</button></div>
+        </form>
+      </section>
+    {% endif %}
+  {% elif pendentes %}
     <section class="notice warning mt-panel">
       <strong>Contagem incompleta.</strong>
       Registre a quantidade física dos {{ pendentes }} item(ns) pendente(s) antes de aplicar o inventário.
@@ -41,25 +70,69 @@
       </form>
     </section>
   {% endif %}
-{% endif %}
 
+  <section class="panel mt-panel">
+    <div class="panel-title">Cancelar inventário sem ajustar estoque</div>
+    <form method="post" action="{% url 'estoque:inventario_cancelar' inventario.pk %}" class="form-grid form-confirm" data-msg="Cancelar este inventário preservando todo o histórico?">
+      {% csrf_token %}
+      <label class="form-field"><span>Justificativa</span><textarea name="motivo_cancelamento" rows="3" minlength="10" maxlength="255" required></textarea></label>
+      <label class="form-field"><span>Supervisor ou admin</span><input type="text" name="supervisor_usuario" autocomplete="username" required></label>
+      <label class="form-field"><span>Senha</span><input type="password" name="supervisor_senha" autocomplete="current-password" required></label>
+      <div class="form-actions"><button class="secondary-button" type="submit">Cancelar e preservar histórico</button></div>
+    </form>
+  </section>
+{% elif inventario.status == "CANCELADO" or inventario.status == "EXPIRADO" %}
+  <section class="notice warning mt-panel">
+    <strong>{{ inventario.get_status_display }} sem ajuste de estoque.</strong>
+    {{ inventario.motivo_encerramento|default:"Histórico encerrado e preservado." }}
+    {% if inventario.encerrado_por %} Responsável pela autorização: {{ inventario.encerrado_por }}.{% endif %}
+  </section>
+{% endif %}
 <div class="panel">
   <div class="panel-title">Itens da contagem</div>
   <div class="table-scroll">
     <table>
-      <thead><tr><th>Produto</th><th>Sistema</th><th>Contado</th><th>Diferença</th><th>Observação</th><th></th></tr></thead>
+      <thead><tr><th>Produto</th><th>Sistema</th><th>Contado</th><th>Diferença</th><th>Observação</th><th>Evidências e lotes</th><th></th></tr></thead>
       <tbody>
         {% for item in inventario.itens.all %}
           <tr>
             <td>{{ item.produto }}</td>
             <td>{{ item.quantidade_sistema }}</td>
-            <td>{% if item.quantidade_contada is None %}<span class="status">Pendente</span>{% else %}{{ item.quantidade_contada }}{% endif %}</td>
+            <td>
+              {% if item.quantidade_contada is None %}
+                <span class="status">Pendente</span>
+              {% else %}
+                {{ item.quantidade_contada }}
+                {% if inventario.origem == "DIVERGENCIA_VALIDADE" %}
+                  <br><small>Soma dos lotes: {{ item.total_contado_lotes|quantidade_br }}</small>
+                  {% if item.soma_lotes_confere %}<br><small>Conferida</small>{% else %}<br><small>Soma divergente</small>{% endif %}
+                {% endif %}
+              {% endif %}
+            </td>
             <td>{% if item.quantidade_contada is None %}-{% else %}<strong>{{ item.diferenca }}</strong>{% endif %}</td>
             <td>{{ item.observacao|default:"-" }}</td>
-            <td>{% if inventario.status == "ABERTO" %}<a href="{% url 'estoque:inventario_item_contar' item.pk %}">{% if item.quantidade_contada is None %}Contar{% else %}Recontar{% endif %}</a>{% endif %}</td>
+            <td>
+              {% for escopo in item.escopos_validade.all %}
+                <div>
+                  {% if escopo.origem %}<a href="{% url 'estoque:conferencia_fisica_validade_detalhe' escopo.origem.conferencia_id %}">Lote {{ escopo.lote.codigo }} · origem divergente {{ escopo.origem.conferencia.diferenca_snapshot|quantidade_br }}</a>{% else %}<strong>Lote {{ escopo.lote.codigo }}</strong> · incluído para fechar a contagem total{% endif %}<br>
+                  Sistema atual: {{ escopo.lote.quantidade_atual|quantidade_br }} · capacidade auditada: {{ escopo.lote.quantidade_maxima_auditada|quantidade_br }} ·
+                  {% if escopo.contagem_vigente %}
+                    contado: <strong>{{ escopo.contagem_vigente.quantidade_contada|quantidade_br }}</strong>
+                    em {{ escopo.contagem_vigente.contado_em|date:"d/m/Y H:i" }}
+                  {% else %}
+                    <span class="status">contagem pendente</span>
+                  {% endif %}
+                  {% if inventario.status == "ABERTO" and not inventario.prazo_operacional_expirado %}
+                    · <a href="{% url 'estoque:inventario_lote_contar' escopo.pk %}">{% if escopo.contagem_vigente %}Recontar lote{% else %}Contar lote{% endif %}</a>
+                  {% endif %}
+                </div>
+                {% if not forloop.last %}<hr>{% endif %}
+              {% empty %}-{% endfor %}
+            </td>
+            <td>{% if inventario.status == "ABERTO" and not inventario.prazo_operacional_expirado %}<a href="{% url 'estoque:inventario_item_contar' item.pk %}">{% if item.quantidade_contada is None %}Contar total{% else %}Recontar total{% endif %}</a>{% endif %}</td>
           </tr>
         {% empty %}
-          <tr><td colspan="6" class="empty">Nenhum item adicionado.</td></tr>
+          <tr><td colspan="7" class="empty">Nenhum item adicionado.</td></tr>
         {% endfor %}
       </tbody>
     </table>

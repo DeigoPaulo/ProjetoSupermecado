@@ -204,6 +204,62 @@
 <section class="panel">
   <div class="panel-heading">
     <div>
+      <h2>Manutenção de inventários de validade</h2>
+      <p>Rotina local diária, idempotente e sem comunicação externa.</p>
+    </div>
+    <span class="status {% if payload.manutencao_inventario_validade.nivel == 'success' %}status-success{% else %}status-warning{% endif %}">{{ payload.manutencao_inventario_validade.ultima_status_display }}</span>
+  </div>
+  <dl class="detail-list">
+    <dt>Última execução</dt><dd>{{ payload.manutencao_inventario_validade.ultima_execucao_em_display }}</dd>
+    <dt>Resultado</dt><dd>{{ payload.manutencao_inventario_validade.mensagem }}</dd>
+    <dt>Encerrados</dt><dd>{{ payload.manutencao_inventario_validade.ultima_expirados_total }}</dd>
+    <dt>Rascunhos vencidos</dt><dd>{{ payload.manutencao_inventario_validade.vencidos_abertos }}</dd>
+    <dt>Agendador</dt><dd><code>{{ payload.scripts.registrar_manutencao_validade }}</code></dd>
+    <dt>Verificador do piloto</dt><dd><code>{{ payload.ensaio_estoque.comando }}</code></dd>
+  </dl>
+</section>
+{% if diagnostico_snapshots_lote %}
+<section class="panel" id="snapshots-lote">
+  <div class="panel-heading">
+    <div>
+      <h2>Diagnóstico de snapshots das vendas por lote</h2>
+      <p>Consulta exclusiva do Master. Não corrige nem preenche registros automaticamente.</p>
+    </div>
+    <span class="status {% if diagnostico_snapshots_lote.totais.nivel == 'success' %}status-success{% elif diagnostico_snapshots_lote.totais.nivel == 'danger' %}status-danger{% elif diagnostico_snapshots_lote.totais.nivel == 'warning' %}status-warning{% else %}status-muted{% endif %}">{{ diagnostico_snapshots_lote.totais.estado_display }}</span>
+  </div>
+  <div class="metrics-grid">
+    <article class="metric"><span>Alocações de venda</span><strong>{{ diagnostico_snapshots_lote.totais.total }}</strong></article>
+    <article class="metric"><span>Íntegras</span><strong>{{ diagnostico_snapshots_lote.totais.integras }}</strong></article>
+    <article class="metric"><span>Legadas</span><strong>{{ diagnostico_snapshots_lote.totais.legadas }}</strong></article>
+    <article class="metric"><span>Inconsistentes</span><strong>{{ diagnostico_snapshots_lote.totais.inconsistentes }}</strong></article>
+    <article class="metric"><span>Cobertura</span><strong>{{ diagnostico_snapshots_lote.totais.cobertura_display }}</strong></article>
+  </div>
+  <div class="operation-notice operation-notice-info">
+    <i class="fa-solid fa-shield-halved"></i>
+    <div><strong>Somente leitura</strong><span>Legado significa ausência honesta de snapshot. Inconsistência exige investigação; o sistema não reescreve o histórico.</span></div>
+  </div>
+  <div class="table-wrapper">
+    <table>
+      <thead><tr><th>Empresa / filial</th><th>Total</th><th>Íntegras</th><th>Legadas</th><th>Inconsistentes</th><th>Cobertura</th><th>Estado</th></tr></thead>
+      <tbody>
+        {% for item in diagnostico_snapshots_lote.filiais %}
+          <tr>
+            <td><strong>{{ item.empresa_nome }}</strong><br><small>{{ item.filial_nome }}</small></td>
+            <td>{{ item.total }}</td><td>{{ item.integras }}</td><td>{{ item.legadas }}</td><td>{{ item.inconsistentes }}</td>
+            <td>{{ item.cobertura_display }}</td>
+            <td><span class="status {% if item.nivel == 'success' %}status-success{% elif item.nivel == 'danger' %}status-danger{% elif item.nivel == 'warning' %}status-warning{% else %}status-muted{% endif %}">{{ item.estado_display }}</span></td>
+          </tr>
+        {% empty %}
+          <tr><td colspan="7" class="empty">Nenhuma filial cadastrada.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</section>
+{% endif %}
+<section class="panel">
+  <div class="panel-heading">
+    <div>
       <h2>Artefatos locais</h2>
       <p>Arquivos iniciais para rodar e manter o servidor administrativo dentro da loja.</p>
     </div>
@@ -230,6 +286,8 @@
         <tr><td>Destino configurável</td><td><code>{{ payload.scripts.backup_destino_env }}</code></td></tr>
         <tr><td>Conta da tarefa de backup</td><td><code>{{ payload.scripts.backup_conta_tarefa }}</code></td></tr>
         <tr><td>Agendar sincronização</td><td><code>{{ payload.scripts.registrar_sincronizacao }}</code></td></tr>
+        <tr><td>Agendar manutenção de validade</td><td><code>{{ payload.scripts.registrar_manutencao_validade }}</code></td></tr>
+        <tr><td>Verificar fluxo do piloto</td><td><code>{{ payload.scripts.verificar_fluxo_estoque_piloto }}</code></td></tr>
         <tr><td>Guia operacional</td><td><code>{{ payload.scripts.guia }}</code></td></tr>
         <tr><td>Manual completo de instalação</td><td><code>{{ payload.scripts.manual_instalacao }}</code></td></tr>
       </tbody>

@@ -1,0 +1,83 @@
+{% extends "base.html" %}
+
+{% block title %}Validar amostra contábil | Deigo Varejo{% endblock %}
+
+{% block content %}
+<div class="page-heading">
+  <div>
+    <h1>Validar amostra mensal</h1>
+    <p>Confere integridade, XMLs, reconciliação e fechamento de estoque antes do aceite do contador.</p>
+  </div>
+  <a class="btn-secondary" href="{% url 'financeiro:chaves_integracao_contabil' %}">Voltar à integração</a>
+</div>
+
+<section class="panel mb-3">
+  <div class="panel-header"><h2>Gerar validação</h2></div>
+  <div class="panel-body">
+    <form method="post" class="form-grid">
+      {% csrf_token %}
+      {% for field in form %}
+        <label>{{ field.label }}
+          {{ field }}
+          {% if field.help_text %}<small class="muted">{{ field.help_text }}</small>{% endif %}
+          {% for error in field.errors %}<small class="form-error">{{ error }}</small>{% endfor %}
+        </label>
+      {% endfor %}
+      {% for error in form.non_field_errors %}<p class="form-error">{{ error }}</p>{% endfor %}
+      <div><button class="btn-primary" type="submit"><i class="fa-solid fa-clipboard-check"></i> Validar amostra</button></div>
+    </form>
+    <p class="muted mt-2">A validação não envia arquivos. Marcar o registro de aceite só terá efeito se todos os portões forem aprovados.</p>
+  </div>
+</section>
+
+{% if relatorio %}
+<section class="panel mb-3">
+  <div class="panel-header"><h2>Resultado</h2></div>
+  <div class="panel-body">
+    {% if relatorio.aprovado %}
+      <div class="notice notice-success"><strong>Amostra aprovada</strong><span>Integridade e portões operacionais foram atendidos.</span></div>
+    {% else %}
+      <div class="notice notice-warning"><strong>Amostra bloqueada</strong><span>Corrija as pendências antes de registrar o aceite.</span></div>
+    {% endif %}
+    <p><strong>SHA-256 do pacote:</strong> <code style="overflow-wrap:anywhere">{{ relatorio.pacote_sha256 }}</code></p>
+    {% if relatorio.erros %}
+      <h3>Pendências</h3>
+      <ul>{% for item in relatorio.erros %}<li><strong>{{ item.codigo }}</strong>: {{ item.mensagem }}</li>{% endfor %}</ul>
+    {% endif %}
+    {% if relatorio.avisos %}
+      <h3>Avisos</h3>
+      <ul>{% for item in relatorio.avisos %}<li><strong>{{ item.codigo }}</strong>: {{ item.mensagem }}</li>{% endfor %}</ul>
+    {% endif %}
+    <div class="metric-grid mt-2">
+      <article class="metric-card"><span>Documentos de saída</span><strong>{{ relatorio.contagens.documentos_saida|default:0 }}</strong></article>
+      <article class="metric-card"><span>Documentos de entrada</span><strong>{{ relatorio.contagens.documentos_entrada|default:0 }}</strong></article>
+      <article class="metric-card"><span>Vendas divergentes</span><strong>{{ relatorio.contagens.vendas_divergentes|default:0 }}</strong></article>
+      <article class="metric-card"><span>Entradas divergentes</span><strong>{{ relatorio.contagens.entradas_divergentes|default:0 }}</strong></article>
+    </div>
+  </div>
+</section>
+{% endif %}
+
+<section class="panel">
+  <div class="panel-header"><h2>Aceites registrados</h2></div>
+  <div class="table-responsive">
+    <table>
+      <thead><tr><th>Competência</th><th>Empresa</th><th>Contrato</th><th>Referência</th><th>Registrado em</th><th>Master</th></tr></thead>
+      <tbody>
+        {% for aceite in aceites %}
+          <tr>
+            <td>{{ aceite.competencia|date:"m/Y" }}</td>
+            <td>{{ aceite.empresa.nome_fantasia }}</td>
+            <td>v{{ aceite.contrato_integracao.versao }}</td>
+            <td>{{ aceite.referencia_aceite }}</td>
+            <td>{{ aceite.registrado_em|date:"d/m/Y H:i" }}</td>
+            <td>{{ aceite.registrado_por.get_username }}</td>
+          </tr>
+        {% empty %}
+          <tr><td colspan="6" class="empty-state">Nenhuma amostra aceita. A ausência é esperada enquanto não houver dados reais.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</section>
+{% endblock %}

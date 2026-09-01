@@ -6,7 +6,7 @@ from xml.etree import ElementTree as ET
 from django.conf import settings
 from django.core.exceptions import ImproperlyConfigured, ValidationError
 from django.db import transaction
-from django.db.models import Q
+from django.db.models import Q, Subquery
 from django.utils import timezone
 
 from apps.auditoria.models import LogAuditoria
@@ -24,7 +24,10 @@ from .adapters import (
 from .assinaturas import assinar_xml_documento, verificar_assinatura_xml
 from .evidencias import registrar_evidencia_fiscal
 from .cbenef import codigos_cbenef_go_validos
+from .cest import queryset_codigos_cest_vigentes, validar_cest
+from .cfop import validar_cfop
 from .cenarios_tributarios import pendencias_cenario_fiscal_go
+from .ncm import queryset_codigos_ncm_vigentes, validar_ncm
 from .validacoes import validar_xml_pre_transmissao
 from .qrcode_nfce import gerar_url_qrcode_nfce
 from .perfis_uf import pendencias_endpoints_nfce, pendencias_produto_por_uf
@@ -361,6 +364,12 @@ def filtro_pendencias_produto_fiscal(regimes_tributarios=None, ufs=None, crts=No
         | (~Q(cest="") & ~Q(cest__regex=r"^\d{7}$"))
         | Q(origem_mercadoria="")
     )
+    codigos_ncm = queryset_codigos_ncm_vigentes()
+    if codigos_ncm is not None:
+        pendente |= ~Q(ncm__in=Subquery(codigos_ncm))
+    codigos_cest = queryset_codigos_cest_vigentes()
+    if codigos_cest is not None:
+        pendente |= ~Q(cest="") & ~Q(cest__in=Subquery(codigos_cest))
     if exige_simples:
         pendente |= ~Q(csosn__in=sorted(CSOSN_ICMS_SUPORTADOS))
     if exige_normal:
@@ -600,8 +609,14 @@ def pendencias_produto_fiscal(produto, regimes_tributarios=None, ufs=None, crts=
         exige_normal = not regimes or any("SIMPLES" not in regime for regime in regimes)
     if not re.fullmatch(r"\d{8}", produto.ncm or ""):
         pendencias.append("NCM com 8 digitos")
-    if produto.cest and not re.fullmatch(r"\d{7}", produto.cest):
-        pendencias.append("CEST com 7 digitos")
+    else:
+        pendencia_ncm = validar_ncm(produto.ncm)
+        if pendencia_ncm:
+            pendencias.append(pendencia_ncm)
+    if produto.cest:
+        pendencia_cest = validar_cest(produto.cest, produto.ncm)
+        if pendencia_cest:
+            pendencias.append(pendencia_cest)
     if not produto.origem_mercadoria:
         pendencias.append("Origem da mercadoria")
     if exige_simples and not re.fullmatch(r"\d{3}", produto.csosn or ""):
@@ -1039,8 +1054,10 @@ def pendencias_preparacao_fiscal(venda, configuracao, natureza):
         erros.append("O certificado A1 da filial está vencido.")
     if not natureza:
         erros.append("Cadastre uma natureza de operação NFC-e ativa.")
-    elif not re.fullmatch(r"[1-7]\d{3}", natureza.cfop.strip()):
-        erros.append("A natureza de operação deve possuir CFOP valido com 4 digitos.")
+    else:
+        pendencia_cfop = validar_cfop(natureza.cfop, direcao="SAIDA", modelo="NFCE")
+        if pendencia_cfop:
+            erros.append(f"Natureza de operação: {pendencia_cfop}.")
     erros.extend(
         pendencias_cenario_fiscal_go(
             uf_emitente=venda.filial.uf,
@@ -1061,6 +1078,14 @@ def pendencias_preparacao_fiscal(venda, configuracao, natureza):
         prefixo = f"Produto {produto.nome}:"
         if not re.fullmatch(r"\d{8}", produto.ncm or ""):
             erros.append(f"{prefixo} informe NCM com 8 digitos.")
+        else:
+            pendencia_ncm = validar_ncm(produto.ncm)
+            if pendencia_ncm:
+                erros.append(f"{prefixo} {pendencia_ncm}.")
+        if produto.cest:
+            pendencia_cest = validar_cest(produto.cest, produto.ncm)
+            if pendencia_cest:
+                erros.append(f"{prefixo} {pendencia_cest}.")
         if not produto.origem_mercadoria:
             erros.append(f"{prefixo} informe a origem da mercadoria.")
         if simples_nacional:
@@ -1120,8 +1145,10 @@ def pendencias_preparacao_nfe_pedido(pedido, configuracao, natureza):
         erros.append("O certificado A1 da filial está vencido.")
     if not natureza:
         erros.append("Cadastre uma natureza de operação NF-e ativa.")
-    elif not re.fullmatch(r"[1-7]\d{3}", natureza.cfop.strip()):
-        erros.append("A natureza de operação deve possuir CFOP valido com 4 digitos.")
+    else:
+        pendencia_cfop = validar_cfop(natureza.cfop, direcao="SAIDA", modelo="NFE")
+        if pendencia_cfop:
+            erros.append(f"Natureza de operação: {pendencia_cfop}.")
     try:
         _documento_destinatario_pedido(pedido)
     except ValidationError as exc:
@@ -1149,6 +1176,14 @@ def pendencias_preparacao_nfe_pedido(pedido, configuracao, natureza):
         prefixo = f"Produto {produto.nome}:"
         if not re.fullmatch(r"\d{8}", produto.ncm or ""):
             erros.append(f"{prefixo} informe NCM com 8 digitos.")
+        else:
+            pendencia_ncm = validar_ncm(produto.ncm)
+            if pendencia_ncm:
+                erros.append(f"{prefixo} {pendencia_ncm}.")
+        if produto.cest:
+            pendencia_cest = validar_cest(produto.cest, produto.ncm)
+            if pendencia_cest:
+                erros.append(f"{prefixo} {pendencia_cest}.")
         if not produto.origem_mercadoria:
             erros.append(f"{prefixo} informe a origem da mercadoria.")
         if simples_nacional:

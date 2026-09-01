@@ -34,6 +34,8 @@ from apps.empresas.models import Empresa, EventoEntradaSincronizacao, EventoSinc
 from apps.fiscal.integridade_operacional import diagnostico_integridade_operacional
 from apps.fiscal.models import ConfiguracaoFiscal
 from apps.financeiro.models import ContaMovimentoFinanceiro
+from apps.estoque.diagnostico_snapshots import diagnostico_cobertura_snapshots_lote
+from apps.estoque.services import diagnostico_manutencao_inventarios_validade
 from apps.pdv.models import AcessoPdvNuvem, CanalAtualizacaoPdv, EventoDispositivoTerminal, StatusAcessoPdvNuvem, StatusLicencaTerminal, TerminalPdv
 from apps.vendas.models import FormaPagamento, FormaPagamentoFilial, PagamentoVenda, StatusPagamento
 from apps.vendas.services import inicializar_formas_pagamento_filial
@@ -1802,6 +1804,8 @@ def _servidor_local_payload(request):
         "restaurar_backup": "scripts/restore_local_backup.ps1",
         "registrar_backup": "scripts/register_backup_task.ps1",
         "registrar_sincronizacao": "scripts/register_sync_task.ps1",
+        "registrar_manutencao_validade": "scripts/register_inventory_expiry_maintenance_task.ps1",
+        "verificar_fluxo_estoque_piloto": "apps/estoque/management/commands/verificar_fluxo_estoque_piloto.py",
         "guia": "docs/IMPLANTACAO_SERVIDOR_LOCAL.md",
         "manual_instalacao": "docs/MANUAL_INSTALACAO_SUPERMERCADO.md",
         "backup_criptografia_env": "BACKUP_ENCRYPTION_PASSPHRASE",
@@ -1911,6 +1915,17 @@ def _servidor_local_payload(request):
             "postgresql_formato": "custom",
             "postgresql_transacao_unica": True,
             "postgresql": "Restauração automática com pg_restore custom, transação unica, backup anterior e rollback.",
+        },
+        "manutencao_inventario_validade": diagnostico_manutencao_inventarios_validade(),
+        "diagnostico_snapshots_lote": (
+            diagnostico_cobertura_snapshots_lote() if request.user.is_superuser else None
+        ),
+        "ensaio_estoque": {
+            "contrato": "inventory_pilot_end_to_end_evidence_v2",
+            "somente_leitura": True,
+            "comunicacao_externa": False,
+            "comando": "manage.py verificar_fluxo_estoque_piloto --entrada-id ID --venda-id ID --perda-id ID --inventario-id ID --fechamento-id ID --estrito",
+            "dados_sinteticos_flag": "--dados-sinteticos",
         },
         "backup_local": {
             "contrato": "erp_local_backup_v2",
@@ -2076,6 +2091,7 @@ def servidor_local(request):
             "homologacoes": homologacoes,
             "resumo_homologacoes": resumo_homologacoes,
             "homologacao_status": homologacao_status,
+            "diagnostico_snapshots_lote": payload.get("diagnostico_snapshots_lote"),
         },
     )
 

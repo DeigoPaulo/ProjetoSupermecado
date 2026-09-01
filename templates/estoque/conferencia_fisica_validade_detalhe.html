@@ -1,0 +1,41 @@
+{% extends "base.html" %}
+{% block title %}Evidência da conferência{% endblock %}
+{% block content %}
+<header class="page-header">
+  <div><h1>Evidência da conferência {{ conferencia.id }}</h1><p>{{ conferencia.produto_nome_snapshot }} · {{ conferencia.filial_nome_snapshot }} · lote {{ conferencia.lote_codigo_snapshot }}</p></div>
+  <div class="actions"><a class="secondary-button" href="{% url 'estoque:conferencia_fisica_validade_lote' conferencia.lote_id %}">Histórico do lote</a><a class="secondary-button" href="{% url 'estoque:lotes' %}?situacao=FILA_VALIDADE">Voltar à fila</a></div>
+</header>
+<section class="metrics-grid">
+  <article class="metric"><span>Conferido</span><strong>{{ conferencia.conferido_em|date:"d/m/Y H:i" }}</strong></article>
+  <article class="metric"><span>Sistema</span><strong>{{ conferencia.quantidade_sistema_snapshot|quantidade_br }}</strong></article>
+  <article class="metric"><span>Observado</span><strong>{{ conferencia.quantidade_observada|quantidade_br }}</strong></article>
+  <article class="metric"><span>Diferença</span><strong>{{ conferencia.diferenca_snapshot|quantidade_br }}</strong></article>
+</section>
+<section class="operation-notice">Evidência imutável. Esta página não altera lote, estoque, inventário, financeiro ou fiscal.</section>
+<section class="panel">
+  <div class="panel-title">Fotografia preservada</div>
+  <table><tbody>
+    <tr><th>Produto</th><td>{{ conferencia.produto_nome_snapshot }} · {{ conferencia.produto_codigo_barras_snapshot|default:"Sem código" }}</td></tr>
+    <tr><th>Filial</th><td>{{ conferencia.filial_nome_snapshot }}</td></tr>
+    <tr><th>Lote e validade</th><td>{{ conferencia.lote_codigo_snapshot }} · {{ conferencia.validade_snapshot|date:"d/m/Y" }}</td></tr>
+    <tr><th>Custo histórico</th><td>R$ {{ conferencia.custo_unitario_snapshot|floatformat:2 }}</td></tr>
+    <tr><th>Tratamento na conferência</th><td>{{ conferencia.get_tratamento_status_snapshot_display }}</td></tr>
+    <tr><th>Responsável</th><td>{{ conferencia.conferido_por }}</td></tr>
+    <tr><th>Observação</th><td>{{ conferencia.observacao|default:"Sem divergência" }}</td></tr>
+    <tr><th>Integridade SHA-256</th><td><code>{{ conferencia.conteudo_sha256 }}</code></td></tr>
+  </tbody></table>
+</section>
+<section class="panel">
+  <div class="panel-title">Inventários originados por esta evidência</div>
+  <table>
+    <thead><tr><th>Inventário</th><th>Produto</th><th>Status</th><th>Criado</th></tr></thead>
+    <tbody>
+      {% for origem in origens_inventario %}
+        <tr><td><a href="{% url 'estoque:inventario_detalhe' origem.item.inventario_id %}">Inventário {{ origem.item.inventario_id }}</a></td><td>{{ origem.item.produto }}</td><td>{{ origem.item.inventario.get_status_display }}</td><td>{{ origem.criado_em|date:"d/m/Y H:i" }}</td></tr>
+      {% empty %}
+        <tr><td colspan="4" class="empty">Esta evidência ainda não originou inventário.</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</section>
+{% endblock %}

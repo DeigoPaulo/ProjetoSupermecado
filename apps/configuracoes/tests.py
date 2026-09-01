@@ -929,6 +929,12 @@ class ConfiguracoesOperacionaisTests(TestCase):
         self.assertEqual(diagnostico.status_code, 403)
         self.assertEqual(csv_response.status_code, 403)
         self.assertEqual(inspecao.status_code, 403)
+
+        central = self.client.get("/configuracoes/servidor-local/")
+        manifesto_local = self.client.get("/configuracoes/servidor-local/manifest.json")
+        self.assertEqual(central.status_code, 200)
+        self.assertNotContains(central, "Diagnóstico de snapshots das vendas por lote")
+        self.assertEqual(manifesto_local.status_code, 403)
     def test_servidor_local_admin_prepara_manifesto_de_implantacao(self):
         self.empresa.modo_implantacao = ModoImplantacao.HIBRIDO
         self.empresa.sincronizacao_automatica = True
@@ -963,6 +969,11 @@ class ConfiguracoesOperacionaisTests(TestCase):
         self.assertContains(response, "Backup local protegido")
         self.assertContains(response, "Restauração operacional")
         self.assertContains(response, "scripts/register_sync_task.ps1")
+        self.assertContains(response, "Manutenção de inventários de validade")
+        self.assertContains(response, "scripts/register_inventory_expiry_maintenance_task.ps1")
+        self.assertContains(response, "verificar_fluxo_estoque_piloto")
+        self.assertContains(response, "Diagnóstico de snapshots das vendas por lote")
+        self.assertContains(response, "Consulta exclusiva do Master")
         self.assertContains(response, "docs/IMPLANTACAO_SERVIDOR_LOCAL.md")
         self.assertContains(response, "docs/MANUAL_INSTALACAO_SUPERMERCADO.md")
         self.assertContains(response, "Supermercado Modelo")
@@ -1116,6 +1127,17 @@ class ConfiguracoesOperacionaisTests(TestCase):
         self.assertIn("postgresql", payload["restauracao_local"]["motores"])
         self.assertTrue(payload["restauracao_local"]["postgresql_transacao_unica"])
         self.assertEqual(payload["scripts"]["registrar_sincronizacao"], "scripts/register_sync_task.ps1")
+        self.assertEqual(payload["scripts"]["registrar_manutencao_validade"], "scripts/register_inventory_expiry_maintenance_task.ps1")
+        self.assertEqual(payload["manutencao_inventario_validade"]["contrato"], "inventory_expiry_maintenance_status_v1")
+        self.assertEqual(payload["manutencao_inventario_validade"]["estado"], "NAO_EXECUTADA")
+        self.assertEqual(payload["ensaio_estoque"]["contrato"], "inventory_pilot_end_to_end_evidence_v2")
+        self.assertEqual(
+            payload["diagnostico_snapshots_lote"]["contrato"],
+            "inventory_lot_snapshot_coverage_v1",
+        )
+        self.assertEqual(payload["diagnostico_snapshots_lote"]["totais"]["estado"], "SEM_VENDAS")
+        self.assertTrue(payload["ensaio_estoque"]["somente_leitura"])
+        self.assertFalse(payload["ensaio_estoque"]["comunicacao_externa"])
         self.assertEqual(payload["scripts"]["manual_instalacao"], "docs/MANUAL_INSTALACAO_SUPERMERCADO.md")
         self.assertEqual(payload["modos_implantacao"]["hibrido"]["empresas"], 1)
         self.assertEqual(payload["empresas"][0]["modo_implantacao"], ModoImplantacao.HIBRIDO)
@@ -1128,6 +1150,7 @@ class ConfiguracoesOperacionaisTests(TestCase):
         backup_texto = (Path(settings.BASE_DIR) / payload["scripts"]["backup_local"]).read_text(encoding="utf-8")
         restaurador_texto = (Path(settings.BASE_DIR) / payload["scripts"]["restaurar_backup"]).read_text(encoding="utf-8")
         agendador_backup_texto = (Path(settings.BASE_DIR) / payload["scripts"]["registrar_backup"]).read_text(encoding="utf-8")
+        agendador_validade_texto = (Path(settings.BASE_DIR) / payload["scripts"]["registrar_manutencao_validade"]).read_text(encoding="utf-8")
         self.assertIn(r"NT SERVICE\DeigoVarejoServidorLocal", instalador_texto)
         self.assertIn("SQLITE_PATH", instalador_texto)
         self.assertIn("icacls.exe", instalador_texto)
@@ -1190,6 +1213,9 @@ class ConfiguracoesOperacionaisTests(TestCase):
         self.assertIn('"SYSTEM"', agendador_backup_texto)
         self.assertIn("DestinoSecundario", agendador_backup_texto)
         self.assertIn("RetencaoSecundariaDias", agendador_backup_texto)
+        self.assertIn("expirar_inventarios_validade --confirmar-expiracao", agendador_validade_texto)
+        self.assertIn("MultipleInstances IgnoreNew", agendador_validade_texto)
+        self.assertIn('"SYSTEM"', agendador_validade_texto)
 
     def test_manifesto_servidor_local_exige_admin_master(self):
         gerente = get_user_model().objects.create_user("gerente_local", "gerente_local@example.com", "123")

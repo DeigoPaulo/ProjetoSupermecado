@@ -2,6 +2,8 @@ from django import forms
 
 from apps.clientes.escopo import empresa_id_do_usuario
 
+from .cfop import validar_cfop
+
 from .models import (
     ConfiguracaoFiscal,
     HomologacaoFiscal,
@@ -221,6 +223,15 @@ class NaturezaOperacaoForm(forms.ModelForm):
         cleaned = super().clean()
         if self.user and empresa_id_do_usuario(self.user) == 0:
             self.add_error(None, "Usuario sem empresa ativa nao pode cadastrar natureza de operacao.")
+        cfop = cleaned.get("cfop")
+        if cfop:
+            pendencia_cfop = validar_cfop(
+                cfop,
+                direcao="SAIDA",
+                modelo=cleaned.get("tipo_documento"),
+            )
+            if pendencia_cfop:
+                self.add_error("cfop", pendencia_cfop)
         if not cleaned.get("ipi_incluso_preco") and (
             cleaned.get("ipi_compoe_base_icms") or cleaned.get("ipi_compoe_base_pis_cofins")
         ):

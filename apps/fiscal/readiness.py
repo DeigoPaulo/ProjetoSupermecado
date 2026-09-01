@@ -1,3 +1,6 @@
+from .cest import catalogo_cest_vigente
+from .cfop import catalogo_cfop_vigente
+from .ncm import catalogo_ncm_vigente
 from .adapters import diagnosticar_adaptador_sefaz
 from .models import (
     AmbienteFiscal,
@@ -67,6 +70,19 @@ def diagnostico_prontidao_homologacao_goias(configuracao):
             "Série e natureza",
             bool(serie and natureza),
             "Série NFC-e e natureza de operação padrão ativas.",
+        ),
+        (
+            "Catálogo NCM",
+            bool(catalogo_ncm_vigente()),
+            "Snapshot oficial vigente do Portal Único Siscomex instalado e ativo.",
+        ),        (
+            "Catálogo CEST",
+            bool(catalogo_cest_vigente()),
+            "Snapshot oficial consolidado do Convênio ICMS 142/18 instalado e ativo.",
+        ),        (
+            "Catálogo CFOP",
+            bool(catalogo_cfop_vigente()),
+            "Snapshot oficial consolidado do Ajuste SINIEF 07/01 instalado e ativo.",
         ),
         (
             "Schema XML",

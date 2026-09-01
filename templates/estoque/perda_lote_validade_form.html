@@ -1,0 +1,12 @@
+{% extends "base.html" %}
+{% block title %}Perda do lote vencido{% endblock %}
+{% block content %}
+<header class="page-header"><div><h1>Perda do lote vencido</h1><p>{{ lote.produto }} · {{ lote.filial }} · lote {{ lote.codigo }}</p></div><a class="secondary-button" href="{% url 'estoque:tratamento_validade_lote' lote.pk %}">Voltar</a></header>
+{% if conferencia_vigente %}
+<section class="operation-notice">Conferência válida de {{ conferencia_vigente.conferido_em|date:"d/m/Y H:i" }}: sistema {{ conferencia_vigente.quantidade_sistema_snapshot|quantidade_br }}, observado {{ conferencia_vigente.quantidade_observada|quantidade_br }}. A confirmação reduzirá somente este lote e exige autorização de supervisor.</section>
+<form method="post" class="panel form-grid form-confirm" data-msg="Confirmar perda no lote exato?">{% csrf_token %}{{ form.non_field_errors }}<label class="form-field"><span>{{ form.quantidade.label }}</span>{{ form.quantidade }}{{ form.quantidade.errors }}</label><label class="form-field"><span>{{ form.motivo.label }}</span>{{ form.motivo }}{{ form.motivo.errors }}</label><label class="form-field"><span>Supervisor ou admin</span><input type="text" name="supervisor_usuario" autocomplete="username" required></label><label class="form-field"><span>Senha</span><input type="password" name="supervisor_senha" autocomplete="current-password" required></label><div class="actions"><button type="submit" class="primary-button">Confirmar baixa deste lote</button></div></form>
+{% else %}
+<section class="operation-notice">A baixa está bloqueada porque não existe conferência física válida de hoje para o saldo atual deste lote.</section>
+<div class="actions"><a class="primary-button" href="{% url 'estoque:conferencia_fisica_validade_lote' lote.pk %}">Registrar conferência física</a></div>
+{% endif %}
+{% endblock %}

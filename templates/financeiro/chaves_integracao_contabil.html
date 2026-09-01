@@ -10,6 +10,49 @@
   </div>
 </div>
 
+<section class="panel mb-3">
+  <div class="panel-header"><h2>Contrato com a contabilidade</h2></div>
+  <div class="panel-body">
+    <p>Registra o formato combinado e quem prepara a EFD ICMS/IPI. Este cadastro não envia arquivos, não habilita integrações e não cria obrigações.</p>
+    <div class="table-responsive mb-3">
+      <table>
+        <thead><tr><th>Empresa</th><th>Estado</th><th>Versão</th><th>Destino</th><th>Formato</th><th>Responsável EFD</th></tr></thead>
+        <tbody>
+          {% for item in contratos %}
+            <tr>
+              <td>{{ item.empresa.nome_fantasia }}</td>
+              <td>{% if item.validado %}<span class="status-badge active">Validado</span>{% elif item.configurado %}<span class="status-badge inactive">Rascunho</span>{% else %}<span class="status-badge inactive">Não configurado</span>{% endif %}</td>
+              <td>{% if item.validado %}{{ item.versao_validada }}{% else %}{{ item.ultima_versao|default:"-" }}{% endif %}</td>
+              <td>{{ item.software_contabil|default:"A definir" }}</td>
+              <td>{{ item.formato_entrega_descricao|default:"A definir" }}</td>
+              <td>{{ item.responsavel_efd_nome|default:"A definir" }}</td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% if contrato_form %}
+      <p><a class="btn-secondary" href="{% url 'financeiro:validar_amostra_contabil' %}"><i class="fa-solid fa-clipboard-check"></i> Validar amostra mensal</a></p>
+      <h3>Registrar nova versão</h3>
+      <form method="post" class="form-grid">
+        {% csrf_token %}
+        <input type="hidden" name="acao" value="registrar_contrato">
+        {% for field in contrato_form %}
+          <label>{{ field.label }}
+            {{ field }}
+            {% if field.help_text %}<small class="muted">{{ field.help_text }}</small>{% endif %}
+            {% for error in field.errors %}<small class="form-error">{{ error }}</small>{% endfor %}
+          </label>
+        {% endfor %}
+        {% for error in contrato_form.non_field_errors %}<p class="form-error">{{ error }}</p>{% endfor %}
+        <div><button class="btn-primary" type="submit"><i class="fa-solid fa-file-signature"></i> Registrar versão</button></div>
+      </form>
+      <p class="muted mt-2">Sem confirmação, a versão fica como rascunho. Uma versão validada exige destinatário, responsável externo pela EFD e referência do aceite do contador.</p>
+    {% else %}
+      <p class="muted">Apenas o Master registra ou valida novas versões. Esta área de consulta não exibe segredos.</p>
+    {% endif %}
+  </div>
+</section>
 {% if token_gerado %}
   <section class="panel mb-3">
     <div class="panel-body">

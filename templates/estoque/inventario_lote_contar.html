@@ -1,0 +1,40 @@
+{% extends "base.html" %}
+
+{% block title %}Contar lote {{ escopo.lote.codigo }}{% endblock %}
+
+{% block content %}
+<header class="page-header">
+  <div>
+    <h1>Contagem física do lote {{ escopo.lote.codigo }}</h1>
+    <p>Inventário {{ inventario.id }} · {{ escopo.item.produto }} · {{ inventario.filial }}</p>
+  </div>
+  <a class="secondary-button" href="{% url 'estoque:inventario_detalhe' inventario.pk %}">Voltar</a>
+</header>
+
+<section class="metrics-grid">
+  <article class="metric"><span>Saldo atual do lote</span><strong>{{ escopo.lote.quantidade_atual }}</strong></article>
+  <article class="metric"><span>Quantidade inicial</span><strong>{{ escopo.lote.quantidade_inicial }}</strong></article>
+  <article class="metric"><span>Capacidade auditada</span><strong>{{ escopo.lote.quantidade_maxima_auditada }}</strong></article>
+  <article class="metric"><span>Validade</span><strong>{{ escopo.lote.validade|date:"d/m/Y" }}</strong></article>
+  {% if escopo.origem %}
+    <article class="metric"><span>Evidência anterior</span><strong>{{ escopo.origem.conferencia.quantidade_observada }}</strong></article>
+    <article class="metric"><span>Diferença anterior</span><strong>{{ escopo.origem.conferencia.diferenca_snapshot }}</strong></article>
+  {% else %}
+    <article class="metric"><span>Origem</span><strong>Lote complementar</strong></article>
+    <article class="metric"><span>Finalidade</span><strong>Fechar o total do produto</strong></article>
+  {% endif %}
+</section>
+
+<section class="notice warning mt-panel">
+  Esta é uma nova contagem física específica do lote. Ela não altera estoque sozinha. Se a quantidade superar a capacidade auditada, informe a justificativa na observação; a ampliação só ocorrerá na aplicação autorizada por supervisor.
+</section>
+
+<section class="panel mt-panel">
+  <div class="panel-title">Registrar contagem do lote</div>
+  <form method="post" class="form-grid">
+    {% csrf_token %}
+    {{ form.as_p }}
+    <div class="form-actions"><button class="primary-button" type="submit">Registrar contagem</button></div>
+  </form>
+</section>
+{% endblock %}

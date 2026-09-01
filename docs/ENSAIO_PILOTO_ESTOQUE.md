@@ -1,0 +1,58 @@
+# Ensaio ponta a ponta de estoque e validade
+
+Atualizado em 01/09/2026.
+
+## Objetivo
+
+Confirmar, em um único fluxo verificável, que a entrada cria camadas de lote, a venda respeita o FEFO e não consome lote vencido, a perda autorizada alcança o lote exato, o inventário reconcilia a divergência por lote e o fechamento preserva a posição final.
+
+## Contrato de evidência
+
+O contrato `inventory_pilot_end_to_end_evidence_v2` é somente leitura. Ele recebe os identificadores de uma entrada finalizada, venda finalizada, perda, inventário aplicado e fechamento de estoque. Todos devem pertencer à mesma filial e compartilhar exatamente um produto do cenário analisado.
+
+O relatório verifica:
+
+- entrada finalizada e camadas de lote criadas;
+- venda com alocação em lote não vencido segundo a validade fotografada no momento do consumo;
+- código, validade e tratamento do lote da venda preservados com SHA-256;
+- consumo limitado aos estados de tratamento liberados para venda no snapshot;
+- ausência de documento fiscal criado para a venda do ensaio;
+- perda vinculada ao lote vencido exato;
+- inventário originado e ajustado no lote divergente;
+- igualdade entre saldo agregado e soma das camadas;
+- igualdade entre saldo final e fechamento;
+- presença do SHA-256 imutável do fechamento;
+- SHA-256 do próprio relatório.
+
+Nenhuma dessas verificações altera dados ou realiza comunicação externa.
+
+A Central do servidor também publica ao Master o diagnóstico agregado `inventory_lot_snapshot_coverage_v1`, separando por filial registros íntegros, legados e inconsistentes. O estado Sem vendas por lote não equivale a aceite do piloto.
+A versão v2 não usa o estado atual do lote para provar uma venda passada. Cada nova alocação preserva código, validade e tratamento no instante do movimento e calcula um SHA-256 sobre a identidade do movimento, lote, quantidade, custo e snapshots. Alterar posteriormente o cadastro do lote não altera essa fotografia. Alocações anteriores à migration 0034 permanecem com campos vazios e são tratadas honestamente como legado sem evidência histórica v2.
+
+## Comando
+
+```powershell
+.\.venv\Scripts\python.exe manage.py verificar_fluxo_estoque_piloto --entrada-id ID --venda-id ID --perda-id ID --inventario-id ID --fechamento-id ID --estrito
+```
+
+Use `--dados-sinteticos` somente quando os registros forem de ensaio. Sem essa opção, o relatório não classifica os dados como sintéticos.
+
+O modo `--estrito` retorna falha quando qualquer verificação for reprovada. O JSON é escrito na saída padrão para que a equipe possa arquivá-lo pelo procedimento de implantação escolhido, sem o sistema inventar uma aprovação.
+
+## Ensaio automatizado executado
+
+O teste `apps.estoque.test_fluxo_piloto_ponta_a_ponta` executa o seguinte cenário em banco temporário:
+
+1. entrada de dez unidades em dois lotes, sendo três vencidas e sete válidas;
+2. venda de duas unidades com emissão fiscal desativada;
+3. confirmação de que o lote vencido permaneceu intacto e o válido caiu de sete para cinco;
+4. planejamento, conferência e baixa de uma unidade vencida no lote exato;
+5. nova conferência divergente, inventário com contagem de todos os lotes e reconciliação do saldo para seis unidades;
+6. fechamento do estoque com seis unidades;
+7. emissão do relatório válido e rejeição de tentativa de misturar fechamento de outra filial.
+
+Resultado em 01/09/2026: teste integrado aprovado, Central do servidor aprovada e regressão completa de Estoque aprovada com 114 testes. O banco temporário foi destruído ao final; nenhum dado sintético foi gravado no banco local.
+
+## Próximo marco externo
+
+Repetir o roteiro em uma filial piloto com registros reais já existentes, informar os cinco IDs ao comando, arquivar o JSON e seu SHA-256 e obter a conferência operacional responsável. Esse marco não libera emissão fiscal nem comunicação externa.

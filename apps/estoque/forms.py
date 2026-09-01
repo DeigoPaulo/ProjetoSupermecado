@@ -13,6 +13,7 @@ from .models import (
     ItemInventarioEstoque,
     OrdemProducaoComposicao,
     PerdaEstoque,
+    StatusTratamentoValidade,
     ReceitaDesmembramento,
     TipoDesmembramentoProduto,
     TipoMovimentacaoEstoque,
@@ -128,6 +129,57 @@ class ContagemItemInventarioForm(forms.ModelForm):
         if quantidade is not None and quantidade < 0:
             raise forms.ValidationError("A quantidade contada não pode ser negativa.")
         return quantidade
+
+class ContagemLoteInventarioValidadeForm(forms.Form):
+    quantidade_contada = forms.DecimalField(
+        label="Quantidade contada no lote",
+        max_digits=12,
+        decimal_places=3,
+        min_value=0,
+    )
+    observacao = forms.CharField(
+        label="Observação",
+        max_length=255,
+        required=False,
+        widget=forms.Textarea(attrs={"rows": 3}),
+    )
+    confirmar_dados = forms.BooleanField(
+        label="Confirmo que contei fisicamente este lote específico.",
+    )
+
+class ConferenciaFisicaValidadeLoteForm(forms.Form):
+    quantidade_observada = forms.DecimalField(
+        label="Quantidade observada",
+        max_digits=12,
+        decimal_places=3,
+        min_value=0,
+    )
+    observacao = forms.CharField(
+        label="Observação",
+        max_length=255,
+        required=False,
+        widget=forms.Textarea(attrs={"rows": 3}),
+    )
+    confirmar_dados = forms.BooleanField(
+        label="Confirmo que conferi fisicamente o lote, a validade e a quantidade informada.",
+    )
+
+class TratamentoValidadeLoteForm(forms.Form):
+    status = forms.ChoiceField(
+        label="Tratamento planejado",
+        choices=[
+            (StatusTratamentoValidade.SEPARADO, "Separado para análise"),
+            (StatusTratamentoValidade.DEVOLUCAO_PLANEJADA, "Devolução planejada"),
+            (StatusTratamentoValidade.PROMOCAO_PLANEJADA, "Promoção planejada"),
+            (StatusTratamentoValidade.DESCARTE_PLANEJADO, "Descarte planejado"),
+        ],
+    )
+    observacao = forms.CharField(label="Orientação/observação", max_length=255, widget=forms.Textarea(attrs={"rows": 3}))
+
+class PerdaLoteValidadeForm(forms.Form):
+    quantidade = forms.DecimalField(max_digits=12, decimal_places=3, min_value=0.001)
+    motivo = forms.CharField(max_length=255, widget=forms.Textarea(attrs={"rows": 3}))
+
 
 class PerdaEstoqueForm(forms.ModelForm):
     class Meta:

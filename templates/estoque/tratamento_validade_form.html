@@ -1,0 +1,15 @@
+{% extends "base.html" %}
+{% block title %}Tratamento de validade{% endblock %}
+{% block content %}
+<header class="page-header"><div><h1>Tratamento de validade</h1><p>{{ lote.produto }} · {{ lote.filial }} · lote {{ lote.codigo }}</p></div><div class="actions"><a class="secondary-button" href="{% url 'estoque:conferencia_fisica_validade_lote' lote.pk %}">Conferir fisicamente</a><a class="secondary-button" href="{% url 'estoque:lotes' %}">Voltar</a></div></header>
+<section class="metrics-grid">
+  <article class="metric"><span>Validade</span><strong>{{ lote.validade|date:"d/m/Y" }}</strong></article>
+  <article class="metric"><span>Saldo do lote</span><strong>{{ lote.quantidade_atual|quantidade_br }}</strong></article>
+  <article class="metric"><span>Situação</span><strong>{{ lote.situacao_validade }}</strong></article>
+  <article class="metric"><span>Conferência de hoje</span><strong>{% if conferencia_vigente %}Válida{% else %}Pendente{% endif %}</strong></article>
+</section>
+{% if ultima_conferencia %}<section class="operation-notice">Última conferência: {{ ultima_conferencia.conferido_em|date:"d/m/Y H:i" }}, sistema {{ ultima_conferencia.quantidade_sistema_snapshot|quantidade_br }}, observado {{ ultima_conferencia.quantidade_observada|quantidade_br }}. {% if not conferencia_vigente %}Ela não corresponde mais ao saldo atual ou não foi feita hoje.{% endif %}</section>{% endif %}
+<section class="operation-notice">Este registro apenas organiza a decisão operacional. Não descarta mercadoria, não baixa estoque e não cria lançamento financeiro.</section>
+<form method="post" class="panel form-grid">{% csrf_token %}{{ form.non_field_errors }}<label class="form-field"><span>{{ form.status.label }}</span>{{ form.status }}{{ form.status.errors }}</label><label class="form-field"><span>{{ form.observacao.label }}</span>{{ form.observacao }}{{ form.observacao.errors }}</label><div class="actions"><button type="submit" class="primary-button">Registrar plano sem baixa</button></div></form>
+{% if lote.situacao_validade == "VENCIDO" and lote.tratamento_validade_status == "DESCARTE_PLANEJADO" %}<section class="panel"><h2>Baixa autorizada</h2>{% if conferencia_vigente %}<p>A conferência física de hoje está válida. A perda ainda exigirá autorização de supervisor e reduzirá somente este lote.</p><a class="primary-button" href="{% url 'estoque:perda_lote_validade' lote.pk %}">Registrar perda deste lote</a>{% else %}<p>Antes da baixa, registre uma nova conferência física deste lote. Nenhum saldo será alterado pela conferência.</p><a class="primary-button" href="{% url 'estoque:conferencia_fisica_validade_lote' lote.pk %}">Conferir antes da baixa</a>{% endif %}</section>{% endif %}
+{% endblock %}

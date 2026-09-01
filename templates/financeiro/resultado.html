@@ -227,9 +227,10 @@
     <div class="notice notice-info"><strong>Integração ainda não configurada</strong><span>Defina FINANCEIRO_CONTABIL_ADAPTER no servidor após escolher e homologar o provedor contábil.</span></div>
   {% endif %}
   {% if pode_enviar_contabil %}
+    {% if not envio_contabil_liberado %}<div class="notice notice-info"><strong>Envio bloqueado</strong><span>É necessária uma versão validada do contrato no formato Adaptador do servidor.</span></div>{% endif %}
     <form method="post" action="{% url 'financeiro:enviar_pacote_contabil' %}?data_inicio={{ data_inicio|date:'Y-m-d' }}&amp;data_fim={{ data_fim|date:'Y-m-d' }}{% if filial_id %}&amp;filial={{ filial_id }}{% endif %}" class="toolbar">
       {% csrf_token %}
-      <button type="submit"{% if not adaptador_contabil.carregavel %} disabled{% endif %}><i class="fa-solid fa-paper-plane"></i> Enviar fechamento ao contador</button>
+      <button type="submit"{% if not adaptador_contabil.carregavel or not envio_contabil_liberado %} disabled{% endif %}><i class="fa-solid fa-paper-plane"></i> Enviar fechamento ao contador</button>
       <span class="muted">O mesmo conteúdo não é reenviado quando já existe protocolo confirmado.</span>
     </form>
   {% endif %}

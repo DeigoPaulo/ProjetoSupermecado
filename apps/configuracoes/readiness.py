@@ -28,6 +28,8 @@ SERVIDOR_LOCAL_ARQUIVOS = {
     "restaurar_backup": "scripts/restore_local_backup.ps1",
     "registrar_backup": "scripts/register_backup_task.ps1",
     "registrar_sincronizacao": "scripts/register_sync_task.ps1",
+    "registrar_manutencao_validade": "scripts/register_inventory_expiry_maintenance_task.ps1",
+    "verificar_fluxo_estoque_piloto": "apps/estoque/management/commands/verificar_fluxo_estoque_piloto.py",
     "guia": "docs/IMPLANTACAO_SERVIDOR_LOCAL.md",
     "manual_instalacao": "docs/MANUAL_INSTALACAO_SUPERMERCADO.md",
 }

@@ -14,7 +14,7 @@
 <div class="panel">
   <table>
     <thead>
-      <tr><th>Data</th><th>Produto</th><th>Filial</th><th>Usuário</th><th>Tipo</th><th>Qtd</th><th>Custo estimado</th><th>Venda estimada</th><th>Motivo</th></tr>
+      <tr><th>Data</th><th>Produto</th><th>Filial</th><th>Lote</th><th>Usuário</th><th>Tipo</th><th>Qtd</th><th>Custo estimado</th><th>Venda estimada</th><th>Motivo</th></tr>
     </thead>
     <tbody>
       {% for perda in perdas %}
@@ -22,6 +22,7 @@
           <td>{{ perda.data|date:"d/m/Y H:i" }}</td>
           <td>{{ perda.produto }}</td>
           <td>{{ perda.filial }}</td>
+          <td>{{ perda.lote.codigo|default:"-" }}</td>
           <td>{{ perda.usuario }}</td>
           <td><span class="status">{{ perda.get_tipo_display }}</span></td>
           <td>{{ perda.quantidade|quantidade_br }}</td>
@@ -30,7 +31,7 @@
           <td>{{ perda.motivo }}</td>
         </tr>
       {% empty %}
-        <tr><td colspan="9" class="empty">Nenhuma perda registrada.</td></tr>
+        <tr><td colspan="10" class="empty">Nenhuma perda registrada.</td></tr>
       {% endfor %}
     </tbody>
   </table>

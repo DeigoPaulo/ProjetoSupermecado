@@ -11,22 +11,31 @@
   <div class="actions"><a class="secondary-button" href="{% url 'estoque:inventario_risco' %}"><i class="fa-solid fa-triangle-exclamation"></i> Fila por risco</a><a class="primary-button" href="{% url 'estoque:inventario_novo' %}">Novo inventário</a></div>
 </header>
 
+<section class="operation-notice {% if manutencao_validade.nivel == 'success' %}operation-notice-success{% else %}operation-notice-warning{% endif %}">
+  <i class="fa-solid fa-clock-rotate-left"></i>
+  <div>
+    <strong>Manutenção automática de validade: {{ manutencao_validade.ultima_status_display }}</strong>
+    <span>{{ manutencao_validade.mensagem }} Última execução: {{ manutencao_validade.ultima_execucao_em_display }}; {{ manutencao_validade.ultima_expirados_total }} inventário(s) encerrado(s).{% if manutencao_validade.vencidos_abertos %} Há {{ manutencao_validade.vencidos_abertos }} rascunho(s) vencido(s) aguardando o próximo ciclo.{% endif %}</span>
+  </div>
+</section>
 <div class="panel">
   <table>
-    <thead><tr><th>ID</th><th>Filial</th><th>Descrição</th><th>Status</th><th>Criado</th><th>Aplicado</th><th></th></tr></thead>
+    <thead><tr><th>ID</th><th>Filial</th><th>Descrição</th><th>Origem</th><th>Status</th><th>Criado</th><th>Prazo</th><th>Encerrado/aplicado</th><th></th></tr></thead>
     <tbody>
       {% for inventario in inventarios %}
         <tr>
           <td>{{ inventario.id }}</td>
           <td>{{ inventario.filial }}</td>
           <td>{{ inventario.descricao }}</td>
-          <td><span class="status">{{ inventario.status }}</span></td>
+          <td>{{ inventario.get_origem_display }}</td>
+          <td><span class="status">{{ inventario.status_operacional_display }}</span></td>
           <td>{{ inventario.criado_em|date:"d/m/Y H:i" }}</td>
-          <td>{{ inventario.aplicado_em|date:"d/m/Y H:i"|default:"-" }}</td>
+          <td>{{ inventario.expira_em|date:"d/m/Y H:i"|default:"-" }}</td>
+          <td>{% if inventario.aplicado_em %}Aplicado {{ inventario.aplicado_em|date:"d/m/Y H:i" }}{% elif inventario.encerrado_em %}Encerrado {{ inventario.encerrado_em|date:"d/m/Y H:i" }}{% else %}-{% endif %}</td>
           <td><a href="{% url 'estoque:inventario_detalhe' inventario.pk %}">Abrir</a></td>
         </tr>
       {% empty %}
-        <tr><td colspan="7" class="empty">Nenhum inventário registrado.</td></tr>
+        <tr><td colspan="9" class="empty">Nenhum inventário registrado.</td></tr>
       {% endfor %}
     </tbody>
   </table>

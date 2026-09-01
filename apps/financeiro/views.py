@@ -26,15 +26,29 @@ from apps.accounts.models import PerfilUsuario, TipoPerfil
 from apps.accounts.permissions import ADMINISTRACAO, CONTABILIDADE, RELATORIOS, SISTEMA, has_role, role_required
 from apps.auditoria.models import LogAuditoria
 from apps.empresas.models import Empresa, Filial
-from apps.fiscal.models import DocumentoFiscal, StatusDocumentoFiscal
+from apps.fiscal.models import (
+    CartaCorrecaoFiscal,
+    DocumentoDFeRecebido,
+    DocumentoFiscal,
+    EventoDFeRecebido,
+    EvidenciaFiscal,
+    ManifestacaoDestinatario,
+    StatusDocumentoFiscal,
+    TipoEvidenciaFiscal,
+)
+from apps.fiscal.pacote_contabil import analisar_xml_nfe, data_competencia_documento
+from apps.estoque.models import Estoque, FechamentoEstoqueContabil
 from apps.vendas.models import PagamentoVenda, StatusVenda
 
-from .forms import AlocacaoRecebivelForm, BaixaContaForm, CategoriaFinanceiraForm, CentroCustoForm, ContaContabilForm, ContaFinanceiraForm, ContaMovimentoFinanceiroForm, ImportacaoExtratoFinanceiroForm, RegraLiquidacaoEletronicaForm, TransferenciaFinanceiraForm
+from .forms import AlocacaoRecebivelForm, AmostraContabilForm, BaixaContaForm, CategoriaFinanceiraForm, CentroCustoForm, ContratoIntegracaoContabilForm, ContaContabilForm, ContaFinanceiraForm, ContaMovimentoFinanceiroForm, ImportacaoExtratoFinanceiroForm, RegraLiquidacaoEletronicaForm, TransferenciaFinanceiraForm
 from .adapters import carregar_adaptador_contabil, diagnosticar_adaptador_contabil, normalizar_retorno_exportacao
-from .models import CategoriaFinanceira, CentroCusto, ContaContabil, ConciliacaoLancamentoFinanceiro, ContaFinanceira, ContaMovimentoFinanceiro, ChaveIntegracaoContabil, ExportacaoContabil, ImportacaoExtratoFinanceiro, ItemExtratoFinanceiro, LancamentoFinanceiro, RecebivelEletronico, RegraLiquidacaoEletronica, StatusContaFinanceira, StatusExportacaoContabil, StatusItemExtratoFinanceiro, StatusRecebivelEletronico, TipoContaFinanceira, TipoLancamentoFinanceiro, TransferenciaFinanceira
+from .models import AceiteAmostraContabil, CategoriaFinanceira, CentroCusto, ContaContabil, ConciliacaoLancamentoFinanceiro, ContaFinanceira, ContaMovimentoFinanceiro, ChaveIntegracaoContabil, ContratoIntegracaoContabil, ExportacaoContabil, ImportacaoExtratoFinanceiro, ItemExtratoFinanceiro, LancamentoFinanceiro, RecebivelEletronico, RegraLiquidacaoEletronica, StatusContaFinanceira, StatusContratoIntegracaoContabil, StatusExportacaoContabil, StatusItemExtratoFinanceiro, StatusRecebivelEletronico, TipoContaFinanceira, TipoLancamentoFinanceiro, TransferenciaFinanceira
 from .services import baixar_conta, cancelar_conta, conciliar_lancamento, estornar_lancamento, realizar_transferencia
 from .services_conciliacao import conciliar_item_extrato, importar_extrato
 from .services_recebiveis import candidatos_recebivel_item, conciliar_recebivel_com_item, sincronizar_recebiveis
+from .reconciliacao_contabil import gerar_reconciliacao_operacional
+from .contrato_contabil import registrar_contrato_contabil, resumo_contrato_contabil
+from .amostra_contabil import registrar_aceite_amostra, validar_amostra_contabil
 
 
 def _periodo_from_request(request):
@@ -808,6 +822,12 @@ def resultado_financeiro(request):
         exportacoes = exportacoes.filter(empresa_id=empresa_id)
     elif not request.user.is_superuser:
         exportacoes = exportacoes.none()
+    empresa = Empresa.objects.filter(pk=empresa_id).first()
+    contrato_contabil = resumo_contrato_contabil(empresa)
+    envio_contabil_liberado = bool(
+        contrato_contabil.get("validado")
+        and contrato_contabil.get("formato_entrega") == "ADAPTADOR_SERVIDOR_V1"
+    )
     return render(request, "financeiro/resultado.html", {
         "data_inicio": data_inicio,
         "data_fim": data_fim,
@@ -815,7 +835,9 @@ def resultado_financeiro(request):
         "filial_id": filial_id,
         "permite_consolidado": permite_consolidado,
         "adaptador_contabil": diagnosticar_adaptador_contabil(),
+        "contrato_integracao_contabil": contrato_contabil,
         "pode_enviar_contabil": has_role(request.user, SISTEMA),
+        "envio_contabil_liberado": envio_contabil_liberado,
         "exportacoes_contabeis": exportacoes[:10],
         **resultado,
     })
@@ -981,6 +1003,7 @@ def _payload_pacote_contabil(data_inicio, data_fim, filiais, filial_id, empresa_
         "conciliacao_bancaria": _conciliacao_bancaria_json(resultado["conciliacao_bancaria"]),
         "integracao_fiscal": _integracao_fiscal_json(resultado["integracao_fiscal"]),
         "pacote_contabil": pacote,
+        "contrato_integracao_contabil": resumo_contrato_contabil(empresa),
         "alertas": pacote["alertas"],
         "observacao": "Pacote gerencial de conferencia interna; não substitui SPED, ECD, ECF ou obrigacoes oficiais.",
     }
@@ -1011,6 +1034,41 @@ def _documentos_fiscais_periodo(filiais, data_inicio, data_fim):
     ).order_by("filial__nome", "tipo_documento", "serie", "numero", "pk")
 
 
+def _documentos_saida_competencia(filiais, data_inicio, data_fim):
+    documentos = DocumentoFiscal.objects.select_related("filial").filter(
+        filial__in=filiais
+    ).order_by("filial__nome", "tipo_documento", "serie", "numero", "pk")
+    selecionados = []
+    for documento in documentos.iterator():
+        analise = analisar_xml_nfe(documento.xml_conteudo)
+        data_emissao, fonte_competencia = data_competencia_documento(documento, analise)
+        if data_inicio <= data_emissao <= data_fim:
+            selecionados.append((documento, analise, data_emissao, fonte_competencia))
+    return selecionados
+
+
+def _documentos_entrada_competencia(filiais, data_inicio, data_fim, consolidado):
+    empresas = Empresa.objects.filter(filiais__in=filiais).distinct()
+    documentos = DocumentoDFeRecebido.objects.select_related("filial_destino").filter(empresa__in=empresas)
+    if consolidado:
+        documentos = documentos.filter(Q(filial_destino__in=filiais) | Q(filial_destino__isnull=True))
+    else:
+        documentos = documentos.filter(filial_destino__in=filiais)
+    candidatos = documentos.filter(
+        Q(data_emissao__range=(data_inicio, data_fim))
+        | Q(data_emissao__isnull=True, recebido_em__date__range=(data_inicio, data_fim))
+    ).order_by("data_emissao", "pk")
+    return [
+        (
+            documento,
+            analisar_xml_nfe(documento.xml_conteudo),
+            documento.data_emissao or documento.recebido_em.date(),
+            "XML_DHEMI" if documento.data_emissao else "RECEBIDO_EM",
+        )
+        for documento in candidatos
+    ]
+
+
 def _csv_text(cabecalho, linhas):
     buffer = StringIO(newline="")
     escritor = csv.writer(buffer, delimiter=";")
@@ -1026,84 +1084,384 @@ def _csv_excel_bytes(cabecalho, linhas):
 
 def _pacote_contabil_zip(competencia, data_inicio, data_fim, filiais, filial_id, empresa_id):
     resultado = _resultado_financeiro_periodo(data_inicio, data_fim, filial_id, empresa_id)
-    payload = _payload_pacote_contabil(data_inicio, data_fim, filiais, filial_id, empresa_id, resultado)
-    documentos = _documentos_fiscais_periodo(filiais, data_inicio, data_fim)
-    lancamentos = LancamentoFinanceiro.objects.select_related("conta", "conta__filial", "conta_contabil", "centro_custo").filter(
-        conta__filial__in=filiais,
+    filiais_pacote = filiais.filter(pk=filial_id) if filial_id else filiais
+    payload = _payload_pacote_contabil(data_inicio, data_fim, filiais_pacote, filial_id, empresa_id, resultado)
+    documentos_saida = _documentos_saida_competencia(filiais_pacote, data_inicio, data_fim)
+    documentos_entrada = _documentos_entrada_competencia(
+        filiais_pacote, data_inicio, data_fim, consolidado=not bool(filial_id)
+    )
+    lancamentos = LancamentoFinanceiro.objects.select_related(
+        "conta", "conta__filial", "conta_contabil", "centro_custo"
+    ).filter(
+        conta__filial__in=filiais_pacote,
         data__gte=data_inicio,
         data__lte=data_fim,
     ).order_by("data", "pk")
-    empresa = filiais.first().empresa if filiais.exists() else None
+    empresa = filiais_pacote.first().empresa if filiais_pacote.exists() else None
+    estoques = Estoque.objects.select_related("filial", "produto").filter(
+        filial__in=filiais_pacote
+    ).order_by("filial__nome", "produto__nome", "produto_id")
+    fechamentos_inventario = list(
+        FechamentoEstoqueContabil.objects.prefetch_related("itens").select_related("filial").filter(
+            filial__in=filiais_pacote, data_referencia=data_fim
+        ).order_by("filial__nome")
+    )
+    snapshot_completo = len(fechamentos_inventario) == filiais_pacote.count()
+    referencia_inventario = (
+        max(fechamento.capturado_em for fechamento in fechamentos_inventario)
+        if snapshot_completo and fechamentos_inventario
+        else timezone.now()
+    )
+    qualidade_inventario = (
+        "SNAPSHOT_IMUTAVEL_FECHAMENTO"
+        if snapshot_completo
+        else ("POSICAO_NO_FECHAMENTO" if data_fim == referencia_inventario.date() else "POSICAO_ATUAL_NAO_RETROATIVA")
+    )
+    arquivos = OrderedDict()
+
+    def adicionar_texto(nome, conteudo):
+        arquivos[nome] = conteudo.encode("utf-8") if isinstance(conteudo, str) else conteudo
+
+    adicionar_texto(
+        "LEIA-ME.txt",
+        "Pacote contábil gerencial do Deigo Varejo.\n"
+        "Este material apoia a conferência da contabilidade e não substitui SPED, ECD, ECF ou obrigações oficiais.\n"
+        f"Competência: {competencia}. A competência fiscal prioriza dhEmi/dEmi do XML e informa o fallback utilizado.\n"
+        "Os dados por item são cópias estruturadas dos XMLs armazenados; divergências devem ser conferidas no XML original.\n"
+        "O inventário prioriza snapshot imutável do fechamento; sem cobertura completa, informa explicitamente a qualidade temporal.\n",
+    )
+    adicionar_texto(
+        "financeiro/pacote-gerencial.json",
+        json.dumps(payload, cls=DjangoJSONEncoder, ensure_ascii=False, indent=2),
+    )
+    arquivos["financeiro/lancamentos.csv"] = _csv_excel_bytes(
+        ["Data", "Filial", "Tipo", "Origem", "Descrição", "Valor", "Conta contábil", "Centro de custo"],
+        [
+            [
+                lancamento.data.isoformat(),
+                lancamento.conta.filial.nome,
+                lancamento.get_tipo_display(),
+                lancamento.origem,
+                lancamento.descricao,
+                f"{lancamento.valor:.2f}".replace(".", ","),
+                str(lancamento.conta_contabil or ""),
+                str(lancamento.centro_custo or ""),
+            ]
+            for lancamento in lancamentos
+        ],
+    )
+
+    linhas_inventario = []
+    valor_total_inventario = Decimal("0.00")
+    if snapshot_completo:
+        for fechamento in fechamentos_inventario:
+            for item in fechamento.itens.all():
+                valor_total_inventario += item.valor_custo
+                linhas_inventario.append([
+                    fechamento.filial.nome,
+                    item.codigo_interno,
+                    item.codigo_barras,
+                    item.nome_produto,
+                    item.ncm,
+                    item.cest,
+                    item.unidade,
+                    f"{item.quantidade_fisica:.3f}".replace(".", ","),
+                    f"{item.quantidade_reservada:.3f}".replace(".", ","),
+                    f"{item.quantidade_disponivel:.3f}".replace(".", ","),
+                    f"{item.custo_medio:.6f}".replace(".", ","),
+                    f"{item.valor_custo:.2f}".replace(".", ","),
+                    fechamento.capturado_em.isoformat(),
+                    fechamento.criterio_custo,
+                    qualidade_inventario,
+                ])
+    else:
+        for saldo in estoques:
+            valor_custo = saldo.quantidade_atual * saldo.custo_medio
+            valor_total_inventario += valor_custo
+            linhas_inventario.append([
+                saldo.filial.nome,
+                saldo.produto.codigo_interno,
+                saldo.produto.codigo_barras,
+                saldo.produto.nome,
+                saldo.produto.ncm,
+                saldo.produto.cest,
+                saldo.produto.get_unidade_display(),
+                f"{saldo.quantidade_atual:.3f}".replace(".", ","),
+                f"{saldo.quantidade_reservada:.3f}".replace(".", ","),
+                f"{saldo.quantidade_disponivel:.3f}".replace(".", ","),
+                f"{saldo.custo_medio:.6f}".replace(".", ","),
+                f"{valor_custo:.2f}".replace(".", ","),
+                referencia_inventario.isoformat(),
+                "CUSTO_MEDIO_PONDERADO_MOVEL",
+                qualidade_inventario,
+            ])
+    arquivos["estoque/inventario-valorizado.csv"] = _csv_excel_bytes(
+        [
+            "Filial", "Código interno", "Código de barras", "Produto", "NCM", "CEST", "Unidade",
+            "Quantidade física", "Quantidade reservada", "Quantidade disponível", "Custo médio unitário",
+            "Valor a custo", "Data/hora da posição", "Critério de custo", "Qualidade temporal",
+        ],
+        linhas_inventario,
+    )
+    reconciliacao_operacional = gerar_reconciliacao_operacional(
+        filiais=filiais_pacote, data_inicio=data_inicio, data_fim=data_fim
+    )
+    adicionar_texto(
+        "reconciliacao/resumo.json",
+        json.dumps(reconciliacao_operacional, cls=DjangoJSONEncoder, ensure_ascii=False, indent=2),
+    )
+    arquivos["reconciliacao/vendas.csv"] = _csv_excel_bytes(
+        [
+            "Filial", "Venda ID", "Data", "Status", "Total venda", "Pagamentos confirmados",
+            "Pagamentos pendentes", "Pagamentos estornados", "Livro financeiro", "Documentos fiscais",
+            "Documentos emitidos", "Valor fiscal", "Itens", "Movimentos de estoque", "Devoluções",
+            "Situação", "Divergências",
+        ],
+        [
+            [
+                linha["filial"], linha["venda_id"], linha["data"].isoformat(), linha["status_venda"],
+                f"{linha['total_venda']:.2f}".replace(".", ","),
+                f"{linha['pagamentos_confirmados']:.2f}".replace(".", ","),
+                f"{linha['pagamentos_pendentes']:.2f}".replace(".", ","),
+                f"{linha['pagamentos_estornados']:.2f}".replace(".", ","),
+                f"{linha['livro_financeiro']:.2f}".replace(".", ","),
+                linha["documentos_fiscais"], linha["documentos_emitidos"],
+                f"{linha['valor_fiscal']:.2f}".replace(".", ","),
+                linha["itens_venda"], linha["movimentos_estoque"], linha["devolucoes"],
+                linha["situacao"], linha["divergencias"],
+            ]
+            for linha in reconciliacao_operacional["vendas"]
+        ],
+    )
+    arquivos["reconciliacao/entradas.csv"] = _csv_excel_bytes(
+        [
+            "Filial", "Entrada ID", "Data de emissão", "Data de recebimento", "Status", "Fornecedor",
+            "Número documento", "Chave de acesso", "Total itens", "Total produtos", "Total documento",
+            "DF-e vinculado", "Contas a pagar", "Valor contas a pagar", "Itens", "Movimentos de estoque",
+            "Situação", "Divergências",
+        ],
+        [
+            [
+                linha["filial"], linha["entrada_id"],
+                linha["data_emissao"].isoformat() if linha["data_emissao"] else "",
+                linha["data_recebimento"].isoformat(), linha["status_entrada"], linha["fornecedor"],
+                linha["numero_documento"], linha["chave_acesso"],
+                f"{linha['total_itens']:.2f}".replace(".", ","),
+                f"{linha['total_produtos']:.2f}".replace(".", ","),
+                f"{linha['total_documento']:.2f}".replace(".", ",") if linha["total_documento"] is not None else "",
+                "Sim" if linha["documento_dfe_vinculado"] else "Não", linha["contas_pagar"],
+                f"{linha['valor_contas_pagar']:.2f}".replace(".", ","),
+                linha["itens_entrada"], linha["movimentos_estoque"], linha["situacao"], linha["divergencias"],
+            ]
+            for linha in reconciliacao_operacional["entradas"]
+        ],
+    )
+
+    arquivos["fiscal/documentos-saida.csv"] = _csv_excel_bytes(
+        [
+            "Filial", "Tipo", "Série", "Número", "Chave de acesso", "Status", "Valor total",
+            "Protocolo", "Data de emissão", "Data de autorização", "Fonte da competência", "Protocolo de cancelamento", "Data de cancelamento", "XML incluído", "Pendência do XML",
+        ],
+        [
+            [
+                documento.filial.nome,
+                documento.get_tipo_documento_display(),
+                documento.serie,
+                documento.numero or "",
+                documento.chave_acesso or analise["chave_acesso"],
+                documento.get_status_display(),
+                f"{documento.valor_total:.2f}".replace(".", ","),
+                documento.protocolo,
+                data_emissao.isoformat(),
+                analise["data_autorizacao"].isoformat() if analise["data_autorizacao"] else "",
+                fonte_competencia,
+                documento.protocolo_cancelamento,
+                documento.cancelamento_em.isoformat() if documento.cancelamento_em else "",
+                "Sim" if documento.xml_conteudo else "Não",
+                analise["erro"],
+            ]
+            for documento, analise, data_emissao, fonte_competencia in documentos_saida
+        ],
+    )
+    # Nome legado mantido durante a transição do contrato v1 para o v2.
+    arquivos["fiscal/documentos.csv"] = arquivos["fiscal/documentos-saida.csv"]
+    arquivos["fiscal/documentos-entrada.csv"] = _csv_excel_bytes(
+        [
+            "Filial destino", "Modelo", "Número", "Chave de acesso", "Emitente CNPJ", "Emitente",
+            "Status", "Valor total", "Data de emissão", "Fonte da competência", "XML incluído", "Pendência do XML",
+        ],
+        [
+            [
+                str(documento.filial_destino or "Consolidado da empresa"),
+                analise["modelo"],
+                documento.numero_documento,
+                documento.chave_acesso or analise["chave_acesso"],
+                documento.emitente_cnpj,
+                documento.emitente_nome,
+                documento.get_status_display(),
+                f"{documento.valor_total:.2f}".replace(".", ","),
+                data_emissao.isoformat(),
+                fonte_competencia,
+                "Sim" if documento.xml_conteudo else "Não",
+                analise["erro"],
+            ]
+            for documento, analise, data_emissao, fonte_competencia in documentos_entrada
+        ],
+    )
+
+    campos_item = [
+        "numero_item", "codigo_produto", "descricao", "ncm", "cest", "cfop", "unidade", "quantidade",
+        "valor_unitario", "valor_produto", "valor_desconto", "origem_icms", "cst_icms", "csosn", "cbenef",
+        "base_icms", "aliquota_icms", "valor_icms", "reducao_base_icms", "base_icms_st", "aliquota_icms_st",
+        "valor_icms_st", "mva_st", "base_fcp", "aliquota_fcp", "valor_fcp", "base_fcp_st", "aliquota_fcp_st",
+        "valor_fcp_st", "cst_pis", "base_pis", "aliquota_pis", "valor_pis", "cst_cofins", "base_cofins",
+        "aliquota_cofins", "valor_cofins", "cst_ipi", "base_ipi", "aliquota_ipi", "valor_ipi",
+    ]
+    cabecalho_item = [
+        "Origem", "Filial", "Documento ID", "Modelo", "Série", "Número", "Chave de acesso", "Status",
+        "Data de emissão", "Fonte da competência",
+    ] + campos_item
+    linhas_itens = []
+    for documento, analise, data_emissao, fonte_competencia in documentos_saida:
+        for item in analise["itens"]:
+            linhas_itens.append([
+                "SAIDA", documento.filial.nome, documento.pk, analise["modelo"] or documento.tipo_documento,
+                documento.serie, documento.numero or "", documento.chave_acesso or analise["chave_acesso"],
+                documento.get_status_display(), data_emissao.isoformat(), fonte_competencia,
+            ] + [item[campo] for campo in campos_item])
+    for documento, analise, data_emissao, fonte_competencia in documentos_entrada:
+        for item in analise["itens"]:
+            linhas_itens.append([
+                "ENTRADA", str(documento.filial_destino or "Consolidado da empresa"), documento.pk,
+                analise["modelo"], "", documento.numero_documento, documento.chave_acesso or analise["chave_acesso"],
+                documento.get_status_display(), data_emissao.isoformat(), fonte_competencia,
+            ] + [item[campo] for campo in campos_item])
+    arquivos["fiscal/itens-fiscais.csv"] = _csv_excel_bytes(cabecalho_item, linhas_itens)
+
+    ids_saida = [documento.pk for documento, _analise, _data, _fonte in documentos_saida]
+    cartas = CartaCorrecaoFiscal.objects.select_related("documento").filter(
+        documento_id__in=ids_saida
+    ).filter(
+        Q(processado_em__date__range=(data_inicio, data_fim))
+        | Q(processado_em__isnull=True, criado_em__date__range=(data_inicio, data_fim))
+    ).order_by("documento_id", "sequencia")
+    evidencias_evento = EvidenciaFiscal.objects.select_related("documento").filter(
+        documento_id__in=ids_saida,
+        criado_em__date__range=(data_inicio, data_fim),
+        tipo__in=[
+            TipoEvidenciaFiscal.EVENTO_CANCELAMENTO_ENVIO,
+            TipoEvidenciaFiscal.EVENTO_CANCELAMENTO_RETORNO,
+            TipoEvidenciaFiscal.EVENTO_CCE_ENVIO,
+            TipoEvidenciaFiscal.EVENTO_CCE_RETORNO,
+        ],
+    ).order_by("documento_id", "sequencia")
+    eventos_entrada = EventoDFeRecebido.objects.filter(
+        empresa=empresa
+    ).filter(
+        Q(filial_destino__in=filiais_pacote) | (Q(filial_destino__isnull=True) if not filial_id else Q(pk__isnull=True))
+    ).filter(
+        Q(data_evento__date__range=(data_inicio, data_fim))
+        | Q(data_evento__isnull=True, recebido_em__date__range=(data_inicio, data_fim))
+    ).order_by("data_evento", "pk") if empresa else EventoDFeRecebido.objects.none()
+    manifestacoes = ManifestacaoDestinatario.objects.select_related("documento").filter(
+        empresa=empresa, filial__in=filiais_pacote
+    ).filter(
+        Q(processado_em__date__range=(data_inicio, data_fim))
+        | Q(processado_em__isnull=True, criado_em__date__range=(data_inicio, data_fim))
+    ).order_by("documento_id", "criado_em") if empresa else ManifestacaoDestinatario.objects.none()
+    linhas_eventos = []
+    for carta in cartas:
+        linhas_eventos.append([
+            "SAIDA", "CC-e", carta.documento.chave_acesso, carta.sequencia, carta.get_status_display(),
+            carta.codigo_status, carta.protocolo, (carta.processado_em or carta.criado_em).isoformat(), carta.mensagem,
+        ])
+        if carta.xml_envio:
+            adicionar_texto(f"fiscal/eventos/saida/cce-{carta.pk}-envio.xml", carta.xml_envio)
+        if carta.xml_retorno:
+            adicionar_texto(f"fiscal/eventos/saida/cce-{carta.pk}-retorno.xml", carta.xml_retorno)
+    for evidencia in evidencias_evento:
+        linhas_eventos.append([
+            "SAIDA", evidencia.get_tipo_display(), evidencia.documento.chave_acesso, evidencia.sequencia, "Evidência",
+            "", evidencia.protocolo, evidencia.criado_em.isoformat(), evidencia.referencia,
+        ])
+        adicionar_texto(f"fiscal/eventos/saida/evidencia-{evidencia.pk}.xml", evidencia.conteudo)
+    for manifestacao in manifestacoes:
+        linhas_eventos.append([
+            "ENTRADA", manifestacao.get_tipo_display(), manifestacao.documento.chave_acesso, 1,
+            manifestacao.get_status_display(), manifestacao.codigo_status, manifestacao.protocolo,
+            (manifestacao.processado_em or manifestacao.criado_em).isoformat(), manifestacao.mensagem,
+        ])
+        if manifestacao.xml_envio:
+            adicionar_texto(f"fiscal/eventos/entrada/manifestacao-{manifestacao.pk}-envio.xml", manifestacao.xml_envio)
+        if manifestacao.xml_retorno:
+            adicionar_texto(f"fiscal/eventos/entrada/manifestacao-{manifestacao.pk}-retorno.xml", manifestacao.xml_retorno)
+    for evento in eventos_entrada:
+        linhas_eventos.append([
+            "ENTRADA", evento.tipo_evento or evento.descricao, evento.chave_acesso, evento.sequencia, "Recebido",
+            "", "", (evento.data_evento or evento.recebido_em).isoformat(), evento.descricao,
+        ])
+        adicionar_texto(f"fiscal/eventos/entrada/evento-{evento.pk}.xml", evento.xml_conteudo)
+    arquivos["fiscal/eventos.csv"] = _csv_excel_bytes(
+        ["Origem", "Tipo", "Chave de acesso", "Sequência", "Status", "Código", "Protocolo", "Data", "Descrição"],
+        linhas_eventos,
+    )
+
+    for documento, _analise, _data, _fonte in documentos_saida:
+        if documento.xml_conteudo:
+            nome = f"{documento.tipo_documento}-{documento.serie}-{documento.numero or documento.pk}-{documento.pk}.xml"
+            adicionar_texto(f"fiscal/xml/saida/{nome}", documento.xml_conteudo)
+            # Caminho legado mantido durante a transição.
+            nome_legado = f"{documento.tipo_documento}-{documento.serie}-{documento.numero or documento.pk}.xml"
+            adicionar_texto(f"fiscal/xml/{nome_legado}", documento.xml_conteudo)
+    for documento, _analise, _data, _fonte in documentos_entrada:
+        if documento.xml_conteudo:
+            adicionar_texto(f"fiscal/xml/entrada/NFE-{documento.chave_acesso or documento.pk}-{documento.pk}.xml", documento.xml_conteudo)
+
+    integridade = [
+        {"caminho": nome, "bytes": len(conteudo), "sha256": hashlib.sha256(conteudo).hexdigest()}
+        for nome, conteudo in arquivos.items()
+    ]
+    manifesto = {
+        "contrato": "accounting_monthly_package_v2",
+        "compatibilidade": ["accounting_monthly_package_v1"],
+        "competencia": competencia,
+        "empresa": payload["empresa"],
+        "filial": payload["filial"],
+        "contrato_integracao_contabil": resumo_contrato_contabil(empresa),
+        "criterio_competencia_fiscal": "dhEmi/dEmi do XML; fallback xml_gerado_em e criado_em explicitado nos CSVs",
+        "contagens": {
+            "documentos_saida": len(documentos_saida),
+            "documentos_entrada": len(documentos_entrada),
+            "itens_fiscais": len(linhas_itens),
+            "eventos": len(linhas_eventos),
+            "itens_inventario": len(linhas_inventario),
+            "vendas_reconciliadas": reconciliacao_operacional["resumo"]["vendas"],
+            "vendas_divergentes": reconciliacao_operacional["resumo"]["vendas_divergentes"],
+            "entradas_reconciliadas": reconciliacao_operacional["resumo"]["entradas"],
+            "entradas_divergentes": reconciliacao_operacional["resumo"]["entradas_divergentes"],
+        },
+        "inventario": {
+            "criterio_custo": "CUSTO_MEDIO_PONDERADO_MOVEL",
+            "referencia": referencia_inventario.isoformat(),
+            "qualidade_temporal": qualidade_inventario,
+            "valor_total_custo": f"{valor_total_inventario:.2f}",
+            "snapshot_completo": snapshot_completo,
+            "fechamentos": [fechamento.conteudo_sha256 for fechamento in fechamentos_inventario] if snapshot_completo else [],
+            "alerta": "Snapshot imutável do fechamento." if snapshot_completo else "Sem snapshot completo; para competência passada, esta é a posição atual e exige conferência.",
+        },
+        "arquivos": integridade,
+        "observacao": "Arquivo gerencial. Valide regras fiscais e obrigações com o contador responsável.",
+    }
     arquivo = BytesIO()
     with ZipFile(arquivo, "w", ZIP_DEFLATED) as zip_file:
         zip_file.writestr(
-            "LEIA-ME.txt",
-            "Pacote contábil gerencial do Deigo Varejo.\n"
-            "Este material apoia a conferência da contabilidade e não substitui SPED, ECD, ECF ou obrigações oficiais.\n"
-            f"Competência: {competencia}.\n"
-            "Os XMLs incluídos são documentos fiscais já gerados no ERP.\n",
-        )
-        zip_file.writestr(
             "manifesto.json",
-            json.dumps(
-                {
-                    "contrato": "accounting_monthly_package_v1",
-                    "competencia": competencia,
-                    "empresa": payload["empresa"],
-                    "filial": payload["filial"],
-                    "arquivos": ["financeiro/pacote-gerencial.json", "financeiro/lancamentos.csv", "fiscal/documentos.csv", "fiscal/xml/"],
-                    "observacao": "Arquivo gerencial. Valide regras fiscais e obrigações com o contador responsável.",
-                },
-                cls=DjangoJSONEncoder,
-                ensure_ascii=False,
-                indent=2,
-            ),
+            json.dumps(manifesto, cls=DjangoJSONEncoder, ensure_ascii=False, indent=2).encode("utf-8"),
         )
-        zip_file.writestr("financeiro/pacote-gerencial.json", json.dumps(payload, cls=DjangoJSONEncoder, ensure_ascii=False, indent=2))
-        zip_file.writestr(
-            "financeiro/lancamentos.csv",
-            _csv_excel_bytes(
-                ["Data", "Filial", "Tipo", "Origem", "Descrição", "Valor", "Conta contábil", "Centro de custo"],
-                [
-                    [
-                        lancamento.data.isoformat(),
-                        lancamento.conta.filial.nome,
-                        lancamento.get_tipo_display(),
-                        lancamento.origem,
-                        lancamento.descricao,
-                        f"{lancamento.valor:.2f}".replace(".", ","),
-                        str(lancamento.conta_contabil or ""),
-                        str(lancamento.centro_custo or ""),
-                    ]
-                    for lancamento in lancamentos
-                ],
-            ),
-        )
-        zip_file.writestr(
-            "fiscal/documentos.csv",
-            _csv_excel_bytes(
-                ["Filial", "Tipo", "Série", "Número", "Chave de acesso", "Status", "Valor total", "Protocolo", "XML incluído"],
-                [
-                    [
-                        documento.filial.nome,
-                        documento.get_tipo_documento_display(),
-                        documento.serie,
-                        documento.numero or "",
-                        documento.chave_acesso,
-                        documento.get_status_display(),
-                        f"{documento.valor_total:.2f}".replace(".", ","),
-                        documento.protocolo,
-                        "Sim" if documento.xml_conteudo else "Não",
-                    ]
-                    for documento in documentos
-                ],
-            ),
-        )
-        for documento in documentos.exclude(xml_conteudo=""):
-            nome = f"{documento.tipo_documento}-{documento.serie}-{documento.numero or documento.pk}.xml"
-            zip_file.writestr(f"fiscal/xml/{nome}", documento.xml_conteudo)
-    return arquivo.getvalue(), resultado, documentos.count(), documentos.exclude(xml_conteudo="").count()
-
+        for nome, conteudo in arquivos.items():
+            zip_file.writestr(nome, conteudo)
+    xml_saida_total = sum(1 for documento, _analise, _data, _fonte in documentos_saida if documento.xml_conteudo)
+    return arquivo.getvalue(), resultado, len(documentos_saida), xml_saida_total
 @login_required
 @role_required(*RELATORIOS)
 def resultado_pacote_contabil_json(request):
@@ -1119,9 +1477,10 @@ def portal_contabilidade(request):
     competencia, data_inicio, data_fim = _periodo_competencia(request)
     filiais, filial_id, permite_consolidado, empresa_id = _escopo_filiais_financeiro(request)
     resultado = _resultado_financeiro_periodo(data_inicio, data_fim, filial_id, empresa_id)
-    documentos = _documentos_fiscais_periodo(filiais, data_inicio, data_fim)
-    documentos_total = documentos.count()
-    xml_total = documentos.exclude(xml_conteudo="").count()
+    filiais_portal = filiais.filter(pk=filial_id) if filial_id else filiais
+    documentos = _documentos_saida_competencia(filiais_portal, data_inicio, data_fim)
+    documentos_total = len(documentos)
+    xml_total = sum(1 for documento, _analise, _data, _fonte in documentos if documento.xml_conteudo)
     return render(
         request,
         "financeiro/portal_contabilidade.html",
@@ -1134,6 +1493,12 @@ def portal_contabilidade(request):
             "documentos_total": documentos_total,
             "xml_total": xml_total,
             "pendencias_xml": documentos_total - xml_total,
+            "contrato_integracao_contabil": resumo_contrato_contabil(
+                Empresa.objects.filter(pk=empresa_id).first()
+            ),
+            "aceite_amostra_contabil": AceiteAmostraContabil.objects.filter(
+                empresa_id=empresa_id, competencia=data_inicio
+            ).order_by("-registrado_em").first(),
         },
     )
 
@@ -1166,9 +1531,32 @@ def chaves_integracao_contabil(request):
     filiais, _filial_id, _permite_consolidado, empresa_id = _escopo_filiais_financeiro(request)
     empresas = Empresa.objects.filter(filiais__in=filiais).distinct().order_by("nome_fantasia")
     token_gerado = ""
+    contrato_form = ContratoIntegracaoContabilForm(empresas=empresas) if request.user.is_superuser else None
     if request.method == "POST":
         acao = (request.POST.get("acao") or "").strip()
-        if acao == "criar":
+        if acao == "registrar_contrato":
+            if not request.user.is_superuser:
+                raise PermissionDenied("Somente o Master pode registrar ou validar o contrato contábil.")
+            contrato_form = ContratoIntegracaoContabilForm(request.POST, empresas=empresas)
+            if contrato_form.is_valid():
+                dados = contrato_form.cleaned_data
+                contrato = registrar_contrato_contabil(
+                    empresa=dados["empresa"], usuario=request.user,
+                    software_contabil=dados["software_contabil"],
+                    formato_entrega=dados["formato_entrega"],
+                    responsavel_efd_icms_ipi=dados["responsavel_efd_icms_ipi"],
+                    responsavel_efd_nome=dados["responsavel_efd_nome"],
+                    aceite_referencia=dados["aceite_referencia"],
+                    observacoes=dados["observacoes"],
+                    validar=dados["confirmar_validacao"],
+                    ip=request.META.get("REMOTE_ADDR") or None,
+                )
+                messages.success(
+                    request,
+                    f"Contrato contábil v{contrato.versao} registrado como {contrato.get_status_display().lower()}.",
+                )
+                return redirect("financeiro:chaves_integracao_contabil")
+        elif acao == "criar":
             empresa = get_object_or_404(empresas, pk=request.POST.get("empresa"))
             nome = (request.POST.get("nome") or "").strip()
             if not nome:
@@ -1205,8 +1593,84 @@ def chaves_integracao_contabil(request):
             messages.success(request, "Chave de integração revogada.")
             return redirect("financeiro:chaves_integracao_contabil")
     chaves = ChaveIntegracaoContabil.objects.filter(empresa__in=empresas).select_related("empresa")
-    return render(request, "financeiro/chaves_integracao_contabil.html", {"empresas": empresas, "chaves": chaves, "token_gerado": token_gerado})
+    contratos = [resumo_contrato_contabil(empresa) | {"empresa": empresa} for empresa in empresas]
+    return render(
+        request,
+        "financeiro/chaves_integracao_contabil.html",
+        {
+            "empresas": empresas,
+            "chaves": chaves,
+            "token_gerado": token_gerado,
+            "contrato_form": contrato_form,
+            "contratos": contratos,
+        },
+    )
 
+
+@login_required
+def validar_amostra_contabil_view(request):
+    if not request.user.is_superuser:
+        raise PermissionDenied("Somente o Master pode validar ou aceitar a amostra contábil.")
+    empresas = Empresa.objects.filter(filiais__is_active=True).distinct().order_by("nome_fantasia")
+    form = AmostraContabilForm(request.POST or None, empresas=empresas)
+    relatorio = None
+    aceite_registrado = None
+    if request.method == "POST" and form.is_valid():
+        dados = form.cleaned_data
+        empresa = dados["empresa"]
+        contrato = ContratoIntegracaoContabil.objects.filter(
+            empresa=empresa,
+            status=StatusContratoIntegracaoContabil.VALIDADO,
+            formato_entrega="PACOTE_ZIP_V2",
+        ).order_by("-versao").first()
+        if not contrato:
+            messages.error(request, "A empresa não possui contrato validado para o pacote ZIP v2.")
+        else:
+            competencia = dados["competencia"]
+            ano, mes = (int(parte) for parte in competencia.split("-", 1))
+            data_inicio = date(ano, mes, 1)
+            data_fim = (
+                date(ano + 1, 1, 1) - timedelta(days=1)
+                if mes == 12
+                else date(ano, mes + 1, 1) - timedelta(days=1)
+            )
+            filiais = Filial.objects.select_related("empresa").filter(
+                empresa=empresa, is_active=True
+            ).order_by("nome")
+            pacote_bytes, _resultado, _documentos, _xmls = _pacote_contabil_zip(
+                competencia, data_inicio, data_fim, filiais, None, empresa.pk
+            )
+            relatorio = validar_amostra_contabil(
+                pacote_bytes=pacote_bytes,
+                empresa=empresa,
+                contrato_integracao=contrato,
+            )
+            if dados["registrar_aceite"]:
+                if not relatorio["aprovado"]:
+                    messages.error(request, "O aceite não foi registrado porque existem portões pendentes.")
+                else:
+                    aceite_registrado, criado = registrar_aceite_amostra(
+                        empresa=empresa,
+                        competencia=competencia,
+                        contrato_integracao=contrato,
+                        pacote_bytes=pacote_bytes,
+                        relatorio_validacao=relatorio,
+                        referencia_aceite=dados["referencia_aceite"],
+                        usuario=request.user,
+                        ip=request.META.get("REMOTE_ADDR") or None,
+                    )
+                    messages.success(
+                        request,
+                        "Aceite da amostra registrado." if criado else "Esta mesma amostra já possuía aceite.",
+                    )
+    aceites = AceiteAmostraContabil.objects.select_related(
+        "empresa", "contrato_integracao", "registrado_por"
+    ).order_by("-registrado_em")[:20]
+    return render(
+        request,
+        "financeiro/validar_amostra_contabil.html",
+        {"form": form, "relatorio": relatorio, "aceite_registrado": aceite_registrado, "aceites": aceites},
+    )
 
 @require_GET
 def api_pacote_contabil_mensal(request):
@@ -1247,7 +1711,14 @@ def api_pacote_contabil_mensal(request):
 @role_required(*RELATORIOS)
 def diagnostico_contabil_json(request):
     diagnostico = diagnosticar_adaptador_contabil()
-    diagnostico["envio_permitido"] = has_role(request.user, SISTEMA)
+    _filiais, _filial_id, _consolidado, empresa_id = _escopo_filiais_financeiro(request)
+    contrato_contabil = resumo_contrato_contabil(Empresa.objects.filter(pk=empresa_id).first())
+    diagnostico["contrato_integracao_contabil"] = contrato_contabil
+    diagnostico["envio_permitido"] = bool(
+        has_role(request.user, SISTEMA)
+        and contrato_contabil.get("validado")
+        and contrato_contabil.get("formato_entrega") == "ADAPTADOR_SERVIDOR_V1"
+    )
     return JsonResponse(diagnostico)
 
 
@@ -1263,6 +1734,14 @@ def enviar_pacote_contabil(request):
     destino = f"/financeiro/resultado/?data_inicio={data_inicio}&data_fim={data_fim}" + (f"&filial={filial_id}" if filial_id else "")
     if not empresa:
         messages.error(request, "Selecione uma filial antes de enviar; não é permitido misturar empresas no mesmo pacote contábil.")
+        return redirect(destino)
+
+    contrato_contabil = resumo_contrato_contabil(empresa)
+    if not contrato_contabil.get("validado"):
+        messages.error(request, "Valide com o contador uma versão do contrato contábil antes de qualquer envio por adaptador.")
+        return redirect(destino)
+    if contrato_contabil.get("formato_entrega") != "ADAPTADOR_SERVIDOR_V1":
+        messages.error(request, "O contrato validado não autoriza envio por adaptador do servidor.")
         return redirect(destino)
 
     resultado = _resultado_financeiro_periodo(data_inicio, data_fim, filial_id, empresa.pk)

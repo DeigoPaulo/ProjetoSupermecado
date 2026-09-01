@@ -16,6 +16,7 @@ urlpatterns = [
     path("estoque-baixo/exportar.csv", views.estoque_baixo_csv, name="estoque_baixo_csv"),
     path("estoque-baixo/imprimir/", views.estoque_baixo_imprimir, name="estoque_baixo_imprimir"),
     path("sugestao-reposicao/", views.sugestao_reposicao, name="sugestao_reposicao"),
+    path("sugestao-reposicao/criar-cotacao/", views.criar_cotacao_sugestao_reposicao, name="criar_cotacao_sugestao_reposicao"),
     path("sugestao-reposicao/exportar.csv", views.sugestao_reposicao_csv, name="sugestao_reposicao_csv"),
     path("sugestao-reposicao/imprimir/", views.sugestao_reposicao_imprimir, name="sugestao_reposicao_imprimir"),
     path("movimentacoes-estoque/", views.movimentacoes_estoque, name="movimentacoes_estoque"),

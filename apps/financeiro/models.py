@@ -568,3 +568,180 @@ class ChaveIntegracaoContabil(models.Model):
 
     def __str__(self):
         return f"{self.empresa} - {self.nome}"
+
+class FormatoEntregaContabil(models.TextChoices):
+    PACOTE_ZIP_V2 = "PACOTE_ZIP_V2", "Pacote mensal ZIP v2"
+    API_JSON_V1 = "API_JSON_V1", "API mensal JSON v1"
+    ADAPTADOR_SERVIDOR_V1 = "ADAPTADOR_SERVIDOR_V1", "Adaptador do servidor v1"
+
+
+class ResponsavelEFDICMSIPI(models.TextChoices):
+    NAO_DEFINIDO = "NAO_DEFINIDO", "Ainda não definido"
+    ESCRITORIO_CONTABIL = "ESCRITORIO_CONTABIL", "Escritório contábil"
+    SOFTWARE_CONTABIL = "SOFTWARE_CONTABIL", "Software contábil externo"
+    OUTRO_RESPONSAVEL = "OUTRO_RESPONSAVEL", "Outro responsável externo"
+
+
+class StatusContratoIntegracaoContabil(models.TextChoices):
+    RASCUNHO = "RASCUNHO", "Rascunho"
+    VALIDADO = "VALIDADO", "Validado com o contador"
+
+
+class ContratoIntegracaoContabilQuerySet(models.QuerySet):
+    def update(self, **kwargs):
+        raise ValidationError("Versões do contrato contábil são imutáveis.")
+
+    def delete(self):
+        raise ValidationError("Versões do contrato contábil são imutáveis.")
+
+
+class ContratoIntegracaoContabil(models.Model):
+    objects = ContratoIntegracaoContabilQuerySet.as_manager()
+
+    empresa = models.ForeignKey(
+        "empresas.Empresa", on_delete=models.PROTECT, related_name="contratos_integracao_contabil"
+    )
+    versao = models.PositiveIntegerField()
+    software_contabil = models.CharField(max_length=160, blank=True)
+    formato_entrega = models.CharField(max_length=32, choices=FormatoEntregaContabil.choices)
+    contrato_tecnico = models.CharField(max_length=80, editable=False)
+    responsavel_efd_icms_ipi = models.CharField(
+        max_length=32,
+        choices=ResponsavelEFDICMSIPI.choices,
+        default=ResponsavelEFDICMSIPI.NAO_DEFINIDO,
+    )
+    responsavel_efd_nome = models.CharField(max_length=160, blank=True)
+    aceite_referencia = models.CharField(
+        max_length=160,
+        blank=True,
+        help_text="Referência interna do aceite do contador, sem anexar credenciais ou segredos.",
+    )
+    observacoes = models.TextField(blank=True)
+    status = models.CharField(
+        max_length=16,
+        choices=StatusContratoIntegracaoContabil.choices,
+        default=StatusContratoIntegracaoContabil.RASCUNHO,
+    )
+    criado_por = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.PROTECT,
+        related_name="contratos_integracao_contabil_criados",
+    )
+    criado_em = models.DateTimeField(auto_now_add=True)
+
+    CONTRATOS_POR_FORMATO = {
+        FormatoEntregaContabil.PACOTE_ZIP_V2: "accounting_monthly_package_v2",
+        FormatoEntregaContabil.API_JSON_V1: "accounting_monthly_api_v1",
+        FormatoEntregaContabil.ADAPTADOR_SERVIDOR_V1: "financial_accounting_adapter_v1",
+    }
+
+    class Meta:
+        ordering = ["empresa__nome_fantasia", "-versao"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["empresa", "versao"], name="financeiro_contrato_contabil_empresa_versao_uniq"
+            )
+        ]
+
+    def clean(self):
+        super().clean()
+        contrato_esperado = self.CONTRATOS_POR_FORMATO.get(self.formato_entrega)
+        if not contrato_esperado:
+            raise ValidationError({"formato_entrega": "Selecione um formato contábil suportado."})
+        self.contrato_tecnico = contrato_esperado
+        if self.status == StatusContratoIntegracaoContabil.VALIDADO:
+            erros = {}
+            if not self.software_contabil.strip():
+                erros["software_contabil"] = "Informe o software ou escritório que receberá o pacote."
+            if self.responsavel_efd_icms_ipi == ResponsavelEFDICMSIPI.NAO_DEFINIDO:
+                erros["responsavel_efd_icms_ipi"] = "Defina o responsável externo pela EFD ICMS/IPI."
+            if not self.responsavel_efd_nome.strip():
+                erros["responsavel_efd_nome"] = "Identifique o responsável pela EFD ICMS/IPI."
+            if not self.aceite_referencia.strip():
+                erros["aceite_referencia"] = "Registre a referência do aceite do contador."
+            if erros:
+                raise ValidationError(erros)
+
+    def save(self, *args, **kwargs):
+        if self.pk or not self._state.adding:
+            raise ValidationError("Versões do contrato contábil são imutáveis; crie uma nova versão.")
+        self.full_clean()
+        return super().save(*args, **kwargs)
+
+    def delete(self, *args, **kwargs):
+        raise ValidationError("Versões do contrato contábil são imutáveis.")
+
+    def __str__(self):
+        return f"{self.empresa} - contrato contábil v{self.versao} ({self.get_status_display()})"
+
+class AceiteAmostraContabilQuerySet(models.QuerySet):
+    def update(self, **kwargs):
+        raise ValidationError("Aceites de amostra contábil são imutáveis.")
+
+    def delete(self):
+        raise ValidationError("Aceites de amostra contábil são imutáveis.")
+
+
+class AceiteAmostraContabil(models.Model):
+    objects = AceiteAmostraContabilQuerySet.as_manager()
+
+    empresa = models.ForeignKey(
+        "empresas.Empresa", on_delete=models.PROTECT, related_name="aceites_amostra_contabil"
+    )
+    competencia = models.DateField()
+    contrato_integracao = models.ForeignKey(
+        ContratoIntegracaoContabil,
+        on_delete=models.PROTECT,
+        related_name="aceites_amostra",
+    )
+    pacote_sha256 = models.CharField(max_length=64)
+    relatorio_validacao = models.JSONField()
+    referencia_aceite = models.CharField(max_length=160)
+    registrado_por = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.PROTECT,
+        related_name="aceites_amostra_contabil_registrados",
+    )
+    registrado_em = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["-competencia", "-registrado_em"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["empresa", "competencia", "pacote_sha256"],
+                name="financeiro_aceite_amostra_empresa_comp_hash_uniq",
+            )
+        ]
+
+    def clean(self):
+        super().clean()
+        erros = {}
+        if self.competencia and self.competencia.day != 1:
+            erros["competencia"] = "A competência deve usar o primeiro dia do mês."
+        if self.contrato_integracao_id:
+            if self.empresa_id and self.contrato_integracao.empresa_id != self.empresa_id:
+                erros["contrato_integracao"] = "O contrato pertence a outra empresa."
+            if self.contrato_integracao.status != StatusContratoIntegracaoContabil.VALIDADO:
+                erros["contrato_integracao"] = "O aceite exige uma versão validada do contrato contábil."
+            if self.contrato_integracao.formato_entrega != FormatoEntregaContabil.PACOTE_ZIP_V2:
+                erros["contrato_integracao"] = "A amostra mensal exige contrato validado para o pacote ZIP v2."
+        if len(self.pacote_sha256 or "") != 64:
+            erros["pacote_sha256"] = "Informe o SHA-256 completo do pacote mensal."
+        if not (self.referencia_aceite or "").strip():
+            erros["referencia_aceite"] = "Registre a referência do aceite do contador."
+        if not isinstance(self.relatorio_validacao, dict) or not self.relatorio_validacao.get("aprovado"):
+            erros["relatorio_validacao"] = "O aceite exige relatório estrutural aprovado."
+        if erros:
+            raise ValidationError(erros)
+
+    def save(self, *args, **kwargs):
+        if self.pk or not self._state.adding:
+            raise ValidationError("Aceites de amostra contábil são imutáveis.")
+        self.full_clean()
+        return super().save(*args, **kwargs)
+
+    def delete(self, *args, **kwargs):
+        raise ValidationError("Aceites de amostra contábil são imutáveis.")
+
+    def __str__(self):
+        return f"Aceite contábil {self.empresa} - {self.competencia:%Y-%m}"

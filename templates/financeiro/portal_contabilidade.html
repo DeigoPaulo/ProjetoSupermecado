@@ -43,6 +43,21 @@
   <article class="metric-card"><span>Documentos sem XML:</span><strong>{{ pendencias_xml }}</strong></article>
 </section>
 
+<section class="panel mb-3">
+  <div class="panel-header"><h2>Contrato de integração</h2></div>
+  <div class="panel-body">
+    {% if contrato_integracao_contabil.validado %}
+      <p><strong>Validado:</strong> versão {{ contrato_integracao_contabil.versao_validada }} — {{ contrato_integracao_contabil.software_contabil }}.</p>
+      <p>Formato: {{ contrato_integracao_contabil.formato_entrega_descricao }}. Responsável pela EFD ICMS/IPI: {{ contrato_integracao_contabil.responsavel_efd_nome }}.</p>
+    {% elif contrato_integracao_contabil.configurado %}
+      <p><strong>Pendente:</strong> existe um rascunho, mas ainda não há versão validada com o contador.</p>
+    {% else %}
+      <p><strong>Pendente:</strong> o formato do software contábil e o responsável pela EFD ICMS/IPI ainda não foram definidos.</p>
+    {% endif %}
+    <p class="muted">O ERP entrega material para conferência. Este registro não transmite EFD nem substitui o responsável contábil.</p>
+    {% if aceite_amostra_contabil %}<p><span class="status-badge active">Amostra aceita</span> Competência validada em {{ aceite_amostra_contabil.registrado_em|date:"d/m/Y H:i" }}.</p>{% else %}<p><span class="status-badge inactive">Amostra sem aceite</span> Esta competência ainda não possui aceite registrado.</p>{% endif %}
+  </div>
+</section>
 <section class="panel">
   <div class="panel-header"><h2>Conteúdo do pacote</h2></div>
   <div class="panel-body">

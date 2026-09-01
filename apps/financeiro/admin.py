@@ -1,6 +1,6 @@
 from django.contrib import admin
 
-from .models import CategoriaFinanceira, CentroCusto, ContaContabil, ContaFinanceira, ContaMovimentoFinanceiro, LancamentoFinanceiro, TransferenciaFinanceira
+from .models import AceiteAmostraContabil, CategoriaFinanceira, CentroCusto, ContratoIntegracaoContabil, ContaContabil, ContaFinanceira, ContaMovimentoFinanceiro, LancamentoFinanceiro, TransferenciaFinanceira
 
 
 @admin.register(ContaContabil)
@@ -62,6 +62,51 @@ class TransferenciaFinanceiraAdmin(admin.ModelAdmin):
 
     def has_add_permission(self, request):
         return False
+
+    def has_delete_permission(self, request, obj=None):
+        return False
+
+@admin.register(ContratoIntegracaoContabil)
+class ContratoIntegracaoContabilAdmin(admin.ModelAdmin):
+    list_display = (
+        "empresa", "versao", "status", "software_contabil", "formato_entrega",
+        "responsavel_efd_icms_ipi", "criado_por", "criado_em",
+    )
+    list_filter = ("status", "formato_entrega", "responsavel_efd_icms_ipi", "empresa")
+    search_fields = ("empresa__nome_fantasia", "software_contabil", "responsavel_efd_nome")
+    readonly_fields = (
+        "empresa", "versao", "software_contabil", "formato_entrega", "contrato_tecnico",
+        "responsavel_efd_icms_ipi", "responsavel_efd_nome", "aceite_referencia",
+        "observacoes", "status", "criado_por", "criado_em",
+    )
+
+    def has_add_permission(self, request):
+        return False
+
+    def has_change_permission(self, request, obj=None):
+        return bool(request.user.is_superuser)
+
+    def has_delete_permission(self, request, obj=None):
+        return False
+
+@admin.register(AceiteAmostraContabil)
+class AceiteAmostraContabilAdmin(admin.ModelAdmin):
+    list_display = (
+        "competencia", "empresa", "contrato_integracao", "referencia_aceite",
+        "registrado_por", "registrado_em",
+    )
+    list_filter = ("competencia", "empresa")
+    search_fields = ("empresa__nome_fantasia", "referencia_aceite", "pacote_sha256")
+    readonly_fields = (
+        "empresa", "competencia", "contrato_integracao", "pacote_sha256",
+        "relatorio_validacao", "referencia_aceite", "registrado_por", "registrado_em",
+    )
+
+    def has_add_permission(self, request):
+        return False
+
+    def has_change_permission(self, request, obj=None):
+        return bool(request.user.is_superuser)
 
     def has_delete_permission(self, request, obj=None):
         return False

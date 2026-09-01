@@ -10,7 +10,15 @@ from django.utils import timezone
 
 from apps.empresas.models import Empresa, Filial
 
-from .models import ConfiguracaoFiscal, NaturezaOperacao, SerieFiscal, TipoDocumentoFiscal
+from .models import (
+    CatalogoCEST,
+    CatalogoCFOP,
+    CatalogoNCM,
+    ConfiguracaoFiscal,
+    NaturezaOperacao,
+    SerieFiscal,
+    TipoDocumentoFiscal,
+)
 from .readiness import diagnostico_prontidao_homologacao_goias
 
 
@@ -62,6 +70,66 @@ class ProntidaoFiscalFilialTests(TestCase):
             padrao=True,
         )
 
+    def test_catalogo_ncm_e_portao_explicito_da_homologacao(self):
+        diagnostico = diagnostico_prontidao_homologacao_goias(self.configuracao)
+        self.assertFalse(self.item(diagnostico, "Catálogo NCM")["pronto"])
+
+        CatalogoNCM.objects.create(
+            versao="teste",
+            referencia_em=timezone.localdate(),
+            ato="Ato oficial de teste",
+            fonte_nome="Portal Único Siscomex",
+            fonte_url=(
+                "https://portalunico.siscomex.gov.br/classif/api/publico/"
+                "nomenclatura/download/json"
+            ),
+            fonte_sha256="a" * 64,
+            ativo=True,
+            quantidade_itens=1,
+            quantidade_linhas_origem=1,
+        )
+
+        diagnostico = diagnostico_prontidao_homologacao_goias(self.configuracao)
+        self.assertTrue(self.item(diagnostico, "Catálogo NCM")["pronto"])
+
+    def test_catalogo_cest_e_portao_explicito_da_homologacao(self):
+        diagnostico = diagnostico_prontidao_homologacao_goias(self.configuracao)
+        self.assertFalse(self.item(diagnostico, "Catálogo CEST")["pronto"])
+
+        CatalogoCEST.objects.create(
+            versao="teste",
+            referencia_em=timezone.localdate(),
+            ato="Convênio ICMS 142/18 consolidado",
+            fonte_nome="CONFAZ / Ministério da Fazenda",
+            fonte_url="https://www.confaz.fazenda.gov.br/legislacao/convenios/2018/CV142_18",
+            fonte_sha256="b" * 64,
+            ativo=True,
+            quantidade_itens=1,
+            quantidade_linhas_origem=1,
+            quantidade_tabelas_origem=1,
+        )
+
+        diagnostico = diagnostico_prontidao_homologacao_goias(self.configuracao)
+        self.assertTrue(self.item(diagnostico, "Catálogo CEST")["pronto"])
+    def test_catalogo_cfop_e_portao_explicito_da_homologacao(self):
+        diagnostico = diagnostico_prontidao_homologacao_goias(self.configuracao)
+        self.assertFalse(self.item(diagnostico, "Catálogo CFOP")["pronto"])
+
+        CatalogoCFOP.objects.create(
+            versao="teste",
+            referencia_em=timezone.localdate(),
+            ato="Ajuste SINIEF 07/01 consolidado",
+            fonte_nome="CONFAZ / Ministério da Fazenda",
+            fonte_url="https://www.confaz.fazenda.gov.br/legislacao/ajustes/2001/AJ_007_01",
+            fonte_sha256="c" * 64,
+            ativo=True,
+            quantidade_itens=1,
+            quantidade_linhas_origem=1,
+            quantidade_agrupadores=0,
+        )
+
+        diagnostico = diagnostico_prontidao_homologacao_goias(self.configuracao)
+        self.assertTrue(self.item(diagnostico, "Catálogo CFOP")["pronto"])
     def item(self, diagnostico, titulo):
         return next(
             item for item in diagnostico["checklist"] if item["titulo"] == titulo

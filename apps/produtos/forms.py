@@ -7,6 +7,7 @@ from django.forms.models import BaseInlineFormSet
 from apps.clientes.escopo import empresa_id_do_usuario
 from apps.configuracoes.models import ModeloEtiqueta
 from apps.core_forms import aplicar_select2
+from apps.fiscal.cest import validar_cest
 from apps.fornecedores.escopo import fornecedores_para_usuario
 
 from .models import (
@@ -150,6 +151,14 @@ class ProdutoForm(forms.ModelForm):
         if cest and len(cest) != 7:
             raise forms.ValidationError("CEST deve possuir 7 dígitos.")
         return cest
+    def clean(self):
+        cleaned_data = super().clean()
+        cest = cleaned_data.get("cest")
+        if cest:
+            pendencia = validar_cest(cest, cleaned_data.get("ncm"))
+            if pendencia:
+                self.add_error("cest", pendencia)
+        return cleaned_data
 
 
     def _codigo_numerico(self, campo, tamanho, rotulo):

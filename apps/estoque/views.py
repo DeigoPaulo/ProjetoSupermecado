@@ -1,5 +1,5 @@
 import csv
-from collections import OrderedDict
+from collections import OrderedDict, defaultdict
 from datetime import date, timedelta
 from decimal import Decimal, InvalidOperation, ROUND_DOWN
 
@@ -9,7 +9,7 @@ from django.contrib.auth import get_user_model
 from django.contrib.auth.mixins import LoginRequiredMixin
 from django.core.exceptions import ValidationError
 from django.core.paginator import Paginator
-from django.db.models import Case, Count, F, IntegerField, Q, Sum, Value, When
+from django.db.models import Case, CharField, Count, F, IntegerField, OuterRef, Q, Subquery, Sum, Value, When
 from django.http import HttpResponse, JsonResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse_lazy
@@ -41,22 +41,28 @@ from .escopo import (
 )
 from .forms import (
     ComposicaoProdutoForm,
+    ConferenciaFisicaValidadeLoteForm,
     ConfiguracaoSLASetorProducaoForm,
     AtribuirSaldoLoteForm,
     DesmembramentoDestinoFormSet,
     DesmembramentoProdutoForm,
     InventarioEstoqueForm,
     ContagemItemInventarioForm,
+    ContagemLoteInventarioValidadeForm,
     ItemComposicaoProdutoFormSet,
     ItemInventarioEstoqueForm,
     MovimentacaoEstoqueForm,
     OrdemProducaoComposicaoForm,
     PerdaEstoqueForm,
+    PerdaLoteValidadeForm,
+    TratamentoValidadeLoteForm,
     ProducaoComposicaoForm,
     ReceitaDesmembramentoForm,
 )
 from .models import (
     ComposicaoProduto,
+    ConferenciaFisicaValidadeLote,
+    EscopoLoteInventarioValidade,
     AlertaSLAOrdemProducao,
     ConfiguracaoSLASetorProducao,
     DesmembramentoProduto,
@@ -64,6 +70,8 @@ from .models import (
     HistoricoEtapaOrdemProducaoComposicao,
     InventarioEstoque,
     ItemInventarioEstoque,
+    OrigemInventario,
+    OrigemItemInventarioValidade,
     ItemDesmembramentoProduto,
     LoteEstoque,
     OrdemProducaoComposicao,
@@ -73,15 +81,21 @@ from .models import (
     StatusInventario,
     StatusOrdemProducaoComposicao,
     StatusProducaoComposicao,
+    StatusTratamentoValidade,
     TipoDesmembramentoProduto,
     TipoSaidaDesmembramento,
     movimentar_estoque,
+    resumo_disponibilidade_venda_lotes,
 )
 from .services import (
     aplicar_inventario,
+    conferencia_fisica_vigente_lote,
     calcular_fila_inventario_risco,
     criar_inventario_risco,
+    criar_inventario_divergencias_validade,
+    diagnostico_manutencao_inventarios_validade,
     atribuir_saldo_historico_lote,
+    cancelar_inventario,
     cancelar_producao_composicao,
     cancelar_ordem_producao_composicao,
     cancelar_desmembramento_produto,
@@ -89,7 +103,11 @@ from .services import (
     confirmar_ordem_producao_composicao,
     confirmar_desmembramento_simples,
     confirmar_producao_composicao,
+    registrar_conferencia_fisica_validade_lote,
+    registrar_contagem_lote_inventario_validade,
     registrar_perda_estoque,
+    registrar_perda_lote_validade,
+    planejar_tratamento_validade_lote,
     saldo_rastreado_lotes,
     simular_desmembramento_multidestino,
     simular_desmembramento_simples,
@@ -218,12 +236,88 @@ class EstoqueListView(LoginRequiredMixin, RoleRequiredMixin, ListView):
         return queryset
 
 
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        estoques = list(context["estoques"])
+        chaves = {(estoque.produto_id, estoque.filial_id) for estoque in estoques}
+        lotes_por_estoque = defaultdict(list)
+        if chaves:
+            lotes = LoteEstoque.objects.filter(
+                quantidade_atual__gt=0,
+                produto_id__in={produto_id for produto_id, _ in chaves},
+                filial_id__in={filial_id for _, filial_id in chaves},
+            )
+            for lote in lotes:
+                chave = (lote.produto_id, lote.filial_id)
+                if chave in chaves:
+                    lotes_por_estoque[chave].append(lote)
+        for estoque in estoques:
+            resumo = resumo_disponibilidade_venda_lotes(
+                produto=estoque.produto,
+                filial=estoque.filial,
+                estoque=estoque,
+                lotes=lotes_por_estoque[(estoque.produto_id, estoque.filial_id)],
+            )
+            estoque.quantidade_vendavel_operacional = resumo["quantidade_vendavel"]
+            estoque.quantidade_bloqueada_venda = resumo["quantidade_bloqueada"]
+        return context
+
 class LoteEstoqueListView(LoginRequiredMixin, RoleRequiredMixin, ListView):
     required_roles = ESTOQUE
     model = LoteEstoque
     template_name = "estoque/lote_list.html"
     context_object_name = "lotes"
     paginate_by = 40
+    ESTADOS_CONFERENCIA = (
+        ("PENDENTE", "Pendente ou desatualizada"),
+        ("DIVERGENTE", "Divergente"),
+        ("PRONTO", "Pronto para decisão"),
+    )
+
+    def _tratamento_selecionado(self):
+        tratamento = (self.request.GET.get("tratamento") or "").strip()
+        codigos_validos = {codigo for codigo, _rotulo in StatusTratamentoValidade.choices}
+        return tratamento if tratamento in codigos_validos else ""
+
+    def _conferencia_selecionada(self):
+        estado = (self.request.GET.get("conferencia") or "").strip()
+        codigos_validos = {codigo for codigo, _rotulo in self.ESTADOS_CONFERENCIA}
+        return estado if estado in codigos_validos else ""
+
+    @staticmethod
+    def _anotar_estado_conferencia(queryset, hoje):
+        conferencias = ConferenciaFisicaValidadeLote.objects.filter(
+            lote_id=OuterRef("pk"),
+            conferido_em__date=hoje,
+        ).order_by("-conferido_em", "-id")
+        queryset = queryset.annotate(
+            conferencia_fila_id=Subquery(conferencias.values("id")[:1]),
+            conferencia_fila_codigo=Subquery(conferencias.values("lote_codigo_snapshot")[:1]),
+            conferencia_fila_validade=Subquery(conferencias.values("validade_snapshot")[:1]),
+            conferencia_fila_custo=Subquery(conferencias.values("custo_unitario_snapshot")[:1]),
+            conferencia_fila_saldo=Subquery(conferencias.values("quantidade_sistema_snapshot")[:1]),
+            conferencia_fila_observado=Subquery(conferencias.values("quantidade_observada")[:1]),
+            conferencia_fila_diferenca=Subquery(conferencias.values("diferenca_snapshot")[:1]),
+            conferencia_fila_em=Subquery(conferencias.values("conferido_em")[:1]),
+        )
+        fotografia_compativel = (
+            Q(conferencia_fila_id__isnull=False)
+            & Q(conferencia_fila_codigo=F("codigo"))
+            & Q(conferencia_fila_validade=F("validade"))
+            & Q(conferencia_fila_custo=F("custo_unitario"))
+            & Q(conferencia_fila_saldo=F("quantidade_atual"))
+        )
+        return queryset.annotate(
+            estado_conferencia_fila=Case(
+                When(
+                    fotografia_compativel & Q(conferencia_fila_diferenca=Decimal("0.000")),
+                    then=Value("PRONTO"),
+                ),
+                When(fotografia_compativel, then=Value("DIVERGENTE")),
+                default=Value("PENDENTE"),
+                output_field=CharField(),
+            )
+        )
 
     def get_queryset(self):
         queryset = lotes_para_usuario(
@@ -237,9 +331,50 @@ class LoteEstoqueListView(LoginRequiredMixin, RoleRequiredMixin, ListView):
                 | Q(produto__nome__icontains=termo)
                 | Q(produto__codigo_barras__icontains=termo)
             )
+        tratamento = self._tratamento_selecionado()
+        if tratamento:
+            queryset = queryset.filter(tratamento_validade_status=tratamento)
+
         situacao = self.request.GET.get("situacao")
         hoje = timezone.localdate()
-        if situacao == "VENCIDO":
+        if situacao == "FILA_VALIDADE":
+            queryset = queryset.filter(
+                validade__lte=hoje + timedelta(days=30),
+                quantidade_atual__gt=0,
+            ).exclude(tratamento_validade_status=StatusTratamentoValidade.BAIXA_CONCLUIDA)
+            queryset = self._anotar_estado_conferencia(queryset, hoje)
+            conferencia = self._conferencia_selecionada()
+            if conferencia:
+                queryset = queryset.filter(estado_conferencia_fila=conferencia)
+            queryset = queryset.annotate(
+                prioridade_fila_validade=Case(
+                    When(
+                        Q(validade__lt=hoje)
+                        & Q(tratamento_validade_status=StatusTratamentoValidade.NAO_INICIADO),
+                        then=Value(0),
+                    ),
+                    When(validade__lt=hoje, then=Value(1)),
+                    When(
+                        tratamento_validade_status=StatusTratamentoValidade.NAO_INICIADO,
+                        then=Value(2),
+                    ),
+                    default=Value(3),
+                    output_field=IntegerField(),
+                ),
+                prioridade_conferencia=Case(
+                    When(estado_conferencia_fila="PENDENTE", then=Value(0)),
+                    When(estado_conferencia_fila="DIVERGENTE", then=Value(1)),
+                    default=Value(2),
+                    output_field=IntegerField(),
+                ),
+            ).order_by(
+                "prioridade_fila_validade",
+                "prioridade_conferencia",
+                "validade",
+                "produto__nome",
+                "id",
+            )
+        elif situacao == "VENCIDO":
             queryset = queryset.filter(validade__lt=hoje, quantidade_atual__gt=0)
         elif situacao == "PROXIMO":
             queryset = queryset.filter(
@@ -255,14 +390,208 @@ class LoteEstoqueListView(LoginRequiredMixin, RoleRequiredMixin, ListView):
         context = super().get_context_data(**kwargs)
         hoje = timezone.localdate()
         base = lotes_para_usuario(self.request.user, LoteEstoque.objects.filter(quantidade_atual__gt=0))
+        fila_validade = base.filter(validade__lte=hoje + timedelta(days=30)).exclude(
+            tratamento_validade_status=StatusTratamentoValidade.BAIXA_CONCLUIDA
+        )
+        fila_com_conferencia = self._anotar_estado_conferencia(fila_validade, hoje)
+        resumo_conferencias = fila_com_conferencia.aggregate(
+            pendente=Count("id", filter=Q(estado_conferencia_fila="PENDENTE")),
+            divergente=Count("id", filter=Q(estado_conferencia_fila="DIVERGENTE")),
+            pronta=Count("id", filter=Q(estado_conferencia_fila="PRONTO")),
+        )
         context["resumo_lotes"] = {
             "com_saldo": base.count(),
             "vencidos": base.filter(validade__lt=hoje).count(),
             "proximos": base.filter(validade__gte=hoje, validade__lte=hoje + timedelta(days=30)).count(),
             "sem_validade": base.filter(validade__isnull=True).count(),
+            "fila_validade": fila_validade.count(),
+            "sem_tratamento": fila_validade.filter(
+                tratamento_validade_status=StatusTratamentoValidade.NAO_INICIADO
+            ).count(),
+            "conferencia_pendente": resumo_conferencias["pendente"],
+            "conferencia_divergente": resumo_conferencias["divergente"],
+            "conferencia_pronta": resumo_conferencias["pronta"],
         }
+        context["tratamentos_validade"] = StatusTratamentoValidade.choices
+        context["tratamento_selecionado"] = self._tratamento_selecionado()
+        context["estados_conferencia"] = self.ESTADOS_CONFERENCIA
+        context["conferencia_selecionada"] = self._conferencia_selecionada()
+        context["fila_validade_ativa"] = self.request.GET.get("situacao") == "FILA_VALIDADE"
         return context
 
+@login_required
+@require_POST
+@role_required(*ESTOQUE)
+def criar_inventario_divergencias_validade_view(request):
+    valores = request.POST.getlist("lotes_divergentes")
+    try:
+        lote_ids = {int(valor) for valor in valores if int(valor) > 0}
+    except (TypeError, ValueError):
+        lote_ids = set()
+    if not lote_ids:
+        messages.error(request, "Selecione ao menos um lote divergente.")
+        return redirect("estoque:lotes")
+    if len(lote_ids) > 200:
+        messages.error(request, "Selecione no máximo 200 lotes por inventário.")
+        return redirect("estoque:lotes")
+
+    lotes = list(
+        lotes_para_usuario(
+            request.user,
+            LoteEstoque.objects.filter(pk__in=lote_ids).select_related(
+                "produto", "filial", "filial__empresa"
+            ),
+        )
+    )
+    if len(lotes) != len(lote_ids):
+        messages.error(request, "A seleção contém lote fora do seu escopo.")
+        return redirect("estoque:lotes")
+    filiais = {lote.filial_id for lote in lotes}
+    if len(filiais) != 1:
+        messages.error(request, "Selecione lotes de uma única filial por inventário.")
+        return redirect("estoque:lotes")
+
+    try:
+        inventario, criado = criar_inventario_divergencias_validade(
+            filial=lotes[0].filial,
+            lotes=lotes,
+            usuario=request.user,
+            descricao=(request.POST.get("descricao") or "").strip(),
+            ip=request.META.get("REMOTE_ADDR"),
+        )
+    except ValidationError as exc:
+        messages.error(request, " ".join(exc.messages))
+        return redirect("estoque:lotes")
+    if criado:
+        messages.success(
+            request,
+            f"Inventário {inventario.id} criado em rascunho. Registre a contagem total antes de aplicar.",
+        )
+    else:
+        messages.info(request, f"O inventário {inventario.id} já havia sido criado para estas divergências.")
+    return redirect("estoque:inventario_detalhe", pk=inventario.pk)
+
+@login_required
+@role_required(*ESTOQUE)
+def conferencia_fisica_validade_detalhe(request, pk):
+    lotes_permitidos = lotes_para_usuario(request.user, LoteEstoque.objects.all())
+    conferencia = get_object_or_404(
+        ConferenciaFisicaValidadeLote.objects.filter(lote__in=lotes_permitidos).select_related(
+            "lote", "empresa", "conferido_por"
+        ),
+        pk=pk,
+    )
+    origens_inventario = conferencia.origens_inventario.select_related(
+        "item__inventario", "item__produto"
+    )
+    return render(
+        request,
+        "estoque/conferencia_fisica_validade_detalhe.html",
+        {"conferencia": conferencia, "origens_inventario": origens_inventario},
+    )
+
+@login_required
+@role_required(*ESTOQUE)
+def conferencia_fisica_validade_lote(request, pk):
+    lote = get_object_or_404(
+        lotes_para_usuario(
+            request.user,
+            LoteEstoque.objects.select_related("produto", "filial", "filial__empresa"),
+        ),
+        pk=pk,
+    )
+    form = ConferenciaFisicaValidadeLoteForm(
+        request.POST or None,
+        initial={"quantidade_observada": lote.quantidade_atual},
+    )
+    if request.method == "POST" and form.is_valid():
+        try:
+            conferencia = registrar_conferencia_fisica_validade_lote(
+                lote=lote,
+                usuario=request.user,
+                ip=request.META.get("REMOTE_ADDR"),
+                **form.cleaned_data,
+            )
+        except ValidationError as exc:
+            form.add_error(None, " ".join(exc.messages))
+        else:
+            messages.success(
+                request,
+                f"Conferência {conferencia.id} registrada sem alterar o estoque.",
+            )
+            return redirect("estoque:tratamento_validade_lote", pk=lote.pk)
+    historico = ConferenciaFisicaValidadeLote.objects.filter(lote=lote).select_related("conferido_por")[:10]
+    return render(
+        request,
+        "estoque/conferencia_fisica_validade_form.html",
+        {"lote": lote, "form": form, "historico_conferencias": historico},
+    )
+
+@login_required
+@role_required(*ESTOQUE)
+def perda_lote_validade(request, pk):
+    lote = get_object_or_404(lotes_para_usuario(request.user, LoteEstoque.objects.select_related("produto", "filial")), pk=pk)
+    form = PerdaLoteValidadeForm(request.POST or None, initial={"quantidade": lote.quantidade_atual})
+    if request.method == "POST" and form.is_valid():
+        try:
+            supervisor = supervisor_from_request(request, acao=AcaoPinSupervisor.ESTOQUE_AJUSTE)
+            perda = registrar_perda_lote_validade(lote=lote, usuario=request.user, supervisor=supervisor, ip=request.META.get("REMOTE_ADDR"), **form.cleaned_data)
+        except ValidationError as exc:
+            form.add_error(None, " ".join(exc.messages))
+        else:
+            messages.success(request, f"Perda {perda.id} registrada no lote exato e estoque reconciliado.")
+            return redirect("estoque:perdas")
+    conferencia_vigente = conferencia_fisica_vigente_lote(lote)
+    return render(
+        request,
+        "estoque/perda_lote_validade_form.html",
+        {"lote": lote, "form": form, "conferencia_vigente": conferencia_vigente},
+    )
+
+
+@login_required
+@role_required(*ESTOQUE)
+def tratamento_validade_lote(request, pk):
+    lote = get_object_or_404(
+        lotes_para_usuario(request.user, LoteEstoque.objects.select_related("produto", "filial")),
+        pk=pk,
+    )
+    form = TratamentoValidadeLoteForm(
+        request.POST or None,
+        initial={
+            "status": lote.tratamento_validade_status if lote.tratamento_validade_status != StatusTratamentoValidade.NAO_INICIADO else StatusTratamentoValidade.SEPARADO,
+            "observacao": lote.tratamento_validade_observacao,
+        },
+    )
+    if request.method == "POST" and form.is_valid():
+        try:
+            lote, alterado = planejar_tratamento_validade_lote(
+                lote=lote,
+                usuario=request.user,
+                ip=request.META.get("REMOTE_ADDR"),
+                **form.cleaned_data,
+            )
+        except ValidationError as exc:
+            form.add_error(None, " ".join(exc.messages))
+        else:
+            messages.success(request, "Plano de validade registrado sem alterar o estoque." if alterado else "O mesmo plano já estava registrado.")
+            return redirect("estoque:lotes")
+    conferencia_vigente = conferencia_fisica_vigente_lote(lote)
+    ultima_conferencia = (
+        ConferenciaFisicaValidadeLote.objects.filter(lote=lote)
+        .select_related("conferido_por")
+        .first()
+    )
+    return render(
+        request,
+        "estoque/tratamento_validade_form.html",
+        {
+            "lote": lote,
+            "form": form,
+            "conferencia_vigente": conferencia_vigente,
+            "ultima_conferencia": ultima_conferencia,
+        },
+    )
 
 @login_required
 @role_required(*ESTOQUE)
@@ -381,6 +710,16 @@ class InventarioListView(LoginRequiredMixin, RoleRequiredMixin, ListView):
         ).order_by("-criado_em")
 
 
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        inventarios_visiveis = inventarios_para_usuario(
+            self.request.user, InventarioEstoque.objects.all()
+        )
+        context["manutencao_validade"] = diagnostico_manutencao_inventarios_validade(
+            inventarios=inventarios_visiveis
+        )
+        return context
+
 class CriarInventarioView(LoginRequiredMixin, RoleRequiredMixin, CreateView):
     required_roles = ESTOQUE
     model = InventarioEstoque
@@ -407,15 +746,57 @@ def inventario_detalhe(request, pk):
     inventario = get_object_or_404(
         inventarios_para_usuario(
             request.user,
-            InventarioEstoque.objects.select_related("filial", "usuario").prefetch_related("itens__produto"),
+            InventarioEstoque.objects.select_related("filial", "usuario").prefetch_related(
+                "itens__produto",
+                "itens__origens_validade__lote",
+                "itens__origens_validade__conferencia",
+                "itens__escopos_validade__lote",
+                "itens__escopos_validade__origem__conferencia",
+                "itens__escopos_validade__contagens",
+            ),
         ),
         pk=pk,
     )
-    pendentes = inventario.itens.filter(quantidade_contada__isnull=True).count()
+    itens = list(inventario.itens.all())
+    pendentes = sum(item.quantidade_contada is None for item in itens)
+    contagens_lote_pendentes = 0
+    somas_lote_validas = True
+    for item in itens:
+        total_contado_lotes = Decimal("0.000")
+        pendentes_item = 0
+        for escopo in item.escopos_validade.all():
+            escopo.contagem_vigente = next(iter(escopo.contagens.all()), None)
+            if escopo.contagem_vigente is None:
+                pendentes_item += 1
+            else:
+                total_contado_lotes += escopo.contagem_vigente.quantidade_contada
+        item.total_contado_lotes = total_contado_lotes
+        item.contagens_lote_pendentes = pendentes_item
+        item.soma_lotes_confere = bool(
+            item.quantidade_contada is not None
+            and not pendentes_item
+            and total_contado_lotes == item.quantidade_contada
+        )
+        contagens_lote_pendentes += pendentes_item
+        if item.escopos_validade.all() and not item.soma_lotes_confere:
+            somas_lote_validas = False
+    aplicacao_lote_pronta = bool(
+        inventario.origem == OrigemInventario.DIVERGENCIA_VALIDADE
+        and not pendentes
+        and not contagens_lote_pendentes
+        and somas_lote_validas
+        and not inventario.prazo_operacional_expirado
+    )
     return render(
         request,
         "estoque/inventario_detalhe.html",
-        {"inventario": inventario, "pendentes": pendentes},
+        {
+            "inventario": inventario,
+            "pendentes": pendentes,
+            "contagens_lote_pendentes": contagens_lote_pendentes,
+            "somas_lote_validas": somas_lote_validas,
+            "aplicacao_lote_pronta": aplicacao_lote_pronta,
+        },
     )
 
 
@@ -425,6 +806,10 @@ def adicionar_item_inventario(request, pk):
     inventario = get_object_or_404(inventarios_para_usuario(request.user), pk=pk)
     if inventario.status != StatusInventario.ABERTO:
         messages.error(request, "Não é possível editar inventário aplicado ou cancelado.")
+        return redirect("estoque:inventario_detalhe", pk=inventario.pk)
+
+    if inventario.origem == OrigemInventario.DIVERGENCIA_VALIDADE:
+        messages.error(request, "O escopo deste inventário é fechado pelos lotes de origem.")
         return redirect("estoque:inventario_detalhe", pk=inventario.pk)
 
     if request.method == "POST":
@@ -459,6 +844,29 @@ def aplicar_inventario_view(request, pk):
         messages.success(request, "Inventário aplicado e estoque ajustado.")
     return redirect("estoque:inventario_detalhe", pk=inventario.pk)
 
+
+@login_required
+@role_required(*ESTOQUE)
+@require_POST
+def cancelar_inventario_view(request, pk):
+    inventario = get_object_or_404(inventarios_para_usuario(request.user), pk=pk)
+    try:
+        supervisor = supervisor_from_request(
+            request,
+            acao=AcaoPinSupervisor.ESTOQUE_AJUSTE,
+        )
+        cancelar_inventario(
+            inventario=inventario,
+            usuario=request.user,
+            supervisor=supervisor,
+            motivo=request.POST.get("motivo_cancelamento", ""),
+            ip=request.META.get("REMOTE_ADDR"),
+        )
+    except ValidationError as exc:
+        messages.error(request, " ".join(exc.messages))
+    else:
+        messages.success(request, "Inventário cancelado sem alterar o estoque.")
+    return redirect("estoque:inventario_detalhe", pk=inventario.pk)
 
 @login_required
 @role_required(*ESTOQUE)
@@ -539,6 +947,10 @@ def contar_item_inventario(request, item_pk):
         messages.error(request, "Apenas inventários abertos podem receber contagens.")
         return redirect("estoque:inventario_detalhe", pk=inventario.pk)
 
+    if inventario.prazo_operacional_expirado:
+        messages.error(request, "O prazo operacional deste inventário expirou.")
+        return redirect("estoque:inventario_detalhe", pk=inventario.pk)
+
     if request.method == "POST":
         form = ContagemItemInventarioForm(request.POST, instance=item)
         if form.is_valid():
@@ -555,6 +967,49 @@ def contar_item_inventario(request, item_pk):
         request,
         "estoque/inventario_item_contar.html",
         {"form": form, "inventario": inventario, "item": item},
+    )
+
+@login_required
+@role_required(*ESTOQUE)
+def contar_lote_inventario_validade(request, escopo_pk):
+    escopo = get_object_or_404(
+        EscopoLoteInventarioValidade.objects.select_related(
+            "item__inventario", "item__produto", "item__inventario__filial",
+            "lote", "origem__conferencia",
+        ),
+        pk=escopo_pk,
+        item__inventario__in=inventarios_para_usuario(request.user),
+    )
+    inventario = escopo.item.inventario
+    if inventario.status != StatusInventario.ABERTO:
+        messages.error(request, "Apenas inventários abertos podem receber contagens por lote.")
+        return redirect("estoque:inventario_detalhe", pk=inventario.pk)
+
+    if inventario.prazo_operacional_expirado:
+        messages.error(request, "O prazo operacional deste inventário expirou.")
+        return redirect("estoque:inventario_detalhe", pk=inventario.pk)
+
+    if request.method == "POST":
+        form = ContagemLoteInventarioValidadeForm(request.POST)
+        if form.is_valid():
+            try:
+                registrar_contagem_lote_inventario_validade(
+                    escopo=escopo,
+                    usuario=request.user,
+                    ip=request.META.get("REMOTE_ADDR"),
+                    **form.cleaned_data,
+                )
+            except ValidationError as exc:
+                messages.error(request, " ".join(exc.messages))
+            else:
+                messages.success(request, f"Contagem física do lote {escopo.lote.codigo} registrada.")
+                return redirect("estoque:inventario_detalhe", pk=inventario.pk)
+    else:
+        form = ContagemLoteInventarioValidadeForm()
+    return render(
+        request,
+        "estoque/inventario_lote_contar.html",
+        {"form": form, "inventario": inventario, "escopo": escopo},
     )
 
 class PerdaEstoqueListView(LoginRequiredMixin, RoleRequiredMixin, ListView):

@@ -1,22 +1,27 @@
 import csv
+from urllib.parse import urlencode
 from decimal import Decimal
 
+from django.contrib import messages
 from django.contrib.auth import get_user_model
 from django.contrib.auth.decorators import login_required
-from django.core.exceptions import PermissionDenied
+from django.core.exceptions import PermissionDenied, ValidationError
 from django.core.paginator import Paginator
 from django.db.models import Count, DecimalField, ExpressionWrapper, F, Sum
 from django.db.models.functions import ExtractHour
 from django.http import HttpResponse
 from django.shortcuts import redirect, render
+from django.urls import reverse
 from django.utils import timezone
 from django.utils.dateparse import parse_date
+from django.views.decorators.http import require_POST
 
 from apps.accounts.models import PerfilUsuario, TipoPerfil
 from apps.accounts.permissions import CADASTROS, COMPRAS, ESTOQUE, PDV, RELATORIOS, has_role, role_required
 from apps.compras.models import EntradaCompra, StatusEntradaCompra
+from apps.compras.services import criar_cotacao_reposicao
 from apps.empresas.models import Filial
-from apps.estoque.models import Estoque, MovimentacaoEstoque, PerdaEstoque, TipoMovimentacaoEstoque
+from apps.estoque.models import Estoque, MovimentacaoEstoque, PerdaEstoque, TipoMovimentacaoEstoque, TipoPerdaEstoque
 from apps.pdv.models import Caixa, Sangria, StatusCaixa, Suprimento
 from apps.produtos.models import Produto
 from apps.vendas.models import (
@@ -377,7 +382,7 @@ def _perdas_periodo(data_inicio, data_fim, filiais):
         filial__in=filiais,
         data__date__gte=data_inicio,
         data__date__lte=data_fim,
-    ).select_related("produto", "produto__categoria", "filial", "usuario")
+    ).select_related("produto", "produto__categoria", "filial", "usuario", "lote")
 
 
 def _devolucoes_periodo(data_inicio, data_fim, filiais):
@@ -686,7 +691,71 @@ def estoque_baixo_imprimir(request):
 
 
 @login_required
-@role_required(*RELATORIOS)
+@require_POST
+@role_required(*COMPRAS)
+def criar_cotacao_sugestao_reposicao(request):
+    data_inicio = parse_date(request.POST.get("data_inicio") or "")
+    data_fim = parse_date(request.POST.get("data_fim") or "")
+    filial_id = (request.POST.get("filial") or "").strip()
+    try:
+        dias_cobertura = min(max(int(request.POST.get("dias_cobertura") or 7), 1), 90)
+    except ValueError:
+        dias_cobertura = 7
+    retorno_parametros = {
+        "data_inicio": data_inicio or "",
+        "data_fim": data_fim or "",
+        "dias_cobertura": dias_cobertura,
+        "filial": filial_id,
+    }
+    retorno = f"{reverse('relatorios:sugestao_reposicao')}?{urlencode(retorno_parametros)}"
+    filiais, _ = _escopo_filiais_caixa(request.user)
+    if not data_inicio or not data_fim or data_inicio > data_fim:
+        messages.error(request, "Informe um período válido para recalcular a reposição.")
+        return redirect(retorno)
+    if not filial_id.isdigit() or not filiais.filter(pk=int(filial_id)).exists():
+        messages.error(request, "Selecione uma única filial do seu acesso antes de criar a cotação.")
+        return redirect(retorno)
+    produtos_recebidos = request.POST.getlist("produto")
+    if not produtos_recebidos or len(produtos_recebidos) > 500 or any(not valor.isdigit() for valor in produtos_recebidos):
+        messages.error(request, "Selecione de 1 a 500 itens válidos da sugestão.")
+        return redirect(retorno)
+    produtos_ids = {int(valor) for valor in produtos_recebidos}
+    if len(produtos_ids) != len(produtos_recebidos):
+        messages.error(request, "A seleção contém produto duplicado.")
+        return redirect(retorno)
+
+    filial = filiais.get(pk=int(filial_id))
+    linhas_calculadas = _calcular_reposicao(data_inicio, data_fim, dias_cobertura, filiais.filter(pk=filial.pk))
+    linhas = [
+        {"produto": item["produto"], "quantidade": item["sugestao"]}
+        for item in linhas_calculadas
+        if item["produto"].pk in produtos_ids
+    ]
+    if {item["produto"].pk for item in linhas} != produtos_ids:
+        messages.error(request, "A sugestão mudou ou contém item fora da filial. Recalcule e selecione novamente.")
+        return redirect(retorno)
+    try:
+        cotacao, criada = criar_cotacao_reposicao(
+            filial=filial,
+            itens=linhas,
+            usuario=request.user,
+            data_inicio=data_inicio,
+            data_fim=data_fim,
+            dias_cobertura=dias_cobertura,
+            ip=request.META.get("REMOTE_ADDR"),
+        )
+    except ValidationError as exc:
+        messages.error(request, " ".join(exc.messages))
+        return redirect(retorno)
+    if criada:
+        messages.success(request, "Cotação criada em rascunho. Revise itens e fornecedores antes de abri-la.")
+    else:
+        messages.info(request, "Esta mesma sugestão já possui uma cotação em rascunho.")
+    return redirect("compras:cotacao_detalhe", pk=cotacao.pk)
+
+
+@login_required
+@role_required(*(RELATORIOS | COMPRAS))
 def sugestao_reposicao(request):
     data_inicio, data_fim = _periodo_from_request(request)
     selecionadas, escopo = _escopo_relatorio_contexto(request)
@@ -872,26 +941,56 @@ def movimentacoes_estoque_imprimir(request):
     })
 
 
+def _perdas_filtradas(request, data_inicio, data_fim, filiais):
+    perdas_qs = _perdas_periodo(data_inicio, data_fim, filiais)
+    tipo = (request.GET.get("tipo") or "").strip()
+    com_lote = (request.GET.get("com_lote") or "").strip().upper()
+    if tipo in dict(TipoPerdaEstoque.choices):
+        perdas_qs = perdas_qs.filter(tipo=tipo)
+    else:
+        tipo = ""
+    if com_lote == "SIM":
+        perdas_qs = perdas_qs.filter(lote__isnull=False)
+    elif com_lote == "NAO":
+        perdas_qs = perdas_qs.filter(lote__isnull=True)
+    else:
+        com_lote = ""
+    return perdas_qs, tipo, com_lote
+
 @login_required
 @role_required(*RELATORIOS)
 def perdas(request):
     data_inicio, data_fim = _periodo_from_request(request)
     selecionadas, escopo = _escopo_relatorio_contexto(request)
-    perdas_qs = _perdas_periodo(data_inicio, data_fim, selecionadas)
+    perdas_qs, tipo, com_lote = _perdas_filtradas(request, data_inicio, data_fim, selecionadas)
+
+    rotulos_tipo = dict(TipoPerdaEstoque.choices)
+    perdas_por_tipo = list(
+        perdas_qs.values("tipo")
+        .annotate(
+            quantidade=Count("id"),
+            custo=Sum("valor_custo_estimado"),
+            venda=Sum("valor_venda_estimado"),
+        )
+        .order_by("-custo")
+    )
+    for item in perdas_por_tipo:
+        item["tipo_label"] = rotulos_tipo.get(item["tipo"], item["tipo"])
 
     context = {
         **escopo,
         "data_inicio": data_inicio,
         "data_fim": data_fim,
         "perdas": _paginar(request, perdas_qs),
+        "tipo": tipo,
+        "com_lote": com_lote,
+        "tipos_perda": TipoPerdaEstoque.choices,
+        "quantidade_total": perdas_qs.aggregate(total=Sum("quantidade"))["total"] or 0,
+        "perdas_por_lote": perdas_qs.values("lote_id", "lote__codigo", "produto__nome", "filial__nome").annotate(registros=Count("id"), quantidade=Sum("quantidade"), custo=Sum("valor_custo_estimado"), venda=Sum("valor_venda_estimado")).order_by("-custo"),
         "total_perdas": perdas_qs.count(),
         "valor_custo_total": perdas_qs.aggregate(total=Sum("valor_custo_estimado"))["total"] or 0,
         "valor_venda_total": perdas_qs.aggregate(total=Sum("valor_venda_estimado"))["total"] or 0,
-        "perdas_por_tipo": perdas_qs.values("tipo").annotate(
-            quantidade=Count("id"),
-            custo=Sum("valor_custo_estimado"),
-            venda=Sum("valor_venda_estimado"),
-        ).order_by("-custo"),
+        "perdas_por_tipo": perdas_por_tipo,
     }
     return render(request, "relatorios/perdas.html", context)
 
@@ -905,10 +1004,12 @@ def perdas_csv(request):
     response.write("\ufeff")
     writer = csv.writer(response, delimiter=";")
     _csv_filtro_filial(writer, escopo)
-    writer.writerow(["Data", "Produto", "Filial", "Tipo", "Motivo", "Quantidade", "Responsável", "Custo estimado", "Venda estimada"])
-    for perda in _perdas_periodo(data_inicio, data_fim, selecionadas).iterator():
+    perdas_qs, _, _ = _perdas_filtradas(request, data_inicio, data_fim, selecionadas)
+    writer.writerow(["Data", "Produto", "Filial", "Lote", "Validade", "Tipo", "Motivo", "Quantidade", "Responsável", "Custo estimado", "Venda estimada"])
+    for perda in perdas_qs.iterator():
         writer.writerow([
             timezone.localtime(perda.data).strftime("%d/%m/%Y %H:%M"), _csv_safe(perda.produto), _csv_safe(perda.filial),
+            _csv_safe(perda.lote.codigo) if perda.lote else "", perda.lote.validade.strftime("%d/%m/%Y") if perda.lote and perda.lote.validade else "",
             perda.get_tipo_display(), _csv_safe(perda.motivo), str(perda.quantidade).replace(".", ","),
             _csv_safe(perda.usuario), str(perda.valor_custo_estimado).replace(".", ","),
             str(perda.valor_venda_estimado).replace(".", ","),
@@ -921,17 +1022,17 @@ def perdas_csv(request):
 def perdas_imprimir(request):
     data_inicio, data_fim = _periodo_from_request(request)
     selecionadas, escopo = _escopo_relatorio_contexto(request)
-    perdas_qs = _perdas_periodo(data_inicio, data_fim, selecionadas)
+    perdas_qs, tipo, com_lote = _perdas_filtradas(request, data_inicio, data_fim, selecionadas)
     linhas = [[
         timezone.localtime(perda.data).strftime("%d/%m/%Y %H:%M"), str(perda.produto), str(perda.filial),
-        perda.get_tipo_display(), perda.motivo, perda.quantidade, perda.usuario,
+        perda.lote.codigo if perda.lote else "-", perda.get_tipo_display(), perda.motivo, perda.quantidade, perda.usuario,
         f"R$ {perda.valor_custo_estimado:.2f}", f"R$ {perda.valor_venda_estimado:.2f}",
     ] for perda in perdas_qs]
     return render(request, "relatorios/exportacao_imprimir.html", {
         **escopo,
         "titulo": "Relatório de perdas", "subtitulo": "Perdas registradas no estoque",
         "data_inicio": data_inicio, "data_fim": data_fim, "gerado_em": timezone.localtime(),
-        "cabecalhos": ["Data", "Produto", "Filial", "Tipo", "Motivo", "Qtd", "Responsavel", "Custo", "Venda estimada"],
+        "cabecalhos": ["Data", "Produto", "Filial", "Lote", "Tipo", "Motivo", "Qtd", "Responsavel", "Custo", "Venda estimada"],
         "linhas": linhas,
         "resumos": [("Registros", perdas_qs.count()), ("Custo perdido", f'R$ {(perdas_qs.aggregate(total=Sum("valor_custo_estimado"))["total"] or 0):.2f}')],
     })

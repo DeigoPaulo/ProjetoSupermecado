@@ -1,3 +1,5 @@
+import hashlib
+
 from decimal import Decimal
 
 from django.core.exceptions import ValidationError
@@ -5,10 +7,12 @@ from django.db import transaction
 from django.utils import timezone
 
 from apps.auditoria.models import LogAuditoria
-from apps.estoque.models import TipoMovimentacaoEstoque, movimentar_estoque
+from apps.estoque.models import Estoque, TipoMovimentacaoEstoque, movimentar_estoque
 
 from .models import (
+    CotacaoCompra,
     EntradaCompra,
+    ItemCotacaoCompra,
     ItemEntradaCompra,
     ItemPedidoCompra,
     PedidoCompra,
@@ -19,6 +23,71 @@ from .models import (
     StatusConferenciaEntrada,
     StatusPedidoCompra,
 )
+
+
+def criar_cotacao_reposicao(
+    *, filial, itens, usuario, data_inicio, data_fim, dias_cobertura, ip=None,
+):
+    if not itens:
+        raise ValidationError("Selecione ao menos um item sugerido para a cotação.")
+    if len(itens) > 500:
+        raise ValidationError("A cotação de reposição aceita no máximo 500 itens por vez.")
+
+    normalizados = []
+    produtos_ids = set()
+    for item in itens:
+        produto = item.get("produto")
+        quantidade = Decimal(str(item.get("quantidade") or "0")).quantize(Decimal("0.001"))
+        if not produto or produto.pk in produtos_ids or quantidade <= 0:
+            raise ValidationError("A seleção de reposição contém item inválido ou duplicado.")
+        produtos_ids.add(produto.pk)
+        normalizados.append((produto, quantidade))
+    if Estoque.objects.filter(filial=filial, produto_id__in=produtos_ids).count() != len(produtos_ids):
+        raise ValidationError("Um produto selecionado não pertence ao estoque da filial.")
+
+    assinatura = "|".join(
+        [str(filial.pk), str(usuario.pk), str(data_inicio), str(data_fim), str(dias_cobertura)]
+        + [f"{produto.pk}:{quantidade}" for produto, quantidade in sorted(normalizados, key=lambda linha: linha[0].pk)]
+    )
+    chave_idempotencia = hashlib.sha256(assinatura.encode("utf-8")).hexdigest()
+    referencia = f"REPOS-{data_fim:%Y%m%d}-{chave_idempotencia[:12]}"
+
+    with transaction.atomic():
+        cotacao, criada = CotacaoCompra.objects.get_or_create(
+            chave_idempotencia=chave_idempotencia,
+            defaults={
+                "filial": filial,
+                "usuario": usuario,
+                "referencia": referencia,
+                "observacoes": (
+                    f"Rascunho gerado da sugestão de reposição de {data_inicio:%d/%m/%Y} a "
+                    f"{data_fim:%d/%m/%Y}, cobertura de {dias_cobertura} dia(s). "
+                    "Revise quantidades e fornecedores antes de abrir a cotação."
+                ),
+                "status": StatusCotacaoCompra.RASCUNHO,
+            },
+        )
+        if not criada:
+            return cotacao, False
+        ItemCotacaoCompra.objects.bulk_create(
+            [
+                ItemCotacaoCompra(cotacao=cotacao, produto=produto, quantidade=quantidade)
+                for produto, quantidade in normalizados
+            ]
+        )
+        LogAuditoria.objects.create(
+            usuario=usuario,
+            modulo="compras",
+            acao="CRIACAO_COTACAO_REPOSICAO",
+            descricao=(
+                f"Cotação de reposição {cotacao.id} criada em rascunho para {filial} "
+                f"com {len(normalizados)} item(ns); nenhum pedido, estoque ou financeiro foi alterado."
+            ),
+            objeto_tipo="CotacaoCompra",
+            objeto_id=str(cotacao.pk),
+            ip=ip,
+        )
+        return cotacao, True
 
 
 def abrir_cotacao_compra(cotacao, *, usuario, ip=None):

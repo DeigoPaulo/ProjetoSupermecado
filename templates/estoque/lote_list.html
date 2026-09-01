@@ -16,6 +16,11 @@
 </header>
 
 <section class="metrics-grid">
+  <a class="metric metric-link" href="?situacao=FILA_VALIDADE"><span>Fila diária</span><strong>{{ resumo_lotes.fila_validade }}</strong></a>
+  <a class="metric metric-link" href="?situacao=FILA_VALIDADE&tratamento=NAO_INICIADO"><span>Sem tratamento</span><strong>{{ resumo_lotes.sem_tratamento }}</strong></a>
+  <a class="metric metric-link" href="?situacao=FILA_VALIDADE&conferencia=PENDENTE"><span>Conferência pendente</span><strong>{{ resumo_lotes.conferencia_pendente }}</strong></a>
+  <a class="metric metric-link" href="?situacao=FILA_VALIDADE&conferencia=DIVERGENTE"><span>Conferência divergente</span><strong>{{ resumo_lotes.conferencia_divergente }}</strong></a>
+  <a class="metric metric-link" href="?situacao=FILA_VALIDADE&conferencia=PRONTO"><span>Prontos para decisão</span><strong>{{ resumo_lotes.conferencia_pronta }}</strong></a>
   <a class="metric metric-link" href="?situacao=COM_SALDO"><span>Lotes com saldo</span><strong>{{ resumo_lotes.com_saldo }}</strong></a>
   <a class="metric metric-link" href="?situacao=VENCIDO"><span>Vencidos com saldo</span><strong>{{ resumo_lotes.vencidos }}</strong></a>
   <a class="metric metric-link" href="?situacao=PROXIMO"><span>Vencem em 30 dias</span><strong>{{ resumo_lotes.proximos }}</strong></a>
@@ -23,29 +28,48 @@
 </section>
 
 <section class="operation-notice">
-  As baixas automáticas consomem primeiro os lotes com validade mais próxima (FEFO). Estoque histórico sem
-  lote continua disponível e não aparece nesta consulta.
+  {% if fila_validade_ativa %}
+    A fila distingue conferência pendente ou desatualizada, divergente e pronta para decisão. Dentro da prioridade de vencimento e tratamento, pendências aparecem primeiro. Nenhum item é baixado ou ajustado automaticamente.
+  {% else %}
+    As baixas automáticas consomem primeiro os lotes com validade mais próxima (FEFO). Estoque histórico sem lote continua disponível e não aparece nesta consulta.
+  {% endif %}
 </section>
 
 <form method="get" class="toolbar">
   <input type="search" name="q" value="{{ request.GET.q }}" placeholder="Produto, código de barras ou lote">
   <select name="situacao">
     <option value="">Todas as camadas</option>
+    <option value="FILA_VALIDADE" {% if request.GET.situacao == "FILA_VALIDADE" %}selected{% endif %}>Fila diária de validade</option>
     <option value="COM_SALDO" {% if request.GET.situacao == "COM_SALDO" %}selected{% endif %}>Com saldo</option>
     <option value="VENCIDO" {% if request.GET.situacao == "VENCIDO" %}selected{% endif %}>Vencidos</option>
     <option value="PROXIMO" {% if request.GET.situacao == "PROXIMO" %}selected{% endif %}>Vencem em 30 dias</option>
   </select>
+  <select name="tratamento">
+    <option value="">Todos os tratamentos</option>
+    {% for codigo, rotulo in tratamentos_validade %}
+      <option value="{{ codigo }}" {% if tratamento_selecionado == codigo %}selected{% endif %}>{{ rotulo }}</option>
+    {% endfor %}
+  </select>
+  <select name="conferencia">
+    <option value="">Todas as conferências</option>
+    {% for codigo, rotulo in estados_conferencia %}
+      <option value="{{ codigo }}" {% if conferencia_selecionada == codigo %}selected{% endif %}>{{ rotulo }}</option>
+    {% endfor %}
+  </select>
   <button type="submit">Filtrar</button>
 </form>
 
+<form method="post" action="{% url 'estoque:criar_inventario_divergencias_validade' %}">
+  {% csrf_token %}
 <div class="panel">
   <table>
     <thead>
-      <tr><th>Produto</th><th>Filial</th><th>Lote</th><th>Fabricação</th><th>Validade</th><th>Saldo</th><th>Custo histórico</th><th>Origem</th></tr>
+      <tr><th><span class="sr-only">Selecionar</span></th><th>Produto</th><th>Filial</th><th>Lote</th><th>Fabricação</th><th>Validade</th><th>Saldo</th><th>Custo histórico</th><th>Origem</th><th>Conferência</th><th>Tratamento</th></tr>
     </thead>
     <tbody>
       {% for lote in lotes %}
         <tr>
+          <td>{% if fila_validade_ativa and lote.estado_conferencia_fila == "DIVERGENTE" %}<input type="checkbox" name="lotes_divergentes" value="{{ lote.pk }}" aria-label="Selecionar lote divergente {{ lote.codigo }}">{% else %}-{% endif %}</td>
           <td>{{ lote.produto }}</td>
           <td>{{ lote.filial }}</td>
           <td><strong>{{ lote.codigo }}</strong></td>
@@ -53,20 +77,35 @@
           <td>
             {{ lote.validade|date:"d/m/Y"|default:"-" }}
             {% if lote.situacao_validade == "VENCIDO" %}
-              <br><span class="status status-danger">Vencido</span>
+              <br><span class="status status-danger">Vencido há {{ lote.dias_vencido }} dia{{ lote.dias_vencido|pluralize }}</span>
+            {% elif lote.dias_para_vencer == 0 %}
+              <br><span class="status status-danger">Vence hoje</span>
             {% elif lote.situacao_validade == "PROXIMO" %}
-              <br><span class="status">Próximo do vencimento</span>
+              <br><span class="status">Vence em {{ lote.dias_para_vencer }} dia{{ lote.dias_para_vencer|pluralize }}</span>
             {% endif %}
           </td>
           <td>{{ lote.quantidade_atual|quantidade_br }} / {{ lote.quantidade_inicial|quantidade_br }}</td>
           <td>R$ {{ lote.custo_unitario|floatformat:2 }}</td>
           <td>{{ lote.origem_referencia|default:"-" }}</td>
+          <td>{% if fila_validade_ativa %}{% if lote.estado_conferencia_fila == "PRONTO" %}<span class="status">Pronto para decisão</span><br><small>Observado: {{ lote.conferencia_fila_observado|quantidade_br }}</small>{% elif lote.estado_conferencia_fila == "DIVERGENTE" %}<span class="status status-danger">Divergente</span><br><small>Sistema {{ lote.conferencia_fila_saldo|quantidade_br }} · observado {{ lote.conferencia_fila_observado|quantidade_br }}</small>{% else %}<span class="status status-danger">Pendente ou desatualizada</span>{% endif %}{% else %}-{% endif %}</td>
+          <td>{% if lote.tratamento_validade_status == "NAO_INICIADO" and lote.quantidade_atual > 0 and lote.situacao_validade == "VENCIDO" or lote.tratamento_validade_status == "NAO_INICIADO" and lote.quantidade_atual > 0 and lote.situacao_validade == "PROXIMO" %}<span class="status status-danger">Pendente</span><br>{% elif lote.tratamento_validade_status != "NAO_INICIADO" %}<span class="status">{{ lote.get_tratamento_validade_status_display }}</span><br>{% endif %}{% if lote.quantidade_atual > 0 and lote.situacao_validade == "VENCIDO" or lote.quantidade_atual > 0 and lote.situacao_validade == "PROXIMO" %}<a class="secondary-button" href="{% url 'estoque:conferencia_fisica_validade_lote' lote.pk %}">Conferir</a> <a class="secondary-button" href="{% url 'estoque:tratamento_validade_lote' lote.pk %}">Planejar</a>{% else %}-{% endif %}</td>
         </tr>
       {% empty %}
-        <tr><td colspan="8" class="empty">Nenhum lote encontrado.</td></tr>
+        <tr><td colspan="11" class="empty">Nenhum lote encontrado.</td></tr>
       {% endfor %}
     </tbody>
   </table>
 </div>
+{% if fila_validade_ativa %}
+  <section class="panel mt-panel">
+    <div class="panel-title">Encaminhar divergências para inventário</div>
+    <p>Selecione lotes divergentes de uma única filial. O sistema agrupará produtos repetidos e criará somente um rascunho pendente de contagem total.</p>
+    <div class="form-grid">
+      <label class="form-field"><span>Descrição opcional</span><input name="descricao" maxlength="255" placeholder="Ex.: Recontagem de perecíveis divergentes"></label>
+      <div class="form-actions"><button class="primary-button" type="submit"><i class="fa-solid fa-clipboard-check"></i> Criar inventário em rascunho</button></div>
+    </div>
+  </section>
+{% endif %}
+</form>
 {% include "includes/pagination.html" %}
 {% endblock %}

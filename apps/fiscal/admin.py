@@ -1,9 +1,15 @@
 from django.contrib import admin
 
 from .models import (
+    CatalogoCEST,
+    CatalogoCFOP,
+    CatalogoNCM,
     CatalogoBeneficioFiscal,
     ConfiguracaoFiscal,
     DocumentoFiscal,
+    ItemCEST,
+    ItemCFOP,
+    ItemNCM,
     ItemBeneficioFiscal,
     NaturezaOperacao,
     SerieFiscal,
@@ -34,6 +40,105 @@ class CatalogoBeneficioFiscalAdmin(admin.ModelAdmin):
     def has_delete_permission(self, request, obj=None):
         return False
 
+@admin.register(CatalogoNCM)
+class CatalogoNCMAdmin(admin.ModelAdmin):
+    list_display = ["versao", "referencia_em", "ato", "quantidade_itens", "ativo"]
+    list_filter = ["ativo", "referencia_em"]
+    search_fields = ["versao", "ato", "fonte_sha256"]
+    readonly_fields = [
+        "versao", "referencia_em", "ato", "fonte_nome", "fonte_url",
+        "fonte_sha256", "quantidade_itens", "quantidade_linhas_origem",
+        "importado_em", "importado_por",
+    ]
+
+    def has_add_permission(self, request):
+        return False
+
+    def has_delete_permission(self, request, obj=None):
+        return False
+
+
+@admin.register(ItemNCM)
+class ItemNCMAdmin(admin.ModelAdmin):
+    list_display = ["codigo_formatado", "descricao", "vigencia_inicio", "vigencia_fim", "catalogo"]
+    list_filter = ["catalogo"]
+    search_fields = ["codigo", "codigo_formatado", "descricao"]
+    readonly_fields = ["catalogo", "codigo", "codigo_formatado", "descricao", "vigencia_inicio", "vigencia_fim", "ato_inicio"]
+
+    def has_add_permission(self, request):
+        return False
+
+    def has_delete_permission(self, request, obj=None):
+        return False
+
+
+@admin.register(CatalogoCEST)
+class CatalogoCESTAdmin(admin.ModelAdmin):
+    list_display = ["versao", "referencia_em", "ato", "quantidade_itens", "ativo"]
+    list_filter = ["ativo", "referencia_em"]
+    search_fields = ["versao", "ato", "fonte_sha256"]
+    readonly_fields = [
+        "versao", "referencia_em", "ato", "fonte_nome", "fonte_url",
+        "fonte_sha256", "quantidade_itens", "quantidade_linhas_origem",
+        "quantidade_tabelas_origem", "importado_em", "importado_por",
+    ]
+
+    def has_add_permission(self, request):
+        return False
+
+    def has_delete_permission(self, request, obj=None):
+        return False
+
+
+@admin.register(ItemCEST)
+class ItemCESTAdmin(admin.ModelAdmin):
+    list_display = ["codigo_formatado", "segmento_nome", "ncm_sh_original", "descricao", "catalogo"]
+    list_filter = ["catalogo", "segmento_codigo"]
+    search_fields = ["codigo", "codigo_formatado", "ncm_sh_original", "descricao"]
+    readonly_fields = [
+        "catalogo", "codigo", "codigo_formatado", "item", "segmento_codigo",
+        "segmento_nome", "ncm_sh_original", "ncm_prefixos", "descricao",
+    ]
+
+    def has_add_permission(self, request):
+        return False
+
+    def has_delete_permission(self, request, obj=None):
+        return False
+
+@admin.register(CatalogoCFOP)
+class CatalogoCFOPAdmin(admin.ModelAdmin):
+    list_display = ["versao", "referencia_em", "ato", "quantidade_itens", "ativo"]
+    list_filter = ["ativo", "referencia_em"]
+    search_fields = ["versao", "ato", "fonte_sha256"]
+    readonly_fields = [
+        "versao", "referencia_em", "ato", "fonte_nome", "fonte_url",
+        "fonte_sha256", "quantidade_itens", "quantidade_linhas_origem",
+        "quantidade_agrupadores", "importado_em", "importado_por",
+    ]
+
+    def has_add_permission(self, request):
+        return False
+
+    def has_delete_permission(self, request, obj=None):
+        return False
+
+
+@admin.register(ItemCFOP)
+class ItemCFOPAdmin(admin.ModelAdmin):
+    list_display = ["codigo_formatado", "titulo", "direcao", "alcance", "catalogo"]
+    list_filter = ["catalogo", "direcao", "alcance"]
+    search_fields = ["codigo", "codigo_formatado", "titulo", "nota_explicativa"]
+    readonly_fields = [
+        "catalogo", "codigo", "codigo_formatado", "titulo", "nota_explicativa",
+        "direcao", "alcance",
+    ]
+
+    def has_add_permission(self, request):
+        return False
+
+    def has_delete_permission(self, request, obj=None):
+        return False
 
 @admin.register(ConfiguracaoFiscal)
 class ConfiguracaoFiscalAdmin(admin.ModelAdmin):

@@ -1005,3 +1005,240 @@ class ItemBeneficioFiscal(models.Model):
 
     def __str__(self):
         return f"{self.codigo} ({', '.join(self.csts)})"
+
+class CatalogoNCM(models.Model):
+    versao = models.CharField(max_length=120)
+    referencia_em = models.DateField()
+    ato = models.CharField(max_length=255)
+    fonte_nome = models.CharField(max_length=255)
+    fonte_url = models.URLField(max_length=500)
+    fonte_sha256 = models.CharField(max_length=64)
+    ativo = models.BooleanField(default=False)
+    quantidade_itens = models.PositiveIntegerField(default=0)
+    quantidade_linhas_origem = models.PositiveIntegerField(default=0)
+    importado_em = models.DateTimeField(auto_now_add=True)
+    importado_por = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        null=True,
+        blank=True,
+        on_delete=models.PROTECT,
+        related_name="catalogos_ncm_importados",
+    )
+
+    class Meta:
+        ordering = ["-referencia_em", "-importado_em"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["versao", "fonte_sha256"],
+                name="fiscal_ncm_versao_hash_uniq",
+            ),
+        ]
+        indexes = [
+            models.Index(
+                fields=["ativo", "referencia_em"],
+                name="fiscal_ncm_ativo_ref_idx",
+            ),
+        ]
+        verbose_name = "catálogo NCM"
+        verbose_name_plural = "catálogos NCM"
+
+    def clean(self):
+        super().clean()
+        self.fonte_sha256 = (self.fonte_sha256 or "").strip().lower()
+        if not re.fullmatch(r"[a-f0-9]{64}", self.fonte_sha256):
+            raise ValidationError({"fonte_sha256": "Informe o SHA-256 integral do arquivo oficial."})
+
+    def __str__(self):
+        return f"NCM {self.versao} ({self.referencia_em:%d/%m/%Y})"
+
+
+class ItemNCM(models.Model):
+    catalogo = models.ForeignKey(
+        CatalogoNCM,
+        on_delete=models.PROTECT,
+        related_name="itens",
+    )
+    codigo = models.CharField(max_length=8)
+    codigo_formatado = models.CharField(max_length=12)
+    descricao = models.TextField()
+    vigencia_inicio = models.DateField()
+    vigencia_fim = models.DateField()
+    ato_inicio = models.CharField(max_length=255, blank=True)
+
+    class Meta:
+        ordering = ["codigo"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["catalogo", "codigo"],
+                name="fiscal_ncm_catalogo_codigo_uniq",
+            ),
+        ]
+        indexes = [models.Index(fields=["codigo"], name="fiscal_ncm_codigo_idx")]
+        verbose_name = "item NCM"
+        verbose_name_plural = "itens NCM"
+
+    def __str__(self):
+        return f"{self.codigo_formatado} - {self.descricao}"
+
+class CatalogoCEST(models.Model):
+    versao = models.CharField(max_length=120)
+    referencia_em = models.DateField()
+    ato = models.CharField(max_length=255)
+    fonte_nome = models.CharField(max_length=255)
+    fonte_url = models.URLField(max_length=500)
+    fonte_sha256 = models.CharField(max_length=64)
+    ativo = models.BooleanField(default=False)
+    quantidade_itens = models.PositiveIntegerField(default=0)
+    quantidade_linhas_origem = models.PositiveIntegerField(default=0)
+    quantidade_tabelas_origem = models.PositiveIntegerField(default=0)
+    importado_em = models.DateTimeField(auto_now_add=True)
+    importado_por = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        null=True,
+        blank=True,
+        on_delete=models.PROTECT,
+        related_name="catalogos_cest_importados",
+    )
+
+    class Meta:
+        ordering = ["-referencia_em", "-importado_em"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["versao", "fonte_sha256"],
+                name="fiscal_cest_versao_hash_uniq",
+            ),
+        ]
+        indexes = [
+            models.Index(
+                fields=["ativo", "referencia_em"],
+                name="fiscal_cest_ativo_ref_idx",
+            ),
+        ]
+        verbose_name = "catálogo CEST"
+        verbose_name_plural = "catálogos CEST"
+
+    def clean(self):
+        super().clean()
+        self.fonte_sha256 = (self.fonte_sha256 or "").strip().lower()
+        if not re.fullmatch(r"[a-f0-9]{64}", self.fonte_sha256):
+            raise ValidationError({"fonte_sha256": "Informe o SHA-256 integral do arquivo oficial."})
+
+    def __str__(self):
+        return f"CEST {self.versao} ({self.referencia_em:%d/%m/%Y})"
+
+
+class ItemCEST(models.Model):
+    catalogo = models.ForeignKey(
+        CatalogoCEST,
+        on_delete=models.PROTECT,
+        related_name="itens",
+    )
+    codigo = models.CharField(max_length=7)
+    codigo_formatado = models.CharField(max_length=9)
+    item = models.CharField(max_length=20)
+    segmento_codigo = models.CharField(max_length=2)
+    segmento_nome = models.CharField(max_length=255)
+    ncm_sh_original = models.CharField(max_length=500, blank=True)
+    ncm_prefixos = models.JSONField(default=list)
+    descricao = models.TextField()
+
+    class Meta:
+        ordering = ["codigo"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["catalogo", "codigo"],
+                name="fiscal_cest_catalogo_codigo_uniq",
+            ),
+        ]
+        indexes = [models.Index(fields=["codigo"], name="fiscal_cest_codigo_idx")]
+        verbose_name = "item CEST"
+        verbose_name_plural = "itens CEST"
+
+    def __str__(self):
+        return f"{self.codigo_formatado} - {self.descricao}"
+class CatalogoCFOP(models.Model):
+    versao = models.CharField(max_length=120)
+    referencia_em = models.DateField()
+    ato = models.CharField(max_length=255)
+    fonte_nome = models.CharField(max_length=255)
+    fonte_url = models.URLField(max_length=500)
+    fonte_sha256 = models.CharField(max_length=64)
+    ativo = models.BooleanField(default=False)
+    quantidade_itens = models.PositiveIntegerField(default=0)
+    quantidade_linhas_origem = models.PositiveIntegerField(default=0)
+    quantidade_agrupadores = models.PositiveIntegerField(default=0)
+    importado_em = models.DateTimeField(auto_now_add=True)
+    importado_por = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        null=True,
+        blank=True,
+        on_delete=models.PROTECT,
+        related_name="catalogos_cfop_importados",
+    )
+
+    class Meta:
+        ordering = ["-referencia_em", "-importado_em"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["versao", "fonte_sha256"],
+                name="fiscal_cfop_versao_hash_uniq",
+            ),
+        ]
+        indexes = [
+            models.Index(
+                fields=["ativo", "referencia_em"],
+                name="fiscal_cfop_ativo_ref_idx",
+            ),
+        ]
+        verbose_name = "catálogo CFOP"
+        verbose_name_plural = "catálogos CFOP"
+
+    def clean(self):
+        super().clean()
+        self.fonte_sha256 = (self.fonte_sha256 or "").strip().lower()
+        if not re.fullmatch(r"[a-f0-9]{64}", self.fonte_sha256):
+            raise ValidationError({"fonte_sha256": "Informe o SHA-256 integral do arquivo oficial."})
+
+    def __str__(self):
+        return f"CFOP {self.versao} ({self.referencia_em:%d/%m/%Y})"
+
+
+class ItemCFOP(models.Model):
+    class Direcao(models.TextChoices):
+        ENTRADA = "ENTRADA", "entrada"
+        SAIDA = "SAIDA", "saída"
+
+    class Alcance(models.TextChoices):
+        INTERNA = "INTERNA", "interno"
+        INTERESTADUAL = "INTERESTADUAL", "interestadual"
+        EXTERIOR = "EXTERIOR", "exterior"
+
+    catalogo = models.ForeignKey(
+        CatalogoCFOP,
+        on_delete=models.PROTECT,
+        related_name="itens",
+    )
+    codigo = models.CharField(max_length=4)
+    codigo_formatado = models.CharField(max_length=5)
+    titulo = models.CharField(max_length=500)
+    nota_explicativa = models.TextField()
+    direcao = models.CharField(max_length=10, choices=Direcao.choices)
+    alcance = models.CharField(max_length=20, choices=Alcance.choices)
+
+    class Meta:
+        ordering = ["codigo"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["catalogo", "codigo"],
+                name="fiscal_cfop_catalogo_codigo_uniq",
+            ),
+        ]
+        indexes = [
+            models.Index(fields=["codigo"], name="fiscal_cfop_codigo_idx"),
+            models.Index(fields=["direcao", "alcance"], name="fiscal_cfop_dir_alc_idx"),
+        ]
+        verbose_name = "item CFOP"
+        verbose_name_plural = "itens CFOP"
+
+    def __str__(self):
+        return f"{self.codigo_formatado} - {self.titulo}"

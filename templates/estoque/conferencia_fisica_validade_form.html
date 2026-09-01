@@ -1,0 +1,34 @@
+{% extends "base.html" %}
+{% block title %}Conferência física do lote{% endblock %}
+{% block content %}
+<header class="page-header">
+  <div><h1>Conferência física do lote</h1><p>{{ lote.produto }} · {{ lote.filial }} · lote {{ lote.codigo }}</p></div>
+  <a class="secondary-button" href="{% url 'estoque:tratamento_validade_lote' lote.pk %}">Voltar</a>
+</header>
+<section class="metrics-grid">
+  <article class="metric"><span>Validade</span><strong>{{ lote.validade|date:"d/m/Y" }}</strong></article>
+  <article class="metric"><span>Saldo no sistema</span><strong>{{ lote.quantidade_atual|quantidade_br }}</strong></article>
+  <article class="metric"><span>Tratamento</span><strong>{{ lote.get_tratamento_validade_status_display }}</strong></article>
+</section>
+<section class="operation-notice">A conferência cria uma evidência imutável da contagem observada. Divergências ficam registradas, mas não ajustam estoque, não criam perda e não geram lançamento financeiro ou fiscal.</section>
+<form method="post" class="panel form-grid">{% csrf_token %}
+  {{ form.non_field_errors }}
+  <label class="form-field"><span>{{ form.quantidade_observada.label }}</span>{{ form.quantidade_observada }}{{ form.quantidade_observada.errors }}</label>
+  <label class="form-field"><span>{{ form.observacao.label }}</span>{{ form.observacao }}{{ form.observacao.errors }}<small>Obrigatória quando a quantidade observada divergir do sistema.</small></label>
+  <label class="form-field checkbox-field">{{ form.confirmar_dados }}<span>{{ form.confirmar_dados.label }}</span>{{ form.confirmar_dados.errors }}</label>
+  <div class="actions"><button type="submit" class="primary-button">Registrar conferência sem ajuste</button></div>
+</form>
+<section class="panel">
+  <h2>Últimas conferências deste lote</h2>
+  <table>
+    <thead><tr><th>Data</th><th>Sistema</th><th>Observado</th><th>Diferença</th><th>Responsável</th><th>Observação</th><th></th></tr></thead>
+    <tbody>
+      {% for conferencia in historico_conferencias %}
+        <tr><td>{{ conferencia.conferido_em|date:"d/m/Y H:i" }}</td><td>{{ conferencia.quantidade_sistema_snapshot|quantidade_br }}</td><td>{{ conferencia.quantidade_observada|quantidade_br }}</td><td>{{ conferencia.diferenca_snapshot|quantidade_br }}</td><td>{{ conferencia.conferido_por }}</td><td>{{ conferencia.observacao|default:"Sem divergência" }}</td><td><a href="{% url 'estoque:conferencia_fisica_validade_detalhe' conferencia.pk %}">Abrir evidência</a></td></tr>
+      {% empty %}
+        <tr><td colspan="7" class="empty">Nenhuma conferência registrada.</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</section>
+{% endblock %}

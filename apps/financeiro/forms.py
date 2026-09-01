@@ -9,7 +9,7 @@ from apps.fornecedores.escopo import fornecedores_para_usuario
 
 from .extrato_adapters import listar_adaptadores_extrato, validar_arquivo_adaptador
 
-from .models import CategoriaFinanceira, CentroCusto, ContaContabil, ContaFinanceira, ContaMovimentoFinanceiro, RegraLiquidacaoEletronica, TransferenciaFinanceira
+from .models import CategoriaFinanceira, CentroCusto, ContaContabil, ContaFinanceira, ContaMovimentoFinanceiro, FormatoEntregaContabil, RegraLiquidacaoEletronica, ResponsavelEFDICMSIPI, TransferenciaFinanceira
 
 
 def _filiais_para_usuario(user):
@@ -353,3 +353,92 @@ class AlocacaoRecebivelForm(forms.Form):
         localize=True,
         widget=forms.TextInput(attrs={"inputmode": "decimal", "placeholder": "0,00"}),
     )
+
+class ContratoIntegracaoContabilForm(forms.Form):
+    empresa = forms.ModelChoiceField(
+        queryset=Empresa.objects.none(), label="Empresa"
+    )
+    software_contabil = forms.CharField(
+        label="Software ou escritório destinatário", max_length=160, required=False
+    )
+    formato_entrega = forms.ChoiceField(
+        label="Formato combinado", choices=FormatoEntregaContabil.choices,
+        initial=FormatoEntregaContabil.PACOTE_ZIP_V2,
+    )
+    responsavel_efd_icms_ipi = forms.ChoiceField(
+        label="Responsável pela EFD ICMS/IPI",
+        choices=ResponsavelEFDICMSIPI.choices,
+        initial=ResponsavelEFDICMSIPI.NAO_DEFINIDO,
+    )
+    responsavel_efd_nome = forms.CharField(
+        label="Identificação do responsável pela EFD", max_length=160, required=False
+    )
+    aceite_referencia = forms.CharField(
+        label="Referência do aceite do contador", max_length=160, required=False,
+        help_text="Ex.: protocolo interno ou data da validação. Não informe senha, token ou certificado.",
+    )
+    observacoes = forms.CharField(
+        label="Observações técnicas", required=False, widget=forms.Textarea(attrs={"rows": 3})
+    )
+    confirmar_validacao = forms.BooleanField(
+        label="Confirmo que este contrato foi validado com o contador responsável",
+        required=False,
+    )
+
+    def __init__(self, *args, empresas=None, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.fields["empresa"].queryset = empresas if empresas is not None else Empresa.objects.none()
+        aplicar_select2(self, ["empresa"])
+
+    def clean(self):
+        cleaned = super().clean()
+        if not cleaned.get("confirmar_validacao"):
+            return cleaned
+        if not (cleaned.get("software_contabil") or "").strip():
+            self.add_error("software_contabil", "Informe o destinatário antes de validar.")
+        if cleaned.get("responsavel_efd_icms_ipi") == ResponsavelEFDICMSIPI.NAO_DEFINIDO:
+            self.add_error("responsavel_efd_icms_ipi", "Defina o responsável externo pela EFD.")
+        if not (cleaned.get("responsavel_efd_nome") or "").strip():
+            self.add_error("responsavel_efd_nome", "Identifique o responsável pela EFD.")
+        if not (cleaned.get("aceite_referencia") or "").strip():
+            self.add_error("aceite_referencia", "Registre a referência do aceite do contador.")
+        return cleaned
+
+class AmostraContabilForm(forms.Form):
+    empresa = forms.ModelChoiceField(queryset=Empresa.objects.none(), label="Empresa")
+    competencia = forms.CharField(
+        label="Competência",
+        max_length=7,
+        widget=forms.TextInput(attrs={"type": "month"}),
+    )
+    referencia_aceite = forms.CharField(
+        label="Referência do aceite do contador",
+        max_length=160,
+        required=False,
+        help_text="Obrigatória somente para registrar o aceite. Não informe senha, token ou certificado.",
+    )
+    registrar_aceite = forms.BooleanField(
+        label="Registrar aceite imutável se todos os portões forem aprovados",
+        required=False,
+    )
+
+    def __init__(self, *args, empresas=None, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.fields["empresa"].queryset = empresas if empresas is not None else Empresa.objects.none()
+        aplicar_select2(self, ["empresa"])
+
+    def clean_competencia(self):
+        valor = (self.cleaned_data.get("competencia") or "").strip()
+        try:
+            ano, mes = (int(parte) for parte in valor.split("-", 1))
+            if ano < 2000 or mes < 1 or mes > 12:
+                raise ValueError
+        except (TypeError, ValueError):
+            raise ValidationError("Competência inválida. Informe no formato AAAA-MM.")
+        return f"{ano:04d}-{mes:02d}"
+
+    def clean(self):
+        cleaned = super().clean()
+        if cleaned.get("registrar_aceite") and not (cleaned.get("referencia_aceite") or "").strip():
+            self.add_error("referencia_aceite", "Registre a referência do aceite do contador.")
+        return cleaned

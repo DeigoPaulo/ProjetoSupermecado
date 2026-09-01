@@ -1,3 +1,4 @@
+import json
 from datetime import timedelta
 from decimal import Decimal
 from io import BytesIO
@@ -12,12 +13,16 @@ from django.utils import timezone
 from apps.accounts.models import PerfilUsuario, TipoPerfil
 from apps.auditoria.models import LogAuditoria
 from apps.empresas.models import Empresa, Filial
-from apps.fiscal.models import AmbienteFiscal, DocumentoFiscal, StatusDocumentoFiscal, TipoDocumentoFiscal
+from apps.fiscal.models import AmbienteFiscal, DocumentoDFeRecebido, DocumentoFiscal, EventoDFeRecebido, ManifestacaoDestinatario, StatusDFeRecebido, StatusDocumentoFiscal, StatusManifestacaoDestinatario, TipoDocumentoFiscal, TipoManifestacaoDestinatario
+from apps.estoque.fechamento_contabil import capturar_fechamento_estoque_contabil
+from apps.estoque.models import Estoque
+from apps.produtos.models import Categoria as CategoriaProduto, Produto
 from apps.pdv.models import Caixa
 from apps.vendas.models import FormaPagamento, PagamentoVenda, StatusVenda, Venda
 
 from .forms import CategoriaFinanceiraForm, ContaContabilForm, ContaFinanceiraForm
-from .models import CategoriaFinanceira, CentroCusto, ContaContabil, ConciliacaoLancamentoFinanceiro, ChaveIntegracaoContabil, ContaFinanceira, ContaMovimentoFinanceiro, ExportacaoContabil, ImportacaoExtratoFinanceiro, ItemExtratoFinanceiro, LancamentoFinanceiro, MovimentoRecebivelEletronico, RecebivelEletronico, RegraLiquidacaoEletronica, StatusContaFinanceira, StatusExportacaoContabil, StatusItemExtratoFinanceiro, StatusRecebivelEletronico, TipoContaContabil, TipoContaFinanceira, TipoContaMovimento, TipoLancamentoFinanceiro, TipoMovimentoRecebivelEletronico, TransferenciaFinanceira
+from .contrato_contabil import registrar_contrato_contabil
+from .models import CategoriaFinanceira, CentroCusto, ContaContabil, ConciliacaoLancamentoFinanceiro, ChaveIntegracaoContabil, ContaFinanceira, ContaMovimentoFinanceiro, ExportacaoContabil, FormatoEntregaContabil, ImportacaoExtratoFinanceiro, ItemExtratoFinanceiro, LancamentoFinanceiro, MovimentoRecebivelEletronico, RecebivelEletronico, RegraLiquidacaoEletronica, ResponsavelEFDICMSIPI, StatusContaFinanceira, StatusExportacaoContabil, StatusItemExtratoFinanceiro, StatusRecebivelEletronico, TipoContaContabil, TipoContaFinanceira, TipoContaMovimento, TipoLancamentoFinanceiro, TipoMovimentoRecebivelEletronico, TransferenciaFinanceira
 from .services import baixar_conta, cancelar_conta, conciliar_lancamento, estornar_lancamento, realizar_transferencia
 from .services_conciliacao import conciliar_item_extrato, importar_extrato, importar_extrato_csv
 from .services_recebiveis import conciliar_recebivel_com_item, gerar_recebivel_pagamento
@@ -79,6 +84,7 @@ class FinanceiroTests(TestCase):
         )
 
     def test_super_admin_escolhe_empresa_ao_criar_categoria(self):
+
         outra_empresa = Empresa.objects.create(
             razao_social="Outro Mercado LTDA",
             nome_fantasia="Outro Mercado",
@@ -95,6 +101,7 @@ class FinanceiroTests(TestCase):
         self.assertEqual(categoria.empresa, outra_empresa)
 
     def test_form_conta_rejeita_categoria_de_outra_empresa(self):
+
         outra_empresa = Empresa.objects.create(
             razao_social="Outro Mercado LTDA",
             nome_fantasia="Outro Mercado",
@@ -342,6 +349,7 @@ class FinanceiroTests(TestCase):
         with self.assertRaises(ValidationError):
             analitica.full_clean()
 
+
         outra_empresa = Empresa.objects.create(
             razao_social="Empresa Contabil Externa LTDA",
             nome_fantasia="Contabil Externa",
@@ -440,6 +448,7 @@ class FinanceiroTests(TestCase):
         self.assertEqual(pacote["centros_custo"][0]["centro_custo"], "Administrativo")
 
     def test_form_conta_rejeita_centro_custo_de_outra_empresa(self):
+
         outra_empresa = Empresa.objects.create(
             razao_social="Empresa Centro Externo LTDA",
             nome_fantasia="Centro Externo",
@@ -775,6 +784,7 @@ class FinanceiroTests(TestCase):
         self.assertEqual(fluxo_externo_negado.status_code, 403)
         self.assertEqual(conciliacao_diaria_externa_negada.status_code, 403)
     def test_resultado_financeiro_isola_filial_e_bloqueia_acesso_fora_do_perfil(self):
+
         outra_empresa = Empresa.objects.create(
             razao_social="Mercado Outra Empresa",
             nome_fantasia="Mercado Outra",
@@ -1119,14 +1129,36 @@ class FinanceiroTests(TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.json()["contrato"], "financial_accounting_adapter_readiness_v1")
         self.assertFalse(response.json()["configurado"])
-        self.assertTrue(response.json()["envio_permitido"])
+        self.assertFalse(response.json()["envio_permitido"])
+        self.assertFalse(response.json()["contrato_integracao_contabil"]["validado"])
         tela = self.client.get("/financeiro/resultado/")
         self.assertContains(tela, "Integração ainda não configurada")
         self.assertContains(tela, "Histórico de integração contábil")
 
     @override_settings(FINANCEIRO_CONTABIL_ADAPTER="apps.financeiro.tests.FakeContabilAdapter")
+    def test_adaptador_configurado_sem_contrato_validado_nao_envia(self):
+        FakeContabilAdapter.chamadas = 0
+        data = timezone.localdate().isoformat()
+
+        resposta = self.client.post(
+            f"/financeiro/resultado/enviar-contabilidade/?data_inicio={data}&data_fim={data}&filial={self.filial.pk}",
+            follow=True,
+        )
+
+        self.assertContains(resposta, "Valide com o contador uma versão do contrato contábil")
+        self.assertEqual(FakeContabilAdapter.chamadas, 0)
+        self.assertFalse(ExportacaoContabil.objects.exists())
+    @override_settings(FINANCEIRO_CONTABIL_ADAPTER="apps.financeiro.tests.FakeContabilAdapter")
     def test_envio_contabil_e_idempotente_e_auditado(self):
         FakeContabilAdapter.chamadas = 0
+        registrar_contrato_contabil(
+            empresa=self.empresa, usuario=self.user,
+            software_contabil="Adaptador contábil homologado",
+            formato_entrega=FormatoEntregaContabil.ADAPTADOR_SERVIDOR_V1,
+            responsavel_efd_icms_ipi=ResponsavelEFDICMSIPI.ESCRITORIO_CONTABIL,
+            responsavel_efd_nome="Escritório responsável",
+            aceite_referencia="ACEITE-ADAPTADOR-001", validar=True,
+        )
         data = timezone.localdate()
         url = (
             f"/financeiro/resultado/enviar-contabilidade/?data_inicio={data.isoformat()}"
@@ -1192,9 +1224,68 @@ class FinanceiroTests(TestCase):
             numero=12,
             status=StatusDocumentoFiscal.EMITIDO,
             valor_total=Decimal("24.50"),
-            xml_conteudo="<NFe><infNFe Id='NFe12'/></NFe>",
+            xml_conteudo=f"<NFe xmlns='http://www.portalfiscal.inf.br/nfe'><infNFe Id='NFe12'><ide><mod>65</mod><dhEmi>{timezone.localdate().isoformat()}T10:00:00-03:00</dhEmi></ide><det nItem='1'><prod><cProd>1</cProd><xProd>Produto contábil</xProd><NCM>10063021</NCM><CFOP>5102</CFOP><uCom>UN</uCom><qCom>1.000</qCom><vUnCom>24.50</vUnCom><vProd>24.50</vProd></prod><imposto><ICMS><ICMSSN102><orig>0</orig><CSOSN>102</CSOSN></ICMSSN102></ICMS><PIS><PISNT><CST>08</CST></PISNT></PIS><COFINS><COFINSNT><CST>08</CST></COFINSNT></COFINS></imposto></det></infNFe></NFe>",
             usuario=self.user,
         )
+
+        chave_entrada = "52260812345678000199550010000001231000001234"
+        documento_entrada = DocumentoDFeRecebido.objects.create(
+            empresa=self.empresa,
+            filial_destino=self.filial,
+            chave_acesso=chave_entrada,
+            nsu="101",
+            emitente_cnpj="12345678000199",
+            emitente_nome="Fornecedor Teste",
+            numero_documento="123",
+            data_emissao=timezone.localdate(),
+            valor_total=Decimal("15.00"),
+            status=StatusDFeRecebido.XML_DISPONIVEL,
+            xml_conteudo=f"<nfeProc xmlns='http://www.portalfiscal.inf.br/nfe'><NFe><infNFe Id='NFe{chave_entrada}'><ide><mod>55</mod><dhEmi>{timezone.localdate().isoformat()}T08:00:00-03:00</dhEmi></ide><det nItem='1'><prod><cProd>F1</cProd><xProd>Compra arroz</xProd><NCM>10063021</NCM><CFOP>1102</CFOP><uCom>UN</uCom><qCom>1.000</qCom><vUnCom>15.00</vUnCom><vProd>15.00</vProd></prod></det></infNFe></NFe></nfeProc>",
+        )
+        EventoDFeRecebido.objects.create(
+            empresa=self.empresa,
+            filial_destino=self.filial,
+            nsu="102",
+            chave_acesso=chave_entrada,
+            tipo_evento="110111",
+            sequencia=1,
+            data_evento=timezone.now(),
+            descricao="Cancelamento recebido",
+            xml_conteudo=f"<procEventoNFe><chNFe>{chave_entrada}</chNFe></procEventoNFe>",
+        )
+        ManifestacaoDestinatario.objects.create(
+            empresa=self.empresa,
+            filial=self.filial,
+            documento=documento_entrada,
+            tipo=TipoManifestacaoDestinatario.CIENCIA,
+            status=StatusManifestacaoDestinatario.AUTORIZADA,
+            ambiente=AmbienteFiscal.HOMOLOGACAO,
+            codigo_status="135",
+            protocolo="135260000000001",
+            mensagem="Evento registrado",
+            xml_envio="<evento><tpEvento>210210</tpEvento></evento>",
+            xml_retorno="<retEvento><cStat>135</cStat></retEvento>",
+            usuario=contador,
+            processado_em=timezone.now(),
+        )
+        categoria_produto = CategoriaProduto.objects.create(nome="Mercearia contábil")
+        produto_estoque = Produto.objects.create(
+            codigo_barras="7890000000999",
+            nome="Arroz em estoque",
+            categoria=categoria_produto,
+            preco_custo=Decimal("8.00"),
+            preco_venda=Decimal("12.00"),
+            ncm="10063021",
+            cest="1704900",
+        )
+        Estoque.objects.create(
+            produto=produto_estoque,
+            filial=self.filial,
+            quantidade_atual=Decimal("10.000"),
+            quantidade_reservada=Decimal("2.000"),
+            custo_medio=Decimal("8.500000"),
+        )
+        capturar_fechamento_estoque_contabil(filial=self.filial, usuario=contador)
         outra_empresa = Empresa.objects.create(
             razao_social="Mercado Isolado LTDA",
             nome_fantasia="Mercado Isolado",
@@ -1212,6 +1303,17 @@ class FinanceiroTests(TestCase):
             usuario=self.user,
         )
 
+        registrar_contrato_contabil(
+            empresa=self.empresa,
+            usuario=self.user,
+            software_contabil="Software contábil de homologação",
+            formato_entrega=FormatoEntregaContabil.PACOTE_ZIP_V2,
+            responsavel_efd_icms_ipi=ResponsavelEFDICMSIPI.ESCRITORIO_CONTABIL,
+            responsavel_efd_nome="Escritório de homologação",
+            aceite_referencia="ACEITE-TESTE-001",
+            validar=True,
+        )
+
         self.client.force_login(contador)
         portal = self.client.get("/financeiro/contabilidade/")
         relatorio_financeiro = self.client.get("/financeiro/resultado/")
@@ -1225,9 +1327,73 @@ class FinanceiroTests(TestCase):
         self.assertEqual(pacote["Content-Type"], "application/zip")
         with ZipFile(BytesIO(pacote.content)) as arquivo:
             self.assertIn("financeiro/lancamentos.csv", arquivo.namelist())
+            self.assertIn("reconciliacao/resumo.json", arquivo.namelist())
+            self.assertIn("reconciliacao/vendas.csv", arquivo.namelist())
+            self.assertIn("reconciliacao/entradas.csv", arquivo.namelist())
             self.assertTrue(arquivo.read("financeiro/lancamentos.csv").startswith(bytes([0xEF, 0xBB, 0xBF])))
             self.assertIn("fiscal/xml/NFCE-1-12.xml", arquivo.namelist())
             self.assertNotIn("fiscal/xml/NFCE-1-1.xml", arquivo.namelist())
+            self.assertIn("fiscal/itens-fiscais.csv", arquivo.namelist())
+            manifesto = json.loads(arquivo.read("manifesto.json"))
+            reconciliacao = json.loads(arquivo.read("reconciliacao/resumo.json"))
+            self.assertEqual(manifesto["contrato"], "accounting_monthly_package_v2")
+            self.assertEqual(reconciliacao["contrato"], "accounting_operational_reconciliation_v1")
+            self.assertTrue(manifesto["contrato_integracao_contabil"]["validado"])
+            self.assertEqual(manifesto["contrato_integracao_contabil"]["contrato_tecnico"], "accounting_monthly_package_v2")
+            self.assertEqual(manifesto["contagens"]["vendas_reconciliadas"], 0)
+            self.assertEqual(manifesto["contagens"]["entradas_reconciliadas"], 0)
+            self.assertEqual(manifesto["contagens"]["documentos_saida"], 1)
+            self.assertEqual(manifesto["contagens"]["documentos_entrada"], 1)
+            self.assertEqual(manifesto["contagens"]["itens_fiscais"], 2)
+            self.assertEqual(manifesto["contagens"]["eventos"], 2)
+            self.assertEqual(manifesto["contagens"]["itens_inventario"], 1)
+            self.assertEqual(manifesto["inventario"]["criterio_custo"], "CUSTO_MEDIO_PONDERADO_MOVEL")
+            self.assertEqual(manifesto["inventario"]["valor_total_custo"], "85.00")
+            self.assertTrue(manifesto["inventario"]["snapshot_completo"])
+            self.assertEqual(manifesto["inventario"]["qualidade_temporal"], "SNAPSHOT_IMUTAVEL_FECHAMENTO")
+            self.assertTrue(all(item["sha256"] for item in manifesto["arquivos"]))
+            itens = arquivo.read("fiscal/itens-fiscais.csv").decode("utf-8-sig")
+            self.assertIn("Produto contábil", itens)
+            self.assertIn("10063021", itens)
+            self.assertIn("5102", itens)
+            self.assertIn("Compra arroz", itens)
+            self.assertIn("fiscal/eventos/entrada/evento-1.xml", arquivo.namelist())
+            self.assertIn("fiscal/eventos/entrada/manifestacao-1-retorno.xml", arquivo.namelist())
+            inventario = arquivo.read("estoque/inventario-valorizado.csv").decode("utf-8-sig")
+            self.assertIn("Arroz em estoque", inventario)
+            self.assertIn("85,00", inventario)
+            self.assertIn("CUSTO_MEDIO_PONDERADO_MOVEL", inventario)
+
+        competencia_anterior = (timezone.localdate().replace(day=1) - timedelta(days=1)).strftime("%Y-%m")
+        pacote_historico = self.client.get(
+            f"/financeiro/contabilidade/pacote-mensal.zip?competencia={competencia_anterior}&filial={self.filial.pk}"
+        )
+        with ZipFile(BytesIO(pacote_historico.content)) as arquivo:
+            manifesto_historico = json.loads(arquivo.read("manifesto.json"))
+            self.assertEqual(
+                manifesto_historico["inventario"]["qualidade_temporal"],
+                "POSICAO_ATUAL_NAO_RETROATIVA",
+            )
+
+        filial_secundaria = Filial.objects.create(
+            empresa=self.empresa, nome="Filial secundária", cnpj="33.333.333/0002-14"
+        )
+        DocumentoFiscal.objects.create(
+            filial=filial_secundaria,
+            tipo_documento=TipoDocumentoFiscal.NFCE,
+            ambiente=AmbienteFiscal.HOMOLOGACAO,
+            numero=88,
+            status=StatusDocumentoFiscal.EMITIDO,
+            valor_total=Decimal("88.00"),
+            xml_conteudo=f"<NFe><infNFe><ide><dhEmi>{timezone.localdate().isoformat()}T11:00:00-03:00</dhEmi></ide></infNFe></NFe>",
+            usuario=self.user,
+        )
+        pacote_filial = self.client.get(f"/financeiro/contabilidade/pacote-mensal.zip?filial={self.filial.pk}")
+        with ZipFile(BytesIO(pacote_filial.content)) as arquivo:
+            manifesto_filial = json.loads(arquivo.read("manifesto.json"))
+            self.assertEqual(manifesto_filial["filial"]["id"], self.filial.pk)
+            self.assertEqual(manifesto_filial["contagens"]["documentos_saida"], 1)
+            self.assertFalse(any("-88" in nome for nome in arquivo.namelist()))
         self.assertTrue(LogAuditoria.objects.filter(usuario=contador, acao="DOWNLOAD_PACOTE_CONTABIL").exists())
 
     def test_operador_nao_acessa_portal_contabilidade(self):
@@ -1242,6 +1408,7 @@ class FinanceiroTests(TestCase):
         chave = ChaveIntegracaoContabil(empresa=self.empresa, nome="Escritorio Demo", criada_por=self.user)
         chave.definir_token(token)
         chave.save()
+
         outra_empresa = Empresa.objects.create(
             razao_social="Mercado API Isolado LTDA",
             nome_fantasia="Mercado API Isolado",
@@ -1261,6 +1428,7 @@ class FinanceiroTests(TestCase):
         self.assertEqual(valido.status_code, 200)
         self.assertEqual(valido.json()["contrato"], "accounting_monthly_api_v1")
         self.assertEqual(valido.json()["pacote"]["empresa"]["id"], self.empresa.pk)
+        self.assertFalse(valido.json()["pacote"]["contrato_integracao_contabil"]["validado"])
         self.assertEqual(filial_estranha.status_code, 403)
         chave.refresh_from_db()
         self.assertIsNotNone(chave.ultima_utilizacao_em)
@@ -1342,6 +1510,7 @@ class FinanceiroTests(TestCase):
         conta_banco = ContaMovimentoFinanceiro.objects.create(
             filial=self.filial, nome="Banco da empresa", tipo=TipoContaMovimento.BANCO
         )
+
         outra_empresa = Empresa.objects.create(
             razao_social="Empresa externa LTDA", nome_fantasia="Externa", cnpj="88.888.888/0001-88"
         )

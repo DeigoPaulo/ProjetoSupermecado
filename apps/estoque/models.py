@@ -1,3 +1,6 @@
+import hashlib
+import json
+import uuid
 from decimal import Decimal, ROUND_HALF_UP
 
 from django.conf import settings
@@ -50,6 +53,103 @@ class Estoque(models.Model):
         return f"{self.produto} / {self.filial}: {self.quantidade_disponivel}"
 
 
+class FechamentoEstoqueContabilQuerySet(models.QuerySet):
+    def update(self, **kwargs):
+        raise ValueError("Fechamentos contábeis de estoque são imutáveis.")
+
+    def delete(self):
+        raise ValueError("Fechamentos contábeis de estoque são imutáveis.")
+
+
+class FechamentoEstoqueContabil(models.Model):
+    objects = FechamentoEstoqueContabilQuerySet.as_manager()
+
+    filial = models.ForeignKey(
+        "empresas.Filial", on_delete=models.PROTECT, related_name="fechamentos_estoque_contabeis"
+    )
+    data_referencia = models.DateField()
+    criterio_custo = models.CharField(max_length=60, default="CUSTO_MEDIO_PONDERADO_MOVEL")
+    total_itens = models.PositiveIntegerField(default=0)
+    valor_total_custo = models.DecimalField(max_digits=18, decimal_places=2, default=0)
+    conteudo_sha256 = models.CharField(max_length=64)
+    capturado_por = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.PROTECT,
+        related_name="fechamentos_estoque_contabeis_capturados",
+        null=True,
+        blank=True,
+    )
+    capturado_em = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["-data_referencia", "filial__nome"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["filial", "data_referencia"], name="estoque_fech_contabil_filial_data_uniq"
+            )
+        ]
+
+    def save(self, *args, **kwargs):
+        if self.pk or not self._state.adding:
+            raise ValueError("Fechamentos contábeis de estoque são imutáveis.")
+        return super().save(*args, **kwargs)
+
+    def delete(self, *args, **kwargs):
+        raise ValueError("Fechamentos contábeis de estoque são imutáveis.")
+
+    def __str__(self):
+        return f"Fechamento de estoque {self.filial} em {self.data_referencia}"
+
+
+class ItemFechamentoEstoqueContabilQuerySet(models.QuerySet):
+    def update(self, **kwargs):
+        raise ValueError("Itens de fechamento contábil são imutáveis.")
+
+    def delete(self):
+        raise ValueError("Itens de fechamento contábil são imutáveis.")
+
+
+class ItemFechamentoEstoqueContabil(models.Model):
+    objects = ItemFechamentoEstoqueContabilQuerySet.as_manager()
+
+    fechamento = models.ForeignKey(
+        FechamentoEstoqueContabil, on_delete=models.PROTECT, related_name="itens"
+    )
+    produto = models.ForeignKey(
+        "produtos.Produto", on_delete=models.PROTECT, related_name="fechamentos_estoque_contabeis"
+    )
+    codigo_interno = models.CharField(max_length=80, blank=True)
+    codigo_barras = models.CharField(max_length=80, blank=True)
+    nome_produto = models.CharField(max_length=255)
+    ncm = models.CharField(max_length=10, blank=True)
+    cest = models.CharField(max_length=10, blank=True)
+    unidade = models.CharField(max_length=20, blank=True)
+    quantidade_fisica = models.DecimalField(max_digits=14, decimal_places=3)
+    quantidade_reservada = models.DecimalField(max_digits=14, decimal_places=3)
+    quantidade_disponivel = models.DecimalField(max_digits=14, decimal_places=3)
+    custo_medio = models.DecimalField(max_digits=14, decimal_places=6)
+    valor_custo = models.DecimalField(max_digits=18, decimal_places=2)
+
+    class Meta:
+        ordering = ["nome_produto", "produto_id"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["fechamento", "produto"], name="estoque_item_fech_contabil_prod_uniq"
+            )
+        ]
+
+    def save(self, *args, **kwargs):
+        if self.pk or not self._state.adding:
+            raise ValueError("Itens de fechamento contábil são imutáveis.")
+        return super().save(*args, **kwargs)
+
+    def delete(self, *args, **kwargs):
+        raise ValueError("Itens de fechamento contábil são imutáveis.")
+
+    def __str__(self):
+        return f"{self.nome_produto} - {self.fechamento.data_referencia}"
+
+
 class MovimentacaoEstoque(models.Model):
     produto = models.ForeignKey("produtos.Produto", on_delete=models.PROTECT, related_name="movimentacoes")
     filial = models.ForeignKey("empresas.Filial", on_delete=models.PROTECT, related_name="movimentacoes_estoque")
@@ -69,6 +169,65 @@ class MovimentacaoEstoque(models.Model):
         return f"{self.tipo} {self.quantidade} - {self.produto}"
 
 
+class StatusTratamentoValidade(models.TextChoices):
+    NAO_INICIADO = "NAO_INICIADO", "Não iniciado"
+    SEPARADO = "SEPARADO", "Separado para análise"
+    DEVOLUCAO_PLANEJADA = "DEVOLUCAO_PLANEJADA", "Devolução planejada"
+    PROMOCAO_PLANEJADA = "PROMOCAO_PLANEJADA", "Promoção planejada"
+    DESCARTE_PLANEJADO = "DESCARTE_PLANEJADO", "Descarte planejado"
+    BAIXA_CONCLUIDA = "BAIXA_CONCLUIDA", "Baixa concluída"
+
+STATUS_TRATAMENTO_LOTE_VENDAVEL = {
+    StatusTratamentoValidade.NAO_INICIADO,
+    StatusTratamentoValidade.PROMOCAO_PLANEJADA,
+}
+
+
+def resumo_disponibilidade_venda_lotes(
+    *, produto, filial, estoque=None, momento=None, bloquear=False, lotes=None
+):
+    """Separa saldo físico de saldo efetivamente liberado para venda."""
+    momento = momento or timezone.now()
+    hoje = timezone.localdate(momento)
+    if lotes is None:
+        lotes_queryset = LoteEstoque.objects.filter(
+            produto=produto, filial=filial, quantidade_atual__gt=0,
+        )
+        if bloquear:
+            lotes_queryset = lotes_queryset.select_for_update()
+        lotes = list(lotes_queryset)
+    else:
+        lotes = list(lotes)
+    total_rastreado = sum((lote.quantidade_atual for lote in lotes), Decimal("0.000"))
+    total_vendavel_lotes = sum(
+        (
+            lote.quantidade_atual
+            for lote in lotes
+            if (lote.validade is None or lote.validade >= hoje)
+            and lote.tratamento_validade_status in STATUS_TRATAMENTO_LOTE_VENDAVEL
+        ),
+        Decimal("0.000"),
+    )
+    if estoque is None:
+        estoque = Estoque.objects.get(produto=produto, filial=filial)
+    saldo_sem_lote = max(estoque.quantidade_atual - total_rastreado, Decimal("0.000"))
+    bloqueado = min(
+        estoque.quantidade_atual,
+        max(total_rastreado - total_vendavel_lotes, Decimal("0.000")),
+    )
+    vendavel_bruto = min(estoque.quantidade_atual, saldo_sem_lote + total_vendavel_lotes)
+    quantidade_vendavel = max(
+        min(estoque.quantidade_disponivel, vendavel_bruto - estoque.quantidade_reservada),
+        Decimal("0.000"),
+    )
+    return {
+        "quantidade_vendavel": quantidade_vendavel,
+        "quantidade_bloqueada": bloqueado,
+        "saldo_sem_lote": saldo_sem_lote,
+        "total_rastreado": total_rastreado,
+        "total_vendavel_lotes": total_vendavel_lotes,
+    }
+
 class LoteEstoque(models.Model):
     produto = models.ForeignKey("produtos.Produto", on_delete=models.PROTECT, related_name="lotes_estoque")
     filial = models.ForeignKey("empresas.Filial", on_delete=models.PROTECT, related_name="lotes_estoque")
@@ -76,9 +235,14 @@ class LoteEstoque(models.Model):
     fabricacao = models.DateField(null=True, blank=True)
     validade = models.DateField(null=True, blank=True)
     quantidade_inicial = models.DecimalField(max_digits=12, decimal_places=3)
+    quantidade_acrescimos_auditados = models.DecimalField(max_digits=12, decimal_places=3, default=0)
     quantidade_atual = models.DecimalField(max_digits=12, decimal_places=3)
     custo_unitario = models.DecimalField(max_digits=10, decimal_places=2)
     origem_referencia = models.CharField(max_length=120, blank=True)
+    tratamento_validade_status = models.CharField(max_length=30, choices=StatusTratamentoValidade.choices, default=StatusTratamentoValidade.NAO_INICIADO)
+    tratamento_validade_observacao = models.CharField(max_length=255, blank=True)
+    tratamento_validade_por = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.PROTECT, null=True, blank=True, related_name="tratamentos_validade_lote")
+    tratamento_validade_em = models.DateTimeField(null=True, blank=True)
     criado_em = models.DateTimeField(auto_now_add=True)
     atualizado_em = models.DateTimeField(auto_now=True)
 
@@ -96,8 +260,10 @@ class LoteEstoque(models.Model):
             raise ValidationError("Quantidade inicial do lote deve ser maior que zero.")
         if self.quantidade_atual < 0:
             raise ValidationError("Quantidade atual do lote não pode ser negativa.")
-        if self.quantidade_atual > self.quantidade_inicial:
-            raise ValidationError("Quantidade atual não pode superar a quantidade inicial do lote.")
+        if self.quantidade_acrescimos_auditados < 0:
+            raise ValidationError("A capacidade adicional auditada não pode ser negativa.")
+        if self.quantidade_atual > self.quantidade_maxima_auditada:
+            raise ValidationError("Quantidade atual não pode superar a capacidade auditada do lote.")
         if self.fabricacao and self.validade and self.fabricacao > self.validade:
             raise ValidationError("A fabricação do lote não pode ser posterior a validade.")
 
@@ -105,10 +271,18 @@ class LoteEstoque(models.Model):
         return f"{self.produto} - lote {self.codigo}"
 
     @property
+    def quantidade_maxima_auditada(self):
+        return self.quantidade_inicial + self.quantidade_acrescimos_auditados
+    @property
     def dias_para_vencer(self):
         if not self.validade:
             return None
         return (self.validade - timezone.localdate()).days
+
+    @property
+    def dias_vencido(self):
+        dias = self.dias_para_vencer
+        return abs(dias) if dias is not None and dias < 0 else 0
 
     @property
     def situacao_validade(self):
@@ -122,23 +296,170 @@ class LoteEstoque(models.Model):
         return "VALIDO"
 
 
+class ConferenciaFisicaValidadeLote(models.Model):
+    lote = models.ForeignKey(
+        LoteEstoque,
+        on_delete=models.PROTECT,
+        related_name="conferencias_validade",
+    )
+    empresa = models.ForeignKey(
+        "empresas.Empresa",
+        on_delete=models.PROTECT,
+        related_name="conferencias_fisicas_validade",
+    )
+    filial_id_snapshot = models.PositiveBigIntegerField()
+    filial_nome_snapshot = models.CharField(max_length=150)
+    produto_id_snapshot = models.PositiveBigIntegerField()
+    produto_nome_snapshot = models.CharField(max_length=200)
+    produto_codigo_barras_snapshot = models.CharField(max_length=50, blank=True)
+    lote_codigo_snapshot = models.CharField(max_length=60)
+    validade_snapshot = models.DateField()
+    quantidade_sistema_snapshot = models.DecimalField(max_digits=12, decimal_places=3)
+    quantidade_observada = models.DecimalField(max_digits=12, decimal_places=3)
+    diferenca_snapshot = models.DecimalField(max_digits=12, decimal_places=3)
+    custo_unitario_snapshot = models.DecimalField(max_digits=10, decimal_places=2)
+    tratamento_status_snapshot = models.CharField(max_length=30, choices=StatusTratamentoValidade.choices)
+    observacao = models.CharField(max_length=255, blank=True)
+    conferido_por = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.PROTECT,
+        related_name="conferencias_fisicas_validade",
+    )
+    conferido_em = models.DateTimeField(default=timezone.now)
+    conteudo_sha256 = models.CharField(max_length=64, unique=True)
+
+    class Meta:
+        ordering = ["-conferido_em", "-id"]
+        indexes = [
+            models.Index(fields=["lote", "conferido_em"], name="est_conf_val_lote_em_idx"),
+            models.Index(fields=["empresa", "conferido_em"], name="est_conf_val_emp_em_idx"),
+        ]
+
+    def save(self, *args, **kwargs):
+        if self.pk and type(self).objects.filter(pk=self.pk).exists():
+            raise ValidationError("A conferência física é imutável.")
+        return super().save(*args, **kwargs)
+
+    def delete(self, *args, **kwargs):
+        raise ValidationError("A conferência física é imutável.")
+
+    def __str__(self):
+        return f"Conferência {self.lote_codigo_snapshot} em {self.conferido_em:%d/%m/%Y %H:%M}"
+
 class MovimentacaoLoteEstoque(models.Model):
     movimentacao = models.ForeignKey(MovimentacaoEstoque, on_delete=models.CASCADE, related_name="alocacoes_lote")
     lote = models.ForeignKey(LoteEstoque, on_delete=models.PROTECT, related_name="movimentacoes_lote")
     quantidade = models.DecimalField(max_digits=12, decimal_places=3)
     custo_unitario = models.DecimalField(max_digits=10, decimal_places=2)
+    lote_codigo_snapshot = models.CharField(max_length=60, blank=True)
+    lote_validade_snapshot = models.DateField(null=True, blank=True)
+    tratamento_status_snapshot = models.CharField(
+        max_length=30, choices=StatusTratamentoValidade.choices, blank=True
+    )
+    snapshot_sha256 = models.CharField(max_length=64, blank=True)
 
     class Meta:
         ordering = ["id"]
 
-    def __str__(self):
-        return f"{self.movimentacao} / {self.lote.codigo}: {self.quantidade}"
+    @staticmethod
+    def calcular_snapshot_sha256(
+        *, movimentacao_id, lote_id, quantidade, custo_unitario, lote_codigo,
+        lote_validade, tratamento_status,
+    ):
+        payload = {
+            "movimentacao_id": movimentacao_id,
+            "lote_id": lote_id,
+            "quantidade": str(quantidade),
+            "custo_unitario": str(custo_unitario),
+            "lote_codigo": lote_codigo,
+            "lote_validade": lote_validade.isoformat() if lote_validade else None,
+            "tratamento_status": tratamento_status,
+        }
+        return hashlib.sha256(
+            json.dumps(payload, ensure_ascii=False, sort_keys=True, separators=(",", ":")).encode("utf-8")
+        ).hexdigest()
 
+    @property
+    def snapshot_integro(self):
+        if not self.snapshot_sha256 or not self.lote_codigo_snapshot or not self.tratamento_status_snapshot:
+            return False
+        esperado = self.calcular_snapshot_sha256(
+            movimentacao_id=self.movimentacao_id,
+            lote_id=self.lote_id,
+            quantidade=self.quantidade,
+            custo_unitario=self.custo_unitario,
+            lote_codigo=self.lote_codigo_snapshot,
+            lote_validade=self.lote_validade_snapshot,
+            tratamento_status=self.tratamento_status_snapshot,
+        )
+        return self.snapshot_sha256 == esperado
+
+    def save(self, *args, **kwargs):
+        if self.pk and type(self).objects.filter(pk=self.pk).exists():
+            raise ValidationError("A alocação histórica do lote é imutável.")
+        if self._state.adding:
+            self.lote_codigo_snapshot = self.lote.codigo
+            self.lote_validade_snapshot = self.lote.validade
+            self.tratamento_status_snapshot = self.lote.tratamento_validade_status
+            self.snapshot_sha256 = self.calcular_snapshot_sha256(
+                movimentacao_id=self.movimentacao_id,
+                lote_id=self.lote_id,
+                quantidade=self.quantidade,
+                custo_unitario=self.custo_unitario,
+                lote_codigo=self.lote_codigo_snapshot,
+                lote_validade=self.lote_validade_snapshot,
+                tratamento_status=self.tratamento_status_snapshot,
+            )
+        return super().save(*args, **kwargs)
+
+    def delete(self, *args, **kwargs):
+        raise ValidationError("A alocação histórica do lote é imutável.")
+
+    def __str__(self):
+        codigo = self.lote_codigo_snapshot or self.lote.codigo
+        return f"{self.movimentacao} / {codigo}: {self.quantidade}"
+
+
+class OrigemInventario(models.TextChoices):
+    MANUAL = "MANUAL", "Manual"
+    RISCO = "RISCO", "Fila de risco"
+    DIVERGENCIA_VALIDADE = "DIVERGENCIA_VALIDADE", "Divergência de validade"
 
 class StatusInventario(models.TextChoices):
     ABERTO = "ABERTO", "Aberto"
     APLICADO = "APLICADO", "Aplicado"
     CANCELADO = "CANCELADO", "Cancelado"
+    EXPIRADO = "EXPIRADO", "Expirado"
+
+
+class StatusExecucaoManutencaoInventarioValidade(models.TextChoices):
+    SUCESSO = "SUCESSO", "Sucesso"
+    FALHA = "FALHA", "Falha"
+
+
+class ExecucaoManutencaoInventarioValidade(models.Model):
+    execucao_id = models.UUIDField(default=uuid.uuid4, unique=True, editable=False)
+    status = models.CharField(max_length=10, choices=StatusExecucaoManutencaoInventarioValidade.choices)
+    iniciada_em = models.DateTimeField()
+    finalizada_em = models.DateTimeField()
+    expirados_total = models.PositiveIntegerField(default=0)
+    erro_codigo = models.CharField(max_length=100, blank=True)
+    erro_resumo = models.CharField(max_length=255, blank=True)
+    conteudo_sha256 = models.CharField(max_length=64, unique=True)
+
+    class Meta:
+        ordering = ["-finalizada_em", "-id"]
+
+    def save(self, *args, **kwargs):
+        if self.pk and type(self).objects.filter(pk=self.pk).exists():
+            raise ValidationError("O histórico de manutenção de validade é imutável.")
+        return super().save(*args, **kwargs)
+
+    def delete(self, *args, **kwargs):
+        raise ValidationError("O histórico de manutenção de validade é imutável.")
+
+    def __str__(self):
+        return f"Manutenção de validade {self.execucao_id}: {self.get_status_display()}"
 
 
 class InventarioEstoque(models.Model):
@@ -146,11 +467,38 @@ class InventarioEstoque(models.Model):
     usuario = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.PROTECT, related_name="inventarios")
     descricao = models.CharField(max_length=255)
     status = models.CharField(max_length=20, choices=StatusInventario.choices, default=StatusInventario.ABERTO)
+    origem = models.CharField(max_length=30, choices=OrigemInventario.choices, default=OrigemInventario.MANUAL)
+    chave_origem = models.CharField(max_length=64, null=True, blank=True, unique=True)
+    chave_origem_base = models.CharField(max_length=64, null=True, blank=True, db_index=True)
     criado_em = models.DateTimeField(auto_now_add=True)
     aplicado_em = models.DateTimeField(null=True, blank=True)
+    expira_em = models.DateTimeField(null=True, blank=True)
+    encerrado_em = models.DateTimeField(null=True, blank=True)
+    encerrado_por = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.PROTECT,
+        related_name="inventarios_estoque_encerrados",
+        null=True,
+        blank=True,
+    )
+    motivo_encerramento = models.CharField(max_length=255, blank=True)
 
     class Meta:
         ordering = ["-criado_em"]
+
+    @property
+    def prazo_operacional_expirado(self):
+        return bool(
+            self.status == StatusInventario.ABERTO
+            and self.expira_em
+            and self.expira_em <= timezone.now()
+        )
+
+    @property
+    def status_operacional_display(self):
+        if self.prazo_operacional_expirado:
+            return "Prazo expirado"
+        return self.get_status_display()
 
     def __str__(self):
         return f"Inventário {self.id} - {self.filial}"
@@ -172,6 +520,182 @@ class ItemInventarioEstoque(models.Model):
         return f"{self.produto}: {self.diferenca}"
 
 
+class OrigemItemInventarioValidade(models.Model):
+    item = models.ForeignKey(
+        ItemInventarioEstoque,
+        on_delete=models.PROTECT,
+        related_name="origens_validade",
+    )
+    conferencia = models.ForeignKey(
+        ConferenciaFisicaValidadeLote,
+        on_delete=models.PROTECT,
+        related_name="origens_inventario",
+    )
+    lote = models.ForeignKey(
+        LoteEstoque,
+        on_delete=models.PROTECT,
+        related_name="origens_inventario_validade",
+    )
+    criado_em = models.DateTimeField(default=timezone.now)
+
+    class Meta:
+        ordering = ["item_id", "conferencia_id"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["item", "conferencia"],
+                name="est_item_inv_conf_val_unica",
+            )
+        ]
+
+    def save(self, *args, **kwargs):
+        if self.pk and type(self).objects.filter(pk=self.pk).exists():
+            raise ValidationError("O vínculo de origem do inventário é imutável.")
+        if self.conferencia.lote_id != self.lote_id:
+            raise ValidationError("O lote não corresponde à conferência de origem.")
+        if self.item.produto_id != self.conferencia.produto_id_snapshot:
+            raise ValidationError("O produto do item não corresponde à conferência de origem.")
+        if self.item.inventario.filial_id != self.conferencia.filial_id_snapshot:
+            raise ValidationError("A filial do inventário não corresponde à conferência de origem.")
+        return super().save(*args, **kwargs)
+
+    def delete(self, *args, **kwargs):
+        raise ValidationError("O vínculo de origem do inventário é imutável.")
+
+    def __str__(self):
+        return f"{self.item} <- conferência {self.conferencia_id}"
+
+class EscopoLoteInventarioValidade(models.Model):
+    item = models.ForeignKey(
+        ItemInventarioEstoque,
+        on_delete=models.PROTECT,
+        related_name="escopos_validade",
+    )
+    lote = models.ForeignKey(
+        LoteEstoque,
+        on_delete=models.PROTECT,
+        related_name="escopos_inventario_validade",
+    )
+    origem = models.OneToOneField(
+        OrigemItemInventarioValidade,
+        on_delete=models.PROTECT,
+        related_name="escopo_contagem",
+        null=True,
+        blank=True,
+    )
+    criado_em = models.DateTimeField(default=timezone.now)
+
+    class Meta:
+        ordering = ["item_id", "lote_id"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["item", "lote"],
+                name="est_item_inv_lote_val_unico",
+            )
+        ]
+
+    def save(self, *args, **kwargs):
+        if self.pk and type(self).objects.filter(pk=self.pk).exists():
+            raise ValidationError("O escopo de lote do inventário é imutável.")
+        if self.item.produto_id != self.lote.produto_id:
+            raise ValidationError("O lote não corresponde ao produto do item.")
+        if self.item.inventario.filial_id != self.lote.filial_id:
+            raise ValidationError("O lote não corresponde à filial do inventário.")
+        if self.origem_id and (
+            self.origem.item_id != self.item_id or self.origem.lote_id != self.lote_id
+        ):
+            raise ValidationError("A evidência de origem não corresponde ao lote do escopo.")
+        return super().save(*args, **kwargs)
+
+    def delete(self, *args, **kwargs):
+        raise ValidationError("O escopo de lote do inventário é imutável.")
+
+    def __str__(self):
+        return f"{self.item} / lote {self.lote_id}"
+
+
+class ContagemLoteInventarioValidade(models.Model):
+    escopo = models.ForeignKey(
+        EscopoLoteInventarioValidade,
+        on_delete=models.PROTECT,
+        related_name="contagens",
+    )
+    quantidade_sistema_snapshot = models.DecimalField(max_digits=12, decimal_places=3)
+    quantidade_contada = models.DecimalField(max_digits=12, decimal_places=3)
+    observacao = models.CharField(max_length=255, blank=True)
+    contado_por = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.PROTECT,
+        related_name="contagens_lote_inventario_validade",
+    )
+    contado_em = models.DateTimeField(default=timezone.now)
+    conteudo_sha256 = models.CharField(max_length=64, unique=True)
+
+    class Meta:
+        ordering = ["-contado_em", "-id"]
+        indexes = [
+            models.Index(fields=["escopo", "contado_em"], name="est_cont_inv_val_esc_em_idx"),
+        ]
+
+    def save(self, *args, **kwargs):
+        if self.pk and type(self).objects.filter(pk=self.pk).exists():
+            raise ValidationError("A contagem por lote é imutável.")
+        return super().save(*args, **kwargs)
+
+    def delete(self, *args, **kwargs):
+        raise ValidationError("A contagem por lote é imutável.")
+
+    def __str__(self):
+        return f"Contagem do lote {self.escopo.lote_id}: {self.quantidade_contada}"
+
+class RetificacaoCapacidadeLoteEstoque(models.Model):
+    lote = models.ForeignKey(
+        LoteEstoque,
+        on_delete=models.PROTECT,
+        related_name="retificacoes_capacidade",
+    )
+    inventario = models.ForeignKey(
+        InventarioEstoque,
+        on_delete=models.PROTECT,
+        related_name="retificacoes_capacidade_lote",
+    )
+    contagem = models.OneToOneField(
+        ContagemLoteInventarioValidade,
+        on_delete=models.PROTECT,
+        related_name="retificacao_capacidade",
+    )
+    quantidade_inicial_snapshot = models.DecimalField(max_digits=12, decimal_places=3)
+    capacidade_adicional_anterior = models.DecimalField(max_digits=12, decimal_places=3)
+    acrescimo_autorizado = models.DecimalField(max_digits=12, decimal_places=3)
+    nova_capacidade = models.DecimalField(max_digits=12, decimal_places=3)
+    quantidade_contada = models.DecimalField(max_digits=12, decimal_places=3)
+    justificativa = models.CharField(max_length=255)
+    solicitado_por = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.PROTECT,
+        related_name="retificacoes_capacidade_lote_solicitadas",
+    )
+    autorizado_por = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.PROTECT,
+        related_name="retificacoes_capacidade_lote_autorizadas",
+    )
+    aplicado_em = models.DateTimeField(default=timezone.now)
+    conteudo_sha256 = models.CharField(max_length=64, unique=True)
+
+    class Meta:
+        ordering = ["-aplicado_em", "-id"]
+
+    def save(self, *args, **kwargs):
+        if self.pk and type(self).objects.filter(pk=self.pk).exists():
+            raise ValidationError("A retificação de capacidade do lote é imutável.")
+        return super().save(*args, **kwargs)
+
+    def delete(self, *args, **kwargs):
+        raise ValidationError("A retificação de capacidade do lote é imutável.")
+
+    def __str__(self):
+        return f"Retificação do lote {self.lote_id}: +{self.acrescimo_autorizado}"
+
 class TipoPerdaEstoque(models.TextChoices):
     VENCIMENTO = "VENCIMENTO", "Vencimento"
     AVARIA = "AVARIA", "Avaria"
@@ -186,6 +710,7 @@ class PerdaEstoque(models.Model):
     produto = models.ForeignKey("produtos.Produto", on_delete=models.PROTECT, related_name="perdas")
     filial = models.ForeignKey("empresas.Filial", on_delete=models.PROTECT, related_name="perdas_estoque")
     usuario = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.PROTECT, related_name="perdas_estoque")
+    lote = models.ForeignKey("estoque.LoteEstoque", on_delete=models.PROTECT, related_name="perdas", null=True, blank=True)
     desmembramento_item = models.ForeignKey(
         "estoque.ItemDesmembramentoProduto",
         on_delete=models.CASCADE,
@@ -564,6 +1089,7 @@ def consumir_lotes_movimentacao(
     lote_id=None,
     exigir_lote=False,
     ignorar_lotes_vencidos=False,
+    somente_lotes_vendaveis=False,
 ):
     restante = quantidade
     codigo_lote = (codigo_lote or "").strip()
@@ -578,6 +1104,8 @@ def consumir_lotes_movimentacao(
         lotes = lotes.filter(pk=lote_id)
     if ignorar_lotes_vencidos:
         lotes = lotes.filter(models.Q(validade__isnull=True) | models.Q(validade__gte=timezone.localdate()))
+    if somente_lotes_vendaveis:
+        lotes = lotes.filter(tratamento_validade_status__in=STATUS_TRATAMENTO_LOTE_VENDAVEL)
     lotes = lotes.order_by(models.F("validade").asc(nulls_last=True), "criado_em", "id")
     consumido = 0
     for lote in lotes:
@@ -669,6 +1197,7 @@ def movimentar_estoque(
     codigo_lote="",
     fabricacao=None,
     validade=None,
+    lote_id=None,
 ):
     with transaction.atomic():
         if quantidade <= 0:
@@ -676,6 +1205,19 @@ def movimentar_estoque(
         estoque, _ = Estoque.objects.select_for_update().get_or_create(produto=produto, filial=filial)
         quantidade_anterior = estoque.quantidade_atual
         custo_medio_anterior = estoque.custo_medio or Decimal(produto.preco_custo or 0)
+        if tipo == TipoMovimentacaoEstoque.VENDA:
+            if estoque.quantidade_disponivel < quantidade:
+                raise ValidationError("Estoque insuficiente.")
+            resumo_venda = resumo_disponibilidade_venda_lotes(
+                produto=produto, filial=filial, estoque=estoque, bloquear=True
+            )
+            if quantidade > resumo_venda["quantidade_vendavel"]:
+                if produto.exige_lote:
+                    raise ValidationError("Saldo insuficiente no lote.")
+                raise ValidationError(
+                    "Estoque vendável insuficiente. Há saldo reservado, vencido ou separado "
+                    "para tratamento que não pode ser consumido no caixa."
+                )
 
         if tipo in [TipoMovimentacaoEstoque.SAIDA, TipoMovimentacaoEstoque.VENDA, TipoMovimentacaoEstoque.PERDA]:
             if estoque.quantidade_disponivel < quantidade:
@@ -729,8 +1271,10 @@ def movimentar_estoque(
                 movimentacao=movimentacao,
                 quantidade=quantidade,
                 codigo_lote=codigo_lote,
-                exigir_lote=produto.exige_lote and tipo == TipoMovimentacaoEstoque.VENDA,
+                lote_id=lote_id,
+                exigir_lote=bool(lote_id) or (produto.exige_lote and tipo == TipoMovimentacaoEstoque.VENDA),
                 ignorar_lotes_vencidos=tipo == TipoMovimentacaoEstoque.VENDA,
+                somente_lotes_vendaveis=tipo == TipoMovimentacaoEstoque.VENDA,
             )
         elif codigo_lote and tipo not in [TipoMovimentacaoEstoque.RESERVA, TipoMovimentacaoEstoque.LIBERACAO_RESERVA]:
             criar_lote_movimentacao(

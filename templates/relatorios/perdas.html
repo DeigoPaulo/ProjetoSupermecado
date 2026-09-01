@@ -9,19 +9,21 @@
     <p>Valor estimado perdido por vencimento, avaria, quebra e outros motivos.</p>
   </div>
   <div class="actions">
-    <a class="secondary-button" href="{% url 'relatorios:perdas_csv' %}?data_inicio={{ data_inicio|date:'Y-m-d' }}&amp;data_fim={{ data_fim|date:'Y-m-d' }}{% if filial_id %}&amp;filial={{ filial_id }}{% endif %}"><i class="fa-solid fa-file-csv"></i> Excel/CSV</a>
-    <a class="secondary-button" href="{% url 'relatorios:perdas_imprimir' %}?data_inicio={{ data_inicio|date:'Y-m-d' }}&amp;data_fim={{ data_fim|date:'Y-m-d' }}{% if filial_id %}&amp;filial={{ filial_id }}{% endif %}" target="_blank"><i class="fa-solid fa-file-pdf"></i> PDF</a>
+    <a class="secondary-button" href="{% url 'relatorios:perdas_csv' %}?data_inicio={{ data_inicio|date:'Y-m-d' }}&amp;data_fim={{ data_fim|date:'Y-m-d' }}{% if filial_id %}&amp;filial={{ filial_id }}{% endif %}{% if tipo %}&amp;tipo={{ tipo }}{% endif %}{% if com_lote %}&amp;com_lote={{ com_lote }}{% endif %}"><i class="fa-solid fa-file-csv"></i> Excel/CSV</a>
+    <a class="secondary-button" href="{% url 'relatorios:perdas_imprimir' %}?data_inicio={{ data_inicio|date:'Y-m-d' }}&amp;data_fim={{ data_fim|date:'Y-m-d' }}{% if filial_id %}&amp;filial={{ filial_id }}{% endif %}{% if tipo %}&amp;tipo={{ tipo }}{% endif %}{% if com_lote %}&amp;com_lote={{ com_lote }}{% endif %}" target="_blank"><i class="fa-solid fa-file-pdf"></i> PDF</a>
     <a class="secondary-button" href="{% url 'estoque:perdas' %}">Lista de perdas</a>
     <a class="primary-button" href="{% url 'estoque:perda_nova' %}">Registrar perda</a>
   </div>
 </header>
 
 {% include "relatorios/includes/periodo_form.html" %}
+<form method="get" class="toolbar"><input type="hidden" name="data_inicio" value="{{ data_inicio|date:'Y-m-d' }}"><input type="hidden" name="data_fim" value="{{ data_fim|date:'Y-m-d' }}">{% if filial_id %}<input type="hidden" name="filial" value="{{ filial_id }}">{% endif %}<select name="tipo"><option value="">Todas as causas</option>{% for valor, rotulo in tipos_perda %}<option value="{{ valor }}" {% if tipo == valor %}selected{% endif %}>{{ rotulo }}</option>{% endfor %}</select><select name="com_lote"><option value="">Com e sem lote</option><option value="SIM" {% if com_lote == "SIM" %}selected{% endif %}>Somente vinculadas a lote</option><option value="NAO" {% if com_lote == "NAO" %}selected{% endif %}>Somente sem lote</option></select><button type="submit">Aplicar filtros</button></form>
 
 <section class="metrics-grid">
   <article class="metric"><span>Registros</span><strong>{{ total_perdas }}</strong></article>
   <article class="metric"><span>Custo perdido</span><strong>R$ {{ valor_custo_total|floatformat:2 }}</strong></article>
   <article class="metric"><span>Venda estimada</span><strong>R$ {{ valor_venda_total|floatformat:2 }}</strong></article>
+  <article class="metric"><span>Quantidade perdida</span><strong>{{ quantidade_total|quantidade_br }}</strong></article>
   <article class="metric"><span>Período</span><strong>{{ data_inicio|date:"d/m" }} - {{ data_fim|date:"d/m" }}</strong></article>
 </section>
 
@@ -33,7 +35,7 @@
       <tbody>
         {% for item in perdas_por_tipo %}
           <tr>
-            <td>{{ item.tipo }}</td>
+            <td>{{ item.tipo_label }}</td>
             <td>{{ item.quantidade }}</td>
             <td>R$ {{ item.custo|floatformat:2 }}</td>
             <td>R$ {{ item.venda|floatformat:2 }}</td>
@@ -47,22 +49,28 @@
   <div class="panel">
     <div class="panel-title">Ultimos registros</div>
     <table>
-      <thead><tr><th>Data</th><th>Produto</th><th>Tipo</th><th>Qtd</th><th>Custo</th></tr></thead>
+      <thead><tr><th>Data</th><th>Produto</th><th>Tipo/lote</th><th>Motivo</th><th>Qtd</th><th>Custo</th></tr></thead>
       <tbody>
         {% for perda in perdas %}
           <tr>
             <td>{{ perda.data|date:"d/m H:i" }}</td>
             <td>{{ perda.produto }}</td>
-            <td>{{ perda.get_tipo_display }}</td>
+            <td>{% if perda.lote %}{{ perda.lote.codigo }} · {% endif %}{{ perda.get_tipo_display }}</td>
+            <td>{{ perda.motivo }}</td>
             <td>{{ perda.quantidade|quantidade_br }}</td>
             <td>R$ {{ perda.valor_custo_estimado|floatformat:2 }}</td>
           </tr>
         {% empty %}
-          <tr><td colspan="5" class="empty">Nenhuma perda no período.</td></tr>
+          <tr><td colspan="6" class="empty">Nenhuma perda no período.</td></tr>
         {% endfor %}
       </tbody>
     </table>
   </div>
 </section>
-{% include "includes/pagination.html" with page_obj=perdas %}
+<div class="panel">
+  <div class="panel-title">Consolidação por lote, produto e filial</div>
+  <table><thead><tr><th>Lote</th><th>Produto</th><th>Filial</th><th>Registros</th><th>Quantidade</th><th>Custo</th><th>Venda estimada</th></tr></thead><tbody>
+  {% for item in perdas_por_lote %}<tr><td>{{ item.lote__codigo|default:"Sem lote" }}</td><td>{{ item.produto__nome }}</td><td>{{ item.filial__nome }}</td><td>{{ item.registros }}</td><td>{{ item.quantidade|quantidade_br }}</td><td>R$ {{ item.custo|floatformat:2 }}</td><td>R$ {{ item.venda|floatformat:2 }}</td></tr>{% empty %}<tr><td colspan="7" class="empty">Nenhuma perda para consolidar.</td></tr>{% endfor %}
+  </tbody></table>
+</div>{% include "includes/pagination.html" with page_obj=perdas %}
 {% endblock %}
