@@ -80,6 +80,8 @@ O contrato `inventory_pilot_dossier_integrity_v1` exige exatamente os quatro nom
 
 A mesma conferência está disponível no sexto cartão do painel Master. O upload é mantido integralmente em memória por um handler dedicado, exige extensão ZIP e confirmação explícita e retorna para download tanto resultados aprovados quanto reprovados. O nome do dossiê gerado contém o prefixo do SHA-256 do ZIP inteiro; o relatório visual publica o hash completo para comparação. Pacote e resultado são descartados ao fim da requisição e a proteção CSRF permanece ativa.
 
+Acima das ferramentas, a Central apresenta um roteiro numerado de 1 a 6. Cada etapa identifica o arquivo que deve ser preservado e o critério que impede o avanço: ausência de candidato comum ou impedimentos na prévia, ficha não apta, relatório inválido, conferência dos JSON reprovada ou conferência final do ZIP reprovada. Os cartões repetem o número da etapa e o guia se adapta a telas menores. A orientação não executa ações em sequência, não reaproveita arquivos automaticamente e deixa explícito que integridade confirmada não equivale a aceite real.
+
 Use `--dados-sinteticos` somente quando os registros forem de ensaio. Sem essa opção, o relatório não classifica os dados como sintéticos.
 
 O modo `--estrito` retorna falha quando qualquer verificação for reprovada, inclusive a prontidão histórica da filial quando o ensaio usa dados reais. O JSON é escrito na saída padrão para que a equipe possa arquivá-lo pelo procedimento de implantação escolhido, sem o sistema inventar uma aprovação.

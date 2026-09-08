@@ -422,3 +422,18 @@ Próxima ação interna: disponibilizar a mesma conferência do ZIP na interface
 - [x] Regressão completa de Estoque e Configurações aprovada com 275 testes.
 
 Próxima ação interna: organizar as seis ferramentas do piloto como um roteiro visual numerado, com arquivos esperados e critérios claros de parada, sem automatizar aprovação ou execução operacional.
+
+### Roteiro visual numerado do piloto
+
+- [x] Exibe as seis etapas na ordem operacional correta.
+- [x] Repete “Etapa X de 6” no cartão correspondente.
+- [x] Informa o nome esperado do arquivo produzido em cada etapa.
+- [x] Define critérios de parada para prévia, ficha, relatório e verificações.
+- [x] Informa que o dossiê só nasce de um conjunto coerente.
+- [x] Informa que integridade confirmada ainda não constitui aceite real.
+- [x] Não executa, encadeia ou aprova etapas automaticamente.
+- [x] Mantém os cartões responsivos em uma coluna nas telas menores.
+- [x] Continua visível somente dentro do painel exclusivo do Master.
+- [x] Regressão completa de Estoque e Configurações aprovada com 276 testes.
+
+Próxima ação interna: retomar a matriz fiscal GO pelos cenários operacionais ainda bloqueados, começando pela preparação segura da devolução ao fornecedor, sem emissão e sem presumir tributação antes dos dados reais e da revisão do contador.

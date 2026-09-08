@@ -1007,6 +1007,7 @@ class ConfiguracoesOperacionaisTests(TestCase):
         self.assertNotContains(central, "Baixar relatório final v3")
         self.assertNotContains(central, "Montar dossiê conferido")
         self.assertNotContains(central, "Conferir dossiê ZIP")
+        self.assertNotContains(central, "Roteiro visual do piloto")
         self.assertEqual(manifesto_local.status_code, 403)
         self.assertEqual(previa_piloto.status_code, 403)
         self.assertEqual(ficha_piloto.status_code, 403)
@@ -1053,6 +1054,7 @@ class ConfiguracoesOperacionaisTests(TestCase):
         self.assertContains(response, "Manutenção de inventários de validade")
         self.assertContains(response, "scripts/register_inventory_expiry_maintenance_task.ps1")
         self.assertContains(response, "verificar_fluxo_estoque_piloto")
+
         self.assertContains(response, "Diagnóstico de snapshots das vendas por lote")
         self.assertContains(response, "Consulta exclusiva do Master")
         self.assertContains(response, "docs/IMPLANTACAO_SERVIDOR_LOCAL.md")
@@ -1329,6 +1331,25 @@ class ConfiguracoesOperacionaisTests(TestCase):
         self.assertIn("expirar_inventarios_validade --confirmar-expiracao", agendador_validade_texto)
         self.assertIn("MultipleInstances IgnoreNew", agendador_validade_texto)
         self.assertIn('"SYSTEM"', agendador_validade_texto)
+
+    def test_servidor_local_master_exibe_roteiro_numerado_do_piloto(self):
+        response = self.client.get("/configuracoes/servidor-local/")
+        self.assertEqual(response.status_code, 200)
+        conteudo = response.content.decode()
+        etapas = [f"Etapa {numero} de 6" for numero in range(1, 7)]
+        posicoes = [conteudo.index(etapa) for etapa in etapas]
+        self.assertEqual(posicoes, sorted(posicoes))
+        for saida in (
+            "previa_piloto_*.json",
+            "ficha_piloto_*.json",
+            "relatorio_piloto_*.json",
+            "integridade_piloto_*.json",
+            "dossie_piloto_*.zip",
+            "integridade_dossie_*.json",
+        ):
+            self.assertContains(response, saida)
+        self.assertContains(response, "não avance para a etapa seguinte")
+        self.assertContains(response, "isso ainda não constitui aceite real")
 
     def test_manifesto_servidor_local_exige_admin_master(self):
         gerente = get_user_model().objects.create_user("gerente_local", "gerente_local@example.com", "123")

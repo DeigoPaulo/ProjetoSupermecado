@@ -244,9 +244,46 @@
     <dt>Conferência offline dos arquivos</dt><dd><code>{{ payload.ensaio_estoque.verificacao_artefatos_comando }}</code></dd>
     <dt>Conferência offline do dossiê</dt><dd><code>{{ payload.ensaio_estoque.verificacao_dossie_comando }}</code></dd>
   </dl>
+  <div class="pilot-workflow-heading">
+    <h3>Roteiro visual do piloto</h3>
+    <p>Siga a ordem e guarde cada download. Se um critério de parada aparecer, não avance para a etapa seguinte.</p>
+  </div>
+  <ol class="pilot-workflow" aria-label="Seis etapas do piloto de estoque">
+    <li>
+      <strong>1. Prévia</strong>
+      <span>Saída: <code>previa_piloto_*.json</code>.</span>
+      <small>Pare se não houver produto comum ou existirem impedimentos.</small>
+    </li>
+    <li>
+      <strong>2. Ficha</strong>
+      <span>Saída: <code>ficha_piloto_*.json</code>.</span>
+      <small>Pare se <code>apta_para_verificacao_final</code> não for verdadeiro.</small>
+    </li>
+    <li>
+      <strong>3. Relatório final</strong>
+      <span>Saída: <code>relatorio_piloto_*.json</code>.</span>
+      <small>Pare se <code>valida</code> não for verdadeiro.</small>
+    </li>
+    <li>
+      <strong>4. Conferência dos JSON</strong>
+      <span>Saída: <code>integridade_piloto_*.json</code>.</span>
+      <small>Pare se <code>integridade_confirmada</code> não for verdadeiro.</small>
+    </li>
+    <li>
+      <strong>5. Dossiê</strong>
+      <span>Saída: <code>dossie_piloto_*.zip</code>.</span>
+      <small>O ZIP só é gerado quando os três JSON formam um conjunto coerente.</small>
+    </li>
+    <li>
+      <strong>6. Conferência do ZIP</strong>
+      <span>Saída: <code>integridade_dossie_*.json</code>.</span>
+      <small>Conclua somente com integridade confirmada; isso ainda não constitui aceite real.</small>
+    </li>
+  </ol>
   <div class="pilot-tools-grid">
     <form method="post" action="{% url 'configuracoes:servidor_local_previa_piloto' %}" class="pilot-tool">
       {% csrf_token %}
+      <span class="pilot-step-badge">Etapa 1 de 6</span>
       <h3>Baixar prévia por filial</h3>
       <label class="form-field">
         <span>Filial</span>
@@ -265,6 +302,7 @@
     </form>
     <form method="post" action="{% url 'configuracoes:servidor_local_ficha_piloto' %}" class="pilot-tool">
       {% csrf_token %}
+      <span class="pilot-step-badge">Etapa 2 de 6</span>
       <h3>Baixar ficha dos IDs escolhidos</h3>
       <div class="form-grid">
         <label class="form-field"><span>Entrada</span><input type="number" name="entrada_id" min="1" required></label>
@@ -285,6 +323,7 @@
     </form>
     <form method="post" action="{% url 'configuracoes:servidor_local_relatorio_piloto' %}" class="pilot-tool">
       {% csrf_token %}
+      <span class="pilot-step-badge">Etapa 3 de 6</span>
       <h3>Baixar relatório final v3</h3>
       <label class="form-field form-field-full">
         <span>Tipo dos dados</span>
@@ -310,6 +349,7 @@
     </form>
     <form method="post" enctype="multipart/form-data" action="{% url 'configuracoes:servidor_local_verificar_artefatos_piloto' %}" class="pilot-tool">
       {% csrf_token %}
+      <span class="pilot-step-badge">Etapa 4 de 6</span>
       <h3>Conferir ficha e relatório</h3>
       <label class="form-field form-field-full">
         <span>Ficha v2 em JSON</span>
@@ -330,6 +370,7 @@
     </form>
     <form method="post" enctype="multipart/form-data" action="{% url 'configuracoes:servidor_local_dossie_piloto' %}" class="pilot-tool">
       {% csrf_token %}
+      <span class="pilot-step-badge">Etapa 5 de 6</span>
       <h3>Montar dossiê conferido</h3>
       <label class="form-field form-field-full">
         <span>Ficha v2 em JSON</span>
@@ -353,6 +394,7 @@
     </form>
     <form method="post" enctype="multipart/form-data" action="{% url 'configuracoes:servidor_local_verificar_dossie_piloto' %}" class="pilot-tool">
       {% csrf_token %}
+      <span class="pilot-step-badge">Etapa 6 de 6</span>
       <h3>Conferir dossiê ZIP</h3>
       <label class="form-field form-field-full">
         <span>Dossiê do piloto em ZIP</span>

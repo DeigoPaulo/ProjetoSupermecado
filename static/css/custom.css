@@ -4755,6 +4755,68 @@ button:disabled,
   margin: 18px 0;
 }
 
+.pilot-workflow-heading {
+  margin-top: 20px;
+}
+
+.pilot-workflow-heading h3,
+.pilot-workflow-heading p {
+  margin: 0;
+}
+
+.pilot-workflow-heading p {
+  margin-top: 5px;
+  color: var(--muted);
+}
+
+.pilot-workflow {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+  margin: 14px 0 20px;
+  padding: 0;
+  list-style: none;
+}
+
+.pilot-workflow li {
+  display: grid;
+  align-content: start;
+  gap: 6px;
+  min-width: 0;
+  padding: 14px;
+  border: 1px solid #cbd8eb;
+  border-left: 4px solid #0b57d0;
+  border-radius: 8px;
+  background: #ffffff;
+}
+
+.pilot-workflow strong {
+  color: #082c6c;
+}
+
+.pilot-workflow span,
+.pilot-workflow small {
+  overflow-wrap: anywhere;
+  color: #475569;
+  line-height: 1.4;
+}
+
+.pilot-workflow small {
+  color: #8a3b12;
+}
+
+.pilot-step-badge {
+  justify-self: start;
+  padding: 4px 9px;
+  border-radius: 999px;
+  background: #dbeafe;
+  color: #164a9c;
+  font-size: 0.78rem;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+}
+
 .pilot-tool {
   display: grid;
   align-content: start;
@@ -4793,6 +4855,10 @@ button:disabled,
 }
 
 @media (max-width: 900px) {
+  .pilot-workflow {
+    grid-template-columns: 1fr;
+  }
+
   .pilot-tools-grid {
     grid-template-columns: 1fr;
   }
