@@ -372,3 +372,19 @@ O verificador comprova consistência entre conteúdo, hash e vínculo dos dois a
 - [x] Não persiste arquivo, nome, responsável, resultado ou aceite.
 - [x] Não consulta banco nem aciona serviço externo.
 - [x] Regressão completa de Estoque e Configurações aprovada com 267 testes.
+
+### Dossiê ZIP local do piloto
+
+- [x] Quinto cartão disponível somente ao Master.
+- [x] Exige ficha v2, relatório v3, conferência íntegra e confirmação explícita.
+- [x] Reconfere contratos, hashes, filial, produto e os cinco IDs em memória.
+- [x] Recusa conferência adulterada ou pertencente a outro conjunto.
+- [x] Usa nomes internos fixos, sem incorporar nomes enviados pelo usuário.
+- [x] Inclui manifesto com tamanho e SHA-256 dos três arquivos empacotados.
+- [x] Protege o próprio manifesto com SHA-256 e declara ausência de assinatura digital.
+- [x] Mantém proteção CSRF, limite individual de 5 MB e limite total da requisição.
+- [x] Não consulta banco, não persiste o ZIP e não registra aceite.
+- [x] Não emite documento fiscal nem aciona Focus ou SEFAZ direta.
+- [x] Regressão completa de Estoque e Configurações aprovada com 270 testes.
+
+Próxima ação interna: criar um verificador offline do ZIP que confira a lista segura de entradas, o manifesto e todos os hashes sem extrair arquivos no disco.

@@ -327,6 +327,29 @@
       <button class="secondary-button" type="submit">Baixar resultado da conferência</button>
       <small>Os arquivos ficam somente em memória durante a requisição e não são armazenados.</small>
     </form>
+    <form method="post" enctype="multipart/form-data" action="{% url 'configuracoes:servidor_local_dossie_piloto' %}" class="pilot-tool">
+      {% csrf_token %}
+      <h3>Montar dossiê conferido</h3>
+      <label class="form-field form-field-full">
+        <span>Ficha v2 em JSON</span>
+        <input type="file" name="ficha_json" accept="application/json,.json" required>
+      </label>
+      <label class="form-field form-field-full">
+        <span>Relatório final v3 em JSON</span>
+        <input type="file" name="relatorio_json" accept="application/json,.json" required>
+      </label>
+      <label class="form-field form-field-full">
+        <span>Resultado da conferência em JSON</span>
+        <input type="file" name="verificacao_json" accept="application/json,.json" required>
+        <small>Cada arquivo local pode ter até 5 MB.</small>
+      </label>
+      <label class="pilot-confirm">
+        <input type="checkbox" name="confirmar_dossie" value="sim" required>
+        <span>Confirmo a montagem local e temporária do dossiê destes três arquivos.</span>
+      </label>
+      <button class="secondary-button" type="submit">Baixar dossiê ZIP</button>
+      <small>O sistema reconfere o conjunto, cria um manifesto e não registra aceite nem armazena o ZIP.</small>
+    </form>
   </div>
   <div class="table-wrapper">
     <table>

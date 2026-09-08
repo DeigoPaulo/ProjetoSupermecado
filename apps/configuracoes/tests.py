@@ -172,6 +172,17 @@ class ConfiguracoesOperacionaisTests(TestCase):
         )
         self.assertEqual(com_token.status_code, 400)
 
+        dossie_sem_token = cliente_csrf.post(
+            "/configuracoes/servidor-local/piloto/dossie.zip",
+            {"confirmar_dossie": "sim"},
+        )
+        self.assertEqual(dossie_sem_token.status_code, 403)
+        dossie_com_token = cliente_csrf.post(
+            "/configuracoes/servidor-local/piloto/dossie.zip",
+            {"confirmar_dossie": "sim", "csrfmiddlewaretoken": token},
+        )
+        self.assertEqual(dossie_com_token.status_code, 400)
+
 
     def test_homologacao_operacional_persiste_por_filial_e_pagina_historico(self):
         resposta = self.client.post(
@@ -965,17 +976,23 @@ class ConfiguracoesOperacionaisTests(TestCase):
             "/configuracoes/servidor-local/piloto/verificar-arquivos.json",
             {"confirmar_verificacao": "sim"},
         )
+        dossie_piloto = self.client.post(
+            "/configuracoes/servidor-local/piloto/dossie.zip",
+            {"confirmar_dossie": "sim"},
+        )
         self.assertEqual(central.status_code, 200)
         self.assertNotContains(central, "Diagnóstico de snapshots das vendas por lote")
         self.assertNotContains(central, "previsualizar_fluxo_estoque_piloto")
         self.assertNotContains(central, "gerar_ficha_execucao_piloto")
         self.assertNotContains(central, "verificar_artefatos_piloto")
         self.assertNotContains(central, "Baixar relatório final v3")
+        self.assertNotContains(central, "Montar dossiê conferido")
         self.assertEqual(manifesto_local.status_code, 403)
         self.assertEqual(previa_piloto.status_code, 403)
         self.assertEqual(ficha_piloto.status_code, 403)
         self.assertEqual(relatorio_piloto.status_code, 403)
         self.assertEqual(verificacao_artefatos.status_code, 403)
+        self.assertEqual(dossie_piloto.status_code, 403)
     def test_servidor_local_admin_prepara_manifesto_de_implantacao(self):
         self.empresa.modo_implantacao = ModoImplantacao.HIBRIDO
         self.empresa.sincronizacao_automatica = True

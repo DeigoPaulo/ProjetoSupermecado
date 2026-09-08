@@ -1,7 +1,8 @@
 import json
+import zipfile
 from datetime import timedelta
 from decimal import Decimal
-from io import StringIO
+from io import BytesIO, StringIO
 
 from django.contrib.auth import get_user_model
 from django.core.exceptions import ValidationError
@@ -312,6 +313,54 @@ class FluxoEstoquePilotoPontaAPontaTests(TestCase):
         self.assertFalse(integridade_visual["consulta_banco"])
         self.assertFalse(integridade_visual["persiste_resultado"])
         self.assertNotIn("Operador Piloto", resposta_integridade_visual.content.decode())
+        resposta_dossie = self.client.post(
+            "/configuracoes/servidor-local/piloto/dossie.zip",
+            {
+                "ficha_json": SimpleUploadedFile(
+                    "ficha.json", resposta_ficha.content, content_type="application/json"
+                ),
+                "relatorio_json": SimpleUploadedFile(
+                    "relatorio.json",
+                    resposta_relatorio.content,
+                    content_type="application/json",
+                ),
+                "verificacao_json": SimpleUploadedFile(
+                    "verificacao.json",
+                    resposta_integridade_visual.content,
+                    content_type="application/json",
+                ),
+                "confirmar_dossie": "sim",
+            },
+        )
+        self.assertEqual(resposta_dossie.status_code, 200)
+        self.assertEqual(resposta_dossie["Content-Type"], "application/zip")
+        self.assertIn("attachment", resposta_dossie["Content-Disposition"])
+        with zipfile.ZipFile(BytesIO(resposta_dossie.content)) as pacote:
+            manifesto_dossie = json.loads(pacote.read("manifesto.json"))
+            self.assertEqual(
+                manifesto_dossie["contrato"], "inventory_pilot_dossier_v1"
+            )
+            self.assertTrue(manifesto_dossie["integridade_confirmada"])
+            self.assertFalse(manifesto_dossie["persiste_dossie"])
+        resposta_dossie_sem_confirmacao = self.client.post(
+            "/configuracoes/servidor-local/piloto/dossie.zip",
+            {
+                "ficha_json": SimpleUploadedFile(
+                    "ficha.json", resposta_ficha.content, content_type="application/json"
+                ),
+                "relatorio_json": SimpleUploadedFile(
+                    "relatorio.json",
+                    resposta_relatorio.content,
+                    content_type="application/json",
+                ),
+                "verificacao_json": SimpleUploadedFile(
+                    "verificacao.json",
+                    resposta_integridade_visual.content,
+                    content_type="application/json",
+                ),
+            },
+        )
+        self.assertEqual(resposta_dossie_sem_confirmacao.status_code, 400)
         resposta_integridade_sem_confirmacao = self.client.post(
             "/configuracoes/servidor-local/piloto/verificar-arquivos.json",
             {

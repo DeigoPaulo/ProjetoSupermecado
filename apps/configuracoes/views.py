@@ -41,6 +41,7 @@ from apps.fiscal.integridade_operacional import diagnostico_integridade_operacio
 from apps.fiscal.models import ConfiguracaoFiscal
 from apps.financeiro.models import ContaMovimentoFinanceiro
 from apps.estoque.diagnostico_snapshots import diagnostico_cobertura_snapshots_lote
+from apps.estoque.dossie_piloto import gerar_dossie_piloto
 from apps.estoque.evidencia_piloto import gerar_evidencia_fluxo_estoque_piloto
 from apps.estoque.ficha_execucao_piloto import gerar_ficha_execucao_piloto
 from apps.estoque.previsualizacao_piloto import previsualizar_candidatos_piloto
@@ -1940,8 +1941,10 @@ def _servidor_local_payload(request):
             "contrato_previa": "inventory_pilot_candidate_preview_v1",
             "contrato_ficha": "inventory_pilot_execution_sheet_v2",
             "contrato_verificacao_artefatos": "inventory_pilot_artifact_integrity_v1",
+            "contrato_dossie": "inventory_pilot_dossier_v1",
             "download_relatorio_master": True,
             "verificacao_artefatos_visual_master": True,
+            "dossie_visual_master": True,
             "somente_leitura": True,
             "comunicacao_externa": False,
             "previa_comando": "manage.py previsualizar_fluxo_estoque_piloto --filial-id ID --estrito",
@@ -2280,6 +2283,50 @@ def servidor_local_verificar_artefatos_piloto(request):
         raise PermissionDenied
     request.upload_handlers = [ArtefatoPilotoMemoryUploadHandler(request)]
     return _processar_verificacao_artefatos_piloto(request)
+
+
+@csrf_protect
+def _processar_dossie_piloto(request):
+    try:
+        if request.POST.get("confirmar_dossie") != "sim":
+            raise ValueError
+        ficha = carregar_artefato_upload(request.FILES.get("ficha_json"))
+        relatorio = carregar_artefato_upload(request.FILES.get("relatorio_json"))
+        verificacao = carregar_artefato_upload(
+            request.FILES.get("verificacao_json")
+        )
+        conteudo, manifesto = gerar_dossie_piloto(
+            ficha=ficha, relatorio=relatorio, verificacao=verificacao
+        )
+    except (RequestDataTooBig, TypeError, ValueError):
+        return JsonResponse(
+            {
+                "erro": (
+                    "Revise a confirmação e os três arquivos JSON coerentes "
+                    "de até 5 MB."
+                )
+            },
+            status=400,
+        )
+    resposta = HttpResponse(conteudo, content_type="application/zip")
+    resposta["Content-Disposition"] = (
+        "attachment; filename=\"dossie_piloto_filial_"
+        f"{manifesto['filial_id']}_{manifesto['conteudo_sha256'][:12]}.zip\""
+    )
+    return resposta
+
+
+@csrf_exempt
+@login_required
+@role_required(*SISTEMA)
+def servidor_local_dossie_piloto(request):
+    _exigir_admin_master(request.user)
+    if request.method != "POST":
+        raise PermissionDenied
+    request.upload_handlers = [
+        ArtefatoPilotoMemoryUploadHandler(request, quantidade_arquivos=3)
+    ]
+    return _processar_dossie_piloto(request)
 
 
 @login_required

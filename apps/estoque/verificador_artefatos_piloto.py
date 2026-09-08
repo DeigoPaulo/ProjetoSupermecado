@@ -16,7 +16,8 @@ from .ficha_execucao_piloto import CONTRATO_FICHA_EXECUCAO_PILOTO
 
 CONTRATO_VERIFICACAO_ARTEFATOS_PILOTO = "inventory_pilot_artifact_integrity_v1"
 LIMITE_ARQUIVO_JSON = 5 * 1024 * 1024
-LIMITE_REQUISICAO_UPLOAD = (2 * LIMITE_ARQUIVO_JSON) + (64 * 1024)
+LIMITE_SOBRA_MULTIPART = 64 * 1024
+LIMITE_REQUISICAO_UPLOAD = (2 * LIMITE_ARQUIVO_JSON) + LIMITE_SOBRA_MULTIPART
 _SHA256_RE = re.compile(r"^[0-9a-f]{64}$")
 _CAMPOS_OBJETOS = {
     "entrada_id",
@@ -28,12 +29,20 @@ _CAMPOS_OBJETOS = {
 
 
 class ArtefatoPilotoMemoryUploadHandler(FileUploadHandler):
-    """Mantém os dois uploads somente em memória e limita a requisição inteira."""
+    """Mantém uploads JSON somente em memória e limita a requisição inteira."""
+
+    def __init__(self, request=None, *, quantidade_arquivos=2):
+        super().__init__(request)
+        if quantidade_arquivos not in {2, 3}:
+            raise ValueError("A quantidade de artefatos deve ser dois ou três.")
+        self.limite_requisicao = (
+            quantidade_arquivos * LIMITE_ARQUIVO_JSON
+        ) + LIMITE_SOBRA_MULTIPART
 
     def handle_raw_input(
         self, input_data, META, content_length, boundary, encoding=None
     ):
-        if content_length is None or content_length > LIMITE_REQUISICAO_UPLOAD:
+        if content_length is None or content_length > self.limite_requisicao:
             raise RequestDataTooBig("A requisição dos artefatos excede o limite.")
 
     def new_file(self, *args, **kwargs):
