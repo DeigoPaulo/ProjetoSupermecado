@@ -41,6 +41,14 @@ Antes de escolher os cinco IDs, o Master pode consultar candidatos recentes de u
 
 A prévia usa o contrato `inventory_pilot_candidate_preview_v1`, limita cada categoria a 20 registros por padrão e aceita `--limite` entre 1 e 100. Ela mostra produtos presentes nas cinco etapas e impedimentos, mas não combina nem escolhe IDs automaticamente. A janela limitada não substitui a conferência humana nem a validação final.
 
+Depois da escolha manual, gere a ficha antes do verificador final:
+
+```powershell
+.\.venv\Scripts\python.exe manage.py gerar_ficha_execucao_piloto --entrada-id ID --venda-id ID --perda-id ID --inventario-id ID --fechamento-id ID --estrito
+```
+
+A ficha usa o contrato `inventory_pilot_execution_sheet_v1`, repete as condições básicas de compatibilidade, incorpora a prontidão da filial, lista impedimentos e produz SHA-256. Ela não grava um aceite, não executa o ensaio e declara `aprovacao_automatica=false`. Somente depois de revisar a ficha o Master deve executar o verificador v3 abaixo.
+
 ```powershell
 .\.venv\Scripts\python.exe manage.py verificar_fluxo_estoque_piloto --entrada-id ID --venda-id ID --perda-id ID --inventario-id ID --fechamento-id ID --estrito
 ```

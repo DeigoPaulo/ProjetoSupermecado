@@ -935,6 +935,7 @@ class ConfiguracoesOperacionaisTests(TestCase):
         self.assertEqual(central.status_code, 200)
         self.assertNotContains(central, "Diagnóstico de snapshots das vendas por lote")
         self.assertNotContains(central, "previsualizar_fluxo_estoque_piloto")
+        self.assertNotContains(central, "gerar_ficha_execucao_piloto")
         self.assertEqual(manifesto_local.status_code, 403)
     def test_servidor_local_admin_prepara_manifesto_de_implantacao(self):
         self.empresa.modo_implantacao = ModoImplantacao.HIBRIDO
@@ -1140,9 +1141,17 @@ class ConfiguracoesOperacionaisTests(TestCase):
             payload["ensaio_estoque"]["contrato_previa"],
             "inventory_pilot_candidate_preview_v1",
         )
+        self.assertEqual(
+            payload["ensaio_estoque"]["contrato_ficha"],
+            "inventory_pilot_execution_sheet_v1",
+        )
         self.assertIn(
             "previsualizar_fluxo_estoque_piloto",
             payload["ensaio_estoque"]["previa_comando"],
+        )
+        self.assertIn(
+            "gerar_ficha_execucao_piloto",
+            payload["ensaio_estoque"]["ficha_comando"],
         )
         self.assertEqual(
             payload["diagnostico_snapshots_lote"]["contrato"],

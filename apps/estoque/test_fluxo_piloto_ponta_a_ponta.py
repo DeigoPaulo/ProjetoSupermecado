@@ -6,6 +6,7 @@ from io import StringIO
 from django.contrib.auth import get_user_model
 from django.core.exceptions import ValidationError
 from django.core.management import call_command
+from django.core.management.base import CommandError
 from django.test import TestCase
 from django.utils import timezone
 
@@ -21,6 +22,7 @@ from apps.vendas.services import finalizar_venda
 
 from .evidencia_piloto import gerar_evidencia_fluxo_estoque_piloto
 from .fechamento_contabil import capturar_fechamento_estoque_contabil
+from .ficha_execucao_piloto import gerar_ficha_execucao_piloto
 from .models import (
     Estoque,
     LoteEstoque,
@@ -198,6 +200,34 @@ class FluxoEstoquePilotoPontaAPontaTests(TestCase):
             filial=filial, usuario=usuario
         )
         self.assertTrue(criado_fechamento)
+        ficha = gerar_ficha_execucao_piloto(
+            entrada_id=entrada.pk,
+            venda_id=venda.pk,
+            perda_id=perda.pk,
+            inventario_id=inventario.pk,
+            fechamento_id=fechamento.pk,
+        )
+        self.assertEqual(ficha["contrato"], "inventory_pilot_execution_sheet_v1")
+        self.assertTrue(ficha["apta_para_verificacao_final"])
+        self.assertFalse(ficha["aprovacao_automatica"])
+        self.assertEqual(ficha["impedimentos"], [])
+        self.assertEqual(len(ficha["conteudo_sha256"]), 64)
+        self.assertIn(f"--entrada-id {entrada.pk}", ficha["comando_verificacao_final"])
+
+        saida_ficha = StringIO()
+        call_command(
+            "gerar_ficha_execucao_piloto",
+            entrada_id=entrada.pk,
+            venda_id=venda.pk,
+            perda_id=perda.pk,
+            inventario_id=inventario.pk,
+            fechamento_id=fechamento.pk,
+            estrito=True,
+            stdout=saida_ficha,
+        )
+        self.assertTrue(
+            json.loads(saida_ficha.getvalue())["apta_para_verificacao_final"]
+        )
         previa = previsualizar_candidatos_piloto(filial_id=filial.pk)
         self.assertEqual(previa["contrato"], "inventory_pilot_candidate_preview_v1")
         self.assertEqual(previa["produtos_com_fluxo_completo"], [produto.pk])
@@ -291,6 +321,30 @@ class FluxoEstoquePilotoPontaAPontaTests(TestCase):
         outro_fechamento, _ = capturar_fechamento_estoque_contabil(
             filial=outra_filial, usuario=usuario
         )
+        ficha_incompativel = gerar_ficha_execucao_piloto(
+            entrada_id=entrada.pk,
+            venda_id=venda.pk,
+            perda_id=perda.pk,
+            inventario_id=inventario.pk,
+            fechamento_id=outro_fechamento.pk,
+        )
+        self.assertFalse(ficha_incompativel["apta_para_verificacao_final"])
+        self.assertIsNone(ficha_incompativel["filial_id"])
+        self.assertIn(
+            "MESMA_FILIAL",
+            {item["codigo"] for item in ficha_incompativel["impedimentos"]},
+        )
+        with self.assertRaisesMessage(CommandError, "ainda possui impedimentos"):
+            call_command(
+                "gerar_ficha_execucao_piloto",
+                entrada_id=entrada.pk,
+                venda_id=venda.pk,
+                perda_id=perda.pk,
+                inventario_id=inventario.pk,
+                fechamento_id=outro_fechamento.pk,
+                estrito=True,
+                stdout=StringIO(),
+            )
         with self.assertRaisesMessage(ValidationError, "mesma filial"):
             gerar_evidencia_fluxo_estoque_piloto(
                 entrada_id=entrada.pk,

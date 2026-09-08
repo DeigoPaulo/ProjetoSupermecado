@@ -282,3 +282,21 @@ O contrato `inventory_pilot_candidate_preview_v1` reduz erro na escolha manual d
 - [x] Comando de prévia fica visível na Central apenas ao Master.
 
 A prévia é preparatória. O contrato v3 continua revalidando os cinco registros escolhidos e é a fonte do resultado final do ensaio.
+
+## Ficha de execução do piloto
+
+O contrato `inventory_pilot_execution_sheet_v1` formaliza a revisão dos IDs escolhidos pelo Master antes do verificador final.
+
+- [x] Exige os IDs de entrada, venda, perda, inventário e fechamento.
+- [x] Confere filial única e exatamente um produto comum.
+- [x] Confere os estados operacionais mínimos dos cinco registros.
+- [x] Bloqueia venda que já possua documento fiscal.
+- [x] Exige perda por vencimento vinculada ao lote.
+- [x] Incorpora a trava de prontidão histórica da filial.
+- [x] Lista impedimentos sem corrigir dados automaticamente.
+- [x] Gera comando final somente com IDs inteiros e SHA-256 da ficha.
+- [x] Declara explicitamente que não produz aprovação automática.
+- [x] Modo estrito recusa seleção incompatível.
+- [x] Central exibe o comando somente no painel Master.
+
+A ficha não substitui o relatório v3, o arquivamento da evidência nem a conferência operacional responsável.
