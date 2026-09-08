@@ -388,3 +388,20 @@ O verificador comprova consistência entre conteúdo, hash e vínculo dos dois a
 - [x] Regressão completa de Estoque e Configurações aprovada com 270 testes.
 
 Próxima ação interna: criar um verificador offline do ZIP que confira a lista segura de entradas, o manifesto e todos os hashes sem extrair arquivos no disco.
+
+### Verificação offline do dossiê ZIP
+
+- [x] Comando `verificar_dossie_piloto` com modo estrito.
+- [x] Exige exatamente ficha, relatório, verificação e manifesto com nomes fixos.
+- [x] Recusa entradas extras, duplicadas, criptografadas ou com compressão não suportada.
+- [x] Limita o ZIP, cada JSON e a soma descompactada antes da leitura do conteúdo.
+- [x] Confere CRC, UTF-8 e raiz como objeto JSON.
+- [x] Confere contrato e SHA-256 próprio do manifesto.
+- [x] Reconstrói o manifesto e compara tamanhos, hashes e vínculos esperados.
+- [x] Detecta alteração interna mesmo quando o ZIP é recomposto com CRC válido.
+- [x] Não extrai arquivos nem inclui caminho local ou responsáveis no resultado.
+- [x] Não consulta banco, não persiste resultado e não acessa a rede.
+- [x] Comando fica informado somente no painel do Master.
+- [x] Regressão completa de Estoque e Configurações aprovada com 274 testes.
+
+Próxima ação interna: disponibilizar a mesma conferência do ZIP na interface Master, processando o upload somente em memória e sem armazenar o pacote ou o resultado.

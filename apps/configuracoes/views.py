@@ -1951,6 +1951,7 @@ def _servidor_local_payload(request):
             "ficha_comando": "manage.py gerar_ficha_execucao_piloto --entrada-id ID --venda-id ID --perda-id ID --inventario-id ID --fechamento-id ID --responsavel-execucao NOME --responsavel-conferencia NOME --estrito",
             "comando": "manage.py verificar_fluxo_estoque_piloto --entrada-id ID --venda-id ID --perda-id ID --inventario-id ID --fechamento-id ID --estrito",
             "verificacao_artefatos_comando": "manage.py verificar_artefatos_piloto --ficha FICHA.json --relatorio RELATORIO.json --estrito",
+            "verificacao_dossie_comando": "manage.py verificar_dossie_piloto --dossie DOSSIE.zip --estrito",
             "dados_sinteticos_flag": "--dados-sinteticos",
         },
         "backup_local": {

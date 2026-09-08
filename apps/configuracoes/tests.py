@@ -985,6 +985,7 @@ class ConfiguracoesOperacionaisTests(TestCase):
         self.assertNotContains(central, "previsualizar_fluxo_estoque_piloto")
         self.assertNotContains(central, "gerar_ficha_execucao_piloto")
         self.assertNotContains(central, "verificar_artefatos_piloto")
+        self.assertNotContains(central, "verificar_dossie_piloto")
         self.assertNotContains(central, "Baixar relatório final v3")
         self.assertNotContains(central, "Montar dossiê conferido")
         self.assertEqual(manifesto_local.status_code, 403)

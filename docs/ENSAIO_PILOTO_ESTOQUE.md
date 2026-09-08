@@ -70,6 +70,14 @@ O mesmo verificador está disponível no quarto cartão da Central do servidor, 
 
 Depois da conferência, o quinto cartão pode reunir ficha, relatório e resultado da conferência no contrato `inventory_pilot_dossier_v1`. Os três JSON são novamente validados em memória; qualquer hash, vínculo, contrato ou proteção divergente impede o download. O ZIP usa nomes internos fixos e inclui `manifesto.json` com filial, produto, cinco IDs, tamanho e SHA-256 dos três arquivos efetivamente empacotados. O manifesto também possui SHA-256 próprio e declara que o pacote não é assinatura digital, não registra aceite, não consulta banco, não é persistido e não acessa a rede.
 
+O ZIP arquivado pode ser novamente conferido, sem extração, pelo comando:
+
+```powershell
+.\.venv\Scripts\python.exe manage.py verificar_dossie_piloto --dossie .\dossie_piloto.zip --estrito
+```
+
+O contrato `inventory_pilot_dossier_integrity_v1` exige exatamente os quatro nomes internos esperados, sem duplicidades, diretórios ou entradas criptografadas. Ele limita o tamanho do ZIP e de cada JSON, aceita apenas armazenamento simples ou Deflate, confere CRC, codificação, objetos JSON, contrato e SHA-256 do manifesto e reconstrói o manifesto esperado a partir da ficha, do relatório e da verificação. O resultado não inclui o caminho local nem os responsáveis, não extrai arquivos, não consulta banco e não acessa a rede.
+
 Use `--dados-sinteticos` somente quando os registros forem de ensaio. Sem essa opção, o relatório não classifica os dados como sintéticos.
 
 O modo `--estrito` retorna falha quando qualquer verificação for reprovada, inclusive a prontidão histórica da filial quando o ensaio usa dados reais. O JSON é escrito na saída padrão para que a equipe possa arquivá-lo pelo procedimento de implantação escolhido, sem o sistema inventar uma aprovação.

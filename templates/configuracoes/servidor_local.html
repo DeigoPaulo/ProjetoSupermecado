@@ -242,6 +242,7 @@
     <dt>Prévia por filial</dt><dd><code>{{ payload.ensaio_estoque.previa_comando }}</code></dd>
     <dt>Ficha dos IDs escolhidos</dt><dd><code>{{ payload.ensaio_estoque.ficha_comando }}</code></dd>
     <dt>Conferência offline dos arquivos</dt><dd><code>{{ payload.ensaio_estoque.verificacao_artefatos_comando }}</code></dd>
+    <dt>Conferência offline do dossiê</dt><dd><code>{{ payload.ensaio_estoque.verificacao_dossie_comando }}</code></dd>
   </dl>
   <div class="pilot-tools-grid">
     <form method="post" action="{% url 'configuracoes:servidor_local_previa_piloto' %}" class="pilot-tool">

@@ -1,6 +1,7 @@
 import hashlib
 import hmac
 import json
+import re
 import zipfile
 from datetime import datetime, timezone
 from io import BytesIO
@@ -18,6 +19,7 @@ _ARQUIVOS_DOSSIE = (
     ("relatorio.json", "relatorio"),
     ("verificacao_integridade.json", "verificacao"),
 )
+_SHA256_RE = re.compile(r"^[0-9a-f]{64}$")
 
 
 def _json_bytes(documento):
@@ -43,8 +45,12 @@ def _verificacao_corresponde(*, ficha, relatorio, verificacao, atual):
     if not isinstance(verificacao, dict):
         return False
     hash_informado = verificacao.get("conteudo_sha256")
-    if not isinstance(hash_informado, str) or not hmac.compare_digest(
-        hash_informado, calcular_sha256_artefato(verificacao)
+    if (
+        not isinstance(hash_informado, str)
+        or not _SHA256_RE.fullmatch(hash_informado)
+        or not hmac.compare_digest(
+            hash_informado, calcular_sha256_artefato(verificacao)
+        )
     ):
         return False
     protecoes = (
