@@ -307,6 +307,26 @@
       <button class="secondary-button" type="submit">Baixar relatório final JSON</button>
       <small>Não emite documento fiscal, não transmite dados e não registra aceite.</small>
     </form>
+    <form method="post" enctype="multipart/form-data" action="{% url 'configuracoes:servidor_local_verificar_artefatos_piloto' %}" class="pilot-tool">
+      {% csrf_token %}
+      <h3>Conferir ficha e relatório</h3>
+      <label class="form-field form-field-full">
+        <span>Ficha v2 em JSON</span>
+        <input type="file" name="ficha_json" accept="application/json,.json" required>
+        <small>Arquivo local de até 5 MB.</small>
+      </label>
+      <label class="form-field form-field-full">
+        <span>Relatório final v3 em JSON</span>
+        <input type="file" name="relatorio_json" accept="application/json,.json" required>
+        <small>Arquivo local de até 5 MB.</small>
+      </label>
+      <label class="pilot-confirm">
+        <input type="checkbox" name="confirmar_verificacao" value="sim" required>
+        <span>Confirmo a conferência local e temporária destes dois arquivos.</span>
+      </label>
+      <button class="secondary-button" type="submit">Baixar resultado da conferência</button>
+      <small>Os arquivos ficam somente em memória durante a requisição e não são armazenados.</small>
+    </form>
   </div>
   <div class="table-wrapper">
     <table>

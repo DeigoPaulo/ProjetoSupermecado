@@ -7,10 +7,13 @@ from pathlib import Path
 
 from django.core.management import call_command
 from django.core.management.base import CommandError
+from django.core.files.uploadedfile import SimpleUploadedFile
 from django.test import SimpleTestCase
 
 from .verificador_artefatos_piloto import (
+    LIMITE_ARQUIVO_JSON,
     calcular_sha256_artefato,
+    carregar_artefato_upload,
     verificar_integridade_artefatos_piloto,
 )
 
@@ -131,3 +134,21 @@ class VerificadorArtefatosPilotoTests(SimpleTestCase):
                     estrito=True,
                     stdout=StringIO(),
                 )
+
+    def test_upload_em_memoria_recusa_extensao_e_tamanho_invalidos(self):
+        valido = SimpleUploadedFile(
+            "ficha.json", json.dumps(self.ficha).encode(), content_type="application/json"
+        )
+        self.assertEqual(carregar_artefato_upload(valido)["contrato"], self.ficha["contrato"])
+        with self.assertRaisesMessage(ValueError, "extensão JSON"):
+            carregar_artefato_upload(
+                SimpleUploadedFile("ficha.txt", b"{}", content_type="text/plain")
+            )
+        with self.assertRaisesMessage(ValueError, "excede"):
+            carregar_artefato_upload(
+                SimpleUploadedFile(
+                    "grande.json",
+                    b"x" * (LIMITE_ARQUIVO_JSON + 1),
+                    content_type="application/json",
+                )
+            )

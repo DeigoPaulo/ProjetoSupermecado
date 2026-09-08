@@ -3,7 +3,12 @@ import hmac
 import json
 import re
 from datetime import datetime, timezone
+from io import BytesIO
 from pathlib import Path
+
+from django.core.exceptions import RequestDataTooBig
+from django.core.files.uploadedfile import InMemoryUploadedFile
+from django.core.files.uploadhandler import FileUploadHandler, StopFutureHandlers
 
 from .evidencia_piloto import CONTRATO_EVIDENCIA_PILOTO
 from .ficha_execucao_piloto import CONTRATO_FICHA_EXECUCAO_PILOTO
@@ -11,6 +16,7 @@ from .ficha_execucao_piloto import CONTRATO_FICHA_EXECUCAO_PILOTO
 
 CONTRATO_VERIFICACAO_ARTEFATOS_PILOTO = "inventory_pilot_artifact_integrity_v1"
 LIMITE_ARQUIVO_JSON = 5 * 1024 * 1024
+LIMITE_REQUISICAO_UPLOAD = (2 * LIMITE_ARQUIVO_JSON) + (64 * 1024)
 _SHA256_RE = re.compile(r"^[0-9a-f]{64}$")
 _CAMPOS_OBJETOS = {
     "entrada_id",
@@ -19,6 +25,36 @@ _CAMPOS_OBJETOS = {
     "inventario_id",
     "fechamento_id",
 }
+
+
+class ArtefatoPilotoMemoryUploadHandler(FileUploadHandler):
+    """Mantém os dois uploads somente em memória e limita a requisição inteira."""
+
+    def handle_raw_input(
+        self, input_data, META, content_length, boundary, encoding=None
+    ):
+        if content_length is None or content_length > LIMITE_REQUISICAO_UPLOAD:
+            raise RequestDataTooBig("A requisição dos artefatos excede o limite.")
+
+    def new_file(self, *args, **kwargs):
+        super().new_file(*args, **kwargs)
+        self.file = BytesIO()
+        raise StopFutureHandlers()
+
+    def receive_data_chunk(self, raw_data, start):
+        self.file.write(raw_data)
+
+    def file_complete(self, file_size):
+        self.file.seek(0)
+        return InMemoryUploadedFile(
+            file=self.file,
+            field_name=self.field_name,
+            name=self.file_name,
+            content_type=self.content_type,
+            size=file_size,
+            charset=self.charset,
+            content_type_extra=self.content_type_extra,
+        )
 
 
 def calcular_sha256_artefato(documento):
@@ -78,6 +114,26 @@ def carregar_artefato_json(caminho, *, limite_bytes=LIMITE_ARQUIVO_JSON):
         raise ValueError("O arquivo JSON está vazio ou excede o limite permitido.")
     with resolvido.open("r", encoding="utf-8-sig") as arquivo:
         documento = json.load(arquivo)
+    if not isinstance(documento, dict):
+        raise ValueError("A raiz do artefato deve ser um objeto JSON.")
+    return documento
+
+
+def carregar_artefato_upload(upload, *, limite_bytes=LIMITE_ARQUIVO_JSON):
+    """Decodifica um upload já mantido em memória, sem gravá-lo em arquivo."""
+    if not isinstance(upload, InMemoryUploadedFile):
+        raise ValueError("O artefato deve permanecer em memória.")
+    if not upload.name.lower().endswith(".json"):
+        raise ValueError("O artefato deve possuir extensão JSON.")
+    if upload.size <= 0 or upload.size > limite_bytes:
+        raise ValueError("O arquivo JSON está vazio ou excede o limite permitido.")
+    conteudo = upload.read(limite_bytes + 1)
+    if len(conteudo) > limite_bytes:
+        raise ValueError("O arquivo JSON excede o limite permitido.")
+    try:
+        documento = json.loads(conteudo.decode("utf-8-sig"))
+    except (json.JSONDecodeError, RecursionError, UnicodeError) as exc:
+        raise ValueError("O arquivo não contém JSON UTF-8 válido.") from exc
     if not isinstance(documento, dict):
         raise ValueError("A raiz do artefato deve ser um objeto JSON.")
     return documento

@@ -155,6 +155,23 @@ class ConfiguracoesOperacionaisTests(TestCase):
         )
         self.filial = Filial.objects.create(empresa=self.empresa, nome="Matriz", cnpj=self.empresa.cnpj)
 
+    def test_verificacao_visual_piloto_mantem_protecao_csrf(self):
+        cliente_csrf = Client(HTTP_HOST="localhost", enforce_csrf_checks=True)
+        cliente_csrf.force_login(self.user)
+        sem_token = cliente_csrf.post(
+            "/configuracoes/servidor-local/piloto/verificar-arquivos.json",
+            {"confirmar_verificacao": "sim"},
+        )
+        self.assertEqual(sem_token.status_code, 403)
+
+        pagina = cliente_csrf.get("/configuracoes/servidor-local/")
+        token = pagina.cookies["csrftoken"].value
+        com_token = cliente_csrf.post(
+            "/configuracoes/servidor-local/piloto/verificar-arquivos.json",
+            {"confirmar_verificacao": "sim", "csrfmiddlewaretoken": token},
+        )
+        self.assertEqual(com_token.status_code, 400)
+
 
     def test_homologacao_operacional_persiste_por_filial_e_pagina_historico(self):
         resposta = self.client.post(
@@ -944,6 +961,10 @@ class ConfiguracoesOperacionaisTests(TestCase):
             "/configuracoes/servidor-local/piloto/relatorio.json",
             {"confirmar_relatorio": "sim", "tipo_dados": "sinteticos"},
         )
+        verificacao_artefatos = self.client.post(
+            "/configuracoes/servidor-local/piloto/verificar-arquivos.json",
+            {"confirmar_verificacao": "sim"},
+        )
         self.assertEqual(central.status_code, 200)
         self.assertNotContains(central, "Diagnóstico de snapshots das vendas por lote")
         self.assertNotContains(central, "previsualizar_fluxo_estoque_piloto")
@@ -954,6 +975,7 @@ class ConfiguracoesOperacionaisTests(TestCase):
         self.assertEqual(previa_piloto.status_code, 403)
         self.assertEqual(ficha_piloto.status_code, 403)
         self.assertEqual(relatorio_piloto.status_code, 403)
+        self.assertEqual(verificacao_artefatos.status_code, 403)
     def test_servidor_local_admin_prepara_manifesto_de_implantacao(self):
         self.empresa.modo_implantacao = ModoImplantacao.HIBRIDO
         self.empresa.sincronizacao_automatica = True
@@ -1177,6 +1199,9 @@ class ConfiguracoesOperacionaisTests(TestCase):
             "inventory_pilot_artifact_integrity_v1",
         )
         self.assertTrue(payload["ensaio_estoque"]["download_relatorio_master"])
+        self.assertTrue(
+            payload["ensaio_estoque"]["verificacao_artefatos_visual_master"]
+        )
         self.assertIn(
             "verificar_artefatos_piloto",
             payload["ensaio_estoque"]["verificacao_artefatos_comando"],

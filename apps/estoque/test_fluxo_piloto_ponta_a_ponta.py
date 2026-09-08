@@ -5,6 +5,7 @@ from io import StringIO
 
 from django.contrib.auth import get_user_model
 from django.core.exceptions import ValidationError
+from django.core.files.uploadedfile import SimpleUploadedFile
 from django.core.management import call_command
 from django.core.management.base import CommandError
 from django.test import TestCase
@@ -289,6 +290,83 @@ class FluxoEstoquePilotoPontaAPontaTests(TestCase):
         self.assertTrue(relatorio_visual["valida"])
         self.assertTrue(relatorio_visual["dados_sinteticos"])
         self.assertFalse(relatorio_visual["comunicacao_externa"])
+        resposta_integridade_visual = self.client.post(
+            "/configuracoes/servidor-local/piloto/verificar-arquivos.json",
+            {
+                "ficha_json": SimpleUploadedFile(
+                    "ficha.json",
+                    resposta_ficha.content,
+                    content_type="application/json",
+                ),
+                "relatorio_json": SimpleUploadedFile(
+                    "relatorio.json",
+                    resposta_relatorio.content,
+                    content_type="application/json",
+                ),
+                "confirmar_verificacao": "sim",
+            },
+        )
+        self.assertEqual(resposta_integridade_visual.status_code, 200)
+        integridade_visual = json.loads(resposta_integridade_visual.content)
+        self.assertTrue(integridade_visual["integridade_confirmada"])
+        self.assertFalse(integridade_visual["consulta_banco"])
+        self.assertFalse(integridade_visual["persiste_resultado"])
+        self.assertNotIn("Operador Piloto", resposta_integridade_visual.content.decode())
+        resposta_integridade_sem_confirmacao = self.client.post(
+            "/configuracoes/servidor-local/piloto/verificar-arquivos.json",
+            {
+                "ficha_json": SimpleUploadedFile(
+                    "ficha.json", resposta_ficha.content, content_type="application/json"
+                ),
+                "relatorio_json": SimpleUploadedFile(
+                    "relatorio.json",
+                    resposta_relatorio.content,
+                    content_type="application/json",
+                ),
+            },
+        )
+        self.assertEqual(resposta_integridade_sem_confirmacao.status_code, 400)
+        resposta_integridade_grande = self.client.post(
+            "/configuracoes/servidor-local/piloto/verificar-arquivos.json",
+            {
+                "ficha_json": SimpleUploadedFile(
+                    "ficha.json",
+                    b"x" * ((5 * 1024 * 1024) + 1),
+                    content_type="application/json",
+                ),
+                "relatorio_json": SimpleUploadedFile(
+                    "relatorio.json",
+                    resposta_relatorio.content,
+                    content_type="application/json",
+                ),
+                "confirmar_verificacao": "sim",
+            },
+        )
+        self.assertEqual(resposta_integridade_grande.status_code, 400)
+        ficha_adulterada = json.loads(resposta_ficha.content)
+        ficha_adulterada["produto_id"] = produto.pk + 999
+        resposta_integridade_adulterada = self.client.post(
+            "/configuracoes/servidor-local/piloto/verificar-arquivos.json",
+            {
+                "ficha_json": SimpleUploadedFile(
+                    "ficha.json",
+                    json.dumps(ficha_adulterada).encode(),
+                    content_type="application/json",
+                ),
+                "relatorio_json": SimpleUploadedFile(
+                    "relatorio.json",
+                    resposta_relatorio.content,
+                    content_type="application/json",
+                ),
+                "confirmar_verificacao": "sim",
+            },
+        )
+        self.assertEqual(resposta_integridade_adulterada.status_code, 200)
+        self.assertFalse(
+            json.loads(resposta_integridade_adulterada.content)[
+                "integridade_confirmada"
+            ]
+        )
         resposta_relatorio_real = self.client.post(
             "/configuracoes/servidor-local/piloto/relatorio.json",
             {

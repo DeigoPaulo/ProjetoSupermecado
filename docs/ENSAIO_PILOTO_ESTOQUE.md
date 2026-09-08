@@ -66,6 +66,8 @@ O contrato `inventory_pilot_artifact_integrity_v1` recalcula os SHA-256 da ficha
 
 O SHA-256 comprova a consistência do conteúdo em relação ao hash que acompanha cada arquivo, mas não é assinatura digital e não prova autoria caso arquivo e hash sejam substituídos juntos. Preserve os originais em local controlado; qualquer futura exigência de autenticidade deverá usar assinatura ou ancoragem externa separada.
 
+O mesmo verificador está disponível no quarto cartão da Central do servidor, somente para o Master. Selecione a ficha v2 e o relatório v3, cada um com no máximo 5 MB, e confirme a operação. O endpoint instala um handler exclusivo antes da validação CSRF, mantém os uploads apenas em memória, baixa o resultado `inventory_pilot_artifact_integrity_v1` e descarta o conteúdo ao terminar a requisição. Nenhum arquivo, nome, responsável ou resultado é persistido pelo sistema.
+
 Use `--dados-sinteticos` somente quando os registros forem de ensaio. Sem essa opção, o relatório não classifica os dados como sintéticos.
 
 O modo `--estrito` retorna falha quando qualquer verificação for reprovada, inclusive a prontidão histórica da filial quando o ensaio usa dados reais. O JSON é escrito na saída padrão para que a equipe possa arquivá-lo pelo procedimento de implantação escolhido, sem o sistema inventar uma aprovação.

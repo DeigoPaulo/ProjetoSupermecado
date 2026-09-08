@@ -18,7 +18,12 @@ from django.contrib.auth.decorators import login_required
 from django.contrib.auth.models import User
 from django.core.management import call_command
 from django.core.paginator import Paginator
-from django.core.exceptions import ObjectDoesNotExist, PermissionDenied, ValidationError
+from django.core.exceptions import (
+    ObjectDoesNotExist,
+    PermissionDenied,
+    RequestDataTooBig,
+    ValidationError,
+)
 from django.db import transaction
 from django.db.models import Count, Q, Sum
 from django.http import FileResponse, Http404, HttpResponse, JsonResponse
@@ -26,6 +31,7 @@ from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse
 from django.utils import timezone
 from django.utils.dateparse import parse_date
+from django.views.decorators.csrf import csrf_exempt, csrf_protect
 
 from apps.accounts.models import PerfilUsuario, TipoPerfil
 from apps.accounts.permissions import ADMINISTRACAO, SISTEMA, has_role, role_required
@@ -38,6 +44,11 @@ from apps.estoque.diagnostico_snapshots import diagnostico_cobertura_snapshots_l
 from apps.estoque.evidencia_piloto import gerar_evidencia_fluxo_estoque_piloto
 from apps.estoque.ficha_execucao_piloto import gerar_ficha_execucao_piloto
 from apps.estoque.previsualizacao_piloto import previsualizar_candidatos_piloto
+from apps.estoque.verificador_artefatos_piloto import (
+    ArtefatoPilotoMemoryUploadHandler,
+    carregar_artefato_upload,
+    verificar_integridade_artefatos_piloto,
+)
 from apps.estoque.services import diagnostico_manutencao_inventarios_validade
 from apps.pdv.models import AcessoPdvNuvem, CanalAtualizacaoPdv, EventoDispositivoTerminal, StatusAcessoPdvNuvem, StatusLicencaTerminal, TerminalPdv
 from apps.vendas.models import FormaPagamento, FormaPagamentoFilial, PagamentoVenda, StatusPagamento
@@ -1930,6 +1941,7 @@ def _servidor_local_payload(request):
             "contrato_ficha": "inventory_pilot_execution_sheet_v2",
             "contrato_verificacao_artefatos": "inventory_pilot_artifact_integrity_v1",
             "download_relatorio_master": True,
+            "verificacao_artefatos_visual_master": True,
             "somente_leitura": True,
             "comunicacao_externa": False,
             "previa_comando": "manage.py previsualizar_fluxo_estoque_piloto --filial-id ID --estrito",
@@ -2236,6 +2248,38 @@ def servidor_local_relatorio_piloto(request):
             f"{evidencia['conteudo_sha256'][:12]}.json"
         ),
     )
+
+
+@csrf_protect
+def _processar_verificacao_artefatos_piloto(request):
+    try:
+        if request.POST.get("confirmar_verificacao") != "sim":
+            raise ValueError
+        ficha = carregar_artefato_upload(request.FILES.get("ficha_json"))
+        relatorio = carregar_artefato_upload(request.FILES.get("relatorio_json"))
+        resultado = verificar_integridade_artefatos_piloto(
+            ficha=ficha, relatorio=relatorio
+        )
+    except (RequestDataTooBig, TypeError, ValueError):
+        return JsonResponse(
+            {"erro": "Revise a confirmação e os dois arquivos JSON de até 5 MB."},
+            status=400,
+        )
+    return _resposta_json_download(
+        resultado,
+        f"integridade_piloto_{resultado['conteudo_sha256'][:12]}.json",
+    )
+
+
+@csrf_exempt
+@login_required
+@role_required(*SISTEMA)
+def servidor_local_verificar_artefatos_piloto(request):
+    _exigir_admin_master(request.user)
+    if request.method != "POST":
+        raise PermissionDenied
+    request.upload_handlers = [ArtefatoPilotoMemoryUploadHandler(request)]
+    return _processar_verificacao_artefatos_piloto(request)
 
 
 @login_required

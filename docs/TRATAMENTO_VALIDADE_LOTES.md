@@ -358,3 +358,17 @@ O contrato `inventory_pilot_artifact_integrity_v1` confere a ficha v2 e o relat�
 - [x] Regressão completa de Estoque e Configurações aprovada com 265 testes.
 
 O verificador comprova consistência entre conteúdo, hash e vínculo dos dois artefatos; ele não é assinatura digital, não prova autoria e não substitui a preservação controlada dos arquivos originais.
+
+### Conferência visual em memória
+
+- [x] Quarto cartão disponível somente ao Master.
+- [x] Exige ficha v2, relatório v3 e confirmação explícita.
+- [x] Mantém cada arquivo em memória, com limite individual de 5 MB.
+- [x] Limita também o tamanho total da requisição.
+- [x] Instala o handler de memória antes de o CSRF ler o formulário.
+- [x] Mantém proteção CSRF ativa e testada.
+- [x] Recusa extensão, tamanho e JSON inválidos com mensagem sanitizada.
+- [x] Entrega resultado íntegro ou reprovado para download e análise.
+- [x] Não persiste arquivo, nome, responsável, resultado ou aceite.
+- [x] Não consulta banco nem aciona serviço externo.
+- [x] Regressão completa de Estoque e Configurações aprovada com 267 testes.
