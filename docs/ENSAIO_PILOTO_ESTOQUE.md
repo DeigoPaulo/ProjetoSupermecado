@@ -44,12 +44,12 @@ A prévia usa o contrato `inventory_pilot_candidate_preview_v1`, limita cada cat
 Depois da escolha manual, gere a ficha antes do verificador final:
 
 ```powershell
-.\.venv\Scripts\python.exe manage.py gerar_ficha_execucao_piloto --entrada-id ID --venda-id ID --perda-id ID --inventario-id ID --fechamento-id ID --estrito
+.\.venv\Scripts\python.exe manage.py gerar_ficha_execucao_piloto --entrada-id ID --venda-id ID --perda-id ID --inventario-id ID --fechamento-id ID --responsavel-execucao "NOME OPERACIONAL" --responsavel-conferencia "NOME DO CONFERENTE" --observacoes "OBSERVACAO OPCIONAL" --estrito
 ```
 
-A ficha usa o contrato `inventory_pilot_execution_sheet_v1`, repete as condições básicas de compatibilidade, incorpora a prontidão da filial, lista impedimentos e produz SHA-256. Ela não grava um aceite, não executa o ensaio e declara `aprovacao_automatica=false`. Somente depois de revisar a ficha o Master deve executar o verificador v3 abaixo.
+A ficha usa o contrato `inventory_pilot_execution_sheet_v2`, repete as condições básicas de compatibilidade, incorpora a prontidão da filial, lista impedimentos, inclui um roteiro operacional fixo e produz SHA-256 sobre todo o conteúdo. Execução e conferência devem ser identificadas por nome ou referência operacional, preferencialmente por pessoas distintas. Não informe CPF, CNPJ ou e-mail. Esses campos aparecem somente no JSON baixado: não são gravados no banco, não constituem aceite, não executam o ensaio e a ficha declara `aprovacao_automatica=false`. Somente depois de revisar a ficha o Master deve executar o verificador v3 abaixo.
 
-Na Central do servidor, o painel exclusivo do Master oferece os mesmos dois passos sem exigir digitação de comandos: seleção da filial para baixar a prévia e preenchimento dos cinco IDs para baixar a ficha. A ficha só é gerada após confirmação explícita de que os IDs foram escolhidos e conferidos manualmente. A interface não possui ação para disparar o verificador final.
+Na Central do servidor, o painel exclusivo do Master oferece os mesmos dois passos sem exigir digitação de comandos: seleção da filial para baixar a prévia e preenchimento dos cinco IDs, dos dois responsáveis e das observações opcionais para baixar a ficha. A ficha só é gerada após confirmação explícita de que os IDs foram escolhidos e conferidos manualmente. A interface não possui ação para disparar o verificador final.
 
 ```powershell
 .\.venv\Scripts\python.exe manage.py verificar_fluxo_estoque_piloto --entrada-id ID --venda-id ID --perda-id ID --inventario-id ID --fechamento-id ID --estrito

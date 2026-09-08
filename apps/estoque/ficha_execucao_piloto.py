@@ -1,5 +1,6 @@
 import hashlib
 import json
+import re
 
 from django.utils import timezone
 
@@ -16,18 +17,54 @@ from .models import (
 )
 
 
-CONTRATO_FICHA_EXECUCAO_PILOTO = "inventory_pilot_execution_sheet_v1"
+CONTRATO_FICHA_EXECUCAO_PILOTO = "inventory_pilot_execution_sheet_v2"
+
+ORIENTACOES_OPERACIONAIS = [
+    "Conferir filial, produto e os cinco IDs antes de iniciar a verificação final.",
+    "Manter emissão fiscal e integrações externas desligadas durante este ensaio de estoque.",
+    "Executar o verificador final em modo estrito e não corrigir evidências históricas manualmente.",
+    "Arquivar a ficha, o relatório final e seus SHA-256 no dossiê da filial piloto.",
+    "Registrar a conferência operacional responsável fora desta ficha antes de declarar aceite.",
+]
 
 
 def _ids_produtos(itens):
     return set(itens.values_list("produto_id", flat=True))
 
 
+def _texto_operacional(valor, *, campo, obrigatorio=True, limite=100):
+    texto = " ".join(str(valor or "").split())
+    if not texto and not obrigatorio:
+        return ""
+    if len(texto) < 3 or len(texto) > limite:
+        raise ValueError(f"{campo} deve ter entre 3 e {limite} caracteres.")
+    digitos = re.sub(r"\D", "", texto)
+    if "@" in texto or len(digitos) in {11, 14}:
+        raise ValueError(f"{campo} não deve conter e-mail, CPF ou CNPJ.")
+    if any(ord(caractere) < 32 for caractere in texto):
+        raise ValueError(f"{campo} contém caracteres inválidos.")
+    return texto
+
+
 def gerar_ficha_execucao_piloto(
-    *, entrada_id, venda_id, perda_id, inventario_id, fechamento_id, momento=None
+    *, entrada_id, venda_id, perda_id, inventario_id, fechamento_id,
+    responsavel_execucao="", responsavel_conferencia="",
+    observacoes_operacionais="", momento=None,
 ):
     """Valida uma seleção manual sem alterar dados nem substituir o aceite humano."""
     momento = momento or timezone.now()
+    responsavel_execucao = _texto_operacional(
+        responsavel_execucao, campo="Responsável pela execução"
+    )
+    responsavel_conferencia = _texto_operacional(
+        responsavel_conferencia, campo="Responsável pela conferência"
+    )
+    observacoes_operacionais = _texto_operacional(
+        observacoes_operacionais,
+        campo="Observações operacionais",
+        obrigatorio=False,
+        limite=500,
+    )
     entrada = EntradaCompra.objects.get(pk=entrada_id)
     venda = Venda.objects.get(pk=venda_id)
     perda = PerdaEstoque.objects.get(pk=perda_id)
@@ -107,11 +144,26 @@ def gerar_ficha_execucao_piloto(
         "objetos_selecionados_manualmente": objetos,
         "filial_id": next(iter(filial_ids)) if mesma_filial else None,
         "produto_id": next(iter(produtos_comuns)) if produto_comum_unico else None,
+        "responsaveis": {
+            "execucao": responsavel_execucao,
+            "conferencia": responsavel_conferencia,
+            "informados_manualmente": True,
+            "persistidos_no_banco": False,
+            "responsaveis_distintos": (
+                responsavel_execucao.casefold() != responsavel_conferencia.casefold()
+            ),
+            "separacao_de_funcoes_recomendada": True,
+        },
+        "observacoes_operacionais": observacoes_operacionais,
+        "orientacoes_operacionais": ORIENTACOES_OPERACIONAIS,
+        "dados_pessoais_sensiveis_solicitados": False,
         "prontidao_piloto_real": prontidao,
         "verificacoes": verificacoes,
         "impedimentos": impedimentos,
         "apta_para_verificacao_final": all(verificacoes.values()),
         "aprovacao_automatica": False,
+        "registra_aceite": False,
+        "persiste_ficha": False,
         "somente_leitura": True,
         "comunicacao_externa": False,
         "comando_verificacao_final": comando_verificacao,

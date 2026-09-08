@@ -11,6 +11,9 @@ class Command(BaseCommand):
     def add_arguments(self, parser):
         for nome in ("entrada", "venda", "perda", "inventario", "fechamento"):
             parser.add_argument(f"--{nome}-id", type=int, required=True)
+        parser.add_argument("--responsavel-execucao", required=True)
+        parser.add_argument("--responsavel-conferencia", required=True)
+        parser.add_argument("--observacoes", default="")
         parser.add_argument("--estrito", action="store_true")
 
     def handle(self, *args, **options):
@@ -21,6 +24,9 @@ class Command(BaseCommand):
                 perda_id=options["perda_id"],
                 inventario_id=options["inventario_id"],
                 fechamento_id=options["fechamento_id"],
+                responsavel_execucao=options["responsavel_execucao"],
+                responsavel_conferencia=options["responsavel_conferencia"],
+                observacoes_operacionais=options["observacoes"],
             )
         except Exception as exc:
             raise CommandError(

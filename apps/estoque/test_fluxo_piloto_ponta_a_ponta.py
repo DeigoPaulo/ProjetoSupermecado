@@ -206,13 +206,21 @@ class FluxoEstoquePilotoPontaAPontaTests(TestCase):
             perda_id=perda.pk,
             inventario_id=inventario.pk,
             fechamento_id=fechamento.pk,
+            responsavel_execucao="Operador Piloto",
+            responsavel_conferencia="Conferente Piloto",
+            observacoes_operacionais="Turno acompanhado pelo Master.",
         )
-        self.assertEqual(ficha["contrato"], "inventory_pilot_execution_sheet_v1")
+        self.assertEqual(ficha["contrato"], "inventory_pilot_execution_sheet_v2")
         self.assertTrue(ficha["apta_para_verificacao_final"])
         self.assertFalse(ficha["aprovacao_automatica"])
         self.assertEqual(ficha["impedimentos"], [])
         self.assertEqual(len(ficha["conteudo_sha256"]), 64)
         self.assertIn(f"--entrada-id {entrada.pk}", ficha["comando_verificacao_final"])
+        self.assertEqual(ficha["responsaveis"]["execucao"], "Operador Piloto")
+        self.assertTrue(ficha["responsaveis"]["responsaveis_distintos"])
+        self.assertFalse(ficha["responsaveis"]["persistidos_no_banco"])
+        self.assertFalse(ficha["dados_pessoais_sensiveis_solicitados"])
+        self.assertGreaterEqual(len(ficha["orientacoes_operacionais"]), 5)
 
         saida_ficha = StringIO()
         call_command(
@@ -222,6 +230,9 @@ class FluxoEstoquePilotoPontaAPontaTests(TestCase):
             perda_id=perda.pk,
             inventario_id=inventario.pk,
             fechamento_id=fechamento.pk,
+            responsavel_execucao="Operador Piloto",
+            responsavel_conferencia="Conferente Piloto",
+            observacoes="Turno acompanhado pelo Master.",
             estrito=True,
             stdout=saida_ficha,
         )
@@ -246,6 +257,9 @@ class FluxoEstoquePilotoPontaAPontaTests(TestCase):
                 "perda_id": perda.pk,
                 "inventario_id": inventario.pk,
                 "fechamento_id": fechamento.pk,
+                "responsavel_execucao": "Operador Piloto",
+                "responsavel_conferencia": "Conferente Piloto",
+                "observacoes_operacionais": "Turno acompanhado pelo Master.",
                 "confirmar_selecao": "sim",
             },
         )
@@ -264,6 +278,28 @@ class FluxoEstoquePilotoPontaAPontaTests(TestCase):
             },
         )
         self.assertEqual(resposta_sem_confirmacao.status_code, 400)
+        resposta_sem_responsaveis = self.client.post(
+            "/configuracoes/servidor-local/piloto/ficha.json",
+            {
+                "entrada_id": entrada.pk,
+                "venda_id": venda.pk,
+                "perda_id": perda.pk,
+                "inventario_id": inventario.pk,
+                "fechamento_id": fechamento.pk,
+                "confirmar_selecao": "sim",
+            },
+        )
+        self.assertEqual(resposta_sem_responsaveis.status_code, 400)
+        with self.assertRaisesMessage(ValueError, "não deve conter"):
+            gerar_ficha_execucao_piloto(
+                entrada_id=entrada.pk,
+                venda_id=venda.pk,
+                perda_id=perda.pk,
+                inventario_id=inventario.pk,
+                fechamento_id=fechamento.pk,
+                responsavel_execucao="operador@example.com",
+                responsavel_conferencia="Conferente Piloto",
+            )
         previa = previsualizar_candidatos_piloto(filial_id=filial.pk)
         self.assertEqual(previa["contrato"], "inventory_pilot_candidate_preview_v1")
         self.assertEqual(previa["produtos_com_fluxo_completo"], [produto.pk])
@@ -363,6 +399,8 @@ class FluxoEstoquePilotoPontaAPontaTests(TestCase):
             perda_id=perda.pk,
             inventario_id=inventario.pk,
             fechamento_id=outro_fechamento.pk,
+            responsavel_execucao="Operador Piloto",
+            responsavel_conferencia="Conferente Piloto",
         )
         self.assertFalse(ficha_incompativel["apta_para_verificacao_final"])
         self.assertIsNone(ficha_incompativel["filial_id"])
@@ -378,6 +416,8 @@ class FluxoEstoquePilotoPontaAPontaTests(TestCase):
                 perda_id=perda.pk,
                 inventario_id=inventario.pk,
                 fechamento_id=outro_fechamento.pk,
+                responsavel_execucao="Operador Piloto",
+                responsavel_conferencia="Conferente Piloto",
                 estrito=True,
                 stdout=StringIO(),
             )

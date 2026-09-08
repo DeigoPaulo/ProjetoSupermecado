@@ -285,7 +285,7 @@ A prévia é preparatória. O contrato v3 continua revalidando os cinco registro
 
 ## Ficha de execução do piloto
 
-O contrato `inventory_pilot_execution_sheet_v1` formaliza a revisão dos IDs escolhidos pelo Master antes do verificador final.
+O contrato `inventory_pilot_execution_sheet_v1` formalizou a revisão dos IDs escolhidos pelo Master antes do verificador final. A versão atual é `inventory_pilot_execution_sheet_v2`.
 
 - [x] Exige os IDs de entrada, venda, perda, inventário e fechamento.
 - [x] Confere filial única e exatamente um produto comum.
@@ -301,10 +301,23 @@ O contrato `inventory_pilot_execution_sheet_v1` formaliza a revisão dos IDs esc
 
 A ficha não substitui o relatório v3, o arquivamento da evidência nem a conferência operacional responsável.
 
+### Responsáveis e roteiro operacional da ficha v2
+
+- [x] Exige identificação manual de quem executa e de quem confere.
+- [x] Recomenda responsáveis distintos, sem bloquear uma contingência justificada.
+- [x] Recusa CPF, CNPJ e e-mail nos campos operacionais.
+- [x] Aceita observação opcional limitada a 500 caracteres.
+- [x] Inclui orientações fixas para conferência, execução isolada e arquivamento.
+- [x] Inclui responsáveis, observação e orientações no SHA-256 da ficha.
+- [x] Não solicita dado pessoal sensível.
+- [x] Não persiste a ficha, responsáveis, observação ou aceite no banco.
+- [x] Linha de comando e interface Master seguem o mesmo contrato v2.
+
 ## Interface Master do piloto
 
 - [x] Prévia exige seleção explícita da filial e limite entre 1 e 100.
 - [x] Ficha exige os cinco IDs positivos.
+- [x] Ficha exige responsáveis por execução e conferência.
 - [x] Ficha exige confirmação humana da escolha manual.
 - [x] Downloads JSON usam nomes vinculados à filial ou ao SHA-256.
 - [x] Entradas inválidas retornam mensagem sanitizada sem detalhes internos.

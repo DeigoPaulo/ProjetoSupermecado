@@ -270,6 +270,9 @@
         <label class="form-field"><span>Perda</span><input type="number" name="perda_id" min="1" required></label>
         <label class="form-field"><span>Inventário</span><input type="number" name="inventario_id" min="1" required></label>
         <label class="form-field"><span>Fechamento</span><input type="number" name="fechamento_id" min="1" required></label>
+        <label class="form-field"><span>Responsável pela execução</span><input type="text" name="responsavel_execucao" minlength="3" maxlength="100" required><small>Nome ou identificação interna; não informe CPF ou e-mail.</small></label>
+        <label class="form-field"><span>Responsável pela conferência</span><input type="text" name="responsavel_conferencia" minlength="3" maxlength="100" required><small>Preferencialmente outra pessoa; não informe CPF ou e-mail.</small></label>
+        <label class="form-field form-field-full"><span>Observações operacionais</span><textarea name="observacoes_operacionais" maxlength="500" rows="3" placeholder="Opcional; não informe dados pessoais sensíveis."></textarea></label>
       </div>
       <label class="pilot-confirm">
         <input type="checkbox" name="confirmar_selecao" value="sim" required>

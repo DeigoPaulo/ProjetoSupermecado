@@ -1926,11 +1926,11 @@ def _servidor_local_payload(request):
             "contrato": "inventory_pilot_end_to_end_evidence_v3",
             "contrato_prontidao_real": "inventory_real_pilot_readiness_v1",
             "contrato_previa": "inventory_pilot_candidate_preview_v1",
-            "contrato_ficha": "inventory_pilot_execution_sheet_v1",
+            "contrato_ficha": "inventory_pilot_execution_sheet_v2",
             "somente_leitura": True,
             "comunicacao_externa": False,
             "previa_comando": "manage.py previsualizar_fluxo_estoque_piloto --filial-id ID --estrito",
-            "ficha_comando": "manage.py gerar_ficha_execucao_piloto --entrada-id ID --venda-id ID --perda-id ID --inventario-id ID --fechamento-id ID --estrito",
+            "ficha_comando": "manage.py gerar_ficha_execucao_piloto --entrada-id ID --venda-id ID --perda-id ID --inventario-id ID --fechamento-id ID --responsavel-execucao NOME --responsavel-conferencia NOME --estrito",
             "comando": "manage.py verificar_fluxo_estoque_piloto --entrada-id ID --venda-id ID --perda-id ID --inventario-id ID --fechamento-id ID --estrito",
             "dados_sinteticos_flag": "--dados-sinteticos",
         },
@@ -2174,10 +2174,13 @@ def servidor_local_ficha_piloto(request):
             perda_id=ids["perda"],
             inventario_id=ids["inventario"],
             fechamento_id=ids["fechamento"],
+            responsavel_execucao=request.POST.get("responsavel_execucao", ""),
+            responsavel_conferencia=request.POST.get("responsavel_conferencia", ""),
+            observacoes_operacionais=request.POST.get("observacoes_operacionais", ""),
         )
     except (ObjectDoesNotExist, TypeError, ValueError):
         return JsonResponse(
-            {"erro": "Um ou mais IDs não são válidos para gerar a ficha."},
+            {"erro": "Revise os IDs, responsáveis e observações da ficha."},
             status=400,
         )
     return _resposta_json_download(

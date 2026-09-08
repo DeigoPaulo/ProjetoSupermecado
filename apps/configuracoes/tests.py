@@ -1155,7 +1155,7 @@ class ConfiguracoesOperacionaisTests(TestCase):
         )
         self.assertEqual(
             payload["ensaio_estoque"]["contrato_ficha"],
-            "inventory_pilot_execution_sheet_v1",
+            "inventory_pilot_execution_sheet_v2",
         )
         self.assertIn(
             "previsualizar_fluxo_estoque_piloto",
