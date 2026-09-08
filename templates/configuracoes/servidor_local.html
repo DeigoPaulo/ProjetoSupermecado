@@ -351,6 +351,21 @@
       <button class="secondary-button" type="submit">Baixar dossiê ZIP</button>
       <small>O sistema reconfere o conjunto, cria um manifesto e não registra aceite nem armazena o ZIP.</small>
     </form>
+    <form method="post" enctype="multipart/form-data" action="{% url 'configuracoes:servidor_local_verificar_dossie_piloto' %}" class="pilot-tool">
+      {% csrf_token %}
+      <h3>Conferir dossiê ZIP</h3>
+      <label class="form-field form-field-full">
+        <span>Dossiê do piloto em ZIP</span>
+        <input type="file" name="dossie_zip" accept="application/zip,.zip" required>
+        <small>O pacote é analisado em memória e nenhum arquivo é extraído.</small>
+      </label>
+      <label class="pilot-confirm">
+        <input type="checkbox" name="confirmar_verificacao_dossie" value="sim" required>
+        <span>Confirmo a conferência local e temporária deste dossiê.</span>
+      </label>
+      <button class="secondary-button" type="submit">Baixar resultado do dossiê</button>
+      <small>O resultado não registra aceite, não consulta o banco e não armazena o pacote.</small>
+    </form>
   </div>
   <div class="table-wrapper">
     <table>

@@ -405,3 +405,20 @@ Próxima ação interna: criar um verificador offline do ZIP que confira a lista
 - [x] Regressão completa de Estoque e Configurações aprovada com 274 testes.
 
 Próxima ação interna: disponibilizar a mesma conferência do ZIP na interface Master, processando o upload somente em memória e sem armazenar o pacote ou o resultado.
+
+### Conferência visual do dossiê ZIP
+
+- [x] Sexto cartão disponível somente ao Master.
+- [x] Exige arquivo ZIP e confirmação explícita.
+- [x] Handler dedicado mantém o pacote integralmente em memória.
+- [x] Limita o arquivo e também o tamanho total da requisição.
+- [x] Reutiliza exatamente o contrato `inventory_pilot_dossier_integrity_v1`.
+- [x] Entrega relatório aprovado ou reprovado para análise, sem erro interno.
+- [x] Nome do ZIP contém prefixo de seu próprio SHA-256.
+- [x] Relatório publica o SHA-256 completo do ZIP para comparação.
+- [x] Não extrai, armazena ou persiste pacote, conteúdo ou resultado.
+- [x] Mantém proteção CSRF ativa e bloqueia administrador que não seja Master.
+- [x] Não registra aceite, consulta banco ou acessa serviço externo.
+- [x] Regressão completa de Estoque e Configurações aprovada com 275 testes.
+
+Próxima ação interna: organizar as seis ferramentas do piloto como um roteiro visual numerado, com arquivos esperados e critérios claros de parada, sem automatizar aprovação ou execução operacional.

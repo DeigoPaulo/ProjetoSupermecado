@@ -9,6 +9,7 @@ from pathlib import Path
 
 from django.core.management import call_command
 from django.core.management.base import CommandError
+from django.core.files.uploadedfile import SimpleUploadedFile
 from django.test import SimpleTestCase
 
 from .dossie_piloto import CONTRATO_DOSSIE_PILOTO, gerar_dossie_piloto
@@ -16,7 +17,10 @@ from .verificador_artefatos_piloto import (
     calcular_sha256_artefato,
     verificar_integridade_artefatos_piloto,
 )
-from .verificador_dossie_piloto import verificar_dossie_piloto
+from .verificador_dossie_piloto import (
+    verificar_dossie_piloto,
+    verificar_dossie_piloto_upload,
+)
 
 
 class DossiePilotoTests(SimpleTestCase):
@@ -244,3 +248,22 @@ class DossiePilotoTests(SimpleTestCase):
                     estrito=True,
                     stdout=StringIO(),
                 )
+
+    def test_upload_em_memoria_confere_zip_e_recusa_extensao_invalida(self):
+        conteudo, _ = gerar_dossie_piloto(
+            ficha=self.ficha,
+            relatorio=self.relatorio,
+            verificacao=self.verificacao,
+        )
+        resultado = verificar_dossie_piloto_upload(
+            SimpleUploadedFile(
+                "dossie.zip", conteudo, content_type="application/zip"
+            )
+        )
+        self.assertTrue(resultado["integridade_confirmada"])
+        with self.assertRaisesMessage(ValueError, "extensão ZIP"):
+            verificar_dossie_piloto_upload(
+                SimpleUploadedFile(
+                    "dossie.txt", conteudo, content_type="text/plain"
+                )
+            )

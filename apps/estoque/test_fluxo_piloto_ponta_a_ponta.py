@@ -1,3 +1,4 @@
+import hashlib
 import json
 import zipfile
 from datetime import timedelta
@@ -335,6 +336,10 @@ class FluxoEstoquePilotoPontaAPontaTests(TestCase):
         self.assertEqual(resposta_dossie.status_code, 200)
         self.assertEqual(resposta_dossie["Content-Type"], "application/zip")
         self.assertIn("attachment", resposta_dossie["Content-Disposition"])
+        sha256_dossie = hashlib.sha256(resposta_dossie.content).hexdigest()
+        self.assertIn(
+            sha256_dossie[:12], resposta_dossie["Content-Disposition"]
+        )
         with zipfile.ZipFile(BytesIO(resposta_dossie.content)) as pacote:
             manifesto_dossie = json.loads(pacote.read("manifesto.json"))
             self.assertEqual(
@@ -342,6 +347,57 @@ class FluxoEstoquePilotoPontaAPontaTests(TestCase):
             )
             self.assertTrue(manifesto_dossie["integridade_confirmada"])
             self.assertFalse(manifesto_dossie["persiste_dossie"])
+        resposta_verificacao_dossie = self.client.post(
+            "/configuracoes/servidor-local/piloto/verificar-dossie.json",
+            {
+                "dossie_zip": SimpleUploadedFile(
+                    "dossie.zip",
+                    resposta_dossie.content,
+                    content_type="application/zip",
+                ),
+                "confirmar_verificacao_dossie": "sim",
+            },
+        )
+        self.assertEqual(resposta_verificacao_dossie.status_code, 200)
+        integridade_dossie = json.loads(resposta_verificacao_dossie.content)
+        self.assertTrue(integridade_dossie["integridade_confirmada"])
+        self.assertEqual(
+            integridade_dossie["dossie"]["sha256_arquivo"], sha256_dossie
+        )
+        self.assertFalse(integridade_dossie["extrai_arquivos"])
+        self.assertFalse(integridade_dossie["persiste_resultado"])
+        self.assertFalse(integridade_dossie["consulta_banco"])
+        self.assertNotIn(
+            "Operador Piloto", resposta_verificacao_dossie.content.decode()
+        )
+        resposta_verificacao_dossie_invalido = self.client.post(
+            "/configuracoes/servidor-local/piloto/verificar-dossie.json",
+            {
+                "dossie_zip": SimpleUploadedFile(
+                    "dossie.zip", b"nao e zip", content_type="application/zip"
+                ),
+                "confirmar_verificacao_dossie": "sim",
+            },
+        )
+        self.assertEqual(resposta_verificacao_dossie_invalido.status_code, 200)
+        self.assertFalse(
+            json.loads(resposta_verificacao_dossie_invalido.content)[
+                "integridade_confirmada"
+            ]
+        )
+        resposta_verificacao_dossie_sem_confirmacao = self.client.post(
+            "/configuracoes/servidor-local/piloto/verificar-dossie.json",
+            {
+                "dossie_zip": SimpleUploadedFile(
+                    "dossie.zip",
+                    resposta_dossie.content,
+                    content_type="application/zip",
+                )
+            },
+        )
+        self.assertEqual(
+            resposta_verificacao_dossie_sem_confirmacao.status_code, 400
+        )
         resposta_dossie_sem_confirmacao = self.client.post(
             "/configuracoes/servidor-local/piloto/dossie.zip",
             {

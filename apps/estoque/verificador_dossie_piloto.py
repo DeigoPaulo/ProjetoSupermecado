@@ -4,7 +4,12 @@ import json
 import re
 import zipfile
 from datetime import datetime, timezone
+from io import BytesIO
 from pathlib import Path
+
+from django.core.exceptions import RequestDataTooBig
+from django.core.files.uploadedfile import InMemoryUploadedFile
+from django.core.files.uploadhandler import FileUploadHandler, StopFutureHandlers
 
 from .dossie_piloto import CONTRATO_DOSSIE_PILOTO, gerar_dossie_piloto
 from .verificador_artefatos_piloto import (
@@ -38,6 +43,37 @@ _MENSAGENS = {
     "conjunto_coerente": "Ficha, relatório e conferência não formam um conjunto íntegro.",
     "manifesto_corresponde_conteudo": "O manifesto não corresponde aos bytes e vínculos do pacote.",
 }
+
+
+class DossiePilotoMemoryUploadHandler(FileUploadHandler):
+    """Mantém o dossiê somente em memória e limita a requisição inteira."""
+
+    def handle_raw_input(
+        self, input_data, META, content_length, boundary, encoding=None
+    ):
+        limite_requisicao = LIMITE_DOSSIE_ZIP + (64 * 1024)
+        if content_length is None or content_length > limite_requisicao:
+            raise RequestDataTooBig("A requisição do dossiê excede o limite.")
+
+    def new_file(self, *args, **kwargs):
+        super().new_file(*args, **kwargs)
+        self.file = BytesIO()
+        raise StopFutureHandlers()
+
+    def receive_data_chunk(self, raw_data, start):
+        self.file.write(raw_data)
+
+    def file_complete(self, file_size):
+        self.file.seek(0)
+        return InMemoryUploadedFile(
+            file=self.file,
+            field_name=self.field_name,
+            name=self.file_name,
+            content_type=self.content_type,
+            size=file_size,
+            charset=self.charset,
+            content_type_extra=self.content_type_extra,
+        )
 
 
 def _instante_manifesto(valor):
@@ -91,26 +127,20 @@ def _resultado(*, tamanho, sha256, verificacoes, manifesto, momento):
     return payload
 
 
-def verificar_dossie_piloto(caminho, *, momento=None):
-    """Confere um dossiê local sem extrair entradas, consultar banco ou acessar rede."""
+def verificar_dossie_piloto_bytes(conteudo, *, momento=None):
+    """Confere bytes de um dossiê sem extrair entradas ou consultar o banco."""
     momento = momento or datetime.now(timezone.utc)
-    original = Path(caminho).expanduser()
-    if original.is_symlink():
-        raise ValueError("Links simbólicos não são aceitos para o dossiê.")
-    resolvido = original.resolve(strict=True)
-    if str(resolvido).startswith("\\\\"):
-        raise ValueError("O dossiê deve estar em armazenamento local.")
-    if not resolvido.is_file():
-        raise ValueError("O caminho informado não é um arquivo.")
-    tamanho = resolvido.stat().st_size
+    if not isinstance(conteudo, bytes):
+        raise ValueError("O conteúdo do dossiê deve estar em memória.")
+    tamanho = len(conteudo)
     if tamanho <= 0 or tamanho > LIMITE_DOSSIE_ZIP:
         raise ValueError("O dossiê está vazio ou excede o limite permitido.")
-    sha256 = hashlib.sha256(resolvido.read_bytes()).hexdigest()
+    sha256 = hashlib.sha256(conteudo).hexdigest()
     verificacoes = {chave: False for chave in _MENSAGENS}
     manifesto = {}
 
     try:
-        with zipfile.ZipFile(resolvido) as pacote:
+        with zipfile.ZipFile(BytesIO(conteudo)) as pacote:
             infos = pacote.infolist()
             nomes = [info.filename for info in infos]
             verificacoes["estrutura_exata"] = (
@@ -204,4 +234,36 @@ def verificar_dossie_piloto(caminho, *, momento=None):
         verificacoes=verificacoes,
         manifesto=manifesto,
         momento=momento,
+    )
+
+
+def verificar_dossie_piloto_upload(upload, *, momento=None):
+    """Confere um upload ZIP já mantido integralmente em memória."""
+    if not isinstance(upload, InMemoryUploadedFile):
+        raise ValueError("O dossiê deve permanecer em memória.")
+    if not upload.name.lower().endswith(".zip"):
+        raise ValueError("O dossiê deve possuir extensão ZIP.")
+    if upload.size <= 0 or upload.size > LIMITE_DOSSIE_ZIP:
+        raise ValueError("O dossiê está vazio ou excede o limite permitido.")
+    conteudo = upload.read(LIMITE_DOSSIE_ZIP + 1)
+    if len(conteudo) > LIMITE_DOSSIE_ZIP:
+        raise ValueError("O dossiê excede o limite permitido.")
+    return verificar_dossie_piloto_bytes(conteudo, momento=momento)
+
+
+def verificar_dossie_piloto(caminho, *, momento=None):
+    """Confere um dossiê local sem extrair entradas, consultar banco ou acessar rede."""
+    original = Path(caminho).expanduser()
+    if original.is_symlink():
+        raise ValueError("Links simbólicos não são aceitos para o dossiê.")
+    resolvido = original.resolve(strict=True)
+    if str(resolvido).startswith("\\\\"):
+        raise ValueError("O dossiê deve estar em armazenamento local.")
+    if not resolvido.is_file():
+        raise ValueError("O caminho informado não é um arquivo.")
+    tamanho = resolvido.stat().st_size
+    if tamanho <= 0 or tamanho > LIMITE_DOSSIE_ZIP:
+        raise ValueError("O dossiê está vazio ou excede o limite permitido.")
+    return verificar_dossie_piloto_bytes(
+        resolvido.read_bytes(), momento=momento
     )

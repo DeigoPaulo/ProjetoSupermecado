@@ -49,7 +49,7 @@ Depois da escolha manual, gere a ficha antes do verificador final:
 
 A ficha usa o contrato `inventory_pilot_execution_sheet_v2`, repete as condições básicas de compatibilidade, incorpora a prontidão da filial, lista impedimentos, inclui um roteiro operacional fixo e produz SHA-256 sobre todo o conteúdo. Execução e conferência devem ser identificadas por nome ou referência operacional, preferencialmente por pessoas distintas. Não informe CPF, CNPJ ou e-mail. Esses campos aparecem somente no JSON baixado: não são gravados no banco, não constituem aceite, não executam o ensaio e a ficha declara `aprovacao_automatica=false`. Somente depois de revisar a ficha o Master deve executar o verificador v3 abaixo.
 
-Na Central do servidor, o painel exclusivo do Master oferece cinco passos sem exigir digitação de comandos: seleção da filial para baixar a prévia; preenchimento dos cinco IDs, dos dois responsáveis e das observações opcionais para baixar a ficha; geração do relatório final v3; conferência da ficha com o relatório; e montagem do dossiê ZIP. A ficha exige confirmação de que os IDs foram escolhidos manualmente. O relatório exige nova confirmação e escolha obrigatória entre `sinteticos` e `reais`; somente a opção real aplica a trava histórica ao aceite. A interface não emite documento fiscal, não transmite dados e não registra aprovação.
+Na Central do servidor, o painel exclusivo do Master oferece seis passos sem exigir digitação de comandos: seleção da filial para baixar a prévia; preenchimento dos cinco IDs, dos dois responsáveis e das observações opcionais para baixar a ficha; geração do relatório final v3; conferência da ficha com o relatório; montagem do dossiê ZIP; e conferência do próprio ZIP. A ficha exige confirmação de que os IDs foram escolhidos manualmente. O relatório exige nova confirmação e escolha obrigatória entre `sinteticos` e `reais`; somente a opção real aplica a trava histórica ao aceite. A interface não emite documento fiscal, não transmite dados e não registra aprovação.
 
 ```powershell
 .\.venv\Scripts\python.exe manage.py verificar_fluxo_estoque_piloto --entrada-id ID --venda-id ID --perda-id ID --inventario-id ID --fechamento-id ID --estrito
@@ -77,6 +77,8 @@ O ZIP arquivado pode ser novamente conferido, sem extração, pelo comando:
 ```
 
 O contrato `inventory_pilot_dossier_integrity_v1` exige exatamente os quatro nomes internos esperados, sem duplicidades, diretórios ou entradas criptografadas. Ele limita o tamanho do ZIP e de cada JSON, aceita apenas armazenamento simples ou Deflate, confere CRC, codificação, objetos JSON, contrato e SHA-256 do manifesto e reconstrói o manifesto esperado a partir da ficha, do relatório e da verificação. O resultado não inclui o caminho local nem os responsáveis, não extrai arquivos, não consulta banco e não acessa a rede.
+
+A mesma conferência está disponível no sexto cartão do painel Master. O upload é mantido integralmente em memória por um handler dedicado, exige extensão ZIP e confirmação explícita e retorna para download tanto resultados aprovados quanto reprovados. O nome do dossiê gerado contém o prefixo do SHA-256 do ZIP inteiro; o relatório visual publica o hash completo para comparação. Pacote e resultado são descartados ao fim da requisição e a proteção CSRF permanece ativa.
 
 Use `--dados-sinteticos` somente quando os registros forem de ensaio. Sem essa opção, o relatório não classifica os dados como sintéticos.
 

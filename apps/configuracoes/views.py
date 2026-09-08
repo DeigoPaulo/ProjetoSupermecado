@@ -50,6 +50,10 @@ from apps.estoque.verificador_artefatos_piloto import (
     carregar_artefato_upload,
     verificar_integridade_artefatos_piloto,
 )
+from apps.estoque.verificador_dossie_piloto import (
+    DossiePilotoMemoryUploadHandler,
+    verificar_dossie_piloto_upload,
+)
 from apps.estoque.services import diagnostico_manutencao_inventarios_validade
 from apps.pdv.models import AcessoPdvNuvem, CanalAtualizacaoPdv, EventoDispositivoTerminal, StatusAcessoPdvNuvem, StatusLicencaTerminal, TerminalPdv
 from apps.vendas.models import FormaPagamento, FormaPagamentoFilial, PagamentoVenda, StatusPagamento
@@ -1945,6 +1949,7 @@ def _servidor_local_payload(request):
             "download_relatorio_master": True,
             "verificacao_artefatos_visual_master": True,
             "dossie_visual_master": True,
+            "verificacao_dossie_visual_master": True,
             "somente_leitura": True,
             "comunicacao_externa": False,
             "previa_comando": "manage.py previsualizar_fluxo_estoque_piloto --filial-id ID --estrito",
@@ -2310,9 +2315,10 @@ def _processar_dossie_piloto(request):
             status=400,
         )
     resposta = HttpResponse(conteudo, content_type="application/zip")
+    sha256_dossie = hashlib.sha256(conteudo).hexdigest()
     resposta["Content-Disposition"] = (
         "attachment; filename=\"dossie_piloto_filial_"
-        f"{manifesto['filial_id']}_{manifesto['conteudo_sha256'][:12]}.zip\""
+        f"{manifesto['filial_id']}_{sha256_dossie[:12]}.zip\""
     )
     return resposta
 
@@ -2328,6 +2334,41 @@ def servidor_local_dossie_piloto(request):
         ArtefatoPilotoMemoryUploadHandler(request, quantidade_arquivos=3)
     ]
     return _processar_dossie_piloto(request)
+
+
+@csrf_protect
+def _processar_verificacao_dossie_piloto(request):
+    try:
+        if request.POST.get("confirmar_verificacao_dossie") != "sim":
+            raise ValueError
+        resultado = verificar_dossie_piloto_upload(
+            request.FILES.get("dossie_zip")
+        )
+    except (RequestDataTooBig, TypeError, ValueError):
+        return JsonResponse(
+            {
+                "erro": (
+                    "Revise a confirmação e selecione um dossiê ZIP local "
+                    "dentro do limite permitido."
+                )
+            },
+            status=400,
+        )
+    return _resposta_json_download(
+        resultado,
+        f"integridade_dossie_{resultado['conteudo_sha256'][:12]}.json",
+    )
+
+
+@csrf_exempt
+@login_required
+@role_required(*SISTEMA)
+def servidor_local_verificar_dossie_piloto(request):
+    _exigir_admin_master(request.user)
+    if request.method != "POST":
+        raise PermissionDenied
+    request.upload_handlers = [DossiePilotoMemoryUploadHandler(request)]
+    return _processar_verificacao_dossie_piloto(request)
 
 
 @login_required
