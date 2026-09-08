@@ -327,6 +327,20 @@ A ficha não substitui o relatório v3, o arquivamento da evidência nem a confe
 - [x] Nenhuma ação movimenta estoque, emite documento ou acessa a rede.
 - [x] Regressão completa de Estoque e Configurações aprovada com 262 testes.
 
+### Download do relatório final v3 pelo Master
+
+- [x] Terceiro cartão visual recebe os mesmos cinco IDs da ficha.
+- [x] Exige confirmação própria antes de gerar o relatório.
+- [x] Exige escolha explícita entre ensaio sintético e piloto real.
+- [x] Modo sintético declara que a trava histórica não foi aplicada ao aceite.
+- [x] Modo real aplica e publica o resultado da trava histórica da filial.
+- [x] Seleção incompatível retorna erro sanitizado.
+- [x] Relatório reprovado continua disponível como evidência, sem virar aceite.
+- [x] Nome do arquivo identifica tipo, filial e prefixo do SHA-256.
+- [x] Administrador da empresa não visualiza o cartão nem acessa a rota.
+- [x] A geração é somente leitura e não emite nem transmite documento fiscal.
+- [x] Regressão completa de Estoque e Configurações aprovada com 265 testes.
+
 ## Verificação offline dos artefatos do piloto
 
 O contrato `inventory_pilot_artifact_integrity_v1` confere a ficha v2 e o relatório final v3 depois da execução, sem consultar os registros atuais do sistema.

@@ -282,6 +282,31 @@
       <button class="secondary-button" type="submit">Baixar ficha JSON</button>
       <small>Esta ação não executa o ensaio nem registra aprovação.</small>
     </form>
+    <form method="post" action="{% url 'configuracoes:servidor_local_relatorio_piloto' %}" class="pilot-tool">
+      {% csrf_token %}
+      <h3>Baixar relatório final v3</h3>
+      <label class="form-field form-field-full">
+        <span>Tipo dos dados</span>
+        <select name="tipo_dados" required>
+          <option value="">Selecione conscientemente</option>
+          <option value="sinteticos">Ensaio sintético — não serve para aceite real</option>
+          <option value="reais">Piloto real — aplica a trava histórica da filial</option>
+        </select>
+      </label>
+      <div class="form-grid">
+        <label class="form-field"><span>Entrada</span><input type="number" name="entrada_id" min="1" required></label>
+        <label class="form-field"><span>Venda</span><input type="number" name="venda_id" min="1" required></label>
+        <label class="form-field"><span>Perda</span><input type="number" name="perda_id" min="1" required></label>
+        <label class="form-field"><span>Inventário</span><input type="number" name="inventario_id" min="1" required></label>
+        <label class="form-field"><span>Fechamento</span><input type="number" name="fechamento_id" min="1" required></label>
+      </div>
+      <label class="pilot-confirm">
+        <input type="checkbox" name="confirmar_relatorio" value="sim" required>
+        <span>Confirmo o tipo dos dados e a geração somente leitura do relatório.</span>
+      </label>
+      <button class="secondary-button" type="submit">Baixar relatório final JSON</button>
+      <small>Não emite documento fiscal, não transmite dados e não registra aceite.</small>
+    </form>
   </div>
   <div class="table-wrapper">
     <table>

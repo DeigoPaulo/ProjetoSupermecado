@@ -25,6 +25,7 @@ urlpatterns = [
     path("servidor-local/manifest.json", views.servidor_local_manifest, name="servidor_local_manifest"),
     path("servidor-local/piloto/previa.json", views.servidor_local_previa_piloto, name="servidor_local_previa_piloto"),
     path("servidor-local/piloto/ficha.json", views.servidor_local_ficha_piloto, name="servidor_local_ficha_piloto"),
+    path("servidor-local/piloto/relatorio.json", views.servidor_local_relatorio_piloto, name="servidor_local_relatorio_piloto"),
     path("servidor-local/download/", views.servidor_local_download, name="servidor_local_download"),
     path("servidor-local/offline/download/", views.servidor_local_offline_download, name="servidor_local_offline_download"),
     path("servidor-local/evidencias.zip", views.servidor_local_evidencias, name="servidor_local_evidencias"),

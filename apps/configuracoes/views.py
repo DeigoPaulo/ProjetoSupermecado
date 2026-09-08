@@ -18,7 +18,7 @@ from django.contrib.auth.decorators import login_required
 from django.contrib.auth.models import User
 from django.core.management import call_command
 from django.core.paginator import Paginator
-from django.core.exceptions import ObjectDoesNotExist, PermissionDenied
+from django.core.exceptions import ObjectDoesNotExist, PermissionDenied, ValidationError
 from django.db import transaction
 from django.db.models import Count, Q, Sum
 from django.http import FileResponse, Http404, HttpResponse, JsonResponse
@@ -35,6 +35,7 @@ from apps.fiscal.integridade_operacional import diagnostico_integridade_operacio
 from apps.fiscal.models import ConfiguracaoFiscal
 from apps.financeiro.models import ContaMovimentoFinanceiro
 from apps.estoque.diagnostico_snapshots import diagnostico_cobertura_snapshots_lote
+from apps.estoque.evidencia_piloto import gerar_evidencia_fluxo_estoque_piloto
 from apps.estoque.ficha_execucao_piloto import gerar_ficha_execucao_piloto
 from apps.estoque.previsualizacao_piloto import previsualizar_candidatos_piloto
 from apps.estoque.services import diagnostico_manutencao_inventarios_validade
@@ -1928,6 +1929,7 @@ def _servidor_local_payload(request):
             "contrato_previa": "inventory_pilot_candidate_preview_v1",
             "contrato_ficha": "inventory_pilot_execution_sheet_v2",
             "contrato_verificacao_artefatos": "inventory_pilot_artifact_integrity_v1",
+            "download_relatorio_master": True,
             "somente_leitura": True,
             "comunicacao_externa": False,
             "previa_comando": "manage.py previsualizar_fluxo_estoque_piloto --filial-id ID --estrito",
@@ -2188,6 +2190,53 @@ def servidor_local_ficha_piloto(request):
     return _resposta_json_download(
         ficha, f"ficha_piloto_{ficha['conteudo_sha256'][:12]}.json"
     )
+
+
+@login_required
+@role_required(*SISTEMA)
+def servidor_local_relatorio_piloto(request):
+    _exigir_admin_master(request.user)
+    if request.method != "POST":
+        raise PermissionDenied
+    if request.POST.get("confirmar_relatorio") != "sim":
+        return JsonResponse(
+            {"erro": "Confirme a geração somente leitura do relatório final."},
+            status=400,
+        )
+    tipo_dados = request.POST.get("tipo_dados", "")
+    if tipo_dados not in {"sinteticos", "reais"}:
+        return JsonResponse(
+            {"erro": "Selecione se os dados do ensaio são sintéticos ou reais."},
+            status=400,
+        )
+    try:
+        ids = {
+            nome: int(request.POST.get(f"{nome}_id", ""))
+            for nome in ("entrada", "venda", "perda", "inventario", "fechamento")
+        }
+        if any(valor < 1 for valor in ids.values()):
+            raise ValueError
+        evidencia = gerar_evidencia_fluxo_estoque_piloto(
+            entrada_id=ids["entrada"],
+            venda_id=ids["venda"],
+            perda_id=ids["perda"],
+            inventario_id=ids["inventario"],
+            fechamento_id=ids["fechamento"],
+            dados_sinteticos=tipo_dados == "sinteticos",
+        )
+    except (ObjectDoesNotExist, TypeError, ValidationError, ValueError):
+        return JsonResponse(
+            {"erro": "Revise os cinco IDs e a compatibilidade do fluxo selecionado."},
+            status=400,
+        )
+    return _resposta_json_download(
+        evidencia,
+        (
+            f"relatorio_piloto_{tipo_dados}_filial_{evidencia['filial_id']}_"
+            f"{evidencia['conteudo_sha256'][:12]}.json"
+        ),
+    )
+
 
 @login_required
 @role_required(*SISTEMA)

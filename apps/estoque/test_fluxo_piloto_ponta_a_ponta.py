@@ -268,6 +268,74 @@ class FluxoEstoquePilotoPontaAPontaTests(TestCase):
         self.assertTrue(
             json.loads(resposta_ficha.content)["apta_para_verificacao_final"]
         )
+        resposta_relatorio = self.client.post(
+            "/configuracoes/servidor-local/piloto/relatorio.json",
+            {
+                "entrada_id": entrada.pk,
+                "venda_id": venda.pk,
+                "perda_id": perda.pk,
+                "inventario_id": inventario.pk,
+                "fechamento_id": fechamento.pk,
+                "tipo_dados": "sinteticos",
+                "confirmar_relatorio": "sim",
+            },
+        )
+        self.assertEqual(resposta_relatorio.status_code, 200)
+        self.assertIn("attachment", resposta_relatorio["Content-Disposition"])
+        relatorio_visual = json.loads(resposta_relatorio.content)
+        self.assertEqual(
+            relatorio_visual["contrato"], "inventory_pilot_end_to_end_evidence_v3"
+        )
+        self.assertTrue(relatorio_visual["valida"])
+        self.assertTrue(relatorio_visual["dados_sinteticos"])
+        self.assertFalse(relatorio_visual["comunicacao_externa"])
+        resposta_relatorio_real = self.client.post(
+            "/configuracoes/servidor-local/piloto/relatorio.json",
+            {
+                "entrada_id": entrada.pk,
+                "venda_id": venda.pk,
+                "perda_id": perda.pk,
+                "inventario_id": inventario.pk,
+                "fechamento_id": fechamento.pk,
+                "tipo_dados": "reais",
+                "confirmar_relatorio": "sim",
+            },
+        )
+        self.assertEqual(resposta_relatorio_real.status_code, 200)
+        relatorio_visual_real = json.loads(resposta_relatorio_real.content)
+        self.assertFalse(relatorio_visual_real["dados_sinteticos"])
+        self.assertTrue(
+            relatorio_visual_real["prontidao_piloto_real"]["aplicada_ao_aceite"]
+        )
+        self.assertTrue(
+            relatorio_visual_real["verificacoes"][
+                "filial_pronta_para_piloto_real"
+            ]
+        )
+        resposta_relatorio_sem_confirmacao = self.client.post(
+            "/configuracoes/servidor-local/piloto/relatorio.json",
+            {
+                "entrada_id": entrada.pk,
+                "venda_id": venda.pk,
+                "perda_id": perda.pk,
+                "inventario_id": inventario.pk,
+                "fechamento_id": fechamento.pk,
+                "tipo_dados": "sinteticos",
+            },
+        )
+        self.assertEqual(resposta_relatorio_sem_confirmacao.status_code, 400)
+        resposta_relatorio_sem_tipo = self.client.post(
+            "/configuracoes/servidor-local/piloto/relatorio.json",
+            {
+                "entrada_id": entrada.pk,
+                "venda_id": venda.pk,
+                "perda_id": perda.pk,
+                "inventario_id": inventario.pk,
+                "fechamento_id": fechamento.pk,
+                "confirmar_relatorio": "sim",
+            },
+        )
+        self.assertEqual(resposta_relatorio_sem_tipo.status_code, 400)
         resposta_sem_confirmacao = self.client.post(
             "/configuracoes/servidor-local/piloto/ficha.json",
             {

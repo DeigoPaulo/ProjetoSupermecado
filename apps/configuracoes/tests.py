@@ -940,14 +940,20 @@ class ConfiguracoesOperacionaisTests(TestCase):
             "/configuracoes/servidor-local/piloto/ficha.json",
             {"confirmar_selecao": "sim"},
         )
+        relatorio_piloto = self.client.post(
+            "/configuracoes/servidor-local/piloto/relatorio.json",
+            {"confirmar_relatorio": "sim", "tipo_dados": "sinteticos"},
+        )
         self.assertEqual(central.status_code, 200)
         self.assertNotContains(central, "Diagnóstico de snapshots das vendas por lote")
         self.assertNotContains(central, "previsualizar_fluxo_estoque_piloto")
         self.assertNotContains(central, "gerar_ficha_execucao_piloto")
         self.assertNotContains(central, "verificar_artefatos_piloto")
+        self.assertNotContains(central, "Baixar relatório final v3")
         self.assertEqual(manifesto_local.status_code, 403)
         self.assertEqual(previa_piloto.status_code, 403)
         self.assertEqual(ficha_piloto.status_code, 403)
+        self.assertEqual(relatorio_piloto.status_code, 403)
     def test_servidor_local_admin_prepara_manifesto_de_implantacao(self):
         self.empresa.modo_implantacao = ModoImplantacao.HIBRIDO
         self.empresa.sincronizacao_automatica = True
@@ -1170,6 +1176,7 @@ class ConfiguracoesOperacionaisTests(TestCase):
             payload["ensaio_estoque"]["contrato_verificacao_artefatos"],
             "inventory_pilot_artifact_integrity_v1",
         )
+        self.assertTrue(payload["ensaio_estoque"]["download_relatorio_master"])
         self.assertIn(
             "verificar_artefatos_piloto",
             payload["ensaio_estoque"]["verificacao_artefatos_comando"],
