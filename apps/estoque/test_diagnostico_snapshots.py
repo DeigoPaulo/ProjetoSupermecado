@@ -1,6 +1,9 @@
 from datetime import timedelta
 from decimal import Decimal
+from io import StringIO
 
+from django.core.management import call_command
+from django.core.management.base import CommandError
 from django.test import TestCase
 from django.utils import timezone
 
@@ -18,6 +21,7 @@ from .models import (
     StatusTratamentoValidade,
     TipoMovimentacaoEstoque,
 )
+from .previsualizacao_piloto import previsualizar_candidatos_piloto
 
 
 class DiagnosticoCoberturaSnapshotsLoteTests(TestCase):
@@ -154,3 +158,29 @@ class DiagnosticoCoberturaSnapshotsLoteTests(TestCase):
         prontidao = diagnostico_prontidao_piloto_real(filial_id=self.filial.pk)
         self.assertEqual(prontidao["estado"], "BLOQUEADA_LEGADO")
         self.assertFalse(prontidao["pronta_para_aceite"])
+
+    def test_previa_sem_base_lista_impedimentos_sem_selecionar_ids(self):
+        previa = previsualizar_candidatos_piloto(filial_id=self.filial.pk)
+
+        self.assertEqual(previa["contrato"], "inventory_pilot_candidate_preview_v1")
+        self.assertTrue(previa["somente_leitura"])
+        self.assertFalse(previa["comunicacao_externa"])
+        self.assertFalse(previa["seleciona_automaticamente"])
+        self.assertFalse(previa["possui_candidatos_compativeis"])
+        codigos = {item["codigo"] for item in previa["impedimentos"]}
+        self.assertIn("SEM_BASE", codigos)
+        self.assertIn("SEM_ENTRADAS", codigos)
+        self.assertIn("SEM_FECHAMENTOS", codigos)
+
+        with self.assertRaisesMessage(ValueError, "entre 1 e 100"):
+            previsualizar_candidatos_piloto(
+                filial_id=self.filial.pk, limite_por_tipo=101
+            )
+        with self.assertRaisesMessage(CommandError, "ainda possui impedimentos"):
+            call_command(
+                "previsualizar_fluxo_estoque_piloto",
+                filial_id=self.filial.pk,
+                limite=20,
+                estrito=True,
+                stdout=StringIO(),
+            )

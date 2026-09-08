@@ -1923,8 +1923,10 @@ def _servidor_local_payload(request):
         "ensaio_estoque": {
             "contrato": "inventory_pilot_end_to_end_evidence_v3",
             "contrato_prontidao_real": "inventory_real_pilot_readiness_v1",
+            "contrato_previa": "inventory_pilot_candidate_preview_v1",
             "somente_leitura": True,
             "comunicacao_externa": False,
+            "previa_comando": "manage.py previsualizar_fluxo_estoque_piloto --filial-id ID --estrito",
             "comando": "manage.py verificar_fluxo_estoque_piloto --entrada-id ID --venda-id ID --perda-id ID --inventario-id ID --fechamento-id ID --estrito",
             "dados_sinteticos_flag": "--dados-sinteticos",
         },

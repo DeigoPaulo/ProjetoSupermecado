@@ -33,6 +33,14 @@ A versão v3 acrescenta o gate `inventory_real_pilot_readiness_v1`. Para dados r
 
 ## Comando
 
+Antes de escolher os cinco IDs, o Master pode consultar candidatos recentes de uma filial:
+
+```powershell
+.\.venv\Scripts\python.exe manage.py previsualizar_fluxo_estoque_piloto --filial-id ID --estrito
+```
+
+A prévia usa o contrato `inventory_pilot_candidate_preview_v1`, limita cada categoria a 20 registros por padrão e aceita `--limite` entre 1 e 100. Ela mostra produtos presentes nas cinco etapas e impedimentos, mas não combina nem escolhe IDs automaticamente. A janela limitada não substitui a conferência humana nem a validação final.
+
 ```powershell
 .\.venv\Scripts\python.exe manage.py verificar_fluxo_estoque_piloto --entrada-id ID --venda-id ID --perda-id ID --inventario-id ID --fechamento-id ID --estrito
 ```

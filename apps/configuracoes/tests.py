@@ -934,6 +934,7 @@ class ConfiguracoesOperacionaisTests(TestCase):
         manifesto_local = self.client.get("/configuracoes/servidor-local/manifest.json")
         self.assertEqual(central.status_code, 200)
         self.assertNotContains(central, "Diagnóstico de snapshots das vendas por lote")
+        self.assertNotContains(central, "previsualizar_fluxo_estoque_piloto")
         self.assertEqual(manifesto_local.status_code, 403)
     def test_servidor_local_admin_prepara_manifesto_de_implantacao(self):
         self.empresa.modo_implantacao = ModoImplantacao.HIBRIDO
@@ -1134,6 +1135,14 @@ class ConfiguracoesOperacionaisTests(TestCase):
         self.assertEqual(
             payload["ensaio_estoque"]["contrato_prontidao_real"],
             "inventory_real_pilot_readiness_v1",
+        )
+        self.assertEqual(
+            payload["ensaio_estoque"]["contrato_previa"],
+            "inventory_pilot_candidate_preview_v1",
+        )
+        self.assertIn(
+            "previsualizar_fluxo_estoque_piloto",
+            payload["ensaio_estoque"]["previa_comando"],
         )
         self.assertEqual(
             payload["diagnostico_snapshots_lote"]["contrato"],

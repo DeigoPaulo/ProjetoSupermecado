@@ -28,6 +28,7 @@ from .models import (
     StatusInventario,
     StatusTratamentoValidade,
 )
+from .previsualizacao_piloto import previsualizar_candidatos_piloto
 from .services import (
     aplicar_inventario,
     criar_inventario_divergencias_validade,
@@ -197,6 +198,25 @@ class FluxoEstoquePilotoPontaAPontaTests(TestCase):
             filial=filial, usuario=usuario
         )
         self.assertTrue(criado_fechamento)
+        previa = previsualizar_candidatos_piloto(filial_id=filial.pk)
+        self.assertEqual(previa["contrato"], "inventory_pilot_candidate_preview_v1")
+        self.assertEqual(previa["produtos_com_fluxo_completo"], [produto.pk])
+        self.assertTrue(previa["possui_candidatos_compativeis"])
+        self.assertFalse(previa["seleciona_automaticamente"])
+        self.assertEqual(previa["impedimentos"], [])
+        self.assertEqual(previa["candidatos"]["entradas"][0]["id"], entrada.pk)
+
+        saida_previa = StringIO()
+        call_command(
+            "previsualizar_fluxo_estoque_piloto",
+            filial_id=filial.pk,
+            limite=20,
+            estrito=True,
+            stdout=saida_previa,
+        )
+        self.assertEqual(
+            json.loads(saida_previa.getvalue())["filial"]["id"], filial.pk
+        )
         saida = StringIO()
         call_command(
             "verificar_fluxo_estoque_piloto",

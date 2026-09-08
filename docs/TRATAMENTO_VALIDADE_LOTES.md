@@ -265,3 +265,20 @@ O contrato `inventory_real_pilot_readiness_v1` usa o diagnóstico da filial como
 - [x] Regressão completa de Estoque e Configurações aprovada com 261 testes.
 
 Pronta estruturalmente ainda não significa homologação operacional, fiscal ou contábil. O aceite continua dependendo da execução responsável na filial real e do arquivamento da evidência.
+
+## Prévia dos candidatos do piloto
+
+O contrato `inventory_pilot_candidate_preview_v1` reduz erro na escolha manual dos cinco IDs sem transformar sugestão em aprovação.
+
+- [x] Filtra todos os registros pela mesma filial.
+- [x] Lista somente entradas e vendas finalizadas, perdas por vencimento com lote, inventários aplicados e fechamentos.
+- [x] Exclui vendas que já possuem documento fiscal.
+- [x] Mostra os produtos presentes nas cinco categorias dentro da janela consultada.
+- [x] Explicita prontidão histórica, categorias ausentes e falta de produto comum.
+- [x] Limite por categoria é validado entre 1 e 100.
+- [x] Não combina nem seleciona IDs automaticamente.
+- [x] Não altera registros nem acessa serviços externos.
+- [x] Modo estrito falha enquanto houver impedimentos.
+- [x] Comando de prévia fica visível na Central apenas ao Master.
+
+A prévia é preparatória. O contrato v3 continua revalidando os cinco registros escolhidos e é a fonte do resultado final do ensaio.
