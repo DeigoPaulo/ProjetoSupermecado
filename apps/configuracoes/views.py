@@ -1927,11 +1927,13 @@ def _servidor_local_payload(request):
             "contrato_prontidao_real": "inventory_real_pilot_readiness_v1",
             "contrato_previa": "inventory_pilot_candidate_preview_v1",
             "contrato_ficha": "inventory_pilot_execution_sheet_v2",
+            "contrato_verificacao_artefatos": "inventory_pilot_artifact_integrity_v1",
             "somente_leitura": True,
             "comunicacao_externa": False,
             "previa_comando": "manage.py previsualizar_fluxo_estoque_piloto --filial-id ID --estrito",
             "ficha_comando": "manage.py gerar_ficha_execucao_piloto --entrada-id ID --venda-id ID --perda-id ID --inventario-id ID --fechamento-id ID --responsavel-execucao NOME --responsavel-conferencia NOME --estrito",
             "comando": "manage.py verificar_fluxo_estoque_piloto --entrada-id ID --venda-id ID --perda-id ID --inventario-id ID --fechamento-id ID --estrito",
+            "verificacao_artefatos_comando": "manage.py verificar_artefatos_piloto --ficha FICHA.json --relatorio RELATORIO.json --estrito",
             "dados_sinteticos_flag": "--dados-sinteticos",
         },
         "backup_local": {

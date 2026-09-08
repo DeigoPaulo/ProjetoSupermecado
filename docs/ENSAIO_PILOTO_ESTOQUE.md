@@ -55,6 +55,17 @@ Na Central do servidor, o painel exclusivo do Master oferece os mesmos dois pass
 .\.venv\Scripts\python.exe manage.py verificar_fluxo_estoque_piloto --entrada-id ID --venda-id ID --perda-id ID --inventario-id ID --fechamento-id ID --estrito
 ```
 
+Para arquivar o relatório e conferir offline sua ligação com a ficha, salve a saída e execute:
+
+```powershell
+.\.venv\Scripts\python.exe manage.py verificar_fluxo_estoque_piloto --entrada-id ID --venda-id ID --perda-id ID --inventario-id ID --fechamento-id ID --estrito | Out-File -FilePath .\relatorio_piloto.json -Encoding utf8
+.\.venv\Scripts\python.exe manage.py verificar_artefatos_piloto --ficha .\ficha_piloto.json --relatorio .\relatorio_piloto.json --estrito
+```
+
+O contrato `inventory_pilot_artifact_integrity_v1` recalcula os SHA-256 da ficha v2 e do relatório v3 e confere contratos, horários, filial, produto, os cinco IDs e os estados finais. Ele lê somente arquivos locais de até 5 MB, não consulta o banco, não repete os nomes dos responsáveis, não persiste o resultado e não acessa a rede. O JSON produzido pelo comando possui hash próprio e também não representa aceite operacional.
+
+O SHA-256 comprova a consistência do conteúdo em relação ao hash que acompanha cada arquivo, mas não é assinatura digital e não prova autoria caso arquivo e hash sejam substituídos juntos. Preserve os originais em local controlado; qualquer futura exigência de autenticidade deverá usar assinatura ou ancoragem externa separada.
+
 Use `--dados-sinteticos` somente quando os registros forem de ensaio. Sem essa opção, o relatório não classifica os dados como sintéticos.
 
 O modo `--estrito` retorna falha quando qualquer verificação for reprovada, inclusive a prontidão histórica da filial quando o ensaio usa dados reais. O JSON é escrito na saída padrão para que a equipe possa arquivá-lo pelo procedimento de implantação escolhido, sem o sistema inventar uma aprovação.

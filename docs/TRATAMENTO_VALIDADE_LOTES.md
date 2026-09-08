@@ -326,3 +326,21 @@ A ficha não substitui o relatório v3, o arquivamento da evidência nem a confe
 - [x] Interface não executa o verificador final automaticamente.
 - [x] Nenhuma ação movimenta estoque, emite documento ou acessa a rede.
 - [x] Regressão completa de Estoque e Configurações aprovada com 262 testes.
+
+## Verificação offline dos artefatos do piloto
+
+O contrato `inventory_pilot_artifact_integrity_v1` confere a ficha v2 e o relatório final v3 depois da execução, sem consultar os registros atuais do sistema.
+
+- [x] Recalcula e compara o SHA-256 dos dois arquivos.
+- [x] Confere os contratos suportados e a ordem temporal dos documentos.
+- [x] Exige vínculo exato de filial, produto e dos cinco IDs.
+- [x] Exige ficha apta e relatório final válido.
+- [x] Recusa arquivo vazio, acima de 5 MB, link simbólico ou caminho de rede.
+- [x] Aceita JSON UTF-8 com ou sem BOM para uso seguro no PowerShell.
+- [x] Não repete nomes dos responsáveis no resultado.
+- [x] Não consulta banco, não persiste resultado e não registra aceite.
+- [x] Gera um relatório de integridade com SHA-256 próprio.
+- [x] Central informa o comando somente dentro do painel Master.
+- [x] Regressão completa de Estoque e Configurações aprovada com 265 testes.
+
+O verificador comprova consistência entre conteúdo, hash e vínculo dos dois artefatos; ele não é assinatura digital, não prova autoria e não substitui a preservação controlada dos arquivos originais.

@@ -31,6 +31,7 @@ from .models import (
     StatusTratamentoValidade,
 )
 from .previsualizacao_piloto import previsualizar_candidatos_piloto
+from .verificador_artefatos_piloto import verificar_integridade_artefatos_piloto
 from .services import (
     aplicar_inventario,
     criar_inventario_divergencias_validade,
@@ -353,6 +354,21 @@ class FluxoEstoquePilotoPontaAPontaTests(TestCase):
         self.assertFalse(evidencia["comunicacao_externa"])
         self.assertTrue(evidencia["dados_sinteticos"])
         self.assertFalse(DocumentoFiscal.objects.exists())
+
+        integridade_artefatos = verificar_integridade_artefatos_piloto(
+            ficha=ficha,
+            relatorio=evidencia,
+        )
+        self.assertEqual(
+            integridade_artefatos["contrato"],
+            "inventory_pilot_artifact_integrity_v1",
+        )
+        self.assertTrue(integridade_artefatos["integridade_confirmada"])
+        self.assertTrue(integridade_artefatos["vinculo"]["confirmado"])
+        self.assertEqual(integridade_artefatos["impedimentos"], [])
+        self.assertFalse(integridade_artefatos["consulta_banco"])
+        self.assertFalse(integridade_artefatos["persiste_resultado"])
+        self.assertNotIn("Operador Piloto", json.dumps(integridade_artefatos))
 
         evidencia_real = gerar_evidencia_fluxo_estoque_piloto(
             entrada_id=entrada.pk,

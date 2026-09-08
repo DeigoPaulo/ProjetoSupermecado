@@ -944,6 +944,7 @@ class ConfiguracoesOperacionaisTests(TestCase):
         self.assertNotContains(central, "Diagnóstico de snapshots das vendas por lote")
         self.assertNotContains(central, "previsualizar_fluxo_estoque_piloto")
         self.assertNotContains(central, "gerar_ficha_execucao_piloto")
+        self.assertNotContains(central, "verificar_artefatos_piloto")
         self.assertEqual(manifesto_local.status_code, 403)
         self.assertEqual(previa_piloto.status_code, 403)
         self.assertEqual(ficha_piloto.status_code, 403)
@@ -1164,6 +1165,14 @@ class ConfiguracoesOperacionaisTests(TestCase):
         self.assertIn(
             "gerar_ficha_execucao_piloto",
             payload["ensaio_estoque"]["ficha_comando"],
+        )
+        self.assertEqual(
+            payload["ensaio_estoque"]["contrato_verificacao_artefatos"],
+            "inventory_pilot_artifact_integrity_v1",
+        )
+        self.assertIn(
+            "verificar_artefatos_piloto",
+            payload["ensaio_estoque"]["verificacao_artefatos_comando"],
         )
         self.assertEqual(
             payload["diagnostico_snapshots_lote"]["contrato"],
