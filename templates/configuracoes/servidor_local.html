@@ -242,6 +242,43 @@
     <dt>Prévia por filial</dt><dd><code>{{ payload.ensaio_estoque.previa_comando }}</code></dd>
     <dt>Ficha dos IDs escolhidos</dt><dd><code>{{ payload.ensaio_estoque.ficha_comando }}</code></dd>
   </dl>
+  <div class="pilot-tools-grid">
+    <form method="post" action="{% url 'configuracoes:servidor_local_previa_piloto' %}" class="pilot-tool">
+      {% csrf_token %}
+      <h3>Baixar prévia por filial</h3>
+      <label class="form-field">
+        <span>Filial</span>
+        <select name="filial_id" required>
+          <option value="">Selecione</option>
+          {% for filial in filiais_piloto %}
+            <option value="{{ filial.id }}">{{ filial.empresa.nome_fantasia }} / {{ filial.nome }}</option>
+          {% endfor %}
+        </select>
+      </label>
+      <label class="form-field">
+        <span>Limite por categoria</span>
+        <input type="number" name="limite" value="20" min="1" max="100" required>
+      </label>
+      <button class="secondary-button" type="submit">Baixar prévia JSON</button>
+    </form>
+    <form method="post" action="{% url 'configuracoes:servidor_local_ficha_piloto' %}" class="pilot-tool">
+      {% csrf_token %}
+      <h3>Baixar ficha dos IDs escolhidos</h3>
+      <div class="form-grid">
+        <label class="form-field"><span>Entrada</span><input type="number" name="entrada_id" min="1" required></label>
+        <label class="form-field"><span>Venda</span><input type="number" name="venda_id" min="1" required></label>
+        <label class="form-field"><span>Perda</span><input type="number" name="perda_id" min="1" required></label>
+        <label class="form-field"><span>Inventário</span><input type="number" name="inventario_id" min="1" required></label>
+        <label class="form-field"><span>Fechamento</span><input type="number" name="fechamento_id" min="1" required></label>
+      </div>
+      <label class="pilot-confirm">
+        <input type="checkbox" name="confirmar_selecao" value="sim" required>
+        <span>Confirmo que escolhi e conferi manualmente os cinco IDs.</span>
+      </label>
+      <button class="secondary-button" type="submit">Baixar ficha JSON</button>
+      <small>Esta ação não executa o ensaio nem registra aprovação.</small>
+    </form>
+  </div>
   <div class="table-wrapper">
     <table>
       <thead><tr><th>Empresa / filial</th><th>Total</th><th>Íntegras</th><th>Legadas</th><th>Inconsistentes</th><th>Cobertura</th><th>Estado</th></tr></thead>

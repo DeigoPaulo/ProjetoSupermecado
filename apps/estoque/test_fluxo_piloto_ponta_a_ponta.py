@@ -228,6 +228,42 @@ class FluxoEstoquePilotoPontaAPontaTests(TestCase):
         self.assertTrue(
             json.loads(saida_ficha.getvalue())["apta_para_verificacao_final"]
         )
+        self.client.force_login(usuario)
+        resposta_previa = self.client.post(
+            "/configuracoes/servidor-local/piloto/previa.json",
+            {"filial_id": filial.pk, "limite": 20},
+        )
+        self.assertEqual(resposta_previa.status_code, 200)
+        self.assertIn("attachment", resposta_previa["Content-Disposition"])
+        self.assertEqual(
+            json.loads(resposta_previa.content)["filial"]["id"], filial.pk
+        )
+        resposta_ficha = self.client.post(
+            "/configuracoes/servidor-local/piloto/ficha.json",
+            {
+                "entrada_id": entrada.pk,
+                "venda_id": venda.pk,
+                "perda_id": perda.pk,
+                "inventario_id": inventario.pk,
+                "fechamento_id": fechamento.pk,
+                "confirmar_selecao": "sim",
+            },
+        )
+        self.assertEqual(resposta_ficha.status_code, 200)
+        self.assertTrue(
+            json.loads(resposta_ficha.content)["apta_para_verificacao_final"]
+        )
+        resposta_sem_confirmacao = self.client.post(
+            "/configuracoes/servidor-local/piloto/ficha.json",
+            {
+                "entrada_id": entrada.pk,
+                "venda_id": venda.pk,
+                "perda_id": perda.pk,
+                "inventario_id": inventario.pk,
+                "fechamento_id": fechamento.pk,
+            },
+        )
+        self.assertEqual(resposta_sem_confirmacao.status_code, 400)
         previa = previsualizar_candidatos_piloto(filial_id=filial.pk)
         self.assertEqual(previa["contrato"], "inventory_pilot_candidate_preview_v1")
         self.assertEqual(previa["produtos_com_fluxo_completo"], [produto.pk])

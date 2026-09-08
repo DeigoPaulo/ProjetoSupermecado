@@ -18,7 +18,7 @@ from django.contrib.auth.decorators import login_required
 from django.contrib.auth.models import User
 from django.core.management import call_command
 from django.core.paginator import Paginator
-from django.core.exceptions import PermissionDenied
+from django.core.exceptions import ObjectDoesNotExist, PermissionDenied
 from django.db import transaction
 from django.db.models import Count, Q, Sum
 from django.http import FileResponse, Http404, HttpResponse, JsonResponse
@@ -35,6 +35,8 @@ from apps.fiscal.integridade_operacional import diagnostico_integridade_operacio
 from apps.fiscal.models import ConfiguracaoFiscal
 from apps.financeiro.models import ContaMovimentoFinanceiro
 from apps.estoque.diagnostico_snapshots import diagnostico_cobertura_snapshots_lote
+from apps.estoque.ficha_execucao_piloto import gerar_ficha_execucao_piloto
+from apps.estoque.previsualizacao_piloto import previsualizar_candidatos_piloto
 from apps.estoque.services import diagnostico_manutencao_inventarios_validade
 from apps.pdv.models import AcessoPdvNuvem, CanalAtualizacaoPdv, EventoDispositivoTerminal, StatusAcessoPdvNuvem, StatusLicencaTerminal, TerminalPdv
 from apps.vendas.models import FormaPagamento, FormaPagamentoFilial, PagamentoVenda, StatusPagamento
@@ -2097,6 +2099,13 @@ def servidor_local(request):
             "resumo_homologacoes": resumo_homologacoes,
             "homologacao_status": homologacao_status,
             "diagnostico_snapshots_lote": payload.get("diagnostico_snapshots_lote"),
+            "filiais_piloto": (
+                Filial.objects.select_related("empresa").order_by(
+                    "empresa__nome_fantasia", "nome", "id"
+                )
+                if request.user.is_superuser
+                else None
+            ),
         },
     )
 
@@ -2106,6 +2115,74 @@ def servidor_local(request):
 def servidor_local_manifest(request):
     _exigir_admin_master(request.user)
     return JsonResponse(_servidor_local_payload(request))
+
+
+def _resposta_json_download(payload, arquivo):
+    response = HttpResponse(
+        json.dumps(payload, ensure_ascii=False, sort_keys=True, indent=2),
+        content_type="application/json; charset=utf-8",
+    )
+    response["Content-Disposition"] = f'attachment; filename="{arquivo}"'
+    return response
+
+
+@login_required
+@role_required(*SISTEMA)
+def servidor_local_previa_piloto(request):
+    _exigir_admin_master(request.user)
+    if request.method != "POST":
+        raise PermissionDenied
+    try:
+        filial_id = int(request.POST.get("filial_id", ""))
+        limite = int(request.POST.get("limite", "20"))
+        if filial_id < 1:
+            raise ValueError
+        previa = previsualizar_candidatos_piloto(
+            filial_id=filial_id, limite_por_tipo=limite
+        )
+    except (ObjectDoesNotExist, TypeError, ValueError):
+        return JsonResponse(
+            {"erro": "Filial ou limite inválido para a prévia do piloto."},
+            status=400,
+        )
+    return _resposta_json_download(
+        previa, f"previa_piloto_filial_{filial_id}.json"
+    )
+
+
+@login_required
+@role_required(*SISTEMA)
+def servidor_local_ficha_piloto(request):
+    _exigir_admin_master(request.user)
+    if request.method != "POST":
+        raise PermissionDenied
+    if request.POST.get("confirmar_selecao") != "sim":
+        return JsonResponse(
+            {"erro": "Confirme que os cinco IDs foram escolhidos manualmente."},
+            status=400,
+        )
+    try:
+        ids = {
+            nome: int(request.POST.get(f"{nome}_id", ""))
+            for nome in ("entrada", "venda", "perda", "inventario", "fechamento")
+        }
+        if any(valor < 1 for valor in ids.values()):
+            raise ValueError
+        ficha = gerar_ficha_execucao_piloto(
+            entrada_id=ids["entrada"],
+            venda_id=ids["venda"],
+            perda_id=ids["perda"],
+            inventario_id=ids["inventario"],
+            fechamento_id=ids["fechamento"],
+        )
+    except (ObjectDoesNotExist, TypeError, ValueError):
+        return JsonResponse(
+            {"erro": "Um ou mais IDs não são válidos para gerar a ficha."},
+            status=400,
+        )
+    return _resposta_json_download(
+        ficha, f"ficha_piloto_{ficha['conteudo_sha256'][:12]}.json"
+    )
 
 @login_required
 @role_required(*SISTEMA)

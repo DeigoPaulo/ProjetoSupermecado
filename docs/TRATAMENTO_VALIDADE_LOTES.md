@@ -300,3 +300,16 @@ O contrato `inventory_pilot_execution_sheet_v1` formaliza a revisão dos IDs esc
 - [x] Central exibe o comando somente no painel Master.
 
 A ficha não substitui o relatório v3, o arquivamento da evidência nem a conferência operacional responsável.
+
+## Interface Master do piloto
+
+- [x] Prévia exige seleção explícita da filial e limite entre 1 e 100.
+- [x] Ficha exige os cinco IDs positivos.
+- [x] Ficha exige confirmação humana da escolha manual.
+- [x] Downloads JSON usam nomes vinculados à filial ou ao SHA-256.
+- [x] Entradas inválidas retornam mensagem sanitizada sem detalhes internos.
+- [x] Administrador da empresa não visualiza os formulários nem acessa as rotas.
+- [x] Layout usa cartões responsivos para computador e celular.
+- [x] Interface não executa o verificador final automaticamente.
+- [x] Nenhuma ação movimenta estoque, emite documento ou acessa a rede.
+- [x] Regressão completa de Estoque e Configurações aprovada com 262 testes.

@@ -932,11 +932,21 @@ class ConfiguracoesOperacionaisTests(TestCase):
 
         central = self.client.get("/configuracoes/servidor-local/")
         manifesto_local = self.client.get("/configuracoes/servidor-local/manifest.json")
+        previa_piloto = self.client.post(
+            "/configuracoes/servidor-local/piloto/previa.json",
+            {"filial_id": self.filial.pk, "limite": 20},
+        )
+        ficha_piloto = self.client.post(
+            "/configuracoes/servidor-local/piloto/ficha.json",
+            {"confirmar_selecao": "sim"},
+        )
         self.assertEqual(central.status_code, 200)
         self.assertNotContains(central, "Diagnóstico de snapshots das vendas por lote")
         self.assertNotContains(central, "previsualizar_fluxo_estoque_piloto")
         self.assertNotContains(central, "gerar_ficha_execucao_piloto")
         self.assertEqual(manifesto_local.status_code, 403)
+        self.assertEqual(previa_piloto.status_code, 403)
+        self.assertEqual(ficha_piloto.status_code, 403)
     def test_servidor_local_admin_prepara_manifesto_de_implantacao(self):
         self.empresa.modo_implantacao = ModoImplantacao.HIBRIDO
         self.empresa.sincronizacao_automatica = True
@@ -947,6 +957,8 @@ class ConfiguracoesOperacionaisTests(TestCase):
 
         self.assertEqual(response.status_code, 200)
         self.assertContains(response, "Servidor local administrativo")
+        self.assertContains(response, "Baixar prévia JSON")
+        self.assertContains(response, "Baixar ficha JSON")
         self.assertContains(response, "não um segundo sistema")
         self.assertContains(response, "PDV desktop segue separado e restrito ao operador")
         self.assertContains(response, "Serviço Windows/Linux")

@@ -49,6 +49,8 @@ Depois da escolha manual, gere a ficha antes do verificador final:
 
 A ficha usa o contrato `inventory_pilot_execution_sheet_v1`, repete as condições básicas de compatibilidade, incorpora a prontidão da filial, lista impedimentos e produz SHA-256. Ela não grava um aceite, não executa o ensaio e declara `aprovacao_automatica=false`. Somente depois de revisar a ficha o Master deve executar o verificador v3 abaixo.
 
+Na Central do servidor, o painel exclusivo do Master oferece os mesmos dois passos sem exigir digitação de comandos: seleção da filial para baixar a prévia e preenchimento dos cinco IDs para baixar a ficha. A ficha só é gerada após confirmação explícita de que os IDs foram escolhidos e conferidos manualmente. A interface não possui ação para disparar o verificador final.
+
 ```powershell
 .\.venv\Scripts\python.exe manage.py verificar_fluxo_estoque_piloto --entrada-id ID --venda-id ID --perda-id ID --inventario-id ID --fechamento-id ID --estrito
 ```
