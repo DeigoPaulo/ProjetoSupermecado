@@ -88,6 +88,7 @@ from .models import (
     TipoManifestacaoDestinatario,
 )
 from .devolucao_fornecedor import (
+    registrar_parametrizacao_itens_devolucao_fornecedor,
     registrar_parecer_tributario_devolucao_fornecedor,
     revisar_rascunho_devolucao_fornecedor,
 )
@@ -128,6 +129,9 @@ def _rascunhos_revisao_queryset(user):
             "itens__item_entrada__produto",
             "revisoes__revisor",
             "pareceres_tributarios__responsavel",
+            "parametrizacoes_fiscais__responsavel",
+            "parametrizacoes_fiscais__parecer",
+            "parametrizacoes_fiscais__itens",
         ),
     )
 
@@ -226,6 +230,35 @@ def registrar_parecer_devolucao_fornecedor(request, pk):
             messages.info(
                 request,
                 f"O mesmo conteúdo já está preservado na versão {parecer.versao}.",
+            )
+    return redirect("fiscal:revisao_devolucao_detalhe", pk=rascunho.pk)
+
+
+@login_required
+@role_required(*REVISAO_FISCAL)
+@require_POST
+def registrar_parametrizacao_devolucao_fornecedor(request, pk):
+    rascunho = get_object_or_404(_rascunhos_revisao_queryset(request.user), pk=pk)
+    try:
+        parametrizacao, criado = registrar_parametrizacao_itens_devolucao_fornecedor(
+            rascunho,
+            parecer_id=request.POST.get("parecer_id"),
+            dados=request.POST,
+            responsavel=request.user,
+            ip=request.META.get("REMOTE_ADDR"),
+        )
+    except ValidationError as exc:
+        messages.error(request, " ".join(exc.messages))
+    else:
+        if criado:
+            messages.success(
+                request,
+                f"Parâmetros por item versão {parametrizacao.versao} registrados sem calcular ou emitir.",
+            )
+        else:
+            messages.info(
+                request,
+                f"O mesmo conteúdo já está preservado na versão {parametrizacao.versao}.",
             )
     return redirect("fiscal:revisao_devolucao_detalhe", pk=rascunho.pk)
 

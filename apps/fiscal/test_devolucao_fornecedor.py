@@ -17,6 +17,7 @@ from .devolucao_fornecedor import (
     CONTRATO_RASCUNHO_DEVOLUCAO_FORNECEDOR,
     cancelar_rascunho_devolucao_fornecedor,
     preparar_devolucao_fornecedor,
+    registrar_parametrizacao_itens_devolucao_fornecedor,
     registrar_parecer_tributario_devolucao_fornecedor,
     revisar_rascunho_devolucao_fornecedor,
     salvar_rascunho_devolucao_fornecedor,
@@ -29,7 +30,9 @@ from .models import (
     DecisaoRevisaoDevolucaoFornecedor,
     ItemRascunhoDevolucaoFornecedor,
     ItemCFOP,
+    ItemParametrizacaoFiscalDevolucaoFornecedor,
     ParecerTributarioDevolucaoFornecedor,
+    ParametrizacaoFiscalDevolucaoFornecedor,
     RascunhoDevolucaoFornecedor,
     RevisaoDevolucaoFornecedor,
     StatusRascunhoDevolucaoFornecedor,
@@ -185,6 +188,34 @@ class PreparacaoDevolucaoFornecedorTests(TestCase):
             "tratamento_cbenef": "Não aplicável neste caso conforme orientação registrada.",
             "tratamento_ibs_cbs": "Tratar conforme regra vigente na data de referência informada.",
             "fundamentacao": "Orientação formal do responsável contábil para este caso concreto.",
+        }
+        dados.update(alteracoes)
+        return dados
+
+    def _parecer_registrado(self):
+        rascunho = self._rascunho_aprovado()
+        self._registrar_catalogo_cfop()
+        parecer, _ = registrar_parecer_tributario_devolucao_fornecedor(
+            rascunho,
+            dados=self._dados_parecer(),
+            responsavel=self.revisor,
+        )
+        return rascunho, parecer
+
+    def _dados_parametros(self, rascunho, **alteracoes):
+        item = rascunho.itens.get()
+        dados = {
+            f"tipo_codigo_icms_{item.pk}": "CST",
+            f"origem_icms_{item.pk}": "0",
+            f"codigo_icms_{item.pk}": "00",
+            f"codigo_ipi_{item.pk}": "NA",
+            f"codigo_pis_{item.pk}": "01",
+            f"codigo_cofins_{item.pk}": "01",
+            f"codigo_cbenef_{item.pk}": "NA",
+            f"tratamento_icms_st_fcp_{item.pk}": "Não aplicável segundo o parecer selecionado.",
+            f"tratamento_cbenef_{item.pk}": "Não aplicável segundo o parecer selecionado.",
+            f"tratamento_ibs_cbs_{item.pk}": "Aplicar a orientação textual do parecer selecionado.",
+            f"observacao_{item.pk}": "Classificação informada para teste sem cálculo.",
         }
         dados.update(alteracoes)
         return dados
@@ -716,4 +747,130 @@ class PreparacaoDevolucaoFornecedorTests(TestCase):
         self.assertContains(detalhe, "Não há preenchimento automático")
         self.assertContains(resposta, "Parecer tributário versão 1 registrado sem liberar emissão")
         self.assertContains(resposta, "CFOP 5202")
+        self.assertFalse(DocumentoFiscal.objects.exists())
+
+    def test_parametrizacao_por_item_versionada_e_imutavel_nao_calcula_nem_emite(self):
+        rascunho, parecer = self._parecer_registrado()
+
+        parametros, criado = registrar_parametrizacao_itens_devolucao_fornecedor(
+            rascunho,
+            parecer_id=parecer.pk,
+            dados=self._dados_parametros(rascunho),
+            responsavel=self.revisor,
+        )
+
+        self.assertTrue(criado)
+        self.assertEqual(parametros.versao, 1)
+        self.assertEqual(parametros.parecer, parecer)
+        self.assertEqual(parametros.conteudo_snapshot["parecer_sha256"], parecer.conteudo_sha256)
+        item = parametros.itens.get()
+        self.assertEqual(item.numero_item_xml, "1")
+        self.assertEqual(item.tipo_codigo_icms, "CST")
+        self.assertEqual(item.origem_icms, "0")
+        self.assertEqual(item.codigo_icms, "00")
+        self.assertEqual(item.codigo_ipi, "NA")
+        self.assertEqual(item.codigo_cbenef, "NA")
+        self.assertFalse(DocumentoFiscal.objects.exists())
+        with self.assertRaisesMessage(ValueError, "imutáveis"):
+            parametros.conteudo_sha256 = "b" * 64
+            parametros.save()
+        with self.assertRaisesMessage(ValueError, "imutáveis"):
+            item.codigo_icms = "20"
+            item.save()
+
+    def test_parametrizacao_incompleta_ou_codigo_invalido_e_atomica(self):
+        rascunho, parecer = self._parecer_registrado()
+        item = rascunho.itens.get()
+        incompleto = self._dados_parametros(rascunho)
+        incompleto.pop(f"tratamento_cbenef_{item.pk}")
+
+        with self.assertRaisesMessage(ValidationError, "tratamento do cBenef"):
+            registrar_parametrizacao_itens_devolucao_fornecedor(
+                rascunho,
+                parecer_id=parecer.pk,
+                dados=incompleto,
+                responsavel=self.revisor,
+            )
+        with self.assertRaisesMessage(ValidationError, "dois dígitos"):
+            registrar_parametrizacao_itens_devolucao_fornecedor(
+                rascunho,
+                parecer_id=parecer.pk,
+                dados=self._dados_parametros(
+                    rascunho, **{f"codigo_icms_{item.pk}": "102"}
+                ),
+                responsavel=self.revisor,
+            )
+
+        self.assertFalse(ParametrizacaoFiscalDevolucaoFornecedor.objects.exists())
+        self.assertFalse(ItemParametrizacaoFiscalDevolucaoFornecedor.objects.exists())
+
+    def test_parametrizacao_identica_e_idempotente_e_mudanca_cria_versao(self):
+        rascunho, parecer = self._parecer_registrado()
+        item = rascunho.itens.get()
+        dados = self._dados_parametros(rascunho)
+
+        primeira, criada = registrar_parametrizacao_itens_devolucao_fornecedor(
+            rascunho,
+            parecer_id=parecer.pk,
+            dados=dados,
+            responsavel=self.revisor,
+        )
+        repetida, criada_repetida = registrar_parametrizacao_itens_devolucao_fornecedor(
+            rascunho,
+            parecer_id=parecer.pk,
+            dados=dados,
+            responsavel=self.revisor,
+        )
+        segunda, criada_segunda = registrar_parametrizacao_itens_devolucao_fornecedor(
+            rascunho,
+            parecer_id=parecer.pk,
+            dados=self._dados_parametros(
+                rascunho,
+                **{f"observacao_{item.pk}": "Segunda orientação expressamente revisada."},
+            ),
+            responsavel=self.revisor,
+        )
+
+        self.assertTrue(criada)
+        self.assertFalse(criada_repetida)
+        self.assertEqual(primeira.pk, repetida.pk)
+        self.assertTrue(criada_segunda)
+        self.assertEqual(segunda.versao, 2)
+        self.assertEqual(ParametrizacaoFiscalDevolucaoFornecedor.objects.count(), 2)
+        self.assertFalse(DocumentoFiscal.objects.exists())
+
+    def test_parametrizacao_bloqueia_xml_divergente(self):
+        rascunho, parecer = self._parecer_registrado()
+        dfe = DocumentoDFeRecebido.objects.get(entrada_compra=self.entrada)
+        dfe.xml_conteudo = dfe.xml_conteudo.replace("3.40", "3.42")
+        dfe.save(update_fields=["xml_conteudo"])
+
+        with self.assertRaisesMessage(ValidationError, "XML original divergiu"):
+            registrar_parametrizacao_itens_devolucao_fornecedor(
+                rascunho,
+                parecer_id=parecer.pk,
+                dados=self._dados_parametros(rascunho),
+                responsavel=self.revisor,
+            )
+
+        self.assertFalse(ParametrizacaoFiscalDevolucaoFornecedor.objects.exists())
+
+    def test_contabilidade_registra_parametros_pela_tela_e_financeiro_nao_acessa(self):
+        rascunho, parecer = self._parecer_registrado()
+        url = f"/fiscal/devolucoes-fornecedor/revisao/{rascunho.pk}/parametros-itens/"
+        dados = {"parecer_id": str(parecer.pk), **self._dados_parametros(rascunho)}
+
+        self.client.force_login(self.financeiro)
+        self.assertEqual(self.client.post(url, dados).status_code, 403)
+
+        self.client.force_login(self.revisor)
+        detalhe = self.client.get(
+            f"/fiscal/devolucoes-fornecedor/revisao/{rascunho.pk}/"
+        )
+        resposta = self.client.post(url, dados, follow=True)
+
+        self.assertContains(detalhe, "Registrar nova versão dos parâmetros por item")
+        self.assertContains(detalhe, "Selecione conscientemente")
+        self.assertContains(resposta, "Parâmetros por item versão 1 registrados")
+        self.assertContains(resposta, "CST 00")
         self.assertFalse(DocumentoFiscal.objects.exists())

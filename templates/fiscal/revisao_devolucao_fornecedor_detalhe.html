@@ -107,6 +107,39 @@
   {% endfor %}
 </section>
 
+<section class="panel mt-panel">
+  <div class="panel-title">Parâmetros fiscais por item</div>
+  <div class="operation-notice">
+    Estas versões registram códigos e orientações recebidos. Não possuem bases, alíquotas ou valores e não geram cálculo ou XML.
+  </div>
+  {% for parametros in rascunho.parametrizacoes_fiscais.all %}
+    <details class="nav-section">
+      <summary>Versão {{ parametros.versao }} · parecer {{ parametros.parecer.versao }} · {{ parametros.itens.count }} nItem(ns)</summary>
+      <table>
+        <thead><tr><th>nItem</th><th>ICMS</th><th>IPI / PIS / COFINS</th><th>Orientações complementares</th></tr></thead>
+        <tbody>
+          {% for item in parametros.itens.all %}
+            <tr>
+              <td>{{ item.numero_item_xml }}</td>
+              <td>Origem {{ item.origem_icms }} · {{ item.get_tipo_codigo_icms_display }}{% if item.codigo_icms %} {{ item.codigo_icms }}{% endif %}</td>
+              <td>{{ item.codigo_ipi }} / {{ item.codigo_pis }} / {{ item.codigo_cofins }}</td>
+              <td>
+                <strong>ICMS-ST/FCP:</strong> {{ item.tratamento_icms_st_fcp }}<br>
+                <strong>cBenef {{ item.codigo_cbenef }}:</strong> {{ item.tratamento_cbenef }}<br>
+                <strong>IBS/CBS:</strong> {{ item.tratamento_ibs_cbs }}
+                {% if item.observacao %}<br><strong>Observação:</strong> {{ item.observacao }}{% endif %}
+              </td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+      <p class="panel-subtitle">Responsável: {{ parametros.responsavel }} em {{ parametros.criado_em|date:"d/m/Y H:i" }} · SHA-256 {{ parametros.conteudo_sha256 }}</p>
+    </details>
+  {% empty %}
+    <p class="panel-subtitle">Nenhuma parametrização por item foi registrada.</p>
+  {% endfor %}
+</section>
+
 {% if rascunho.status == "AGUARDANDO_REVISAO" %}
   <section class="panel mt-panel">
     <div class="panel-title">Registrar decisão fiscal</div>
@@ -160,6 +193,57 @@
       <label class="form-field span-2"><span>Tratamento de IBS/CBS</span><textarea name="tratamento_ibs_cbs" maxlength="2000" required></textarea></label>
       <label class="form-field span-2"><span>Fundamentação e fonte da orientação</span><textarea name="fundamentacao" maxlength="4000" required></textarea></label>
       <div class="form-actions span-2"><button class="primary-button" type="submit">Registrar parecer sem emitir</button></div>
+    </form>
+  </section>
+{% endif %}
+
+{% if rascunho.status == "APROVADO" and rascunho.pareceres_tributarios.exists %}
+  <section class="panel mt-panel">
+    <div class="panel-title">Registrar nova versão dos parâmetros por item</div>
+    <div class="operation-notice">
+      Preencha todos os itens com base no parecer escolhido. Use “NA” somente quando o parecer declarar que o tributo não se aplica.
+    </div>
+    <form method="post" action="{% url 'fiscal:registrar_parametrizacao_devolucao' rascunho.pk %}" class="form-grid form-confirm" data-msg="Preservar estes parâmetros por item como uma nova versão imutável? Nenhum cálculo ou documento será criado.">
+      {% csrf_token %}
+      <label class="form-field span-2">
+        <span>Versão do parecer que fundamenta esta ficha</span>
+        <select name="parecer_id" required>
+          <option value="">Selecione conscientemente</option>
+          {% for parecer in rascunho.pareceres_tributarios.all %}
+            <option value="{{ parecer.pk }}">Versão {{ parecer.versao }} · CFOP {{ parecer.cfop }} · {{ parecer.vigencia_referencia|date:"d/m/Y" }}</option>
+          {% endfor %}
+        </select>
+      </label>
+      <div class="span-2">
+        {% for item in rascunho.itens.all %}
+          <section class="panel mt-panel">
+            <div class="panel-title">nItem {{ item.numero_item_xml }} · {{ item.item_entrada.produto }}</div>
+            <p class="panel-subtitle">Evidência original: CFOP {{ item.item_xml_snapshot.cfop|default:"-" }}, NCM {{ item.item_xml_snapshot.ncm|default:"-" }}. Ela não é copiada automaticamente para a saída.</p>
+            <div class="form-grid">
+              <label class="form-field">
+                <span>Classificação do ICMS</span>
+                <select name="tipo_codigo_icms_{{ item.pk }}" required>
+                  <option value="">Selecione</option>
+                  <option value="CST">CST</option>
+                  <option value="CSOSN">CSOSN</option>
+                  <option value="NAO_APLICAVEL">Não aplicável</option>
+                </select>
+              </label>
+              <label class="form-field"><span>Origem do ICMS (0 a 8)</span><input type="text" name="origem_icms_{{ item.pk }}" inputmode="numeric" minlength="1" maxlength="1" required></label>
+              <label class="form-field"><span>Código CST/CSOSN</span><input type="text" name="codigo_icms_{{ item.pk }}" inputmode="numeric" maxlength="3"></label>
+              <label class="form-field"><span>CST IPI ou NA</span><input type="text" name="codigo_ipi_{{ item.pk }}" maxlength="2" required></label>
+              <label class="form-field"><span>CST PIS ou NA</span><input type="text" name="codigo_pis_{{ item.pk }}" maxlength="2" required></label>
+              <label class="form-field"><span>CST COFINS ou NA</span><input type="text" name="codigo_cofins_{{ item.pk }}" maxlength="2" required></label>
+              <label class="form-field"><span>cBenef GO ou NA</span><input type="text" name="codigo_cbenef_{{ item.pk }}" maxlength="8" required></label>
+              <label class="form-field span-2"><span>Orientação ICMS-ST/FCP</span><textarea name="tratamento_icms_st_fcp_{{ item.pk }}" maxlength="2000" required></textarea></label>
+              <label class="form-field span-2"><span>Orientação cBenef</span><textarea name="tratamento_cbenef_{{ item.pk }}" maxlength="2000" required></textarea></label>
+              <label class="form-field span-2"><span>Orientação IBS/CBS</span><textarea name="tratamento_ibs_cbs_{{ item.pk }}" maxlength="2000" required></textarea></label>
+              <label class="form-field span-2"><span>Observação opcional</span><textarea name="observacao_{{ item.pk }}" maxlength="2000"></textarea></label>
+            </div>
+          </section>
+        {% endfor %}
+      </div>
+      <div class="form-actions span-2"><button class="primary-button" type="submit">Registrar parâmetros sem calcular</button></div>
     </form>
   </section>
 {% endif %}

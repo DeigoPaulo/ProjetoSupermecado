@@ -4,7 +4,7 @@ Atualizado em 09/09/2026. Documento interno de engenharia e homologação.
 
 ## Estado atual
 
-O contrato `supplier_return_fiscal_preparation_v1` faz o diagnóstico documental de uma entrada de compra finalizada. O contrato `supplier_return_draft_v1` preserva o motivo operacional, a seleção de itens e quantidades, o vínculo ao `nItem` e o retrato tributário original. O contrato `supplier_return_fiscal_review_v1` registra a decisão imutável de Administrador ou Contabilidade. Depois da aprovação, `supplier_return_tax_opinion_v1` preserva versões da orientação profissional, com natureza, regime de referência, CFOP de saída validado no catálogo oficial, tratamentos textuais de cada tributo, fundamentação, catálogo utilizado e hashes da revisão/XML. Nenhuma dessas ações cria NF-e, reserva série ou número, calcula tributos, movimenta estoque ou chama Focus/SEFAZ direta.
+O contrato `supplier_return_fiscal_preparation_v1` faz o diagnóstico documental de uma entrada finalizada. `supplier_return_draft_v1` preserva motivo, itens, quantidades, `nItem` e retrato tributário original. `supplier_return_fiscal_review_v1` registra a decisão imutável de Administrador ou Contabilidade. Depois da aprovação, `supplier_return_tax_opinion_v1` preserva a orientação profissional global. Por fim, `supplier_return_item_tax_parameters_v1` registra, em lote completo e versionado, origem e CST ou CSOSN do ICMS, CST/“NA” de IPI, PIS e COFINS, código cBenef GO/“NA” e orientações de ICMS-ST/FCP, cBenef e IBS/CBS para cada item. Nenhuma dessas ações cria NF-e, reserva série ou número, calcula bases/alíquotas/valores, movimenta estoque ou chama Focus/SEFAZ direta.
 
 O cenário continua **bloqueado para emissão**. “Base documental disponível” significa apenas que a entrada possui chave válida, XML integral vinculado pelo DF-e, modelo 55, identidades coincidentes e itens fiscais legíveis.
 
@@ -42,6 +42,9 @@ Uma entrada criada por upload direto hoje preserva os dados normalizados e a cha
 - [x] Registrar parecer tributário append-only somente sobre preparação aprovada, com versões idempotentes e snapshot integral; migration fiscal 0039.
 - [x] Exigir data, regime e natureza informados pelo responsável e CFOP de saída presente no catálogo oficial vigente.
 - [x] Exigir declaração explícita para ICMS, ICMS-ST/FCP, IPI, PIS, COFINS, cBenef e IBS/CBS, sem defaults ou cálculo automático.
+- [x] Registrar ficha completa por `nItem`, vinculada a uma versão explícita do parecer e sem copiar automaticamente a tributação de entrada; migration fiscal 0040.
+- [x] Validar origem e formato de CST/CSOSN e exigir `NA` explícito para IPI/PIS/COFINS e cBenef quando não aplicáveis.
+- [x] Versionar e deduplicar o lote inteiro, preservando responsável, parecer, XML e conteúdo por SHA-256.
 - [ ] Considerar no saldo as devoluções efetivamente autorizadas quando essa etapa existir.
 
 ## Decisões ainda pendentes
@@ -49,7 +52,8 @@ Uma entrada criada por upload direto hoje preserva os dados normalizados e a cha
 - [x] Criar a decisão segregada do revisor fiscal, permitindo devolver para correção ou aprovar somente a preparação.
 - [x] Registrar justificativa e responsável pela decisão sem transformar aprovação em autorização para emitir.
 - [x] Modelar o parecer tributário versionado que recebe as decisões explícitas do contador, sem sugerir valores por padrão.
-- [ ] Estruturar parâmetros fiscais por `nItem`, vinculados a uma versão do parecer e sem preenchimento automático.
+- [x] Estruturar parâmetros fiscais por `nItem`, vinculados a uma versão do parecer e sem preenchimento automático.
+- [ ] Criar memória de cálculo por item com bases, alíquotas e valores exclusivamente informados, sem gerar XML.
 - [ ] Definir natureza, CFOP, tratamento de ICMS/ICMS-ST/FCP/IPI/PIS/COFINS e cBenef com o contador.
 - [ ] Definir frete, transportador, volumes e motivo quando aplicáveis.
 - [ ] Gerar XML modelo 55 com finalidade de devolução e documento referenciado.

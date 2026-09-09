@@ -26,6 +26,11 @@ urlpatterns = [
         views.registrar_parecer_devolucao_fornecedor,
         name="registrar_parecer_devolucao",
     ),
+    path(
+        "devolucoes-fornecedor/revisao/<int:pk>/parametros-itens/",
+        views.registrar_parametrizacao_devolucao_fornecedor,
+        name="registrar_parametrizacao_devolucao",
+    ),
     path("atualizacoes/", views.atualizacoes_fiscais, name="atualizacoes"),
     path("atualizacoes/<int:pk>/revisar/", views.revisar_atualizacao_fiscal, name="revisar_atualizacao"),
     path("inutilizacoes/", views.inutilizacoes, name="inutilizacoes"),

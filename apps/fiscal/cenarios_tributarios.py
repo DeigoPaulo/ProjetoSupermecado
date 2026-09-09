@@ -83,12 +83,13 @@ CENARIOS_TRIBUTARIOS_GO = (
             "Rascunho operacional ligado à entrada, com seleção limitada, mapeamento ao nItem, "
             "snapshot tributário original, submissão íntegra e decisão segregada imutável por "
             "Administrador/Contabilidade. Parecer tributário global versionado exige CFOP de "
-            "saída no catálogo oficial e tratamentos humanos explícitos; parâmetros por item, "
-            "finalidade no gerador, documento referenciado e impostos devolvidos ainda não implementados."
+            "saída no catálogo oficial e tratamentos humanos explícitos. A ficha por nItem "
+            "versiona CST/CSOSN e orientações complementares sem bases ou alíquotas; memória de "
+            "cálculo, finalidade no gerador, documento referenciado e impostos devolvidos ainda não implementados."
         ),
         "proxima_evidencia": (
-            "Estruturar parâmetros fiscais por nItem vinculados ao parecer vigente, sem defaults, "
-            "cálculo, XML, numeração ou emissão."
+            "Criar memória de cálculo não emissiva por nItem, recebendo somente bases, alíquotas "
+            "e valores explicitamente informados e validando totais sem gerar XML."
         ),
     },
     {

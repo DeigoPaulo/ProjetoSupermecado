@@ -25,17 +25,21 @@ from .pacote_contabil import analisar_xml_nfe
 from .cfop import catalogo_cfop_vigente, validar_cfop
 from .models import (
     DecisaoRevisaoDevolucaoFornecedor,
+    ItemParametrizacaoFiscalDevolucaoFornecedor,
     ItemRascunhoDevolucaoFornecedor,
     ParecerTributarioDevolucaoFornecedor,
+    ParametrizacaoFiscalDevolucaoFornecedor,
     RascunhoDevolucaoFornecedor,
     RevisaoDevolucaoFornecedor,
     StatusRascunhoDevolucaoFornecedor,
+    TipoCodigoICMSDevolucaoFornecedor,
 )
 
 
 CONTRATO_PREPARACAO_DEVOLUCAO_FORNECEDOR = "supplier_return_fiscal_preparation_v1"
 CONTRATO_RASCUNHO_DEVOLUCAO_FORNECEDOR = "supplier_return_draft_v1"
 CONTRATO_PARECER_TRIBUTARIO_DEVOLUCAO_FORNECEDOR = "supplier_return_tax_opinion_v1"
+CONTRATO_PARAMETROS_ITEM_DEVOLUCAO_FORNECEDOR = "supplier_return_item_tax_parameters_v1"
 STATUS_RASCUNHO_ATIVO = (
     StatusRascunhoDevolucaoFornecedor.RASCUNHO,
     StatusRascunhoDevolucaoFornecedor.AGUARDANDO_REVISAO,
@@ -770,3 +774,189 @@ def registrar_parecer_tributario_devolucao_fornecedor(
             ip=ip,
         )
     return parecer, True
+
+
+def _codigo_cst_ou_na(valor, rotulo):
+    codigo = str(valor or "").strip().upper()
+    if codigo == "NA":
+        return codigo
+    if len(codigo) != 2 or not codigo.isdigit():
+        raise ValidationError(f"{rotulo} deve conter dois dígitos ou NA.")
+    return codigo
+
+
+def _parametros_item(dados, item):
+    sufixo = str(item.pk)
+    tipo_icms = str(dados.get(f"tipo_codigo_icms_{sufixo}") or "").strip().upper()
+    if tipo_icms not in TipoCodigoICMSDevolucaoFornecedor.values:
+        raise ValidationError(f"Informe CST, CSOSN ou não aplicável para o nItem {item.numero_item_xml}.")
+    codigo_icms = "".join(
+        caractere
+        for caractere in str(dados.get(f"codigo_icms_{sufixo}") or "")
+        if caractere.isdigit()
+    )
+    if tipo_icms == TipoCodigoICMSDevolucaoFornecedor.CST and len(codigo_icms) != 2:
+        raise ValidationError(f"O CST do ICMS do nItem {item.numero_item_xml} deve ter dois dígitos.")
+    if tipo_icms == TipoCodigoICMSDevolucaoFornecedor.CSOSN and len(codigo_icms) != 3:
+        raise ValidationError(f"O CSOSN do nItem {item.numero_item_xml} deve ter três dígitos.")
+    if tipo_icms == TipoCodigoICMSDevolucaoFornecedor.NAO_APLICAVEL:
+        if codigo_icms:
+            raise ValidationError(f"Não informe código de ICMS quando o nItem {item.numero_item_xml} não se aplica.")
+
+    origem_icms = str(dados.get(f"origem_icms_{sufixo}") or "").strip()
+    if len(origem_icms) != 1 or origem_icms not in "012345678":
+        raise ValidationError(f"A origem do ICMS do nItem {item.numero_item_xml} deve ser um código de 0 a 8.")
+    codigo_cbenef = str(dados.get(f"codigo_cbenef_{sufixo}") or "").strip().upper()
+    if codigo_cbenef != "NA" and not (
+        len(codigo_cbenef) == 8
+        and codigo_cbenef.startswith("GO")
+        and codigo_cbenef[2:].isdigit()
+    ):
+        raise ValidationError(
+            f"O cBenef do nItem {item.numero_item_xml} deve seguir GO + 6 dígitos ou ser NA."
+        )
+
+    observacao = str(dados.get(f"observacao_{sufixo}") or "").strip()
+    if len(observacao) > 2000:
+        raise ValidationError(f"A observação do nItem {item.numero_item_xml} excede 2.000 caracteres.")
+    return {
+        "item_rascunho_id": item.pk,
+        "numero_item_xml": item.numero_item_xml,
+        "tipo_codigo_icms": tipo_icms,
+        "origem_icms": origem_icms,
+        "codigo_icms": codigo_icms,
+        "codigo_ipi": _codigo_cst_ou_na(
+            dados.get(f"codigo_ipi_{sufixo}"), f"O CST do IPI do nItem {item.numero_item_xml}"
+        ),
+        "codigo_pis": _codigo_cst_ou_na(
+            dados.get(f"codigo_pis_{sufixo}"), f"O CST do PIS do nItem {item.numero_item_xml}"
+        ),
+        "codigo_cofins": _codigo_cst_ou_na(
+            dados.get(f"codigo_cofins_{sufixo}"), f"O CST da COFINS do nItem {item.numero_item_xml}"
+        ),
+        "codigo_cbenef": codigo_cbenef,
+        "tratamento_icms_st_fcp": _texto_parecer(
+            dados.get(f"tratamento_icms_st_fcp_{sufixo}"),
+            f"o tratamento de ICMS-ST/FCP do nItem {item.numero_item_xml}",
+        ),
+        "tratamento_cbenef": _texto_parecer(
+            dados.get(f"tratamento_cbenef_{sufixo}"),
+            f"o tratamento do cBenef do nItem {item.numero_item_xml}",
+        ),
+        "tratamento_ibs_cbs": _texto_parecer(
+            dados.get(f"tratamento_ibs_cbs_{sufixo}"),
+            f"o tratamento de IBS/CBS do nItem {item.numero_item_xml}",
+        ),
+        "observacao": observacao,
+    }
+
+
+def registrar_parametrizacao_itens_devolucao_fornecedor(
+    rascunho,
+    *,
+    parecer_id,
+    dados,
+    responsavel,
+    ip=None,
+):
+    """Versiona códigos orientados por item sem calcular ou gerar documento."""
+    if not has_role(responsavel, REVISAO_FISCAL):
+        raise ValidationError("O usuário não possui permissão para parametrização fiscal.")
+    try:
+        parecer_id = int(parecer_id)
+    except (TypeError, ValueError) as exc:
+        raise ValidationError("Selecione a versão do parecer que fundamenta os parâmetros.") from exc
+
+    with transaction.atomic():
+        rascunho = (
+            RascunhoDevolucaoFornecedor.objects.select_for_update()
+            .select_related("entrada_compra__filial")
+            .get(pk=rascunho.pk)
+        )
+        empresa_id = empresa_id_do_usuario(responsavel)
+        if empresa_id is not None and rascunho.entrada_compra.filial.empresa_id != empresa_id:
+            raise ValidationError("Este rascunho não pertence à empresa do responsável fiscal.")
+        if rascunho.status != StatusRascunhoDevolucaoFornecedor.APROVADO:
+            raise ValidationError("A parametrização exige uma preparação previamente aprovada.")
+
+        parecer = rascunho.pareceres_tributarios.filter(pk=parecer_id).first()
+        if not parecer:
+            raise ValidationError("O parecer selecionado não pertence a esta preparação.")
+        if _hash_conteudo_revisao(parecer.conteudo_snapshot) != parecer.conteudo_sha256:
+            raise ValidationError("O parecer selecionado perdeu a integridade.")
+
+        documento_dfe = _documento_dfe_da_entrada(rascunho.entrada_compra)
+        xml_origem = documento_dfe.xml_conteudo if documento_dfe else ""
+        if (
+            not xml_origem
+            or hashlib.sha256(xml_origem.encode("utf-8")).hexdigest()
+            != rascunho.xml_origem_sha256
+        ):
+            raise ValidationError("O XML original divergiu da preparação aprovada.")
+
+        itens = list(rascunho.itens.select_for_update().order_by("pk"))
+        if not itens:
+            raise ValidationError("A preparação aprovada não possui itens para parametrizar.")
+        parametros = [_parametros_item(dados, item) for item in itens]
+        conteudo = {
+            "contrato": CONTRATO_PARAMETROS_ITEM_DEVOLUCAO_FORNECEDOR,
+            "rascunho_id": rascunho.pk,
+            "parecer_id": parecer.pk,
+            "parecer_versao": parecer.versao,
+            "parecer_sha256": parecer.conteudo_sha256,
+            "xml_origem_sha256": rascunho.xml_origem_sha256,
+            "itens": parametros,
+        }
+        hash_conteudo = _hash_conteudo_revisao(conteudo)
+        existente = rascunho.parametrizacoes_fiscais.filter(
+            conteudo_sha256=hash_conteudo
+        ).first()
+        if existente:
+            return existente, False
+
+        versao = (
+            rascunho.parametrizacoes_fiscais.aggregate(maior=Max("versao"))["maior"] or 0
+        ) + 1
+        parametrizacao = ParametrizacaoFiscalDevolucaoFornecedor.objects.create(
+            rascunho=rascunho,
+            parecer=parecer,
+            versao=versao,
+            conteudo_snapshot=conteudo,
+            conteudo_sha256=hash_conteudo,
+            responsavel=responsavel,
+        )
+        ItemParametrizacaoFiscalDevolucaoFornecedor.objects.bulk_create(
+            [
+                ItemParametrizacaoFiscalDevolucaoFornecedor(
+                    parametrizacao=parametrizacao,
+                    item_rascunho_id=item["item_rascunho_id"],
+                    numero_item_xml=item["numero_item_xml"],
+                    tipo_codigo_icms=item["tipo_codigo_icms"],
+                    origem_icms=item["origem_icms"],
+                    codigo_icms=item["codigo_icms"],
+                    codigo_ipi=item["codigo_ipi"],
+                    codigo_pis=item["codigo_pis"],
+                    codigo_cofins=item["codigo_cofins"],
+                    codigo_cbenef=item["codigo_cbenef"],
+                    tratamento_icms_st_fcp=item["tratamento_icms_st_fcp"],
+                    tratamento_cbenef=item["tratamento_cbenef"],
+                    tratamento_ibs_cbs=item["tratamento_ibs_cbs"],
+                    observacao=item["observacao"],
+                )
+                for item in parametros
+            ]
+        )
+        LogAuditoria.objects.create(
+            usuario=responsavel,
+            modulo="fiscal",
+            acao="PARAMETRIZACAO_ITEM_DEVOLUCAO_FORNECEDOR",
+            descricao=(
+                f"Parametrização {parametrizacao.pk}, versão {versao}, registrada com "
+                f"{len(parametros)} nItem(ns) para o rascunho {rascunho.pk}. Nenhum cálculo, "
+                "documento, numeração, estoque ou transmissão foi criado."
+            ),
+            objeto_tipo="ParametrizacaoFiscalDevolucaoFornecedor",
+            objeto_id=str(parametrizacao.pk),
+            ip=ip,
+        )
+    return parametrizacao, True

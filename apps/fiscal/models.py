@@ -64,6 +64,12 @@ class DecisaoRevisaoDevolucaoFornecedor(models.TextChoices):
     DEVOLVER_CORRECAO = "DEVOLVER_CORRECAO", "Devolver para correção"
 
 
+class TipoCodigoICMSDevolucaoFornecedor(models.TextChoices):
+    CST = "CST", "CST"
+    CSOSN = "CSOSN", "CSOSN"
+    NAO_APLICAVEL = "NAO_APLICAVEL", "Não aplicável"
+
+
 class StatusInutilizacaoFiscal(models.TextChoices):
     PENDENTE = "PENDENTE", "Pendente"
     AUTORIZADA = "AUTORIZADA", "Autorizada"
@@ -630,6 +636,125 @@ class ParecerTributarioDevolucaoFornecedor(models.Model):
 
     def __str__(self):
         return f"Parecer tributário {self.rascunho_id}/{self.versao} - CFOP {self.cfop}"
+
+
+class ParametrizacaoFiscalDevolucaoFornecedorQuerySet(models.QuerySet):
+    def update(self, **kwargs):
+        raise ValueError("Parametrizações fiscais são imutáveis e não podem ser alteradas.")
+
+    def delete(self):
+        raise ValueError("Parametrizações fiscais são imutáveis e não podem ser excluídas.")
+
+
+class ParametrizacaoFiscalDevolucaoFornecedor(models.Model):
+    objects = ParametrizacaoFiscalDevolucaoFornecedorQuerySet.as_manager()
+
+    contrato = models.CharField(
+        max_length=64,
+        default="supplier_return_item_tax_parameters_v1",
+        editable=False,
+    )
+    rascunho = models.ForeignKey(
+        RascunhoDevolucaoFornecedor,
+        on_delete=models.PROTECT,
+        related_name="parametrizacoes_fiscais",
+    )
+    parecer = models.ForeignKey(
+        ParecerTributarioDevolucaoFornecedor,
+        on_delete=models.PROTECT,
+        related_name="parametrizacoes_fiscais",
+    )
+    versao = models.PositiveIntegerField()
+    conteudo_snapshot = models.JSONField()
+    conteudo_sha256 = models.CharField(max_length=64)
+    responsavel = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.PROTECT,
+        related_name="parametrizacoes_fiscais_devolucao_fornecedor",
+    )
+    criado_em = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["rascunho_id", "versao"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["rascunho", "versao"],
+                name="fisc_param_dev_rasc_vers_uniq",
+            ),
+            models.UniqueConstraint(
+                fields=["rascunho", "conteudo_sha256"],
+                name="fisc_param_dev_rasc_hash_uniq",
+            ),
+        ]
+
+    def save(self, *args, **kwargs):
+        if self.pk or not self._state.adding:
+            raise ValueError("Parametrizações fiscais são imutáveis e não podem ser alteradas.")
+        return super().save(*args, **kwargs)
+
+    def delete(self, *args, **kwargs):
+        raise ValueError("Parametrizações fiscais são imutáveis e não podem ser excluídas.")
+
+    def __str__(self):
+        return f"Parametrização fiscal {self.rascunho_id}/{self.versao}"
+
+
+class ItemParametrizacaoFiscalDevolucaoFornecedorQuerySet(models.QuerySet):
+    def update(self, **kwargs):
+        raise ValueError("Itens de parametrização fiscal são imutáveis.")
+
+    def delete(self):
+        raise ValueError("Itens de parametrização fiscal são imutáveis.")
+
+
+class ItemParametrizacaoFiscalDevolucaoFornecedor(models.Model):
+    objects = ItemParametrizacaoFiscalDevolucaoFornecedorQuerySet.as_manager()
+
+    parametrizacao = models.ForeignKey(
+        ParametrizacaoFiscalDevolucaoFornecedor,
+        on_delete=models.PROTECT,
+        related_name="itens",
+    )
+    item_rascunho = models.ForeignKey(
+        ItemRascunhoDevolucaoFornecedor,
+        on_delete=models.PROTECT,
+        related_name="parametrizacoes_fiscais",
+    )
+    numero_item_xml = models.CharField(max_length=10)
+    tipo_codigo_icms = models.CharField(
+        max_length=16,
+        choices=TipoCodigoICMSDevolucaoFornecedor.choices,
+    )
+    origem_icms = models.CharField(max_length=1)
+    codigo_icms = models.CharField(max_length=3, blank=True)
+    codigo_ipi = models.CharField(max_length=2)
+    codigo_pis = models.CharField(max_length=2)
+    codigo_cofins = models.CharField(max_length=2)
+    codigo_cbenef = models.CharField(max_length=8)
+    tratamento_icms_st_fcp = models.TextField()
+    tratamento_cbenef = models.TextField()
+    tratamento_ibs_cbs = models.TextField()
+    observacao = models.TextField(blank=True)
+
+    class Meta:
+        ordering = ["item_rascunho_id"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["parametrizacao", "item_rascunho"],
+                name="fisc_item_param_dev_uniq",
+            ),
+        ]
+
+    def save(self, *args, **kwargs):
+        if self.pk or not self._state.adding:
+            raise ValueError("Itens de parametrização fiscal são imutáveis.")
+        return super().save(*args, **kwargs)
+
+    def delete(self, *args, **kwargs):
+        raise ValueError("Itens de parametrização fiscal são imutáveis.")
+
+    def __str__(self):
+        return f"Parâmetros do nItem {self.numero_item_xml}"
 
 
 class TipoEvidenciaFiscal(models.TextChoices):
