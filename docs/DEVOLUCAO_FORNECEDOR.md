@@ -1,5 +1,8 @@
 # Devolução ao fornecedor — preparação fiscal segura
 
+- [x] Ciclo 61: mapeamento preliminar de dados e bloqueios do XML em [CONTRATO_XML_DEVOLUCAO_FORNECEDOR.md](CONTRATO_XML_DEVOLUCAO_FORNECEDOR.md). Não equivale a contrato implementado ou validação normativa.
+- [ ] Obter MOC/NT/XSD integrais e confirmar versões/vigências antes de fechar o contrato e gerar XML; as tentativas de leitura integral retornaram erro neste ciclo.
+
 - [x] Ciclo 60: painel de conferência consolidada com estados Registrado, Conferida, Referência, Pendente, Desatualizado, Inconsistente e Bloqueado. Registros com hash íntegro não equivalem a validação fiscal; o painel é somente consulta, sem liberar emissão.
 - [ ] Especificar o contrato de dados para XML modelo 55 de devolução, mapeando origem, destino, itens, tributos, transporte, totais e campos ainda não suportados; verificar as fontes oficiais vigentes antes de implementar geração.
 

@@ -1,5 +1,7 @@
 # Matriz de conformidade fiscal e contábil — Goiás 2026
 
+Ciclo 61: contrato preliminar e matriz de campos documentados em [CONTRATO_XML_DEVOLUCAO_FORNECEDOR.md](CONTRATO_XML_DEVOLUCAO_FORNECEDOR.md). O gerador de venda e o payload Focus observado não demonstram suporte completo a devolução. Orientações oficiais GO sobre ST exigem hipóteses específicas; nenhuma política tributária foi aplicada. Leitura integral de MOC/NT e pacote XSD permanece pendente por erro de acesso, portanto não há certificação de conformidade. Emissão continua bloqueada.
+
 Ciclo 60: painel somente leitura consolida pendências estruturais do dossiê e distingue origem histórica da memória revisada de dados superados. A consulta confere hashes e integridade da memória/XML, mas não substitui validações fiscais completas ou aprovação de dados reais. O bloqueio de XML e homologação é permanente nesta etapa; nenhum resultado do painel autoriza emissão. Próximo passo: especificar o contrato de dados do XML e os bloqueios por campo com base na documentação oficial vigente.
 
 Ciclo 59: correções da memória revisada devolvida agora criam sucessoras rastreáveis com a mesma origem e bases aprovadas. A decisão anterior é preservada e cada sucessora exige revisão independente. Não há aplicação automática de impactos, cálculo legal dos impostos ou liberação de XML. Próxima etapa interna: consolidar o dossiê e suas pendências atuais; aceite contábil real e homologação continuam necessários.

@@ -89,8 +89,8 @@ CENARIOS_TRIBUTARIOS_GO = (
             "Finalidade no gerador, documento referenciado e impostos devolvidos ainda não implementados."
         ),
         "proxima_evidencia": (
-            "Dossiê consolidado em painel de consulta; especificar contrato de dados e "
-            "bloqueios do XML modelo 55. Emissão continua bloqueada."
+            "Contrato XML preliminar documentado; obter fontes integrais e implementar "
+            "validador neutro com bloqueios por grupo. Emissão continua bloqueada."
         ),
     },
     {
