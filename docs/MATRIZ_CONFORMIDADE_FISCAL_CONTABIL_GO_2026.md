@@ -1,5 +1,7 @@
 # Matriz de conformidade fiscal e contábil — Goiás 2026
 
+Ciclo 56: a limitação operacional do ciclo 55 foi superada: os reflexos declarados agora têm serviço protegido, histórico imutável e tela de revisão (migration 0047). A gravação valida escopo, rateio atual, aprovações, integridade da cadeia e somas, mantendo a memória original intacta. Ainda não há aprovação independente dos reflexos, recálculo de impostos, aceite contábil real ou homologação deste fluxo. Emissão permanece bloqueada.
+
 Ciclo 55: existe um núcleo isolado para conferir aritmeticamente impactos declarados sobre bases por item/tributo. Ainda não há gravação, endpoint ou tela dessa etapa. A correspondência dos itens é conferida, mas a autenticação, atualidade e integridade da origem devem ser verificadas pelo futuro serviço. Não constitui validação normativa, cálculo de impostos ou evidência de homologação. Próxima entrega: serviço protegido e persistência dos reflexos vinculados ao rateio atual.
 
 Atualizada em 09/09/2026. Documento interno de engenharia e homologação.

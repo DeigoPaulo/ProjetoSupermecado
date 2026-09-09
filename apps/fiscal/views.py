@@ -126,6 +126,7 @@ from .transporte_devolucao import TransporteDevolucaoForm, registrar_transporte
 from .composicao_devolucao import ComposicaoDevolucaoForm, registrar_composicao
 from .composicao_devolucao import RevisaoComposicaoForm, revisar_composicao
 from .rateio_devolucao import RateioDevolucaoForm, registrar_rateio
+from .reflexos_devolucao import ReflexosBasesDevolucaoForm, registrar_reflexos, validar_rateio_atual
 
 
 def _rascunhos_revisao_queryset(user):
@@ -150,6 +151,7 @@ def _rascunhos_revisao_queryset(user):
             "composicoes__responsavel",
             "composicoes__revisao__revisor",
             "composicoes__rateios__responsavel",
+            "composicoes__rateios__reflexos__responsavel",
         ),
     )
 
@@ -185,17 +187,31 @@ def revisao_devolucao_fornecedor_detalhe(request, pk):
     rascunho = get_object_or_404(_rascunhos_revisao_queryset(request.user), pk=pk)
     composicao_rateio = rascunho.composicoes.order_by("-versao").select_related("memoria", "revisao").first()
     rateio_form = None
+    reflexos_form = None
+    rateio_reflexos = None
+    reflexos_bloqueio = ""
     if (rascunho.status == "APROVADO" and composicao_rateio
         and getattr(composicao_rateio, "revisao", None)
         and composicao_rateio.revisao.decisao == "APROVAR"
         and not rascunho.memorias_calculo.filter(versao__gt=composicao_rateio.memoria.versao).exists()):
         rateio_form = RateioDevolucaoForm(itens=composicao_rateio.memoria.itens.order_by("item_rascunho_id"), totais=composicao_rateio.conteudo_snapshot["dados"])
+        rateio_reflexos = composicao_rateio.rateios.order_by("-versao").first()
+        if rateio_reflexos:
+            try:
+                itens_reflexos = validar_rateio_atual(rascunho, rateio_reflexos)
+            except ValidationError as exc:
+                reflexos_bloqueio = " ".join(exc.messages)
+            else:
+                reflexos_form = ReflexosBasesDevolucaoForm(itens=itens_reflexos, linhas_rateio=rateio_reflexos.conteudo_snapshot["itens"])
     return render(
         request,
         "fiscal/revisao_devolucao_fornecedor_detalhe.html",
         {
             "rascunho": rascunho,
             "rateio_form": rateio_form,
+            "reflexos_form": reflexos_form,
+            "rateio_reflexos": rateio_reflexos,
+            "reflexos_bloqueio": reflexos_bloqueio,
             "composicao_rateio": composicao_rateio,
             "transporte_form": TransporteDevolucaoForm(),
             "composicao_form": ComposicaoDevolucaoForm(),
@@ -415,6 +431,20 @@ def registrar_rateio_devolucao(request, pk):
         messages.error(request, " ".join(exc.messages))
     else:
         messages.success(request, f"Rateio versão {rateio.versao}: " + ("registrado; emissão continua bloqueada." if criado else "conteúdo já registrado."))
+    return redirect("fiscal:revisao_devolucao_detalhe", pk=pk)
+
+
+@login_required
+@role_required(*REVISAO_FISCAL)
+@require_POST
+def registrar_reflexos_devolucao(request, pk):
+    rascunho = get_object_or_404(_rascunhos_revisao_queryset(request.user), pk=pk)
+    try:
+        registro, criado = registrar_reflexos(rascunho, rateio_id=request.POST.get("rateio_id"), dados=request.POST, responsavel=request.user)
+    except ValidationError as exc:
+        messages.error(request, " ".join(exc.messages))
+    else:
+        messages.success(request, f"Reflexos das bases versão {registro.versao}: " + ("registrados; emissão continua bloqueada." if criado else "conteúdo já registrado."))
     return redirect("fiscal:revisao_devolucao_detalhe", pk=pk)
 
 

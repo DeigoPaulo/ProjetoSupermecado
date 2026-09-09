@@ -8,6 +8,16 @@ proporção, redução ou regra de arredondamento é inferida do valor comercial
 from decimal import Decimal
 
 from django import forms
+from django.core.exceptions import ValidationError
+from django.db import transaction
+from django.db.models import Max
+
+from apps.accounts.permissions import REVISAO_FISCAL, has_role
+from apps.auditoria.models import LogAuditoria
+from apps.clientes.escopo import empresa_id_do_usuario
+from .models import RascunhoDevolucaoFornecedor, RateioDevolucaoFornecedor, ReflexosBasesDevolucaoFornecedor
+from .devolucao_fornecedor import _hash_conteudo_revisao
+from .rateio_devolucao import RateioDevolucaoForm, validar_composicao_atual
 
 from .devolucao_fornecedor import TRIBUTOS_MEMORIA_CALCULO
 from .rateio_devolucao import COMPONENTES
@@ -84,3 +94,73 @@ class ReflexosBasesDevolucaoForm(forms.Form):
             "permite_emissao": False,
         }
         return dados
+
+
+def validar_rateio_atual(rascunho, rateio):
+    """Somente leitura; o serviço de escrita mantém o bloqueio do rascunho."""
+    if rascunho.status != "APROVADO":
+        raise ValidationError("A preparação precisa estar aprovada.")
+    ficha = rateio.composicao
+    if ficha.rascunho_id != rascunho.pk:
+        raise ValidationError("Rateio de outra preparação.")
+    memoria, revisao = validar_composicao_atual(rascunho, ficha)
+    if ficha.rateios.filter(versao__gt=rateio.versao).exists():
+        raise ValidationError("O rateio foi superado por uma versão mais recente.")
+    snapshot = rateio.conteudo_snapshot
+    if _hash_conteudo_revisao(snapshot) != rateio.conteudo_sha256:
+        raise ValidationError("O rateio perdeu a integridade.")
+    if (snapshot.get("composicao_id") != ficha.pk
+        or snapshot.get("composicao_sha256") != ficha.conteudo_sha256
+        or snapshot.get("revisao_sha256") != revisao.conteudo_sha256
+        or snapshot.get("memoria_sha256") != memoria.conteudo_sha256
+        or snapshot.get("permite_emissao") is not False):
+        raise ValidationError("Os vínculos do rateio perderam a integridade.")
+    itens = list(memoria.itens.order_by("item_rascunho_id"))
+    try:
+        dados = {"criterio": snapshot["criterio"]}
+        for linha in snapshot["itens"]:
+            for campo in COMPONENTES:
+                dados[f"{campo}_{linha['item_memoria_id']}"] = Decimal(linha[campo])
+        form = RateioDevolucaoForm(dados, itens=itens, totais=ficha.conteudo_snapshot["dados"])
+        if not form.is_valid() or form.linhas != snapshot["itens"]:
+            raise ValidationError("Os itens ou totais do rateio divergiram.")
+    except (KeyError, TypeError, ArithmeticError, ValueError) as exc:
+        raise ValidationError("Conteúdo do rateio inválido.") from exc
+    return itens
+
+
+def registrar_reflexos(rascunho, *, rateio_id, dados, responsavel):
+    if not has_role(responsavel, REVISAO_FISCAL):
+        raise ValidationError("Sem permissão para registrar reflexos nas bases.")
+    try:
+        rateio_id = int(rateio_id)
+    except (TypeError, ValueError) as exc:
+        raise ValidationError("Selecione um rateio válido.") from exc
+    with transaction.atomic():
+        rascunho = RascunhoDevolucaoFornecedor.objects.select_for_update().select_related("entrada_compra__filial").get(pk=rascunho.pk)
+        empresa_id = empresa_id_do_usuario(responsavel)
+        if empresa_id is not None and empresa_id != rascunho.entrada_compra.filial.empresa_id:
+            raise ValidationError("Preparação de outra empresa.")
+        rateio = RateioDevolucaoFornecedor.objects.select_related("composicao__memoria__parametrizacao__parecer").filter(pk=rateio_id, composicao__rascunho=rascunho).first()
+        if not rateio:
+            raise ValidationError("Rateio não pertence à preparação.")
+        itens = validar_rateio_atual(rascunho, rateio)
+        form = ReflexosBasesDevolucaoForm(dados, itens=itens, linhas_rateio=rateio.conteudo_snapshot["itens"])
+        if not form.is_valid():
+            raise ValidationError([erro for erros in form.errors.values() for erro in erros])
+        conteudo = {**form.resultado, "contrato": "supplier_return_tax_base_impacts_v1",
+                    "rascunho_id": rascunho.pk, "rateio_id": rateio.pk,
+                    "rateio_sha256": rateio.conteudo_sha256,
+                    "memoria_sha256": rateio.composicao.memoria.conteudo_sha256}
+        sha = _hash_conteudo_revisao(conteudo)
+        existente = rateio.reflexos.filter(conteudo_sha256=sha).first()
+        if existente:
+            return existente, False
+        registro = ReflexosBasesDevolucaoFornecedor.objects.create(
+            rateio=rateio, versao=(rateio.reflexos.aggregate(v=Max("versao"))["v"] or 0) + 1,
+            conteudo_snapshot=conteudo, conteudo_sha256=sha, responsavel=responsavel,
+        )
+        LogAuditoria.objects.create(usuario=responsavel, modulo="fiscal", acao="REFLEXOS_DEVOLUCAO",
+            descricao=f"Reflexos {registro.pk} do rateio {rateio.pk} registrados.",
+            objeto_tipo="ReflexosBasesDevolucaoFornecedor", objeto_id=str(registro.pk))
+        return registro, True

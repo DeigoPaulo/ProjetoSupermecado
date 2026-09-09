@@ -89,8 +89,8 @@ CENARIOS_TRIBUTARIOS_GO = (
             "Finalidade no gerador, documento referenciado e impostos devolvidos ainda não implementados."
         ),
         "proxima_evidencia": (
-            "Validador isolado dos reflexos nas bases implementado; integrar serviço "
-            "protegido, histórico e tela ao rateio atual. Emissão continua bloqueada."
+            "Reflexos nas bases com serviço protegido, histórico e tela; falta conferência "
+            "independente e vínculo com memória revisada. Emissão continua bloqueada."
         ),
     },
     {

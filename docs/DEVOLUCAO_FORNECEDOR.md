@@ -1,7 +1,10 @@
 # Devolução ao fornecedor — preparação fiscal segura
 
+- [x] Ciclo 56: serviço protegido, histórico imutável e tela dos reflexos vinculados ao rateio atual (migration 0047). Registra responsável, versão e hashes, verifica origem, somas, escopo e atualidade sem mudar a memória aprovada. Somente Administrador/Contabilidade. A etapa operacional antes pendente do ciclo 55 foi implementada.
+- [ ] Conferir os reflexos por responsável independente e vinculá-los a uma memória tributária revisada, antes de qualquer geração de XML. Bases declaradas não equivalem a imposto calculado ou validação normativa.
+
 - [x] Ciclo 55: validador isolado dos impactos declarados nas bases por item/tributo, com valores explícitos inclusive zeros, precisão de centavos e totais conferidos. Não valida mérito fiscal nem calcula impostos.
-- [ ] Integrar o validador a serviço transacional e histórico imutável vinculado ao rateio atual, conferindo empresa, permissões e hashes; depois disponibilizar a tela. O formulário isolado pressupõe origem validada pelo chamador e não autoriza nenhuma operação.
+- [x] Integrar o validador a serviço transacional e histórico imutável vinculado ao rateio atual, conferindo empresa, permissões e hashes; tela disponibilizada no ciclo 56. O serviço valida a origem antes do formulário; registro não autoriza emissão.
 
 - [x] Rateio comercial por item (ciclo 54, migration 0046): frete, seguro, despesas e desconto informados, sem distribuição automática. Cada soma confere com a composição aprovada atual; totais por item não podem ser negativos. Histórico versionado e imutável com hashes da composição, revisão e memória. Somente Administrador/Contabilidade. Não define bases tributárias nem libera emissão.
 

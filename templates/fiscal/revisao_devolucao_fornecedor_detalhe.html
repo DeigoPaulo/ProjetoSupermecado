@@ -224,6 +224,17 @@
 
 <section class="panel mt-panel">
   <div class="panel-title">Composição comercial da devolução</div>
+  {% if reflexos_bloqueio %}<p>Reflexos bloqueados: {{ reflexos_bloqueio }}</p>{% endif %}
+  {% if reflexos_form %}
+    <details><summary>Informar reflexos nas bases · rateio {{ rateio_reflexos.versao }}</summary>
+      <p>Informe impactos com sinal e zeros explícitos conforme orientação contábil. Base anterior + impactos = base final. Os valores não são copiados do frete ou desconto comercial e não calculam impostos. Registrar não significa aprovar a tributação nem autorizar emissão.</p>
+      <form method="post" action="{% url 'fiscal:registrar_reflexos_devolucao' rascunho.pk %}" class="form-grid">
+        {% csrf_token %}<input type="hidden" name="rateio_id" value="{{ rateio_reflexos.pk }}">
+        {{ reflexos_form.as_p }}
+        <button type="submit" class="btn btn-primary">Registrar reflexos nas bases</button>
+      </form>
+    </details>
+  {% endif %}
   {% if rateio_form %}
     <details><summary>Registrar rateio por item da composição {{ composicao_rateio.versao }}</summary>
       <p>Informe todos os componentes, inclusive zeros. As somas devem conferir com a composição aprovada. O rateio é comercial: não define bases tributárias nem autoriza emissão.</p>
@@ -243,6 +254,18 @@
       {% for rateio in ficha.rateios.all %}
         <details><summary>Rateio {{ rateio.versao }} · {{ rateio.responsavel }} · {{ rateio.criado_em|date:"d/m/Y H:i" }}</summary>
           <p>{{ rateio.conteudo_snapshot.criterio }}</p>
+          {% for registro in rateio.reflexos.all %}
+            <details><summary>Reflexos das bases {{ registro.versao }} · {{ registro.responsavel }} · {{ registro.criado_em|date:"d/m/Y H:i" }}</summary>
+              <p>Histórico vinculado a este rateio; não autoriza emissão.</p>
+              <p>{{ registro.conteudo_snapshot.fundamentacao }}</p>
+              <table><thead><tr><th>nItem</th><th>Tributo</th><th>Base anterior</th><th>Frete</th><th>Seguro</th><th>Despesas</th><th>Desconto</th><th>Base final</th></tr></thead><tbody>
+              {% for item in registro.conteudo_snapshot.itens %}{% for tributo, valores in item.tributos.items %}
+                <tr><td>{{ item.numero_item_xml }}</td><td>{{ tributo|upper }}</td><td>{{ valores.base_anterior }}</td><td>{{ valores.impactos.frete }}</td><td>{{ valores.impactos.seguro }}</td><td>{{ valores.impactos.despesas }}</td><td>{{ valores.impactos.desconto }}</td><td>{{ valores.base_final }}</td></tr>
+              {% endfor %}{% endfor %}
+              </tbody></table>
+              {% for tributo, total in registro.conteudo_snapshot.totais_bases.items %}<p>Total das bases {{ tributo|upper }}: {{ total }}</p>{% endfor %}
+            </details>
+          {% endfor %}
           <table><thead><tr><th>nItem</th><th>Base comercial</th><th>Frete</th><th>Seguro</th><th>Despesas</th><th>Desconto</th><th>Total comercial</th></tr></thead><tbody>
           {% for item in rateio.conteudo_snapshot.itens %}
             <tr><td>{{ item.numero_item_xml }}</td><td>{{ item.base }}</td><td>{{ item.frete }}</td><td>{{ item.seguro }}</td><td>{{ item.despesas }}</td><td>{{ item.desconto }}</td><td>{{ item.total }}</td></tr>

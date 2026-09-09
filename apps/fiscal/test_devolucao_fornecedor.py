@@ -53,6 +53,7 @@ from .transporte_devolucao import TransporteDevolucaoForm, registrar_transporte
 from .composicao_devolucao import ComposicaoDevolucaoForm, registrar_composicao
 from .composicao_devolucao import RevisaoComposicaoForm, revisar_composicao
 from .rateio_devolucao import registrar_rateio
+from .reflexos_devolucao import registrar_reflexos
 
 
 class PreparacaoDevolucaoFornecedorTests(TestCase):
@@ -334,6 +335,81 @@ class PreparacaoDevolucaoFornecedorTests(TestCase):
         self.assertEqual(self.client.get(url).status_code, 405)
         self.assertContains(self.client.post(url, {**dados, "composicao_id": ficha.pk}, follow=True), "conteúdo já registrado")
         self.assertFalse(DocumentoFiscal.objects.exists())
+
+    def _preparar_reflexos(self):
+        rascunho, ficha = self._composicao_registrada()
+        revisar_composicao(rascunho, composicao_id=ficha.pk, dados=self._dados_revisao_composicao(), revisor=self.segundo_revisor)
+        item = ficha.memoria.itens.get()
+        dados_rateio = {"criterio": "Componentes informados para o item.", **{f"{c}_{item.pk}": self._dados_composicao()[c] for c in ("frete", "seguro", "despesas", "desconto")}}
+        rateio, _ = registrar_rateio(rascunho, composicao_id=ficha.pk, dados=dados_rateio, responsavel=self.revisor)
+        dados = {"fundamentacao": "Orientação sintética para conferir as bases."}
+        for tributo in ("icms", "icms_st", "fcp", "ipi", "pis", "cofins", "ibs", "cbs"):
+            dados[f"total_base_{tributo}"] = getattr(item, f"base_{tributo}")
+            dados[f"item_{item.pk}_{tributo}_base_final"] = getattr(item, f"base_{tributo}")
+            for c in ("frete", "seguro", "despesas", "desconto"):
+                dados[f"item_{item.pk}_{tributo}_{c}"] = "0"
+        return rascunho, rateio, dados, dados_rateio
+
+    def test_reflexos_historico_idempotencia_imutabilidade_e_tela(self):
+        rascunho, rateio, dados, _ = self._preparar_reflexos()
+        registro, criado = registrar_reflexos(rascunho, rateio_id=rateio.pk, dados=dados, responsavel=self.revisor)
+        self.assertTrue(criado)
+        self.assertEqual(registro.conteudo_snapshot["rateio_sha256"], rateio.conteudo_sha256)
+        self.assertFalse(registro.conteudo_snapshot["permite_emissao"])
+        repetido, criado = registrar_reflexos(rascunho, rateio_id=rateio.pk, dados=dados, responsavel=self.revisor)
+        self.assertFalse(criado)
+        self.assertEqual(repetido.pk, registro.pk)
+        novo, _ = registrar_reflexos(rascunho, rateio_id=rateio.pk, dados={**dados, "fundamentacao": "Nova orientação sintética registrada."}, responsavel=self.revisor)
+        self.assertEqual(novo.versao, 2)
+        for operacao in (registro.save, registro.delete, lambda: rateio.reflexos.update(versao=8), rateio.reflexos.all().delete):
+            with self.assertRaises(ValueError):
+                operacao()
+        self.client.force_login(self.revisor)
+        url = f"/fiscal/devolucoes-fornecedor/revisao/{rascunho.pk}/reflexos/"
+        self.assertEqual(self.client.get(url).status_code, 405)
+        resposta = self.client.post(url, {**dados, "rateio_id": rateio.pk}, follow=True)
+        self.assertContains(resposta, "conteúdo já registrado")
+        self.assertContains(resposta, "Nova orientação sintética registrada.")
+        self.assertFalse(DocumentoFiscal.objects.exists())
+
+    def test_reflexos_permissoes_id_invalido_e_somas(self):
+        rascunho, rateio, dados, _ = self._preparar_reflexos()
+        for user in (self.financeiro, self.usuario):
+            with self.assertRaisesMessage(ValidationError, "Sem permissão"):
+                registrar_reflexos(rascunho, rateio_id=rateio.pk, dados=dados, responsavel=user)
+            self.client.force_login(user)
+            self.assertEqual(self.client.post(f"/fiscal/devolucoes-fornecedor/revisao/{rascunho.pk}/reflexos/", {**dados, "rateio_id": rateio.pk}).status_code, 403)
+        for pk in ("abc", None, 999999):
+            with self.assertRaises(ValidationError):
+                registrar_reflexos(rascunho, rateio_id=pk, dados=dados, responsavel=self.revisor)
+        with self.assertRaisesMessage(ValidationError, "diverge dos itens"):
+            registrar_reflexos(rascunho, rateio_id=rateio.pk, dados={**dados, "total_base_icms": "999"}, responsavel=self.revisor)
+        self.assertFalse(rateio.reflexos.exists())
+
+    def test_reflexos_bloqueia_rateio_superado_e_xml_alterado(self):
+        rascunho, rateio, dados, dados_rateio = self._preparar_reflexos()
+        dfe = DocumentoDFeRecebido.objects.get(entrada_compra=self.entrada)
+        dfe.xml_conteudo += " "
+        dfe.save(update_fields=["xml_conteudo"])
+        with self.assertRaisesMessage(ValidationError, "XML original divergiu"):
+            registrar_reflexos(rascunho, rateio_id=rateio.pk, dados=dados, responsavel=self.revisor)
+        dfe.xml_conteudo = dfe.xml_conteudo[:-1]
+        dfe.save(update_fields=["xml_conteudo"])
+        registrar_rateio(rascunho, composicao_id=rateio.composicao_id, dados={**dados_rateio, "criterio": "Novo rateio informado para conferência."}, responsavel=self.revisor)
+        with self.assertRaisesMessage(ValidationError, "superado"):
+            registrar_reflexos(rascunho, rateio_id=rateio.pk, dados=dados, responsavel=self.revisor)
+        self.assertFalse(rateio.reflexos.exists())
+
+    def test_reflexos_confere_hash_e_itens_do_rateio(self):
+        from .reflexos_devolucao import validar_rateio_atual
+        from .devolucao_fornecedor import _hash_conteudo_revisao
+        rascunho, rateio, _, _ = self._preparar_reflexos()
+        rateio.conteudo_snapshot["itens"][0]["frete"] = "3.00"
+        with self.assertRaisesMessage(ValidationError, "integridade"):
+            validar_rateio_atual(rascunho, rateio)
+        rateio.conteudo_sha256 = _hash_conteudo_revisao(rateio.conteudo_snapshot)
+        with self.assertRaisesMessage(ValidationError, "divergiram"):
+            validar_rateio_atual(rascunho, rateio)
 
     def test_rateio_rejeita_soma_versao_superada_e_xml_alterado(self):
         rascunho, ficha = self._composicao_registrada()

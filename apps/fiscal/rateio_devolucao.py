@@ -60,6 +60,31 @@ class RateioDevolucaoForm(forms.Form):
         return dados
 
 
+def validar_composicao_atual(rascunho, ficha):
+    memoria = ficha.memoria
+    if rascunho.composicoes.filter(versao__gt=ficha.versao).exists() or rascunho.memorias_calculo.filter(versao__gt=memoria.versao).exists():
+        raise ValidationError("A composição ou memória foi superada.")
+    revisao = RevisaoComposicaoDevolucaoFornecedor.objects.filter(composicao=ficha, decisao="APROVAR").first()
+    base = RevisaoMemoriaCalculoDevolucaoFornecedor.objects.filter(memoria=memoria, decisao="APROVAR").first()
+    if not revisao or not base:
+        raise ValidationError("A composição e a memória precisam estar aprovadas.")
+    for objeto in (ficha, revisao, base):
+        if _hash_conteudo_revisao(objeto.conteudo_snapshot) != objeto.conteudo_sha256:
+            raise ValidationError("A composição ou sua revisão perdeu a integridade.")
+    if (
+        ficha.conteudo_snapshot.get("rascunho_id") != rascunho.pk
+        or ficha.conteudo_snapshot.get("memoria_id") != memoria.pk
+        or ficha.conteudo_snapshot.get("memoria_sha256") != memoria.conteudo_sha256
+        or ficha.conteudo_snapshot.get("revisao_sha256") != base.conteudo_sha256
+        or revisao.conteudo_snapshot.get("composicao_id") != ficha.pk
+        or revisao.conteudo_snapshot.get("composicao_sha256") != ficha.conteudo_sha256
+        or base.conteudo_snapshot.get("memoria_sha256") != memoria.conteudo_sha256
+    ):
+        raise ValidationError("Os vínculos da composição perderam a integridade.")
+    _validar_integridade_memoria_calculo(rascunho, memoria)
+    return memoria, revisao
+
+
 def registrar_rateio(rascunho, *, composicao_id, dados, responsavel):
     if not has_role(responsavel, REVISAO_FISCAL):
         raise ValidationError("Sem permissão para registrar rateio.")
@@ -77,27 +102,7 @@ def registrar_rateio(rascunho, *, composicao_id, dados, responsavel):
         ficha = rascunho.composicoes.select_related("memoria__parametrizacao__parecer").filter(pk=composicao_id).first()
         if not ficha:
             raise ValidationError("Composição não pertence à preparação.")
-        memoria = ficha.memoria
-        if rascunho.composicoes.filter(versao__gt=ficha.versao).exists() or rascunho.memorias_calculo.filter(versao__gt=memoria.versao).exists():
-            raise ValidationError("A composição ou memória foi superada.")
-        revisao = RevisaoComposicaoDevolucaoFornecedor.objects.filter(composicao=ficha, decisao="APROVAR").first()
-        base = RevisaoMemoriaCalculoDevolucaoFornecedor.objects.filter(memoria=memoria, decisao="APROVAR").first()
-        if not revisao or not base:
-            raise ValidationError("A composição e a memória precisam estar aprovadas.")
-        for objeto in (ficha, revisao, base):
-            if _hash_conteudo_revisao(objeto.conteudo_snapshot) != objeto.conteudo_sha256:
-                raise ValidationError("A composição ou sua revisão perdeu a integridade.")
-        if (
-            ficha.conteudo_snapshot.get("rascunho_id") != rascunho.pk
-            or ficha.conteudo_snapshot.get("memoria_id") != memoria.pk
-            or ficha.conteudo_snapshot.get("memoria_sha256") != memoria.conteudo_sha256
-            or ficha.conteudo_snapshot.get("revisao_sha256") != base.conteudo_sha256
-            or revisao.conteudo_snapshot.get("composicao_id") != ficha.pk
-            or revisao.conteudo_snapshot.get("composicao_sha256") != ficha.conteudo_sha256
-            or base.conteudo_snapshot.get("memoria_sha256") != memoria.conteudo_sha256
-        ):
-            raise ValidationError("Os vínculos da composição perderam a integridade.")
-        _validar_integridade_memoria_calculo(rascunho, memoria)
+        memoria, revisao = validar_composicao_atual(rascunho, ficha)
         form = RateioDevolucaoForm(dados, itens=memoria.itens.order_by("item_rascunho_id"), totais=ficha.conteudo_snapshot["dados"])
         if not form.is_valid():
             raise ValidationError([erro for erros in form.errors.values() for erro in erros])
