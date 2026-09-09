@@ -1,5 +1,8 @@
 # Devolução ao fornecedor — preparação fiscal segura
 
+- [x] Ciclo 62: contrato preliminar de referências e validador estrutural isolado, com sete testes e bloqueios permanentes de XML/emissão.
+- [ ] Integrar extração autenticada do dossiê ao contrato, verificando escopo, hashes e atualidade no banco. Identificadores declarados no envelope não são autorização nem evidência autenticada.
+
 - [x] Ciclo 61: mapeamento preliminar de dados e bloqueios do XML em [CONTRATO_XML_DEVOLUCAO_FORNECEDOR.md](CONTRATO_XML_DEVOLUCAO_FORNECEDOR.md). Não equivale a contrato implementado ou validação normativa.
 - [ ] Obter MOC/NT/XSD integrais e confirmar versões/vigências antes de fechar o contrato e gerar XML; as tentativas de leitura integral retornaram erro neste ciclo.
 

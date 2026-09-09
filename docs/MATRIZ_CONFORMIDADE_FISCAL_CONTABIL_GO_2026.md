@@ -1,5 +1,7 @@
 # Matriz de conformidade fiscal e contábil — Goiás 2026
 
+Ciclo 62: validador estrutural do envelope de referências implementado, ainda sem leitura autenticada do banco ou validação normativa. Mesmo referências sintaticamente válidas produzem bloqueio de conteúdo fiscal não implementado; modelo 65, campos desconhecidos e emissão habilitada são rejeitados. Não há XML, transmissão, persistência ou nova migração. Próximo passo: extração com autorização e integridade, mantendo os bloqueios fiscais.
+
 Ciclo 61: contrato preliminar e matriz de campos documentados em [CONTRATO_XML_DEVOLUCAO_FORNECEDOR.md](CONTRATO_XML_DEVOLUCAO_FORNECEDOR.md). O gerador de venda e o payload Focus observado não demonstram suporte completo a devolução. Orientações oficiais GO sobre ST exigem hipóteses específicas; nenhuma política tributária foi aplicada. Leitura integral de MOC/NT e pacote XSD permanece pendente por erro de acesso, portanto não há certificação de conformidade. Emissão continua bloqueada.
 
 Ciclo 60: painel somente leitura consolida pendências estruturais do dossiê e distingue origem histórica da memória revisada de dados superados. A consulta confere hashes e integridade da memória/XML, mas não substitui validações fiscais completas ou aprovação de dados reais. O bloqueio de XML e homologação é permanente nesta etapa; nenhum resultado do painel autoriza emissão. Próximo passo: especificar o contrato de dados do XML e os bloqueios por campo com base na documentação oficial vigente.

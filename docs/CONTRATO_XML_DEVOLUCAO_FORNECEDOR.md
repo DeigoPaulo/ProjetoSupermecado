@@ -2,6 +2,12 @@
 
 09/09/2026 · ciclo 61 · especificação preliminar, não implementada.
 
+Atualização do ciclo 62: implementado somente o envelope de referências e seu validador estrutural em `apps/fiscal/contrato_devolucao.py`. Ainda não é o contrato completo de dados fiscais nem possui extração autenticada, tela ou endpoint. Sete testes passaram.
+
+O envelope exige `contrato`, `rascunho_id`, `empresa_id`, `modelo=55`, `operacao=DEVOLUCAO_COMPRA`, `permite_emissao=false` e `grupos`. Cada grupo conhecido contém `estado` e lista `referencias` (tipo, ID positivo, SHA-256). Os estados são AUSENTE, DIVERGENTE, SUPERADO, NAO_SUPORTADO e REFERENCIADO. Este último indica apenas presença sintática de evidência, nunca aprovação. Campos desconhecidos são rejeitados; não enviar tokens, certificado, XML ou dados pessoais no envelope. O resultado separa erros estruturais de bloqueios fiscais e sempre retorna `permite_gerar_xml=false` e `permite_emissao=false`. IDs e hashes ainda precisam ser resolvidos e conferidos por serviço autenticado.
+
+Nova evidência oficial: o [aviso de 04/08/2026](https://www.nfe.fazenda.gov.br/pOrtal/informe.aspx?AspxAutoDetectCookieSupport=1&Informe=k7zG06n5M6I%3D&ehCTG=false) confirma a publicação da NT 2025.002 v1.51, juntamente com outras notas. Isso resolve a dúvida sobre a existência dessa versão, não confirma ausência de versões posteriores nem substitui a leitura integral e verificação de vigência/XSD, que permanecem pendentes.
+
 ## Decisão de engenharia
 
 Criar futuramente um contrato neutro `supplier_return_nfe_input_v1`, independente de Focus e SEFAZ direta. Seu primeiro consumidor será um validador somente leitura. Não reutilizar o despacho de venda para emitir devolução. O dossiê atual informa pendências, mas não é autorização fiscal.
