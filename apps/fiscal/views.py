@@ -87,7 +87,10 @@ from .models import (
     TipoDocumentoConsultaCadastro,
     TipoManifestacaoDestinatario,
 )
-from .devolucao_fornecedor import revisar_rascunho_devolucao_fornecedor
+from .devolucao_fornecedor import (
+    registrar_parecer_tributario_devolucao_fornecedor,
+    revisar_rascunho_devolucao_fornecedor,
+)
 from .monitor_atualizacoes import resumo_monitor_atualizacoes
 from .services_cce import registrar_carta_correcao
 from .services_cadastro import consultar_cadastro_contribuinte
@@ -121,7 +124,11 @@ def _rascunhos_revisao_queryset(user):
             "entrada_compra__fornecedor",
             "entrada_compra__filial",
             "submetido_por",
-        ).prefetch_related("itens__item_entrada__produto", "revisoes__revisor"),
+        ).prefetch_related(
+            "itens__item_entrada__produto",
+            "revisoes__revisor",
+            "pareceres_tributarios__responsavel",
+        ),
     )
 
 
@@ -193,6 +200,34 @@ def decidir_revisao_devolucao_fornecedor(request, pk):
             f"Revisão {revisao.sequencia} devolvida para correção em Compras.",
         )
     return redirect("fiscal:revisoes_devolucao")
+
+
+@login_required
+@role_required(*REVISAO_FISCAL)
+@require_POST
+def registrar_parecer_devolucao_fornecedor(request, pk):
+    rascunho = get_object_or_404(_rascunhos_revisao_queryset(request.user), pk=pk)
+    try:
+        parecer, criado = registrar_parecer_tributario_devolucao_fornecedor(
+            rascunho,
+            dados=request.POST,
+            responsavel=request.user,
+            ip=request.META.get("REMOTE_ADDR"),
+        )
+    except ValidationError as exc:
+        messages.error(request, " ".join(exc.messages))
+    else:
+        if criado:
+            messages.success(
+                request,
+                f"Parecer tributário versão {parecer.versao} registrado sem liberar emissão.",
+            )
+        else:
+            messages.info(
+                request,
+                f"O mesmo conteúdo já está preservado na versão {parecer.versao}.",
+            )
+    return redirect("fiscal:revisao_devolucao_detalhe", pk=rascunho.pk)
 
 
 def _diagnostico_prontidao_fiscal(user):

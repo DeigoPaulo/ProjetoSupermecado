@@ -76,6 +76,37 @@
   </table>
 </section>
 
+<section class="panel mt-panel">
+  <div class="panel-title">Pareceres tributários versionados</div>
+  <div class="operation-notice">
+    O parecer registra orientação humana. Ele não calcula tributos, não altera cadastros e não libera emissão ou transmissão.
+  </div>
+  {% for parecer in rascunho.pareceres_tributarios.all %}
+    <details class="nav-section">
+      <summary>Versão {{ parecer.versao }} · CFOP {{ parecer.cfop }} · referência {{ parecer.vigencia_referencia|date:"d/m/Y" }}</summary>
+      <table>
+        <tbody>
+          <tr><th>Regime de referência</th><td>{{ parecer.regime_tributario_referencia }}</td></tr>
+          <tr><th>Natureza da operação</th><td>{{ parecer.natureza_operacao }}</td></tr>
+          <tr><th>Catálogo CFOP</th><td>Referência {{ parecer.conteudo_snapshot.catalogo_cfop_referencia_em }} · SHA-256 {{ parecer.conteudo_snapshot.catalogo_cfop_sha256 }}</td></tr>
+          <tr><th>ICMS</th><td>{{ parecer.tratamento_icms }}</td></tr>
+          <tr><th>ICMS-ST / FCP</th><td>{{ parecer.tratamento_icms_st_fcp }}</td></tr>
+          <tr><th>IPI</th><td>{{ parecer.tratamento_ipi }}</td></tr>
+          <tr><th>PIS</th><td>{{ parecer.tratamento_pis }}</td></tr>
+          <tr><th>COFINS</th><td>{{ parecer.tratamento_cofins }}</td></tr>
+          <tr><th>cBenef</th><td>{{ parecer.tratamento_cbenef }}</td></tr>
+          <tr><th>IBS/CBS</th><td>{{ parecer.tratamento_ibs_cbs }}</td></tr>
+          <tr><th>Fundamentação</th><td>{{ parecer.fundamentacao }}</td></tr>
+          <tr><th>Responsável</th><td>{{ parecer.responsavel }} em {{ parecer.criado_em|date:"d/m/Y H:i" }}</td></tr>
+          <tr><th>Integridade</th><td><small>{{ parecer.conteudo_sha256 }}</small></td></tr>
+        </tbody>
+      </table>
+    </details>
+  {% empty %}
+    <p class="panel-subtitle">Nenhum parecer tributário foi registrado.</p>
+  {% endfor %}
+</section>
+
 {% if rascunho.status == "AGUARDANDO_REVISAO" %}
   <section class="panel mt-panel">
     <div class="panel-title">Registrar decisão fiscal</div>
@@ -92,6 +123,43 @@
         <button class="secondary-button" type="submit" name="decisao" value="{{ decisao_corrigir }}">Devolver para correção</button>
         <button class="primary-button" type="submit" name="decisao" value="{{ decisao_aprovar }}">Aprovar somente a preparação</button>
       </div>
+    </form>
+  </section>
+{% endif %}
+
+{% if rascunho.status == "APROVADO" %}
+  <section class="panel mt-panel">
+    <div class="panel-title">Registrar nova versão do parecer</div>
+    <div class="operation-notice">
+      Não há preenchimento automático. Todos os tratamentos devem reproduzir orientação profissional para este caso, inclusive quando não forem aplicáveis.
+    </div>
+    <form method="post" action="{% url 'fiscal:registrar_parecer_devolucao' rascunho.pk %}" class="form-grid form-confirm" data-msg="Preservar esta orientação como uma nova versão imutável? Isso não libera emissão.">
+      {% csrf_token %}
+      <label class="form-field">
+        <span>Data de referência</span>
+        <input type="date" name="vigencia_referencia" required>
+      </label>
+      <label class="form-field">
+        <span>Regime tributário de referência</span>
+        <input type="text" name="regime_tributario_referencia" maxlength="120" required>
+      </label>
+      <label class="form-field">
+        <span>Natureza da operação</span>
+        <input type="text" name="natureza_operacao" maxlength="120" required>
+      </label>
+      <label class="form-field">
+        <span>CFOP de saída</span>
+        <input type="text" name="cfop" inputmode="numeric" minlength="4" maxlength="5" required>
+      </label>
+      <label class="form-field span-2"><span>Tratamento do ICMS</span><textarea name="tratamento_icms" maxlength="2000" required></textarea></label>
+      <label class="form-field span-2"><span>Tratamento do ICMS-ST e FCP</span><textarea name="tratamento_icms_st_fcp" maxlength="2000" required></textarea></label>
+      <label class="form-field"><span>Tratamento do IPI</span><textarea name="tratamento_ipi" maxlength="2000" required></textarea></label>
+      <label class="form-field"><span>Tratamento do PIS</span><textarea name="tratamento_pis" maxlength="2000" required></textarea></label>
+      <label class="form-field"><span>Tratamento da COFINS</span><textarea name="tratamento_cofins" maxlength="2000" required></textarea></label>
+      <label class="form-field"><span>Tratamento do cBenef</span><textarea name="tratamento_cbenef" maxlength="2000" required></textarea></label>
+      <label class="form-field span-2"><span>Tratamento de IBS/CBS</span><textarea name="tratamento_ibs_cbs" maxlength="2000" required></textarea></label>
+      <label class="form-field span-2"><span>Fundamentação e fonte da orientação</span><textarea name="fundamentacao" maxlength="4000" required></textarea></label>
+      <div class="form-actions span-2"><button class="primary-button" type="submit">Registrar parecer sem emitir</button></div>
     </form>
   </section>
 {% endif %}

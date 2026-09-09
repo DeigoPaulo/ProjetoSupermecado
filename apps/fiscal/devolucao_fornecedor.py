@@ -7,6 +7,7 @@ separa evidências da entrada das decisões dependentes do contador e do caso re
 
 import hashlib
 import json
+from datetime import date
 from decimal import Decimal, InvalidOperation
 
 from django.core.exceptions import ObjectDoesNotExist, ValidationError
@@ -21,9 +22,11 @@ from apps.compras.models import EntradaCompra, ItemEntradaCompra, StatusEntradaC
 from apps.auditoria.models import LogAuditoria
 
 from .pacote_contabil import analisar_xml_nfe
+from .cfop import catalogo_cfop_vigente, validar_cfop
 from .models import (
     DecisaoRevisaoDevolucaoFornecedor,
     ItemRascunhoDevolucaoFornecedor,
+    ParecerTributarioDevolucaoFornecedor,
     RascunhoDevolucaoFornecedor,
     RevisaoDevolucaoFornecedor,
     StatusRascunhoDevolucaoFornecedor,
@@ -32,6 +35,7 @@ from .models import (
 
 CONTRATO_PREPARACAO_DEVOLUCAO_FORNECEDOR = "supplier_return_fiscal_preparation_v1"
 CONTRATO_RASCUNHO_DEVOLUCAO_FORNECEDOR = "supplier_return_draft_v1"
+CONTRATO_PARECER_TRIBUTARIO_DEVOLUCAO_FORNECEDOR = "supplier_return_tax_opinion_v1"
 STATUS_RASCUNHO_ATIVO = (
     StatusRascunhoDevolucaoFornecedor.RASCUNHO,
     StatusRascunhoDevolucaoFornecedor.AGUARDANDO_REVISAO,
@@ -615,3 +619,154 @@ def revisar_rascunho_devolucao_fornecedor(
             ip=ip,
         )
     return revisao, rascunho
+
+
+def _texto_parecer(valor, rotulo, *, maximo=2000):
+    texto = str(valor or "").strip()
+    if len(texto) < 5:
+        raise ValidationError(
+            f"Informe {rotulo}; quando não se aplicar, registre isso expressamente."
+        )
+    if len(texto) > maximo:
+        raise ValidationError(f"{rotulo.capitalize()} deve ter no máximo {maximo} caracteres.")
+    return texto
+
+
+def _data_parecer(valor):
+    if isinstance(valor, date):
+        return valor
+    try:
+        return date.fromisoformat(str(valor or "").strip())
+    except ValueError as exc:
+        raise ValidationError("Informe uma data de referência válida para o parecer.") from exc
+
+
+def registrar_parecer_tributario_devolucao_fornecedor(
+    rascunho,
+    *,
+    dados,
+    responsavel,
+    ip=None,
+):
+    """Preserva orientação humana versionada sem calcular ou liberar emissão."""
+    if not has_role(responsavel, REVISAO_FISCAL):
+        raise ValidationError("O usuário não possui permissão para registrar parecer fiscal.")
+
+    vigencia = _data_parecer(dados.get("vigencia_referencia"))
+    cfop = "".join(caractere for caractere in str(dados.get("cfop") or "") if caractere.isdigit())
+    catalogo = catalogo_cfop_vigente(vigencia)
+    if not catalogo:
+        raise ValidationError("Não existe catálogo CFOP oficial vigente para a data informada.")
+    erro_cfop = validar_cfop(
+        cfop,
+        direcao="SAIDA",
+        modelo="55",
+        data_referencia=vigencia,
+    )
+    if erro_cfop:
+        raise ValidationError(erro_cfop)
+
+    campos = {
+        "regime_tributario_referencia": _texto_parecer(
+            dados.get("regime_tributario_referencia"), "o regime tributário de referência", maximo=120
+        ),
+        "natureza_operacao": _texto_parecer(
+            dados.get("natureza_operacao"), "a natureza da operação", maximo=120
+        ),
+        "tratamento_icms": _texto_parecer(dados.get("tratamento_icms"), "o tratamento do ICMS"),
+        "tratamento_icms_st_fcp": _texto_parecer(
+            dados.get("tratamento_icms_st_fcp"), "o tratamento de ICMS-ST/FCP"
+        ),
+        "tratamento_ipi": _texto_parecer(dados.get("tratamento_ipi"), "o tratamento do IPI"),
+        "tratamento_pis": _texto_parecer(dados.get("tratamento_pis"), "o tratamento do PIS"),
+        "tratamento_cofins": _texto_parecer(
+            dados.get("tratamento_cofins"), "o tratamento da COFINS"
+        ),
+        "tratamento_cbenef": _texto_parecer(
+            dados.get("tratamento_cbenef"), "o tratamento do cBenef"
+        ),
+        "tratamento_ibs_cbs": _texto_parecer(
+            dados.get("tratamento_ibs_cbs"), "o tratamento de IBS/CBS"
+        ),
+        "fundamentacao": _texto_parecer(
+            dados.get("fundamentacao"), "a fundamentação e fonte da orientação", maximo=4000
+        ),
+    }
+
+    with transaction.atomic():
+        rascunho = (
+            RascunhoDevolucaoFornecedor.objects.select_for_update()
+            .select_related("entrada_compra__filial")
+            .get(pk=rascunho.pk)
+        )
+        empresa_id = empresa_id_do_usuario(responsavel)
+        if empresa_id is not None and rascunho.entrada_compra.filial.empresa_id != empresa_id:
+            raise ValidationError("Este rascunho não pertence à empresa do responsável fiscal.")
+        if rascunho.status != StatusRascunhoDevolucaoFornecedor.APROVADO:
+            raise ValidationError("O parecer exige uma preparação previamente aprovada.")
+
+        revisao_base = rascunho.revisoes.filter(
+            decisao=DecisaoRevisaoDevolucaoFornecedor.APROVAR
+        ).order_by("-sequencia").first()
+        if not revisao_base:
+            raise ValidationError("A revisão de aprovação que fundamenta o parecer não foi encontrada.")
+        if (
+            _hash_conteudo_revisao(revisao_base.conteudo_snapshot)
+            != revisao_base.conteudo_sha256
+        ):
+            raise ValidationError("A revisão de aprovação perdeu a integridade; o parecer foi bloqueado.")
+
+        documento_dfe = _documento_dfe_da_entrada(rascunho.entrada_compra)
+        xml_origem = documento_dfe.xml_conteudo if documento_dfe else ""
+        hash_atual = hashlib.sha256(xml_origem.encode("utf-8")).hexdigest()
+        if not xml_origem or hash_atual != rascunho.xml_origem_sha256:
+            raise ValidationError("O XML original divergiu da preparação aprovada; o parecer foi bloqueado.")
+
+        conteudo = {
+            "contrato": CONTRATO_PARECER_TRIBUTARIO_DEVOLUCAO_FORNECEDOR,
+            "rascunho_id": rascunho.pk,
+            "revisao_base_id": revisao_base.pk,
+            "revisao_base_sha256": revisao_base.conteudo_sha256,
+            "xml_origem_sha256": rascunho.xml_origem_sha256,
+            "vigencia_referencia": vigencia.isoformat(),
+            "cfop": cfop,
+            "catalogo_cfop_id": catalogo.pk,
+            "catalogo_cfop_referencia_em": catalogo.referencia_em.isoformat(),
+            "catalogo_cfop_sha256": catalogo.fonte_sha256,
+            **campos,
+        }
+        hash_conteudo = _hash_conteudo_revisao(conteudo)
+        existente = rascunho.pareceres_tributarios.filter(
+            conteudo_sha256=hash_conteudo
+        ).first()
+        if existente:
+            return existente, False
+
+        versao = (
+            rascunho.pareceres_tributarios.aggregate(maior=Max("versao"))["maior"] or 0
+        ) + 1
+        parecer = ParecerTributarioDevolucaoFornecedor.objects.create(
+            rascunho=rascunho,
+            revisao_base=revisao_base,
+            versao=versao,
+            vigencia_referencia=vigencia,
+            cfop=cfop,
+            conteudo_snapshot=conteudo,
+            conteudo_sha256=hash_conteudo,
+            responsavel=responsavel,
+            **campos,
+        )
+        LogAuditoria.objects.create(
+            usuario=responsavel,
+            modulo="fiscal",
+            acao="PARECER_TRIBUTARIO_DEVOLUCAO_FORNECEDOR",
+            descricao=(
+                f"Parecer tributário {parecer.pk}, versão {versao}, registrado para o "
+                f"rascunho {rascunho.pk}. Nenhum cálculo, documento, numeração, estoque "
+                "ou transmissão foi criado."
+            ),
+            objeto_tipo="ParecerTributarioDevolucaoFornecedor",
+            objeto_id=str(parecer.pk),
+            ip=ip,
+        )
+    return parecer, True

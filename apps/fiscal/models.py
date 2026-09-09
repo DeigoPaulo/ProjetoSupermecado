@@ -559,6 +559,79 @@ class RevisaoDevolucaoFornecedor(models.Model):
         return f"Revisão {self.rascunho_id}/{self.sequencia} - {self.decisao}"
 
 
+class ParecerTributarioDevolucaoFornecedorQuerySet(models.QuerySet):
+    def update(self, **kwargs):
+        raise ValueError("Pareceres tributários são imutáveis e não podem ser alterados.")
+
+    def delete(self):
+        raise ValueError("Pareceres tributários são imutáveis e não podem ser excluídos.")
+
+
+class ParecerTributarioDevolucaoFornecedor(models.Model):
+    objects = ParecerTributarioDevolucaoFornecedorQuerySet.as_manager()
+
+    contrato = models.CharField(
+        max_length=64,
+        default="supplier_return_tax_opinion_v1",
+        editable=False,
+    )
+    rascunho = models.ForeignKey(
+        RascunhoDevolucaoFornecedor,
+        on_delete=models.PROTECT,
+        related_name="pareceres_tributarios",
+    )
+    revisao_base = models.ForeignKey(
+        RevisaoDevolucaoFornecedor,
+        on_delete=models.PROTECT,
+        related_name="pareceres_tributarios",
+    )
+    versao = models.PositiveIntegerField()
+    vigencia_referencia = models.DateField()
+    regime_tributario_referencia = models.CharField(max_length=120)
+    natureza_operacao = models.CharField(max_length=120)
+    cfop = models.CharField(max_length=4)
+    tratamento_icms = models.TextField()
+    tratamento_icms_st_fcp = models.TextField()
+    tratamento_ipi = models.TextField()
+    tratamento_pis = models.TextField()
+    tratamento_cofins = models.TextField()
+    tratamento_cbenef = models.TextField()
+    tratamento_ibs_cbs = models.TextField()
+    fundamentacao = models.TextField()
+    conteudo_snapshot = models.JSONField()
+    conteudo_sha256 = models.CharField(max_length=64)
+    responsavel = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.PROTECT,
+        related_name="pareceres_tributarios_devolucao_fornecedor",
+    )
+    criado_em = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["rascunho_id", "versao"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["rascunho", "versao"],
+                name="fisc_par_dev_rasc_vers_uniq",
+            ),
+            models.UniqueConstraint(
+                fields=["rascunho", "conteudo_sha256"],
+                name="fisc_par_dev_rasc_hash_uniq",
+            ),
+        ]
+
+    def save(self, *args, **kwargs):
+        if self.pk or not self._state.adding:
+            raise ValueError("Pareceres tributários são imutáveis e não podem ser alterados.")
+        return super().save(*args, **kwargs)
+
+    def delete(self, *args, **kwargs):
+        raise ValueError("Pareceres tributários são imutáveis e não podem ser excluídos.")
+
+    def __str__(self):
+        return f"Parecer tributário {self.rascunho_id}/{self.versao} - CFOP {self.cfop}"
+
+
 class TipoEvidenciaFiscal(models.TextChoices):
     XML_ENVIO = "XML_ENVIO", "XML transmitido"
     RETORNO_TRANSMISSAO = "RETORNO_TRANSMISSAO", "Retorno da transmissão"

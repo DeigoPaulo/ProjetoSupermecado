@@ -1,3 +1,4 @@
+from datetime import date
 from decimal import Decimal
 
 from django.contrib.auth import get_user_model
@@ -16,6 +17,7 @@ from .devolucao_fornecedor import (
     CONTRATO_RASCUNHO_DEVOLUCAO_FORNECEDOR,
     cancelar_rascunho_devolucao_fornecedor,
     preparar_devolucao_fornecedor,
+    registrar_parecer_tributario_devolucao_fornecedor,
     revisar_rascunho_devolucao_fornecedor,
     salvar_rascunho_devolucao_fornecedor,
     submeter_rascunho_devolucao_para_revisao,
@@ -23,8 +25,11 @@ from .devolucao_fornecedor import (
 from .models import (
     DocumentoDFeRecebido,
     DocumentoFiscal,
+    CatalogoCFOP,
     DecisaoRevisaoDevolucaoFornecedor,
     ItemRascunhoDevolucaoFornecedor,
+    ItemCFOP,
+    ParecerTributarioDevolucaoFornecedor,
     RascunhoDevolucaoFornecedor,
     RevisaoDevolucaoFornecedor,
     StatusRascunhoDevolucaoFornecedor,
@@ -124,6 +129,65 @@ class PreparacaoDevolucaoFornecedorTests(TestCase):
             self.entrada,
             usuario=self.usuario,
         )
+
+    def _rascunho_aprovado(self):
+        rascunho = self._rascunho_submetido()
+        _, aprovado = revisar_rascunho_devolucao_fornecedor(
+            rascunho,
+            decisao=DecisaoRevisaoDevolucaoFornecedor.APROVAR,
+            justificativa="Preparação documental aprovada para receber parecer tributário.",
+            revisor=self.revisor,
+        )
+        return aprovado
+
+    def _registrar_catalogo_cfop(self):
+        catalogo = CatalogoCFOP.objects.create(
+            versao="teste-devolucao-2026",
+            referencia_em=date(2026, 1, 1),
+            ato="Convênio s/nº de 1970",
+            fonte_nome="Portal Nacional da NF-e",
+            fonte_url="https://www.confaz.fazenda.gov.br/legislacao/convenios/s-n-de-1970",
+            fonte_sha256="a" * 64,
+            ativo=True,
+            quantidade_itens=2,
+        )
+        ItemCFOP.objects.create(
+            catalogo=catalogo,
+            codigo="5202",
+            codigo_formatado="5.202",
+            titulo="Devolução de compra para comercialização",
+            nota_explicativa="Item de teste do catálogo oficial versionado.",
+            direcao=ItemCFOP.Direcao.SAIDA,
+            alcance=ItemCFOP.Alcance.INTERNA,
+        )
+        ItemCFOP.objects.create(
+            catalogo=catalogo,
+            codigo="1202",
+            codigo_formatado="1.202",
+            titulo="Devolução de venda de mercadoria adquirida de terceiros",
+            nota_explicativa="Item de entrada usado para validar a direção.",
+            direcao=ItemCFOP.Direcao.ENTRADA,
+            alcance=ItemCFOP.Alcance.INTERNA,
+        )
+        return catalogo
+
+    def _dados_parecer(self, **alteracoes):
+        dados = {
+            "vigencia_referencia": "2026-09-09",
+            "regime_tributario_referencia": "Regime informado pelo contador para o caso",
+            "natureza_operacao": "Devolução de compra para comercialização",
+            "cfop": "5202",
+            "tratamento_icms": "Aplicar conforme memória de cálculo validada pelo contador.",
+            "tratamento_icms_st_fcp": "Não aplicável neste caso conforme orientação registrada.",
+            "tratamento_ipi": "Não aplicável neste caso conforme orientação registrada.",
+            "tratamento_pis": "Aplicar conforme orientação profissional anexada ao caso.",
+            "tratamento_cofins": "Aplicar conforme orientação profissional anexada ao caso.",
+            "tratamento_cbenef": "Não aplicável neste caso conforme orientação registrada.",
+            "tratamento_ibs_cbs": "Tratar conforme regra vigente na data de referência informada.",
+            "fundamentacao": "Orientação formal do responsável contábil para este caso concreto.",
+        }
+        dados.update(alteracoes)
+        return dados
 
     def test_consolida_evidencias_sem_criar_documento_ou_escolher_tributacao(self):
         self._registrar_dfe()
@@ -542,3 +606,114 @@ class PreparacaoDevolucaoFornecedorTests(TestCase):
 
         self.assertNotContains(fila, self.CHAVE)
         self.assertEqual(detalhe.status_code, 404)
+
+    def test_parecer_tributario_versionado_e_imutavel_nao_emite(self):
+        rascunho = self._rascunho_aprovado()
+        self._registrar_catalogo_cfop()
+
+        parecer, criado = registrar_parecer_tributario_devolucao_fornecedor(
+            rascunho,
+            dados=self._dados_parecer(),
+            responsavel=self.revisor,
+        )
+
+        self.assertTrue(criado)
+        self.assertEqual(parecer.versao, 1)
+        self.assertEqual(parecer.cfop, "5202")
+        self.assertEqual(parecer.vigencia_referencia, date(2026, 9, 9))
+        self.assertEqual(parecer.conteudo_snapshot["cfop"], "5202")
+        self.assertEqual(parecer.conteudo_snapshot["catalogo_cfop_sha256"], "a" * 64)
+        self.assertEqual(len(parecer.conteudo_sha256), 64)
+        self.assertFalse(DocumentoFiscal.objects.exists())
+        with self.assertRaisesMessage(ValueError, "imutáveis"):
+            parecer.cfop = "6202"
+            parecer.save()
+        with self.assertRaisesMessage(ValueError, "imutáveis"):
+            ParecerTributarioDevolucaoFornecedor.objects.filter(pk=parecer.pk).delete()
+
+    def test_parecer_identico_e_idempotente_e_mudanca_cria_nova_versao(self):
+        rascunho = self._rascunho_aprovado()
+        self._registrar_catalogo_cfop()
+
+        primeiro, criado = registrar_parecer_tributario_devolucao_fornecedor(
+            rascunho,
+            dados=self._dados_parecer(),
+            responsavel=self.revisor,
+        )
+        repetido, criado_repetido = registrar_parecer_tributario_devolucao_fornecedor(
+            rascunho,
+            dados=self._dados_parecer(),
+            responsavel=self.revisor,
+        )
+        segundo, criado_segundo = registrar_parecer_tributario_devolucao_fornecedor(
+            rascunho,
+            dados=self._dados_parecer(
+                fundamentacao="Orientação profissional revisada e formalizada para este caso."
+            ),
+            responsavel=self.revisor,
+        )
+
+        self.assertTrue(criado)
+        self.assertFalse(criado_repetido)
+        self.assertEqual(repetido.pk, primeiro.pk)
+        self.assertTrue(criado_segundo)
+        self.assertEqual(segundo.versao, 2)
+        self.assertEqual(ParecerTributarioDevolucaoFornecedor.objects.count(), 2)
+        self.assertFalse(DocumentoFiscal.objects.exists())
+
+    def test_parecer_exige_aprovacao_catalogo_e_cfop_de_saida(self):
+        rascunho = self._rascunho_submetido()
+        self._registrar_catalogo_cfop()
+
+        with self.assertRaisesMessage(ValidationError, "previamente aprovada"):
+            registrar_parecer_tributario_devolucao_fornecedor(
+                rascunho,
+                dados=self._dados_parecer(),
+                responsavel=self.revisor,
+            )
+
+        revisar_rascunho_devolucao_fornecedor(
+            rascunho,
+            decisao=DecisaoRevisaoDevolucaoFornecedor.APROVAR,
+            justificativa="Preparação aprovada para testar o controle do CFOP.",
+            revisor=self.revisor,
+        )
+        with self.assertRaisesMessage(ValidationError, "não de saída"):
+            registrar_parecer_tributario_devolucao_fornecedor(
+                rascunho,
+                dados=self._dados_parecer(cfop="1202"),
+                responsavel=self.revisor,
+            )
+        self.assertFalse(ParecerTributarioDevolucaoFornecedor.objects.exists())
+
+    def test_parecer_bloqueia_quando_nao_ha_catalogo_oficial_vigente(self):
+        rascunho = self._rascunho_aprovado()
+
+        with self.assertRaisesMessage(ValidationError, "catálogo CFOP oficial"):
+            registrar_parecer_tributario_devolucao_fornecedor(
+                rascunho,
+                dados=self._dados_parecer(),
+                responsavel=self.revisor,
+            )
+
+        self.assertFalse(ParecerTributarioDevolucaoFornecedor.objects.exists())
+
+    def test_contabilidade_registra_parecer_pela_tela_e_financeiro_nao_acessa(self):
+        rascunho = self._rascunho_aprovado()
+        self._registrar_catalogo_cfop()
+        url = f"/fiscal/devolucoes-fornecedor/revisao/{rascunho.pk}/parecer/"
+
+        self.client.force_login(self.financeiro)
+        self.assertEqual(self.client.post(url, self._dados_parecer()).status_code, 403)
+
+        self.client.force_login(self.revisor)
+        detalhe = self.client.get(
+            f"/fiscal/devolucoes-fornecedor/revisao/{rascunho.pk}/"
+        )
+        resposta = self.client.post(url, self._dados_parecer(), follow=True)
+
+        self.assertContains(detalhe, "Registrar nova versão do parecer")
+        self.assertContains(detalhe, "Não há preenchimento automático")
+        self.assertContains(resposta, "Parecer tributário versão 1 registrado sem liberar emissão")
+        self.assertContains(resposta, "CFOP 5202")
+        self.assertFalse(DocumentoFiscal.objects.exists())

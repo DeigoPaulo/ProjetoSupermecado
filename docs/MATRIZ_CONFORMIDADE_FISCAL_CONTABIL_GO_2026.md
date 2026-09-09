@@ -101,9 +101,10 @@ Comunicação com Focus ou SEFAZ não será tratada como conformidade enquanto c
 - [x] Preservar o `nItem` na importação e mapear cada seleção ao item original, bloqueando ambiguidades e excesso agregado por lotes; migration compras 0011.
 - [x] Submeter o rascunho à revisão fiscal com snapshot por item, responsável, horário e SHA-256 do XML; migration fiscal 0037.
 - [x] Implementar a decisão segregada e imutável do revisor fiscal, exclusiva de Administrador/Contabilidade, com aprovação da preparação ou devolução para correção e sem autorização automática de emissão; migration fiscal 0038.
-- [ ] Modelar o parecer tributário versionado para natureza, CFOP e tratamento por tributo definidos pelo contador, sem defaults presumidos.
+- [x] Modelar parecer tributário versionado e imutável para natureza, CFOP oficial de saída e tratamento textual por tributo definido por Administrador/Contabilidade, sem defaults presumidos; migration fiscal 0039.
+- [ ] Estruturar os parâmetros fiscais por `nItem` vinculados ao parecer escolhido, ainda sem calcular ou gerar XML.
 - [ ] Revisar a Fase 1 com o contador quando os dados reais chegarem.
 
 ## Próxima ação verificável
 
-O rascunho da devolução ao fornecedor já preserva origem, motivo, itens, quantidades, vínculo ao `nItem`, snapshot tributário e hash do XML. A revisão segregada permite devolver para correção ou aprovar apenas a preparação, com histórico imutável, sem acesso do Financeiro e sem efeito emissivo. A próxima ação interna é modelar um parecer tributário versionado para receber natureza, CFOP e tratamento de cada tributo somente quando informados e validados pelo contador. Cálculo, geração, numeração e transmissão continuam bloqueados. Quando os dados reais estiverem disponíveis, também será necessário concluir o aceite contábil e a homologação por canal.
+O rascunho da devolução ao fornecedor já preserva origem, itens, `nItem`, snapshot tributário e hash do XML. A revisão segregada aprova apenas a preparação, sem acesso do Financeiro e sem efeito emissivo. O parecer tributário versionado registra orientação humana, valida o CFOP de saída pelo catálogo oficial da data e preserva o catálogo, a revisão-base e o XML por hash. A próxima ação interna é estruturar parâmetros fiscais por `nItem` vinculados a uma versão explícita desse parecer, ainda sem defaults, cálculo ou XML. Numeração e transmissão continuam bloqueadas. Quando os dados reais estiverem disponíveis, também será necessário concluir o aceite contábil e a homologação por canal.
