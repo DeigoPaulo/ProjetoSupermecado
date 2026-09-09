@@ -58,7 +58,8 @@ Uma entrada criada por upload direto hoje preserva os dados normalizados e a cha
 - [x] Modelar o parecer tributário versionado que recebe as decisões explícitas do contador, sem sugerir valores por padrão.
 - [x] Estruturar parâmetros fiscais por `nItem`, vinculados a uma versão do parecer e sem preenchimento automático.
 - [x] Criar memória de cálculo por item com bases, alíquotas e valores exclusivamente informados, sem gerar XML.
-- [ ] Criar revisão segregada da memória completa, com aprovação ou devolução para correção e sem liberar XML/emissão.
+- [x] Criar revisão segregada da memória completa; migration fiscal 0042. Somente outro Administrador/Contabilidade decide sobre a versão mais recente, com justificativa, hash e decisão única imutável. Correções exigem nova versão. Aprovação não libera XML/emissão.
+- [ ] Estruturar dados de transporte e composição do valor da devolução para posterior conferência contábil.
 - [ ] Definir natureza, CFOP, tratamento de ICMS/ICMS-ST/FCP/IPI/PIS/COFINS e cBenef com o contador.
 - [ ] Definir frete, transportador, volumes e motivo quando aplicáveis.
 - [ ] Gerar XML modelo 55 com finalidade de devolução e documento referenciado.

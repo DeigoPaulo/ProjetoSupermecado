@@ -14,6 +14,7 @@ from apps.produtos.models import Categoria, Produto
 
 from .devolucao_fornecedor import (
     CONTRATO_MEMORIA_CALCULO_DEVOLUCAO_FORNECEDOR,
+    CONTRATO_REVISAO_MEMORIA_CALCULO_DEVOLUCAO_FORNECEDOR,
     CONTRATO_PREPARACAO_DEVOLUCAO_FORNECEDOR,
     CONTRATO_RASCUNHO_DEVOLUCAO_FORNECEDOR,
     TRIBUTOS_MEMORIA_CALCULO,
@@ -22,6 +23,7 @@ from .devolucao_fornecedor import (
     registrar_memoria_calculo_devolucao_fornecedor,
     registrar_parametrizacao_itens_devolucao_fornecedor,
     registrar_parecer_tributario_devolucao_fornecedor,
+    revisar_memoria_calculo_devolucao_fornecedor,
     revisar_rascunho_devolucao_fornecedor,
     salvar_rascunho_devolucao_fornecedor,
     submeter_rascunho_devolucao_para_revisao,
@@ -31,6 +33,7 @@ from .models import (
     DocumentoFiscal,
     CatalogoCFOP,
     DecisaoRevisaoDevolucaoFornecedor,
+    DecisaoRevisaoMemoriaCalculoFornecedor,
     ItemRascunhoDevolucaoFornecedor,
     ItemCFOP,
     ItemMemoriaCalculoDevolucaoFornecedor,
@@ -40,6 +43,7 @@ from .models import (
     ParametrizacaoFiscalDevolucaoFornecedor,
     RascunhoDevolucaoFornecedor,
     RevisaoDevolucaoFornecedor,
+    RevisaoMemoriaCalculoDevolucaoFornecedor,
     StatusRascunhoDevolucaoFornecedor,
 )
 
@@ -68,6 +72,12 @@ class PreparacaoDevolucaoFornecedorTests(TestCase):
         self.revisor = get_user_model().objects.create_user("contador_devolucao")
         PerfilUsuario.objects.create(
             usuario=self.revisor,
+            filial=self.filial,
+            tipo=TipoPerfil.CONTABILIDADE,
+        )
+        self.segundo_revisor = get_user_model().objects.create_user("contador_revisor_devolucao")
+        PerfilUsuario.objects.create(
+            usuario=self.segundo_revisor,
             filial=self.filial,
             tipo=TipoPerfil.CONTABILIDADE,
         )
@@ -257,6 +267,16 @@ class PreparacaoDevolucaoFornecedorTests(TestCase):
         dados[f"observacao_memoria_{item.pk}"] = "Memória informada somente para conferência estrutural."
         dados.update(alteracoes)
         return dados
+
+    def _memoria_registrada(self):
+        rascunho, parametrizacao = self._parametrizacao_registrada()
+        memoria, _ = registrar_memoria_calculo_devolucao_fornecedor(
+            rascunho,
+            parametrizacao_id=parametrizacao.pk,
+            dados=self._dados_memoria(parametrizacao),
+            responsavel=self.revisor,
+        )
+        return rascunho, parametrizacao, memoria
 
     def test_consolida_evidencias_sem_criar_documento_ou_escolher_tributacao(self):
         self._registrar_dfe()
@@ -1050,4 +1070,126 @@ class PreparacaoDevolucaoFornecedorTests(TestCase):
         self.assertContains(detalhe, "usando zero explícito")
         self.assertContains(resposta, "Memória de cálculo versão 1 registrada")
         self.assertContains(resposta, "totais conferidos")
+        self.assertFalse(DocumentoFiscal.objects.exists())
+
+    def test_revisao_memoria_em_quatro_olhos_e_imutavel_nao_libera_emissao(self):
+        rascunho, _parametrizacao, memoria = self._memoria_registrada()
+
+        revisao = revisar_memoria_calculo_devolucao_fornecedor(
+            rascunho,
+            memoria_id=memoria.pk,
+            decisao=DecisaoRevisaoMemoriaCalculoFornecedor.APROVAR,
+            justificativa="Bases, alíquotas, valores e totalizações conferidos integralmente.",
+            revisor=self.segundo_revisor,
+        )
+
+        self.assertEqual(
+            revisao.contrato,
+            CONTRATO_REVISAO_MEMORIA_CALCULO_DEVOLUCAO_FORNECEDOR,
+        )
+        self.assertEqual(revisao.memoria, memoria)
+        self.assertEqual(revisao.decisao, DecisaoRevisaoMemoriaCalculoFornecedor.APROVAR)
+        self.assertEqual(revisao.conteudo_snapshot["memoria_sha256"], memoria.conteudo_sha256)
+        self.assertNotEqual(revisao.revisor, memoria.responsavel)
+        self.assertFalse(DocumentoFiscal.objects.exists())
+        with self.assertRaisesMessage(ValueError, "imutáveis"):
+            revisao.justificativa = "Tentativa de alteração"
+            revisao.save()
+        with self.assertRaisesMessage(ValueError, "imutáveis"):
+            RevisaoMemoriaCalculoDevolucaoFornecedor.objects.filter(pk=revisao.pk).delete()
+
+    def test_revisao_memoria_bloqueia_autorrevisao_e_versao_superada(self):
+        rascunho, parametrizacao, primeira = self._memoria_registrada()
+        item = parametrizacao.itens.get()
+
+        with self.assertRaisesMessage(ValidationError, "outro responsável fiscal"):
+            revisar_memoria_calculo_devolucao_fornecedor(
+                rascunho,
+                memoria_id=primeira.pk,
+                decisao=DecisaoRevisaoMemoriaCalculoFornecedor.APROVAR,
+                justificativa="Tentativa de aprovar a própria memória de cálculo fiscal.",
+                revisor=self.revisor,
+            )
+
+        segunda, _ = registrar_memoria_calculo_devolucao_fornecedor(
+            rascunho,
+            parametrizacao_id=parametrizacao.pk,
+            dados=self._dados_memoria(
+                parametrizacao,
+                **{f"observacao_memoria_{item.pk}": "Segunda versão para revisão segregada."},
+            ),
+            responsavel=self.revisor,
+        )
+        with self.assertRaisesMessage(ValidationError, "versão mais recente"):
+            revisar_memoria_calculo_devolucao_fornecedor(
+                rascunho,
+                memoria_id=primeira.pk,
+                decisao=DecisaoRevisaoMemoriaCalculoFornecedor.APROVAR,
+                justificativa="Tentativa de aprovar uma memória que já foi superada.",
+                revisor=self.segundo_revisor,
+            )
+
+        self.assertEqual(segunda.versao, 2)
+        self.assertFalse(RevisaoMemoriaCalculoDevolucaoFornecedor.objects.exists())
+
+    def test_revisao_memoria_e_unica_e_bloqueia_xml_divergente(self):
+        rascunho, _parametrizacao, memoria = self._memoria_registrada()
+        dfe = DocumentoDFeRecebido.objects.get(entrada_compra=self.entrada)
+        dfe.xml_conteudo = dfe.xml_conteudo.replace("3.40", "3.44")
+        dfe.save(update_fields=["xml_conteudo"])
+
+        with self.assertRaisesMessage(ValidationError, "XML original divergiu"):
+            revisar_memoria_calculo_devolucao_fornecedor(
+                rascunho,
+                memoria_id=memoria.pk,
+                decisao=DecisaoRevisaoMemoriaCalculoFornecedor.APROVAR,
+                justificativa="Tentativa de revisar após alteração da evidência original.",
+                revisor=self.segundo_revisor,
+            )
+        dfe.xml_conteudo = dfe.xml_conteudo.replace("3.44", "3.40")
+        dfe.save(update_fields=["xml_conteudo"])
+        revisar_memoria_calculo_devolucao_fornecedor(
+            rascunho,
+            memoria_id=memoria.pk,
+            decisao=DecisaoRevisaoMemoriaCalculoFornecedor.DEVOLVER_CORRECAO,
+            justificativa="Revisão devolvida para ajuste documentado em nova versão.",
+            revisor=self.segundo_revisor,
+        )
+        with self.assertRaisesMessage(ValidationError, "decisão imutável"):
+            revisar_memoria_calculo_devolucao_fornecedor(
+                rascunho,
+                memoria_id=memoria.pk,
+                decisao=DecisaoRevisaoMemoriaCalculoFornecedor.APROVAR,
+                justificativa="Tentativa de substituir a decisão já registrada.",
+                revisor=self.segundo_revisor,
+            )
+
+        self.assertEqual(RevisaoMemoriaCalculoDevolucaoFornecedor.objects.count(), 1)
+        self.assertFalse(DocumentoFiscal.objects.exists())
+
+    def test_segundo_contador_revisa_memoria_pela_tela_e_financeiro_nao_acessa(self):
+        rascunho, _parametrizacao, memoria = self._memoria_registrada()
+        url = f"/fiscal/devolucoes-fornecedor/revisao/{rascunho.pk}/memoria-calculo/revisar/"
+        dados = {
+            "memoria_id": str(memoria.pk),
+            "decisao": DecisaoRevisaoMemoriaCalculoFornecedor.APROVAR,
+            "justificativa": "Conferência segregada concluída pelo segundo responsável fiscal.",
+        }
+
+        self.client.force_login(self.financeiro)
+        self.assertEqual(self.client.post(url, dados).status_code, 403)
+
+        self.client.force_login(self.revisor)
+        detalhe_autor = self.client.get(f"/fiscal/devolucoes-fornecedor/revisao/{rascunho.pk}/")
+        self.assertContains(detalhe_autor, "O autor da memória não pode aprovar")
+        self.assertNotContains(detalhe_autor, "Aprovar somente a memória")
+
+        self.client.force_login(self.segundo_revisor)
+        detalhe = self.client.get(f"/fiscal/devolucoes-fornecedor/revisao/{rascunho.pk}/")
+        resposta = self.client.post(url, dados, follow=True)
+
+        self.assertContains(detalhe, "Aprovar somente a memória")
+        self.assertContains(detalhe, "Devolver memória para correção")
+        self.assertContains(resposta, "aprovada sem liberar XML ou emissão")
+        self.assertContains(resposta, "Aprovar memória")
         self.assertFalse(DocumentoFiscal.objects.exists())

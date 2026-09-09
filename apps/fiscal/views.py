@@ -67,6 +67,7 @@ from .models import (
     EventoDFeRecebido,
     DocumentoFiscal,
     DecisaoRevisaoDevolucaoFornecedor,
+    DecisaoRevisaoMemoriaCalculoFornecedor,
     FonteAtualizacaoFiscal,
     HomologacaoFiscal,
     InutilizacaoNumeracaoFiscal,
@@ -92,6 +93,7 @@ from .devolucao_fornecedor import (
     registrar_memoria_calculo_devolucao_fornecedor,
     registrar_parametrizacao_itens_devolucao_fornecedor,
     registrar_parecer_tributario_devolucao_fornecedor,
+    revisar_memoria_calculo_devolucao_fornecedor,
     revisar_rascunho_devolucao_fornecedor,
 )
 from .monitor_atualizacoes import resumo_monitor_atualizacoes
@@ -137,6 +139,7 @@ def _rascunhos_revisao_queryset(user):
             "memorias_calculo__responsavel",
             "memorias_calculo__parametrizacao",
             "memorias_calculo__itens",
+            "memorias_calculo__revisao_fiscal__revisor",
         ),
     )
 
@@ -177,10 +180,15 @@ def revisao_devolucao_fornecedor_detalhe(request, pk):
             "rascunho": rascunho,
             "decisao_aprovar": DecisaoRevisaoDevolucaoFornecedor.APROVAR,
             "decisao_corrigir": DecisaoRevisaoDevolucaoFornecedor.DEVOLVER_CORRECAO,
+            "decisao_memoria_aprovar": DecisaoRevisaoMemoriaCalculoFornecedor.APROVAR,
+            "decisao_memoria_corrigir": DecisaoRevisaoMemoriaCalculoFornecedor.DEVOLVER_CORRECAO,
             "tributos_memoria": [
                 {"chave": chave, "rotulo": rotulo}
                 for chave, rotulo in TRIBUTOS_MEMORIA_CALCULO
             ],
+            "ultima_memoria_id": rascunho.memorias_calculo.order_by("-versao")
+            .values_list("pk", flat=True)
+            .first(),
         },
     )
 
@@ -297,6 +305,36 @@ def registrar_memoria_calculo_devolucao(request, pk):
             messages.info(
                 request,
                 f"O mesmo conteúdo já está preservado na versão {memoria.versao}.",
+            )
+    return redirect("fiscal:revisao_devolucao_detalhe", pk=rascunho.pk)
+
+
+@login_required
+@role_required(*REVISAO_FISCAL)
+@require_POST
+def revisar_memoria_calculo_devolucao(request, pk):
+    rascunho = get_object_or_404(_rascunhos_revisao_queryset(request.user), pk=pk)
+    try:
+        revisao = revisar_memoria_calculo_devolucao_fornecedor(
+            rascunho,
+            memoria_id=request.POST.get("memoria_id"),
+            decisao=request.POST.get("decisao"),
+            justificativa=request.POST.get("justificativa"),
+            revisor=request.user,
+            ip=request.META.get("REMOTE_ADDR"),
+        )
+    except ValidationError as exc:
+        messages.error(request, " ".join(exc.messages))
+    else:
+        if revisao.decisao == DecisaoRevisaoMemoriaCalculoFornecedor.APROVAR:
+            messages.success(
+                request,
+                f"Memória versão {revisao.memoria.versao} aprovada sem liberar XML ou emissão.",
+            )
+        else:
+            messages.success(
+                request,
+                f"Memória versão {revisao.memoria.versao} devolvida; registre uma nova versão corrigida.",
             )
     return redirect("fiscal:revisao_devolucao_detalhe", pk=rascunho.pk)
 

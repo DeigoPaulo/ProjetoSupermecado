@@ -24,6 +24,7 @@ from apps.auditoria.models import LogAuditoria
 from .pacote_contabil import analisar_xml_nfe
 from .cfop import catalogo_cfop_vigente, validar_cfop
 from .models import (
+    DecisaoRevisaoMemoriaCalculoFornecedor,
     DecisaoRevisaoDevolucaoFornecedor,
     ItemMemoriaCalculoDevolucaoFornecedor,
     ItemParametrizacaoFiscalDevolucaoFornecedor,
@@ -32,6 +33,7 @@ from .models import (
     ParecerTributarioDevolucaoFornecedor,
     ParametrizacaoFiscalDevolucaoFornecedor,
     RascunhoDevolucaoFornecedor,
+    RevisaoMemoriaCalculoDevolucaoFornecedor,
     RevisaoDevolucaoFornecedor,
     StatusRascunhoDevolucaoFornecedor,
     TipoCodigoICMSDevolucaoFornecedor,
@@ -43,6 +45,7 @@ CONTRATO_RASCUNHO_DEVOLUCAO_FORNECEDOR = "supplier_return_draft_v1"
 CONTRATO_PARECER_TRIBUTARIO_DEVOLUCAO_FORNECEDOR = "supplier_return_tax_opinion_v1"
 CONTRATO_PARAMETROS_ITEM_DEVOLUCAO_FORNECEDOR = "supplier_return_item_tax_parameters_v1"
 CONTRATO_MEMORIA_CALCULO_DEVOLUCAO_FORNECEDOR = "supplier_return_item_tax_calculation_memory_v1"
+CONTRATO_REVISAO_MEMORIA_CALCULO_DEVOLUCAO_FORNECEDOR = "supplier_return_item_tax_calculation_review_v1"
 STATUS_RASCUNHO_ATIVO = (
     StatusRascunhoDevolucaoFornecedor.RASCUNHO,
     StatusRascunhoDevolucaoFornecedor.AGUARDANDO_REVISAO,
@@ -1264,3 +1267,154 @@ def registrar_memoria_calculo_devolucao_fornecedor(
             ip=ip,
         )
     return memoria, True
+
+
+def _snapshot_item_memoria_model(item):
+    dados = {
+        "item_parametrizacao_id": item.item_parametrizacao_id,
+        "item_rascunho_id": item.item_rascunho_id,
+        "numero_item_xml": item.numero_item_xml,
+        "valor_operacao": item.valor_operacao,
+        "observacao": item.observacao,
+    }
+    for chave, _rotulo in TRIBUTOS_MEMORIA_CALCULO:
+        for campo in ("base", "aliquota", "valor"):
+            dados[f"{campo}_{chave}"] = getattr(item, f"{campo}_{chave}")
+    return _snapshot_item_memoria(dados)
+
+
+def _validar_integridade_memoria_calculo(rascunho, memoria):
+    if _hash_conteudo_revisao(memoria.conteudo_snapshot) != memoria.conteudo_sha256:
+        raise ValidationError("A memória de cálculo selecionada perdeu a integridade.")
+    if memoria.conteudo_snapshot.get("totais") != memoria.totais_snapshot:
+        raise ValidationError("Os totais da memória de cálculo perderam a integridade.")
+    parametrizacao = memoria.parametrizacao
+    if (
+        memoria.conteudo_snapshot.get("rascunho_id") != rascunho.pk
+        or memoria.conteudo_snapshot.get("parametrizacao_id") != parametrizacao.pk
+        or memoria.conteudo_snapshot.get("parametrizacao_sha256")
+        != parametrizacao.conteudo_sha256
+    ):
+        raise ValidationError("O vínculo da memória com a parametrização perdeu a integridade.")
+    if _hash_conteudo_revisao(parametrizacao.conteudo_snapshot) != parametrizacao.conteudo_sha256:
+        raise ValidationError("A parametrização vinculada à memória perdeu a integridade.")
+    if _hash_conteudo_revisao(parametrizacao.parecer.conteudo_snapshot) != parametrizacao.parecer.conteudo_sha256:
+        raise ValidationError("O parecer vinculado à memória perdeu a integridade.")
+
+    itens_parametrizacao = list(
+        parametrizacao.itens.select_for_update().order_by("item_rascunho_id")
+    )
+    if parametrizacao.conteudo_snapshot.get("itens") != [
+        _snapshot_item_parametrizacao(item) for item in itens_parametrizacao
+    ]:
+        raise ValidationError("Os itens da parametrização vinculada perderam a integridade.")
+    itens_memoria = list(memoria.itens.select_for_update().order_by("item_rascunho_id"))
+    if (
+        not itens_memoria
+        or [item.item_parametrizacao_id for item in itens_memoria]
+        != [item.pk for item in itens_parametrizacao]
+        or memoria.conteudo_snapshot.get("itens")
+        != [_snapshot_item_memoria_model(item) for item in itens_memoria]
+    ):
+        raise ValidationError("Os itens da memória de cálculo perderam a integridade.")
+
+    documento_dfe = _documento_dfe_da_entrada(rascunho.entrada_compra)
+    xml_origem = documento_dfe.xml_conteudo if documento_dfe else ""
+    if (
+        not xml_origem
+        or hashlib.sha256(xml_origem.encode("utf-8")).hexdigest()
+        != rascunho.xml_origem_sha256
+    ):
+        raise ValidationError("O XML original divergiu da preparação aprovada.")
+
+
+def revisar_memoria_calculo_devolucao_fornecedor(
+    rascunho,
+    *,
+    memoria_id,
+    decisao,
+    justificativa,
+    revisor,
+    ip=None,
+):
+    """Registra decisão em quatro olhos sem liberar geração ou emissão fiscal."""
+    if not has_role(revisor, REVISAO_FISCAL):
+        raise ValidationError("O usuário não possui permissão para revisar a memória fiscal.")
+    try:
+        memoria_id = int(memoria_id)
+    except (TypeError, ValueError) as exc:
+        raise ValidationError("Selecione a memória de cálculo que será revisada.") from exc
+    decisao = str(decisao or "").strip()
+    if decisao not in DecisaoRevisaoMemoriaCalculoFornecedor.values:
+        raise ValidationError("Decisão da memória fiscal inválida.")
+    justificativa = str(justificativa or "").strip()
+    if len(justificativa) < 10:
+        raise ValidationError("Informe uma justificativa fiscal com pelo menos 10 caracteres.")
+    if len(justificativa) > 500:
+        raise ValidationError("A justificativa fiscal deve ter no máximo 500 caracteres.")
+
+    with transaction.atomic():
+        rascunho = (
+            RascunhoDevolucaoFornecedor.objects.select_for_update()
+            .select_related("entrada_compra__filial")
+            .get(pk=rascunho.pk)
+        )
+        empresa_id = empresa_id_do_usuario(revisor)
+        if empresa_id is not None and rascunho.entrada_compra.filial.empresa_id != empresa_id:
+            raise ValidationError("Esta memória não pertence à empresa do revisor fiscal.")
+        if rascunho.status != StatusRascunhoDevolucaoFornecedor.APROVADO:
+            raise ValidationError("A revisão da memória exige uma preparação previamente aprovada.")
+
+        memoria = (
+            rascunho.memorias_calculo.select_for_update()
+            .select_related("parametrizacao__parecer", "responsavel")
+            .filter(pk=memoria_id)
+            .first()
+        )
+        if not memoria:
+            raise ValidationError("A memória selecionada não pertence a esta preparação.")
+        if memoria.responsavel_id == revisor.pk:
+            raise ValidationError("A memória deve ser revisada por outro responsável fiscal.")
+        if RevisaoMemoriaCalculoDevolucaoFornecedor.objects.filter(memoria=memoria).exists():
+            raise ValidationError("Esta versão da memória já possui uma decisão imutável.")
+        if rascunho.memorias_calculo.filter(versao__gt=memoria.versao).exists():
+            raise ValidationError("Somente a versão mais recente da memória pode ser revisada.")
+
+        _validar_integridade_memoria_calculo(rascunho, memoria)
+        conteudo = {
+            "contrato": CONTRATO_REVISAO_MEMORIA_CALCULO_DEVOLUCAO_FORNECEDOR,
+            "rascunho_id": rascunho.pk,
+            "memoria_id": memoria.pk,
+            "memoria_versao": memoria.versao,
+            "memoria_sha256": memoria.conteudo_sha256,
+            "parametrizacao_id": memoria.parametrizacao_id,
+            "parametrizacao_sha256": memoria.parametrizacao.conteudo_sha256,
+            "parecer_id": memoria.parametrizacao.parecer_id,
+            "parecer_sha256": memoria.parametrizacao.parecer.conteudo_sha256,
+            "xml_origem_sha256": rascunho.xml_origem_sha256,
+            "decisao": decisao,
+            "justificativa": justificativa,
+            "revisor_id": revisor.pk,
+        }
+        revisao = RevisaoMemoriaCalculoDevolucaoFornecedor.objects.create(
+            memoria=memoria,
+            decisao=decisao,
+            justificativa=justificativa,
+            conteudo_snapshot=conteudo,
+            conteudo_sha256=_hash_conteudo_revisao(conteudo),
+            revisor=revisor,
+        )
+        LogAuditoria.objects.create(
+            usuario=revisor,
+            modulo="fiscal",
+            acao="REVISAO_MEMORIA_CALCULO_DEVOLUCAO_FORNECEDOR",
+            descricao=(
+                f"Memória de cálculo {memoria.pk}, versão {memoria.versao}, recebeu a "
+                f"decisão imutável {decisao}. Nenhum documento, numeração, estoque, XML "
+                "ou transmissão foi criado ou liberado."
+            ),
+            objeto_tipo="RevisaoMemoriaCalculoDevolucaoFornecedor",
+            objeto_id=str(revisao.pk),
+            ip=ip,
+        )
+    return revisao

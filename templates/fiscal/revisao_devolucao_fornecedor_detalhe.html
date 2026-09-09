@@ -172,6 +172,30 @@
         </tbody>
       </table>
       <p class="panel-subtitle">Responsável: {{ memoria.responsavel }} em {{ memoria.criado_em|date:"d/m/Y H:i" }} · SHA-256 {{ memoria.conteudo_sha256 }}</p>
+      {% if memoria.revisao_fiscal %}
+        <div class="operation-notice">
+          <strong>{{ memoria.revisao_fiscal.get_decisao_display }}</strong> por {{ memoria.revisao_fiscal.revisor }} em {{ memoria.revisao_fiscal.criado_em|date:"d/m/Y H:i" }}.<br>
+          {{ memoria.revisao_fiscal.justificativa }}<br>
+          <small>Revisão imutável: {{ memoria.revisao_fiscal.conteudo_sha256 }}</small>
+        </div>
+      {% elif memoria.pk != ultima_memoria_id %}
+        <p class="panel-subtitle">Versão superada: somente a memória mais recente pode receber decisão.</p>
+      {% elif memoria.responsavel_id == request.user.pk %}
+        <div class="operation-notice">Aguardando outro Administrador/Contabilidade. O autor da memória não pode aprovar o próprio trabalho.</div>
+      {% else %}
+        <form method="post" action="{% url 'fiscal:revisar_memoria_calculo_devolucao' rascunho.pk %}" class="form-grid form-confirm" data-msg="Registrar esta decisão imutável? Aprovar não libera XML nem emissão.">
+          {% csrf_token %}
+          <input type="hidden" name="memoria_id" value="{{ memoria.pk }}">
+          <label class="form-field span-2">
+            <span>Justificativa da conferência (obrigatória)</span>
+            <textarea name="justificativa" minlength="10" maxlength="500" required></textarea>
+          </label>
+          <div class="form-actions span-2">
+            <button class="secondary-button" type="submit" name="decisao" value="{{ decisao_memoria_corrigir }}">Devolver memória para correção</button>
+            <button class="primary-button" type="submit" name="decisao" value="{{ decisao_memoria_aprovar }}">Aprovar somente a memória</button>
+          </div>
+        </form>
+      {% endif %}
     </details>
   {% empty %}
     <p class="panel-subtitle">Nenhuma memória de cálculo fiscal foi registrada.</p>

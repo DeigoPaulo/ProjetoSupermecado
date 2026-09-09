@@ -85,12 +85,12 @@ CENARIOS_TRIBUTARIOS_GO = (
             "Administrador/Contabilidade. Parecer tributário global versionado exige CFOP de "
             "saída no catálogo oficial e tratamentos humanos explícitos. A ficha por nItem "
             "versiona CST/CSOSN e orientações complementares. A memória não emissiva vinculada "
-            "à ficha preserva bases, alíquotas e valores informados e confere os totais; revisão "
-            "final, finalidade no gerador, documento referenciado e impostos devolvidos ainda não implementados."
+            "à ficha preserva bases, alíquotas e valores informados e confere os totais; revisão segregada implementada. "
+            "Finalidade no gerador, documento referenciado e impostos devolvidos ainda não implementados."
         ),
         "proxima_evidencia": (
-            "Criar revisão segregada da memória completa, com aprovação ou devolução para "
-            "correção e sem gerar XML ou liberar emissão."
+            "Estruturar transporte e composição do valor da devolução para posterior "
+            "conferência contábil, mantendo a emissão bloqueada."
         ),
     },
     {

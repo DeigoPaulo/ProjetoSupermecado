@@ -64,6 +64,11 @@ class DecisaoRevisaoDevolucaoFornecedor(models.TextChoices):
     DEVOLVER_CORRECAO = "DEVOLVER_CORRECAO", "Devolver para correção"
 
 
+class DecisaoRevisaoMemoriaCalculoFornecedor(models.TextChoices):
+    APROVAR = "APROVAR", "Aprovar memória"
+    DEVOLVER_CORRECAO = "DEVOLVER_CORRECAO", "Devolver para correção"
+
+
 class TipoCodigoICMSDevolucaoFornecedor(models.TextChoices):
     CST = "CST", "CST"
     CSOSN = "CSOSN", "CSOSN"
@@ -936,6 +941,56 @@ class ItemMemoriaCalculoDevolucaoFornecedor(models.Model):
             }
             for chave, rotulo in rotulos
         ]
+
+
+class RevisaoMemoriaCalculoDevolucaoFornecedorQuerySet(models.QuerySet):
+    def update(self, **kwargs):
+        raise ValueError("Revisões da memória de cálculo são imutáveis e não podem ser alteradas.")
+
+    def delete(self):
+        raise ValueError("Revisões da memória de cálculo são imutáveis e não podem ser excluídas.")
+
+
+class RevisaoMemoriaCalculoDevolucaoFornecedor(models.Model):
+    objects = RevisaoMemoriaCalculoDevolucaoFornecedorQuerySet.as_manager()
+
+    contrato = models.CharField(
+        max_length=64,
+        default="supplier_return_item_tax_calculation_review_v1",
+        editable=False,
+    )
+    memoria = models.OneToOneField(
+        MemoriaCalculoDevolucaoFornecedor,
+        on_delete=models.PROTECT,
+        related_name="revisao_fiscal",
+    )
+    decisao = models.CharField(
+        max_length=24,
+        choices=DecisaoRevisaoMemoriaCalculoFornecedor.choices,
+    )
+    justificativa = models.CharField(max_length=500)
+    conteudo_snapshot = models.JSONField()
+    conteudo_sha256 = models.CharField(max_length=64)
+    revisor = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.PROTECT,
+        related_name="revisoes_memoria_calculo_devolucao_fornecedor",
+    )
+    criado_em = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["memoria__rascunho_id", "memoria__versao"]
+
+    def save(self, *args, **kwargs):
+        if self.pk or not self._state.adding:
+            raise ValueError("Revisões da memória de cálculo são imutáveis e não podem ser alteradas.")
+        return super().save(*args, **kwargs)
+
+    def delete(self, *args, **kwargs):
+        raise ValueError("Revisões da memória de cálculo são imutáveis e não podem ser excluídas.")
+
+    def __str__(self):
+        return f"Revisão da memória {self.memoria_id} - {self.decisao}"
 
 
 class TipoEvidenciaFiscal(models.TextChoices):

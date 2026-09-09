@@ -36,6 +36,11 @@ urlpatterns = [
         views.registrar_memoria_calculo_devolucao,
         name="registrar_memoria_calculo_devolucao",
     ),
+    path(
+        "devolucoes-fornecedor/revisao/<int:pk>/memoria-calculo/revisar/",
+        views.revisar_memoria_calculo_devolucao,
+        name="revisar_memoria_calculo_devolucao",
+    ),
     path("atualizacoes/", views.atualizacoes_fiscais, name="atualizacoes"),
     path("atualizacoes/<int:pk>/revisar/", views.revisar_atualizacao_fiscal, name="revisar_atualizacao"),
     path("inutilizacoes/", views.inutilizacoes, name="inutilizacoes"),
