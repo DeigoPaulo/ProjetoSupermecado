@@ -25,8 +25,10 @@ from .pacote_contabil import analisar_xml_nfe
 from .cfop import catalogo_cfop_vigente, validar_cfop
 from .models import (
     DecisaoRevisaoDevolucaoFornecedor,
+    ItemMemoriaCalculoDevolucaoFornecedor,
     ItemParametrizacaoFiscalDevolucaoFornecedor,
     ItemRascunhoDevolucaoFornecedor,
+    MemoriaCalculoDevolucaoFornecedor,
     ParecerTributarioDevolucaoFornecedor,
     ParametrizacaoFiscalDevolucaoFornecedor,
     RascunhoDevolucaoFornecedor,
@@ -40,6 +42,7 @@ CONTRATO_PREPARACAO_DEVOLUCAO_FORNECEDOR = "supplier_return_fiscal_preparation_v
 CONTRATO_RASCUNHO_DEVOLUCAO_FORNECEDOR = "supplier_return_draft_v1"
 CONTRATO_PARECER_TRIBUTARIO_DEVOLUCAO_FORNECEDOR = "supplier_return_tax_opinion_v1"
 CONTRATO_PARAMETROS_ITEM_DEVOLUCAO_FORNECEDOR = "supplier_return_item_tax_parameters_v1"
+CONTRATO_MEMORIA_CALCULO_DEVOLUCAO_FORNECEDOR = "supplier_return_item_tax_calculation_memory_v1"
 STATUS_RASCUNHO_ATIVO = (
     StatusRascunhoDevolucaoFornecedor.RASCUNHO,
     StatusRascunhoDevolucaoFornecedor.AGUARDANDO_REVISAO,
@@ -50,6 +53,18 @@ STATUS_RASCUNHO_CANCELAVEL = (
     StatusRascunhoDevolucaoFornecedor.AGUARDANDO_REVISAO,
 )
 MILESIMOS = Decimal("0.001")
+CENTAVOS = Decimal("0.01")
+QUATRO_DECIMAIS = Decimal("0.0001")
+TRIBUTOS_MEMORIA_CALCULO = (
+    ("icms", "ICMS"),
+    ("icms_st", "ICMS-ST"),
+    ("fcp", "FCP"),
+    ("ipi", "IPI"),
+    ("pis", "PIS"),
+    ("cofins", "COFINS"),
+    ("ibs", "IBS"),
+    ("cbs", "CBS"),
+)
 
 
 def _digitos(valor):
@@ -960,3 +975,292 @@ def registrar_parametrizacao_itens_devolucao_fornecedor(
             ip=ip,
         )
     return parametrizacao, True
+
+
+def _decimal_memoria(valor, rotulo, *, casas):
+    texto = str(valor or "").strip().replace(" ", "")
+    if not texto:
+        raise ValidationError(f"Informe {rotulo}, inclusive quando o valor for zero.")
+    if "," in texto:
+        if "." in texto:
+            texto = texto.replace(".", "")
+        texto = texto.replace(",", ".")
+    try:
+        numero = Decimal(texto)
+    except (InvalidOperation, TypeError, ValueError) as exc:
+        raise ValidationError(f"{rotulo} possui formato decimal inválido.") from exc
+    if not numero.is_finite() or numero < 0:
+        raise ValidationError(f"{rotulo} deve ser um número não negativo.")
+    quantizador = CENTAVOS if casas == 2 else QUATRO_DECIMAIS
+    try:
+        normalizado = numero.quantize(quantizador)
+    except InvalidOperation as exc:
+        raise ValidationError(f"{rotulo} excede o limite permitido.") from exc
+    if numero != normalizado:
+        raise ValidationError(f"{rotulo} deve possuir no máximo {casas} casas decimais.")
+    limite = Decimal("9999999999999.99") if casas == 2 else Decimal("999.9999")
+    if normalizado > limite:
+        raise ValidationError(f"{rotulo} excede o limite permitido.")
+    return normalizado
+
+
+def _decimal_snapshot(valor, casas):
+    return f"{valor:.{casas}f}"
+
+
+def _snapshot_item_parametrizacao(item):
+    return {
+        "item_rascunho_id": item.item_rascunho_id,
+        "numero_item_xml": item.numero_item_xml,
+        "tipo_codigo_icms": item.tipo_codigo_icms,
+        "origem_icms": item.origem_icms,
+        "codigo_icms": item.codigo_icms,
+        "codigo_ipi": item.codigo_ipi,
+        "codigo_pis": item.codigo_pis,
+        "codigo_cofins": item.codigo_cofins,
+        "codigo_cbenef": item.codigo_cbenef,
+        "tratamento_icms_st_fcp": item.tratamento_icms_st_fcp,
+        "tratamento_cbenef": item.tratamento_cbenef,
+        "tratamento_ibs_cbs": item.tratamento_ibs_cbs,
+        "observacao": item.observacao,
+    }
+
+
+def _dados_item_memoria(dados, item_parametrizacao):
+    sufixo = str(item_parametrizacao.pk)
+    item = {
+        "item_parametrizacao_id": item_parametrizacao.pk,
+        "item_rascunho_id": item_parametrizacao.item_rascunho_id,
+        "numero_item_xml": item_parametrizacao.numero_item_xml,
+        "valor_operacao": _decimal_memoria(
+            dados.get(f"valor_operacao_{sufixo}"),
+            f"o valor da operação do nItem {item_parametrizacao.numero_item_xml}",
+            casas=2,
+        ),
+    }
+    for chave, rotulo in TRIBUTOS_MEMORIA_CALCULO:
+        item[f"base_{chave}"] = _decimal_memoria(
+            dados.get(f"base_{chave}_{sufixo}"),
+            f"a base de {rotulo} do nItem {item_parametrizacao.numero_item_xml}",
+            casas=2,
+        )
+        item[f"aliquota_{chave}"] = _decimal_memoria(
+            dados.get(f"aliquota_{chave}_{sufixo}"),
+            f"a alíquota de {rotulo} do nItem {item_parametrizacao.numero_item_xml}",
+            casas=4,
+        )
+        item[f"valor_{chave}"] = _decimal_memoria(
+            dados.get(f"valor_{chave}_{sufixo}"),
+            f"o valor de {rotulo} do nItem {item_parametrizacao.numero_item_xml}",
+            casas=2,
+        )
+
+    codigos_nao_aplicaveis = []
+    if item_parametrizacao.tipo_codigo_icms == TipoCodigoICMSDevolucaoFornecedor.NAO_APLICAVEL:
+        codigos_nao_aplicaveis.append(("icms", "ICMS"))
+    for chave, rotulo, codigo in (
+        ("ipi", "IPI", item_parametrizacao.codigo_ipi),
+        ("pis", "PIS", item_parametrizacao.codigo_pis),
+        ("cofins", "COFINS", item_parametrizacao.codigo_cofins),
+    ):
+        if codigo == "NA":
+            codigos_nao_aplicaveis.append((chave, rotulo))
+    for chave, rotulo in codigos_nao_aplicaveis:
+        if any(item[f"{campo}_{chave}"] != 0 for campo in ("base", "aliquota", "valor")):
+            raise ValidationError(
+                f"{rotulo} está marcado como não aplicável no nItem "
+                f"{item_parametrizacao.numero_item_xml}; informe zero em base, alíquota e valor."
+            )
+
+    observacao = str(dados.get(f"observacao_memoria_{sufixo}") or "").strip()
+    if len(observacao) > 2000:
+        raise ValidationError(
+            f"A observação da memória do nItem {item_parametrizacao.numero_item_xml} excede 2.000 caracteres."
+        )
+    item["observacao"] = observacao
+    return item
+
+
+def _snapshot_item_memoria(item):
+    snapshot = {
+        "item_parametrizacao_id": item["item_parametrizacao_id"],
+        "item_rascunho_id": item["item_rascunho_id"],
+        "numero_item_xml": item["numero_item_xml"],
+        "valor_operacao": _decimal_snapshot(item["valor_operacao"], 2),
+    }
+    for chave, _rotulo in TRIBUTOS_MEMORIA_CALCULO:
+        snapshot[f"base_{chave}"] = _decimal_snapshot(item[f"base_{chave}"], 2)
+        snapshot[f"aliquota_{chave}"] = _decimal_snapshot(item[f"aliquota_{chave}"], 4)
+        snapshot[f"valor_{chave}"] = _decimal_snapshot(item[f"valor_{chave}"], 2)
+    snapshot["observacao"] = item["observacao"]
+    return snapshot
+
+
+def _totais_memoria(dados, itens):
+    campos = [("valor_operacao", "valor total da operação")]
+    for chave, rotulo in TRIBUTOS_MEMORIA_CALCULO:
+        campos.extend(
+            [
+                (f"base_{chave}", f"total da base de {rotulo}"),
+                (f"valor_{chave}", f"total do valor de {rotulo}"),
+            ]
+        )
+    totais = {}
+    for campo, rotulo in campos:
+        informado = _decimal_memoria(
+            dados.get(f"total_{campo}"),
+            rotulo,
+            casas=2,
+        )
+        calculado = sum((item[campo] for item in itens), Decimal("0.00"))
+        if informado != calculado:
+            raise ValidationError(
+                f"O {rotulo} informado ({informado:.2f}) não confere com a soma "
+                f"dos itens ({calculado:.2f})."
+            )
+        totais[campo] = _decimal_snapshot(informado, 2)
+    return totais
+
+
+def registrar_memoria_calculo_devolucao_fornecedor(
+    rascunho,
+    *,
+    parametrizacao_id,
+    dados,
+    responsavel,
+    ip=None,
+):
+    """Versiona valores informados e confere totais sem gerar tributação ou XML."""
+    if not has_role(responsavel, REVISAO_FISCAL):
+        raise ValidationError("O usuário não possui permissão para registrar memória de cálculo fiscal.")
+    try:
+        parametrizacao_id = int(parametrizacao_id)
+    except (TypeError, ValueError) as exc:
+        raise ValidationError("Selecione a versão dos parâmetros que fundamenta a memória.") from exc
+
+    with transaction.atomic():
+        rascunho = (
+            RascunhoDevolucaoFornecedor.objects.select_for_update()
+            .select_related("entrada_compra__filial")
+            .get(pk=rascunho.pk)
+        )
+        empresa_id = empresa_id_do_usuario(responsavel)
+        if empresa_id is not None and rascunho.entrada_compra.filial.empresa_id != empresa_id:
+            raise ValidationError("Este rascunho não pertence à empresa do responsável fiscal.")
+        if rascunho.status != StatusRascunhoDevolucaoFornecedor.APROVADO:
+            raise ValidationError("A memória de cálculo exige uma preparação previamente aprovada.")
+
+        parametrizacao = (
+            rascunho.parametrizacoes_fiscais.select_for_update()
+            .select_related("parecer")
+            .filter(pk=parametrizacao_id)
+            .first()
+        )
+        if not parametrizacao:
+            raise ValidationError("A parametrização selecionada não pertence a esta preparação.")
+        if _hash_conteudo_revisao(parametrizacao.conteudo_snapshot) != parametrizacao.conteudo_sha256:
+            raise ValidationError("A parametrização selecionada perdeu a integridade.")
+        if _hash_conteudo_revisao(parametrizacao.parecer.conteudo_snapshot) != parametrizacao.parecer.conteudo_sha256:
+            raise ValidationError("O parecer vinculado à parametrização perdeu a integridade.")
+
+        documento_dfe = _documento_dfe_da_entrada(rascunho.entrada_compra)
+        xml_origem = documento_dfe.xml_conteudo if documento_dfe else ""
+        if (
+            not xml_origem
+            or hashlib.sha256(xml_origem.encode("utf-8")).hexdigest()
+            != rascunho.xml_origem_sha256
+        ):
+            raise ValidationError("O XML original divergiu da preparação aprovada.")
+
+        itens_parametrizacao = list(
+            parametrizacao.itens.select_for_update()
+            .select_related("item_rascunho")
+            .order_by("item_rascunho_id")
+        )
+        ids_itens_rascunho = list(
+            rascunho.itens.select_for_update()
+            .order_by("pk")
+            .values_list("pk", flat=True)
+        )
+        snapshot_parametros = parametrizacao.conteudo_snapshot.get("itens")
+        if (
+            not itens_parametrizacao
+            or ids_itens_rascunho
+            != [item.item_rascunho_id for item in itens_parametrizacao]
+            or snapshot_parametros
+            != [_snapshot_item_parametrizacao(item) for item in itens_parametrizacao]
+        ):
+            raise ValidationError("Os itens da parametrização selecionada perderam a integridade.")
+
+        itens = [_dados_item_memoria(dados, item) for item in itens_parametrizacao]
+        totais = _totais_memoria(dados, itens)
+        criterio = _texto_parecer(
+            dados.get("criterio_arredondamento"),
+            "o critério de cálculo e arredondamento",
+        )
+        if len(criterio) > 500:
+            raise ValidationError("O critério de cálculo e arredondamento excede 500 caracteres.")
+
+        conteudo = {
+            "contrato": CONTRATO_MEMORIA_CALCULO_DEVOLUCAO_FORNECEDOR,
+            "rascunho_id": rascunho.pk,
+            "parametrizacao_id": parametrizacao.pk,
+            "parametrizacao_versao": parametrizacao.versao,
+            "parametrizacao_sha256": parametrizacao.conteudo_sha256,
+            "parecer_id": parametrizacao.parecer_id,
+            "parecer_sha256": parametrizacao.parecer.conteudo_sha256,
+            "xml_origem_sha256": rascunho.xml_origem_sha256,
+            "criterio_arredondamento": criterio,
+            "totais": totais,
+            "itens": [_snapshot_item_memoria(item) for item in itens],
+        }
+        hash_conteudo = _hash_conteudo_revisao(conteudo)
+        existente = rascunho.memorias_calculo.filter(conteudo_sha256=hash_conteudo).first()
+        if existente:
+            return existente, False
+
+        versao = (
+            rascunho.memorias_calculo.aggregate(maior=Max("versao"))["maior"] or 0
+        ) + 1
+        memoria = MemoriaCalculoDevolucaoFornecedor.objects.create(
+            rascunho=rascunho,
+            parametrizacao=parametrizacao,
+            versao=versao,
+            criterio_arredondamento=criterio,
+            totais_snapshot=totais,
+            conteudo_snapshot=conteudo,
+            conteudo_sha256=hash_conteudo,
+            responsavel=responsavel,
+        )
+        ItemMemoriaCalculoDevolucaoFornecedor.objects.bulk_create(
+            [
+                ItemMemoriaCalculoDevolucaoFornecedor(
+                    memoria=memoria,
+                    item_parametrizacao_id=item["item_parametrizacao_id"],
+                    item_rascunho_id=item["item_rascunho_id"],
+                    numero_item_xml=item["numero_item_xml"],
+                    valor_operacao=item["valor_operacao"],
+                    observacao=item["observacao"],
+                    **{
+                        f"{campo}_{chave}": item[f"{campo}_{chave}"]
+                        for chave, _rotulo in TRIBUTOS_MEMORIA_CALCULO
+                        for campo in ("base", "aliquota", "valor")
+                    },
+                )
+                for item in itens
+            ]
+        )
+        LogAuditoria.objects.create(
+            usuario=responsavel,
+            modulo="fiscal",
+            acao="MEMORIA_CALCULO_DEVOLUCAO_FORNECEDOR",
+            descricao=(
+                f"Memória de cálculo {memoria.pk}, versão {versao}, registrada com "
+                f"{len(itens)} nItem(ns) para o rascunho {rascunho.pk}. Os totais foram "
+                "conferidos; nenhum documento, numeração, estoque, XML ou transmissão foi criado."
+            ),
+            objeto_tipo="MemoriaCalculoDevolucaoFornecedor",
+            objeto_id=str(memoria.pk),
+            ip=ip,
+        )
+    return memoria, True

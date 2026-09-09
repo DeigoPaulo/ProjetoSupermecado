@@ -13,10 +13,13 @@ from apps.fornecedores.models import Fornecedor
 from apps.produtos.models import Categoria, Produto
 
 from .devolucao_fornecedor import (
+    CONTRATO_MEMORIA_CALCULO_DEVOLUCAO_FORNECEDOR,
     CONTRATO_PREPARACAO_DEVOLUCAO_FORNECEDOR,
     CONTRATO_RASCUNHO_DEVOLUCAO_FORNECEDOR,
+    TRIBUTOS_MEMORIA_CALCULO,
     cancelar_rascunho_devolucao_fornecedor,
     preparar_devolucao_fornecedor,
+    registrar_memoria_calculo_devolucao_fornecedor,
     registrar_parametrizacao_itens_devolucao_fornecedor,
     registrar_parecer_tributario_devolucao_fornecedor,
     revisar_rascunho_devolucao_fornecedor,
@@ -30,7 +33,9 @@ from .models import (
     DecisaoRevisaoDevolucaoFornecedor,
     ItemRascunhoDevolucaoFornecedor,
     ItemCFOP,
+    ItemMemoriaCalculoDevolucaoFornecedor,
     ItemParametrizacaoFiscalDevolucaoFornecedor,
+    MemoriaCalculoDevolucaoFornecedor,
     ParecerTributarioDevolucaoFornecedor,
     ParametrizacaoFiscalDevolucaoFornecedor,
     RascunhoDevolucaoFornecedor,
@@ -217,6 +222,39 @@ class PreparacaoDevolucaoFornecedorTests(TestCase):
             f"tratamento_ibs_cbs_{item.pk}": "Aplicar a orientação textual do parecer selecionado.",
             f"observacao_{item.pk}": "Classificação informada para teste sem cálculo.",
         }
+        dados.update(alteracoes)
+        return dados
+
+    def _parametrizacao_registrada(self):
+        rascunho, parecer = self._parecer_registrado()
+        parametros, _ = registrar_parametrizacao_itens_devolucao_fornecedor(
+            rascunho,
+            parecer_id=parecer.pk,
+            dados=self._dados_parametros(rascunho),
+            responsavel=self.revisor,
+        )
+        return rascunho, parametros
+
+    def _dados_memoria(self, parametrizacao, **alteracoes):
+        item = parametrizacao.itens.get()
+        dados = {
+            "criterio_arredondamento": "Valores expressamente informados com fechamento por item em centavos.",
+            f"valor_operacao_{item.pk}": "10,00",
+            "total_valor_operacao": "10,00",
+        }
+        valores = {
+            "icms": ("10,00", "17,0000", "1,70"),
+            "pis": ("10,00", "1,6500", "0,17"),
+            "cofins": ("10,00", "7,6000", "0,76"),
+        }
+        for chave, _rotulo in TRIBUTOS_MEMORIA_CALCULO:
+            base, aliquota, valor = valores.get(chave, ("0,00", "0,0000", "0,00"))
+            dados[f"base_{chave}_{item.pk}"] = base
+            dados[f"aliquota_{chave}_{item.pk}"] = aliquota
+            dados[f"valor_{chave}_{item.pk}"] = valor
+            dados[f"total_base_{chave}"] = base
+            dados[f"total_valor_{chave}"] = valor
+        dados[f"observacao_memoria_{item.pk}"] = "Memória informada somente para conferência estrutural."
         dados.update(alteracoes)
         return dados
 
@@ -873,4 +911,143 @@ class PreparacaoDevolucaoFornecedorTests(TestCase):
         self.assertContains(detalhe, "Selecione conscientemente")
         self.assertContains(resposta, "Parâmetros por item versão 1 registrados")
         self.assertContains(resposta, "CST 00")
+        self.assertFalse(DocumentoFiscal.objects.exists())
+
+    def test_memoria_calculo_versionada_imutavel_confere_totais_sem_emitir(self):
+        rascunho, parametrizacao = self._parametrizacao_registrada()
+
+        memoria, criado = registrar_memoria_calculo_devolucao_fornecedor(
+            rascunho,
+            parametrizacao_id=parametrizacao.pk,
+            dados=self._dados_memoria(parametrizacao),
+            responsavel=self.revisor,
+        )
+
+        self.assertTrue(criado)
+        self.assertEqual(memoria.contrato, CONTRATO_MEMORIA_CALCULO_DEVOLUCAO_FORNECEDOR)
+        self.assertEqual(memoria.versao, 1)
+        self.assertEqual(memoria.parametrizacao, parametrizacao)
+        self.assertEqual(memoria.totais_snapshot["valor_operacao"], "10.00")
+        self.assertEqual(memoria.totais_snapshot["valor_icms"], "1.70")
+        self.assertEqual(
+            memoria.conteudo_snapshot["parametrizacao_sha256"],
+            parametrizacao.conteudo_sha256,
+        )
+        item = memoria.itens.get()
+        self.assertEqual(item.numero_item_xml, "1")
+        self.assertEqual(item.base_icms, Decimal("10.00"))
+        self.assertEqual(item.aliquota_icms, Decimal("17.0000"))
+        self.assertEqual(item.valor_icms, Decimal("1.70"))
+        self.assertFalse(DocumentoFiscal.objects.exists())
+        with self.assertRaisesMessage(ValueError, "imutáveis"):
+            memoria.criterio_arredondamento = "Tentativa de alteração"
+            memoria.save()
+        with self.assertRaisesMessage(ValueError, "imutáveis"):
+            item.valor_icms = Decimal("1.71")
+            item.save()
+
+    def test_memoria_exige_campos_nao_aplicaveis_e_totais_atomicos(self):
+        rascunho, parametrizacao = self._parametrizacao_registrada()
+        item = parametrizacao.itens.get()
+        incompleto = self._dados_memoria(parametrizacao)
+        incompleto.pop(f"base_cbs_{item.pk}")
+
+        with self.assertRaisesMessage(ValidationError, "base de CBS"):
+            registrar_memoria_calculo_devolucao_fornecedor(
+                rascunho,
+                parametrizacao_id=parametrizacao.pk,
+                dados=incompleto,
+                responsavel=self.revisor,
+            )
+        with self.assertRaisesMessage(ValidationError, "não confere"):
+            registrar_memoria_calculo_devolucao_fornecedor(
+                rascunho,
+                parametrizacao_id=parametrizacao.pk,
+                dados=self._dados_memoria(parametrizacao, total_valor_icms="1,71"),
+                responsavel=self.revisor,
+            )
+        with self.assertRaisesMessage(ValidationError, "IPI está marcado como não aplicável"):
+            registrar_memoria_calculo_devolucao_fornecedor(
+                rascunho,
+                parametrizacao_id=parametrizacao.pk,
+                dados=self._dados_memoria(
+                    parametrizacao,
+                    **{f"valor_ipi_{item.pk}": "0,01", "total_valor_ipi": "0,01"},
+                ),
+                responsavel=self.revisor,
+            )
+
+        self.assertFalse(MemoriaCalculoDevolucaoFornecedor.objects.exists())
+        self.assertFalse(ItemMemoriaCalculoDevolucaoFornecedor.objects.exists())
+
+    def test_memoria_identica_e_idempotente_e_mudanca_cria_versao(self):
+        rascunho, parametrizacao = self._parametrizacao_registrada()
+        item = parametrizacao.itens.get()
+        dados = self._dados_memoria(parametrizacao)
+
+        primeira, criada = registrar_memoria_calculo_devolucao_fornecedor(
+            rascunho,
+            parametrizacao_id=parametrizacao.pk,
+            dados=dados,
+            responsavel=self.revisor,
+        )
+        repetida, criada_repetida = registrar_memoria_calculo_devolucao_fornecedor(
+            rascunho,
+            parametrizacao_id=parametrizacao.pk,
+            dados=dados,
+            responsavel=self.revisor,
+        )
+        segunda, criada_segunda = registrar_memoria_calculo_devolucao_fornecedor(
+            rascunho,
+            parametrizacao_id=parametrizacao.pk,
+            dados=self._dados_memoria(
+                parametrizacao,
+                **{f"observacao_memoria_{item.pk}": "Nova conferência expressamente informada."},
+            ),
+            responsavel=self.revisor,
+        )
+
+        self.assertTrue(criada)
+        self.assertFalse(criada_repetida)
+        self.assertEqual(primeira.pk, repetida.pk)
+        self.assertTrue(criada_segunda)
+        self.assertEqual(segunda.versao, 2)
+        self.assertEqual(MemoriaCalculoDevolucaoFornecedor.objects.count(), 2)
+        self.assertFalse(DocumentoFiscal.objects.exists())
+
+    def test_memoria_bloqueia_xml_divergente(self):
+        rascunho, parametrizacao = self._parametrizacao_registrada()
+        dfe = DocumentoDFeRecebido.objects.get(entrada_compra=self.entrada)
+        dfe.xml_conteudo = dfe.xml_conteudo.replace("3.40", "3.43")
+        dfe.save(update_fields=["xml_conteudo"])
+
+        with self.assertRaisesMessage(ValidationError, "XML original divergiu"):
+            registrar_memoria_calculo_devolucao_fornecedor(
+                rascunho,
+                parametrizacao_id=parametrizacao.pk,
+                dados=self._dados_memoria(parametrizacao),
+                responsavel=self.revisor,
+            )
+
+        self.assertFalse(MemoriaCalculoDevolucaoFornecedor.objects.exists())
+
+    def test_contabilidade_registra_memoria_pela_tela_e_financeiro_nao_acessa(self):
+        rascunho, parametrizacao = self._parametrizacao_registrada()
+        url = f"/fiscal/devolucoes-fornecedor/revisao/{rascunho.pk}/memoria-calculo/"
+        dados = {
+            "parametrizacao_id": str(parametrizacao.pk),
+            **self._dados_memoria(parametrizacao),
+        }
+
+        self.client.force_login(self.financeiro)
+        self.assertEqual(self.client.post(url, dados).status_code, 403)
+
+        self.client.force_login(self.revisor)
+        detalhe = self.client.get(f"/fiscal/devolucoes-fornecedor/revisao/{rascunho.pk}/")
+        resposta = self.client.post(url, dados, follow=True)
+
+        self.assertContains(detalhe, "Registrar nova memória de cálculo")
+        self.assertContains(detalhe, "usando zero explícito")
+        self.assertContains(resposta, "Memória de cálculo versão 1 registrada")
+        self.assertContains(resposta, "totais conferidos")
         self.assertFalse(DocumentoFiscal.objects.exists())

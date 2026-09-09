@@ -757,6 +757,187 @@ class ItemParametrizacaoFiscalDevolucaoFornecedor(models.Model):
         return f"Parâmetros do nItem {self.numero_item_xml}"
 
 
+class MemoriaCalculoDevolucaoFornecedorQuerySet(models.QuerySet):
+    def update(self, **kwargs):
+        raise ValueError("Memórias de cálculo fiscal são imutáveis e não podem ser alteradas.")
+
+    def delete(self):
+        raise ValueError("Memórias de cálculo fiscal são imutáveis e não podem ser excluídas.")
+
+
+class MemoriaCalculoDevolucaoFornecedor(models.Model):
+    objects = MemoriaCalculoDevolucaoFornecedorQuerySet.as_manager()
+
+    contrato = models.CharField(
+        max_length=64,
+        default="supplier_return_item_tax_calculation_memory_v1",
+        editable=False,
+    )
+    rascunho = models.ForeignKey(
+        RascunhoDevolucaoFornecedor,
+        on_delete=models.PROTECT,
+        related_name="memorias_calculo",
+    )
+    parametrizacao = models.ForeignKey(
+        ParametrizacaoFiscalDevolucaoFornecedor,
+        on_delete=models.PROTECT,
+        related_name="memorias_calculo",
+    )
+    versao = models.PositiveIntegerField()
+    criterio_arredondamento = models.CharField(max_length=500)
+    totais_snapshot = models.JSONField()
+    conteudo_snapshot = models.JSONField()
+    conteudo_sha256 = models.CharField(max_length=64)
+    responsavel = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.PROTECT,
+        related_name="memorias_calculo_devolucao_fornecedor",
+    )
+    criado_em = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["rascunho_id", "versao"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["rascunho", "versao"],
+                name="fisc_mem_dev_rasc_vers_uniq",
+            ),
+            models.UniqueConstraint(
+                fields=["rascunho", "conteudo_sha256"],
+                name="fisc_mem_dev_rasc_hash_uniq",
+            ),
+        ]
+
+    def save(self, *args, **kwargs):
+        if self.pk or not self._state.adding:
+            raise ValueError("Memórias de cálculo fiscal são imutáveis e não podem ser alteradas.")
+        return super().save(*args, **kwargs)
+
+    def delete(self, *args, **kwargs):
+        raise ValueError("Memórias de cálculo fiscal são imutáveis e não podem ser excluídas.")
+
+    def __str__(self):
+        return f"Memória de cálculo fiscal {self.rascunho_id}/{self.versao}"
+
+    @property
+    def linhas_totais(self):
+        rotulos = (
+            ("icms", "ICMS"),
+            ("icms_st", "ICMS-ST"),
+            ("fcp", "FCP"),
+            ("ipi", "IPI"),
+            ("pis", "PIS"),
+            ("cofins", "COFINS"),
+            ("ibs", "IBS"),
+            ("cbs", "CBS"),
+        )
+        return [
+            {
+                "tributo": rotulo,
+                "base": self.totais_snapshot.get(f"base_{chave}", "0.00"),
+                "valor": self.totais_snapshot.get(f"valor_{chave}", "0.00"),
+            }
+            for chave, rotulo in rotulos
+        ]
+
+
+class ItemMemoriaCalculoDevolucaoFornecedorQuerySet(models.QuerySet):
+    def update(self, **kwargs):
+        raise ValueError("Itens da memória de cálculo fiscal são imutáveis.")
+
+    def delete(self):
+        raise ValueError("Itens da memória de cálculo fiscal são imutáveis.")
+
+
+class ItemMemoriaCalculoDevolucaoFornecedor(models.Model):
+    objects = ItemMemoriaCalculoDevolucaoFornecedorQuerySet.as_manager()
+
+    memoria = models.ForeignKey(
+        MemoriaCalculoDevolucaoFornecedor,
+        on_delete=models.PROTECT,
+        related_name="itens",
+    )
+    item_parametrizacao = models.ForeignKey(
+        ItemParametrizacaoFiscalDevolucaoFornecedor,
+        on_delete=models.PROTECT,
+        related_name="memorias_calculo",
+    )
+    item_rascunho = models.ForeignKey(
+        ItemRascunhoDevolucaoFornecedor,
+        on_delete=models.PROTECT,
+        related_name="memorias_calculo",
+    )
+    numero_item_xml = models.CharField(max_length=10)
+    valor_operacao = models.DecimalField(max_digits=15, decimal_places=2)
+    base_icms = models.DecimalField(max_digits=15, decimal_places=2)
+    aliquota_icms = models.DecimalField(max_digits=8, decimal_places=4)
+    valor_icms = models.DecimalField(max_digits=15, decimal_places=2)
+    base_icms_st = models.DecimalField(max_digits=15, decimal_places=2)
+    aliquota_icms_st = models.DecimalField(max_digits=8, decimal_places=4)
+    valor_icms_st = models.DecimalField(max_digits=15, decimal_places=2)
+    base_fcp = models.DecimalField(max_digits=15, decimal_places=2)
+    aliquota_fcp = models.DecimalField(max_digits=8, decimal_places=4)
+    valor_fcp = models.DecimalField(max_digits=15, decimal_places=2)
+    base_ipi = models.DecimalField(max_digits=15, decimal_places=2)
+    aliquota_ipi = models.DecimalField(max_digits=8, decimal_places=4)
+    valor_ipi = models.DecimalField(max_digits=15, decimal_places=2)
+    base_pis = models.DecimalField(max_digits=15, decimal_places=2)
+    aliquota_pis = models.DecimalField(max_digits=8, decimal_places=4)
+    valor_pis = models.DecimalField(max_digits=15, decimal_places=2)
+    base_cofins = models.DecimalField(max_digits=15, decimal_places=2)
+    aliquota_cofins = models.DecimalField(max_digits=8, decimal_places=4)
+    valor_cofins = models.DecimalField(max_digits=15, decimal_places=2)
+    base_ibs = models.DecimalField(max_digits=15, decimal_places=2)
+    aliquota_ibs = models.DecimalField(max_digits=8, decimal_places=4)
+    valor_ibs = models.DecimalField(max_digits=15, decimal_places=2)
+    base_cbs = models.DecimalField(max_digits=15, decimal_places=2)
+    aliquota_cbs = models.DecimalField(max_digits=8, decimal_places=4)
+    valor_cbs = models.DecimalField(max_digits=15, decimal_places=2)
+    observacao = models.TextField(blank=True)
+
+    class Meta:
+        ordering = ["item_rascunho_id"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["memoria", "item_parametrizacao"],
+                name="fisc_item_mem_dev_uniq",
+            ),
+        ]
+
+    def save(self, *args, **kwargs):
+        if self.pk or not self._state.adding:
+            raise ValueError("Itens da memória de cálculo fiscal são imutáveis.")
+        return super().save(*args, **kwargs)
+
+    def delete(self, *args, **kwargs):
+        raise ValueError("Itens da memória de cálculo fiscal são imutáveis.")
+
+    def __str__(self):
+        return f"Memória de cálculo do nItem {self.numero_item_xml}"
+
+    @property
+    def linhas_tributos(self):
+        rotulos = (
+            ("icms", "ICMS"),
+            ("icms_st", "ICMS-ST"),
+            ("fcp", "FCP"),
+            ("ipi", "IPI"),
+            ("pis", "PIS"),
+            ("cofins", "COFINS"),
+            ("ibs", "IBS"),
+            ("cbs", "CBS"),
+        )
+        return [
+            {
+                "tributo": rotulo,
+                "base": getattr(self, f"base_{chave}"),
+                "aliquota": getattr(self, f"aliquota_{chave}"),
+                "valor": getattr(self, f"valor_{chave}"),
+            }
+            for chave, rotulo in rotulos
+        ]
+
+
 class TipoEvidenciaFiscal(models.TextChoices):
     XML_ENVIO = "XML_ENVIO", "XML transmitido"
     RETORNO_TRANSMISSAO = "RETORNO_TRANSMISSAO", "Retorno da transmissão"

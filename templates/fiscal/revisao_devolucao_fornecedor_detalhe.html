@@ -140,6 +140,44 @@
   {% endfor %}
 </section>
 
+<section class="panel mt-panel">
+  <div class="panel-title">Memórias de cálculo fiscal</div>
+  <div class="operation-notice">
+    Os valores abaixo foram informados pelo responsável e tiveram somente suas totalizações conferidas. Esta memória não define fórmula tributária, não gera XML e não libera emissão.
+  </div>
+  {% for memoria in rascunho.memorias_calculo.all %}
+    <details class="nav-section">
+      <summary>Versão {{ memoria.versao }} · parâmetros {{ memoria.parametrizacao.versao }} · total da operação R$ {{ memoria.totais_snapshot.valor_operacao }}</summary>
+      <p><strong>Critério informado:</strong> {{ memoria.criterio_arredondamento }}</p>
+      {% for item in memoria.itens.all %}
+        <details class="nav-section">
+          <summary>nItem {{ item.numero_item_xml }} · valor da operação R$ {{ item.valor_operacao }}</summary>
+          <table>
+            <thead><tr><th>Tributo</th><th>Base</th><th>Alíquota (%)</th><th>Valor</th></tr></thead>
+            <tbody>
+              {% for linha in item.linhas_tributos %}
+                <tr><td>{{ linha.tributo }}</td><td>R$ {{ linha.base }}</td><td>{{ linha.aliquota }}</td><td>R$ {{ linha.valor }}</td></tr>
+              {% endfor %}
+            </tbody>
+          </table>
+          {% if item.observacao %}<p><strong>Observação:</strong> {{ item.observacao }}</p>{% endif %}
+        </details>
+      {% endfor %}
+      <table>
+        <thead><tr><th>Total</th><th>Base</th><th>Valor</th></tr></thead>
+        <tbody>
+          {% for linha in memoria.linhas_totais %}
+            <tr><td>{{ linha.tributo }}</td><td>R$ {{ linha.base }}</td><td>R$ {{ linha.valor }}</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+      <p class="panel-subtitle">Responsável: {{ memoria.responsavel }} em {{ memoria.criado_em|date:"d/m/Y H:i" }} · SHA-256 {{ memoria.conteudo_sha256 }}</p>
+    </details>
+  {% empty %}
+    <p class="panel-subtitle">Nenhuma memória de cálculo fiscal foi registrada.</p>
+  {% endfor %}
+</section>
+
 {% if rascunho.status == "AGUARDANDO_REVISAO" %}
   <section class="panel mt-panel">
     <div class="panel-title">Registrar decisão fiscal</div>
@@ -245,6 +283,71 @@
       </div>
       <div class="form-actions span-2"><button class="primary-button" type="submit">Registrar parâmetros sem calcular</button></div>
     </form>
+  </section>
+{% endif %}
+
+{% if rascunho.status == "APROVADO" and rascunho.parametrizacoes_fiscais.exists %}
+  <section class="panel mt-panel">
+    <div class="panel-title">Registrar nova memória de cálculo</div>
+    <div class="operation-notice">
+      Escolha conscientemente uma versão dos parâmetros. Informe todos os campos, usando zero explícito quando aplicável. O sistema apenas soma os itens e compara com os totais declarados.
+    </div>
+    {% for parametros in rascunho.parametrizacoes_fiscais.all %}
+      <details class="nav-section">
+        <summary>Preencher sobre parâmetros versão {{ parametros.versao }} · parecer {{ parametros.parecer.versao }}</summary>
+        <form method="post" action="{% url 'fiscal:registrar_memoria_calculo_devolucao' rascunho.pk %}" class="form-grid form-confirm" data-msg="Preservar esta memória como nova versão imutável? Ela não será usada para emitir ou gerar XML.">
+          {% csrf_token %}
+          <input type="hidden" name="parametrizacao_id" value="{{ parametros.pk }}">
+          <label class="form-field span-2">
+            <span>Critério de cálculo e arredondamento informado pelo responsável</span>
+            <textarea name="criterio_arredondamento" minlength="10" maxlength="500" required></textarea>
+          </label>
+          <div class="span-2">
+            {% for item in parametros.itens.all %}
+              <section class="panel mt-panel">
+                <div class="panel-title">nItem {{ item.numero_item_xml }} · {{ item.item_rascunho.item_entrada.produto }}</div>
+                <p class="panel-subtitle">Classificação escolhida: origem {{ item.origem_icms }}, {{ item.get_tipo_codigo_icms_display }}{% if item.codigo_icms %} {{ item.codigo_icms }}{% endif %}, IPI {{ item.codigo_ipi }}, PIS {{ item.codigo_pis }}, COFINS {{ item.codigo_cofins }}. Nada será copiado do XML original.</p>
+                <label class="form-field">
+                  <span>Valor da operação do item</span>
+                  <input type="text" name="valor_operacao_{{ item.pk }}" inputmode="decimal" placeholder="0,00" required>
+                </label>
+                <table>
+                  <thead><tr><th>Tributo</th><th>Base</th><th>Alíquota (%)</th><th>Valor</th></tr></thead>
+                  <tbody>
+                    {% for tributo in tributos_memoria %}
+                      <tr>
+                        <td>{{ tributo.rotulo }}</td>
+                        <td><input type="text" name="base_{{ tributo.chave }}_{{ item.pk }}" inputmode="decimal" placeholder="0,00" required></td>
+                        <td><input type="text" name="aliquota_{{ tributo.chave }}_{{ item.pk }}" inputmode="decimal" placeholder="0,0000" required></td>
+                        <td><input type="text" name="valor_{{ tributo.chave }}_{{ item.pk }}" inputmode="decimal" placeholder="0,00" required></td>
+                      </tr>
+                    {% endfor %}
+                  </tbody>
+                </table>
+                <label class="form-field span-2"><span>Observação opcional</span><textarea name="observacao_memoria_{{ item.pk }}" maxlength="2000"></textarea></label>
+              </section>
+            {% endfor %}
+          </div>
+          <section class="panel span-2 mt-panel">
+            <div class="panel-title">Totais declarados para conferência</div>
+            <label class="form-field"><span>Valor total da operação</span><input type="text" name="total_valor_operacao" inputmode="decimal" placeholder="0,00" required></label>
+            <table>
+              <thead><tr><th>Tributo</th><th>Total da base</th><th>Total do valor</th></tr></thead>
+              <tbody>
+                {% for tributo in tributos_memoria %}
+                  <tr>
+                    <td>{{ tributo.rotulo }}</td>
+                    <td><input type="text" name="total_base_{{ tributo.chave }}" inputmode="decimal" placeholder="0,00" required></td>
+                    <td><input type="text" name="total_valor_{{ tributo.chave }}" inputmode="decimal" placeholder="0,00" required></td>
+                  </tr>
+                {% endfor %}
+              </tbody>
+            </table>
+          </section>
+          <div class="form-actions span-2"><button class="primary-button" type="submit">Conferir totais e registrar sem emitir</button></div>
+        </form>
+      </details>
+    {% endfor %}
   </section>
 {% endif %}
 {% endblock %}

@@ -4,7 +4,7 @@ Atualizado em 09/09/2026. Documento interno de engenharia e homologação.
 
 ## Estado atual
 
-O contrato `supplier_return_fiscal_preparation_v1` faz o diagnóstico documental de uma entrada finalizada. `supplier_return_draft_v1` preserva motivo, itens, quantidades, `nItem` e retrato tributário original. `supplier_return_fiscal_review_v1` registra a decisão imutável de Administrador ou Contabilidade. Depois da aprovação, `supplier_return_tax_opinion_v1` preserva a orientação profissional global. Por fim, `supplier_return_item_tax_parameters_v1` registra, em lote completo e versionado, origem e CST ou CSOSN do ICMS, CST/“NA” de IPI, PIS e COFINS, código cBenef GO/“NA” e orientações de ICMS-ST/FCP, cBenef e IBS/CBS para cada item. Nenhuma dessas ações cria NF-e, reserva série ou número, calcula bases/alíquotas/valores, movimenta estoque ou chama Focus/SEFAZ direta.
+O contrato `supplier_return_fiscal_preparation_v1` faz o diagnóstico documental de uma entrada finalizada. `supplier_return_draft_v1` preserva motivo, itens, quantidades, `nItem` e retrato tributário original. `supplier_return_fiscal_review_v1` registra a decisão imutável de Administrador ou Contabilidade. Depois da aprovação, `supplier_return_tax_opinion_v1` preserva a orientação profissional global. `supplier_return_item_tax_parameters_v1` registra, em lote completo e versionado, origem e CST ou CSOSN do ICMS, CST/“NA” de IPI, PIS e COFINS, código cBenef GO/“NA” e orientações de ICMS-ST/FCP, cBenef e IBS/CBS para cada item. Por fim, `supplier_return_item_tax_calculation_memory_v1` preserva bases, alíquotas e valores expressamente informados, confere os totais declarados contra a soma dos itens e exige zeros para tributos classificados como não aplicáveis. Nenhuma dessas ações cria NF-e, reserva série ou número, define fórmulas tributárias, movimenta estoque ou chama Focus/SEFAZ direta.
 
 O cenário continua **bloqueado para emissão**. “Base documental disponível” significa apenas que a entrada possui chave válida, XML integral vinculado pelo DF-e, modelo 55, identidades coincidentes e itens fiscais legíveis.
 
@@ -45,6 +45,10 @@ Uma entrada criada por upload direto hoje preserva os dados normalizados e a cha
 - [x] Registrar ficha completa por `nItem`, vinculada a uma versão explícita do parecer e sem copiar automaticamente a tributação de entrada; migration fiscal 0040.
 - [x] Validar origem e formato de CST/CSOSN e exigir `NA` explícito para IPI/PIS/COFINS e cBenef quando não aplicáveis.
 - [x] Versionar e deduplicar o lote inteiro, preservando responsável, parecer, XML e conteúdo por SHA-256.
+- [x] Registrar memória de cálculo completa por `nItem`, vinculada à versão explícita dos parâmetros, com bases, alíquotas e valores informados e sem copiar o XML original; migration fiscal 0041.
+- [x] Exigir zeros explícitos para ICMS/IPI/PIS/COFINS classificados como não aplicáveis e validar casas decimais, não negatividade e limite dos valores.
+- [x] Conferir o total da operação e os totais de base/valor de ICMS, ICMS-ST, FCP, IPI, PIS, COFINS, IBS e CBS contra a soma de todos os itens antes de gravar atomicamente.
+- [x] Preservar memória, parâmetros, parecer e XML por snapshot/SHA-256, com versões append-only e idempotentes exclusivas de Administrador/Contabilidade.
 - [ ] Considerar no saldo as devoluções efetivamente autorizadas quando essa etapa existir.
 
 ## Decisões ainda pendentes
@@ -53,7 +57,8 @@ Uma entrada criada por upload direto hoje preserva os dados normalizados e a cha
 - [x] Registrar justificativa e responsável pela decisão sem transformar aprovação em autorização para emitir.
 - [x] Modelar o parecer tributário versionado que recebe as decisões explícitas do contador, sem sugerir valores por padrão.
 - [x] Estruturar parâmetros fiscais por `nItem`, vinculados a uma versão do parecer e sem preenchimento automático.
-- [ ] Criar memória de cálculo por item com bases, alíquotas e valores exclusivamente informados, sem gerar XML.
+- [x] Criar memória de cálculo por item com bases, alíquotas e valores exclusivamente informados, sem gerar XML.
+- [ ] Criar revisão segregada da memória completa, com aprovação ou devolução para correção e sem liberar XML/emissão.
 - [ ] Definir natureza, CFOP, tratamento de ICMS/ICMS-ST/FCP/IPI/PIS/COFINS e cBenef com o contador.
 - [ ] Definir frete, transportador, volumes e motivo quando aplicáveis.
 - [ ] Gerar XML modelo 55 com finalidade de devolução e documento referenciado.

@@ -88,6 +88,8 @@ from .models import (
     TipoManifestacaoDestinatario,
 )
 from .devolucao_fornecedor import (
+    TRIBUTOS_MEMORIA_CALCULO,
+    registrar_memoria_calculo_devolucao_fornecedor,
     registrar_parametrizacao_itens_devolucao_fornecedor,
     registrar_parecer_tributario_devolucao_fornecedor,
     revisar_rascunho_devolucao_fornecedor,
@@ -131,7 +133,10 @@ def _rascunhos_revisao_queryset(user):
             "pareceres_tributarios__responsavel",
             "parametrizacoes_fiscais__responsavel",
             "parametrizacoes_fiscais__parecer",
-            "parametrizacoes_fiscais__itens",
+            "parametrizacoes_fiscais__itens__item_rascunho__item_entrada__produto",
+            "memorias_calculo__responsavel",
+            "memorias_calculo__parametrizacao",
+            "memorias_calculo__itens",
         ),
     )
 
@@ -172,6 +177,10 @@ def revisao_devolucao_fornecedor_detalhe(request, pk):
             "rascunho": rascunho,
             "decisao_aprovar": DecisaoRevisaoDevolucaoFornecedor.APROVAR,
             "decisao_corrigir": DecisaoRevisaoDevolucaoFornecedor.DEVOLVER_CORRECAO,
+            "tributos_memoria": [
+                {"chave": chave, "rotulo": rotulo}
+                for chave, rotulo in TRIBUTOS_MEMORIA_CALCULO
+            ],
         },
     )
 
@@ -259,6 +268,35 @@ def registrar_parametrizacao_devolucao_fornecedor(request, pk):
             messages.info(
                 request,
                 f"O mesmo conteúdo já está preservado na versão {parametrizacao.versao}.",
+            )
+    return redirect("fiscal:revisao_devolucao_detalhe", pk=rascunho.pk)
+
+
+@login_required
+@role_required(*REVISAO_FISCAL)
+@require_POST
+def registrar_memoria_calculo_devolucao(request, pk):
+    rascunho = get_object_or_404(_rascunhos_revisao_queryset(request.user), pk=pk)
+    try:
+        memoria, criado = registrar_memoria_calculo_devolucao_fornecedor(
+            rascunho,
+            parametrizacao_id=request.POST.get("parametrizacao_id"),
+            dados=request.POST,
+            responsavel=request.user,
+            ip=request.META.get("REMOTE_ADDR"),
+        )
+    except ValidationError as exc:
+        messages.error(request, " ".join(exc.messages))
+    else:
+        if criado:
+            messages.success(
+                request,
+                f"Memória de cálculo versão {memoria.versao} registrada com totais conferidos, sem emitir.",
+            )
+        else:
+            messages.info(
+                request,
+                f"O mesmo conteúdo já está preservado na versão {memoria.versao}.",
             )
     return redirect("fiscal:revisao_devolucao_detalhe", pk=rascunho.pk)
 
