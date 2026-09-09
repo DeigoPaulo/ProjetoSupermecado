@@ -98,9 +98,11 @@ Comunicação com Focus ou SEFAZ não será tratada como conformidade enquanto c
 - [x] Criar o pré-diagnóstico `supplier_return_fiscal_preparation_v1` para devolução ao fornecedor, ligado à entrada e ao XML integral, sem emissão, numeração, estoque ou transmissão.
 - [x] Bloquear preparação incompleta quando faltarem XML integral, chave, modelo 55, identidades coincidentes ou itens fiscais originais.
 - [x] Criar a seleção persistente e reversível dos itens e quantidades da devolução, limitada ao recebido e ainda sem gerar documento fiscal; migration fiscal 0036.
-- [ ] Criar a submissão bloqueante à revisão fiscal e mapear a seleção ao `nItem` original antes de calcular qualquer tributo.
+- [x] Preservar o `nItem` na importação e mapear cada seleção ao item original, bloqueando ambiguidades e excesso agregado por lotes; migration compras 0011.
+- [x] Submeter o rascunho à revisão fiscal com snapshot por item, responsável, horário e SHA-256 do XML; migration fiscal 0037.
+- [ ] Implementar a decisão segregada do revisor fiscal, sem autorizar emissão automaticamente.
 - [ ] Revisar a Fase 1 com o contador quando os dados reais chegarem.
 
 ## Próxima ação verificável
 
-O pré-diagnóstico e o rascunho operacional da devolução ao fornecedor já preservam a origem, o motivo, os itens e as quantidades sem inventar enquadramento. A próxima ação interna é submeter esse rascunho a uma revisão fiscal bloqueante e mapear cada seleção ao `nItem` do XML original, mantendo CFOP, tributos, geração, numeração e transmissão bloqueados. Quando os dados reais estiverem disponíveis, também será necessário concluir o aceite contábil e a homologação por canal.
+O rascunho da devolução ao fornecedor já preserva origem, motivo, itens, quantidades, vínculo ao `nItem`, snapshot tributário e hash do XML e pode ser congelado em “aguardando revisão fiscal”. A próxima ação interna é implementar a decisão segregada do revisor, com devolução para correção ou aprovação apenas da preparação. CFOP definitivo, cálculo, geração, numeração e transmissão continuam bloqueados. Quando os dados reais estiverem disponíveis, também será necessário concluir o aceite contábil e a homologação por canal.

@@ -26,6 +26,7 @@ from apps.fiscal.devolucao_fornecedor import (
     preparar_devolucao_fornecedor,
     rascunho_ativo_da_entrada,
     salvar_rascunho_devolucao_fornecedor,
+    submeter_rascunho_devolucao_para_revisao,
 )
 
 from .escopo import (
@@ -649,20 +650,29 @@ class EntradaCompraDetailView(LoginRequiredMixin, RoleRequiredMixin, DetailView)
             else None
         )
         selecoes_devolucao = {
-            item.item_entrada_id: item.quantidade
+            item.item_entrada_id: item
             for item in (rascunho_devolucao.itens.all() if rascunho_devolucao else [])
         }
         context["rascunho_devolucao_fornecedor"] = rascunho_devolucao
         context["itens_rascunho_devolucao"] = [
             {
                 "item": item,
-                "quantidade_selecionada": selecoes_devolucao.get(item.pk),
+                "quantidade_selecionada": (
+                    selecoes_devolucao[item.pk].quantidade
+                    if item.pk in selecoes_devolucao
+                    else None
+                ),
                 "quantidade_selecionada_html": (
-                    format(selecoes_devolucao[item.pk], "f")
+                    format(selecoes_devolucao[item.pk].quantidade, "f")
                     if item.pk in selecoes_devolucao
                     else ""
                 ),
                 "quantidade_maxima_html": format(item.quantidade, "f"),
+                "numero_item_xml": (
+                    selecoes_devolucao[item.pk].numero_item_xml
+                    if item.pk in selecoes_devolucao
+                    else item.numero_item_xml
+                ),
             }
             for item in entrada.itens.all()
         ]
@@ -909,6 +919,28 @@ def cancelar_rascunho_devolucao(request, pk):
         messages.success(
             request,
             "Preparação fiscal cancelada. As quantidades foram liberadas sem alterar o estoque.",
+        )
+    return redirect("compras:detalhe", pk=entrada.pk)
+
+
+@login_required
+@role_required(*COMPRAS)
+def submeter_rascunho_devolucao(request, pk):
+    entrada = get_object_or_404(entradas_para_usuario(request.user), pk=pk)
+    if request.method != "POST":
+        return redirect("compras:detalhe", pk=entrada.pk)
+    try:
+        submeter_rascunho_devolucao_para_revisao(
+            entrada,
+            usuario=request.user,
+            ip=request.META.get("REMOTE_ADDR"),
+        )
+    except ValidationError as exc:
+        messages.error(request, " ".join(exc.messages))
+    else:
+        messages.success(
+            request,
+            "Rascunho submetido à revisão fiscal. Emissão e transmissão permanecem bloqueadas.",
         )
     return redirect("compras:detalhe", pk=entrada.pk)
 

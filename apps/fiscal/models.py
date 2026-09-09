@@ -414,6 +414,15 @@ class RascunhoDevolucaoFornecedor(models.Model):
         on_delete=models.PROTECT,
         related_name="rascunhos_devolucao_fornecedor_atualizados",
     )
+    xml_origem_sha256 = models.CharField(max_length=64, blank=True)
+    submetido_em = models.DateTimeField(null=True, blank=True)
+    submetido_por = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.PROTECT,
+        related_name="rascunhos_devolucao_fornecedor_submetidos",
+        null=True,
+        blank=True,
+    )
     criado_em = models.DateTimeField(auto_now_add=True)
     atualizado_em = models.DateTimeField(auto_now=True)
 
@@ -429,6 +438,19 @@ class RascunhoDevolucaoFornecedor(models.Model):
                     ]
                 ),
                 name="fisc_rasc_dev_entrada_uniq",
+            ),
+            models.CheckConstraint(
+                condition=(
+                    ~models.Q(
+                        status=StatusRascunhoDevolucaoFornecedor.AGUARDANDO_REVISAO
+                    )
+                    | (
+                        models.Q(submetido_em__isnull=False)
+                        & models.Q(submetido_por__isnull=False)
+                        & ~models.Q(xml_origem_sha256="")
+                    )
+                ),
+                name="fisc_rasc_dev_submissao_ok",
             ),
         ]
 
@@ -449,6 +471,8 @@ class ItemRascunhoDevolucaoFornecedor(models.Model):
     )
     quantidade = models.DecimalField(max_digits=12, decimal_places=3)
     quantidade_recebida_snapshot = models.DecimalField(max_digits=12, decimal_places=3)
+    numero_item_xml = models.CharField(max_length=10, blank=True, default="")
+    item_xml_snapshot = models.JSONField(default=dict)
 
     class Meta:
         ordering = ["item_entrada_id"]

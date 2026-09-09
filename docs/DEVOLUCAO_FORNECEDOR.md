@@ -4,7 +4,7 @@ Atualizado em 09/09/2026. Documento interno de engenharia e homologação.
 
 ## Estado atual
 
-O contrato `supplier_return_fiscal_preparation_v1` faz o diagnóstico documental de uma entrada de compra finalizada. O contrato `supplier_return_draft_v1` preserva o motivo operacional e a seleção de itens e quantidades. A tela da entrada mostra as evidências, permite salvar ou cancelar essa preparação, mas não cria NF-e, não reserva série ou número, não escolhe CFOP ou tributação, não movimenta estoque e não chama Focus ou SEFAZ direta.
+O contrato `supplier_return_fiscal_preparation_v1` faz o diagnóstico documental de uma entrada de compra finalizada. O contrato `supplier_return_draft_v1` preserva o motivo operacional, a seleção de itens e quantidades, o vínculo ao `nItem` e o retrato tributário original. A tela da entrada permite salvar, cancelar ou submeter essa preparação à revisão fiscal, mas não cria NF-e, não reserva série ou número, não escolhe CFOP ou tributação, não movimenta estoque e não chama Focus ou SEFAZ direta.
 
 O cenário continua **bloqueado para emissão**. “Base documental disponível” significa apenas que a entrada possui chave válida, XML integral vinculado pelo DF-e, modelo 55, identidades coincidentes e itens fiscais legíveis.
 
@@ -29,12 +29,18 @@ Uma entrada criada por upload direto hoje preserva os dados normalizados e a cha
 - [x] Cancelar a preparação para liberar quantidades, sem excluir o histórico.
 - [x] Auditar criação, atualização e cancelamento sem gerar efeito fiscal ou de estoque.
 - [x] Impedir cancelamento da entrada enquanto houver preparação ativa.
+- [x] Preservar o `nItem` em novas importações de NF-e; migration compras 0011.
+- [x] Mapear rascunhos legados somente quando existir correspondência única entre os identificadores do produto e do XML.
+- [x] Congelar em cada seleção o item fiscal original, incluindo CFOP e valores tributários apenas como evidência.
+- [x] Validar a soma dos lotes contra a quantidade do `nItem` original.
+- [x] Submeter para revisão com responsável, horário e SHA-256 do XML; migration fiscal 0037.
+- [x] Bloquear alterações enquanto o rascunho aguarda revisão fiscal.
 - [ ] Considerar no saldo as devoluções efetivamente autorizadas quando essa etapa existir.
 
 ## Decisões ainda pendentes
 
-- [ ] Submeter o rascunho a uma revisão fiscal bloqueante e registrar o responsável.
-- [ ] Mapear cada seleção operacional ao `nItem` correspondente no XML original.
+- [ ] Criar a decisão segregada do revisor fiscal, permitindo devolver para correção ou aprovar somente a preparação.
+- [ ] Registrar justificativa e responsável pela decisão sem transformar aprovação em autorização para emitir.
 - [ ] Definir natureza, CFOP, tratamento de ICMS/ICMS-ST/FCP/IPI/PIS/COFINS e cBenef com o contador.
 - [ ] Definir frete, transportador, volumes e motivo quando aplicáveis.
 - [ ] Gerar XML modelo 55 com finalidade de devolução e documento referenciado.

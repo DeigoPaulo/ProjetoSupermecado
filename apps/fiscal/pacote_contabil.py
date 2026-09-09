@@ -92,6 +92,8 @@ def analisar_xml_nfe(xml_conteudo):
             {
                 "numero_item": (det.get("nItem") or "").strip(),
                 "codigo_produto": _texto(produto, "cProd"),
+                "ean": _texto(produto, "cEAN"),
+                "ean_tributavel": _texto(produto, "cEANTrib"),
                 "descricao": _texto(produto, "xProd"),
                 "ncm": _texto(produto, "NCM"),
                 "cest": _texto(produto, "CEST"),

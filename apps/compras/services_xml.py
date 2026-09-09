@@ -357,6 +357,7 @@ def importar_xml_entrada(conteudo, *, usuario, gerar_conta_financeira=True, ip=N
                 codigo_lote=item["codigo_lote"],
                 fabricacao=item["fabricacao"],
                 validade=item["validade"],
+                numero_item_xml=item["numero"],
             )
             for item, produto in itens_resolvidos
         ])

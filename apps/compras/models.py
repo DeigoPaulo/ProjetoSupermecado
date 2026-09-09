@@ -251,6 +251,12 @@ class ItemEntradaCompra(models.Model):
     codigo_lote = models.CharField(max_length=60, blank=True)
     fabricacao = models.DateField(null=True, blank=True)
     validade = models.DateField(null=True, blank=True)
+    numero_item_xml = models.CharField(
+        "Item no XML de origem",
+        max_length=10,
+        blank=True,
+        help_text="nItem preservado quando a entrada foi importada de NF-e.",
+    )
 
     class Meta:
         ordering = ["id"]

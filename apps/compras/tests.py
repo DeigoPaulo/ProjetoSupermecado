@@ -1471,6 +1471,7 @@ class ImportacaoXMLEntradaTests(TestCase):
         self.assertEqual(entrada.filial, self.filial)
         self.assertEqual(entrada.numero_documento, "123")
         self.assertEqual(entrada.chave_acesso_xml, self.CHAVE)
+        self.assertEqual(entrada.itens.get().numero_item_xml, "1")
         self.assertEqual(entrada.vencimento_financeiro.isoformat(), "2026-08-15")
         self.assertEqual(entrada.total_produtos, Decimal("16.50"))
         self.assertEqual(entrada.total_documento, Decimal("18.00"))
@@ -1831,6 +1832,7 @@ class ComprasIsolamentoEmpresaTests(TestCase):
             ("post", f"/compras/{self.entrada_b.pk}/cancelar/", {"motivo": "Teste"}),
             ("post", f"/compras/{self.entrada_b.pk}/devolucao-fornecedor/rascunho/", {}),
             ("post", f"/compras/{self.entrada_b.pk}/devolucao-fornecedor/rascunho/cancelar/", {}),
+            ("post", f"/compras/{self.entrada_b.pk}/devolucao-fornecedor/rascunho/submeter/", {}),
             ("post", f"/compras/{self.entrada_b.pk}/excluir-rascunho/", {}),
         ]
 

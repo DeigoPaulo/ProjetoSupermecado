@@ -181,11 +181,12 @@
             {% csrf_token %}
             <div class="span-2">
               <table>
-                <thead><tr><th>Produto / lote</th><th>Recebido</th><th>Quantidade a devolver</th></tr></thead>
+                <thead><tr><th>Produto / lote</th><th>Item no XML</th><th>Recebido</th><th>Quantidade a devolver</th></tr></thead>
                 <tbody>
                   {% for linha in itens_rascunho_devolucao %}
                     <tr>
                       <td>{{ linha.item.produto }}{% if linha.item.codigo_lote %}<br><small>Lote {{ linha.item.codigo_lote }}</small>{% endif %}</td>
+                      <td>{% if linha.numero_item_xml %}nItem {{ linha.numero_item_xml }}{% else %}<span class="status status-warning">Mapear ao salvar</span>{% endif %}</td>
                       <td>{{ linha.item.quantidade|quantidade_br }}</td>
                       <td><input type="number" name="quantidade_{{ linha.item.pk }}" min="0" max="{{ linha.quantidade_maxima_html }}" step="0.001" value="{{ linha.quantidade_selecionada_html }}"></td>
                     </tr>
@@ -201,6 +202,17 @@
           </form>
         {% endif %}
         {% if rascunho_devolucao_fornecedor %}
+          {% if rascunho_devolucao_fornecedor.status == "RASCUNHO" %}
+            <form method="post" action="{% url 'compras:submeter_rascunho_devolucao' entrada.pk %}" class="inline-form form-confirm" data-msg="Congelar a seleção e enviar para revisão fiscal? Ainda não será emitida nenhuma nota.">
+              {% csrf_token %}
+              <button class="primary-button" type="submit">Enviar para revisão fiscal</button>
+            </form>
+          {% else %}
+            <div class="operation-notice">
+              Submetido em {{ rascunho_devolucao_fornecedor.submetido_em|date:"d/m/Y H:i" }} por {{ rascunho_devolucao_fornecedor.submetido_por|default:"-" }}.<br>
+              Integridade do XML original: {{ rascunho_devolucao_fornecedor.xml_origem_sha256 }}.
+            </div>
+          {% endif %}
           <form method="post" action="{% url 'compras:cancelar_rascunho_devolucao' entrada.pk %}" class="inline-form form-confirm" data-msg="Cancelar esta preparação e liberar as quantidades selecionadas?">
             {% csrf_token %}
             <button class="secondary-button" type="submit">Cancelar preparação</button>

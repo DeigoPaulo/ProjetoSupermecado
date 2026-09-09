@@ -32,6 +32,7 @@ urlpatterns = [
     path("<int:pk>/confirmar-conferencia-fisica/", views.confirmar_conferencia_fisica_entrada, name="confirmar_conferencia_fisica"),
     path("<int:pk>/devolucao-fornecedor/rascunho/", views.salvar_rascunho_devolucao, name="salvar_rascunho_devolucao"),
     path("<int:pk>/devolucao-fornecedor/rascunho/cancelar/", views.cancelar_rascunho_devolucao, name="cancelar_rascunho_devolucao"),
+    path("<int:pk>/devolucao-fornecedor/rascunho/submeter/", views.submeter_rascunho_devolucao, name="submeter_rascunho_devolucao"),
     path("<int:pk>/cancelar/", views.cancelar_entrada, name="cancelar"),
     path("<int:pk>/excluir-rascunho/", views.excluir_rascunho, name="excluir_rascunho"),
 ]

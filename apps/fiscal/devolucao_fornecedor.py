@@ -5,11 +5,13 @@ não escolhe tributação, não cria DocumentoFiscal e não movimenta estoque. E
 separa evidências da entrada das decisões dependentes do contador e do caso real.
 """
 
+import hashlib
 from decimal import Decimal, InvalidOperation
 
 from django.core.exceptions import ObjectDoesNotExist, ValidationError
 from django.db import transaction
 from django.db.models import Sum
+from django.utils import timezone
 
 from apps.clientes.escopo import empresa_id_do_usuario
 from apps.compras.models import EntradaCompra, ItemEntradaCompra, StatusEntradaCompra
@@ -42,6 +44,83 @@ def _documento_dfe_da_entrada(entrada):
         return entrada.documento_dfe_recebido
     except ObjectDoesNotExist:
         return None
+
+
+def _identificador(valor):
+    return str(valor or "").strip().upper()
+
+
+def _identificadores_produto(produto):
+    return {
+        valor
+        for valor in (
+            _identificador(produto.codigo_interno),
+            _identificador(produto.codigo_barras),
+        )
+        if valor
+    }
+
+
+def _identificadores_item_xml(item_xml):
+    return {
+        valor
+        for valor in (
+            _identificador(item_xml.get("codigo_produto")),
+            _identificador(item_xml.get("ean")),
+            _identificador(item_xml.get("ean_tributavel")),
+        )
+        if valor and valor not in {"SEM GTIN", "SEM-GTIN"}
+    }
+
+
+def _resolver_item_xml(item_entrada, numero_solicitado, itens_xml):
+    por_numero = {item["numero_item"]: item for item in itens_xml if item["numero_item"]}
+    numero = str(numero_solicitado or item_entrada.numero_item_xml or "").strip()
+    if numero:
+        item_xml = por_numero.get(numero)
+        if not item_xml:
+            raise ValidationError(
+                f"O nItem {numero} de {item_entrada.produto} não existe no XML original."
+            )
+        # O nItem gravado na importação é a evidência primária. Mapeamentos
+        # posteriores só são aceitos se os identificadores ainda coincidirem.
+        if item_entrada.numero_item_xml == numero:
+            return item_xml
+        if _identificadores_produto(item_entrada.produto) & _identificadores_item_xml(item_xml):
+            return item_xml
+        raise ValidationError(
+            f"O nItem {numero} não corresponde com segurança ao produto {item_entrada.produto}."
+        )
+
+    identificadores = _identificadores_produto(item_entrada.produto)
+    candidatos = [
+        item_xml
+        for item_xml in itens_xml
+        if identificadores & _identificadores_item_xml(item_xml)
+    ]
+    if len(candidatos) != 1:
+        raise ValidationError(
+            f"Não foi possível mapear {item_entrada.produto} a um único nItem do XML original."
+        )
+    return candidatos[0]
+
+
+def _validar_totais_por_item_xml(itens_rascunho, itens_xml):
+    por_numero = {item["numero_item"]: item for item in itens_xml}
+    totais = {}
+    for item in itens_rascunho:
+        totais[item.numero_item_xml] = totais.get(
+            item.numero_item_xml, Decimal("0.000")
+        ) + item.quantidade
+    for numero, selecionada in totais.items():
+        try:
+            original = Decimal(por_numero[numero]["quantidade"])
+        except (KeyError, InvalidOperation, TypeError) as exc:
+            raise ValidationError(f"Quantidade original inválida no nItem {numero}.") from exc
+        if not original.is_finite() or original <= 0 or selecionada > original:
+            raise ValidationError(
+                f"A soma selecionada para o nItem {numero} excede ou invalida a quantidade original."
+            )
 
 
 def preparar_devolucao_fornecedor(entrada):
@@ -174,6 +253,7 @@ def salvar_rascunho_devolucao_fornecedor(
     selecoes,
     motivo_operacional,
     usuario,
+    mapeamentos=None,
     ip=None,
 ):
     """Persiste somente itens e quantidades; nenhum efeito fiscal ou de estoque."""
@@ -220,6 +300,17 @@ def salvar_rascunho_devolucao_fornecedor(
                 quantidades[item_id] = quantidade
         if not quantidades:
             raise ValidationError("Selecione ao menos um item com quantidade maior que zero.")
+
+        itens_xml = diagnostico["itens_xml_original"]
+        mapeamentos = mapeamentos or {}
+        itens_xml_mapeados = {
+            item_id: _resolver_item_xml(
+                itens_entrada[item_id],
+                mapeamentos.get(item_id, mapeamentos.get(str(item_id), "")),
+                itens_xml,
+            )
+            for item_id in quantidades
+        }
 
         rascunho = (
             RascunhoDevolucaoFornecedor.objects.select_for_update()
@@ -269,6 +360,8 @@ def salvar_rascunho_devolucao_fornecedor(
                     item_entrada=itens_entrada[item_id],
                     quantidade=quantidade,
                     quantidade_recebida_snapshot=itens_entrada[item_id].quantidade,
+                    numero_item_xml=itens_xml_mapeados[item_id]["numero_item"],
+                    item_xml_snapshot=itens_xml_mapeados[item_id],
                 )
                 for item_id, quantidade in sorted(quantidades.items())
             ]
@@ -287,6 +380,79 @@ def salvar_rascunho_devolucao_fornecedor(
             ip=ip,
         )
     return rascunho, criado
+
+
+def submeter_rascunho_devolucao_para_revisao(entrada, *, usuario, ip=None):
+    """Congela origem e seleção para revisão, ainda sem emitir ou calcular tributos."""
+    with transaction.atomic():
+        entrada = (
+            EntradaCompra.objects.select_for_update()
+            .select_related("fornecedor", "filial__empresa")
+            .get(pk=entrada.pk)
+        )
+        empresa_id = empresa_id_do_usuario(usuario)
+        if empresa_id is not None and entrada.filial.empresa_id != empresa_id:
+            raise ValidationError("Esta entrada não pertence à empresa do usuário.")
+        rascunho = (
+            RascunhoDevolucaoFornecedor.objects.select_for_update()
+            .filter(
+                entrada_compra=entrada,
+                status=StatusRascunhoDevolucaoFornecedor.RASCUNHO,
+            )
+            .first()
+        )
+        if not rascunho:
+            raise ValidationError("Não existe rascunho editável para submeter à revisão fiscal.")
+
+        diagnostico = preparar_devolucao_fornecedor(entrada)
+        if diagnostico["bloqueios_documentais"]:
+            raise ValidationError("A preparação documental deixou de estar válida.")
+        itens_rascunho = list(
+            rascunho.itens.select_for_update().select_related("item_entrada__produto")
+        )
+        if not itens_rascunho:
+            raise ValidationError("O rascunho não possui itens para revisão.")
+        itens_xml = diagnostico["itens_xml_original"]
+        atuais_por_numero = {item["numero_item"]: item for item in itens_xml}
+        for item in itens_rascunho:
+            atual = atuais_por_numero.get(item.numero_item_xml)
+            if not item.numero_item_xml or not item.item_xml_snapshot or atual != item.item_xml_snapshot:
+                raise ValidationError(
+                    f"O vínculo com o XML original do item {item.item_entrada.produto} não está íntegro."
+                )
+        _validar_totais_por_item_xml(itens_rascunho, itens_xml)
+
+        documento_dfe = _documento_dfe_da_entrada(entrada)
+        xml_origem = documento_dfe.xml_conteudo if documento_dfe else ""
+        rascunho.xml_origem_sha256 = hashlib.sha256(xml_origem.encode("utf-8")).hexdigest()
+        rascunho.status = StatusRascunhoDevolucaoFornecedor.AGUARDANDO_REVISAO
+        rascunho.submetido_em = timezone.now()
+        rascunho.submetido_por = usuario
+        rascunho.atualizado_por = usuario
+        rascunho.save(
+            update_fields=[
+                "xml_origem_sha256",
+                "status",
+                "submetido_em",
+                "submetido_por",
+                "atualizado_por",
+                "atualizado_em",
+            ]
+        )
+        LogAuditoria.objects.create(
+            usuario=usuario,
+            modulo="fiscal",
+            acao="RASCUNHO_DEVOLUCAO_FORNECEDOR_SUBMETIDO",
+            descricao=(
+                f"Rascunho {rascunho.pk} submetido à revisão com {len(itens_rascunho)} "
+                "seleção(ões) mapeadas ao XML original. Nenhum tributo, documento fiscal, "
+                "numeração, estoque ou transmissão foi criado."
+            ),
+            objeto_tipo="RascunhoDevolucaoFornecedor",
+            objeto_id=str(rascunho.pk),
+            ip=ip,
+        )
+    return rascunho
 
 
 def cancelar_rascunho_devolucao_fornecedor(entrada, *, usuario, ip=None):

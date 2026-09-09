@@ -17,6 +17,7 @@ from .devolucao_fornecedor import (
     cancelar_rascunho_devolucao_fornecedor,
     preparar_devolucao_fornecedor,
     salvar_rascunho_devolucao_fornecedor,
+    submeter_rascunho_devolucao_para_revisao,
 )
 from .models import (
     DocumentoDFeRecebido,
@@ -91,7 +92,7 @@ class PreparacaoDevolucaoFornecedorTests(TestCase):
         return f"""<nfeProc xmlns="http://www.portalfiscal.inf.br/nfe" versao="4.00">
           <NFe><infNFe Id="NFe{self.CHAVE}"><ide><mod>55</mod><finNFe>1</finNFe><dhEmi>2026-09-01T10:00:00-03:00</dhEmi></ide>
           <emit><CNPJ>11111111000111</CNPJ></emit><dest><CNPJ>22222222000122</CNPJ></dest>
-          <det nItem="1"><prod><cProd>ABC</cProd><xProd>Produto recebido</xProd><NCM>10063021</NCM><CFOP>5102</CFOP><uCom>UN</uCom><qCom>2.0000</qCom><vUnCom>10.00</vUnCom><vProd>20.00</vProd></prod>
+          <det nItem="1"><prod><cProd>7891111111111</cProd><xProd>Produto recebido</xProd><NCM>10063021</NCM><CFOP>5102</CFOP><uCom>UN</uCom><qCom>2.0000</qCom><vUnCom>10.00</vUnCom><vProd>20.00</vProd></prod>
           <imposto><ICMS><ICMS00><orig>0</orig><CST>00</CST><vBC>20.00</vBC><pICMS>17.00</pICMS><vICMS>3.40</vICMS></ICMS00></ICMS></imposto></det>
           </infNFe></NFe><protNFe><infProt><chNFe>{self.CHAVE}</chNFe><cStat>100</cStat></infProt></protNFe>
         </nfeProc>"""
@@ -166,6 +167,9 @@ class PreparacaoDevolucaoFornecedorTests(TestCase):
         item = ItemRascunhoDevolucaoFornecedor.objects.get()
         self.assertEqual(item.quantidade, Decimal("0.750"))
         self.assertEqual(item.quantidade_recebida_snapshot, Decimal("2.000"))
+        self.assertEqual(item.numero_item_xml, "1")
+        self.assertEqual(item.item_xml_snapshot["codigo_produto"], "7891111111111")
+        self.assertEqual(item.item_xml_snapshot["valor_icms"], "3.40")
         self.assertFalse(DocumentoFiscal.objects.exists())
 
     def test_rejeita_quantidade_acima_do_recebido_sem_criar_rascunho(self):
@@ -239,6 +243,85 @@ class PreparacaoDevolucaoFornecedorTests(TestCase):
         self.entrada.refresh_from_db()
         self.assertEqual(self.entrada.status, StatusEntradaCompra.FINALIZADA)
 
+    def test_submissao_congela_mapeamento_e_hash_sem_emitir(self):
+        self._registrar_dfe()
+        rascunho, _ = salvar_rascunho_devolucao_fornecedor(
+            self.entrada,
+            selecoes={self.item_entrada.pk: "1.000"},
+            motivo_operacional="Produto divergente",
+            usuario=self.usuario,
+        )
+
+        submetido = submeter_rascunho_devolucao_para_revisao(
+            self.entrada,
+            usuario=self.usuario,
+        )
+
+        self.assertEqual(submetido.pk, rascunho.pk)
+        self.assertEqual(
+            submetido.status,
+            StatusRascunhoDevolucaoFornecedor.AGUARDANDO_REVISAO,
+        )
+        self.assertEqual(submetido.submetido_por, self.usuario)
+        self.assertIsNotNone(submetido.submetido_em)
+        self.assertEqual(len(submetido.xml_origem_sha256), 64)
+        self.assertFalse(DocumentoFiscal.objects.exists())
+        with self.assertRaisesMessage(ValidationError, "não pode ser alterado"):
+            salvar_rascunho_devolucao_fornecedor(
+                self.entrada,
+                selecoes={self.item_entrada.pk: "0.500"},
+                motivo_operacional="Tentativa posterior",
+                usuario=self.usuario,
+            )
+
+    def test_submissao_rejeita_snapshot_xml_adulterado(self):
+        self._registrar_dfe()
+        salvar_rascunho_devolucao_fornecedor(
+            self.entrada,
+            selecoes={self.item_entrada.pk: "1.000"},
+            motivo_operacional="Teste de integridade",
+            usuario=self.usuario,
+        )
+        item = ItemRascunhoDevolucaoFornecedor.objects.get()
+        item.item_xml_snapshot = {**item.item_xml_snapshot, "valor_icms": "99.99"}
+        item.save(update_fields=["item_xml_snapshot"])
+
+        with self.assertRaisesMessage(ValidationError, "não está íntegro"):
+            submeter_rascunho_devolucao_para_revisao(
+                self.entrada,
+                usuario=self.usuario,
+            )
+
+        self.assertEqual(
+            RascunhoDevolucaoFornecedor.objects.get().status,
+            StatusRascunhoDevolucaoFornecedor.RASCUNHO,
+        )
+
+    def test_submissao_rejeita_soma_de_lotes_acima_do_nitem_original(self):
+        segundo_item = ItemEntradaCompra.objects.create(
+            entrada=self.entrada,
+            produto=self.item_entrada.produto,
+            quantidade=Decimal("1.000"),
+            custo_unitario=Decimal("10.00"),
+            total=Decimal("10.00"),
+            codigo_lote="LOTE-2",
+        )
+        self._registrar_dfe()
+        salvar_rascunho_devolucao_fornecedor(
+            self.entrada,
+            selecoes={self.item_entrada.pk: "2.000", segundo_item.pk: "1.000"},
+            motivo_operacional="Dois lotes do mesmo item fiscal",
+            usuario=self.usuario,
+        )
+
+        with self.assertRaisesMessage(ValidationError, "soma selecionada"):
+            submeter_rascunho_devolucao_para_revisao(
+                self.entrada,
+                usuario=self.usuario,
+            )
+
+        self.assertFalse(DocumentoFiscal.objects.exists())
+
     def test_tela_salva_e_cancela_rascunho_sem_oferecer_emissao(self):
         self._registrar_dfe()
         self.client.force_login(self.usuario)
@@ -255,8 +338,17 @@ class PreparacaoDevolucaoFornecedorTests(TestCase):
         self.assertEqual(resposta.status_code, 200)
         self.assertContains(resposta, "Rascunho de devolução criado")
         self.assertContains(resposta, "Cancelar preparação")
+        self.assertContains(resposta, "nItem 1")
         self.assertContains(resposta, 'value="1.500"', html=False)
         self.assertNotContains(resposta, "Emitir devolução")
+
+        submetido = self.client.post(
+            f"/compras/{self.entrada.pk}/devolucao-fornecedor/rascunho/submeter/",
+            follow=True,
+        )
+        self.assertContains(submetido, "Rascunho submetido à revisão fiscal")
+        self.assertContains(submetido, "Integridade do XML original")
+        self.assertNotContains(submetido, "Emitir devolução")
 
         cancelado = self.client.post(
             f"/compras/{self.entrada.pk}/devolucao-fornecedor/rascunho/cancelar/",
