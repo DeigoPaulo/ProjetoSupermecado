@@ -69,7 +69,7 @@ Uma entrada criada por upload direto hoje preserva os dados normalizados e a cha
 
 ## Referências oficiais consultadas
 
-A ficha logística é uma preparação de dados, não uma validação fiscal completa. CPF/CNPJ é validado por formato; dígitos verificadores e regras de identidade do transporte próprio ainda devem ser implementados antes da geração de XML. A modalidade 9 bloqueia o grupo transportador conforme X03-30 da [NT 2021.004 v1.33](https://www.nfe.fazenda.gov.br/portal/exibirArquivo.aspx?conteudo=i0rK6ogxnx8%3D), consultada em 09/09/2026. A composição de valores e a conferência contábil permanecem pendentes.
+A ficha logística é uma preparação de dados, não uma validação fiscal completa. CPF/CNPJ numérico informado é validado por dígitos verificadores. Nas modalidades 3/4, a identidade corresponde à raiz do CNPJ ou CPF do remetente/destinatário da devolução, invertendo os papéis do XML original. Documento ausente não dispara essa comparação. CNPJ alfanumérico, demais regras de transporte e homologação ainda permanecem pendentes. A modalidade 9 bloqueia o grupo transportador conforme X03-30 da [NT 2021.004 v1.33](https://www.nfe.fazenda.gov.br/portal/exibirArquivo.aspx?conteudo=i0rK6ogxnx8%3D), consultada em 09/09/2026. A composição de valores e a conferência contábil permanecem pendentes.
 
 - Portal Nacional da NF-e: Manual de Orientação do Contribuinte 7.0, Anexo I, leiaute e regras de validação.
 - Portal Nacional da NF-e: notas técnicas vigentes, incluindo as adequações da Reforma Tributária do Consumo.

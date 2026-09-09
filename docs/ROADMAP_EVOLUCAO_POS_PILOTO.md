@@ -72,6 +72,8 @@ O ERP ja possui uma base operacional, financeira gerencial, fiscal preparada por
 
 ## Continuidade registrada em 24/08/2026
 
+- Ciclo 51 concluído em 09/09/2026: ficha logística valida dígitos verificadores de CPF/CNPJ numéricos e identidade no transporte próprio (modalidades 3/4). Referências vêm do XML preservado, com remetente/destinatário invertidos na devolução; CNPJ compara raiz e CPF compara o documento completo. Ausência de documento respeita a exceção oficial. 44 testes aprovados. Sem migration, emissão ou transmissão. CNPJ alfanumérico e demais regras de transporte continuam pendentes. Próxima etapa: composição dos valores da devolução para revisão contábil.
+
 - Ciclo 50 concluído estruturalmente em 09/09/2026: ficha logística `supplier_return_transport_v1`, migration fiscal 0043, ligada à memória aprovada mais recente. Modalidade explícita, dados opcionais do transportador, volumes e pesos validados, versões imutáveis e deduplicação por SHA-256. A gravação reconfere a integridade da revisão, memória e XML. 41 testes de devolução aprovados. Nenhuma emissão ou movimentação é realizada. Próxima ação: compor frete, seguro, desconto e despesas, com revisão contábil. Validação completa dos documentos do transportador e regras fiscais de transporte próprio permanecem pendentes antes de alimentar XML.
 
 - A auditoria do checkout confirmou o núcleo fiscal, o adaptador de emissão e recebimento Focus NFe e o pacote SEFAZ direta GO implementados, com produção bloqueada por padrão.
