@@ -72,6 +72,8 @@ O ERP ja possui uma base operacional, financeira gerencial, fiscal preparada por
 
 ## Continuidade registrada em 24/08/2026
 
+- Ciclo 50 concluído estruturalmente em 09/09/2026: ficha logística `supplier_return_transport_v1`, migration fiscal 0043, ligada à memória aprovada mais recente. Modalidade explícita, dados opcionais do transportador, volumes e pesos validados, versões imutáveis e deduplicação por SHA-256. A gravação reconfere a integridade da revisão, memória e XML. 41 testes de devolução aprovados. Nenhuma emissão ou movimentação é realizada. Próxima ação: compor frete, seguro, desconto e despesas, com revisão contábil. Validação completa dos documentos do transportador e regras fiscais de transporte próprio permanecem pendentes antes de alimentar XML.
+
 - A auditoria do checkout confirmou o núcleo fiscal, o adaptador de emissão e recebimento Focus NFe e o pacote SEFAZ direta GO implementados, com produção bloqueada por padrão.
 - A trilha técnica inicial ativa passa a ser a homologação Focus NFe em sandbox, começando por uma única filial piloto e emissão manual. Esta escolha técnica não libera produção nem substitui a contratação e o aceite comercial do provedor.
 - O banco local de desenvolvimento continua sem configuração fiscal por filial, credenciais Focus ou evidência de homologação real. A migration fiscal `0028_consultacadastrocontribuinte` foi aplicada localmente em 24/08/2026.

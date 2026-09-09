@@ -122,6 +122,9 @@ from .services import (
 )
 
 
+from .transporte_devolucao import TransporteDevolucaoForm, registrar_transporte
+
+
 def _rascunhos_revisao_queryset(user):
     return rascunhos_devolucao_para_usuario(
         user,
@@ -140,6 +143,7 @@ def _rascunhos_revisao_queryset(user):
             "memorias_calculo__parametrizacao",
             "memorias_calculo__itens",
             "memorias_calculo__revisao_fiscal__revisor",
+            "transportes__responsavel",
         ),
     )
 
@@ -178,6 +182,7 @@ def revisao_devolucao_fornecedor_detalhe(request, pk):
         "fiscal/revisao_devolucao_fornecedor_detalhe.html",
         {
             "rascunho": rascunho,
+            "transporte_form": TransporteDevolucaoForm(),
             "decisao_aprovar": DecisaoRevisaoDevolucaoFornecedor.APROVAR,
             "decisao_corrigir": DecisaoRevisaoDevolucaoFornecedor.DEVOLVER_CORRECAO,
             "decisao_memoria_aprovar": DecisaoRevisaoMemoriaCalculoFornecedor.APROVAR,
@@ -337,6 +342,20 @@ def revisar_memoria_calculo_devolucao(request, pk):
                 f"Memória versão {revisao.memoria.versao} devolvida; registre uma nova versão corrigida.",
             )
     return redirect("fiscal:revisao_devolucao_detalhe", pk=rascunho.pk)
+
+
+@login_required
+@role_required(*REVISAO_FISCAL)
+@require_POST
+def registrar_transporte_devolucao(request, pk):
+    rascunho = get_object_or_404(_rascunhos_revisao_queryset(request.user), pk=pk)
+    try:
+        ficha, criado = registrar_transporte(rascunho, dados=request.POST, responsavel=request.user)
+    except ValidationError as exc:
+        messages.error(request, " ".join(exc.messages))
+    else:
+        messages.success(request, f"Transporte versão {ficha.versao}: " + ("registrado." if criado else "conteúdo já registrado."))
+    return redirect("fiscal:revisao_devolucao_detalhe", pk=pk)
 
 
 def _diagnostico_prontidao_fiscal(user):

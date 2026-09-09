@@ -202,6 +202,26 @@
   {% endfor %}
 </section>
 
+<section class="panel mt-panel">
+  <div class="panel-title">Transporte da devolução</div>
+  <p>Preenchimento logístico vinculado à memória aprovada mais recente. Valores de frete e composição do total serão tratados na próxima etapa.</p>
+  {% for transporte in rascunho.transportes.all %}
+    <details><summary>Versão {{ transporte.versao }} · {{ transporte.responsavel }} · {{ transporte.criado_em|date:"d/m/Y H:i" }}</summary>
+      <table><tbody>{% for chave, valor in transporte.conteudo_snapshot.dados.items %}<tr><th>{{ chave }}</th><td>{{ valor|default_if_none:"—" }}</td></tr>{% endfor %}</tbody></table>
+    </details>
+  {% empty %}<p>Nenhuma ficha de transporte registrada.</p>{% endfor %}
+  {% if rascunho.status == "APROVADO" %}
+    <details><summary>Registrar transporte</summary>
+      <p>A memória mais recente precisa ter aprovação de outro responsável. Esta ficha não emite nota nem movimenta estoque.</p>
+      <form method="post" action="{% url 'fiscal:registrar_transporte_devolucao' rascunho.pk %}" class="form-grid">
+        {% csrf_token %}
+        {% for field in transporte_form %}<label class="form-field"><span>{{ field.label }}</span>{{ field }}</label>{% endfor %}
+        <div class="form-actions"><button type="submit" class="primary-button">Registrar ficha de transporte</button></div>
+      </form>
+    </details>
+  {% endif %}
+</section>
+
 {% if rascunho.status == "AGUARDANDO_REVISAO" %}
   <section class="panel mt-panel">
     <div class="panel-title">Registrar decisão fiscal</div>

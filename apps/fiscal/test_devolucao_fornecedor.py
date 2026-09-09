@@ -29,6 +29,7 @@ from .devolucao_fornecedor import (
     submeter_rascunho_devolucao_para_revisao,
 )
 from .models import (
+    TransporteDevolucaoFornecedor,
     DocumentoDFeRecebido,
     DocumentoFiscal,
     CatalogoCFOP,
@@ -46,6 +47,9 @@ from .models import (
     RevisaoMemoriaCalculoDevolucaoFornecedor,
     StatusRascunhoDevolucaoFornecedor,
 )
+
+
+from .transporte_devolucao import TransporteDevolucaoForm, registrar_transporte
 
 
 class PreparacaoDevolucaoFornecedorTests(TestCase):
@@ -277,6 +281,51 @@ class PreparacaoDevolucaoFornecedorTests(TestCase):
             responsavel=self.revisor,
         )
         return rascunho, parametrizacao, memoria
+
+    def _dados_transporte(self):
+        return {"modalidade": "9", "quantidade_volumes": "0", "peso_liquido": "0", "peso_bruto": "0"}
+
+    def test_transporte_exige_memoria_aprovada_e_e_versionado(self):
+        rascunho, _, memoria = self._memoria_registrada()
+        with self.assertRaisesMessage(ValidationError, "mais recente precisa estar aprovada"):
+            registrar_transporte(rascunho, dados=self._dados_transporte(), responsavel=self.revisor)
+        revisar_memoria_calculo_devolucao_fornecedor(rascunho, memoria_id=memoria.pk, decisao="APROVAR", justificativa="Conferência independente concluída.", revisor=self.segundo_revisor)
+        primeira, criada = registrar_transporte(rascunho, dados=self._dados_transporte(), responsavel=self.revisor)
+        repetida, criada_repetida = registrar_transporte(rascunho, dados=self._dados_transporte(), responsavel=self.revisor)
+        segunda, _ = registrar_transporte(rascunho, dados={**self._dados_transporte(), "observacao": "Nova informação logística"}, responsavel=self.revisor)
+        self.assertTrue(criada)
+        self.assertFalse(criada_repetida)
+        self.assertEqual(primeira.pk, repetida.pk)
+        self.assertEqual(segunda.versao, 2)
+        with self.assertRaisesMessage(ValueError, "imutáveis"):
+            primeira.save()
+        self.assertFalse(DocumentoFiscal.objects.exists())
+
+    def test_transporte_valida_modalidade_pesos_e_ausencia_de_defaults(self):
+        for alteracao in (
+            {"modalidade": ""}, {"modalidade": "9", "nome": "Transportadora"},
+            {"quantidade_volumes": "1", "peso_liquido": "2", "peso_bruto": "1"},
+            {"peso_bruto": "-1"}, {"peso_bruto": "0.0001"},
+            {"especie": "Caixa"},
+        ):
+            with self.subTest(alteracao=alteracao):
+                self.assertFalse(TransporteDevolucaoForm({**self._dados_transporte(), **alteracao}).is_valid())
+        self.assertTrue(TransporteDevolucaoForm({"modalidade": "2", "quantidade_volumes": "2", "peso_liquido": "1,500", "peso_bruto": "2,000", "especie": "Caixas"}).is_valid())
+
+    def test_transporte_respeita_permissao_e_xml_original(self):
+        rascunho, _, memoria = self._memoria_registrada()
+        revisar_memoria_calculo_devolucao_fornecedor(rascunho, memoria_id=memoria.pk, decisao="APROVAR", justificativa="Conferência independente concluída.", revisor=self.segundo_revisor)
+        url = f"/fiscal/devolucoes-fornecedor/revisao/{rascunho.pk}/transporte/"
+        self.client.force_login(self.financeiro)
+        self.assertEqual(self.client.post(url, self._dados_transporte()).status_code, 403)
+        self.client.force_login(self.revisor)
+        self.assertContains(self.client.post(url, self._dados_transporte(), follow=True), "Transporte versão 1")
+        dfe = DocumentoDFeRecebido.objects.get(entrada_compra=self.entrada)
+        dfe.xml_conteudo += " "
+        dfe.save(update_fields=["xml_conteudo"])
+        with self.assertRaisesMessage(ValidationError, "XML original divergiu"):
+            registrar_transporte(rascunho, dados=self._dados_transporte(), responsavel=self.revisor)
+        self.assertEqual(TransporteDevolucaoFornecedor.objects.count(), 1)
 
     def test_consolida_evidencias_sem_criar_documento_ou_escolher_tributacao(self):
         self._registrar_dfe()

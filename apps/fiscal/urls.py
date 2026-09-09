@@ -5,6 +5,7 @@ from . import views
 app_name = "fiscal"
 
 urlpatterns = [
+    path("devolucoes-fornecedor/revisao/<int:pk>/transporte/", views.registrar_transporte_devolucao, name="registrar_transporte_devolucao"),
     path("", views.documentos, name="documentos"),
     path(
         "devolucoes-fornecedor/revisao/",

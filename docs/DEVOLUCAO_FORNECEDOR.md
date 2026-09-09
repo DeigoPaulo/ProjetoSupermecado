@@ -61,12 +61,15 @@ Uma entrada criada por upload direto hoje preserva os dados normalizados e a cha
 - [x] Criar revisão segregada da memória completa; migration fiscal 0042. Somente outro Administrador/Contabilidade decide sobre a versão mais recente, com justificativa, hash e decisão única imutável. Correções exigem nova versão. Aprovação não libera XML/emissão.
 - [ ] Estruturar dados de transporte e composição do valor da devolução para posterior conferência contábil.
 - [ ] Definir natureza, CFOP, tratamento de ICMS/ICMS-ST/FCP/IPI/PIS/COFINS e cBenef com o contador.
-- [ ] Definir frete, transportador, volumes e motivo quando aplicáveis.
+- [x] Registrar modalidade de frete, transportador e volumes em ficha logística versionada vinculada à memória aprovada mais recente; migration 0043. Dados informados, ainda sem geração fiscal.
+- [ ] Compor valores de frete, seguro, desconto e despesas da devolução e obter conferência contábil.
 - [ ] Gerar XML modelo 55 com finalidade de devolução e documento referenciado.
 - [ ] Validar totais, schemas e regras vigentes com casos aprovados pelo contador.
 - [ ] Somente depois homologar, separadamente, Focus e SEFAZ direta.
 
 ## Referências oficiais consultadas
+
+A ficha logística é uma preparação de dados, não uma validação fiscal completa. CPF/CNPJ é validado por formato; dígitos verificadores e regras de identidade do transporte próprio ainda devem ser implementados antes da geração de XML. A modalidade 9 bloqueia o grupo transportador conforme X03-30 da [NT 2021.004 v1.33](https://www.nfe.fazenda.gov.br/portal/exibirArquivo.aspx?conteudo=i0rK6ogxnx8%3D), consultada em 09/09/2026. A composição de valores e a conferência contábil permanecem pendentes.
 
 - Portal Nacional da NF-e: Manual de Orientação do Contribuinte 7.0, Anexo I, leiaute e regras de validação.
 - Portal Nacional da NF-e: notas técnicas vigentes, incluindo as adequações da Reforma Tributária do Consumo.

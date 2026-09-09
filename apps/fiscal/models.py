@@ -993,6 +993,33 @@ class RevisaoMemoriaCalculoDevolucaoFornecedor(models.Model):
         return f"Revisão da memória {self.memoria_id} - {self.decisao}"
 
 
+class TransporteDevolucaoFornecedor(models.Model):
+    objects = MemoriaCalculoDevolucaoFornecedorQuerySet.as_manager()
+
+    rascunho = models.ForeignKey(RascunhoDevolucaoFornecedor, on_delete=models.PROTECT, related_name="transportes")
+    memoria = models.ForeignKey(MemoriaCalculoDevolucaoFornecedor, on_delete=models.PROTECT, related_name="transportes")
+    versao = models.PositiveIntegerField()
+    conteudo_snapshot = models.JSONField()
+    conteudo_sha256 = models.CharField(max_length=64)
+    responsavel = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.PROTECT)
+    criado_em = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["versao"]
+        constraints = [
+            models.UniqueConstraint(fields=["rascunho", "versao"], name="fisc_transp_dev_vers_uniq"),
+            models.UniqueConstraint(fields=["rascunho", "conteudo_sha256"], name="fisc_transp_dev_hash_uniq"),
+        ]
+
+    def save(self, *args, **kwargs):
+        if self.pk or not self._state.adding:
+            raise ValueError("Fichas de transporte são imutáveis.")
+        return super().save(*args, **kwargs)
+
+    def delete(self, *args, **kwargs):
+        raise ValueError("Fichas de transporte são imutáveis.")
+
+
 class TipoEvidenciaFiscal(models.TextChoices):
     XML_ENVIO = "XML_ENVIO", "XML transmitido"
     RETORNO_TRANSMISSAO = "RETORNO_TRANSMISSAO", "Retorno da transmissão"
