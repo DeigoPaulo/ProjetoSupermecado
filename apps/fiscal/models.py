@@ -52,6 +52,12 @@ class StatusDocumentoFiscal(models.TextChoices):
     INUTILIZADO = "INUTILIZADO", "Inutilizado"
 
 
+class StatusRascunhoDevolucaoFornecedor(models.TextChoices):
+    RASCUNHO = "RASCUNHO", "Em preparação"
+    AGUARDANDO_REVISAO = "AGUARDANDO_REVISAO", "Aguardando revisão fiscal"
+    CANCELADO = "CANCELADO", "Cancelado"
+
+
 class StatusInutilizacaoFiscal(models.TextChoices):
     PENDENTE = "PENDENTE", "Pendente"
     AUTORIZADA = "AUTORIZADA", "Autorizada"
@@ -378,6 +384,93 @@ class DocumentoFiscal(models.Model):
     def __str__(self):
         numero = self.numero or "sem número"
         return f"{self.get_tipo_documento_display()} {self.serie}/{numero}"
+
+
+class RascunhoDevolucaoFornecedor(models.Model):
+    contrato = models.CharField(
+        max_length=64,
+        default="supplier_return_draft_v1",
+        editable=False,
+    )
+    entrada_compra = models.ForeignKey(
+        "compras.EntradaCompra",
+        on_delete=models.PROTECT,
+        related_name="rascunhos_devolucao_fornecedor",
+    )
+    chave_referenciada = models.CharField(max_length=44)
+    motivo_operacional = models.CharField(max_length=255)
+    status = models.CharField(
+        max_length=24,
+        choices=StatusRascunhoDevolucaoFornecedor.choices,
+        default=StatusRascunhoDevolucaoFornecedor.RASCUNHO,
+    )
+    criado_por = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.PROTECT,
+        related_name="rascunhos_devolucao_fornecedor_criados",
+    )
+    atualizado_por = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.PROTECT,
+        related_name="rascunhos_devolucao_fornecedor_atualizados",
+    )
+    criado_em = models.DateTimeField(auto_now_add=True)
+    atualizado_em = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ["-criado_em", "-id"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["entrada_compra"],
+                condition=models.Q(
+                    status__in=[
+                        StatusRascunhoDevolucaoFornecedor.RASCUNHO,
+                        StatusRascunhoDevolucaoFornecedor.AGUARDANDO_REVISAO,
+                    ]
+                ),
+                name="fisc_rasc_dev_entrada_uniq",
+            ),
+        ]
+
+    def __str__(self):
+        return f"Devolução em preparação da entrada {self.entrada_compra_id}"
+
+
+class ItemRascunhoDevolucaoFornecedor(models.Model):
+    rascunho = models.ForeignKey(
+        RascunhoDevolucaoFornecedor,
+        on_delete=models.CASCADE,
+        related_name="itens",
+    )
+    item_entrada = models.ForeignKey(
+        "compras.ItemEntradaCompra",
+        on_delete=models.PROTECT,
+        related_name="selecoes_devolucao_fornecedor",
+    )
+    quantidade = models.DecimalField(max_digits=12, decimal_places=3)
+    quantidade_recebida_snapshot = models.DecimalField(max_digits=12, decimal_places=3)
+
+    class Meta:
+        ordering = ["item_entrada_id"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["rascunho", "item_entrada"],
+                name="fisc_item_rasc_dev_uniq",
+            ),
+            models.CheckConstraint(
+                condition=models.Q(quantidade__gt=0),
+                name="fisc_item_rasc_dev_qtd_pos",
+            ),
+            models.CheckConstraint(
+                condition=models.Q(quantidade__lte=models.F("quantidade_recebida_snapshot")),
+                name="fisc_item_rasc_dev_qtd_lim",
+            ),
+        ]
+
+    def __str__(self):
+        return f"{self.quantidade} da entrada {self.item_entrada_id}"
+
+
 class TipoEvidenciaFiscal(models.TextChoices):
     XML_ENVIO = "XML_ENVIO", "XML transmitido"
     RETORNO_TRANSMISSAO = "RETORNO_TRANSMISSAO", "Retorno da transmissão"

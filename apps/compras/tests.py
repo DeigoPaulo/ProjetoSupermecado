@@ -1829,6 +1829,8 @@ class ComprasIsolamentoEmpresaTests(TestCase):
             ("get", f"/compras/{self.entrada_b.pk}/editar/", {}),
             ("post", f"/compras/{self.entrada_b.pk}/finalizar/", {}),
             ("post", f"/compras/{self.entrada_b.pk}/cancelar/", {"motivo": "Teste"}),
+            ("post", f"/compras/{self.entrada_b.pk}/devolucao-fornecedor/rascunho/", {}),
+            ("post", f"/compras/{self.entrada_b.pk}/devolucao-fornecedor/rascunho/cancelar/", {}),
             ("post", f"/compras/{self.entrada_b.pk}/excluir-rascunho/", {}),
         ]
 

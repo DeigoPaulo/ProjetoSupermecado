@@ -545,6 +545,21 @@ def cancelar_entrada_compra(entrada, *, usuario, motivo, supervisor=None, ip=Non
         entrada = entrada.__class__.objects.select_for_update().get(pk=entrada.pk)
         if entrada.status != StatusEntradaCompra.FINALIZADA:
             raise ValidationError("Apenas entradas finalizadas podem ser canceladas.")
+        from apps.fiscal.models import (
+            RascunhoDevolucaoFornecedor,
+            StatusRascunhoDevolucaoFornecedor,
+        )
+
+        if RascunhoDevolucaoFornecedor.objects.filter(
+            entrada_compra=entrada,
+            status__in=[
+                StatusRascunhoDevolucaoFornecedor.RASCUNHO,
+                StatusRascunhoDevolucaoFornecedor.AGUARDANDO_REVISAO,
+            ],
+        ).exists():
+            raise ValidationError(
+                "Cancele a preparação fiscal da devolução antes de cancelar a entrada."
+            )
 
         for conta in entrada.contas_financeiras.select_for_update():
             from apps.financeiro.services import cancelar_conta

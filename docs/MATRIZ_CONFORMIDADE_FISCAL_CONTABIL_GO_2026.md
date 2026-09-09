@@ -97,9 +97,10 @@ Comunicação com Focus ou SEFAZ não será tratada como conformidade enquanto c
 - [x] Manter Focus, SEFAZ direta e produção desligados durante toda a preparação realizada até 09/09/2026.
 - [x] Criar o pré-diagnóstico `supplier_return_fiscal_preparation_v1` para devolução ao fornecedor, ligado à entrada e ao XML integral, sem emissão, numeração, estoque ou transmissão.
 - [x] Bloquear preparação incompleta quando faltarem XML integral, chave, modelo 55, identidades coincidentes ou itens fiscais originais.
-- [ ] Criar a seleção persistente e revisável dos itens e quantidades da devolução, ainda sem gerar documento fiscal.
+- [x] Criar a seleção persistente e reversível dos itens e quantidades da devolução, limitada ao recebido e ainda sem gerar documento fiscal; migration fiscal 0036.
+- [ ] Criar a submissão bloqueante à revisão fiscal e mapear a seleção ao `nItem` original antes de calcular qualquer tributo.
 - [ ] Revisar a Fase 1 com o contador quando os dados reais chegarem.
 
 ## Próxima ação verificável
 
-O pré-diagnóstico da devolução ao fornecedor já comprova a origem documental sem inventar enquadramento. A próxima ação interna é criar um rascunho de devolução ligado à entrada, com seleção de itens e quantidades e controle de saldo devolvível, mantendo CFOP, tributos, geração, numeração e transmissão bloqueados até revisão fiscal. Quando os dados reais estiverem disponíveis, também será necessário concluir o aceite contábil e a homologação por canal.
+O pré-diagnóstico e o rascunho operacional da devolução ao fornecedor já preservam a origem, o motivo, os itens e as quantidades sem inventar enquadramento. A próxima ação interna é submeter esse rascunho a uma revisão fiscal bloqueante e mapear cada seleção ao `nItem` do XML original, mantendo CFOP, tributos, geração, numeração e transmissão bloqueados. Quando os dados reais estiverem disponíveis, também será necessário concluir o aceite contábil e a homologação por canal.

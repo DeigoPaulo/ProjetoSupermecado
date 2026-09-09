@@ -80,10 +80,11 @@ CENARIOS_TRIBUTARIOS_GO = (
         "modelos": ("55",),
         "status": BLOQUEADO,
         "escopo_atual": (
-            "Pré-diagnóstico somente leitura ligado à entrada e ao XML integral; seleção, "
-            "finalidade no gerador, documento referenciado e impostos devolvidos ainda não implementados."
+            "Pré-diagnóstico e rascunho operacional ligados à entrada e ao XML integral, "
+            "com seleção limitada de itens; revisão fiscal, finalidade no gerador, documento "
+            "referenciado e impostos devolvidos ainda não implementados."
         ),
-        "proxima_evidencia": "Persistir a seleção revisável de itens sem liberar emissão e testar totalização.",
+        "proxima_evidencia": "Submeter o rascunho à revisão fiscal e mapear cada seleção ao item do XML original.",
     },
     {
         "codigo": "transferencia_bonificacao_remessa",

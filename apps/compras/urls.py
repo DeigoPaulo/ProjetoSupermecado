@@ -30,6 +30,8 @@ urlpatterns = [
     path("<int:pk>/finalizar/", views.finalizar_entrada, name="finalizar"),
     path("<int:pk>/vincular-pedido-xml/", views.vincular_xml_pedido_manual, name="vincular_xml_pedido_manual"),
     path("<int:pk>/confirmar-conferencia-fisica/", views.confirmar_conferencia_fisica_entrada, name="confirmar_conferencia_fisica"),
+    path("<int:pk>/devolucao-fornecedor/rascunho/", views.salvar_rascunho_devolucao, name="salvar_rascunho_devolucao"),
+    path("<int:pk>/devolucao-fornecedor/rascunho/cancelar/", views.cancelar_rascunho_devolucao, name="cancelar_rascunho_devolucao"),
     path("<int:pk>/cancelar/", views.cancelar_entrada, name="cancelar"),
     path("<int:pk>/excluir-rascunho/", views.excluir_rascunho, name="excluir_rascunho"),
 ]

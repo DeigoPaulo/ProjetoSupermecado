@@ -21,7 +21,12 @@ from apps.auditoria.models import LogAuditoria
 from apps.estoque.models import Estoque, MovimentacaoEstoque
 from apps.empresas.models import AcaoPinSupervisor
 from apps.financeiro.models import ContaFinanceira, StatusContaFinanceira
-from apps.fiscal.devolucao_fornecedor import preparar_devolucao_fornecedor
+from apps.fiscal.devolucao_fornecedor import (
+    cancelar_rascunho_devolucao_fornecedor,
+    preparar_devolucao_fornecedor,
+    rascunho_ativo_da_entrada,
+    salvar_rascunho_devolucao_fornecedor,
+)
 
 from .escopo import (
     cotacoes_para_usuario,
@@ -616,8 +621,17 @@ class EntradaCompraDetailView(LoginRequiredMixin, RoleRequiredMixin, DetailView)
             retorno_lista = reverse("compras:lista")
         context["retorno_lista_url"] = retorno_lista
         context["itens_conferencia"] = itens_conferencia_entrada(entrada)
+        rascunho_devolucao = (
+            rascunho_ativo_da_entrada(entrada)
+            if entrada.status == StatusEntradaCompra.FINALIZADA
+            else None
+        )
         bloqueios_cancelamento = []
         if entrada.status == StatusEntradaCompra.FINALIZADA:
+            if rascunho_devolucao:
+                bloqueios_cancelamento.append(
+                    "Existe uma preparação fiscal de devolução ativa para esta entrada."
+                )
             if entrada.contas_financeiras.filter(status=StatusContaFinanceira.PAGA).exists():
                 bloqueios_cancelamento.append("A conta financeira vinculada ja foi paga.")
             for item in entrada.itens.all():
@@ -634,6 +648,24 @@ class EntradaCompraDetailView(LoginRequiredMixin, RoleRequiredMixin, DetailView)
             if entrada.status == StatusEntradaCompra.FINALIZADA
             else None
         )
+        selecoes_devolucao = {
+            item.item_entrada_id: item.quantidade
+            for item in (rascunho_devolucao.itens.all() if rascunho_devolucao else [])
+        }
+        context["rascunho_devolucao_fornecedor"] = rascunho_devolucao
+        context["itens_rascunho_devolucao"] = [
+            {
+                "item": item,
+                "quantidade_selecionada": selecoes_devolucao.get(item.pk),
+                "quantidade_selecionada_html": (
+                    format(selecoes_devolucao[item.pk], "f")
+                    if item.pk in selecoes_devolucao
+                    else ""
+                ),
+                "quantidade_maxima_html": format(item.quantidade, "f"),
+            }
+            for item in entrada.itens.all()
+        ]
         context["pedidos_vinculaveis"] = PedidoCompra.objects.none()
         if entrada.status == StatusEntradaCompra.RASCUNHO and entrada.chave_acesso_xml and not entrada.pedido_origem_id:
             context["pedidos_vinculaveis"] = pedidos_para_usuario(self.request.user).filter(
@@ -824,6 +856,60 @@ def cancelar_entrada(request, pk):
     else:
         messages.success(request, "Entrada cancelada, estoque revertido e financeiro ajustado.")
 
+    return redirect("compras:detalhe", pk=entrada.pk)
+
+
+@login_required
+@role_required(*COMPRAS)
+def salvar_rascunho_devolucao(request, pk):
+    entrada = get_object_or_404(
+        entradas_para_usuario(request.user).prefetch_related("itens__produto"),
+        pk=pk,
+    )
+    if request.method != "POST":
+        return redirect("compras:detalhe", pk=entrada.pk)
+    selecoes = {
+        item.pk: request.POST.get(f"quantidade_{item.pk}", "")
+        for item in entrada.itens.all()
+    }
+    try:
+        _, criado = salvar_rascunho_devolucao_fornecedor(
+            entrada,
+            selecoes=selecoes,
+            motivo_operacional=request.POST.get("motivo_operacional", ""),
+            usuario=request.user,
+            ip=request.META.get("REMOTE_ADDR"),
+        )
+    except ValidationError as exc:
+        messages.error(request, " ".join(exc.messages))
+    else:
+        acao = "criado" if criado else "atualizado"
+        messages.success(
+            request,
+            f"Rascunho de devolução {acao}. Nenhuma nota, estoque ou transmissão foi gerada.",
+        )
+    return redirect("compras:detalhe", pk=entrada.pk)
+
+
+@login_required
+@role_required(*COMPRAS)
+def cancelar_rascunho_devolucao(request, pk):
+    entrada = get_object_or_404(entradas_para_usuario(request.user), pk=pk)
+    if request.method != "POST":
+        return redirect("compras:detalhe", pk=entrada.pk)
+    try:
+        cancelar_rascunho_devolucao_fornecedor(
+            entrada,
+            usuario=request.user,
+            ip=request.META.get("REMOTE_ADDR"),
+        )
+    except ValidationError as exc:
+        messages.error(request, " ".join(exc.messages))
+    else:
+        messages.success(
+            request,
+            "Preparação fiscal cancelada. As quantidades foram liberadas sem alterar o estoque.",
+        )
     return redirect("compras:detalhe", pk=entrada.pk)
 
 
