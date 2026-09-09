@@ -9,7 +9,7 @@ from django.db.models import Q
 from django.http import HttpResponse, JsonResponse, StreamingHttpResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.utils import timezone
-from django.views.decorators.http import require_POST
+from django.views.decorators.http import require_POST, require_GET
 
 from apps.accounts.permissions import (
     ADMINISTRACAO,
@@ -129,6 +129,7 @@ from .rateio_devolucao import RateioDevolucaoForm, registrar_rateio
 from .reflexos_devolucao import ReflexosBasesDevolucaoForm, registrar_reflexos, validar_rateio_atual
 from .reflexos_devolucao import RevisaoReflexosForm, revisar_reflexos
 from .dossie_devolucao import diagnosticar_dossie
+from .extracao_contrato_devolucao import extrair_contrato_devolucao
 
 
 def _rascunhos_revisao_queryset(user):
@@ -468,6 +469,21 @@ def revisar_reflexos_devolucao(request, pk):
     else:
         messages.success(request, f"{revisao.get_decisao_display()}. Emissão continua bloqueada.")
     return redirect("fiscal:revisao_devolucao_detalhe", pk=pk)
+
+
+@login_required
+@role_required(*REVISAO_FISCAL)
+@require_GET
+def previa_contrato_devolucao(request, pk):
+    rascunho = get_object_or_404(_rascunhos_revisao_queryset(request.user), pk=pk)
+    resultado = extrair_contrato_devolucao(rascunho.pk, request.user)
+    estados = {"REFERENCIADO": "Referência encontrada, não significa aprovação", "AUSENTE": "Ausente",
+               "DIVERGENTE": "Dados divergentes", "SUPERADO": "Versão superada", "NAO_SUPORTADO": "Ainda não implementado"}
+    grupos = [{"nome": nome.replace("_", " ").capitalize(), "estado": estados[valor["estado"]],
+               "referencias": valor["referencias"]} for nome, valor in resultado["conteudo"]["grupos"].items()]
+    resposta = render(request, "fiscal/previa_contrato_devolucao.html", {"rascunho": rascunho, "resultado": resultado, "grupos": grupos})
+    resposta["Cache-Control"] = "private, no-store"
+    return resposta
 
 
 def _diagnostico_prontidao_fiscal(user):

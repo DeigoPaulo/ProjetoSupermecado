@@ -14,6 +14,7 @@
 
 <section class="panel">
   <div class="panel-title">Conferência consolidada da devolução</div>
+  <a class="secondary-button" href="{% url 'fiscal:previa_contrato_devolucao' rascunho.pk %}">Ver prévia das referências fiscais</a>
   <p>{{ dossie.pendencias }} pendência(s) identificada(s). Consulta estrutural dos registros: não certifica conformidade fiscal e não libera cobrança, XML ou transmissão.</p>
   <table><thead><tr><th>Etapa</th><th>Situação</th><th>Orientação</th></tr></thead><tbody>
     {% for etapa in dossie.etapas %}<tr><td>{{ etapa.titulo }}{% if etapa.registro_id %} · #{{ etapa.registro_id }}{% endif %}</td><td>{{ etapa.estado }}</td><td>{{ etapa.detalhe }}</td></tr>{% endfor %}

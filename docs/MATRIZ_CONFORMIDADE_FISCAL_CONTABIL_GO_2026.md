@@ -1,5 +1,7 @@
 # Matriz de conformidade fiscal e contábil — Goiás 2026
 
+Ciclo 64 (09/09/2026): prévia protegida das referências fiscais disponível pela tela de revisão da devolução. Rota somente GET, restrita a Administrador/Contabilidade e à empresa do usuário, com cache desabilitado. Mostra grupos, referências, hashes, pendências e bloqueios, sem edição ou emissão. A etapa de extração do ciclo 63 foi salva no commit 7efa868 após restabelecimento da execução. Próximo passo: obter e analisar integralmente as fontes oficiais e schemas pendentes para fechar a matriz de capacidade fiscal; a prévia não substitui essa validação.
+
 Ciclo 63: referências do envelope passam a ser extraídas por serviço autenticado com escopo de empresa, hashes e pendências do dossiê. Não há payload tributário completo, validação XSD ou liberação de emissão. A autenticidade aqui significa origem em registros autorizados do sistema e conferência de hashes, não assinatura fiscal ou aceite da SEFAZ. Próximo passo: prévia protegida na tela; fontes integrais e homologação seguem pendentes.
 
 Ciclo 62: validador estrutural do envelope de referências implementado, ainda sem leitura autenticada do banco ou validação normativa. Mesmo referências sintaticamente válidas produzem bloqueio de conteúdo fiscal não implementado; modelo 65, campos desconhecidos e emissão habilitada são rejeitados. Não há XML, transmissão, persistência ou nova migração. Próximo passo: extração com autorização e integridade, mantendo os bloqueios fiscais.

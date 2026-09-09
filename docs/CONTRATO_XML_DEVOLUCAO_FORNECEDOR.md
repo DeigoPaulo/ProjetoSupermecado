@@ -1,5 +1,7 @@
 # Contrato proposto do XML de devolução ao fornecedor
 
+Ciclo 64 (09/09/2026): prévia protegida das referências fiscais disponível pela tela de revisão da devolução. Rota somente GET, restrita a Administrador/Contabilidade e à empresa do usuário, com cache desabilitado. Mostra grupos, referências, hashes, pendências e bloqueios, sem edição ou emissão. A etapa de extração do ciclo 63 foi salva no commit 7efa868 após restabelecimento da execução. Próximo passo: obter e analisar integralmente as fontes oficiais e schemas pendentes para fechar a matriz de capacidade fiscal; a prévia não substitui essa validação.
+
 Atualização do ciclo 63: `extrair_contrato_devolucao(rascunho_id, usuario)` consulta o banco com escopo de empresa e perfil fiscal, extrai IDs/hashes e retorna `conteudo`, `validacao` e `pendencias_dossie`. Os grupos sem mapeamento fiscal permanecem NAO_SUPORTADO. A extração inclui decisões disponíveis e cadeia de memórias; referências íntegras não substituem aprovações pendentes. Não expõe XML ou credenciais, não grava dados e não fornece endpoint público. A prévia em tela ainda está pendente. O validador puro continua sem autenticar entradas arbitrárias: a autorização pertence ao serviço de extração.
 
 09/09/2026 · ciclo 61 · especificação preliminar, não implementada.

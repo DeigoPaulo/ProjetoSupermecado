@@ -1,0 +1,25 @@
+{% extends "base.html" %}
+{% block title %}Prévia das referências fiscais{% endblock %}
+{% block content %}
+<div id="previa-contrato-fiscal">
+<div class="page-header"><h1>Prévia das referências fiscais</h1><a class="secondary-button" href="{% url 'fiscal:revisao_devolucao_detalhe' rascunho.pk %}">Voltar à revisão</a></div>
+<section class="panel">
+  <p>Preparação #{{ rascunho.pk }} · consulta somente leitura.</p>
+  <p><strong>XML e emissão bloqueados.</strong> Esta prévia não é uma nota fiscal, não gera cobrança e não certifica conformidade. As referências são obtidas do sistema; não podem ser editadas nesta tela.</p>
+  <p>Estrutura do contrato: {% if resultado.validacao.estrutura_valida %}conferida, ainda sem validação fiscal{% else %}com inconsistências{% endif %}.</p>
+  <table><thead><tr><th>Grupo</th><th>Situação</th><th>Referências</th></tr></thead><tbody>
+  {% for grupo in grupos %}<tr><td>{{ grupo.nome }}</td><td>{{ grupo.estado }}</td><td>{% for ref in grupo.referencias %}<details><summary>{{ ref.tipo }} · #{{ ref.id }}</summary><p style="overflow-wrap:anywhere">SHA-256: {{ ref.sha256 }}</p></details>{% empty %}Sem referência disponível{% endfor %}</td></tr>{% endfor %}
+  </tbody></table>
+</section>
+<section class="panel mt-panel"><div class="panel-title">Pendências do dossiê</div>
+  {% for etapa in resultado.pendencias_dossie %}<p><strong>{{ etapa.titulo }} — {{ etapa.estado }}</strong>: {{ etapa.detalhe }}</p>{% endfor %}
+</section>
+<section class="panel mt-panel"><div class="panel-title">Bloqueios técnicos</div>
+  <p>Campos fiscais ainda precisam ser implementados e conferidos. Fontes integrais, schemas e homologação continuam pendentes. Nenhuma referência encontrada remove estes bloqueios.</p>
+  <details><summary>Ver códigos de diagnóstico</summary>
+  <ul>{% for item in resultado.validacao.bloqueios %}<li>{{ item.grupo }}: {{ item.codigo }}</li>{% endfor %}</ul>
+  {% for erro in resultado.validacao.erros %}<p>{{ erro.caminho }}: {{ erro.codigo }}</p>{% endfor %}
+  </details>
+</section>
+</div>
+{% endblock %}

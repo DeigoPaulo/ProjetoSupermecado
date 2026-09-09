@@ -661,6 +661,35 @@ class PreparacaoDevolucaoFornecedorTests(TestCase):
             with self.assertRaises(ValidationError):
                 extrair_contrato_devolucao(pk, self.revisor)
 
+    def test_previa_contrato_somente_leitura_e_acesso_restrito(self):
+        from apps.auditoria.models import LogAuditoria
+        rascunho, _, _, _ = self._reflexos_registrados()
+        url = f"/fiscal/devolucoes-fornecedor/revisao/{rascunho.pk}/contrato/"
+        self.assertEqual(self.client.get(url).status_code, 302)
+        for usuario in (self.financeiro, self.usuario):
+            self.client.force_login(usuario)
+            self.assertEqual(self.client.get(url).status_code, 403)
+        self.client.force_login(self.revisor)
+        antes = LogAuditoria.objects.count()
+        resposta = self.client.get(url)
+        self.assertContains(resposta, "XML e emissão bloqueados")
+        self.assertContains(resposta, "Referência encontrada, não significa aprovação")
+        conteudo_previa = resposta.content.decode().split('<div id="previa-contrato-fiscal">', 1)[1].split('</main>', 1)[0]
+        self.assertNotIn("<form", conteudo_previa)
+        self.assertEqual(resposta["Cache-Control"], "private, no-store")
+        self.assertEqual(self.client.post(url, {"permite_emissao": True}).status_code, 405)
+        self.assertEqual(LogAuditoria.objects.count(), antes)
+        self.assertFalse(DocumentoFiscal.objects.exists())
+
+    def test_previa_contrato_outra_empresa_retorna_404(self):
+        rascunho, _, _, _ = self._reflexos_registrados()
+        empresa = Empresa.objects.create(razao_social="Outra empresa", nome_fantasia="Outra", cnpj="33.333.333/0001-33")
+        filial = Filial.objects.create(empresa=empresa, nome="Outra", cnpj=empresa.cnpj, uf="GO")
+        usuario = get_user_model().objects.create_user("contador_previa_outra")
+        PerfilUsuario.objects.create(usuario=usuario, filial=filial, tipo=TipoPerfil.CONTABILIDADE)
+        self.client.force_login(usuario)
+        self.assertEqual(self.client.get(f"/fiscal/devolucoes-fornecedor/revisao/{rascunho.pk}/contrato/").status_code, 404)
+
     def test_revisao_reflexos_exige_decisao_e_justificativa(self):
         for dados in ({}, {"decisao": "APROVAR", "justificativa": "curta"}, {"decisao": "EMITIR", "justificativa": "Conferência independente das bases."}):
             self.assertFalse(RevisaoReflexosForm(dados).is_valid())
