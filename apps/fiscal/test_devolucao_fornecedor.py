@@ -50,6 +50,7 @@ from .models import (
 
 
 from .transporte_devolucao import TransporteDevolucaoForm, registrar_transporte
+from .composicao_devolucao import ComposicaoDevolucaoForm, registrar_composicao
 
 
 class PreparacaoDevolucaoFornecedorTests(TestCase):
@@ -284,6 +285,50 @@ class PreparacaoDevolucaoFornecedorTests(TestCase):
 
     def _dados_transporte(self):
         return {"modalidade": "9", "quantidade_volumes": "0", "peso_liquido": "0", "peso_bruto": "0"}
+
+    def _dados_composicao(self):
+        return {"valor_base": "10,00", "frete": "2,00", "seguro": "1,00", "despesas": "0,50", "desconto": "0,50", "total": "13,00", "criterio": "Componentes conferidos para a devolução.", "confirmar_componentes": "on"}
+
+    def test_composicao_exige_aprovacao_e_preserva_versoes(self):
+        rascunho, _, memoria = self._memoria_registrada()
+        with self.assertRaisesMessage(ValidationError, "mais recente precisa estar aprovada"):
+            registrar_composicao(rascunho, dados=self._dados_composicao(), responsavel=self.revisor)
+        revisar_memoria_calculo_devolucao_fornecedor(rascunho, memoria_id=memoria.pk, decisao="APROVAR", justificativa="Conferência independente concluída.", revisor=self.segundo_revisor)
+        primeira, criada = registrar_composicao(rascunho, dados=self._dados_composicao(), responsavel=self.revisor)
+        repetida, nova = registrar_composicao(rascunho, dados=self._dados_composicao(), responsavel=self.revisor)
+        segunda, _ = registrar_composicao(rascunho, dados={**self._dados_composicao(), "frete": "3,00", "total": "14,00"}, responsavel=self.revisor)
+        self.assertTrue(criada)
+        self.assertFalse(nova)
+        self.assertEqual(primeira.pk, repetida.pk)
+        self.assertEqual(segunda.versao, 2)
+        self.assertEqual(primeira.conteudo_snapshot["dados"]["total"], "13.00")
+        with self.assertRaises(ValueError):
+            primeira.save()
+        with self.assertRaisesMessage(ValidationError, "valor base diverge"):
+            registrar_composicao(rascunho, dados={**self._dados_composicao(), "valor_base": "11,00", "total": "14,00"}, responsavel=self.revisor)
+        self.assertEqual(rascunho.composicoes.count(), 2)
+        self.assertFalse(DocumentoFiscal.objects.exists())
+
+    def test_composicao_recusa_inconsistencia_e_ausencia_de_confirmacao(self):
+        self.assertTrue(ComposicaoDevolucaoForm(self._dados_composicao()).is_valid())
+        for alteracao in ({"total": "14,00"}, {"frete": "-1"}, {"seguro": ""}, {"despesas": "0,001"}, {"confirmar_componentes": ""}, {"total": "NaN"}):
+            with self.subTest(alteracao=alteracao):
+                self.assertFalse(ComposicaoDevolucaoForm({**self._dados_composicao(), **alteracao}).is_valid())
+
+    def test_composicao_tela_permissao_e_xml_adulterado(self):
+        rascunho, _, memoria = self._memoria_registrada()
+        revisar_memoria_calculo_devolucao_fornecedor(rascunho, memoria_id=memoria.pk, decisao="APROVAR", justificativa="Conferência independente concluída.", revisor=self.segundo_revisor)
+        url = f"/fiscal/devolucoes-fornecedor/revisao/{rascunho.pk}/composicao/"
+        self.client.force_login(self.financeiro)
+        self.assertEqual(self.client.post(url, self._dados_composicao()).status_code, 403)
+        self.client.force_login(self.revisor)
+        self.assertContains(self.client.post(url, self._dados_composicao(), follow=True), "Composição versão 1")
+        dfe = DocumentoDFeRecebido.objects.get(entrada_compra=self.entrada)
+        dfe.xml_conteudo += " "
+        dfe.save(update_fields=["xml_conteudo"])
+        with self.assertRaisesMessage(ValidationError, "XML original divergiu"):
+            registrar_composicao(rascunho, dados=self._dados_composicao(), responsavel=self.revisor)
+        self.assertEqual(rascunho.composicoes.count(), 1)
 
     def test_transporte_exige_memoria_aprovada_e_e_versionado(self):
         rascunho, _, memoria = self._memoria_registrada()

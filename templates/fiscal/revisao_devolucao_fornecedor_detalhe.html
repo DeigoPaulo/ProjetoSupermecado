@@ -204,7 +204,7 @@
 
 <section class="panel mt-panel">
   <div class="panel-title">Transporte da devolução</div>
-  <p>Preenchimento logístico vinculado à memória aprovada mais recente. Valores de frete e composição do total serão tratados na próxima etapa.</p>
+  <p>Preenchimento logístico vinculado à memória aprovada mais recente. Os valores de frete são registrados separadamente na composição comercial.</p>
   {% for transporte in rascunho.transportes.all %}
     <details><summary>Versão {{ transporte.versao }} · {{ transporte.responsavel }} · {{ transporte.criado_em|date:"d/m/Y H:i" }}</summary>
       <table><tbody>{% for chave, valor in transporte.conteudo_snapshot.dados.items %}<tr><th>{{ chave }}</th><td>{{ valor|default_if_none:"—" }}</td></tr>{% endfor %}</tbody></table>
@@ -217,6 +217,28 @@
         {% csrf_token %}
         {% for field in transporte_form %}<label class="form-field"><span>{{ field.label }}</span>{{ field }}</label>{% endfor %}
         <div class="form-actions"><button type="submit" class="primary-button">Registrar ficha de transporte</button></div>
+      </form>
+    </details>
+  {% endif %}
+</section>
+
+<section class="panel mt-panel">
+  <div class="panel-title">Composição comercial da devolução</div>
+  <p>Base + frete + seguro + despesas − desconto. Esta conferência não determina o total fiscal da NF-e e aguarda revisão contábil; não gera cobrança, estoque ou emissão.</p>
+  {% for ficha in rascunho.composicoes.all %}
+    <details><summary>Versão {{ ficha.versao }} · {{ ficha.responsavel }} · {{ ficha.criado_em|date:"d/m/Y H:i" }}</summary>
+      <p>Base: R$ {{ ficha.conteudo_snapshot.dados.valor_base }} · Frete: R$ {{ ficha.conteudo_snapshot.dados.frete }} · Seguro: R$ {{ ficha.conteudo_snapshot.dados.seguro }}</p>
+      <p>Despesas: R$ {{ ficha.conteudo_snapshot.dados.despesas }} · Desconto: R$ {{ ficha.conteudo_snapshot.dados.desconto }} · Total comercial: R$ {{ ficha.conteudo_snapshot.dados.total }}</p>
+      <p>{{ ficha.conteudo_snapshot.dados.criterio }}</p>
+    </details>
+  {% empty %}<p>Nenhuma composição registrada.</p>{% endfor %}
+  {% if rascunho.status == "APROVADO" %}
+    <details><summary>Registrar composição comercial</summary>
+      <p>Informe todos os valores, inclusive zeros. A memória mais recente precisa estar aprovada.</p>
+      <form method="post" action="{% url 'fiscal:registrar_composicao_devolucao' rascunho.pk %}" class="form-grid">
+        {% csrf_token %}
+        {% for field in composicao_form %}<label class="form-field"><span>{{ field.label }}</span>{{ field }}</label>{% endfor %}
+        <div class="form-actions"><button type="submit" class="primary-button">Registrar para conferência</button></div>
       </form>
     </details>
   {% endif %}
