@@ -1,5 +1,7 @@
 # Roadmap de evolucao pos-piloto
 
+- Ciclo 54 concluído estruturalmente em 09/09/2026: rateio comercial por item `supplier_return_commercial_allocation_v1` implementado, migration 0046. Exige composição e memória atuais aprovadas, valores explícitos inclusive zeros e somas exatas por componente e total. Histórico imutável, idempotência, escopo e hashes preservados. 56 testes de devolução, transporte e rateio aprovados; nenhuma divergência de migrations. Migration gerada e exercitada no banco de testes, ainda não aplicada ao banco operacional. Não gera cobrança, imposto, XML ou transmissão. Próximo passo: estruturar os reflexos sobre bases tributárias com orientação contábil; aceite real e homologação permanecem pendentes.
+
 Atualizado em 01/09/2026 a partir das notas técnicas de evolução contábil, integração SEFAZ, comparativo iSOLIDUS e auditoria do estado executável do repositório.
 
 ## Principio de produto

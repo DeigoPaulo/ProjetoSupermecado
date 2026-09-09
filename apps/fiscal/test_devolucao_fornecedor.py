@@ -52,6 +52,7 @@ from .models import (
 from .transporte_devolucao import TransporteDevolucaoForm, registrar_transporte
 from .composicao_devolucao import ComposicaoDevolucaoForm, registrar_composicao
 from .composicao_devolucao import RevisaoComposicaoForm, revisar_composicao
+from .rateio_devolucao import registrar_rateio
 
 
 class PreparacaoDevolucaoFornecedorTests(TestCase):
@@ -305,6 +306,53 @@ class PreparacaoDevolucaoFornecedorTests(TestCase):
             with self.subTest(campo=campo):
                 self.assertFalse(RevisaoComposicaoForm({**self._dados_revisao_composicao(), campo: ""}).is_valid())
         self.assertTrue(RevisaoComposicaoForm({"decisao": "DEVOLVER_CORRECAO", "justificativa": "Corrigir a composição apresentada."}).is_valid())
+
+    def test_rateio_aprovacao_idempotencia_imutabilidade_e_tela(self):
+        rascunho, ficha = self._composicao_registrada()
+        item = ficha.memoria.itens.get()
+        dados = {"criterio": "Componentes informados para o item.", **{f"{campo}_{item.pk}": self._dados_composicao()[campo] for campo in ("frete", "seguro", "despesas", "desconto")}}
+        with self.assertRaisesMessage(ValidationError, "precisam estar aprovadas"):
+            registrar_rateio(rascunho, composicao_id=ficha.pk, dados=dados, responsavel=self.revisor)
+        revisar_composicao(rascunho, composicao_id=ficha.pk, dados=self._dados_revisao_composicao(), revisor=self.segundo_revisor)
+        rateio, criado = registrar_rateio(rascunho, composicao_id=ficha.pk, dados=dados, responsavel=self.revisor)
+        self.assertTrue(criado)
+        self.assertEqual(rateio.conteudo_snapshot["itens"][0]["total"], "13.00")
+        self.assertFalse(rateio.conteudo_snapshot["permite_emissao"])
+        repetido, criado = registrar_rateio(rascunho, composicao_id=ficha.pk, dados=dados, responsavel=self.revisor)
+        self.assertFalse(criado)
+        self.assertEqual(rateio.pk, repetido.pk)
+        with self.assertRaises(ValueError):
+            rateio.save()
+        with self.assertRaises(ValueError):
+            rateio.delete()
+        novo, _ = registrar_rateio(rascunho, composicao_id=ficha.pk, dados={**dados, "criterio": "Novo detalhamento do critério informado."}, responsavel=self.revisor)
+        self.assertEqual(novo.versao, 2)
+        url = f"/fiscal/devolucoes-fornecedor/revisao/{rascunho.pk}/composicao/rateio/"
+        self.client.force_login(self.financeiro)
+        self.assertEqual(self.client.post(url, dados).status_code, 403)
+        self.client.force_login(self.revisor)
+        self.assertEqual(self.client.get(url).status_code, 405)
+        self.assertContains(self.client.post(url, {**dados, "composicao_id": ficha.pk}, follow=True), "conteúdo já registrado")
+        self.assertFalse(DocumentoFiscal.objects.exists())
+
+    def test_rateio_rejeita_soma_versao_superada_e_xml_alterado(self):
+        rascunho, ficha = self._composicao_registrada()
+        revisar_composicao(rascunho, composicao_id=ficha.pk, dados=self._dados_revisao_composicao(), revisor=self.segundo_revisor)
+        item = ficha.memoria.itens.get()
+        dados = {"criterio": "Componentes informados para o item.", **{f"{campo}_{item.pk}": "0" for campo in ("frete", "seguro", "despesas", "desconto")}}
+        with self.assertRaisesMessage(ValidationError, "soma de frete"):
+            registrar_rateio(rascunho, composicao_id=ficha.pk, dados=dados, responsavel=self.revisor)
+        dfe = DocumentoDFeRecebido.objects.get(entrada_compra=self.entrada)
+        dfe.xml_conteudo += " "
+        dfe.save(update_fields=["xml_conteudo"])
+        with self.assertRaisesMessage(ValidationError, "XML original divergiu"):
+            registrar_rateio(rascunho, composicao_id=ficha.pk, dados=dados, responsavel=self.revisor)
+        dfe.xml_conteudo = dfe.xml_conteudo[:-1]
+        dfe.save(update_fields=["xml_conteudo"])
+        registrar_composicao(rascunho, dados={**self._dados_composicao(), "criterio": "Nova composição comercial informada."}, responsavel=self.revisor)
+        with self.assertRaisesMessage(ValidationError, "superada"):
+            registrar_rateio(rascunho, composicao_id=ficha.pk, dados=dados, responsavel=self.revisor)
+        self.assertFalse(ficha.rateios.exists())
 
     def test_revisao_composicao_segregada_unica_imutavel(self):
         rascunho, ficha = self._composicao_registrada()

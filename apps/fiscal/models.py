@@ -1072,6 +1072,31 @@ class RevisaoComposicaoDevolucaoFornecedor(models.Model):
         raise ValueError("Revisões da composição são imutáveis.")
 
 
+class RateioDevolucaoFornecedor(models.Model):
+    objects = ComposicaoDevolucaoQuerySet.as_manager()
+    composicao = models.ForeignKey(ComposicaoDevolucaoFornecedor, on_delete=models.PROTECT, related_name="rateios")
+    versao = models.PositiveIntegerField()
+    conteudo_snapshot = models.JSONField()
+    conteudo_sha256 = models.CharField(max_length=64)
+    responsavel = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.PROTECT)
+    criado_em = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["versao"]
+        constraints = [
+            models.UniqueConstraint(fields=["composicao", "versao"], name="fisc_rateio_dev_vers_uniq"),
+            models.UniqueConstraint(fields=["composicao", "conteudo_sha256"], name="fisc_rateio_dev_hash_uniq"),
+        ]
+
+    def save(self, *args, **kwargs):
+        if self.pk or not self._state.adding:
+            raise ValueError("Rateios da devolução são imutáveis.")
+        return super().save(*args, **kwargs)
+
+    def delete(self, *args, **kwargs):
+        raise ValueError("Rateios da devolução são imutáveis.")
+
+
 class TipoEvidenciaFiscal(models.TextChoices):
     XML_ENVIO = "XML_ENVIO", "XML transmitido"
     RETORNO_TRANSMISSAO = "RETORNO_TRANSMISSAO", "Retorno da transmissão"

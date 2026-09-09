@@ -224,12 +224,32 @@
 
 <section class="panel mt-panel">
   <div class="panel-title">Composição comercial da devolução</div>
+  {% if rateio_form %}
+    <details><summary>Registrar rateio por item da composição {{ composicao_rateio.versao }}</summary>
+      <p>Informe todos os componentes, inclusive zeros. As somas devem conferir com a composição aprovada. O rateio é comercial: não define bases tributárias nem autoriza emissão.</p>
+      <form method="post" action="{% url 'fiscal:registrar_rateio_devolucao' rascunho.pk %}" class="form-grid">
+        {% csrf_token %}<input type="hidden" name="composicao_id" value="{{ composicao_rateio.pk }}">
+        {{ rateio_form.as_p }}
+        <button type="submit" class="btn btn-primary">Registrar rateio comercial</button>
+      </form>
+    </details>
+  {% endif %}
   <p>Base + frete + seguro + despesas − desconto. O total comercial e a orientação contábil não determinam automaticamente o total fiscal da NF-e; não geram cobrança, estoque ou emissão.</p>
   {% for ficha in rascunho.composicoes.all %}
     <details><summary>Versão {{ ficha.versao }} · {{ ficha.responsavel }} · {{ ficha.criado_em|date:"d/m/Y H:i" }}</summary>
       <p>Base: R$ {{ ficha.conteudo_snapshot.dados.valor_base }} · Frete: R$ {{ ficha.conteudo_snapshot.dados.frete }} · Seguro: R$ {{ ficha.conteudo_snapshot.dados.seguro }}</p>
       <p>Despesas: R$ {{ ficha.conteudo_snapshot.dados.despesas }} · Desconto: R$ {{ ficha.conteudo_snapshot.dados.desconto }} · Total comercial: R$ {{ ficha.conteudo_snapshot.dados.total }}</p>
       <p>{{ ficha.conteudo_snapshot.dados.criterio }}</p>
+      {% for rateio in ficha.rateios.all %}
+        <details><summary>Rateio {{ rateio.versao }} · {{ rateio.responsavel }} · {{ rateio.criado_em|date:"d/m/Y H:i" }}</summary>
+          <p>{{ rateio.conteudo_snapshot.criterio }}</p>
+          <table><thead><tr><th>nItem</th><th>Base comercial</th><th>Frete</th><th>Seguro</th><th>Despesas</th><th>Desconto</th><th>Total comercial</th></tr></thead><tbody>
+          {% for item in rateio.conteudo_snapshot.itens %}
+            <tr><td>{{ item.numero_item_xml }}</td><td>{{ item.base }}</td><td>{{ item.frete }}</td><td>{{ item.seguro }}</td><td>{{ item.despesas }}</td><td>{{ item.desconto }}</td><td>{{ item.total }}</td></tr>
+          {% endfor %}
+          </tbody></table>
+        </details>
+      {% endfor %}
       {% if ficha.revisao %}
         <p><strong>{{ ficha.revisao.get_decisao_display }}</strong> por {{ ficha.revisao.revisor }} em {{ ficha.revisao.criado_em|date:"d/m/Y H:i" }}</p>
         <p>{{ ficha.revisao.conteudo_snapshot.dados.justificativa }}</p>
