@@ -1,5 +1,8 @@
 # Devolução ao fornecedor — preparação fiscal segura
 
+- [x] Ciclo 55: validador isolado dos impactos declarados nas bases por item/tributo, com valores explícitos inclusive zeros, precisão de centavos e totais conferidos. Não valida mérito fiscal nem calcula impostos.
+- [ ] Integrar o validador a serviço transacional e histórico imutável vinculado ao rateio atual, conferindo empresa, permissões e hashes; depois disponibilizar a tela. O formulário isolado pressupõe origem validada pelo chamador e não autoriza nenhuma operação.
+
 - [x] Rateio comercial por item (ciclo 54, migration 0046): frete, seguro, despesas e desconto informados, sem distribuição automática. Cada soma confere com a composição aprovada atual; totais por item não podem ser negativos. Histórico versionado e imutável com hashes da composição, revisão e memória. Somente Administrador/Contabilidade. Não define bases tributárias nem libera emissão.
 
 Atualizado em 09/09/2026. Documento interno de engenharia e homologação.
