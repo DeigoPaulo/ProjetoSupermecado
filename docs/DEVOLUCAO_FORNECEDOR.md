@@ -63,7 +63,8 @@ Uma entrada criada por upload direto hoje preserva os dados normalizados e a cha
 - [ ] Definir natureza, CFOP, tratamento de ICMS/ICMS-ST/FCP/IPI/PIS/COFINS e cBenef com o contador.
 - [x] Registrar modalidade de frete, transportador e volumes em ficha logística versionada vinculada à memória aprovada mais recente; migration 0043. Dados informados, ainda sem geração fiscal.
 - [x] Registrar composição comercial versionada: base da memória aprovada + frete + seguro + despesas − desconto, total declarado conferido, zeros explícitos e confirmação de ausência de duplicidade; migration 0044. Não representa vNF nem cálculo tributário.
-- [ ] Obter revisão contábil da composição comercial e definir os reflexos tributários antes do XML.
+- [x] Implementar revisão da composição por outro responsável, decisão única por versão e orientação explícita para ICMS/ST/FCP, IPI, PIS/COFINS e IBS/CBS na aprovação; migration 0045. Devolução preserva histórico e exige nova composição.
+- [ ] Obter orientação e aceite do contador com dados reais; converter orientações em regras estruturadas e validar reflexos sobre as bases antes do XML.
 - [ ] Gerar XML modelo 55 com finalidade de devolução e documento referenciado.
 - [ ] Validar totais, schemas e regras vigentes com casos aprovados pelo contador.
 - [ ] Somente depois homologar, separadamente, Focus e SEFAZ direta.

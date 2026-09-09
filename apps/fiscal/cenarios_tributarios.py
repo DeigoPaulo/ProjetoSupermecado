@@ -89,8 +89,8 @@ CENARIOS_TRIBUTARIOS_GO = (
             "Finalidade no gerador, documento referenciado e impostos devolvidos ainda não implementados."
         ),
         "proxima_evidencia": (
-            "Ficha logística e composição comercial estruturadas; obter revisão e "
-            "definir reflexos tributários, mantendo a emissão bloqueada."
+            "Revisão segregada da composição implementada; estruturar rateio por item e "
+            "conferir bases e totalizações, mantendo a emissão bloqueada."
         ),
     },
     {

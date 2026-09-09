@@ -224,12 +224,32 @@
 
 <section class="panel mt-panel">
   <div class="panel-title">Composição comercial da devolução</div>
-  <p>Base + frete + seguro + despesas − desconto. Esta conferência não determina o total fiscal da NF-e e aguarda revisão contábil; não gera cobrança, estoque ou emissão.</p>
+  <p>Base + frete + seguro + despesas − desconto. O total comercial e a orientação contábil não determinam automaticamente o total fiscal da NF-e; não geram cobrança, estoque ou emissão.</p>
   {% for ficha in rascunho.composicoes.all %}
     <details><summary>Versão {{ ficha.versao }} · {{ ficha.responsavel }} · {{ ficha.criado_em|date:"d/m/Y H:i" }}</summary>
       <p>Base: R$ {{ ficha.conteudo_snapshot.dados.valor_base }} · Frete: R$ {{ ficha.conteudo_snapshot.dados.frete }} · Seguro: R$ {{ ficha.conteudo_snapshot.dados.seguro }}</p>
       <p>Despesas: R$ {{ ficha.conteudo_snapshot.dados.despesas }} · Desconto: R$ {{ ficha.conteudo_snapshot.dados.desconto }} · Total comercial: R$ {{ ficha.conteudo_snapshot.dados.total }}</p>
       <p>{{ ficha.conteudo_snapshot.dados.criterio }}</p>
+      {% if ficha.revisao %}
+        <p><strong>{{ ficha.revisao.get_decisao_display }}</strong> por {{ ficha.revisao.revisor }} em {{ ficha.revisao.criado_em|date:"d/m/Y H:i" }}</p>
+        <p>{{ ficha.revisao.conteudo_snapshot.dados.justificativa }}</p>
+        <p>ICMS/ST/FCP: {{ ficha.revisao.conteudo_snapshot.dados.reflexos_icms }}</p>
+        <p>IPI: {{ ficha.revisao.conteudo_snapshot.dados.reflexos_ipi }}</p>
+        <p>PIS/COFINS: {{ ficha.revisao.conteudo_snapshot.dados.reflexos_pis_cofins }}</p>
+        <p>IBS/CBS: {{ ficha.revisao.conteudo_snapshot.dados.reflexos_ibs_cbs }}</p>
+        <p>Fundamentação: {{ ficha.revisao.conteudo_snapshot.dados.fundamentacao }}</p>
+      {% elif ficha.pk != ultima_composicao_id or ficha.memoria_id != ultima_memoria_id %}
+        <p>Versão superada: registre uma composição vinculada à memória atual.</p>
+      {% elif ficha.responsavel_id == request.user.pk %}
+        <p>Aguardando revisão por outro responsável fiscal.</p>
+      {% elif rascunho.status == "APROVADO" %}
+        <form method="post" action="{% url 'fiscal:revisar_composicao_devolucao' rascunho.pk %}" class="form-grid">
+          {% csrf_token %}<input type="hidden" name="composicao_id" value="{{ ficha.pk }}">
+          <p>Para aprovar, descreva os efeitos tributários de todos os componentes, inclusive quando não houver efeito. Uma devolução exige nova versão corrigida.</p>
+          {% for field in revisao_composicao_form %}<label class="form-field"><span>{{ field.label }}</span>{{ field }}</label>{% endfor %}
+          <div class="form-actions"><button type="submit" class="primary-button">Registrar revisão da composição</button></div>
+        </form>
+      {% endif %}
     </details>
   {% empty %}<p>Nenhuma composição registrada.</p>{% endfor %}
   {% if rascunho.status == "APROVADO" %}

@@ -51,6 +51,7 @@ from .models import (
 
 from .transporte_devolucao import TransporteDevolucaoForm, registrar_transporte
 from .composicao_devolucao import ComposicaoDevolucaoForm, registrar_composicao
+from .composicao_devolucao import RevisaoComposicaoForm, revisar_composicao
 
 
 class PreparacaoDevolucaoFornecedorTests(TestCase):
@@ -288,6 +289,61 @@ class PreparacaoDevolucaoFornecedorTests(TestCase):
 
     def _dados_composicao(self):
         return {"valor_base": "10,00", "frete": "2,00", "seguro": "1,00", "despesas": "0,50", "desconto": "0,50", "total": "13,00", "criterio": "Componentes conferidos para a devolução.", "confirmar_componentes": "on"}
+
+    def _composicao_registrada(self):
+        rascunho, _, memoria = self._memoria_registrada()
+        revisar_memoria_calculo_devolucao_fornecedor(rascunho, memoria_id=memoria.pk, decisao="APROVAR", justificativa="Conferência independente concluída.", revisor=self.segundo_revisor)
+        ficha, _ = registrar_composicao(rascunho, dados=self._dados_composicao(), responsavel=self.revisor)
+        return rascunho, ficha
+
+    def _dados_revisao_composicao(self):
+        return {"decisao": "APROVAR", "justificativa": "Composição conferida pelo responsável contábil.", **{campo: "Orientação explícita de teste para os componentes informados." for campo in ("reflexos_icms", "reflexos_ipi", "reflexos_pis_cofins", "reflexos_ibs_cbs", "fundamentacao")}}
+
+    def test_revisao_composicao_exige_orientacao_na_aprovacao(self):
+        self.assertTrue(RevisaoComposicaoForm(self._dados_revisao_composicao()).is_valid())
+        for campo in ("reflexos_icms", "reflexos_ipi", "reflexos_pis_cofins", "reflexos_ibs_cbs", "fundamentacao"):
+            with self.subTest(campo=campo):
+                self.assertFalse(RevisaoComposicaoForm({**self._dados_revisao_composicao(), campo: ""}).is_valid())
+        self.assertTrue(RevisaoComposicaoForm({"decisao": "DEVOLVER_CORRECAO", "justificativa": "Corrigir a composição apresentada."}).is_valid())
+
+    def test_revisao_composicao_segregada_unica_imutavel(self):
+        rascunho, ficha = self._composicao_registrada()
+        with self.assertRaisesMessage(ValidationError, "outro responsável"):
+            revisar_composicao(rascunho, composicao_id=ficha.pk, dados=self._dados_revisao_composicao(), revisor=self.revisor)
+        revisao = revisar_composicao(rascunho, composicao_id=ficha.pk, dados=self._dados_revisao_composicao(), revisor=self.segundo_revisor)
+        self.assertEqual(revisao.conteudo_snapshot["composicao_sha256"], ficha.conteudo_sha256)
+        self.assertFalse(revisao.conteudo_snapshot["permite_emissao"])
+        with self.assertRaisesMessage(ValidationError, "decisão imutável"):
+            revisar_composicao(rascunho, composicao_id=ficha.pk, dados=self._dados_revisao_composicao(), revisor=self.segundo_revisor)
+        with self.assertRaises(ValueError):
+            revisao.save()
+        self.assertFalse(DocumentoFiscal.objects.exists())
+
+    def test_revisao_composicao_bloqueia_versao_superada_e_xml_adulterado(self):
+        rascunho, antiga = self._composicao_registrada()
+        atual, _ = registrar_composicao(rascunho, dados={**self._dados_composicao(), "criterio": "Composição revisada para conferência."}, responsavel=self.revisor)
+        with self.assertRaisesMessage(ValidationError, "superada"):
+            revisar_composicao(rascunho, composicao_id=antiga.pk, dados=self._dados_revisao_composicao(), revisor=self.segundo_revisor)
+        dfe = DocumentoDFeRecebido.objects.get(entrada_compra=self.entrada)
+        dfe.xml_conteudo += " "
+        dfe.save(update_fields=["xml_conteudo"])
+        with self.assertRaisesMessage(ValidationError, "XML original divergiu"):
+            revisar_composicao(rascunho, composicao_id=atual.pk, dados=self._dados_revisao_composicao(), revisor=self.segundo_revisor)
+
+    def test_revisao_composicao_tela_permissoes_e_correcao(self):
+        rascunho, ficha = self._composicao_registrada()
+        url = f"/fiscal/devolucoes-fornecedor/revisao/{rascunho.pk}/composicao/revisar/"
+        dados = {"composicao_id": ficha.pk, "decisao": "DEVOLVER_CORRECAO", "justificativa": "Corrigir os valores informados."}
+        self.client.force_login(self.financeiro)
+        self.assertEqual(self.client.post(url, dados).status_code, 403)
+        self.client.force_login(self.revisor)
+        self.assertNotContains(self.client.get(f"/fiscal/devolucoes-fornecedor/revisao/{rascunho.pk}/"), "Registrar revisão da composição")
+        self.client.force_login(self.segundo_revisor)
+        resposta = self.client.post(url, dados, follow=True)
+        self.assertContains(resposta, "Devolvida para correção")
+        nova, _ = registrar_composicao(rascunho, dados={**self._dados_composicao(), "criterio": "Valores conferidos após devolução para correção."}, responsavel=self.revisor)
+        self.assertEqual(nova.versao, 2)
+        self.assertEqual(ficha.revisao.decisao, "DEVOLVER_CORRECAO")
 
     def test_composicao_exige_aprovacao_e_preserva_versoes(self):
         rascunho, _, memoria = self._memoria_registrada()

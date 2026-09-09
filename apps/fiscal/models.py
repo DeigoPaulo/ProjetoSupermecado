@@ -1054,6 +1054,24 @@ class ComposicaoDevolucaoFornecedor(models.Model):
         raise ValueError("Composições da devolução são imutáveis.")
 
 
+class RevisaoComposicaoDevolucaoFornecedor(models.Model):
+    objects = ComposicaoDevolucaoQuerySet.as_manager()
+    composicao = models.OneToOneField(ComposicaoDevolucaoFornecedor, on_delete=models.PROTECT, related_name="revisao")
+    decisao = models.CharField(max_length=24, choices=[("APROVAR", "Composição aprovada"), ("DEVOLVER_CORRECAO", "Devolvida para correção")])
+    conteudo_snapshot = models.JSONField()
+    conteudo_sha256 = models.CharField(max_length=64)
+    revisor = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.PROTECT)
+    criado_em = models.DateTimeField(auto_now_add=True)
+
+    def save(self, *args, **kwargs):
+        if self.pk or not self._state.adding:
+            raise ValueError("Revisões da composição são imutáveis.")
+        return super().save(*args, **kwargs)
+
+    def delete(self, *args, **kwargs):
+        raise ValueError("Revisões da composição são imutáveis.")
+
+
 class TipoEvidenciaFiscal(models.TextChoices):
     XML_ENVIO = "XML_ENVIO", "XML transmitido"
     RETORNO_TRANSMISSAO = "RETORNO_TRANSMISSAO", "Retorno da transmissão"

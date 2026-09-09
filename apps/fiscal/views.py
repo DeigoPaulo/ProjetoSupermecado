@@ -124,6 +124,7 @@ from .services import (
 
 from .transporte_devolucao import TransporteDevolucaoForm, registrar_transporte
 from .composicao_devolucao import ComposicaoDevolucaoForm, registrar_composicao
+from .composicao_devolucao import RevisaoComposicaoForm, revisar_composicao
 
 
 def _rascunhos_revisao_queryset(user):
@@ -146,6 +147,7 @@ def _rascunhos_revisao_queryset(user):
             "memorias_calculo__revisao_fiscal__revisor",
             "transportes__responsavel",
             "composicoes__responsavel",
+            "composicoes__revisao__revisor",
         ),
     )
 
@@ -186,6 +188,8 @@ def revisao_devolucao_fornecedor_detalhe(request, pk):
             "rascunho": rascunho,
             "transporte_form": TransporteDevolucaoForm(),
             "composicao_form": ComposicaoDevolucaoForm(),
+            "revisao_composicao_form": RevisaoComposicaoForm(),
+            "ultima_composicao_id": rascunho.composicoes.order_by("-versao").values_list("pk", flat=True).first(),
             "decisao_aprovar": DecisaoRevisaoDevolucaoFornecedor.APROVAR,
             "decisao_corrigir": DecisaoRevisaoDevolucaoFornecedor.DEVOLVER_CORRECAO,
             "decisao_memoria_aprovar": DecisaoRevisaoMemoriaCalculoFornecedor.APROVAR,
@@ -372,6 +376,20 @@ def registrar_composicao_devolucao(request, pk):
         messages.error(request, " ".join(exc.messages))
     else:
         messages.success(request, f"Composição versão {ficha.versao}: " + ("registrada para conferência contábil." if criado else "conteúdo já registrado."))
+    return redirect("fiscal:revisao_devolucao_detalhe", pk=pk)
+
+
+@login_required
+@role_required(*REVISAO_FISCAL)
+@require_POST
+def revisar_composicao_devolucao(request, pk):
+    rascunho = get_object_or_404(_rascunhos_revisao_queryset(request.user), pk=pk)
+    try:
+        revisao = revisar_composicao(rascunho, composicao_id=request.POST.get("composicao_id"), dados=request.POST, revisor=request.user)
+    except ValidationError as exc:
+        messages.error(request, " ".join(exc.messages))
+    else:
+        messages.success(request, f"{revisao.get_decisao_display()}. Decisão registrada; emissão continua bloqueada.")
     return redirect("fiscal:revisao_devolucao_detalhe", pk=pk)
 
 
