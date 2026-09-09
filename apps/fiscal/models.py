@@ -1122,6 +1122,24 @@ class ReflexosBasesDevolucaoFornecedor(models.Model):
         raise ValueError("Reflexos das bases são imutáveis.")
 
 
+class RevisaoReflexosDevolucaoFornecedor(models.Model):
+    objects = ComposicaoDevolucaoQuerySet.as_manager()
+    reflexos = models.OneToOneField(ReflexosBasesDevolucaoFornecedor, on_delete=models.PROTECT, related_name="revisao")
+    decisao = models.CharField(max_length=30, choices=[("APROVAR", "Reflexos aprovados"), ("DEVOLVER_CORRECAO", "Reflexos devolvidos para correção")])
+    conteudo_snapshot = models.JSONField()
+    conteudo_sha256 = models.CharField(max_length=64)
+    revisor = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.PROTECT)
+    criado_em = models.DateTimeField(auto_now_add=True)
+
+    def save(self, *args, **kwargs):
+        if self.pk or not self._state.adding:
+            raise ValueError("Revisões dos reflexos são imutáveis.")
+        return super().save(*args, **kwargs)
+
+    def delete(self, *args, **kwargs):
+        raise ValueError("Revisões dos reflexos são imutáveis.")
+
+
 class TipoEvidenciaFiscal(models.TextChoices):
     XML_ENVIO = "XML_ENVIO", "XML transmitido"
     RETORNO_TRANSMISSAO = "RETORNO_TRANSMISSAO", "Retorno da transmissão"

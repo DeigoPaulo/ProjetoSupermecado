@@ -5,6 +5,7 @@ from . import views
 app_name = "fiscal"
 
 urlpatterns = [
+    path("devolucoes-fornecedor/revisao/<int:pk>/reflexos/revisar/", views.revisar_reflexos_devolucao, name="revisar_reflexos_devolucao"),
     path("devolucoes-fornecedor/revisao/<int:pk>/reflexos/", views.registrar_reflexos_devolucao, name="registrar_reflexos_devolucao"),
     path("devolucoes-fornecedor/revisao/<int:pk>/composicao/rateio/", views.registrar_rateio_devolucao, name="registrar_rateio_devolucao"),
     path("devolucoes-fornecedor/revisao/<int:pk>/composicao/revisar/", views.revisar_composicao_devolucao, name="revisar_composicao_devolucao"),

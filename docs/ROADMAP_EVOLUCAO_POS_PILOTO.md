@@ -1,5 +1,9 @@
 # Roadmap de evolucao pos-piloto
 
+Validação do ciclo 57: 73 testes de devolução, transporte, rateio e reflexos aprovados. Migration 0048 gerada e exercitada no banco de testes, ainda não aplicada ao banco operacional. Sem transmissão externa ou alteração de cobrança.
+
+- Ciclo 57 (09/09/2026): revisão independente dos reflexos nas bases implementada, contrato supplier_return_tax_base_impacts_review_v1, migration 0048. Outro Administrador/Contabilidade da empresa aprova ou devolve com justificativa; uma decisão imutável por versão. O serviço bloqueia o rascunho, exige reflexos/rateio/composição/memória atuais, confere hashes, vínculos, bases e totais e XML de origem. Correção cria nova versão sem apagar a decisão. A tela mostra autoria, justificativa e decisão e não oferece revisão ao autor ou para versões superadas. Próximo passo: vincular os reflexos aprovados à preparação de uma memória tributária revisada, sem reaplicar impactos ou substituir a memória original. Cálculo dos impostos, aceite real e homologação continuam pendentes.
+
 Validação do ciclo 56: 67 testes aprovados; sem divergências de migrations e sem erros em git diff --check. Migration 0047 gerada e exercitada no banco de testes, não aplicada ao banco operacional. Sem transmissão externa.
 
 - Ciclo 56 (09/09/2026): reflexos das bases integrados ao histórico imutável e à tela de revisão, contrato supplier_return_tax_base_impacts_v1, migration 0047. Serviço transacional bloqueia a preparação, exige Administrador/Contabilidade no escopo, composição/memória aprovadas atuais e rateio mais recente, verifica hashes, itens, totais e XML de origem. Conteúdo repetido é idempotente; alterações criam versão. A conferência continua apenas aritmética: não recalcula impostos nem libera emissão. Próximo passo: conferência independente dos reflexos e definição do vínculo com uma memória tributária revisada; aprovação contábil real e homologação permanecem pendentes.

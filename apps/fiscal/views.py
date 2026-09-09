@@ -127,6 +127,7 @@ from .composicao_devolucao import ComposicaoDevolucaoForm, registrar_composicao
 from .composicao_devolucao import RevisaoComposicaoForm, revisar_composicao
 from .rateio_devolucao import RateioDevolucaoForm, registrar_rateio
 from .reflexos_devolucao import ReflexosBasesDevolucaoForm, registrar_reflexos, validar_rateio_atual
+from .reflexos_devolucao import RevisaoReflexosForm, revisar_reflexos
 
 
 def _rascunhos_revisao_queryset(user):
@@ -152,6 +153,7 @@ def _rascunhos_revisao_queryset(user):
             "composicoes__revisao__revisor",
             "composicoes__rateios__responsavel",
             "composicoes__rateios__reflexos__responsavel",
+            "composicoes__rateios__reflexos__revisao__revisor",
         ),
     )
 
@@ -210,6 +212,8 @@ def revisao_devolucao_fornecedor_detalhe(request, pk):
             "rascunho": rascunho,
             "rateio_form": rateio_form,
             "reflexos_form": reflexos_form,
+            "revisao_reflexos_form": RevisaoReflexosForm(),
+            "ultimos_reflexos_id": rateio_reflexos.reflexos.order_by("-versao").values_list("pk", flat=True).first() if reflexos_form else None,
             "rateio_reflexos": rateio_reflexos,
             "reflexos_bloqueio": reflexos_bloqueio,
             "composicao_rateio": composicao_rateio,
@@ -445,6 +449,20 @@ def registrar_reflexos_devolucao(request, pk):
         messages.error(request, " ".join(exc.messages))
     else:
         messages.success(request, f"Reflexos das bases versão {registro.versao}: " + ("registrados; emissão continua bloqueada." if criado else "conteúdo já registrado."))
+    return redirect("fiscal:revisao_devolucao_detalhe", pk=pk)
+
+
+@login_required
+@role_required(*REVISAO_FISCAL)
+@require_POST
+def revisar_reflexos_devolucao(request, pk):
+    rascunho = get_object_or_404(_rascunhos_revisao_queryset(request.user), pk=pk)
+    try:
+        revisao = revisar_reflexos(rascunho, reflexos_id=request.POST.get("reflexos_id"), dados=request.POST, revisor=request.user)
+    except ValidationError as exc:
+        messages.error(request, " ".join(exc.messages))
+    else:
+        messages.success(request, f"{revisao.get_decisao_display()}. Emissão continua bloqueada.")
     return redirect("fiscal:revisao_devolucao_detalhe", pk=pk)
 
 

@@ -54,6 +54,7 @@ from .composicao_devolucao import ComposicaoDevolucaoForm, registrar_composicao
 from .composicao_devolucao import RevisaoComposicaoForm, revisar_composicao
 from .rateio_devolucao import registrar_rateio
 from .reflexos_devolucao import registrar_reflexos
+from .reflexos_devolucao import revisar_reflexos, validar_reflexos_atuais, RevisaoReflexosForm
 
 
 class PreparacaoDevolucaoFornecedorTests(TestCase):
@@ -410,6 +411,92 @@ class PreparacaoDevolucaoFornecedorTests(TestCase):
         rateio.conteudo_sha256 = _hash_conteudo_revisao(rateio.conteudo_snapshot)
         with self.assertRaisesMessage(ValidationError, "divergiram"):
             validar_rateio_atual(rascunho, rateio)
+
+    def _reflexos_registrados(self):
+        rascunho, rateio, dados, dados_rateio = self._preparar_reflexos()
+        registro, _ = registrar_reflexos(rascunho, rateio_id=rateio.pk, dados=dados, responsavel=self.revisor)
+        return rascunho, registro, dados, dados_rateio
+
+    def test_revisao_reflexos_segregada_unica_e_imutavel(self):
+        rascunho, registro, _, _ = self._reflexos_registrados()
+        dados = {"decisao": "APROVAR", "justificativa": "Bases conferidas de forma independente."}
+        with self.assertRaisesMessage(ValidationError, "outro responsável"):
+            revisar_reflexos(rascunho, reflexos_id=registro.pk, dados=dados, revisor=self.revisor)
+        revisao = revisar_reflexos(rascunho, reflexos_id=registro.pk, dados=dados, revisor=self.segundo_revisor)
+        self.assertEqual(revisao.conteudo_snapshot["reflexos_sha256"], registro.conteudo_sha256)
+        self.assertFalse(revisao.conteudo_snapshot["permite_emissao"])
+        with self.assertRaisesMessage(ValidationError, "decisão imutável"):
+            revisar_reflexos(rascunho, reflexos_id=registro.pk, dados=dados, revisor=self.segundo_revisor)
+        for operacao in (revisao.save, revisao.delete, lambda: type(revisao).objects.filter(pk=revisao.pk).update(decisao="APROVAR"), lambda: type(revisao).objects.filter(pk=revisao.pk).delete()):
+            with self.assertRaises(ValueError):
+                operacao()
+        self.assertFalse(DocumentoFiscal.objects.exists())
+
+    def test_revisao_reflexos_tela_permissoes_e_correcao(self):
+        rascunho, registro, dados_registro, _ = self._reflexos_registrados()
+        url = f"/fiscal/devolucoes-fornecedor/revisao/{rascunho.pk}/reflexos/revisar/"
+        dados = {"reflexos_id": registro.pk, "decisao": "DEVOLVER_CORRECAO", "justificativa": "Corrigir os impactos informados nas bases."}
+        for user in (self.financeiro, self.usuario):
+            self.client.force_login(user)
+            self.assertEqual(self.client.post(url, dados).status_code, 403)
+            with self.assertRaisesMessage(ValidationError, "Sem permissão"):
+                revisar_reflexos(rascunho, reflexos_id=registro.pk, dados=dados, revisor=user)
+        self.client.force_login(self.revisor)
+        self.assertNotContains(self.client.get(f"/fiscal/devolucoes-fornecedor/revisao/{rascunho.pk}/"), "Registrar revisão dos reflexos")
+        self.client.force_login(self.segundo_revisor)
+        self.assertEqual(self.client.get(url).status_code, 405)
+        self.assertContains(self.client.get(f"/fiscal/devolucoes-fornecedor/revisao/{rascunho.pk}/"), "Registrar revisão dos reflexos")
+        self.assertContains(self.client.post(url, dados, follow=True), "Reflexos devolvidos para correção")
+        novo, _ = registrar_reflexos(rascunho, rateio_id=registro.rateio_id, dados={**dados_registro, "fundamentacao": "Orientação corrigida para nova conferência."}, responsavel=self.revisor)
+        self.assertEqual(novo.versao, 2)
+        self.assertEqual(registro.revisao.decisao, "DEVOLVER_CORRECAO")
+
+    def test_revisao_reflexos_bloqueia_versoes_superadas_e_xml(self):
+        rascunho, registro, dados, dados_rateio = self._reflexos_registrados()
+        revisao = {"decisao": "APROVAR", "justificativa": "Conferência independente das bases."}
+        novo, _ = registrar_reflexos(rascunho, rateio_id=registro.rateio_id, dados={**dados, "fundamentacao": "Nova orientação para bases declaradas."}, responsavel=self.revisor)
+        with self.assertRaisesMessage(ValidationError, "superados"):
+            revisar_reflexos(rascunho, reflexos_id=registro.pk, dados=revisao, revisor=self.segundo_revisor)
+        dfe = DocumentoDFeRecebido.objects.get(entrada_compra=self.entrada)
+        original = dfe.xml_conteudo
+        dfe.xml_conteudo += " "
+        dfe.save(update_fields=["xml_conteudo"])
+        with self.assertRaisesMessage(ValidationError, "XML original divergiu"):
+            revisar_reflexos(rascunho, reflexos_id=novo.pk, dados=revisao, revisor=self.segundo_revisor)
+        dfe.xml_conteudo = original
+        dfe.save(update_fields=["xml_conteudo"])
+        registrar_rateio(rascunho, composicao_id=registro.rateio.composicao_id, dados={**dados_rateio, "criterio": "Rateio atualizado para conferência."}, responsavel=self.revisor)
+        with self.assertRaisesMessage(ValidationError, "rateio foi superado"):
+            revisar_reflexos(rascunho, reflexos_id=novo.pk, dados=revisao, revisor=self.segundo_revisor)
+
+    def test_revisao_reflexos_confere_integridade_e_somas(self):
+        from .devolucao_fornecedor import _hash_conteudo_revisao
+        rascunho, registro, _, _ = self._reflexos_registrados()
+        registro.conteudo_snapshot["totais_bases"]["icms"] = "999.00"
+        with self.assertRaisesMessage(ValidationError, "integridade"):
+            validar_reflexos_atuais(rascunho, registro)
+        registro.conteudo_sha256 = _hash_conteudo_revisao(registro.conteudo_snapshot)
+        with self.assertRaisesMessage(ValidationError, "divergiram"):
+            validar_reflexos_atuais(rascunho, registro)
+
+    def test_revisao_reflexos_outra_empresa_e_ids_invalidos(self):
+        rascunho, registro, _, _ = self._reflexos_registrados()
+        dados = {"decisao": "APROVAR", "justificativa": "Conferência independente das bases."}
+        for pk in (None, "abc", 999999):
+            with self.assertRaises(ValidationError):
+                revisar_reflexos(rascunho, reflexos_id=pk, dados=dados, revisor=self.segundo_revisor)
+        empresa = Empresa.objects.create(razao_social="Outra empresa", nome_fantasia="Outra", cnpj="33.333.333/0001-33")
+        filial = Filial.objects.create(empresa=empresa, nome="Outra filial", cnpj=empresa.cnpj, uf="GO")
+        user = get_user_model().objects.create_user("revisor_outra_empresa_reflexos")
+        PerfilUsuario.objects.create(usuario=user, filial=filial, tipo=TipoPerfil.CONTABILIDADE)
+        with self.assertRaisesMessage(ValidationError, "outra empresa"):
+            revisar_reflexos(rascunho, reflexos_id=registro.pk, dados=dados, revisor=user)
+        self.client.force_login(user)
+        self.assertEqual(self.client.post(f"/fiscal/devolucoes-fornecedor/revisao/{rascunho.pk}/reflexos/revisar/", {**dados, "reflexos_id": registro.pk}).status_code, 404)
+
+    def test_revisao_reflexos_exige_decisao_e_justificativa(self):
+        for dados in ({}, {"decisao": "APROVAR", "justificativa": "curta"}, {"decisao": "EMITIR", "justificativa": "Conferência independente das bases."}):
+            self.assertFalse(RevisaoReflexosForm(dados).is_valid())
 
     def test_rateio_rejeita_soma_versao_superada_e_xml_alterado(self):
         rascunho, ficha = self._composicao_registrada()

@@ -257,6 +257,21 @@
           {% for registro in rateio.reflexos.all %}
             <details><summary>Reflexos das bases {{ registro.versao }} · {{ registro.responsavel }} · {{ registro.criado_em|date:"d/m/Y H:i" }}</summary>
               <p>Histórico vinculado a este rateio; não autoriza emissão.</p>
+              {% if registro.revisao %}
+                <p>{{ registro.revisao.get_decisao_display }} · {{ registro.revisao.revisor }} · {{ registro.revisao.criado_em|date:"d/m/Y H:i" }}</p>
+                <p>{{ registro.revisao.conteudo_snapshot.dados.justificativa }}</p>
+              {% elif registro.pk != ultimos_reflexos_id %}
+                <p>Revisão indisponível: versão superada ou origem não apta.</p>
+              {% elif registro.responsavel_id == request.user.pk %}
+                <p>Aguardando conferência por outro responsável fiscal.</p>
+              {% else %}
+                <form method="post" action="{% url 'fiscal:revisar_reflexos_devolucao' rascunho.pk %}" class="form-grid">
+                  {% csrf_token %}<input type="hidden" name="reflexos_id" value="{{ registro.pk }}">
+                  <p>A decisão confere os reflexos informados, sem recalcular impostos ou substituir a memória aprovada. Correções exigem nova versão.</p>
+                  {{ revisao_reflexos_form.as_p }}
+                  <button type="submit" class="btn btn-primary">Registrar revisão dos reflexos</button>
+                </form>
+              {% endif %}
               <p>{{ registro.conteudo_snapshot.fundamentacao }}</p>
               <table><thead><tr><th>nItem</th><th>Tributo</th><th>Base anterior</th><th>Frete</th><th>Seguro</th><th>Despesas</th><th>Desconto</th><th>Base final</th></tr></thead><tbody>
               {% for item in registro.conteudo_snapshot.itens %}{% for tributo, valores in item.tributos.items %}

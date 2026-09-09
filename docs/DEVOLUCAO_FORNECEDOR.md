@@ -1,5 +1,8 @@
 # Devolução ao fornecedor — preparação fiscal segura
 
+- [x] Ciclo 57: conferência independente dos reflexos nas bases, com aprovação/devolução justificada, decisão única imutável, escopo da empresa e validação da origem atual (migration 0048). Aprovar confere apenas os reflexos declarados; não recalcula impostos nem libera emissão.
+- [ ] Vincular os reflexos aprovados à preparação de uma memória tributária revisada, com rastreabilidade da base anterior e sem aplicar o mesmo impacto novamente. A memória aprovada existente permanece intacta.
+
 - [x] Ciclo 56: serviço protegido, histórico imutável e tela dos reflexos vinculados ao rateio atual (migration 0047). Registra responsável, versão e hashes, verifica origem, somas, escopo e atualidade sem mudar a memória aprovada. Somente Administrador/Contabilidade. A etapa operacional antes pendente do ciclo 55 foi implementada.
 - [ ] Conferir os reflexos por responsável independente e vinculá-los a uma memória tributária revisada, antes de qualquer geração de XML. Bases declaradas não equivalem a imposto calculado ou validação normativa.
 

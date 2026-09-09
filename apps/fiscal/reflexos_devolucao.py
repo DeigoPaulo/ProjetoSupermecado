@@ -16,6 +16,7 @@ from apps.accounts.permissions import REVISAO_FISCAL, has_role
 from apps.auditoria.models import LogAuditoria
 from apps.clientes.escopo import empresa_id_do_usuario
 from .models import RascunhoDevolucaoFornecedor, RateioDevolucaoFornecedor, ReflexosBasesDevolucaoFornecedor
+from .models import RevisaoReflexosDevolucaoFornecedor
 from .devolucao_fornecedor import _hash_conteudo_revisao
 from .rateio_devolucao import RateioDevolucaoForm, validar_composicao_atual
 
@@ -164,3 +165,78 @@ def registrar_reflexos(rascunho, *, rateio_id, dados, responsavel):
             descricao=f"Reflexos {registro.pk} do rateio {rateio.pk} registrados.",
             objeto_tipo="ReflexosBasesDevolucaoFornecedor", objeto_id=str(registro.pk))
         return registro, True
+
+
+class RevisaoReflexosForm(forms.Form):
+    decisao = forms.ChoiceField(choices=[("APROVAR", "Aprovar os reflexos informados"), ("DEVOLVER_CORRECAO", "Devolver para correção")])
+    justificativa = forms.CharField(min_length=10, max_length=4000, widget=forms.Textarea)
+
+
+def validar_reflexos_atuais(rascunho, registro):
+    rateio = registro.rateio
+    itens = validar_rateio_atual(rascunho, rateio)
+    if rateio.reflexos.filter(versao__gt=registro.versao).exists():
+        raise ValidationError("Os reflexos foram superados por uma versão mais recente.")
+    snapshot = registro.conteudo_snapshot
+    if _hash_conteudo_revisao(snapshot) != registro.conteudo_sha256:
+        raise ValidationError("Os reflexos perderam a integridade.")
+    if (snapshot.get("contrato") != "supplier_return_tax_base_impacts_v1"
+        or snapshot.get("rascunho_id") != rascunho.pk
+        or snapshot.get("rateio_id") != rateio.pk
+        or snapshot.get("rateio_sha256") != rateio.conteudo_sha256
+        or snapshot.get("memoria_sha256") != rateio.composicao.memoria.conteudo_sha256
+        or snapshot.get("permite_emissao") is not False):
+        raise ValidationError("Os vínculos dos reflexos perderam a integridade.")
+    try:
+        dados = {"fundamentacao": snapshot["fundamentacao"]}
+        for tributo, _ in TRIBUTOS_MEMORIA_CALCULO:
+            dados[f"total_base_{tributo}"] = Decimal(snapshot["totais_bases"][tributo])
+        for linha in snapshot["itens"]:
+            for tributo, _ in TRIBUTOS_MEMORIA_CALCULO:
+                prefixo = f"item_{linha['item_memoria_id']}_{tributo}"
+                valores = linha["tributos"][tributo]
+                dados[f"{prefixo}_base_final"] = Decimal(valores["base_final"])
+                for campo in COMPONENTES:
+                    dados[f"{prefixo}_{campo}"] = Decimal(valores["impactos"][campo])
+        form = ReflexosBasesDevolucaoForm(dados, itens=itens, linhas_rateio=rateio.conteudo_snapshot["itens"])
+        if (not form.is_valid() or form.resultado["itens"] != snapshot["itens"]
+            or form.resultado["totais_bases"] != snapshot["totais_bases"]):
+            raise ValidationError("Os itens ou totais dos reflexos divergiram.")
+    except (KeyError, TypeError, ArithmeticError, ValueError) as exc:
+        raise ValidationError("Conteúdo dos reflexos inválido.") from exc
+
+
+def revisar_reflexos(rascunho, *, reflexos_id, dados, revisor):
+    if not has_role(revisor, REVISAO_FISCAL):
+        raise ValidationError("Sem permissão para revisar reflexos.")
+    try:
+        reflexos_id = int(reflexos_id)
+    except (TypeError, ValueError) as exc:
+        raise ValidationError("Selecione reflexos válidos.") from exc
+    form = RevisaoReflexosForm(dados)
+    if not form.is_valid():
+        raise ValidationError([erro for erros in form.errors.values() for erro in erros])
+    with transaction.atomic():
+        rascunho = RascunhoDevolucaoFornecedor.objects.select_for_update().select_related("entrada_compra__filial").get(pk=rascunho.pk)
+        empresa_id = empresa_id_do_usuario(revisor)
+        if empresa_id is not None and empresa_id != rascunho.entrada_compra.filial.empresa_id:
+            raise ValidationError("Preparação de outra empresa.")
+        registro = ReflexosBasesDevolucaoFornecedor.objects.select_related("rateio__composicao__memoria__parametrizacao__parecer").filter(pk=reflexos_id, rateio__composicao__rascunho=rascunho).first()
+        if not registro:
+            raise ValidationError("Reflexos não pertencem à preparação.")
+        if registro.responsavel_id == revisor.pk:
+            raise ValidationError("A revisão exige outro responsável fiscal.")
+        if RevisaoReflexosDevolucaoFornecedor.objects.filter(reflexos=registro).exists():
+            raise ValidationError("Esta versão já possui decisão imutável.")
+        validar_reflexos_atuais(rascunho, registro)
+        conteudo = {"contrato": "supplier_return_tax_base_impacts_review_v1",
+                    "reflexos_id": registro.pk, "reflexos_sha256": registro.conteudo_sha256,
+                    "rateio_sha256": registro.rateio.conteudo_sha256,
+                    "revisor_id": revisor.pk, "dados": form.cleaned_data, "permite_emissao": False}
+        revisao = RevisaoReflexosDevolucaoFornecedor.objects.create(
+            reflexos=registro, decisao=form.cleaned_data["decisao"], revisor=revisor,
+            conteudo_snapshot=conteudo, conteudo_sha256=_hash_conteudo_revisao(conteudo))
+        LogAuditoria.objects.create(usuario=revisor, modulo="fiscal", acao="REVISAO_REFLEXOS_DEVOLUCAO",
+            descricao=f"Revisão {revisao.pk} dos reflexos {registro.pk}: {revisao.decisao}.",
+            objeto_tipo="RevisaoReflexosDevolucaoFornecedor", objeto_id=str(revisao.pk))
+        return revisao
