@@ -21,6 +21,7 @@ from apps.auditoria.models import LogAuditoria
 from apps.estoque.models import Estoque, MovimentacaoEstoque
 from apps.empresas.models import AcaoPinSupervisor
 from apps.financeiro.models import ContaFinanceira, StatusContaFinanceira
+from apps.fiscal.devolucao_fornecedor import preparar_devolucao_fornecedor
 
 from .escopo import (
     cotacoes_para_usuario,
@@ -628,6 +629,11 @@ class EntradaCompraDetailView(LoginRequiredMixin, RoleRequiredMixin, DetailView)
                     )
         context["bloqueios_cancelamento"] = bloqueios_cancelamento
         context["pode_cancelar_entrada"] = entrada.status == StatusEntradaCompra.FINALIZADA and not bloqueios_cancelamento
+        context["preparacao_devolucao_fornecedor"] = (
+            preparar_devolucao_fornecedor(entrada)
+            if entrada.status == StatusEntradaCompra.FINALIZADA
+            else None
+        )
         context["pedidos_vinculaveis"] = PedidoCompra.objects.none()
         if entrada.status == StatusEntradaCompra.RASCUNHO and entrada.chave_acesso_xml and not entrada.pedido_origem_id:
             context["pedidos_vinculaveis"] = pedidos_para_usuario(self.request.user).filter(

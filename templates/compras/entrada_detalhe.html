@@ -146,6 +146,34 @@
 {% endif %}
 
 {% if entrada.status == "FINALIZADA" %}
+  {% with preparo=preparacao_devolucao_fornecedor %}
+    <section class="panel mt-panel">
+      <div class="panel-title">Preparação fiscal para devolução ao fornecedor</div>
+      <p class="panel-subtitle">
+        Diagnóstico somente leitura. Não cria nota, não escolhe impostos, não movimenta mercadoria e não transmite para Focus ou SEFAZ.
+      </p>
+      <div class="operation-notice">
+        <strong>{% if preparo.estado == "BASE_DOCUMENTAL_DISPONIVEL" %}Base documental disponível para preenchimento e revisão{% else %}Preparação documental incompleta{% endif %}</strong><br>
+        Documento planejado: NF-e modelo {{ preparo.documento_planejado.modelo }}, finalidade {{ preparo.documento_planejado.finalidade }} (devolução de mercadoria). Emissão permanece bloqueada.
+      </div>
+      <table>
+        <thead><tr><th>Verificação</th><th>Situação</th><th>Detalhe</th></tr></thead>
+        <tbody>
+          {% for verificacao in preparo.verificacoes %}
+            <tr>
+              <td>{{ verificacao.rotulo }}</td>
+              <td>{% if verificacao.ok %}<span class="status status-success">Confirmado</span>{% else %}<span class="status status-warning">Pendente</span>{% endif %}</td>
+              <td>{{ verificacao.detalhe }}</td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+      <div class="panel-subtitle">Decisões que o sistema não assume</div>
+      <ul>
+        {% for decisao in preparo.decisoes_pendentes %}<li>{{ decisao }}</li>{% endfor %}
+      </ul>
+    </section>
+  {% endwith %}
   <section class="panel mt-panel">
     <div class="panel-title">Cancelar entrada</div>
     {% if pode_cancelar_entrada %}

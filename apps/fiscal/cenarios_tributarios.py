@@ -79,8 +79,11 @@ CENARIOS_TRIBUTARIOS_GO = (
         "nome": "Devolucao fiscal a fornecedor",
         "modelos": ("55",),
         "status": BLOQUEADO,
-        "escopo_atual": "Finalidade, documento referenciado e impostos devolvidos incompletos.",
-        "proxima_evidencia": "Fluxo proprio, referencia da entrada e testes de totalizacao.",
+        "escopo_atual": (
+            "Pré-diagnóstico somente leitura ligado à entrada e ao XML integral; seleção, "
+            "finalidade no gerador, documento referenciado e impostos devolvidos ainda não implementados."
+        ),
+        "proxima_evidencia": "Persistir a seleção revisável de itens sem liberar emissão e testar totalização.",
     },
     {
         "codigo": "transferencia_bonificacao_remessa",

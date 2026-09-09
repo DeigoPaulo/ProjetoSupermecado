@@ -1,6 +1,6 @@
 # Matriz de conformidade fiscal e contábil — Goiás 2026
 
-Atualizada em 31/08/2026. Documento interno de engenharia e homologação.
+Atualizada em 09/09/2026. Documento interno de engenharia e homologação.
 
 ## Regra de conclusão
 
@@ -94,9 +94,12 @@ Comunicação com Focus ou SEFAZ não será tratada como conformidade enquanto c
 - [x] Exigir endereço, município/IBGE, UF, CEP e indicador de IE; gerar enderDest e bloquear antes da numeração quando incompleto. Regressões com 61 e 229 testes aprovadas.
 - [ ] Transformar os demais cenários catalogados em fixture e teste do XML correspondente.
 - [ ] Ampliar o motor tributário e concluir o aceite do pacote do contador v2 com contrato externo e amostra mensal validada.
-- [x] Manter Focus, SEFAZ direta e produção desligados durante toda a preparação realizada até 31/08/2026.
+- [x] Manter Focus, SEFAZ direta e produção desligados durante toda a preparação realizada até 09/09/2026.
+- [x] Criar o pré-diagnóstico `supplier_return_fiscal_preparation_v1` para devolução ao fornecedor, ligado à entrada e ao XML integral, sem emissão, numeração, estoque ou transmissão.
+- [x] Bloquear preparação incompleta quando faltarem XML integral, chave, modelo 55, identidades coincidentes ou itens fiscais originais.
+- [ ] Criar a seleção persistente e revisável dos itens e quantidades da devolução, ainda sem gerar documento fiscal.
 - [ ] Revisar a Fase 1 com o contador quando os dados reais chegarem.
 
 ## Próxima ação verificável
 
-O validador e o registro imutável de aceite estão prontos sem envio externo. Quando os dados reais estiverem disponíveis, registrar o software contábil e o responsável pela EFD ICMS/IPI, gerar uma amostra da competência, obter a conferência do contador e arquivar a referência do aceite. Enquanto isso, o próximo trabalho interno pode avançar apenas em cenários operacionais que não exijam inventar enquadramento tributário.
+O pré-diagnóstico da devolução ao fornecedor já comprova a origem documental sem inventar enquadramento. A próxima ação interna é criar um rascunho de devolução ligado à entrada, com seleção de itens e quantidades e controle de saldo devolvível, mantendo CFOP, tributos, geração, numeração e transmissão bloqueados até revisão fiscal. Quando os dados reais estiverem disponíveis, também será necessário concluir o aceite contábil e a homologação por canal.

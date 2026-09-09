@@ -43,7 +43,17 @@ def _data_iso(valor):
 
 def analisar_xml_nfe(xml_conteudo):
     """Retorna cabeçalho e itens de NF-e/NFC-e sem alterar ou validar o XML."""
-    resultado = {"data_emissao": None, "data_autorizacao": None, "modelo": "", "chave_acesso": "", "itens": [], "erro": ""}
+    resultado = {
+        "data_emissao": None,
+        "data_autorizacao": None,
+        "modelo": "",
+        "finalidade": "",
+        "chave_acesso": "",
+        "emitente_cnpj": "",
+        "destinatario_cnpj": "",
+        "itens": [],
+        "erro": "",
+    }
     if not (xml_conteudo or "").strip():
         resultado["erro"] = "XML ausente"
         return resultado
@@ -61,7 +71,10 @@ def analisar_xml_nfe(xml_conteudo):
     resultado["chave_acesso"] = identificador[3:] if identificador.startswith("NFe") else identificador
     ide = _filho(inf_nfe, "ide")
     resultado["modelo"] = _texto(ide, "mod")
+    resultado["finalidade"] = _texto(ide, "finNFe")
     resultado["data_emissao"] = _data_iso(_texto(ide, "dhEmi") or _texto(ide, "dEmi"))
+    resultado["emitente_cnpj"] = _texto(_filho(inf_nfe, "emit"), "CNPJ")
+    resultado["destinatario_cnpj"] = _texto(_filho(inf_nfe, "dest"), "CNPJ")
     inf_prot = _primeiro(raiz, "infProt")
     resultado["data_autorizacao"] = _data_iso(_texto(inf_prot, "dhRecbto"))
 
