@@ -28,6 +28,7 @@ from apps.fiscal.devolucao_fornecedor import (
     salvar_rascunho_devolucao_fornecedor,
     submeter_rascunho_devolucao_para_revisao,
 )
+from apps.fiscal.models import StatusRascunhoDevolucaoFornecedor
 
 from .escopo import (
     cotacoes_para_usuario,
@@ -654,6 +655,14 @@ class EntradaCompraDetailView(LoginRequiredMixin, RoleRequiredMixin, DetailView)
             for item in (rascunho_devolucao.itens.all() if rascunho_devolucao else [])
         }
         context["rascunho_devolucao_fornecedor"] = rascunho_devolucao
+        context["rascunho_devolucao_cancelavel"] = bool(
+            rascunho_devolucao
+            and rascunho_devolucao.status
+            in {
+                StatusRascunhoDevolucaoFornecedor.RASCUNHO,
+                StatusRascunhoDevolucaoFornecedor.AGUARDANDO_REVISAO,
+            }
+        )
         context["itens_rascunho_devolucao"] = [
             {
                 "item": item,

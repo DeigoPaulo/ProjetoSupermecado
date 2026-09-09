@@ -81,10 +81,14 @@ CENARIOS_TRIBUTARIOS_GO = (
         "status": BLOQUEADO,
         "escopo_atual": (
             "Rascunho operacional ligado à entrada, com seleção limitada, mapeamento ao nItem, "
-            "snapshot tributário original e submissão íntegra para revisão; decisão fiscal, "
-            "finalidade no gerador, documento referenciado e impostos devolvidos ainda não implementados."
+            "snapshot tributário original, submissão íntegra e decisão segregada imutável por "
+            "Administrador/Contabilidade; finalidade no gerador, documento referenciado e "
+            "impostos devolvidos ainda não implementados."
         ),
-        "proxima_evidencia": "Registrar decisão fiscal segregada, com aprovação ou devolução para correção, sem emitir.",
+        "proxima_evidencia": (
+            "Modelar parecer tributário versionado para receber natureza, CFOP e tratamento por "
+            "tributo validados pelo contador, sem valores presumidos nem emissão."
+        ),
     },
     {
         "codigo": "transferencia_bonificacao_remessa",

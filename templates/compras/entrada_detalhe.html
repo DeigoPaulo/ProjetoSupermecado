@@ -176,6 +176,11 @@
         <div class="panel-subtitle">Seleção operacional do rascunho</div>
         {% if rascunho_devolucao_fornecedor.status == "AGUARDANDO_REVISAO" %}
           <div class="operation-notice">Este rascunho aguarda revisão fiscal e não pode ser alterado.</div>
+        {% elif rascunho_devolucao_fornecedor.status == "APROVADO" %}
+          <div class="operation-notice">
+            <strong>Preparação aprovada pela revisão fiscal.</strong><br>
+            A aprovação preserva a seleção e o histórico, mas não autoriza emissão, numeração ou transmissão para Focus/SEFAZ.
+          </div>
         {% else %}
           <form method="post" action="{% url 'compras:salvar_rascunho_devolucao' entrada.pk %}" class="form-grid form-confirm" data-msg="Salvar apenas a preparação dos itens? Nenhuma nota ou movimentação será criada.">
             {% csrf_token %}
@@ -213,10 +218,12 @@
               Integridade do XML original: {{ rascunho_devolucao_fornecedor.xml_origem_sha256 }}.
             </div>
           {% endif %}
-          <form method="post" action="{% url 'compras:cancelar_rascunho_devolucao' entrada.pk %}" class="inline-form form-confirm" data-msg="Cancelar esta preparação e liberar as quantidades selecionadas?">
-            {% csrf_token %}
-            <button class="secondary-button" type="submit">Cancelar preparação</button>
-          </form>
+          {% if rascunho_devolucao_cancelavel %}
+            <form method="post" action="{% url 'compras:cancelar_rascunho_devolucao' entrada.pk %}" class="inline-form form-confirm" data-msg="Cancelar esta preparação e liberar as quantidades selecionadas?">
+              {% csrf_token %}
+              <button class="secondary-button" type="submit">Cancelar preparação</button>
+            </form>
+          {% endif %}
         {% endif %}
       {% endif %}
     </section>

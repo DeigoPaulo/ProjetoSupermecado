@@ -6,22 +6,26 @@ separa evidências da entrada das decisões dependentes do contador e do caso re
 """
 
 import hashlib
+import json
 from decimal import Decimal, InvalidOperation
 
 from django.core.exceptions import ObjectDoesNotExist, ValidationError
 from django.db import transaction
-from django.db.models import Sum
+from django.db.models import Max, Sum
 from django.utils import timezone
 
 from apps.clientes.escopo import empresa_id_do_usuario
+from apps.accounts.permissions import REVISAO_FISCAL, has_role
 from apps.compras.models import EntradaCompra, ItemEntradaCompra, StatusEntradaCompra
 
 from apps.auditoria.models import LogAuditoria
 
 from .pacote_contabil import analisar_xml_nfe
 from .models import (
+    DecisaoRevisaoDevolucaoFornecedor,
     ItemRascunhoDevolucaoFornecedor,
     RascunhoDevolucaoFornecedor,
+    RevisaoDevolucaoFornecedor,
     StatusRascunhoDevolucaoFornecedor,
 )
 
@@ -29,6 +33,11 @@ from .models import (
 CONTRATO_PREPARACAO_DEVOLUCAO_FORNECEDOR = "supplier_return_fiscal_preparation_v1"
 CONTRATO_RASCUNHO_DEVOLUCAO_FORNECEDOR = "supplier_return_draft_v1"
 STATUS_RASCUNHO_ATIVO = (
+    StatusRascunhoDevolucaoFornecedor.RASCUNHO,
+    StatusRascunhoDevolucaoFornecedor.AGUARDANDO_REVISAO,
+    StatusRascunhoDevolucaoFornecedor.APROVADO,
+)
+STATUS_RASCUNHO_CANCELAVEL = (
     StatusRascunhoDevolucaoFornecedor.RASCUNHO,
     StatusRascunhoDevolucaoFornecedor.AGUARDANDO_REVISAO,
 )
@@ -469,6 +478,10 @@ def cancelar_rascunho_devolucao_fornecedor(entrada, *, usuario, ip=None):
         )
         if not rascunho:
             raise ValidationError("Não existe preparação fiscal ativa para cancelar.")
+        if rascunho.status not in STATUS_RASCUNHO_CANCELAVEL:
+            raise ValidationError(
+                "A preparação fiscal aprovada não pode ser cancelada por Compras."
+            )
         rascunho.status = StatusRascunhoDevolucaoFornecedor.CANCELADO
         rascunho.atualizado_por = usuario
         rascunho.save(update_fields=["status", "atualizado_por", "atualizado_em"])
@@ -485,3 +498,120 @@ def cancelar_rascunho_devolucao_fornecedor(entrada, *, usuario, ip=None):
             ip=ip,
         )
     return rascunho
+
+
+def _conteudo_revisao(rascunho, itens, decisao, justificativa):
+    return {
+        "contrato": "supplier_return_fiscal_review_v1",
+        "rascunho_id": rascunho.pk,
+        "chave_referenciada": rascunho.chave_referenciada,
+        "xml_origem_sha256": rascunho.xml_origem_sha256,
+        "decisao": decisao,
+        "justificativa": justificativa,
+        "itens": [
+            {
+                "item_entrada_id": item.item_entrada_id,
+                "numero_item_xml": item.numero_item_xml,
+                "quantidade": format(item.quantidade, "f"),
+                "item_xml_snapshot": item.item_xml_snapshot,
+            }
+            for item in itens
+        ],
+    }
+
+
+def _hash_conteudo_revisao(conteudo):
+    serializado = json.dumps(
+        conteudo,
+        ensure_ascii=False,
+        sort_keys=True,
+        separators=(",", ":"),
+    )
+    return hashlib.sha256(serializado.encode("utf-8")).hexdigest()
+
+
+def revisar_rascunho_devolucao_fornecedor(
+    rascunho,
+    *,
+    decisao,
+    justificativa,
+    revisor,
+    ip=None,
+):
+    """Registra decisão imutável sem gerar autorização para emissão."""
+    if not has_role(revisor, REVISAO_FISCAL):
+        raise ValidationError("O usuário não possui permissão de revisão fiscal.")
+    decisao = str(decisao or "").strip()
+    if decisao not in DecisaoRevisaoDevolucaoFornecedor.values:
+        raise ValidationError("Decisão fiscal inválida.")
+    justificativa = str(justificativa or "").strip()
+    if len(justificativa) < 10:
+        raise ValidationError("Informe uma justificativa fiscal com pelo menos 10 caracteres.")
+    if len(justificativa) > 500:
+        raise ValidationError("A justificativa fiscal deve ter no máximo 500 caracteres.")
+
+    with transaction.atomic():
+        rascunho = (
+            RascunhoDevolucaoFornecedor.objects.select_for_update()
+            .select_related("entrada_compra__filial")
+            .get(pk=rascunho.pk)
+        )
+        empresa_id = empresa_id_do_usuario(revisor)
+        if empresa_id is not None and rascunho.entrada_compra.filial.empresa_id != empresa_id:
+            raise ValidationError("Este rascunho não pertence à empresa do revisor.")
+        if rascunho.status != StatusRascunhoDevolucaoFornecedor.AGUARDANDO_REVISAO:
+            raise ValidationError("Somente rascunhos aguardando revisão podem receber decisão.")
+
+        itens = list(
+            rascunho.itens.select_for_update().select_related("item_entrada__produto")
+        )
+        documento_dfe = _documento_dfe_da_entrada(rascunho.entrada_compra)
+        xml_origem = documento_dfe.xml_conteudo if documento_dfe else ""
+        hash_atual = hashlib.sha256(xml_origem.encode("utf-8")).hexdigest()
+        if not xml_origem or hash_atual != rascunho.xml_origem_sha256:
+            raise ValidationError("O XML original divergiu após a submissão; a revisão foi bloqueada.")
+
+        sequencia = (rascunho.revisoes.aggregate(maior=Max("sequencia"))["maior"] or 0) + 1
+        conteudo_revisao = _conteudo_revisao(
+            rascunho, itens, decisao, justificativa
+        )
+        revisao = RevisaoDevolucaoFornecedor.objects.create(
+            rascunho=rascunho,
+            sequencia=sequencia,
+            decisao=decisao,
+            justificativa=justificativa,
+            conteudo_snapshot=conteudo_revisao,
+            conteudo_sha256=_hash_conteudo_revisao(conteudo_revisao),
+            revisor=revisor,
+        )
+        if decisao == DecisaoRevisaoDevolucaoFornecedor.APROVAR:
+            rascunho.status = StatusRascunhoDevolucaoFornecedor.APROVADO
+        else:
+            rascunho.status = StatusRascunhoDevolucaoFornecedor.RASCUNHO
+            rascunho.xml_origem_sha256 = ""
+            rascunho.submetido_em = None
+            rascunho.submetido_por = None
+        rascunho.atualizado_por = revisor
+        rascunho.save(
+            update_fields=[
+                "status",
+                "xml_origem_sha256",
+                "submetido_em",
+                "submetido_por",
+                "atualizado_por",
+                "atualizado_em",
+            ]
+        )
+        LogAuditoria.objects.create(
+            usuario=revisor,
+            modulo="fiscal",
+            acao="REVISAO_DEVOLUCAO_FORNECEDOR",
+            descricao=(
+                f"Revisão {revisao.pk} registrada para o rascunho {rascunho.pk}: {decisao}. "
+                "A decisão não gerou documento fiscal, numeração, estoque ou transmissão."
+            ),
+            objeto_tipo="RevisaoDevolucaoFornecedor",
+            objeto_id=str(revisao.pk),
+            ip=ip,
+        )
+    return revisao, rascunho

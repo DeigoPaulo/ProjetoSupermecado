@@ -6,6 +6,21 @@ app_name = "fiscal"
 
 urlpatterns = [
     path("", views.documentos, name="documentos"),
+    path(
+        "devolucoes-fornecedor/revisao/",
+        views.revisoes_devolucao_fornecedor,
+        name="revisoes_devolucao",
+    ),
+    path(
+        "devolucoes-fornecedor/revisao/<int:pk>/",
+        views.revisao_devolucao_fornecedor_detalhe,
+        name="revisao_devolucao_detalhe",
+    ),
+    path(
+        "devolucoes-fornecedor/revisao/<int:pk>/decidir/",
+        views.decidir_revisao_devolucao_fornecedor,
+        name="decidir_revisao_devolucao",
+    ),
     path("atualizacoes/", views.atualizacoes_fiscais, name="atualizacoes"),
     path("atualizacoes/<int:pk>/revisar/", views.revisar_atualizacao_fiscal, name="revisar_atualizacao"),
     path("inutilizacoes/", views.inutilizacoes, name="inutilizacoes"),

@@ -81,6 +81,9 @@
             <details class="nav-section" {% if not access.relatorios %}open{% endif %}>
               <summary><i class="fa-solid fa-calculator"></i> Contabilidade</summary>
               <a href="{% url 'financeiro:portal_contabilidade' %}"><i class="fa-solid fa-folder-open"></i> Portal contábil</a>
+              {% if access.revisao_fiscal %}
+                <a href="{% url 'fiscal:revisoes_devolucao' %}"><i class="fa-solid fa-clipboard-check"></i> Revisões fiscais</a>
+              {% endif %}
             </details>
           {% endif %}
           {% if access.administracao %}

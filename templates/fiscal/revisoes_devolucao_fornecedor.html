@@ -1,0 +1,65 @@
+{% extends "base.html" %}
+
+{% block title %}Revisões fiscais de devolução{% endblock %}
+
+{% block content %}
+<div class="page-header">
+  <div>
+    <h1>Revisões fiscais de devolução</h1>
+    <p>Fila segregada para validar a preparação feita por Compras.</p>
+  </div>
+</div>
+
+<section class="panel">
+  <div class="operation-notice">
+    <strong>Aprovar não significa emitir.</strong><br>
+    Nenhuma decisão desta fila cria NF-e, reserva número, movimenta estoque ou transmite para Focus/SEFAZ.
+  </div>
+
+  <form method="get" class="inline-form">
+    <label class="form-field">
+      <span>Situação</span>
+      <select name="status">
+        <option value="TODOS" {% if status_selecionado == "TODOS" %}selected{% endif %}>Todas</option>
+        {% for valor, rotulo in status_opcoes %}
+          <option value="{{ valor }}" {% if status_selecionado == valor %}selected{% endif %}>{{ rotulo }}</option>
+        {% endfor %}
+      </select>
+    </label>
+    <button class="secondary-button" type="submit">Filtrar</button>
+  </form>
+
+  <table>
+    <thead>
+      <tr>
+        <th>Entrada</th>
+        <th>Fornecedor / filial</th>
+        <th>Preparação</th>
+        <th>Situação</th>
+        <th></th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for rascunho in pagina %}
+        <tr>
+          <td>#{{ rascunho.entrada_compra_id }}<br><small>{{ rascunho.chave_referenciada }}</small></td>
+          <td>{{ rascunho.entrada_compra.fornecedor }}<br><small>{{ rascunho.entrada_compra.filial }}</small></td>
+          <td>{{ rascunho.itens.count }} item(ns)<br><small>{% if rascunho.submetido_em %}{{ rascunho.submetido_em|date:"d/m/Y H:i" }}{% else %}Ainda não submetida{% endif %}</small></td>
+          <td><span class="status">{{ rascunho.get_status_display }}</span></td>
+          <td><a class="secondary-button" href="{% url 'fiscal:revisao_devolucao_detalhe' rascunho.pk %}">Analisar</a></td>
+        </tr>
+      {% empty %}
+        <tr><td colspan="5">Nenhuma preparação encontrada para este filtro.</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+
+  {% if pagina.has_other_pages %}
+    <div class="pagination">
+      {% if pagina.has_previous %}<a href="?status={{ status_selecionado }}&page={{ pagina.previous_page_number }}">Anterior</a>{% endif %}
+      <span>Página {{ pagina.number }} de {{ pagina.paginator.num_pages }}</span>
+      {% if pagina.has_next %}<a href="?status={{ status_selecionado }}&page={{ pagina.next_page_number }}">Próxima</a>{% endif %}
+    </div>
+  {% endif %}
+</section>
+{% endblock %}

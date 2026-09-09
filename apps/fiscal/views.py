@@ -11,7 +11,13 @@ from django.shortcuts import get_object_or_404, redirect, render
 from django.utils import timezone
 from django.views.decorators.http import require_POST
 
-from apps.accounts.permissions import ADMINISTRACAO, RELATORIOS, SISTEMA, role_required
+from apps.accounts.permissions import (
+    ADMINISTRACAO,
+    RELATORIOS,
+    REVISAO_FISCAL,
+    SISTEMA,
+    role_required,
+)
 from apps.auditoria.models import LogAuditoria
 from apps.empresas.models import Filial
 from apps.produtos.models import Produto
@@ -32,6 +38,7 @@ from .escopo import (
     filiais_para_usuario,
     inutilizacoes_para_usuario,
     naturezas_para_usuario,
+    rascunhos_devolucao_para_usuario,
     series_para_usuario,
     vendas_para_usuario,
 )
@@ -59,12 +66,14 @@ from .models import (
     DocumentoDFeRecebido,
     EventoDFeRecebido,
     DocumentoFiscal,
+    DecisaoRevisaoDevolucaoFornecedor,
     FonteAtualizacaoFiscal,
     HomologacaoFiscal,
     InutilizacaoNumeracaoFiscal,
     ManifestacaoDestinatario,
     NaturezaOperacao,
     ProvedorEmissaoFiscal,
+    RascunhoDevolucaoFornecedor,
     SerieFiscal,
     StatusDFeRecebido,
     StatusDocumentoFiscal,
@@ -73,10 +82,12 @@ from .models import (
     StatusHomologacaoFiscal,
     StatusInutilizacaoFiscal,
     StatusManifestacaoDestinatario,
+    StatusRascunhoDevolucaoFornecedor,
     TipoDocumentoFiscal,
     TipoDocumentoConsultaCadastro,
     TipoManifestacaoDestinatario,
 )
+from .devolucao_fornecedor import revisar_rascunho_devolucao_fornecedor
 from .monitor_atualizacoes import resumo_monitor_atualizacoes
 from .services_cce import registrar_carta_correcao
 from .services_cadastro import consultar_cadastro_contribuinte
@@ -101,6 +112,87 @@ from .services import (
     transmitir_documento_simulado,
     transmitir_documento_sefaz,
 )
+
+
+def _rascunhos_revisao_queryset(user):
+    return rascunhos_devolucao_para_usuario(
+        user,
+        RascunhoDevolucaoFornecedor.objects.select_related(
+            "entrada_compra__fornecedor",
+            "entrada_compra__filial",
+            "submetido_por",
+        ).prefetch_related("itens__item_entrada__produto", "revisoes__revisor"),
+    )
+
+
+@login_required
+@role_required(*REVISAO_FISCAL)
+def revisoes_devolucao_fornecedor(request):
+    status = request.GET.get(
+        "status", StatusRascunhoDevolucaoFornecedor.AGUARDANDO_REVISAO
+    )
+    queryset = _rascunhos_revisao_queryset(request.user)
+    if status != "TODOS":
+        if status not in StatusRascunhoDevolucaoFornecedor.values:
+            status = StatusRascunhoDevolucaoFornecedor.AGUARDANDO_REVISAO
+        queryset = queryset.filter(status=status)
+    pagina = Paginator(queryset.order_by("submetido_em", "id"), 25).get_page(
+        request.GET.get("page")
+    )
+    return render(
+        request,
+        "fiscal/revisoes_devolucao_fornecedor.html",
+        {
+            "pagina": pagina,
+            "status_selecionado": status,
+            "status_opcoes": StatusRascunhoDevolucaoFornecedor.choices,
+        },
+    )
+
+
+@login_required
+@role_required(*REVISAO_FISCAL)
+def revisao_devolucao_fornecedor_detalhe(request, pk):
+    rascunho = get_object_or_404(_rascunhos_revisao_queryset(request.user), pk=pk)
+    return render(
+        request,
+        "fiscal/revisao_devolucao_fornecedor_detalhe.html",
+        {
+            "rascunho": rascunho,
+            "decisao_aprovar": DecisaoRevisaoDevolucaoFornecedor.APROVAR,
+            "decisao_corrigir": DecisaoRevisaoDevolucaoFornecedor.DEVOLVER_CORRECAO,
+        },
+    )
+
+
+@login_required
+@role_required(*REVISAO_FISCAL)
+@require_POST
+def decidir_revisao_devolucao_fornecedor(request, pk):
+    rascunho = get_object_or_404(_rascunhos_revisao_queryset(request.user), pk=pk)
+    try:
+        revisao, rascunho = revisar_rascunho_devolucao_fornecedor(
+            rascunho,
+            decisao=request.POST.get("decisao"),
+            justificativa=request.POST.get("justificativa"),
+            revisor=request.user,
+            ip=request.META.get("REMOTE_ADDR"),
+        )
+    except ValidationError as exc:
+        messages.error(request, " ".join(exc.messages))
+        return redirect("fiscal:revisao_devolucao_detalhe", pk=rascunho.pk)
+
+    if rascunho.status == StatusRascunhoDevolucaoFornecedor.APROVADO:
+        messages.success(
+            request,
+            f"Revisão {revisao.sequencia} aprovada. A preparação continua sem autorização para emitir.",
+        )
+    else:
+        messages.success(
+            request,
+            f"Revisão {revisao.sequencia} devolvida para correção em Compras.",
+        )
+    return redirect("fiscal:revisoes_devolucao")
 
 
 def _diagnostico_prontidao_fiscal(user):

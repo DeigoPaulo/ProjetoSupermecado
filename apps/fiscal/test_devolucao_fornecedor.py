@@ -16,14 +16,17 @@ from .devolucao_fornecedor import (
     CONTRATO_RASCUNHO_DEVOLUCAO_FORNECEDOR,
     cancelar_rascunho_devolucao_fornecedor,
     preparar_devolucao_fornecedor,
+    revisar_rascunho_devolucao_fornecedor,
     salvar_rascunho_devolucao_fornecedor,
     submeter_rascunho_devolucao_para_revisao,
 )
 from .models import (
     DocumentoDFeRecebido,
     DocumentoFiscal,
+    DecisaoRevisaoDevolucaoFornecedor,
     ItemRascunhoDevolucaoFornecedor,
     RascunhoDevolucaoFornecedor,
+    RevisaoDevolucaoFornecedor,
     StatusRascunhoDevolucaoFornecedor,
 )
 
@@ -48,6 +51,18 @@ class PreparacaoDevolucaoFornecedorTests(TestCase):
             usuario=self.usuario,
             filial=self.filial,
             tipo=TipoPerfil.COMPRAS,
+        )
+        self.revisor = get_user_model().objects.create_user("contador_devolucao")
+        PerfilUsuario.objects.create(
+            usuario=self.revisor,
+            filial=self.filial,
+            tipo=TipoPerfil.CONTABILIDADE,
+        )
+        self.financeiro = get_user_model().objects.create_user("financeiro_devolucao")
+        PerfilUsuario.objects.create(
+            usuario=self.financeiro,
+            filial=self.filial,
+            tipo=TipoPerfil.FINANCEIRO,
         )
         self.fornecedor = Fornecedor.objects.create(
             empresa=self.empresa,
@@ -96,6 +111,19 @@ class PreparacaoDevolucaoFornecedorTests(TestCase):
           <imposto><ICMS><ICMS00><orig>0</orig><CST>00</CST><vBC>20.00</vBC><pICMS>17.00</pICMS><vICMS>3.40</vICMS></ICMS00></ICMS></imposto></det>
           </infNFe></NFe><protNFe><infProt><chNFe>{self.CHAVE}</chNFe><cStat>100</cStat></infProt></protNFe>
         </nfeProc>"""
+
+    def _rascunho_submetido(self):
+        self._registrar_dfe()
+        rascunho, _ = salvar_rascunho_devolucao_fornecedor(
+            self.entrada,
+            selecoes={self.item_entrada.pk: "1.000"},
+            motivo_operacional="Mercadoria avariada na conferência",
+            usuario=self.usuario,
+        )
+        return submeter_rascunho_devolucao_para_revisao(
+            self.entrada,
+            usuario=self.usuario,
+        )
 
     def test_consolida_evidencias_sem_criar_documento_ou_escolher_tributacao(self):
         self._registrar_dfe()
@@ -359,3 +387,158 @@ class PreparacaoDevolucaoFornecedorTests(TestCase):
             RascunhoDevolucaoFornecedor.objects.get().status,
             StatusRascunhoDevolucaoFornecedor.CANCELADO,
         )
+
+    def test_revisor_aprova_preparacao_sem_efeito_fiscal_e_historico_e_imutavel(self):
+        rascunho = self._rascunho_submetido()
+
+        revisao, aprovado = revisar_rascunho_devolucao_fornecedor(
+            rascunho,
+            decisao=DecisaoRevisaoDevolucaoFornecedor.APROVAR,
+            justificativa="Documentos e quantidades conferidos para a próxima etapa.",
+            revisor=self.revisor,
+        )
+
+        self.assertEqual(aprovado.status, StatusRascunhoDevolucaoFornecedor.APROVADO)
+        self.assertEqual(revisao.sequencia, 1)
+        self.assertEqual(len(revisao.conteudo_sha256), 64)
+        self.assertEqual(revisao.revisor, self.revisor)
+        self.assertEqual(revisao.conteudo_snapshot["itens"][0]["quantidade"], "1.000")
+        self.assertFalse(DocumentoFiscal.objects.exists())
+        with self.assertRaisesMessage(ValueError, "imutáveis"):
+            revisao.justificativa = "Tentativa de alteração"
+            revisao.save()
+        with self.assertRaisesMessage(ValueError, "imutáveis"):
+            RevisaoDevolucaoFornecedor.objects.filter(pk=revisao.pk).update(
+                justificativa="Tentativa"
+            )
+        with self.assertRaisesMessage(ValidationError, "não pode ser cancelada"):
+            cancelar_rascunho_devolucao_fornecedor(
+                self.entrada,
+                usuario=self.usuario,
+            )
+
+    def test_revisor_devolve_para_correcao_e_preserva_historico(self):
+        rascunho = self._rascunho_submetido()
+
+        revisao, devolvido = revisar_rascunho_devolucao_fornecedor(
+            rascunho,
+            decisao=DecisaoRevisaoDevolucaoFornecedor.DEVOLVER_CORRECAO,
+            justificativa="Corrigir a quantidade informada antes de nova submissão.",
+            revisor=self.revisor,
+        )
+
+        self.assertEqual(devolvido.status, StatusRascunhoDevolucaoFornecedor.RASCUNHO)
+        self.assertEqual(devolvido.xml_origem_sha256, "")
+        self.assertIsNone(devolvido.submetido_em)
+        self.assertIsNone(devolvido.submetido_por)
+        self.assertTrue(RevisaoDevolucaoFornecedor.objects.filter(pk=revisao.pk).exists())
+        corrigido, criado = salvar_rascunho_devolucao_fornecedor(
+            self.entrada,
+            selecoes={self.item_entrada.pk: "0.500"},
+            motivo_operacional="Quantidade corrigida após revisão fiscal",
+            usuario=self.usuario,
+        )
+        self.assertFalse(criado)
+        self.assertEqual(corrigido.pk, rascunho.pk)
+        self.assertEqual(corrigido.itens.get().quantidade, Decimal("0.500"))
+        revisao.refresh_from_db()
+        self.assertEqual(revisao.conteudo_snapshot["itens"][0]["quantidade"], "1.000")
+        self.assertFalse(DocumentoFiscal.objects.exists())
+
+    def test_revisao_bloqueia_xml_alterado_depois_da_submissao(self):
+        rascunho = self._rascunho_submetido()
+        dfe = DocumentoDFeRecebido.objects.get(entrada_compra=self.entrada)
+        dfe.xml_conteudo = dfe.xml_conteudo.replace("3.40", "3.41")
+        dfe.save(update_fields=["xml_conteudo"])
+
+        with self.assertRaisesMessage(ValidationError, "XML original divergiu"):
+            revisar_rascunho_devolucao_fornecedor(
+                rascunho,
+                decisao=DecisaoRevisaoDevolucaoFornecedor.APROVAR,
+                justificativa="Tentativa com documento original modificado.",
+                revisor=self.revisor,
+            )
+
+        self.assertFalse(RevisaoDevolucaoFornecedor.objects.exists())
+        rascunho.refresh_from_db()
+        self.assertEqual(
+            rascunho.status,
+            StatusRascunhoDevolucaoFornecedor.AGUARDANDO_REVISAO,
+        )
+
+    def test_fila_de_revisao_exclui_compras_e_financeiro(self):
+        rascunho = self._rascunho_submetido()
+
+        for usuario in (self.usuario, self.financeiro):
+            with self.subTest(usuario=usuario.username):
+                self.client.force_login(usuario)
+                self.assertEqual(
+                    self.client.get("/fiscal/devolucoes-fornecedor/revisao/").status_code,
+                    403,
+                )
+                self.assertEqual(
+                    self.client.get(
+                        f"/fiscal/devolucoes-fornecedor/revisao/{rascunho.pk}/"
+                    ).status_code,
+                    403,
+                )
+
+    def test_contabilidade_revisa_pela_tela_e_aprovacao_some_das_acoes_de_compras(self):
+        rascunho = self._rascunho_submetido()
+        self.client.force_login(self.revisor)
+
+        fila = self.client.get("/fiscal/devolucoes-fornecedor/revisao/")
+        detalhe = self.client.get(
+            f"/fiscal/devolucoes-fornecedor/revisao/{rascunho.pk}/"
+        )
+        resposta = self.client.post(
+            f"/fiscal/devolucoes-fornecedor/revisao/{rascunho.pk}/decidir/",
+            {
+                "decisao": DecisaoRevisaoDevolucaoFornecedor.APROVAR,
+                "justificativa": "Preparação documental conferida pelo responsável fiscal.",
+            },
+            follow=True,
+        )
+
+        self.assertEqual(fila.status_code, 200)
+        self.assertContains(fila, "Aprovar não significa emitir")
+        self.assertEqual(detalhe.status_code, 200)
+        self.assertContains(detalhe, "Aprovar somente a preparação")
+        self.assertContains(resposta, "continua sem autorização para emitir")
+        self.assertFalse(DocumentoFiscal.objects.exists())
+
+        self.client.force_login(self.usuario)
+        compra = self.client.get(f"/compras/{self.entrada.pk}/")
+        self.assertContains(compra, "Preparação aprovada pela revisão fiscal")
+        self.assertNotContains(compra, "Salvar rascunho sem emitir")
+        self.assertNotContains(compra, "Enviar para revisão fiscal")
+        self.assertNotContains(compra, "Cancelar preparação")
+
+    def test_revisor_nao_enxerga_rascunho_de_outra_empresa(self):
+        rascunho = self._rascunho_submetido()
+        outra_empresa = Empresa.objects.create(
+            razao_social="Outro Mercado Ltda",
+            nome_fantasia="Outro Mercado",
+            cnpj="33.333.333/0001-33",
+        )
+        outra_filial = Filial.objects.create(
+            empresa=outra_empresa,
+            nome="Outra Matriz",
+            cnpj=outra_empresa.cnpj,
+            uf="GO",
+        )
+        outro_revisor = get_user_model().objects.create_user("outro_contador")
+        PerfilUsuario.objects.create(
+            usuario=outro_revisor,
+            filial=outra_filial,
+            tipo=TipoPerfil.CONTABILIDADE,
+        )
+        self.client.force_login(outro_revisor)
+
+        fila = self.client.get("/fiscal/devolucoes-fornecedor/revisao/")
+        detalhe = self.client.get(
+            f"/fiscal/devolucoes-fornecedor/revisao/{rascunho.pk}/"
+        )
+
+        self.assertNotContains(fila, self.CHAVE)
+        self.assertEqual(detalhe.status_code, 404)

@@ -100,9 +100,10 @@ Comunicação com Focus ou SEFAZ não será tratada como conformidade enquanto c
 - [x] Criar a seleção persistente e reversível dos itens e quantidades da devolução, limitada ao recebido e ainda sem gerar documento fiscal; migration fiscal 0036.
 - [x] Preservar o `nItem` na importação e mapear cada seleção ao item original, bloqueando ambiguidades e excesso agregado por lotes; migration compras 0011.
 - [x] Submeter o rascunho à revisão fiscal com snapshot por item, responsável, horário e SHA-256 do XML; migration fiscal 0037.
-- [ ] Implementar a decisão segregada do revisor fiscal, sem autorizar emissão automaticamente.
+- [x] Implementar a decisão segregada e imutável do revisor fiscal, exclusiva de Administrador/Contabilidade, com aprovação da preparação ou devolução para correção e sem autorização automática de emissão; migration fiscal 0038.
+- [ ] Modelar o parecer tributário versionado para natureza, CFOP e tratamento por tributo definidos pelo contador, sem defaults presumidos.
 - [ ] Revisar a Fase 1 com o contador quando os dados reais chegarem.
 
 ## Próxima ação verificável
 
-O rascunho da devolução ao fornecedor já preserva origem, motivo, itens, quantidades, vínculo ao `nItem`, snapshot tributário e hash do XML e pode ser congelado em “aguardando revisão fiscal”. A próxima ação interna é implementar a decisão segregada do revisor, com devolução para correção ou aprovação apenas da preparação. CFOP definitivo, cálculo, geração, numeração e transmissão continuam bloqueados. Quando os dados reais estiverem disponíveis, também será necessário concluir o aceite contábil e a homologação por canal.
+O rascunho da devolução ao fornecedor já preserva origem, motivo, itens, quantidades, vínculo ao `nItem`, snapshot tributário e hash do XML. A revisão segregada permite devolver para correção ou aprovar apenas a preparação, com histórico imutável, sem acesso do Financeiro e sem efeito emissivo. A próxima ação interna é modelar um parecer tributário versionado para receber natureza, CFOP e tratamento de cada tributo somente quando informados e validados pelo contador. Cálculo, geração, numeração e transmissão continuam bloqueados. Quando os dados reais estiverem disponíveis, também será necessário concluir o aceite contábil e a homologação por canal.

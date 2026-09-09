@@ -55,7 +55,13 @@ class StatusDocumentoFiscal(models.TextChoices):
 class StatusRascunhoDevolucaoFornecedor(models.TextChoices):
     RASCUNHO = "RASCUNHO", "Em preparação"
     AGUARDANDO_REVISAO = "AGUARDANDO_REVISAO", "Aguardando revisão fiscal"
+    APROVADO = "APROVADO", "Preparação aprovada"
     CANCELADO = "CANCELADO", "Cancelado"
+
+
+class DecisaoRevisaoDevolucaoFornecedor(models.TextChoices):
+    APROVAR = "APROVAR", "Aprovar preparação"
+    DEVOLVER_CORRECAO = "DEVOLVER_CORRECAO", "Devolver para correção"
 
 
 class StatusInutilizacaoFiscal(models.TextChoices):
@@ -435,6 +441,7 @@ class RascunhoDevolucaoFornecedor(models.Model):
                     status__in=[
                         StatusRascunhoDevolucaoFornecedor.RASCUNHO,
                         StatusRascunhoDevolucaoFornecedor.AGUARDANDO_REVISAO,
+                        StatusRascunhoDevolucaoFornecedor.APROVADO,
                     ]
                 ),
                 name="fisc_rasc_dev_entrada_uniq",
@@ -442,7 +449,10 @@ class RascunhoDevolucaoFornecedor(models.Model):
             models.CheckConstraint(
                 condition=(
                     ~models.Q(
-                        status=StatusRascunhoDevolucaoFornecedor.AGUARDANDO_REVISAO
+                        status__in=[
+                            StatusRascunhoDevolucaoFornecedor.AGUARDANDO_REVISAO,
+                            StatusRascunhoDevolucaoFornecedor.APROVADO,
+                        ]
                     )
                     | (
                         models.Q(submetido_em__isnull=False)
@@ -493,6 +503,60 @@ class ItemRascunhoDevolucaoFornecedor(models.Model):
 
     def __str__(self):
         return f"{self.quantidade} da entrada {self.item_entrada_id}"
+
+
+class RevisaoDevolucaoFornecedorQuerySet(models.QuerySet):
+    def update(self, **kwargs):
+        raise ValueError("Revisões de devolução são imutáveis e não podem ser alteradas.")
+
+    def delete(self):
+        raise ValueError("Revisões de devolução são imutáveis e não podem ser excluídas.")
+
+
+class RevisaoDevolucaoFornecedor(models.Model):
+    objects = RevisaoDevolucaoFornecedorQuerySet.as_manager()
+
+    contrato = models.CharField(
+        max_length=64,
+        default="supplier_return_fiscal_review_v1",
+        editable=False,
+    )
+    rascunho = models.ForeignKey(
+        RascunhoDevolucaoFornecedor,
+        on_delete=models.PROTECT,
+        related_name="revisoes",
+    )
+    sequencia = models.PositiveIntegerField()
+    decisao = models.CharField(max_length=24, choices=DecisaoRevisaoDevolucaoFornecedor.choices)
+    justificativa = models.CharField(max_length=500)
+    conteudo_snapshot = models.JSONField()
+    conteudo_sha256 = models.CharField(max_length=64)
+    revisor = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.PROTECT,
+        related_name="revisoes_devolucao_fornecedor",
+    )
+    criado_em = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["rascunho_id", "sequencia"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["rascunho", "sequencia"],
+                name="fisc_rev_dev_rasc_seq_uniq",
+            ),
+        ]
+
+    def save(self, *args, **kwargs):
+        if self.pk or not self._state.adding:
+            raise ValueError("Revisões de devolução são imutáveis e não podem ser alteradas.")
+        return super().save(*args, **kwargs)
+
+    def delete(self, *args, **kwargs):
+        raise ValueError("Revisões de devolução são imutáveis e não podem ser excluídas.")
+
+    def __str__(self):
+        return f"Revisão {self.rascunho_id}/{self.sequencia} - {self.decisao}"
 
 
 class TipoEvidenciaFiscal(models.TextChoices):

@@ -1,0 +1,98 @@
+{% extends "base.html" %}
+{% load l10n %}
+
+{% block title %}Revisão fiscal da devolução{% endblock %}
+
+{% block content %}
+<div class="page-header">
+  <div>
+    <h1>Revisão da devolução da entrada #{{ rascunho.entrada_compra_id }}</h1>
+    <p>{{ rascunho.entrada_compra.fornecedor }} · {{ rascunho.entrada_compra.filial }}</p>
+  </div>
+  <a class="secondary-button" href="{% url 'fiscal:revisoes_devolucao' %}">Voltar à fila</a>
+</div>
+
+<section class="panel">
+  <div class="panel-title">Origem e integridade</div>
+  <table>
+    <tbody>
+      <tr><th>Situação</th><td>{{ rascunho.get_status_display }}</td></tr>
+      <tr><th>Chave referenciada</th><td>{{ rascunho.chave_referenciada }}</td></tr>
+      <tr><th>Motivo operacional</th><td>{{ rascunho.motivo_operacional }}</td></tr>
+      <tr><th>Submissão</th><td>{% if rascunho.submetido_em %}{{ rascunho.submetido_em|date:"d/m/Y H:i" }} por {{ rascunho.submetido_por }}{% else %}Não submetida no estado atual{% endif %}</td></tr>
+      <tr><th>SHA-256 do XML original</th><td>{{ rascunho.xml_origem_sha256|default:"-" }}</td></tr>
+    </tbody>
+  </table>
+</section>
+
+<section class="panel mt-panel">
+  <div class="panel-title">Itens congelados na preparação</div>
+  <table>
+    <thead>
+      <tr>
+        <th>nItem / produto</th>
+        <th>Quantidade</th>
+        <th>CFOP / NCM</th>
+        <th>Tributos no XML original</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for item in rascunho.itens.all %}
+        <tr>
+          <td>nItem {{ item.numero_item_xml }}<br><small>{{ item.item_entrada.produto }}</small></td>
+          <td>{{ item.quantidade|unlocalize }}</td>
+          <td>{{ item.item_xml_snapshot.cfop|default:"-" }} / {{ item.item_xml_snapshot.ncm|default:"-" }}</td>
+          <td>
+            ICMS {{ item.item_xml_snapshot.valor_icms|default:"0" }};
+            ICMS-ST {{ item.item_xml_snapshot.valor_icms_st|default:"0" }};
+            IPI {{ item.item_xml_snapshot.valor_ipi|default:"0" }};
+            PIS {{ item.item_xml_snapshot.valor_pis|default:"0" }};
+            COFINS {{ item.item_xml_snapshot.valor_cofins|default:"0" }}
+          </td>
+        </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  <p class="panel-subtitle">Estes valores são evidências do XML original; o sistema ainda não os transforma automaticamente em tributação de saída.</p>
+</section>
+
+<section class="panel mt-panel">
+  <div class="panel-title">Histórico imutável da revisão</div>
+  <table>
+    <thead><tr><th>#</th><th>Decisão</th><th>Justificativa</th><th>Responsável</th><th>Integridade</th></tr></thead>
+    <tbody>
+      {% for revisao in rascunho.revisoes.all %}
+        <tr>
+          <td>{{ revisao.sequencia }}</td>
+          <td>{{ revisao.get_decisao_display }}</td>
+          <td>{{ revisao.justificativa }}</td>
+          <td>{{ revisao.revisor }}<br><small>{{ revisao.criado_em|date:"d/m/Y H:i" }}</small></td>
+          <td><small>{{ revisao.conteudo_sha256 }}</small></td>
+        </tr>
+      {% empty %}
+        <tr><td colspan="5">Ainda não existe decisão registrada.</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</section>
+
+{% if rascunho.status == "AGUARDANDO_REVISAO" %}
+  <section class="panel mt-panel">
+    <div class="panel-title">Registrar decisão fiscal</div>
+    <div class="operation-notice">
+      A aprovação valida somente esta preparação. Emissão, numeração, estoque e Focus/SEFAZ permanecem bloqueados.
+    </div>
+    <form method="post" action="{% url 'fiscal:decidir_revisao_devolucao' rascunho.pk %}" class="form-grid form-confirm" data-msg="Registrar esta decisão fiscal de forma imutável?">
+      {% csrf_token %}
+      <label class="form-field span-2">
+        <span>Justificativa fiscal (obrigatória)</span>
+        <textarea name="justificativa" minlength="10" maxlength="500" required></textarea>
+      </label>
+      <div class="form-actions span-2">
+        <button class="secondary-button" type="submit" name="decisao" value="{{ decisao_corrigir }}">Devolver para correção</button>
+        <button class="primary-button" type="submit" name="decisao" value="{{ decisao_aprovar }}">Aprovar somente a preparação</button>
+      </div>
+    </form>
+  </section>
+{% endif %}
+{% endblock %}

@@ -18,6 +18,7 @@ ESTOQUE = SUPERVISAO | {TipoPerfil.ESTOQUISTA, TipoPerfil.COMPRAS}
 COMPRAS = SUPERVISAO | {TipoPerfil.COMPRAS}
 RELATORIOS = SUPERVISAO | {TipoPerfil.FINANCEIRO}
 CONTABILIDADE = ADMINISTRACAO | {TipoPerfil.FINANCEIRO, TipoPerfil.CONTABILIDADE}
+REVISAO_FISCAL = ADMINISTRACAO | {TipoPerfil.CONTABILIDADE}
 SISTEMA = SUPERVISAO
 
 
@@ -124,6 +125,7 @@ def access_flags(user):
         "compras": has_role(user, COMPRAS),
         "relatorios": has_role(user, RELATORIOS),
         "contabilidade": has_role(user, CONTABILIDADE),
+        "revisao_fiscal": has_role(user, REVISAO_FISCAL),
         "sistema": has_role(user, SISTEMA),
     }
 
