@@ -55,6 +55,7 @@ from .composicao_devolucao import RevisaoComposicaoForm, revisar_composicao
 from .rateio_devolucao import registrar_rateio
 from .reflexos_devolucao import registrar_reflexos
 from .reflexos_devolucao import revisar_reflexos, validar_reflexos_atuais, RevisaoReflexosForm
+from .dossie_devolucao import diagnosticar_dossie
 
 
 class PreparacaoDevolucaoFornecedorTests(TestCase):
@@ -582,6 +583,43 @@ class PreparacaoDevolucaoFornecedorTests(TestCase):
         dfe.save(update_fields=["xml_conteudo"])
         with self.assertRaisesMessage(ValidationError, "XML original divergiu"):
             registrar_memoria_calculo_devolucao_fornecedor(rascunho, parametrizacao_id=param.pk, dados=self._dados_memoria(param, correcao_memoria_id=memoria.pk), responsavel=self.revisor)
+
+    def test_dossie_pendencias_sem_gravar_ou_liberar_emissao(self):
+        from apps.auditoria.models import LogAuditoria
+        rascunho, _, _, _ = self._reflexos_registrados()
+        antes = LogAuditoria.objects.count()
+        dossie = diagnosticar_dossie(rascunho, self.revisor)
+        etapas = {e["chave"]: e for e in dossie["etapas"]}
+        self.assertEqual(etapas["revisao_reflexos"]["estado"], "Pendente")
+        self.assertEqual(etapas["transporte"]["estado"], "Pendente")
+        self.assertEqual(etapas["xml"]["estado"], "Bloqueado")
+        self.assertFalse(dossie["permite_emissao"])
+        self.assertEqual(LogAuditoria.objects.count(), antes)
+        self.assertFalse(DocumentoFiscal.objects.exists())
+        self.client.force_login(self.revisor)
+        self.assertContains(self.client.get(f"/fiscal/devolucoes-fornecedor/revisao/{rascunho.pk}/"), "Conferência consolidada da devolução")
+
+    def test_dossie_distingue_origem_historica_de_memoria_revisada(self):
+        rascunho, memoria, _ = self._memoria_revisada_para_correcao()
+        etapas = {e["chave"]: e for e in diagnosticar_dossie(rascunho, self.revisor)["etapas"]}
+        self.assertEqual(etapas["origem_revisada"]["estado"], "Referência")
+        self.assertNotIn("composicao_atual", etapas)
+        self.assertNotIn("origem_atual", etapas)
+        self.assertEqual(etapas["revisao_memoria"]["estado"], "Pendente")
+        revisar_memoria_calculo_devolucao_fornecedor(rascunho, memoria_id=memoria.pk, decisao="DEVOLVER_CORRECAO", justificativa="Corrigir o critério informado na memória.", revisor=self.segundo_revisor)
+        etapas = {e["chave"]: e for e in diagnosticar_dossie(rascunho, self.revisor)["etapas"]}
+        self.assertIn("Corrigir", etapas["revisao_memoria"]["detalhe"])
+
+    def test_dossie_identifica_xml_alterado_e_restringe_acesso(self):
+        rascunho, _, _, _ = self._reflexos_registrados()
+        with self.assertRaisesMessage(ValidationError, "Sem permissão"):
+            diagnosticar_dossie(rascunho, self.financeiro)
+        dfe = DocumentoDFeRecebido.objects.get(entrada_compra=self.entrada)
+        dfe.xml_conteudo += " "
+        dfe.save(update_fields=["xml_conteudo"])
+        etapas = {e["chave"]: e for e in diagnosticar_dossie(rascunho, self.revisor)["etapas"]}
+        self.assertEqual(etapas["memoria"]["estado"], "Inconsistente")
+        self.assertIn("XML original divergiu", etapas["memoria"]["detalhe"])
 
     def test_revisao_reflexos_exige_decisao_e_justificativa(self):
         for dados in ({}, {"decisao": "APROVAR", "justificativa": "curta"}, {"decisao": "EMITIR", "justificativa": "Conferência independente das bases."}):

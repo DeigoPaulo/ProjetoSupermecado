@@ -128,6 +128,7 @@ from .composicao_devolucao import RevisaoComposicaoForm, revisar_composicao
 from .rateio_devolucao import RateioDevolucaoForm, registrar_rateio
 from .reflexos_devolucao import ReflexosBasesDevolucaoForm, registrar_reflexos, validar_rateio_atual
 from .reflexos_devolucao import RevisaoReflexosForm, revisar_reflexos
+from .dossie_devolucao import diagnosticar_dossie
 
 
 def _rascunhos_revisao_queryset(user):
@@ -211,6 +212,7 @@ def revisao_devolucao_fornecedor_detalhe(request, pk):
         {
             "rascunho": rascunho,
             "memoria_para_correcao": rascunho.memorias_calculo.order_by("-versao").first(),
+            "dossie": diagnosticar_dossie(rascunho, request.user),
             "rateio_form": rateio_form,
             "reflexos_form": reflexos_form,
             "reflexos_para_memoria": rateio_reflexos.reflexos.filter(revisao__decisao="APROVAR", memoria_revisada__isnull=True).order_by("-versao").first() if reflexos_form else None,

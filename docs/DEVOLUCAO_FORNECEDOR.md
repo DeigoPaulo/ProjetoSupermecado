@@ -1,7 +1,10 @@
 # Devolução ao fornecedor — preparação fiscal segura
 
+- [x] Ciclo 60: painel de conferência consolidada com estados Registrado, Conferida, Referência, Pendente, Desatualizado, Inconsistente e Bloqueado. Registros com hash íntegro não equivalem a validação fiscal; o painel é somente consulta, sem liberar emissão.
+- [ ] Especificar o contrato de dados para XML modelo 55 de devolução, mapeando origem, destino, itens, tributos, transporte, totais e campos ainda não suportados; verificar as fontes oficiais vigentes antes de implementar geração.
+
 - [x] Ciclo 59: corrigir memória revisada devolvida mantendo reflexos, bases finais e histórico; nova versão ligada à decisão de devolução e submetida novamente à revisão (migration 0050). O bloqueio de reutilização direta dos reflexos permanece; somente correção explícita da memória atual devolvida permite nova versão.
-- [ ] Consolidar o dossiê e apresentar as pendências atuais de preparação, parâmetros, memória, transporte, composição e reflexos antes de desenvolver o XML.
+- [x] Consolidar o dossiê e apresentar as pendências atuais de preparação, parâmetros, memória, transporte, composição e reflexos antes de desenvolver o XML (ciclo 60; consulta estrutural, sem autorização fiscal).
 
 - [x] Ciclo 58: vínculo da memória revisada aos reflexos aprovados, com bases finais exatas, origem preservada e bloqueio de reaplicação (migration 0049). A seleção é explícita; memória independente não recebe esse vínculo. Alíquotas e impostos continuam informados e sujeitos a revisão.
 - [ ] Tratar correção da memória revisada após devolução, preservando a origem aprovada e o histórico, sem reaplicar impactos. Nesta entrega, cada conjunto de reflexos pode originar uma única memória vinculada; repetir o vínculo é bloqueado.
