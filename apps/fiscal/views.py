@@ -212,6 +212,7 @@ def revisao_devolucao_fornecedor_detalhe(request, pk):
             "rascunho": rascunho,
             "rateio_form": rateio_form,
             "reflexos_form": reflexos_form,
+            "reflexos_para_memoria": rateio_reflexos.reflexos.filter(revisao__decisao="APROVAR", memoria_revisada__isnull=True).order_by("-versao").first() if reflexos_form else None,
             "revisao_reflexos_form": RevisaoReflexosForm(),
             "ultimos_reflexos_id": rateio_reflexos.reflexos.order_by("-versao").values_list("pk", flat=True).first() if reflexos_form else None,
             "rateio_reflexos": rateio_reflexos,

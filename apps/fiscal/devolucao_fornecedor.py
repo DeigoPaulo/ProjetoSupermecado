@@ -1195,7 +1195,33 @@ def registrar_memoria_calculo_devolucao_fornecedor(
         ):
             raise ValidationError("Os itens da parametrização selecionada perderam a integridade.")
 
+        reflexos = None
+        vinculo_reflexos = None
+        reflexos_id = dados.get("reflexos_origem_id")
+        if reflexos_id:
+            from .models import ReflexosBasesDevolucaoFornecedor
+            from .reflexos_devolucao import validar_reflexos_atuais, validar_aprovacao_reflexos
+            try:
+                reflexos_id = int(reflexos_id)
+            except (TypeError, ValueError) as exc:
+                raise ValidationError("Selecione reflexos válidos para a memória revisada.") from exc
+            reflexos = ReflexosBasesDevolucaoFornecedor.objects.select_related("rateio__composicao__memoria").filter(pk=reflexos_id, rateio__composicao__rascunho=rascunho).first()
+            if not reflexos:
+                raise ValidationError("Reflexos não pertencem à preparação.")
+            if MemoriaCalculoDevolucaoFornecedor.objects.filter(reflexos_origem=reflexos).exists():
+                raise ValidationError("Estes reflexos já estão vinculados a uma memória revisada; não podem ser reaplicados.")
+            validar_reflexos_atuais(rascunho, reflexos)
+            revisao_reflexos = validar_aprovacao_reflexos(reflexos)
+            anterior = reflexos.rateio.composicao.memoria
+            if anterior.parametrizacao_id != parametrizacao.pk:
+                raise ValidationError("A memória revisada deve preservar os parâmetros da origem.")
+            vinculo_reflexos = {"reflexos_id": reflexos.pk, "reflexos_sha256": reflexos.conteudo_sha256,
+                               "revisao_sha256": revisao_reflexos.conteudo_sha256,
+                               "memoria_anterior_id": anterior.pk, "memoria_anterior_sha256": anterior.conteudo_sha256}
         itens = [_dados_item_memoria(dados, item) for item in itens_parametrizacao]
+        if reflexos:
+            from .reflexos_devolucao import conferir_bases_revisadas
+            conferir_bases_revisadas(reflexos, itens)
         totais = _totais_memoria(dados, itens)
         criterio = _texto_parecer(
             dados.get("criterio_arredondamento"),
@@ -1217,6 +1243,8 @@ def registrar_memoria_calculo_devolucao_fornecedor(
             "totais": totais,
             "itens": [_snapshot_item_memoria(item) for item in itens],
         }
+        if vinculo_reflexos:
+            conteudo["origem_reflexos"] = vinculo_reflexos
         hash_conteudo = _hash_conteudo_revisao(conteudo)
         existente = rascunho.memorias_calculo.filter(conteudo_sha256=hash_conteudo).first()
         if existente:
@@ -1226,6 +1254,7 @@ def registrar_memoria_calculo_devolucao_fornecedor(
             rascunho.memorias_calculo.aggregate(maior=Max("versao"))["maior"] or 0
         ) + 1
         memoria = MemoriaCalculoDevolucaoFornecedor.objects.create(
+            reflexos_origem=reflexos,
             rascunho=rascunho,
             parametrizacao=parametrizacao,
             versao=versao,
@@ -1288,6 +1317,24 @@ def _validar_integridade_memoria_calculo(rascunho, memoria):
         raise ValidationError("A memória de cálculo selecionada perdeu a integridade.")
     if memoria.conteudo_snapshot.get("totais") != memoria.totais_snapshot:
         raise ValidationError("Os totais da memória de cálculo perderam a integridade.")
+    vinculo = memoria.conteudo_snapshot.get("origem_reflexos")
+    if bool(vinculo) != bool(memoria.reflexos_origem_id):
+        raise ValidationError("O vínculo da memória revisada perdeu a integridade.")
+    if memoria.reflexos_origem_id:
+        from .reflexos_devolucao import validar_aprovacao_reflexos, conferir_bases_revisadas
+        registro = memoria.reflexos_origem
+        revisao = validar_aprovacao_reflexos(registro)
+        anterior = registro.rateio.composicao.memoria
+        esperado = {"reflexos_id": registro.pk, "reflexos_sha256": registro.conteudo_sha256,
+                    "revisao_sha256": revisao.conteudo_sha256,
+                    "memoria_anterior_id": anterior.pk, "memoria_anterior_sha256": anterior.conteudo_sha256}
+        if (vinculo != esperado or anterior.rascunho_id != rascunho.pk
+            or anterior.versao >= memoria.versao or anterior.parametrizacao_id != memoria.parametrizacao_id
+            or _hash_conteudo_revisao(registro.conteudo_snapshot) != registro.conteudo_sha256
+            or _hash_conteudo_revisao(anterior.conteudo_snapshot) != anterior.conteudo_sha256):
+            raise ValidationError("A origem da memória revisada perdeu a integridade.")
+        conferir_bases_revisadas(registro, [{"item_rascunho_id": i.item_rascunho_id, "valor_operacao": i.valor_operacao,
+            **{f"base_{t}": getattr(i, f"base_{t}") for t, _ in TRIBUTOS_MEMORIA_CALCULO}} for i in memoria.itens.all()])
     parametrizacao = memoria.parametrizacao
     if (
         memoria.conteudo_snapshot.get("rascunho_id") != rascunho.pk

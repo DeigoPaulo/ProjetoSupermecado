@@ -1,5 +1,7 @@
 # Matriz de conformidade fiscal e contábil — Goiás 2026
 
+Ciclo 58: reflexos aprovados podem fundamentar uma memória revisada, com vínculo único, hashes e conferência exata das bases finais. A memória anterior permanece intacta. Não há recálculo automático dos impostos ou certificação normativa. A nova memória segue a revisão independente existente. Correção após devolução dessa memória vinculada ainda requer implementação específica; não reutilizar o vínculo nem tratar impactos anteriores como novos ajustes. Emissão continua bloqueada.
+
 Ciclo 57: a conferência independente dos reflexos foi implementada com decisão imutável de outro responsável, justificativa e validação de integridade/atualidade. Esta aprovação interna não representa validação normativa, cálculo dos impostos ou homologação. Ainda falta vincular os reflexos aprovados à memória tributária revisada e obter aceite com dados reais. A emissão continua bloqueada.
 
 Ciclo 56: a limitação operacional do ciclo 55 foi superada: os reflexos declarados agora têm serviço protegido, histórico imutável e tela de revisão (migration 0047). A gravação valida escopo, rateio atual, aprovações, integridade da cadeia e somas, mantendo a memória original intacta. Ainda não há aprovação independente dos reflexos, recálculo de impostos, aceite contábil real ou homologação deste fluxo. Emissão permanece bloqueada.

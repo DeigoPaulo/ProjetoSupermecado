@@ -149,6 +149,7 @@
     <details class="nav-section">
       <summary>Versão {{ memoria.versao }} · parâmetros {{ memoria.parametrizacao.versao }} · total da operação R$ {{ memoria.totais_snapshot.valor_operacao }}</summary>
       <p><strong>Critério informado:</strong> {{ memoria.criterio_arredondamento }}</p>
+      {% if memoria.reflexos_origem_id %}<p>Memória revisada vinculada aos reflexos {{ memoria.reflexos_origem_id }}, com bases finais aprovadas. Memória anterior: {{ memoria.conteudo_snapshot.origem_reflexos.memoria_anterior_id }}. Sem reaplicação de impactos.</p>{% endif %}
       {% for item in memoria.itens.all %}
         <details class="nav-section">
           <summary>nItem {{ item.numero_item_xml }} · valor da operação R$ {{ item.valor_operacao }}</summary>
@@ -442,6 +443,12 @@
         <form method="post" action="{% url 'fiscal:registrar_memoria_calculo_devolucao' rascunho.pk %}" class="form-grid form-confirm" data-msg="Preservar esta memória como nova versão imutável? Ela não será usada para emitir ou gerar XML.">
           {% csrf_token %}
           <input type="hidden" name="parametrizacao_id" value="{{ parametros.pk }}">
+          {% if reflexos_para_memoria and reflexos_para_memoria.pk == ultimos_reflexos_id and reflexos_para_memoria.rateio.composicao.memoria.parametrizacao_id == parametros.pk %}
+            <label class="form-field"><span>Origem da memória</span>
+              <select name="reflexos_origem_id"><option value="">Memória independente, sem vínculo aos reflexos</option><option value="{{ reflexos_para_memoria.pk }}">Memória revisada — reflexos aprovados {{ reflexos_para_memoria.pk }}</option></select>
+            </label>
+            <p>Ao vincular, informe exatamente as bases finais aprovadas, sem somar novamente os impactos. Informe alíquotas e valores conforme orientação contábil. A nova memória exige revisão e não autoriza emissão.</p>
+          {% endif %}
           <label class="form-field span-2">
             <span>Critério de cálculo e arredondamento informado pelo responsável</span>
             <textarea name="criterio_arredondamento" minlength="10" maxlength="500" required></textarea>

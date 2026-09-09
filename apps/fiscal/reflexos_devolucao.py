@@ -172,6 +172,34 @@ class RevisaoReflexosForm(forms.Form):
     justificativa = forms.CharField(min_length=10, max_length=4000, widget=forms.Textarea)
 
 
+def validar_aprovacao_reflexos(registro):
+    revisao = RevisaoReflexosDevolucaoFornecedor.objects.filter(reflexos=registro, decisao="APROVAR").first()
+    if not revisao:
+        raise ValidationError("Os reflexos precisam estar aprovados por outro responsável.")
+    s = revisao.conteudo_snapshot
+    if (_hash_conteudo_revisao(s) != revisao.conteudo_sha256
+        or s.get("reflexos_id") != registro.pk or s.get("reflexos_sha256") != registro.conteudo_sha256
+        or s.get("rateio_sha256") != registro.rateio.conteudo_sha256
+        or s.get("revisor_id") != revisao.revisor_id or revisao.revisor_id == registro.responsavel_id
+        or s.get("dados", {}).get("decisao") != "APROVAR" or s.get("permite_emissao") is not False):
+        raise ValidationError("A aprovação dos reflexos perdeu a integridade.")
+    return revisao
+
+
+def conferir_bases_revisadas(registro, itens):
+    origem = {i.item_rascunho_id: i for i in registro.rateio.composicao.memoria.itens.all()}
+    finais = {i["item_rascunho_id"]: i["tributos"] for i in registro.conteudo_snapshot["itens"]}
+    if set(origem) != {i["item_rascunho_id"] for i in itens}:
+        raise ValidationError("Os itens da memória revisada divergem da origem.")
+    for item in itens:
+        pk = item["item_rascunho_id"]
+        if item["valor_operacao"] != origem[pk].valor_operacao:
+            raise ValidationError("A memória revisada deve preservar o valor da operação de origem.")
+        for tributo, _ in TRIBUTOS_MEMORIA_CALCULO:
+            if item[f"base_{tributo}"] != Decimal(finais[pk][tributo]["base_final"]):
+                raise ValidationError(f"A base de {tributo} deve corresponder à base final aprovada, sem reaplicar impactos.")
+
+
 def validar_reflexos_atuais(rascunho, registro):
     rateio = registro.rateio
     itens = validar_rateio_atual(rascunho, rateio)

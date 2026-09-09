@@ -494,6 +494,50 @@ class PreparacaoDevolucaoFornecedorTests(TestCase):
         self.client.force_login(user)
         self.assertEqual(self.client.post(f"/fiscal/devolucoes-fornecedor/revisao/{rascunho.pk}/reflexos/revisar/", {**dados, "reflexos_id": registro.pk}).status_code, 404)
 
+    def test_memoria_revisada_preserva_origem_e_impede_reaplicacao(self):
+        rascunho, registro, _, _ = self._reflexos_registrados()
+        anterior = registro.rateio.composicao.memoria
+        revisar_reflexos(rascunho, reflexos_id=registro.pk, dados={"decisao": "APROVAR", "justificativa": "Conferência independente concluída."}, revisor=self.segundo_revisor)
+        dados = self._dados_memoria(anterior.parametrizacao, reflexos_origem_id=str(registro.pk))
+        self.client.force_login(self.revisor)
+        self.assertContains(self.client.get(f"/fiscal/devolucoes-fornecedor/revisao/{rascunho.pk}/"), "Memória revisada — reflexos aprovados")
+        nova, criada = registrar_memoria_calculo_devolucao_fornecedor(rascunho, parametrizacao_id=anterior.parametrizacao_id, dados=dados, responsavel=self.revisor)
+        self.assertTrue(criada)
+        self.assertEqual(nova.versao, anterior.versao + 1)
+        self.assertEqual(nova.reflexos_origem_id, registro.pk)
+        self.assertEqual(nova.conteudo_snapshot["origem_reflexos"]["memoria_anterior_sha256"], anterior.conteudo_sha256)
+        anterior.refresh_from_db()
+        self.assertIsNone(anterior.reflexos_origem_id)
+        with self.assertRaisesMessage(ValidationError, "não podem ser reaplicados"):
+            registrar_memoria_calculo_devolucao_fornecedor(rascunho, parametrizacao_id=anterior.parametrizacao_id, dados=dados, responsavel=self.revisor)
+        revisar_memoria_calculo_devolucao_fornecedor(rascunho, memoria_id=nova.pk, decisao="APROVAR", justificativa="Nova memória conferida independentemente.", revisor=self.segundo_revisor)
+        self.assertFalse(DocumentoFiscal.objects.exists())
+
+    def test_memoria_revisada_exige_aprovacao_e_bases_finais(self):
+        rascunho, registro, _, _ = self._reflexos_registrados()
+        anterior = registro.rateio.composicao.memoria
+        dados = self._dados_memoria(anterior.parametrizacao, reflexos_origem_id=registro.pk)
+        with self.assertRaisesMessage(ValidationError, "precisam estar aprovados"):
+            registrar_memoria_calculo_devolucao_fornecedor(rascunho, parametrizacao_id=anterior.parametrizacao_id, dados=dados, responsavel=self.revisor)
+        revisar_reflexos(rascunho, reflexos_id=registro.pk, dados={"decisao": "APROVAR", "justificativa": "Conferência independente concluída."}, revisor=self.segundo_revisor)
+        item = anterior.parametrizacao.itens.get()
+        with self.assertRaisesMessage(ValidationError, "base final aprovada"):
+            registrar_memoria_calculo_devolucao_fornecedor(rascunho, parametrizacao_id=anterior.parametrizacao_id, dados={**dados, f"base_icms_{item.pk}": "12", "total_base_icms": "12"}, responsavel=self.revisor)
+        self.assertEqual(rascunho.memorias_calculo.count(), 1)
+
+    def test_memoria_revisada_recebe_base_final_sem_somar_impacto(self):
+        rascunho, rateio, dados_reflexos, _ = self._preparar_reflexos()
+        item = rateio.composicao.memoria.itens.get()
+        dados_reflexos.update({f"item_{item.pk}_icms_frete": "2", f"item_{item.pk}_icms_base_final": "12", "total_base_icms": "12"})
+        registro, _ = registrar_reflexos(rascunho, rateio_id=rateio.pk, dados=dados_reflexos, responsavel=self.revisor)
+        revisar_reflexos(rascunho, reflexos_id=registro.pk, dados={"decisao": "APROVAR", "justificativa": "Conferência independente concluída."}, revisor=self.segundo_revisor)
+        param = rateio.composicao.memoria.parametrizacao
+        dados = self._dados_memoria(param, reflexos_origem_id=registro.pk)
+        dados.update({f"base_icms_{item.item_parametrizacao_id}": "12", "total_base_icms": "12", f"valor_icms_{item.item_parametrizacao_id}": "2,04", "total_valor_icms": "2,04"})
+        nova, _ = registrar_memoria_calculo_devolucao_fornecedor(rascunho, parametrizacao_id=param.pk, dados=dados, responsavel=self.revisor)
+        self.assertEqual(nova.itens.get().base_icms, Decimal("12"))
+        self.assertEqual(item.base_icms, Decimal("10"))
+
     def test_revisao_reflexos_exige_decisao_e_justificativa(self):
         for dados in ({}, {"decisao": "APROVAR", "justificativa": "curta"}, {"decisao": "EMITIR", "justificativa": "Conferência independente das bases."}):
             self.assertFalse(RevisaoReflexosForm(dados).is_valid())

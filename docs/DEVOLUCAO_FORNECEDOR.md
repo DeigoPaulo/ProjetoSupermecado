@@ -1,5 +1,8 @@
 # Devolução ao fornecedor — preparação fiscal segura
 
+- [x] Ciclo 58: vínculo da memória revisada aos reflexos aprovados, com bases finais exatas, origem preservada e bloqueio de reaplicação (migration 0049). A seleção é explícita; memória independente não recebe esse vínculo. Alíquotas e impostos continuam informados e sujeitos a revisão.
+- [ ] Tratar correção da memória revisada após devolução, preservando a origem aprovada e o histórico, sem reaplicar impactos. Nesta entrega, cada conjunto de reflexos pode originar uma única memória vinculada; repetir o vínculo é bloqueado.
+
 - [x] Ciclo 57: conferência independente dos reflexos nas bases, com aprovação/devolução justificada, decisão única imutável, escopo da empresa e validação da origem atual (migration 0048). Aprovar confere apenas os reflexos declarados; não recalcula impostos nem libera emissão.
 - [ ] Vincular os reflexos aprovados à preparação de uma memória tributária revisada, com rastreabilidade da base anterior e sem aplicar o mesmo impacto novamente. A memória aprovada existente permanece intacta.
 
