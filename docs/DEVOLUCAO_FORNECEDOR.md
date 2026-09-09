@@ -1,5 +1,7 @@
 # Devolução ao fornecedor — preparação fiscal segura
 
+- [ ] Bloqueio do ciclo 65: obter arquivos oficiais integrais (ZIP XSD, MOC Anexo I e NT aplicáveis, com origem/versão) para análise local; portal com falha de redirecionamento e sem XSD em fiscal_schemas. Não avançar para geração de XML enquanto a matriz normativa permanecer sem evidência.
+
 Ciclo 64 (09/09/2026): prévia protegida das referências fiscais disponível pela tela de revisão da devolução. Rota somente GET, restrita a Administrador/Contabilidade e à empresa do usuário, com cache desabilitado. Mostra grupos, referências, hashes, pendências e bloqueios, sem edição ou emissão. A etapa de extração do ciclo 63 foi salva no commit 7efa868 após restabelecimento da execução. Próximo passo: obter e analisar integralmente as fontes oficiais e schemas pendentes para fechar a matriz de capacidade fiscal; a prévia não substitui essa validação.
 
 - [x] Ciclo 63: extração de referências do dossiê em serviço somente leitura, restrita à empresa e aos perfis fiscais, com hashes conferidos e pendências separadas. Não equivale a validação completa dos dados fiscais.

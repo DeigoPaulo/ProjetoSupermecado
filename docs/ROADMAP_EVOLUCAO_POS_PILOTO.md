@@ -1,5 +1,13 @@
 # Roadmap de evolucao pos-piloto
 
+## Ponto de retomada — ciclo 65, 09/09/2026
+
+Bloqueio documental confirmado: `fiscal_schemas` contém somente README.md, sem pacote XSD. Nova tentativa de abrir a página oficial de schemas indicada pelo projeto retornou redirecionamento circular; a leitura integral do MOC/NT permanece pendente. Não houve alteração de regras, configuração, certificado, banco ou emissão. Não contar esta verificação como módulo fiscal concluído.
+
+Para retomar a matriz normativa: obter o ZIP oficial dos schemas, o MOC Anexo I e as notas técnicas aplicáveis em arquivos locais, com URL de origem e identificação da versão. Conferir o conteúdo e gerar inventário/hash antes de qualquer instalação. O comando existente `instalar_schemas_fiscais` exige hash esperado e versão: não executá-lo para promover um pacote ainda não validado. Nenhuma decisão de tributação ou versão de produção deve ser inferida por disponibilidade de um ZIP.
+
+Próxima ação necessária: disponibilizar os arquivos oficiais ou restabelecer acesso ao portal; depois analisar campos/regras de devolução e vigências, completar a matriz e implementar testes antes do gerador. A prévia e a extração já existentes continuam somente leitura e não autorizam transmissão.
+
 Validação do ciclo 64: suíte de 94 testes executada, com 93 aprovados inicialmente e uma asserção de ausência de formulário ajustada para ignorar formulários globais da página. Os dois testes da prévia foram reexecutados e aprovados após o ajuste. Verificação da aplicação e git diff --check sem erros. Sem nova migração ou transmissão.
 
 Ciclo 64 (09/09/2026): prévia protegida das referências fiscais disponível pela tela de revisão da devolução. Rota somente GET, restrita a Administrador/Contabilidade e à empresa do usuário, com cache desabilitado. Mostra grupos, referências, hashes, pendências e bloqueios, sem edição ou emissão. A etapa de extração do ciclo 63 foi salva no commit 7efa868 após restabelecimento da execução. Próximo passo: obter e analisar integralmente as fontes oficiais e schemas pendentes para fechar a matriz de capacidade fiscal; a prévia não substitui essa validação.
