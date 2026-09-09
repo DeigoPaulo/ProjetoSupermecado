@@ -1,5 +1,8 @@
 # Devolução ao fornecedor — preparação fiscal segura
 
+- [x] Ciclo 63: extração de referências do dossiê em serviço somente leitura, restrita à empresa e aos perfis fiscais, com hashes conferidos e pendências separadas. Não equivale a validação completa dos dados fiscais.
+- [ ] Disponibilizar prévia protegida do contrato e bloqueios na tela de revisão, sem edição manual das referências, XML ou emissão.
+
 - [x] Ciclo 62: contrato preliminar de referências e validador estrutural isolado, com sete testes e bloqueios permanentes de XML/emissão.
 - [ ] Integrar extração autenticada do dossiê ao contrato, verificando escopo, hashes e atualidade no banco. Identificadores declarados no envelope não são autorização nem evidência autenticada.
 

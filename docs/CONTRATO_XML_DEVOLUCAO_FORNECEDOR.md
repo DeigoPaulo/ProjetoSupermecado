@@ -1,5 +1,7 @@
 # Contrato proposto do XML de devolução ao fornecedor
 
+Atualização do ciclo 63: `extrair_contrato_devolucao(rascunho_id, usuario)` consulta o banco com escopo de empresa e perfil fiscal, extrai IDs/hashes e retorna `conteudo`, `validacao` e `pendencias_dossie`. Os grupos sem mapeamento fiscal permanecem NAO_SUPORTADO. A extração inclui decisões disponíveis e cadeia de memórias; referências íntegras não substituem aprovações pendentes. Não expõe XML ou credenciais, não grava dados e não fornece endpoint público. A prévia em tela ainda está pendente. O validador puro continua sem autenticar entradas arbitrárias: a autorização pertence ao serviço de extração.
+
 09/09/2026 · ciclo 61 · especificação preliminar, não implementada.
 
 Atualização do ciclo 62: implementado somente o envelope de referências e seu validador estrutural em `apps/fiscal/contrato_devolucao.py`. Ainda não é o contrato completo de dados fiscais nem possui extração autenticada, tela ou endpoint. Sete testes passaram.

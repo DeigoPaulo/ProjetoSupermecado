@@ -56,6 +56,7 @@ from .rateio_devolucao import registrar_rateio
 from .reflexos_devolucao import registrar_reflexos
 from .reflexos_devolucao import revisar_reflexos, validar_reflexos_atuais, RevisaoReflexosForm
 from .dossie_devolucao import diagnosticar_dossie
+from .extracao_contrato_devolucao import extrair_contrato_devolucao
 
 
 class PreparacaoDevolucaoFornecedorTests(TestCase):
@@ -620,6 +621,45 @@ class PreparacaoDevolucaoFornecedorTests(TestCase):
         etapas = {e["chave"]: e for e in diagnosticar_dossie(rascunho, self.revisor)["etapas"]}
         self.assertEqual(etapas["memoria"]["estado"], "Inconsistente")
         self.assertIn("XML original divergiu", etapas["memoria"]["detalhe"])
+
+    def test_extracao_contrato_referencias_sem_gravar(self):
+        from apps.auditoria.models import LogAuditoria
+        rascunho, memoria, _ = self._memoria_revisada_para_correcao()
+        antes = LogAuditoria.objects.count()
+        resultado = extrair_contrato_devolucao(rascunho.pk, self.revisor)
+        self.assertTrue(resultado["validacao"]["estrutura_valida"])
+        self.assertFalse(resultado["validacao"]["permite_emissao"])
+        self.assertEqual(resultado["conteudo"]["grupos"]["origem"]["estado"], "REFERENCIADO")
+        self.assertEqual(resultado["conteudo"]["grupos"]["pagamento"]["estado"], "NAO_SUPORTADO")
+        refs = resultado["conteudo"]["grupos"]["bases_valores"]["referencias"]
+        self.assertIn({"tipo": "memoria", "id": memoria.pk, "sha256": memoria.conteudo_sha256}, refs)
+        origem = memoria.reflexos_origem.rateio.composicao.memoria
+        self.assertIn({"tipo": "memoria", "id": origem.pk, "sha256": origem.conteudo_sha256}, refs)
+        self.assertEqual(LogAuditoria.objects.count(), antes)
+        self.assertFalse(DocumentoFiscal.objects.exists())
+
+    def test_extracao_contrato_xml_divergente_e_permissao(self):
+        rascunho, _, _, _ = self._reflexos_registrados()
+        with self.assertRaisesMessage(ValidationError, "Sem permissão"):
+            extrair_contrato_devolucao(rascunho.pk, self.financeiro)
+        dfe = DocumentoDFeRecebido.objects.get(entrada_compra=self.entrada)
+        dfe.xml_conteudo += " "
+        dfe.save(update_fields=["xml_conteudo"])
+        resultado = extrair_contrato_devolucao(rascunho.pk, self.revisor)
+        self.assertEqual(resultado["conteudo"]["grupos"]["origem"]["estado"], "DIVERGENTE")
+        self.assertEqual(resultado["conteudo"]["grupos"]["bases_valores"]["estado"], "DIVERGENTE")
+
+    def test_extracao_contrato_isola_empresa(self):
+        rascunho, _, _, _ = self._reflexos_registrados()
+        empresa = Empresa.objects.create(razao_social="Outra empresa", nome_fantasia="Outra", cnpj="33.333.333/0001-33")
+        filial = Filial.objects.create(empresa=empresa, nome="Outra filial", cnpj=empresa.cnpj, uf="GO")
+        user = get_user_model().objects.create_user("contador_contrato_outra")
+        PerfilUsuario.objects.create(usuario=user, filial=filial, tipo=TipoPerfil.CONTABILIDADE)
+        with self.assertRaisesMessage(ValidationError, "indisponível"):
+            extrair_contrato_devolucao(rascunho.pk, user)
+        for pk in (None, "abc", 999999):
+            with self.assertRaises(ValidationError):
+                extrair_contrato_devolucao(pk, self.revisor)
 
     def test_revisao_reflexos_exige_decisao_e_justificativa(self):
         for dados in ({}, {"decisao": "APROVAR", "justificativa": "curta"}, {"decisao": "EMITIR", "justificativa": "Conferência independente das bases."}):

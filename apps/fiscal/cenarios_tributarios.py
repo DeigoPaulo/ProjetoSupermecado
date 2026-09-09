@@ -89,8 +89,8 @@ CENARIOS_TRIBUTARIOS_GO = (
             "Finalidade no gerador, documento referenciado e impostos devolvidos ainda não implementados."
         ),
         "proxima_evidencia": (
-            "Envelope e validador estrutural isolados implementados; integrar extração "
-            "autenticada do dossiê e obter fontes integrais. Emissão continua bloqueada."
+            "Extração autorizada de referências implementada; apresentar prévia protegida "
+            "e obter fontes integrais. Emissão continua bloqueada."
         ),
     },
     {
