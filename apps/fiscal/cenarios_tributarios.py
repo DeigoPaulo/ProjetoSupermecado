@@ -89,8 +89,8 @@ CENARIOS_TRIBUTARIOS_GO = (
             "Finalidade no gerador, documento referenciado e impostos devolvidos ainda não implementados."
         ),
         "proxima_evidencia": (
-            "Memória revisada vinculada aos reflexos aprovados; falta tratar sua correção "
-            "após devolução sem reaplicar impactos. Emissão continua bloqueada."
+            "Correção da memória revisada implementada; consolidar dossiê e pendências "
+            "antes do XML. Emissão continua bloqueada."
         ),
     },
     {

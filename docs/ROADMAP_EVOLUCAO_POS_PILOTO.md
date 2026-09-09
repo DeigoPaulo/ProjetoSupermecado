@@ -1,5 +1,9 @@
 # Roadmap de evolucao pos-piloto
 
+Validação do ciclo 59: 79 testes aprovados; sem divergências de migrations e sem erros em git diff --check. Migration 0050 gerada e exercitada no banco de testes, ainda não aplicada ao banco operacional. Nenhuma cobrança ou transmissão liberada.
+
+- Ciclo 59 (09/09/2026): correção rastreável da memória revisada implementada (migration 0050). Reflexos passam a admitir versões de memória, mas cada memória devolvida só pode originar uma sucessora. A seleção explícita da memória a corrigir exige versão atual, decisão de devolução íntegra, origem preservada e bases finais idênticas às aprovadas. Nova versão conserva hashes da memória devolvida e da decisão, sem reaplicar impactos; exige nova revisão. Reenvio da correção já utilizada é bloqueado. Próximo passo: consolidar a situação do dossiê da devolução e suas pendências em uma conferência única antes do trabalho de XML. Emissão e homologação permanecem pendentes.
+
 Validação do ciclo 58: 76 testes aprovados. Migration 0049 gerada e exercitada no banco de testes, ainda não aplicada ao banco operacional. Nenhuma transmissão ou cobrança liberada.
 
 - Ciclo 58 (09/09/2026): memória tributária revisada vinculada explicitamente aos reflexos aprovados, migration 0049. O vínculo único preserva IDs e hashes da memória anterior, dos reflexos e da aprovação. As bases informadas devem corresponder exatamente às bases finais aprovadas; valor da operação e parametrização permanecem os da origem. Não soma impactos, não presume alíquotas ou impostos e exige a revisão independente já existente da nova memória. A opção é apresentada para reflexos atuais aprovados ainda não utilizados. Reenvio do mesmo vínculo é bloqueado, não cria outra memória. Próximo passo: tratar a devolução para correção da memória revisada com nova versão rastreável, sem reutilizar impactos como novo ajuste. Aceite real e homologação continuam pendentes.

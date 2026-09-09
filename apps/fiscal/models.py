@@ -771,7 +771,8 @@ class MemoriaCalculoDevolucaoFornecedorQuerySet(models.QuerySet):
 
 
 class MemoriaCalculoDevolucaoFornecedor(models.Model):
-    reflexos_origem = models.OneToOneField("ReflexosBasesDevolucaoFornecedor", null=True, blank=True, on_delete=models.PROTECT, related_name="memoria_revisada")
+    reflexos_origem = models.ForeignKey("ReflexosBasesDevolucaoFornecedor", null=True, blank=True, on_delete=models.PROTECT, related_name="memoria_revisada")
+    correcao_de = models.OneToOneField("self", null=True, blank=True, on_delete=models.PROTECT, related_name="memoria_corrigida")
     objects = MemoriaCalculoDevolucaoFornecedorQuerySet.as_manager()
 
     contrato = models.CharField(

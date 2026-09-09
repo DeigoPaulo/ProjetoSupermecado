@@ -149,6 +149,7 @@
     <details class="nav-section">
       <summary>Versão {{ memoria.versao }} · parâmetros {{ memoria.parametrizacao.versao }} · total da operação R$ {{ memoria.totais_snapshot.valor_operacao }}</summary>
       <p><strong>Critério informado:</strong> {{ memoria.criterio_arredondamento }}</p>
+      {% if memoria.correcao_de_id %}<p>Correção da memória {{ memoria.correcao_de_id }}. A versão devolvida permanece no histórico.</p>{% endif %}
       {% if memoria.reflexos_origem_id %}<p>Memória revisada vinculada aos reflexos {{ memoria.reflexos_origem_id }}, com bases finais aprovadas. Memória anterior: {{ memoria.conteudo_snapshot.origem_reflexos.memoria_anterior_id }}. Sem reaplicação de impactos.</p>{% endif %}
       {% for item in memoria.itens.all %}
         <details class="nav-section">
@@ -443,6 +444,10 @@
         <form method="post" action="{% url 'fiscal:registrar_memoria_calculo_devolucao' rascunho.pk %}" class="form-grid form-confirm" data-msg="Preservar esta memória como nova versão imutável? Ela não será usada para emitir ou gerar XML.">
           {% csrf_token %}
           <input type="hidden" name="parametrizacao_id" value="{{ parametros.pk }}">
+          {% if memoria_para_correcao.reflexos_origem_id and memoria_para_correcao.revisao_fiscal.decisao == "DEVOLVER_CORRECAO" and memoria_para_correcao.parametrizacao_id == parametros.pk %}
+            <label class="form-field"><span>Corrigir memória devolvida</span><select name="correcao_memoria_id"><option value="">Não vincular como correção</option><option value="{{ memoria_para_correcao.pk }}">Corrigir versão {{ memoria_para_correcao.versao }}</option></select></label>
+            <p>A correção preserva os reflexos e as bases finais aprovadas, cria nova versão e exige nova revisão. Não some impactos novamente.</p>
+          {% endif %}
           {% if reflexos_para_memoria and reflexos_para_memoria.pk == ultimos_reflexos_id and reflexos_para_memoria.rateio.composicao.memoria.parametrizacao_id == parametros.pk %}
             <label class="form-field"><span>Origem da memória</span>
               <select name="reflexos_origem_id"><option value="">Memória independente, sem vínculo aos reflexos</option><option value="{{ reflexos_para_memoria.pk }}">Memória revisada — reflexos aprovados {{ reflexos_para_memoria.pk }}</option></select>

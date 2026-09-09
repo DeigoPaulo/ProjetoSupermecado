@@ -186,6 +186,41 @@ def validar_aprovacao_reflexos(registro):
     return revisao
 
 
+def validar_decisao_correcao(memoria):
+    from .models import RevisaoMemoriaCalculoDevolucaoFornecedor
+    decisao = RevisaoMemoriaCalculoDevolucaoFornecedor.objects.filter(memoria=memoria, decisao="DEVOLVER_CORRECAO").first()
+    if not decisao:
+        raise ValidationError("A memória precisa estar devolvida para correção.")
+    s = decisao.conteudo_snapshot
+    if (_hash_conteudo_revisao(s) != decisao.conteudo_sha256
+        or s.get("memoria_sha256") != memoria.conteudo_sha256
+        or s.get("memoria_id") != memoria.pk or s.get("decisao") != "DEVOLVER_CORRECAO"
+        or s.get("revisor_id") != decisao.revisor_id
+        or decisao.revisor_id == memoria.responsavel_id):
+        raise ValidationError("A decisão de correção perdeu a integridade.")
+    return decisao
+
+
+def validar_memoria_para_correcao(rascunho, memoria):
+    from .devolucao_fornecedor import _validar_integridade_memoria_calculo
+    if rascunho.memorias_calculo.filter(versao__gt=memoria.versao).exists() or hasattr(memoria, "memoria_corrigida"):
+        raise ValidationError("A memória foi superada ou já possui correção.")
+    decisao = validar_decisao_correcao(memoria)
+    _validar_integridade_memoria_calculo(rascunho, memoria)
+    registro = memoria.reflexos_origem
+    rateio = registro.rateio
+    ficha = rateio.composicao
+    if (rateio.reflexos.filter(versao__gt=registro.versao).exists()
+        or ficha.rateios.filter(versao__gt=rateio.versao).exists()
+        or rascunho.composicoes.filter(versao__gt=ficha.versao).exists()):
+        raise ValidationError("A origem da correção foi superada.")
+    for objeto in (rateio, ficha, ficha.revisao):
+        if _hash_conteudo_revisao(objeto.conteudo_snapshot) != objeto.conteudo_sha256:
+            raise ValidationError("A origem da correção perdeu a integridade.")
+    _validar_integridade_memoria_calculo(rascunho, ficha.memoria)
+    return decisao
+
+
 def conferir_bases_revisadas(registro, itens):
     origem = {i.item_rascunho_id: i for i in registro.rateio.composicao.memoria.itens.all()}
     finais = {i["item_rascunho_id"]: i["tributos"] for i in registro.conteudo_snapshot["itens"]}

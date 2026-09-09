@@ -538,6 +538,51 @@ class PreparacaoDevolucaoFornecedorTests(TestCase):
         self.assertEqual(nova.itens.get().base_icms, Decimal("12"))
         self.assertEqual(item.base_icms, Decimal("10"))
 
+    def _memoria_revisada_para_correcao(self):
+        rascunho, registro, _, _ = self._reflexos_registrados()
+        param = registro.rateio.composicao.memoria.parametrizacao
+        revisar_reflexos(rascunho, reflexos_id=registro.pk, dados={"decisao": "APROVAR", "justificativa": "Conferência independente concluída."}, revisor=self.segundo_revisor)
+        memoria, _ = registrar_memoria_calculo_devolucao_fornecedor(rascunho, parametrizacao_id=param.pk, dados=self._dados_memoria(param, reflexos_origem_id=registro.pk), responsavel=self.revisor)
+        return rascunho, memoria, param
+
+    def test_correcao_memoria_revisada_preserva_bases_e_historico(self):
+        rascunho, memoria, param = self._memoria_revisada_para_correcao()
+        revisar_memoria_calculo_devolucao_fornecedor(rascunho, memoria_id=memoria.pk, decisao="DEVOLVER_CORRECAO", justificativa="Corrigir o critério informado na memória.", revisor=self.segundo_revisor)
+        dados = self._dados_memoria(param, correcao_memoria_id=memoria.pk, criterio_arredondamento="Critério corrigido conforme a revisão independente.")
+        self.client.force_login(self.revisor)
+        self.assertContains(self.client.get(f"/fiscal/devolucoes-fornecedor/revisao/{rascunho.pk}/"), "Corrigir memória devolvida")
+        nova, _ = registrar_memoria_calculo_devolucao_fornecedor(rascunho, parametrizacao_id=param.pk, dados=dados, responsavel=self.revisor)
+        self.assertEqual(nova.correcao_de_id, memoria.pk)
+        self.assertEqual(nova.reflexos_origem_id, memoria.reflexos_origem_id)
+        self.assertEqual(nova.totais_snapshot, memoria.totais_snapshot)
+        self.assertEqual(memoria.revisao_fiscal.decisao, "DEVOLVER_CORRECAO")
+        with self.assertRaisesMessage(ValidationError, "superada"):
+            registrar_memoria_calculo_devolucao_fornecedor(rascunho, parametrizacao_id=param.pk, dados=dados, responsavel=self.revisor)
+        revisar_memoria_calculo_devolucao_fornecedor(rascunho, memoria_id=nova.pk, decisao="APROVAR", justificativa="Correção conferida por outro responsável.", revisor=self.segundo_revisor)
+        self.assertFalse(DocumentoFiscal.objects.exists())
+
+    def test_correcao_memoria_exige_devolucao_e_rejeita_troca_de_origem(self):
+        rascunho, memoria, param = self._memoria_revisada_para_correcao()
+        dados = self._dados_memoria(param, correcao_memoria_id=memoria.pk)
+        with self.assertRaisesMessage(ValidationError, "devolvida para correção"):
+            registrar_memoria_calculo_devolucao_fornecedor(rascunho, parametrizacao_id=param.pk, dados=dados, responsavel=self.revisor)
+        revisar_memoria_calculo_devolucao_fornecedor(rascunho, memoria_id=memoria.pk, decisao="DEVOLVER_CORRECAO", justificativa="Corrigir o critério informado na memória.", revisor=self.segundo_revisor)
+        with self.assertRaisesMessage(ValidationError, "trocar os reflexos"):
+            registrar_memoria_calculo_devolucao_fornecedor(rascunho, parametrizacao_id=param.pk, dados={**dados, "reflexos_origem_id": 99999}, responsavel=self.revisor)
+        item = param.itens.get()
+        with self.assertRaisesMessage(ValidationError, "base final aprovada"):
+            registrar_memoria_calculo_devolucao_fornecedor(rascunho, parametrizacao_id=param.pk, dados={**dados, f"base_icms_{item.pk}": "12"}, responsavel=self.revisor)
+        self.assertEqual(rascunho.memorias_calculo.count(), 2)
+
+    def test_correcao_memoria_rejeita_xml_alterado(self):
+        rascunho, memoria, param = self._memoria_revisada_para_correcao()
+        revisar_memoria_calculo_devolucao_fornecedor(rascunho, memoria_id=memoria.pk, decisao="DEVOLVER_CORRECAO", justificativa="Corrigir o critério informado na memória.", revisor=self.segundo_revisor)
+        dfe = DocumentoDFeRecebido.objects.get(entrada_compra=self.entrada)
+        dfe.xml_conteudo += " "
+        dfe.save(update_fields=["xml_conteudo"])
+        with self.assertRaisesMessage(ValidationError, "XML original divergiu"):
+            registrar_memoria_calculo_devolucao_fornecedor(rascunho, parametrizacao_id=param.pk, dados=self._dados_memoria(param, correcao_memoria_id=memoria.pk), responsavel=self.revisor)
+
     def test_revisao_reflexos_exige_decisao_e_justificativa(self):
         for dados in ({}, {"decisao": "APROVAR", "justificativa": "curta"}, {"decisao": "EMITIR", "justificativa": "Conferência independente das bases."}):
             self.assertFalse(RevisaoReflexosForm(dados).is_valid())

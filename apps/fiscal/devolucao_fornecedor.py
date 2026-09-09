@@ -1197,7 +1197,25 @@ def registrar_memoria_calculo_devolucao_fornecedor(
 
         reflexos = None
         vinculo_reflexos = None
+        correcao = None
+        vinculo_correcao = None
+        correcao_id = dados.get("correcao_memoria_id")
         reflexos_id = dados.get("reflexos_origem_id")
+        if correcao_id:
+            from .reflexos_devolucao import validar_memoria_para_correcao
+            try:
+                correcao_id = int(correcao_id)
+            except (TypeError, ValueError) as exc:
+                raise ValidationError("Selecione a memória devolvida para correção.") from exc
+            correcao = rascunho.memorias_calculo.filter(pk=correcao_id).first()
+            if not correcao or not correcao.reflexos_origem_id:
+                raise ValidationError("Memória revisada não pertence à preparação.")
+            if reflexos_id and str(reflexos_id) != str(correcao.reflexos_origem_id):
+                raise ValidationError("A correção não pode trocar os reflexos de origem.")
+            decisao_correcao = validar_memoria_para_correcao(rascunho, correcao)
+            reflexos_id = correcao.reflexos_origem_id
+            vinculo_correcao = {"memoria_id": correcao.pk, "memoria_sha256": correcao.conteudo_sha256,
+                               "revisao_sha256": decisao_correcao.conteudo_sha256}
         if reflexos_id:
             from .models import ReflexosBasesDevolucaoFornecedor
             from .reflexos_devolucao import validar_reflexos_atuais, validar_aprovacao_reflexos
@@ -1208,9 +1226,10 @@ def registrar_memoria_calculo_devolucao_fornecedor(
             reflexos = ReflexosBasesDevolucaoFornecedor.objects.select_related("rateio__composicao__memoria").filter(pk=reflexos_id, rateio__composicao__rascunho=rascunho).first()
             if not reflexos:
                 raise ValidationError("Reflexos não pertencem à preparação.")
-            if MemoriaCalculoDevolucaoFornecedor.objects.filter(reflexos_origem=reflexos).exists():
+            if not correcao and MemoriaCalculoDevolucaoFornecedor.objects.filter(reflexos_origem=reflexos).exists():
                 raise ValidationError("Estes reflexos já estão vinculados a uma memória revisada; não podem ser reaplicados.")
-            validar_reflexos_atuais(rascunho, reflexos)
+            if not correcao:
+                validar_reflexos_atuais(rascunho, reflexos)
             revisao_reflexos = validar_aprovacao_reflexos(reflexos)
             anterior = reflexos.rateio.composicao.memoria
             if anterior.parametrizacao_id != parametrizacao.pk:
@@ -1245,6 +1264,8 @@ def registrar_memoria_calculo_devolucao_fornecedor(
         }
         if vinculo_reflexos:
             conteudo["origem_reflexos"] = vinculo_reflexos
+        if vinculo_correcao:
+            conteudo["correcao_de"] = vinculo_correcao
         hash_conteudo = _hash_conteudo_revisao(conteudo)
         existente = rascunho.memorias_calculo.filter(conteudo_sha256=hash_conteudo).first()
         if existente:
@@ -1255,6 +1276,7 @@ def registrar_memoria_calculo_devolucao_fornecedor(
         ) + 1
         memoria = MemoriaCalculoDevolucaoFornecedor.objects.create(
             reflexos_origem=reflexos,
+            correcao_de=correcao,
             rascunho=rascunho,
             parametrizacao=parametrizacao,
             versao=versao,
@@ -1318,6 +1340,20 @@ def _validar_integridade_memoria_calculo(rascunho, memoria):
     if memoria.conteudo_snapshot.get("totais") != memoria.totais_snapshot:
         raise ValidationError("Os totais da memória de cálculo perderam a integridade.")
     vinculo = memoria.conteudo_snapshot.get("origem_reflexos")
+    correcao_snapshot = memoria.conteudo_snapshot.get("correcao_de")
+    if bool(correcao_snapshot) != bool(memoria.correcao_de_id):
+        raise ValidationError("O vínculo da correção perdeu a integridade.")
+    if memoria.correcao_de_id:
+        from .reflexos_devolucao import validar_decisao_correcao
+        anterior_correcao = memoria.correcao_de
+        decisao = validar_decisao_correcao(anterior_correcao)
+        esperado_correcao = {"memoria_id": anterior_correcao.pk, "memoria_sha256": anterior_correcao.conteudo_sha256,
+                            "revisao_sha256": decisao.conteudo_sha256}
+        if (correcao_snapshot != esperado_correcao or anterior_correcao.rascunho_id != rascunho.pk
+            or anterior_correcao.versao >= memoria.versao
+            or anterior_correcao.reflexos_origem_id != memoria.reflexos_origem_id
+            or _hash_conteudo_revisao(anterior_correcao.conteudo_snapshot) != anterior_correcao.conteudo_sha256):
+            raise ValidationError("A origem da correção perdeu a integridade.")
     if bool(vinculo) != bool(memoria.reflexos_origem_id):
         raise ValidationError("O vínculo da memória revisada perdeu a integridade.")
     if memoria.reflexos_origem_id:

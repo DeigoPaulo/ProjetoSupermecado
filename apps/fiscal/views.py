@@ -210,6 +210,7 @@ def revisao_devolucao_fornecedor_detalhe(request, pk):
         "fiscal/revisao_devolucao_fornecedor_detalhe.html",
         {
             "rascunho": rascunho,
+            "memoria_para_correcao": rascunho.memorias_calculo.order_by("-versao").first(),
             "rateio_form": rateio_form,
             "reflexos_form": reflexos_form,
             "reflexos_para_memoria": rateio_reflexos.reflexos.filter(revisao__decisao="APROVAR", memoria_revisada__isnull=True).order_by("-versao").first() if reflexos_form else None,
