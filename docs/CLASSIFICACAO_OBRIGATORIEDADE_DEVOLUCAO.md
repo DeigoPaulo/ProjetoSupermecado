@@ -2,6 +2,8 @@
 
 10/09/2026 · ciclo 84 · análise parcial, não emissiva.
 
+Atualização do ciclo 85: as famílias foram decompostas em 106 campos no [inventário atômico](INVENTARIO_DADOS_DEVOLUCAO.md), que também registra nove lacunas de cadastro/modelagem. A classificação normativa abaixo permanece bloqueada para aplicação operacional.
+
 O contrato `supplier_return_field_requirement_matrix_v1` classifica as 37 famílias rastreadas sem transformar cardinalidade de XSD em decisão fiscal. O escopo permanece restrito a NF-e modelo 55, finalidade 4, saída, com uma NF-e de origem. Leitura normativa integral, vigência operacional em Goiás e caso real aprovado pelo contador continuam falsos.
 
 ## Critério empregado

@@ -807,6 +807,12 @@ class PreparacaoDevolucaoFornecedorTests(TestCase):
         self.assertGreater(obrigatoriedade["validacao"]["quantidade_pendentes"], 0)
         self.assertFalse(obrigatoriedade["validacao"]["analise_normativa_integral"])
         self.assertFalse(obrigatoriedade["validacao"]["permite_emissao"])
+        inventario = extrair_contrato_devolucao(rascunho.pk, self.revisor)["inventario_dados"]
+        self.assertTrue(inventario["validacao"]["estrutura_valida"])
+        self.assertGreater(inventario["validacao"]["quantidade_campos_atomicos"], 90)
+        self.assertEqual(inventario["validacao"]["quantidade_lacunas_modelagem"], 9)
+        self.assertTrue(all(item["expoe_valor"] is False for item in inventario["conteudo"]["itens"]))
+        self.assertFalse(inventario["validacao"]["permite_emissao"])
 
     def test_extracao_referencias_bloqueia_protocolo_ou_snapshot_divergente(self):
         rascunho, _, _, _ = self._reflexos_registrados()
@@ -898,6 +904,9 @@ class PreparacaoDevolucaoFornecedorTests(TestCase):
         self.assertContains(resposta, "Obrigatoriedade e condicionantes")
         self.assertContains(resposta, "A existência no XSD, sozinha, não torna um campo aplicável")
         self.assertContains(resposta, "Decisão pendente")
+        self.assertContains(resposta, "Inventário atômico dos dados")
+        self.assertContains(resposta, "nenhum valor fiscal é exposto")
+        self.assertContains(resposta, "não substitui um cadastro fiscal estruturado e atual")
         conteudo_previa = resposta.content.decode().split('<div id="previa-contrato-fiscal">', 1)[1].split('</main>', 1)[0]
         self.assertNotIn("<form", conteudo_previa)
         self.assertEqual(resposta["Cache-Control"], "private, no-store")

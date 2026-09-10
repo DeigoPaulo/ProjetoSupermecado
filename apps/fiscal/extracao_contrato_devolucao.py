@@ -20,6 +20,7 @@ from .identidade_partes_devolucao import (
 )
 from .icms_st_fcp_contrato import construir_icms_st_fcp
 from .ipi_devolvido_contrato import construir_ipi_devolvido
+from .inventario_dados_devolucao import construir_inventario_dados_devolucao
 from .models import ConfiguracaoFiscal, DocumentoDFeRecebido, RascunhoDevolucaoFornecedor
 from .pacote_contabil import analisar_xml_nfe
 from .produtos_devolucao import CONTRATO_PRODUTOS, validar_produtos_devolucao
@@ -650,4 +651,5 @@ def extrair_contrato_devolucao(rascunho_id, usuario):
         resultado["portao_prontidao"] = construir_portao_prontidao(resultado)
         resultado["rastreabilidade_leiaute"] = construir_rastreabilidade_leiaute_devolucao()
         resultado["obrigatoriedade_campos"] = construir_obrigatoriedade_campos_devolucao()
+        resultado["inventario_dados"] = construir_inventario_dados_devolucao(resultado)
         return resultado

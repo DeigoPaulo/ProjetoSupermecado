@@ -1,6 +1,8 @@
 # Devolução: confronto documental e plano de validação
 
-10/09/2026 · atualizado no ciclo 84 · análise técnica parcial, sem homologação ou autorização de emissão.
+10/09/2026 · atualizado no ciclo 85 · análise técnica parcial, sem homologação ou autorização de emissão.
+
+O ciclo 85 decompôs os dados em 106 campos no [inventário atômico](INVENTARIO_DADOS_DEVOLUCAO.md). A origem e a disponibilidade são informadas sem expor valores. O XML preservado continua evidência histórica e não preenche nem atualiza automaticamente o cadastro fiscal do fornecedor.
 
 O ciclo 84 classificou as 37 famílias sem inferir aplicação pelo XSD isolado. A distinção completa entre estrutura, contexto, hipótese, vigência e contador está em [CLASSIFICACAO_OBRIGATORIEDADE_DEVOLUCAO.md](CLASSIFICACAO_OBRIGATORIEDADE_DEVOLUCAO.md). Famílias mistas ainda serão decompostas e nenhuma classificação autoriza serialização.
 

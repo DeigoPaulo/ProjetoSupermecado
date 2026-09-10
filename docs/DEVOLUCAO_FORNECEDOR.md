@@ -1,5 +1,7 @@
 # Devolução ao fornecedor — preparação fiscal segura
 
+Ciclo 85 — 10/09/2026: o inventário `supplier_return_atomic_data_inventory_v1` acompanha 106 campos sem expor seus valores. Foram confirmadas nove lacunas, com destaque para o cadastro fiscal não estruturado do fornecedor e campos ausentes de ICMS, IPI, produto e destinatário. XML histórico não substitui cadastro atual. A prévia foi ampliada e 138 testes passaram. Próximo passo: estruturar os campos fiscais opcionais do fornecedor e confrontá-los com o XML sem copiar automaticamente.
+
 Ciclo 84 — 10/09/2026: as 37 famílias receberam classificação separada de XSD, regra contextual, hipótese, vigência e decisão do contador no contrato `supplier_return_field_requirement_matrix_v1`. Referência por item e pagamento ficaram documentados como obrigatórios no contexto; IPI devolvido, ST/FCP e RTC seguem condicionados. A tela mostra as pendências sem liberar aplicação operacional. Foram aprovados 135 testes. Próximo passo: decompor famílias mistas e inventariar lacunas de dados locais.
 
 Ciclo 83 — 10/09/2026: 37 famílias de campos foram ligadas ao leiaute/XSD e comparadas com os dois canais no contrato `supplier_return_layout_traceability_v1`. O conversor Focus atual é parcial e não mapeia grupos essenciais da devolução. A SEFAZ direta preserva o XML recebido, porém não substitui o gerador específico ainda ausente. A prévia continua somente leitura, todos os canais ficam bloqueados e 132 testes passaram. Próximo passo: classificar obrigatoriedade e condicionantes de cada família por fonte normativa.

@@ -32,6 +32,14 @@
   </tbody></table>
   <p>Leitura normativa integral, vigência operacional em Goiás e caso real aprovado pelo contador continuam pendentes. Nenhuma classificação autoriza XML ou emissão.</p>
 </section>
+<section class="panel mt-panel"><div class="panel-title">Inventário atômico dos dados</div>
+  <p><strong>{{ resultado.inventario_dados.validacao.quantidade_campos_atomicos }} campos acompanhados e {{ resultado.inventario_dados.validacao.quantidade_lacunas_modelagem }} lacunas estruturais identificadas.</strong> A tela mostra apenas disponibilidade e origem; nenhum valor fiscal é exposto por este inventário.</p>
+  <table><thead><tr><th>Bloco</th><th>Campo</th><th>Fonte</th><th>Disponibilidade</th></tr></thead><tbody>
+    {% for item in resultado.inventario_dados.conteudo.itens %}<tr><td>{{ item.grupo }}</td><td>{{ item.campo }}</td><td>{{ item.fonte_primaria }}</td><td>{{ item.estado }}</td></tr>{% endfor %}
+  </tbody></table>
+  <p><strong>Lacuna cadastral:</strong> o XML original preserva dados históricos do fornecedor, mas não substitui um cadastro fiscal estruturado e atual.</p>
+  <details><summary>Ver lacunas de modelagem</summary><ul>{% for item in resultado.inventario_dados.conteudo.lacunas_modelagem %}<li>{{ item.campo }}: {{ item.codigo }}</li>{% endfor %}</ul></details>
+</section>
 <section class="panel mt-panel"><div class="panel-title">Transporte</div>
   <p><strong>{% if resultado.transporte.validacao.origem_completa %}Ficha atual conferida{% else %}Ficha de transporte pendente ou superada{% endif %}.</strong> Os dados permanecem somente para validação; nenhum grupo XML é produzido.</p>
   <table><tbody>

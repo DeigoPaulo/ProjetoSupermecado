@@ -1,5 +1,19 @@
 # Roadmap de evolucao pos-piloto
 
+## Ponto de retomada — ciclo 85, 10/09/2026
+
+Criado `supplier_return_atomic_data_inventory_v1`, que decompõe os blocos fiscais em 106 campos acompanhados e informa somente fonte, ocorrências e disponibilidade, sem expor valores. O inventário confirmou nove lacunas de modelagem: cadastro fiscal estruturado do fornecedor, `indIEDest`, `indTot`, modalidade/redução de base ICMS, `cEnq` do IPI, variantes PIS/COFINS, gerador específico e paridade Focus. O XML original permanece evidência histórica e não pode atualizar cadastro automaticamente.
+
+- [x] Decompor famílias mistas e grupos críticos em 106 campos atômicos.
+- [x] Identificar fonte primária e estado de disponibilidade sem expor valores.
+- [x] Separar ausência bloqueante, campo condicionado e vazio imposto por política.
+- [x] Registrar nove lacunas de cadastro, contrato, hipótese, código e adaptador.
+- [x] Impedir uso do XML histórico como cadastro atual ou preenchimento por default.
+- [x] Integrar o diagnóstico à prévia protegida e validar 138 testes conjuntos.
+- [ ] Próximo passo: estruturar IE, indicador de IE, endereço fiscal e município IBGE no fornecedor, opcionais e sem importação automática do XML; depois confrontar cadastro atual e XML histórico sem emitir.
+
+Sem migração, exposição de valores, geração de XML, acesso a credencial/certificado, mudança de canal/ambiente ou transmissão neste ciclo. Detalhes em [INVENTARIO_DADOS_DEVOLUCAO.md](INVENTARIO_DADOS_DEVOLUCAO.md).
+
 ## Ponto de retomada — ciclo 84, 10/09/2026
 
 Criado `supplier_return_field_requirement_matrix_v1` para classificar as 37 famílias rastreadas por cardinalidade XSD, regra contextual, hipótese tributária, vigência e necessidade de decisão do contador. A matriz registra que XSD isolado não define aplicação: `DFeReferenciado` é opcional na estrutura e obrigatório no contexto documentado; pagamento usa `tPag=90`/`vPag=0`; IPI devolvido, ST/FCP e RTC permanecem condicionados. Famílias com regra contextual ou hipótese ainda não fechada aparecem como pendentes na prévia.

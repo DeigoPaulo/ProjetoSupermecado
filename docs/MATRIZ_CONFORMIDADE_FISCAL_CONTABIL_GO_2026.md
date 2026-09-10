@@ -1,5 +1,7 @@
 # Matriz de conformidade fiscal e contábil — Goiás 2026
 
+Ciclo 85 — 10/09/2026: inventariados 106 campos atômicos e nove lacunas de modelagem. O fornecedor ainda não possui cadastro fiscal estruturado suficiente para confrontar atualidade de IE/endereço/município com o XML original. Também faltam `indIEDest`, `indTot`, detalhes de base ICMS, `cEnq`, variantes PIS/COFINS, gerador e paridade Focus. Nenhum valor é exposto pelo inventário e 138 testes passaram. Próximo passo: completar o cadastro fiscal opcional do fornecedor sem importar XML automaticamente.
+
 Ciclo 84 — 10/09/2026: classificadas 37 famílias por XSD, MOC/NT, condicionantes de Goiás e decisão do contador. A existência de um grupo no schema não o ativa. Referência por item e pagamento têm regra contextual documentada; IPI devolvido, ST/FCP, RTC e totais associados continuam condicionados. Nenhuma família possui aplicação operacional e 135 testes passaram. Próximo passo: decomposição atômica e inventário dos dados ausentes.
 
 Ciclo 83 — 10/09/2026: a rastreabilidade executável relaciona 37 famílias do contrato neutro ao XSD e aos canais. Focus possui cobertura parcial no conversor local; SEFAZ direta preserva o XML, mas depende do gerador ausente. Referências por item, ajustes, transporte detalhado, totais, `infAdProd`, IPI devolvido, ST/FCP e RTC permanecem sem paridade comprovada. Todos os canais seguem bloqueados e 132 testes passaram. Próximo passo: classificar obrigatoriedade por XSD, MOC/NT, Goiás e contador.

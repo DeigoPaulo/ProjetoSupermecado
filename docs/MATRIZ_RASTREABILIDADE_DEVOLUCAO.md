@@ -4,6 +4,8 @@
 
 Atualização do ciclo 84: as 37 famílias receberam classificação de obrigatoriedade e condicionantes em [CLASSIFICACAO_OBRIGATORIEDADE_DEVOLUCAO.md](CLASSIFICACAO_OBRIGATORIEDADE_DEVOLUCAO.md). A rastreabilidade de canais abaixo permanece inalterada e não emissiva.
 
+Atualização do ciclo 85: o [inventário de dados](INVENTARIO_DADOS_DEVOLUCAO.md) acompanha 106 campos atômicos e fixa as lacunas locais que precisam ser resolvidas antes de qualquer serializador.
+
 Esta matriz confronta o contrato neutro da devolução com o pacote XSD preservado e com o código atual dos dois canais. “Focus” significa apenas a cobertura observada no conversor do ERP; não afirma limite comercial ou técnico da API externa. “SEFAZ direta” indica que o adaptador transporta a `NFe` local sem reconstruir seus campos; isso não resolve a ausência do gerador nem comprova schema, assinatura, regra de negócio ou homologação.
 
 Evidência XSD: `PL_010f_v1.04/leiauteNFe_v4.00.xsd`, SHA-256 `2bace939973916d54184ff3e2740041a932de5d79772f3363504504160f22542`. O pacote está preservado, mas não aprovado nem instalado para uso operacional.
