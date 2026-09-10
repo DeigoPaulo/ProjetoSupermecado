@@ -731,6 +731,15 @@ class PreparacaoDevolucaoFornecedorTests(TestCase):
         self.assertEqual(transporte["conteudo"]["dados"]["peso_liquido"], "0.000")
         self.assertFalse(transporte["validacao"]["permite_emissao"])
 
+        totalizacao = extrair_contrato_devolucao(rascunho.pk, self.revisor)["totalizacao"]
+        self.assertTrue(totalizacao["validacao"]["estrutura_valida"])
+        self.assertTrue(totalizacao["validacao"]["origem_completa"])
+        self.assertEqual(totalizacao["conteudo"]["totais_comerciais"]["valor_produtos"], "10.00")
+        self.assertEqual(totalizacao["conteudo"]["totais_comerciais"]["total_informado"], "13.00")
+        self.assertEqual(totalizacao["conteudo"]["totais_tributarios_informados"]["icms"]["valor"], "1.70")
+        self.assertEqual(totalizacao["conteudo"]["totais_fiscais_nao_definidos"]["valor_nota"], "")
+        self.assertFalse(totalizacao["validacao"]["permite_emissao"])
+
     def test_extracao_referencias_bloqueia_protocolo_ou_snapshot_divergente(self):
         rascunho, _, _, _ = self._reflexos_registrados()
         dfe = DocumentoDFeRecebido.objects.get(entrada_compra=self.entrada)
@@ -798,6 +807,8 @@ class PreparacaoDevolucaoFornecedorTests(TestCase):
         self.assertContains(resposta, "não são reaplicados")
         self.assertContains(resposta, "Ficha de transporte pendente ou superada")
         self.assertContains(resposta, "nenhum grupo XML é produzido")
+        self.assertContains(resposta, "Totalização diagnóstica")
+        self.assertContains(resposta, "Esta conferência não forma o valor total da NF-e")
         conteudo_previa = resposta.content.decode().split('<div id="previa-contrato-fiscal">', 1)[1].split('</main>', 1)[0]
         self.assertNotIn("<form", conteudo_previa)
         self.assertEqual(resposta["Cache-Control"], "private, no-store")

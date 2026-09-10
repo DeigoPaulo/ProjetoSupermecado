@@ -18,6 +18,14 @@
     <tr><th>Volumes</th><td>{{ resultado.transporte.conteudo.dados.quantidade_volumes|default_if_none:"Pendente" }}</td><th>Pesos</th><td>{{ resultado.transporte.conteudo.dados.peso_liquido|default:"Pendente" }} / {{ resultado.transporte.conteudo.dados.peso_bruto|default:"Pendente" }} kg</td></tr>
   </tbody></table>
 </section>
+<section class="panel mt-panel"><div class="panel-title">Totalização diagnóstica</div>
+  <p><strong>{% if resultado.totalizacao.validacao.origem_completa %}Valores informados conferidos{% else %}Origens ou valores ainda pendentes{% endif %}.</strong> Esta conferência não forma o valor total da NF-e.</p>
+  <table><tbody>
+    <tr><th>Produtos informados</th><td>{{ resultado.totalizacao.conteudo.totais_comerciais.valor_produtos|default:"Pendente" }}</td><th>Total comercial informado</th><td>{{ resultado.totalizacao.conteudo.totais_comerciais.total_informado|default:"Pendente" }}</td></tr>
+    <tr><th>Frete / seguro / despesas</th><td>{{ resultado.totalizacao.conteudo.totais_comerciais.frete|default:"Pendente" }} / {{ resultado.totalizacao.conteudo.totais_comerciais.seguro|default:"Pendente" }} / {{ resultado.totalizacao.conteudo.totais_comerciais.outras_despesas|default:"Pendente" }}</td><th>Desconto</th><td>{{ resultado.totalizacao.conteudo.totais_comerciais.desconto|default:"Pendente" }}</td></tr>
+    <tr><th>Valor da NF-e</th><td>Não definido</td><th>IPI devolvido / totais RTC</th><td>Não definidos</td></tr>
+  </tbody></table>
+</section>
 <section class="panel mt-panel"><div class="panel-title">Ajustes comerciais por item</div>
   <p><strong>{% if resultado.ajustes_comerciais.validacao.origem_completa %}Rateio ligado à cadeia final aprovada{% else %}Rateio final ainda pendente{% endif %}.</strong> Frete, seguro, despesas e desconto são apenas conferidos; não são reaplicados às bases tributárias.</p>
   <table><thead><tr><th>Item</th><th>Base</th><th>Frete</th><th>Seguro</th><th>Despesas</th><th>Desconto</th><th>Total informado</th></tr></thead><tbody>
@@ -74,6 +82,7 @@
   <ul>{% for item in resultado.tributos_itens.validacao.bloqueios %}<li>{{ item.grupo }}: {{ item.codigo }}</li>{% endfor %}</ul>
   <ul>{% for item in resultado.ajustes_comerciais.validacao.bloqueios %}<li>{{ item.grupo }}: {{ item.codigo }}</li>{% endfor %}</ul>
   <ul>{% for item in resultado.transporte.validacao.bloqueios %}<li>{{ item.grupo }}: {{ item.codigo }}</li>{% endfor %}</ul>
+  <ul>{% for item in resultado.totalizacao.validacao.bloqueios %}<li>{{ item.grupo }}: {{ item.codigo }}</li>{% endfor %}</ul>
   {% for erro in resultado.validacao.erros %}<p>{{ erro.caminho }}: {{ erro.codigo }}</p>{% endfor %}
   </details>
 </section>

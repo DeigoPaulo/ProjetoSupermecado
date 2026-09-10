@@ -1,5 +1,7 @@
 # Matriz de conformidade fiscal e contábil — Goiás 2026
 
+Ciclo 76 — 10/09/2026: implementada totalização somente diagnóstica dos valores já informados. O contrato exige a mesma memória aprovada para produtos, tributos e ajustes, confere somas e mantém separados os grupos tributários. `vNF`, IPI devolvido e totais RTC ficam vazios e não podem ser inferidos. A prévia foi ampliada e 111 testes passaram; geração e homologação permanecem bloqueadas.
+
 Ciclo 75 — 10/09/2026: a ficha logística foi ligada ao contrato somente leitura da devolução. Apenas a versão correspondente à memória final aprovada e com hashes íntegros é aceita. As combinações de modalidade, transportador, documento, volumes e pesos são validadas, mas nenhum grupo `transp` é gerado. A regressão conjunta passou com 108 testes; totalização e homologação continuam pendentes.
 
 Ciclo 74 — 10/09/2026: ajustes comerciais do rateio foram estruturados com cadeia de aprovação e hashes até a memória final. Linhas e totais são conferidos sem reaplicar valores às bases. A prévia mostra base, frete, seguro, despesas, desconto e total informado por item; geração continua bloqueada. A regressão conjunta passou com 105 testes.

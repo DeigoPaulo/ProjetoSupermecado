@@ -35,6 +35,7 @@ from .transporte_contrato_devolucao import (
     CONTRATO_TRANSPORTE,
     validar_transporte_devolucao,
 )
+from .totalizacao_diagnostica_devolucao import construir_totalizacao_diagnostica
 
 
 LIMITE_XML_ORIGEM_BYTES = 5 * 1024 * 1024
@@ -552,13 +553,19 @@ def extrair_contrato_devolucao(rascunho_id, usuario):
         contrato = {"contrato": CONTRATO, "rascunho_id": rascunho.pk,
                     "empresa_id": rascunho.entrada_compra.filial.empresa_id, "modelo": "55",
                     "operacao": "DEVOLUCAO_COMPRA", "permite_emissao": False, "grupos": grupos}
+        produtos_extraidos = _extrair_produtos(rascunho, memoria, parametros)
+        tributos_extraidos = _extrair_tributos_itens(rascunho, memoria, parametros)
+        ajustes_extraidos = _extrair_ajustes_comerciais(
+            rascunho, memoria, parametros, rateio, reflexos
+        )
         return {"conteudo": contrato, "validacao": validar_contrato_devolucao(contrato),
                 "referencias_itens": _extrair_referencias_itens(rascunho, dfe, xml),
                 "identidade_partes": _extrair_identidade_partes(rascunho, xml, parecer),
-                "produtos": _extrair_produtos(rascunho, memoria, parametros),
-                "tributos_itens": _extrair_tributos_itens(rascunho, memoria, parametros),
-                "ajustes_comerciais": _extrair_ajustes_comerciais(
-                    rascunho, memoria, parametros, rateio, reflexos
-                ),
+                "produtos": produtos_extraidos,
+                "tributos_itens": tributos_extraidos,
+                "ajustes_comerciais": ajustes_extraidos,
                 "transporte": _extrair_transporte(rascunho, memoria, parametros, transporte),
+                "totalizacao": construir_totalizacao_diagnostica(
+                    produtos_extraidos, tributos_extraidos, ajustes_extraidos
+                ),
                 "pendencias_dossie": [e for e in dossie["etapas"] if e["estado"] in ("Pendente", "Desatualizado", "Inconsistente", "Bloqueado")]}

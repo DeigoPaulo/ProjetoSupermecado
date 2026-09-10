@@ -1,6 +1,6 @@
 # Devolução: confronto documental e plano de validação
 
-10/09/2026 · atualizado no ciclo 75 · análise técnica parcial, sem homologação ou autorização de emissão.
+10/09/2026 · atualizado no ciclo 76 · análise técnica parcial, sem homologação ou autorização de emissão.
 
 ## Evidência e limite da análise
 
@@ -78,3 +78,7 @@ O contrato `supplier_return_commercial_adjustments_v1` liga o rateio à cadeia f
 ## Implementação do ciclo 75
 
 O contrato `supplier_return_transport_input_v1` usa somente a ficha vinculada à memória final aprovada e confere ficha, memória e revisão por identificadores e hashes. As regras condicionais impedem combinar modalidade sem transporte com transportador ou volumes, exigem identificação coerente quando informada e conferem pesos. O resultado apenas prepara e diagnostica dados; não cria `transp`, XML ou autorização de emissão.
+
+## Implementação do ciclo 76
+
+O contrato `supplier_return_diagnostic_totals_v1` totaliza separadamente os valores comerciais e cada base/valor tributário já informado, exigindo que produtos, tributos e ajustes pertençam à mesma memória aprovada. A comparação entre produtos e base comercial é diagnóstica. `vNF`, `vIPIDevol` e totais RTC permanecem vazios e qualquer preenchimento nessa etapa é erro bloqueante; nenhuma fórmula fiscal nova foi criada.

@@ -1,5 +1,19 @@
 # Roadmap de evolucao pos-piloto
 
+## Ponto de retomada — ciclo 76, 10/09/2026
+
+Criado o contrato `supplier_return_diagnostic_totals_v1` para consolidar somente valores já informados nas origens aprovadas. Produtos, base comercial, frete, seguro, despesas, desconto, bases e valores tributários são somados para conferência e precisam apontar para a mesma memória. O diagnóstico não forma `vNF`: valor da nota, IPI devolvido e totais RTC permanecem deliberadamente vazios e bloqueados.
+
+- [x] Consolidar totais comerciais sem reaplicar componentes às bases.
+- [x] Somar bases e valores informados de cada grupo tributário sem recalcular imposto.
+- [x] Exigir produtos, tributos e ajustes completos, íntegros e ligados à mesma memória.
+- [x] Recusar preenchimento antecipado de `vNF`, IPI devolvido e totais RTC.
+- [x] Integrar o diagnóstico à prévia protegida.
+- [x] Validar 111 testes conjuntos dos contratos e do fluxo de devolução.
+- [ ] Próximo passo: estruturar a política fiscal de pagamento `tPag=90` e `vPag=0.00` como contrato não emissivo, sem produzir efeitos operacionais.
+
+Sem migração, cálculo de `vNF`, geração de XML, acesso a certificado ou transmissão neste ciclo.
+
 ## Ponto de retomada — ciclo 75, 10/09/2026
 
 Criado o contrato `supplier_return_transport_input_v1` para expor a ficha logística sem transformá-la em XML. A extração só aceita a ficha ligada à última memória final aprovada e confere novamente os hashes da ficha, da memória e da revisão. Modalidade, transportador, documento, volumes e pesos são validados com suas regras condicionais; a ausência da ficha ou uma origem superada aparecem como pendência explícita.
@@ -9,7 +23,7 @@ Criado o contrato `supplier_return_transport_input_v1` para expor a ficha logís
 - [x] Validar modalidade sem transporte, dados do transportador, CPF/CNPJ, volumes e pesos.
 - [x] Integrar estado e bloqueios à prévia protegida, sem gerar o grupo `transp`.
 - [x] Validar 108 testes conjuntos dos contratos e do fluxo de devolução.
-- [ ] Próximo passo: estruturar a totalização diagnóstica, separando total comercial, bases, tributos e grupos ainda não suportados, sem calcular ou declarar `vNF`.
+- [x] Estruturar a totalização diagnóstica, separando total comercial, bases, tributos e grupos ainda não suportados, sem calcular ou declarar `vNF` (ciclo 76).
 
 Sem migração, geração de XML, acesso a certificado, alteração de ambiente ou transmissão neste ciclo.
 
