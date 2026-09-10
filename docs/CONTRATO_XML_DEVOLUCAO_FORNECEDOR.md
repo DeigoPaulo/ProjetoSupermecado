@@ -1,5 +1,7 @@
 # Contrato proposto do XML de devolução ao fornecedor
 
+Ciclo 67 — 10/09/2026: [confronto documental](REGRAS_DOCUMENTAIS_DEVOLUCAO_2026.md) corrigiu a proposta de referência para `det/DFeReferenciado` com chave e nItem original, conforme NT 2025.002 v1.51. Cronograma contém divergência histórica registrada; não há ativação automática. Pagamento sem pagamento/valor zero e grupo próprio de IPI devolvido documentados, sem implementação fiscal. Próximo passo: validador isolado de referências por item e testes, mantendo XML/emissão bloqueados.
+
 Ciclo 66 — 10/09/2026: bloqueio de obtenção das fontes superado com sessão HTTP/cookies. ZIP oficial 010f e PDFs MOC Anexo I, NT 2025.002 v1.51 e NT 2026.007 v1.00 preservados em docs/evidencias/nfe_2026_09_10, com inventário e hashes no README da pasta. ZIP passou CRC e XSD raiz compilou em memória sem rede; identificação dos PDFs conferida. Não houve instalação, alteração fiscal, banco ou emissão. Leitura normativa integral e validação de vigências permanecem pendentes: próximo passo é confrontar regras de devolução com o contrato e os dados do sistema. Os bloqueios históricos de acesso descritos abaixo não representam mais falta dos arquivos; a aprovação do pacote continua pendente.
 
 Verificação do ciclo 65 (09/09/2026): nenhum XSD foi encontrado em `fiscal_schemas`; a pasta contém apenas README.md. O endereço de schemas indicado no README retornou redirecionamento circular na nova consulta. A leitura integral dos documentos e a fixação do pacote permanecem bloqueadas. Solicitar ZIP oficial, MOC Anexo I e NT aplicáveis, com URL/versão de origem, para análise local. Não instalar ou ativar o pacote antes de conferir o conjunto. Nenhuma regra fiscal foi implementada nesta verificação.
@@ -26,7 +28,7 @@ Escopo inicial proposto: devolução de compra pelo supermercado ao fornecedor, 
 
 | Grupo do contrato | Fonte existente | Destino XML proposto | Condição para avançar |
 |---|---|---|---|
-| origem | rascunho, chave, XML e hashes | referência documental em `ide/NFref` | Validar chave, modelo, partes e referência; não confundir nItem original com a sequência do novo documento |
+| origem | rascunho, chave, XML e hashes | `det/DFeReferenciado/chaveAcesso` e `nItem`, conforme política/vigência conferida | Validar chave, modelo, partes, duplicidade e ausência de NFref simultâneo; não confundir nItem original com a sequência do novo documento; ver confronto do ciclo 67 |
 | identificação | parecer, filial e configuração | `ide`: modelo, finalidade, direção, destino e natureza | Confirmar finalidade de devolução no leiaute vigente; não herdar finalidade normal ou consumidor final da venda |
 | emitente | filial/configuração fiscal | `emit` e endereço | Snapshot completo e validado de CNPJ, IE, CRT e município; dados reais ainda pendentes |
 | destinatário | fornecedor e XML de origem | `dest` e endereço | Validar identidade e dados atuais; não copiar cegamente ou inverter partes em operações fora do escopo |
@@ -39,7 +41,7 @@ Escopo inicial proposto: devolução de compra pelo supermercado ao fornecedor, 
 | IBS/CBS | bases/valores e orientação textual | grupos RTC do leiaute vigente | Falta fechar classificações, grupos, totais e regras por vigência; não considerar memória genérica suficiente |
 | transporte | ficha logística | `transp` | Usar ficha ligada à memória final aprovada; validar grupos condicionais e documento do transportador |
 | total fiscal | ainda não definido | `total` | Total comercial não é `vNF`; especificar cada parcela, exceção e total novo da RTC com fonte e teste |
-| pagamento | não há política específica de devolução | `pag` conforme leiaute aplicável | Definir tratamento explícito da operação; não gerar recebíveis, cobrança, troco ou pagamentos de venda |
+| pagamento | política documentada, não implementada | `pag/detPag`: `tPag=90`, `vPag=0.00` no escopo proposto | MOC YA02-04/YA03-30; confirmar regras complementares aplicáveis; não gerar recebíveis, cobrança, troco ou pagamentos de venda |
 | observações | parecer e fundamento aprovado | `infAdic` | Separar texto interno de informação fiscal exigida, sem credenciais ou dados indevidos |
 | envelope técnico | somente na futura emissão | número, série, chave, datas, ambiente, assinatura | Fora do validador preliminar; sem reserva de número, certificado, chamada externa ou XML nesta etapa |
 

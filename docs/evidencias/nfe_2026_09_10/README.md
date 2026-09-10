@@ -36,4 +36,6 @@ O grupo impostoDevol contém pDevol e IPI/vIPIDevol; há também vIPIDevol no to
 
 ## Próxima ação
 
+Atualização do ciclo 67: trechos de referência, pagamento e IPI foram confrontados em [REGRAS_DOCUMENTAIS_DEVOLUCAO_2026.md](../../REGRAS_DOCUMENTAIS_DEVOLUCAO_2026.md). A existência de NFref no XSD não autoriza seu uso no novo desenho de devolução: VC02-14 exige DFeReferenciado por item. Inspeção visual das páginas 6/71 registrou divergência histórica de data no PDF. O pacote continua não aprovado/não instalado; demais regras e vigências permanecem pendentes.
+
 Ler os trechos integrais relevantes do MOC e das NT com histórico de alterações e vigências, documentar regras e exceções de devolução, confrontar cada campo com os dados locais e testes. Verificar outras NT/tabelas aplicáveis, inclusive CNPJ alfanumérico, antes de aprovar qualquer pacote. Manter o bloqueio do XML, assinatura e transmissão; não promover o pacote automaticamente.
