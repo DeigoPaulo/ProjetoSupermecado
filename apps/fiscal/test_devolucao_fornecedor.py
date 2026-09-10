@@ -785,6 +785,17 @@ class PreparacaoDevolucaoFornecedorTests(TestCase):
         self.assertFalse(rtc["validacao"]["vigencia_confirmada"])
         self.assertFalse(rtc["validacao"]["permite_emissao"])
 
+        portao = extrair_contrato_devolucao(rascunho.pk, self.revisor)["portao_prontidao"]
+        self.assertTrue(portao["validacao"]["estrutura_valida"])
+        self.assertTrue(portao["validacao"]["estrutura_consolidada"])
+        self.assertFalse(portao["validacao"]["pronto_para_gerador"])
+        self.assertFalse(portao["validacao"]["pronto_para_homologacao"])
+        self.assertFalse(portao["validacao"]["permite_emissao"])
+        self.assertEqual(
+            [item["grupo"] for item in portao["conteudo"]["verificacoes"]][-3:],
+            ["ipi_devolvido", "icms_st_fcp", "rtc"],
+        )
+
     def test_extracao_referencias_bloqueia_protocolo_ou_snapshot_divergente(self):
         rascunho, _, _, _ = self._reflexos_registrados()
         dfe = DocumentoDFeRecebido.objects.get(entrada_compra=self.entrada)
@@ -865,6 +876,9 @@ class PreparacaoDevolucaoFornecedorTests(TestCase):
         self.assertContains(resposta, "Hipótese ainda não definida")
         self.assertContains(resposta, "IBS/CBS e RTC")
         self.assertContains(resposta, "A data documental não ativa grupos")
+        self.assertContains(resposta, "Portão consolidado de prontidão")
+        self.assertContains(resposta, "Estrutura reunida não significa NF-e pronta")
+        self.assertContains(resposta, "não altera Focus, SEFAZ direta, certificados ou ambientes")
         conteudo_previa = resposta.content.decode().split('<div id="previa-contrato-fiscal">', 1)[1].split('</main>', 1)[0]
         self.assertNotIn("<form", conteudo_previa)
         self.assertEqual(resposta["Cache-Control"], "private, no-store")

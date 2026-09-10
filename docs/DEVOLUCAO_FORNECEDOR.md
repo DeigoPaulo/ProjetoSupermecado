@@ -1,5 +1,7 @@
 # Devolução ao fornecedor — preparação fiscal segura
 
+Ciclo 82 — 10/09/2026: implementado o portão consolidado `supplier_return_readiness_gate_v1`. A consulta protegida agora confere os 13 subcontratos, reúne seus bloqueios e recusa qualquer tentativa interna de habilitar XML ou emissão. Estrutura consolidada e origens conferidas são indicadores diagnósticos separados; nenhum deles significa NF-e pronta. Análise normativa, matriz tributária, dados reais, contador, schema, Focus e SEFAZ direta continuam como portões externos fechados. Foram aprovados 129 testes. Próximo passo: mapear cada campo neutro ao leiaute/XSD e aos dois adaptadores, ainda sem gerar XML.
+
 Ciclo 81 — 10/09/2026: IBS/CBS/RTC recebeu contrato de vigência bloqueado. A NT 2026.007 v1.00, hash e datas ficam registrados como evidência, sem ativação automática. Valores da memória não definem enquadramento, classificação, grupos ou totais. Foram aprovados 126 testes. Próximo passo: portão consolidado de prontidão dos subcontratos.
 
 Ciclo 80 — 10/09/2026: ICMS-ST/FCP recebeu contrato próprio e bloqueado. Valores da memória são apenas referência; hipótese, grupos fiscais, texto complementar e totais continuam vazios. O sistema rejeita inferência por código, regime ou generalização das orientações GO 21305/21349. Foram aprovados 123 testes. Próximo passo: política de vigência e leiaute para IBS/CBS/RTC.

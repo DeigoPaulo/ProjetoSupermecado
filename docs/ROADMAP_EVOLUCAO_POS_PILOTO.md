@@ -1,5 +1,18 @@
 # Roadmap de evolucao pos-piloto
 
+## Ponto de retomada — ciclo 82, 10/09/2026
+
+Criado o portão diagnóstico `supplier_return_readiness_gate_v1`. Ele confere em ordem os 13 subcontratos da devolução, separa estrutura consolidada de origens conferidas, agrega os bloqueios e impede que qualquer bloco libere XML ou emissão. Os sete portões externos — análise normativa integral, matriz tributária, dados reais, casos aprovados pelo contador, schema aplicável, paridade Focus e paridade SEFAZ direta — permanecem explicitamente desligados.
+
+- [x] Consolidar envelope, referências, partes, produtos, tributos, ajustes, transporte, totais, pagamento fiscal, observações, IPI devolvido, ICMS-ST/FCP e RTC.
+- [x] Recusar divergência de contrato, ausência estrutural e tentativa de liberação de XML/emissão por qualquer subcontrato.
+- [x] Exibir o diagnóstico na prévia protegida, distinguindo estrutura reunida de NF-e pronta.
+- [x] Manter Focus, SEFAZ direta, certificados, ambientes e configurações inalterados.
+- [x] Validar 129 testes conjuntos dos contratos e do fluxo de devolução.
+- [ ] Próximo passo: construir a matriz campo a campo entre o contrato neutro, o leiaute/XSD aplicável e os adaptadores Focus/SEFAZ direta, sem serializar XML, e usar as lacunas para concluir a leitura normativa.
+
+Sem migração, geração de XML, instalação de schema, acesso a credencial/certificado, mudança de feature flag ou transmissão neste ciclo.
+
 ## Ponto de retomada — ciclo 81, 10/09/2026
 
 Criado o contrato `supplier_return_rtc_vigency_policy_v1` para manter IBS/CBS/RTC condicionado à confirmação normativa e operacional. A NT 2026.007 v1.00, seu SHA-256 e as datas documentais são registrados como evidência, mas não ativam nada. Os valores da memória são apenas referência; enquadramento, classificação, grupos e totais ficam vazios enquanto leitura integral, implantação em Goiás, leiaute aplicável e homologação não estiverem confirmados.

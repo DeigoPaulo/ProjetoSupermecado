@@ -1,6 +1,8 @@
 # Devolução: confronto documental e plano de validação
 
-10/09/2026 · atualizado no ciclo 81 · análise técnica parcial, sem homologação ou autorização de emissão.
+10/09/2026 · atualizado no ciclo 82 · análise técnica parcial, sem homologação ou autorização de emissão.
+
+O ciclo 82 acrescentou somente um portão diagnóstico sobre os 13 contratos internos. Ele não completa a leitura normativa descrita abaixo e mantém desligadas a geração, a homologação, Focus e SEFAZ direta. O próximo confronto será campo a campo entre o contrato neutro, o leiaute/XSD e cada adaptador, preservando como pendência tudo que a evidência ainda não resolver.
 
 ## Evidência e limite da análise
 

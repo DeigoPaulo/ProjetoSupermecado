@@ -1,5 +1,7 @@
 # Matriz de conformidade fiscal e contábil — Goiás 2026
 
+Ciclo 82 — 10/09/2026: criado portão consolidado e não emissivo para os 13 subcontratos da devolução. O diagnóstico diferencia integridade estrutural, completude das origens e prontidão externa; os portões de análise normativa, matriz tributária, dados reais, aceite do contador, schema e paridade dos dois provedores ficam fechados. A tela protegida informa expressamente que estrutura reunida não significa NF-e pronta. Foram aprovados 129 testes; nenhuma flag, credencial, certificado ou ambiente foi alterado. Próximo passo: matriz de rastreabilidade por campo para o leiaute/XSD e para Focus/SEFAZ direta.
+
 Ciclo 81 — 10/09/2026: implementado contrato de vigência IBS/CBS/RTC. A NT 2026.007 v1.00, hash e datas documentais ficam registrados, mas não ativam regras. Enquadramento, classificação, grupos e totais seguem vazios até confirmação normativa, implantação em Goiás e homologação. A prévia foi ampliada e 126 testes passaram.
 
 Ciclo 80 — 10/09/2026: implementado contrato específico e bloqueado para ICMS-ST/FCP. Valores da memória aparecem somente como referência; hipótese, destino fiscal, informação complementar e totais ficam vazios. Inferência por código/regime e generalização das orientações GO são proibidas. A prévia foi ampliada e 123 testes passaram; enquadramento real e homologação continuam pendentes.

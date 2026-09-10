@@ -1,5 +1,7 @@
 # Contrato proposto do XML de devolução ao fornecedor
 
+Ciclo 82 — 10/09/2026: implementado `supplier_return_readiness_gate_v1`, que consolida os 13 subcontratos sem convertê-los em autorização. O validador falha fechado diante de contrato divergente, origem incompleta ou tentativa de liberar XML/emissão. Análise normativa integral, matriz tributária aprovada, dados reais, casos do contador, schema aplicável e paridade separada de Focus/SEFAZ direta permanecem falsas e visíveis. A prévia protegida foi ampliada e 129 testes passaram. O próximo passo é a matriz campo a campo contrato–leiaute/XSD–adaptadores, sem serialização.
+
 Ciclo 81 — 10/09/2026: implementado `supplier_return_rtc_vigency_policy_v1`. O contrato registra a NT 2026.007 v1.00, hash, páginas e datas documentais, sem ativação por calendário. IBS/CBS da memória são apenas referência; enquadramento, classificação, grupos e totais ficam vazios até confirmação de vigência, implantação GO, leiaute e homologação. Foram aprovados 126 testes.
 
 Ciclo 80 — 10/09/2026: implementado `supplier_return_icms_st_fcp_hypothesis_v1`. A memória é preservada apenas como referência; hipótese, grupos de destino, informação complementar e totais ficam vazios. Inferência por código/regime e generalização das orientações GO 21305/21349 são proibidas. Não há serialização; 123 testes passaram.

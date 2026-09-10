@@ -24,6 +24,7 @@ from .models import ConfiguracaoFiscal, DocumentoDFeRecebido, RascunhoDevolucaoF
 from .pacote_contabil import analisar_xml_nfe
 from .produtos_devolucao import CONTRATO_PRODUTOS, validar_produtos_devolucao
 from .pagamento_fiscal_devolucao import construir_politica_pagamento_devolucao
+from .portao_prontidao_devolucao import construir_portao_prontidao
 from .observacoes_fiscais_devolucao import (
     CONTRATO_OBSERVACOES,
     validar_observacoes_fiscais_devolucao,
@@ -626,7 +627,7 @@ def extrair_contrato_devolucao(rascunho_id, usuario):
             rascunho, memoria, parametros, rateio, reflexos
         )
         transporte_extraido = _extrair_transporte(rascunho, memoria, parametros, transporte)
-        return {"conteudo": contrato, "validacao": validar_contrato_devolucao(contrato),
+        resultado = {"conteudo": contrato, "validacao": validar_contrato_devolucao(contrato),
                 "referencias_itens": _extrair_referencias_itens(rascunho, dfe, xml),
                 "identidade_partes": _extrair_identidade_partes(rascunho, xml, parecer),
                 "produtos": produtos_extraidos,
@@ -644,3 +645,5 @@ def extrair_contrato_devolucao(rascunho_id, usuario):
                 "icms_st_fcp": construir_icms_st_fcp(tributos_extraidos),
                 "rtc": construir_rtc_devolucao(tributos_extraidos),
                 "pendencias_dossie": [e for e in dossie["etapas"] if e["estado"] in ("Pendente", "Desatualizado", "Inconsistente", "Bloqueado")]}
+        resultado["portao_prontidao"] = construir_portao_prontidao(resultado)
+        return resultado

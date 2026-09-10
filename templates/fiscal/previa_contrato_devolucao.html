@@ -11,6 +11,13 @@
   {% for grupo in grupos %}<tr><td>{{ grupo.nome }}</td><td>{{ grupo.estado }}</td><td>{% for ref in grupo.referencias %}<details><summary>{{ ref.tipo }} · #{{ ref.id }}</summary><p style="overflow-wrap:anywhere">SHA-256: {{ ref.sha256 }}</p></details>{% empty %}Sem referência disponível{% endfor %}</td></tr>{% endfor %}
   </tbody></table>
 </section>
+<section class="panel mt-panel"><div class="panel-title">Portão consolidado de prontidão</div>
+  <p><strong>{% if resultado.portao_prontidao.validacao.estrutura_consolidada %}Estrutura dos subcontratos reunida{% else %}Há estruturas internas pendentes{% endif %}.</strong> Estrutura reunida não significa NF-e pronta.</p>
+  <p>Origens: {% if resultado.portao_prontidao.validacao.origens_conferidas %}conferidas neste diagnóstico{% else %}ainda incompletas{% endif %}. XML, homologação e emissão permanecem bloqueados; este painel não altera Focus, SEFAZ direta, certificados ou ambientes.</p>
+  <table><thead><tr><th>Bloco</th><th>Estrutura</th><th>Origem</th><th>XML / emissão</th></tr></thead><tbody>
+    {% for item in resultado.portao_prontidao.conteudo.verificacoes %}<tr><td>{{ item.grupo }}</td><td>{% if item.estrutura_valida %}Conferida{% else %}Pendente{% endif %}</td><td>{% if item.origem_conferida %}Conferida{% else %}Pendente{% endif %}</td><td>Bloqueados</td></tr>{% endfor %}
+  </tbody></table>
+</section>
 <section class="panel mt-panel"><div class="panel-title">Transporte</div>
   <p><strong>{% if resultado.transporte.validacao.origem_completa %}Ficha atual conferida{% else %}Ficha de transporte pendente ou superada{% endif %}.</strong> Os dados permanecem somente para validação; nenhum grupo XML é produzido.</p>
   <table><tbody>
@@ -113,6 +120,7 @@
   <ul>{% for item in resultado.ipi_devolvido.validacao.bloqueios %}<li>{{ item.grupo }}: {{ item.codigo }}</li>{% endfor %}</ul>
   <ul>{% for item in resultado.icms_st_fcp.validacao.bloqueios %}<li>{{ item.grupo }}: {{ item.codigo }}</li>{% endfor %}</ul>
   <ul>{% for item in resultado.rtc.validacao.bloqueios %}<li>{{ item.grupo }}: {{ item.codigo }}</li>{% endfor %}</ul>
+  <ul>{% for item in resultado.portao_prontidao.conteudo.bloqueios_consolidados %}<li>{{ item.grupo }}: {{ item.codigo }}</li>{% endfor %}</ul>
   {% for erro in resultado.validacao.erros %}<p>{{ erro.caminho }}: {{ erro.codigo }}</p>{% endfor %}
   </details>
 </section>
