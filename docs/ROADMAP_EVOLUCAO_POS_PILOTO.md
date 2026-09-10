@@ -1,5 +1,19 @@
 # Roadmap de evolucao pos-piloto
 
+## Ponto de retomada — ciclo 79, 10/09/2026
+
+Criado o contrato `supplier_return_returned_ipi_policy_v1` para manter `impostoDevol` separado do IPI informado na memória. Cada item preserva a referência aprovada de IPI, mas permanece no estado `HIPOTESE_NAO_APROVADA`; `pDevol`, `vIPIDevol`, justificativa fiscal e total ficam vazios. O validador rejeita cópia, cálculo automático ou preenchimento desses campos.
+
+- [x] Estruturar `impostoDevol` por item sem confundi-lo com `det/imposto/IPI`.
+- [x] Preservar IDs e hashes da memória/revisão que contém o IPI de referência.
+- [x] Manter hipótese, percentual, valor, justificativa e total não definidos.
+- [x] Rejeitar cópia do IPI da memória e cálculo automático de percentual.
+- [x] Integrar o diagnóstico à prévia protegida sem produzir grupo XML.
+- [x] Validar 120 testes conjuntos dos contratos e do fluxo de devolução.
+- [ ] Próximo passo: estruturar ICMS-ST/FCP por hipótese explícita, mantendo destaque/restituição e valores bloqueados até orientação aprovada para o caso real.
+
+Sem migração, cálculo de IPI devolvido, geração de XML, acesso a certificado ou transmissão neste ciclo.
+
 ## Ponto de retomada — ciclo 78, 10/09/2026
 
 Criado o contrato `supplier_return_fiscal_notes_policy_v1` para separar anotações internas de futuros textos fiscais. A extração confere parecer, parametrização, memória e revisão, mas expõe somente IDs, hashes e um inventário de presença/contagem. Motivo operacional, fundamentações e observações não são copiados para a prévia nem para os campos fiscais. `infAdic` e `infAdProd` permanecem vazios, e qualquer preenchimento ou exportação automática é rejeitado.
@@ -10,7 +24,7 @@ Criado o contrato `supplier_return_fiscal_notes_policy_v1` para separar anotaç�
 - [x] Rejeitar cópia automática ou injeção antecipada de texto fiscal.
 - [x] Integrar o diagnóstico à prévia protegida sem expor conteúdo interno.
 - [x] Validar 117 testes conjuntos dos contratos e do fluxo de devolução.
-- [ ] Próximo passo: estruturar o grupo específico de IPI devolvido por item, separado do IPI da memória e sem presumir hipótese, percentual ou valor.
+- [x] Estruturar o grupo específico de IPI devolvido por item, separado do IPI da memória e sem presumir hipótese, percentual ou valor (ciclo 79).
 
 Sem migração, cópia de texto para XML, geração de XML, acesso a certificado ou transmissão neste ciclo.
 

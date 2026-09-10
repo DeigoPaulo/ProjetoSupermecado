@@ -18,6 +18,7 @@ from .identidade_partes_devolucao import (
     CONTRATO_IDENTIDADE_PARTES,
     validar_identidade_partes_devolucao,
 )
+from .ipi_devolvido_contrato import construir_ipi_devolvido
 from .models import ConfiguracaoFiscal, DocumentoDFeRecebido, RascunhoDevolucaoFornecedor
 from .pacote_contabil import analisar_xml_nfe
 from .produtos_devolucao import CONTRATO_PRODUTOS, validar_produtos_devolucao
@@ -637,4 +638,5 @@ def extrair_contrato_devolucao(rascunho_id, usuario):
                 "observacoes_fiscais": _extrair_observacoes_fiscais(
                     rascunho, memoria, parametros, parecer, transporte_extraido
                 ),
+                "ipi_devolvido": construir_ipi_devolvido(tributos_extraidos),
                 "pendencias_dossie": [e for e in dossie["etapas"] if e["estado"] in ("Pendente", "Desatualizado", "Inconsistente", "Bloqueado")]}

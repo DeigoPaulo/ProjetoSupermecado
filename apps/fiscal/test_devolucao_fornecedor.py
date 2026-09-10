@@ -757,6 +757,15 @@ class PreparacaoDevolucaoFornecedorTests(TestCase):
         self.assertEqual(observacoes["conteudo"]["textos_fiscais"]["itens"][0]["infadprod"], "")
         self.assertFalse(observacoes["validacao"]["permite_emissao"])
 
+        ipi_devolvido = extrair_contrato_devolucao(rascunho.pk, self.revisor)["ipi_devolvido"]
+        self.assertTrue(ipi_devolvido["validacao"]["estrutura_valida"])
+        self.assertTrue(ipi_devolvido["validacao"]["origem_completa"])
+        self.assertEqual(ipi_devolvido["conteudo"]["itens"][0]["ipi_memoria"]["valor"], "0.00")
+        self.assertEqual(ipi_devolvido["conteudo"]["itens"][0]["imposto_devol"]["pdevol"], "")
+        self.assertEqual(ipi_devolvido["conteudo"]["itens"][0]["imposto_devol"]["vipidevol"], "")
+        self.assertEqual(ipi_devolvido["conteudo"]["total"]["vipidevol"], "")
+        self.assertFalse(ipi_devolvido["validacao"]["permite_emissao"])
+
     def test_extracao_referencias_bloqueia_protocolo_ou_snapshot_divergente(self):
         rascunho, _, _, _ = self._reflexos_registrados()
         dfe = DocumentoDFeRecebido.objects.get(entrada_compra=self.entrada)
@@ -831,6 +840,8 @@ class PreparacaoDevolucaoFornecedorTests(TestCase):
         self.assertContains(resposta, "Separação das observações")
         self.assertContains(resposta, "não recebem cópia automática")
         self.assertNotContains(resposta, "Orientação formal do responsável contábil para este caso concreto")
+        self.assertContains(resposta, "IPI devolvido")
+        self.assertContains(resposta, "não é copiado para")
         conteudo_previa = resposta.content.decode().split('<div id="previa-contrato-fiscal">', 1)[1].split('</main>', 1)[0]
         self.assertNotIn("<form", conteudo_previa)
         self.assertEqual(resposta["Cache-Control"], "private, no-store")

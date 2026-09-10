@@ -1,5 +1,7 @@
 # Contrato proposto do XML de devolução ao fornecedor
 
+Ciclo 79 — 10/09/2026: implementado `supplier_return_returned_ipi_policy_v1`. O contrato preserva o IPI informado na memória somente como referência e cria campos separados, vazios e bloqueados para `pDevol`, `vIPIDevol`, justificativa e total. Cópia ou cálculo automático é erro. Não há serialização de `impostoDevol`; 120 testes passaram.
+
 Ciclo 78 — 10/09/2026: implementado `supplier_return_fiscal_notes_policy_v1`. O contrato inventaria fontes internas por IDs, hashes e contagens, sem copiar seu conteúdo. `infAdic` e `infAdProd` ficam vazios e o validador rejeita exportação automática ou texto não aprovado. Ainda não há serialização; 117 testes passaram.
 
 Ciclo 77 — 10/09/2026: implementado `supplier_return_fiscal_payment_policy_v1`. A política isolada exige `tPag=90`, `vPag=0.00`, devolução modelo 55/finalidade 4 e nenhum efeito operacional. Total comercial não pode alimentar o pagamento. Ainda não há serialização de `pag/detPag`; regras complementares e homologação permanecem bloqueadas. Foram aprovados 114 testes.
@@ -56,7 +58,7 @@ Escopo inicial proposto: devolução de compra pelo supermercado ao fornecedor, 
 | classificação | parametrização aprovada por item | grupos CST/CSOSN e CFOP | Matriz de capacidade por grupo, regime e vigência; código cadastrado não garante suporte à serialização |
 | bases e valores | memória revisada aprovada | `det/imposto` | Contrato/extrator implementados no ciclo 73; matriz por hipótese e serialização continuam bloqueadas |
 | ajustes comerciais | composição, rateio, reflexos e memória final | frete, seguro, despesas e desconto por produto | Contrato/extrator implementados no ciclo 74; mapeamento XML permanece bloqueado |
-| IPI devolvido | ainda sem grupo específico | eventual `impostoDevol` e total correspondente | Modelar os campos e a hipótese aplicável; IPI informado na memória não implica IPI devolvido |
+| IPI devolvido | contrato separado com IPI da memória apenas como referência | eventual `impostoDevol` e total correspondente | Estrutura bloqueada implementada no ciclo 79; hipótese, valores, justificativa, total e serialização dependem de aprovação específica |
 | ICMS-ST/FCP | orientação e memória, ainda genéricas | grupos específicos e/ou informações complementares conforme hipótese | Bloquear até parametrizar a hipótese contábil e os campos exigidos; não destacar ST automaticamente |
 | IBS/CBS | bases/valores e orientação textual | grupos RTC do leiaute vigente | Falta fechar classificações, grupos, totais e regras por vigência; não considerar memória genérica suficiente |
 | transporte | ficha logística | `transp` | Contrato/extrator implementados no ciclo 75; serialização, paridade XSD e casos reais continuam bloqueados |

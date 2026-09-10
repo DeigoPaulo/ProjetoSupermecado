@@ -1,6 +1,6 @@
 # Devolução: confronto documental e plano de validação
 
-10/09/2026 · atualizado no ciclo 78 · análise técnica parcial, sem homologação ou autorização de emissão.
+10/09/2026 · atualizado no ciclo 79 · análise técnica parcial, sem homologação ou autorização de emissão.
 
 ## Evidência e limite da análise
 
@@ -90,3 +90,7 @@ O contrato `supplier_return_fiscal_payment_policy_v1` fixa `tPag=90` e `vPag=0.0
 ## Implementação do ciclo 78
 
 O contrato `supplier_return_fiscal_notes_policy_v1` classifica motivo, fundamentação e observações existentes como fontes internas por padrão. Somente IDs, hashes, presença e contagem entram no diagnóstico; os textos não são reproduzidos. `infAdic` e `infAdProd` permanecem vazios, e qualquer tentativa de preenchê-los ou habilitar exportação automática é bloqueada até existir conteúdo fiscal específico, aprovado e testado.
+
+## Implementação do ciclo 79
+
+O contrato `supplier_return_returned_ipi_policy_v1` representa `impostoDevol` separadamente do IPI da memória. Base, alíquota e valor anteriores aparecem apenas como referência vinculada à memória aprovada. A hipótese segue não aprovada e `pDevol`, `vIPIDevol`, justificativa fiscal e total permanecem vazios; qualquer cópia, cálculo ou preenchimento antecipado é bloqueado. A estrutura não produz XML.

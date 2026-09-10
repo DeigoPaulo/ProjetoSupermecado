@@ -33,6 +33,12 @@
   <p><strong>{% if resultado.observacoes_fiscais.validacao.origem_completa %}Fontes internas identificadas{% else %}Cadeia de origem pendente{% endif %}.</strong> Motivos, fundamentações e anotações continuam internos. `infAdic` e `infAdProd` estão vazios e não recebem cópia automática.</p>
   <p>Registros internos presentes: motivo {% if resultado.observacoes_fiscais.conteudo.inventario_interno.motivo_operacional_presente %}sim{% else %}não{% endif %}; fundamentação {% if resultado.observacoes_fiscais.conteudo.inventario_interno.fundamentacao_parecer_presente %}sim{% else %}não{% endif %}; observações por item {{ resultado.observacoes_fiscais.conteudo.inventario_interno.observacoes_parametros }} / {{ resultado.observacoes_fiscais.conteudo.inventario_interno.observacoes_memoria }}.</p>
 </section>
+<section class="panel mt-panel"><div class="panel-title">IPI devolvido</div>
+  <p><strong>Hipótese ainda não aprovada.</strong> O IPI informado na memória aparece somente como referência e não é copiado para `impostoDevol`.</p>
+  <table><thead><tr><th>Item</th><th>IPI da memória</th><th>pDevol</th><th>vIPIDevol</th></tr></thead><tbody>
+    {% for item in resultado.ipi_devolvido.conteudo.itens %}<tr><td>{{ item.nitem_novo }}</td><td>{{ item.ipi_memoria.valor|default:"Pendente" }}</td><td>Não definido</td><td>Não definido</td></tr>{% empty %}<tr><td colspan="4">Nenhum item disponível.</td></tr>{% endfor %}
+  </tbody></table>
+</section>
 <section class="panel mt-panel"><div class="panel-title">Ajustes comerciais por item</div>
   <p><strong>{% if resultado.ajustes_comerciais.validacao.origem_completa %}Rateio ligado à cadeia final aprovada{% else %}Rateio final ainda pendente{% endif %}.</strong> Frete, seguro, despesas e desconto são apenas conferidos; não são reaplicados às bases tributárias.</p>
   <table><thead><tr><th>Item</th><th>Base</th><th>Frete</th><th>Seguro</th><th>Despesas</th><th>Desconto</th><th>Total informado</th></tr></thead><tbody>
@@ -92,6 +98,7 @@
   <ul>{% for item in resultado.totalizacao.validacao.bloqueios %}<li>{{ item.grupo }}: {{ item.codigo }}</li>{% endfor %}</ul>
   <ul>{% for item in resultado.pagamento_fiscal.validacao.bloqueios %}<li>{{ item.grupo }}: {{ item.codigo }}</li>{% endfor %}</ul>
   <ul>{% for item in resultado.observacoes_fiscais.validacao.bloqueios %}<li>{{ item.grupo }}: {{ item.codigo }}</li>{% endfor %}</ul>
+  <ul>{% for item in resultado.ipi_devolvido.validacao.bloqueios %}<li>{{ item.grupo }}: {{ item.codigo }}</li>{% endfor %}</ul>
   {% for erro in resultado.validacao.erros %}<p>{{ erro.caminho }}: {{ erro.codigo }}</p>{% endfor %}
   </details>
 </section>

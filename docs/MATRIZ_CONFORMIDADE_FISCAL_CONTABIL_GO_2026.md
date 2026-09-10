@@ -1,5 +1,7 @@
 # Matriz de conformidade fiscal e contábil — Goiás 2026
 
+Ciclo 79 — 10/09/2026: implementado contrato específico e bloqueado para IPI devolvido. O IPI da memória aparece apenas como referência; `pDevol`, `vIPIDevol`, justificativa por item e total ficam vazios. Cópia e cálculo automático são proibidos. A prévia restrita foi ampliada e 120 testes passaram; hipótese real, serialização e homologação continuam pendentes.
+
 Ciclo 78 — 10/09/2026: implementada a separação obrigatória entre anotações internas e futuros textos fiscais. A extração confere a cadeia aprovada e mostra somente inventário, IDs e hashes; não expõe o conteúdo. `infAdic`/`infAdProd` ficam vazios e a exportação automática é proibida. A prévia restrita foi ampliada e 117 testes passaram; serialização e homologação seguem bloqueadas.
 
 Ciclo 77 — 10/09/2026: implementada a política isolada `tPag=90`/`vPag=0.00` para devolução modelo 55/finalidade 4. O contrato rejeita uso do total comercial e qualquer efeito operacional; o fluxo de venda existente não é chamado. A prévia restrita foi ampliada e 114 testes passaram. Serialização, regras complementares e homologação seguem bloqueadas.

@@ -1,5 +1,7 @@
 # Devolução ao fornecedor — preparação fiscal segura
 
+Ciclo 79 — 10/09/2026: IPI devolvido recebeu contrato próprio por item. O IPI da memória é apenas referência e não alimenta `impostoDevol`. Hipótese, `pDevol`, `vIPIDevol`, justificativa e total permanecem vazios; cópia ou cálculo automático é rejeitado. Foram aprovados 120 testes. Próximo passo: separar hipóteses de ICMS-ST/FCP sem ativá-las automaticamente.
+
 Ciclo 78 — 10/09/2026: observações internas e textos fiscais foram separados por contrato. A prévia mostra apenas presença e contagem, nunca o conteúdo das anotações. `infAdic` e `infAdProd` permanecem vazios; cópia automática ou preenchimento sem aprovação específica é rejeitado. Foram aprovados 117 testes. Próximo passo: grupo próprio de IPI devolvido, sem reaproveitar o IPI da memória.
 
 Ciclo 77 — 10/09/2026: o tratamento `tPag=90`/`vPag=0.00` recebeu contrato puro e painel na prévia restrita. Ele só aceita devolução de compra modelo 55/finalidade 4, não usa o total comercial e obriga todos os efeitos operacionais a permanecerem desligados. O fluxo comum de vendas não foi reutilizado. Foram aprovados 114 testes. Próximo passo: separar observações internas de textos fiscais.
