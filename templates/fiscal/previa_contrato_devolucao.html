@@ -25,6 +25,13 @@
   </tbody></table>
   <p>Paridade Focus: não validada. Paridade SEFAZ direta: não validada. O pacote XSD preservado ainda não foi aprovado para uso operacional.</p>
 </section>
+<section class="panel mt-panel"><div class="panel-title">Obrigatoriedade e condicionantes</div>
+  <p><strong>{{ resultado.obrigatoriedade_campos.validacao.quantidade_campos }} famílias classificadas; {{ resultado.obrigatoriedade_campos.validacao.quantidade_pendentes }} ainda dependem de hipóteses ou vigência.</strong> A existência no XSD, sozinha, não torna um campo aplicável.</p>
+  <table><thead><tr><th>Bloco</th><th>Campo neutro</th><th>Classificação</th><th>Contador</th></tr></thead><tbody>
+    {% for item in resultado.obrigatoriedade_campos.conteudo.itens %}<tr><td>{{ item.grupo }}</td><td>{{ item.origem_contrato }}</td><td>{{ item.categoria }}</td><td>{% if item.exige_decisao_contador %}Decisão pendente{% else %}Não nesta regra estrutural{% endif %}</td></tr>{% endfor %}
+  </tbody></table>
+  <p>Leitura normativa integral, vigência operacional em Goiás e caso real aprovado pelo contador continuam pendentes. Nenhuma classificação autoriza XML ou emissão.</p>
+</section>
 <section class="panel mt-panel"><div class="panel-title">Transporte</div>
   <p><strong>{% if resultado.transporte.validacao.origem_completa %}Ficha atual conferida{% else %}Ficha de transporte pendente ou superada{% endif %}.</strong> Os dados permanecem somente para validação; nenhum grupo XML é produzido.</p>
   <table><tbody>

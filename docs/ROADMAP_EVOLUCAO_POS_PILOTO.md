@@ -1,5 +1,19 @@
 # Roadmap de evolucao pos-piloto
 
+## Ponto de retomada — ciclo 84, 10/09/2026
+
+Criado `supplier_return_field_requirement_matrix_v1` para classificar as 37 famílias rastreadas por cardinalidade XSD, regra contextual, hipótese tributária, vigência e necessidade de decisão do contador. A matriz registra que XSD isolado não define aplicação: `DFeReferenciado` é opcional na estrutura e obrigatório no contexto documentado; pagamento usa `tPag=90`/`vPag=0`; IPI devolvido, ST/FCP e RTC permanecem condicionados. Famílias com regra contextual ou hipótese ainda não fechada aparecem como pendentes na prévia.
+
+- [x] Separar obrigatoriedade estrutural de obrigatoriedade contextual MOC/NT.
+- [x] Classificar campos dependentes de valor, transporte, hipótese e enquadramento.
+- [x] Marcar expressamente quais famílias exigem decisão do contador.
+- [x] Manter vigência GO, análise integral e caso real como não confirmados.
+- [x] Recusar alteração da classificação, aplicação antecipada ou liberação de canal.
+- [x] Integrar o diagnóstico à prévia protegida e validar 135 testes conjuntos.
+- [ ] Próximo passo: decompor famílias mistas em campos atômicos e inventariar quais dados existem no sistema, quais faltam no cadastro e quais dependem do XML/contador, sem gerar XML.
+
+Sem migração, geração de XML, instalação de schema, acesso a credencial/certificado, mudança de canal/ambiente ou transmissão neste ciclo. Detalhes em [CLASSIFICACAO_OBRIGATORIEDADE_DEVOLUCAO.md](CLASSIFICACAO_OBRIGATORIEDADE_DEVOLUCAO.md).
+
 ## Ponto de retomada — ciclo 83, 10/09/2026
 
 Criado o contrato `supplier_return_layout_traceability_v1`, com 37 famílias de campos distribuídas pelos 13 subcontratos. A matriz liga cada origem neutra ao destino no leiaute, à cobertura observada no conversor Focus e ao comportamento do adaptador SEFAZ direto. Foram confirmadas lacunas Focus em referências por item, ajustes, transporte completo, totais, `infAdProd`, IPI devolvido e RTC. O canal direto preserva a `NFe` recebida, mas continua dependente de um gerador específico que não existe.

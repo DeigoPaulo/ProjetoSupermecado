@@ -29,6 +29,7 @@ from .observacoes_fiscais_devolucao import (
     CONTRATO_OBSERVACOES,
     validar_observacoes_fiscais_devolucao,
 )
+from .obrigatoriedade_campos_devolucao import construir_obrigatoriedade_campos_devolucao
 from .referencias_item_devolucao import (
     CONTRATO_REFERENCIAS_ITEM,
     POLITICA_REFERENCIAS_ITEM,
@@ -648,4 +649,5 @@ def extrair_contrato_devolucao(rascunho_id, usuario):
                 "pendencias_dossie": [e for e in dossie["etapas"] if e["estado"] in ("Pendente", "Desatualizado", "Inconsistente", "Bloqueado")]}
         resultado["portao_prontidao"] = construir_portao_prontidao(resultado)
         resultado["rastreabilidade_leiaute"] = construir_rastreabilidade_leiaute_devolucao()
+        resultado["obrigatoriedade_campos"] = construir_obrigatoriedade_campos_devolucao()
         return resultado

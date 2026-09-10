@@ -801,6 +801,12 @@ class PreparacaoDevolucaoFornecedorTests(TestCase):
         self.assertFalse(rastreabilidade["validacao"]["permite_focus"])
         self.assertFalse(rastreabilidade["validacao"]["permite_sefaz_direta"])
         self.assertFalse(rastreabilidade["validacao"]["permite_emissao"])
+        obrigatoriedade = extrair_contrato_devolucao(rascunho.pk, self.revisor)["obrigatoriedade_campos"]
+        self.assertTrue(obrigatoriedade["validacao"]["estrutura_valida"])
+        self.assertEqual(obrigatoriedade["validacao"]["quantidade_campos"], 37)
+        self.assertGreater(obrigatoriedade["validacao"]["quantidade_pendentes"], 0)
+        self.assertFalse(obrigatoriedade["validacao"]["analise_normativa_integral"])
+        self.assertFalse(obrigatoriedade["validacao"]["permite_emissao"])
 
     def test_extracao_referencias_bloqueia_protocolo_ou_snapshot_divergente(self):
         rascunho, _, _, _ = self._reflexos_registrados()
@@ -889,6 +895,9 @@ class PreparacaoDevolucaoFornecedorTests(TestCase):
         self.assertContains(resposta, "famílias de campos mapeadas")
         self.assertContains(resposta, "Recebe XML integral; depende do gerador")
         self.assertContains(resposta, "Paridade Focus: não validada")
+        self.assertContains(resposta, "Obrigatoriedade e condicionantes")
+        self.assertContains(resposta, "A existência no XSD, sozinha, não torna um campo aplicável")
+        self.assertContains(resposta, "Decisão pendente")
         conteudo_previa = resposta.content.decode().split('<div id="previa-contrato-fiscal">', 1)[1].split('</main>', 1)[0]
         self.assertNotIn("<form", conteudo_previa)
         self.assertEqual(resposta["Cache-Control"], "private, no-store")

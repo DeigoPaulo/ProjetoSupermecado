@@ -1,6 +1,8 @@
 # Devolução: confronto documental e plano de validação
 
-10/09/2026 · atualizado no ciclo 83 · análise técnica parcial, sem homologação ou autorização de emissão.
+10/09/2026 · atualizado no ciclo 84 · análise técnica parcial, sem homologação ou autorização de emissão.
+
+O ciclo 84 classificou as 37 famílias sem inferir aplicação pelo XSD isolado. A distinção completa entre estrutura, contexto, hipótese, vigência e contador está em [CLASSIFICACAO_OBRIGATORIEDADE_DEVOLUCAO.md](CLASSIFICACAO_OBRIGATORIEDADE_DEVOLUCAO.md). Famílias mistas ainda serão decompostas e nenhuma classificação autoriza serialização.
 
 O ciclo 83 acrescentou a [matriz de rastreabilidade](MATRIZ_RASTREABILIDADE_DEVOLUCAO.md) de 37 famílias. Ela registra onde cada campo deverá chegar no leiaute e quais lacunas existem no código dos canais, mas ainda não declara obrigatoriedade normativa nem autoriza serialização. O próximo ciclo separará cardinalidade XSD, regra MOC/NT, requisito de Goiás e decisão do contador.
 
