@@ -18,4 +18,4 @@ A pendência de `modBC` não modifica nem invalida a origem aprovada de base, al
 
 ## Próximo passo
 
-Modelar `pRedBC` por item como hipótese vazia e não confirmada do contador. Cadastro atual e XML histórico devem permanecer fontes de comparação, nunca preenchimento automático.
+O passo seguinte foi concluído no ciclo 91: `pRedBC` agora é hipótese vazia e não confirmada do contador, sem preenchimento automático. A próxima lacuna é `cEnq` do IPI.

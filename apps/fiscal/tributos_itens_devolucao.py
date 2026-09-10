@@ -1,5 +1,6 @@
 """Contrato puro dos valores tributários informados, sem cálculo ou emissão."""
 from decimal import Decimal, InvalidOperation
+import re
 
 
 CONTRATO_TRIBUTOS_ITENS = "supplier_return_item_tax_values_v1"
@@ -22,6 +23,7 @@ _CAMPOS_ITEM = {
 _CAMPOS_GRUPO = {"estado", "codigo", "base", "aliquota", "valor"}
 _CAMPOS_GRUPO_ICMS = _CAMPOS_GRUPO | {
     "modalidade_base_candidata", "modalidade_base_fonte", "modalidade_base_confirmada",
+    "reducao_base_candidata", "reducao_base_fonte", "reducao_base_confirmada",
 }
 
 
@@ -34,6 +36,16 @@ def _decimal_exato(valor, casas):
     except (InvalidOperation, ValueError):
         return False
     return numero.is_finite() and numero >= 0 and numero == normalizado
+
+
+def _percentual_reducao_candidato(valor):
+    if not isinstance(valor, str) or not re.fullmatch(r"(?:0|[1-9][0-9]{0,2})(?:\.[0-9]{2,4})?", valor):
+        return False
+    try:
+        numero = Decimal(valor)
+    except (InvalidOperation, ValueError):
+        return False
+    return numero.is_finite() and Decimal("0") <= numero <= Decimal("100")
 
 
 def validar_tributos_itens_devolucao(conteudo):
@@ -112,6 +124,17 @@ def validar_tributos_itens_devolucao(conteudo):
                     erro(f"{grupo_caminho}.modalidade_base_fonte", "MODBC_FONTE_INVALIDA")
                 if grupo.get("modalidade_base_confirmada") is not False:
                     erro(f"{grupo_caminho}.modalidade_base_confirmada", "MODBC_CONFIRMACAO_DIRETA_PROIBIDA")
+                reducao = grupo.get("reducao_base_candidata")
+                if reducao == "":
+                    pendencia(f"{grupo_caminho}.reducao_base_candidata", "PREDBC_CANDIDATA_PENDENTE")
+                elif not _percentual_reducao_candidato(reducao):
+                    erro(f"{grupo_caminho}.reducao_base_candidata", "PREDBC_CANDIDATA_INVALIDA")
+                else:
+                    pendencia(f"{grupo_caminho}.reducao_base_candidata", "PREDBC_NAO_CONFIRMADA")
+                if grupo.get("reducao_base_fonte") != "DECISAO_CONTADOR_PENDENTE":
+                    erro(f"{grupo_caminho}.reducao_base_fonte", "PREDBC_FONTE_INVALIDA")
+                if grupo.get("reducao_base_confirmada") is not False:
+                    erro(f"{grupo_caminho}.reducao_base_confirmada", "PREDBC_CONFIRMACAO_DIRETA_PROIBIDA")
     bloqueios = [{"grupo": "bases_valores", "codigo": item["codigo"]} for item in pendencias]
     bloqueios.extend((
         {"grupo": "classificacao", "codigo": "MATRIZ_TRIBUTARIA_NAO_HOMOLOGADA"},
@@ -121,12 +144,15 @@ def validar_tributos_itens_devolucao(conteudo):
         {"grupo": "xml", "codigo": "GERACAO_NAO_IMPLEMENTADA"},
         {"grupo": "transmissao", "codigo": "HOMOLOGACAO_PENDENTE"},
     ))
-    pendencias_decisao_modbc = {"MODBC_CANDIDATA_PENDENTE", "MODBC_NAO_CONFIRMADA"}
+    pendencias_decisoes_icms = {
+        "MODBC_CANDIDATA_PENDENTE", "MODBC_NAO_CONFIRMADA",
+        "PREDBC_CANDIDATA_PENDENTE", "PREDBC_NAO_CONFIRMADA",
+    }
     return {
         "contrato": CONTRATO_VALIDACAO_TRIBUTOS_ITENS,
         "estrutura_valida": not erros,
         "origem_completa": not erros and not any(
-            item["codigo"] not in pendencias_decisao_modbc for item in pendencias
+            item["codigo"] not in pendencias_decisoes_icms for item in pendencias
         ),
         "dados_completos": not erros and not pendencias,
         "escopo_fiscal_suportado": False,
@@ -134,6 +160,7 @@ def validar_tributos_itens_devolucao(conteudo):
         "pendencias": pendencias,
         "bloqueios": bloqueios,
         "permite_aplicar_modalidade_base_icms": False,
+        "permite_aplicar_reducao_base_icms": False,
         "permite_gerar_xml": False,
         "permite_emissao": False,
     }

@@ -21,6 +21,9 @@ class TributosItensDevolucaoTests(SimpleTestCase):
             "modalidade_base_candidata": "",
             "modalidade_base_fonte": "DECISAO_CONTADOR_PENDENTE",
             "modalidade_base_confirmada": False,
+            "reducao_base_candidata": "",
+            "reducao_base_fonte": "DECISAO_CONTADOR_PENDENTE",
+            "reducao_base_confirmada": False,
         })
         return {
             "contrato": CONTRATO_TRIBUTOS_ITENS,
@@ -41,6 +44,8 @@ class TributosItensDevolucaoTests(SimpleTestCase):
         self.assertFalse(resultado["dados_completos"])
         self.assertIn("MODBC_CANDIDATA_PENDENTE", {item["codigo"] for item in resultado["pendencias"]})
         self.assertFalse(resultado["permite_aplicar_modalidade_base_icms"])
+        self.assertIn("PREDBC_CANDIDATA_PENDENTE", {item["codigo"] for item in resultado["pendencias"]})
+        self.assertFalse(resultado["permite_aplicar_reducao_base_icms"])
         self.assertFalse(resultado["escopo_fiscal_suportado"])
         self.assertFalse(resultado["permite_emissao"])
 
@@ -68,6 +73,31 @@ class TributosItensDevolucaoTests(SimpleTestCase):
         self.assertIn("MODBC_CANDIDATA_INVALIDA", codigos)
         self.assertIn("MODBC_FONTE_INVALIDA", codigos)
         self.assertIn("MODBC_CONFIRMACAO_DIRETA_PROIBIDA", codigos)
+
+    def test_predbc_valida_continua_nao_confirmada_e_nao_altera_base(self):
+        contrato = self.contrato()
+        icms = contrato["itens"][0]["grupos"]["icms"]
+        icms["reducao_base_candidata"] = "10.0000"
+        resultado = validar_tributos_itens_devolucao(contrato)
+        self.assertTrue(resultado["estrutura_valida"])
+        self.assertTrue(resultado["origem_completa"])
+        self.assertIn("PREDBC_NAO_CONFIRMADA", {item["codigo"] for item in resultado["pendencias"]})
+        self.assertEqual(icms["base"], "10.00")
+        self.assertFalse(resultado["permite_aplicar_reducao_base_icms"])
+
+    def test_rejeita_percentual_fonte_ou_confirmacao_direta_de_predbc(self):
+        contrato = self.contrato()
+        icms = contrato["itens"][0]["grupos"]["icms"]
+        icms.update({
+            "reducao_base_candidata": "100.0001", "reducao_base_fonte": "CADASTRO_PRODUTO",
+            "reducao_base_confirmada": True,
+        })
+        resultado = validar_tributos_itens_devolucao(contrato)
+        self.assertFalse(resultado["estrutura_valida"])
+        codigos = {item["codigo"] for item in resultado["erros"]}
+        self.assertIn("PREDBC_CANDIDATA_INVALIDA", codigos)
+        self.assertIn("PREDBC_FONTE_INVALIDA", codigos)
+        self.assertIn("PREDBC_CONFIRMACAO_DIRETA_PROIBIDA", codigos)
 
     def test_memoria_pendente_nao_exige_numeros_inventados(self):
         contrato = self.contrato()

@@ -10,6 +10,8 @@ Atualização do ciclo 89: `indTot` foi modelado como candidato vazio e não con
 
 Atualização do ciclo 90: `modBC` foi isolado no grupo ICMS como candidato contábil vazio e não confirmado. O inventário acompanha 109 campos e cinco lacunas; bases, XML e canais permanecem inalterados.
 
+Atualização do ciclo 91: `pRedBC` foi modelado como hipótese contábil vazia e não confirmada, sem copiar cadastro, XML ou memória e sem alterar a base. O inventário acompanha 110 campos e quatro lacunas.
+
 Esta matriz confronta o contrato neutro da devolução com o pacote XSD preservado e com o código atual dos dois canais. “Focus” significa apenas a cobertura observada no conversor do ERP; não afirma limite comercial ou técnico da API externa. “SEFAZ direta” indica que o adaptador transporta a `NFe` local sem reconstruir seus campos; isso não resolve a ausência do gerador nem comprova schema, assinatura, regra de negócio ou homologação.
 
 Evidência XSD: `PL_010f_v1.04/leiauteNFe_v4.00.xsd`, SHA-256 `2bace939973916d54184ff3e2740041a932de5d79772f3363504504160f22542`. O pacote está preservado, mas não aprovado nem instalado para uso operacional.

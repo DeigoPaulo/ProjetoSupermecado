@@ -1,8 +1,8 @@
 # Inventário atômico de dados da devolução
 
-10/09/2026 · atualizado no ciclo 90 · diagnóstico somente leitura.
+10/09/2026 · atualizado no ciclo 91 · diagnóstico somente leitura.
 
-O contrato `supplier_return_atomic_data_inventory_v1` acompanha 109 campos atômicos dos blocos de identificação, partes, referências, produtos, tributos, ajustes, transporte, totais, pagamento fiscal, observações, IPI devolvido, ICMS-ST/FCP e RTC. O inventário não inclui os valores: registra apenas fonte, ocorrências, quantidade preenchida e estado de disponibilidade.
+O contrato `supplier_return_atomic_data_inventory_v1` acompanha 110 campos atômicos dos blocos de identificação, partes, referências, produtos, tributos, ajustes, transporte, totais, pagamento fiscal, observações, IPI devolvido, ICMS-ST/FCP e RTC. O inventário não inclui os valores: registra apenas fonte, ocorrências, quantidade preenchida e estado de disponibilidade.
 
 ## Fontes reconhecidas
 
@@ -21,11 +21,10 @@ O contrato `supplier_return_atomic_data_inventory_v1` acompanha 109 campos atôm
 
 ## Lacunas de modelagem restantes
 
-1. Redução da base de ICMS ainda não está modelada.
-2. Enquadramento legal `cEnq` do IPI não está no contrato da devolução.
-3. Variantes de cálculo de PIS/COFINS ainda não estão discriminadas.
-4. Gerador específico de XML da devolução não existe.
-5. O conversor Focus não possui paridade para todos os grupos da devolução.
+1. Enquadramento legal `cEnq` do IPI não está no contrato da devolução.
+2. Variantes de cálculo de PIS/COFINS ainda não estão discriminadas.
+3. Gerador específico de XML da devolução não existe.
+4. O conversor Focus não possui paridade para todos os grupos da devolução.
 
 ## Regra de segurança cadastral
 
@@ -33,4 +32,4 @@ O XML original é evidência histórica e pode fornecer dados da operação rece
 
 ## Próximo marco
 
-Modelar `pRedBC` por item como hipótese explícita do contador, inicialmente vazia e não confirmada. O cadastro atual do produto e o XML histórico podem ser evidências separadas, mas não devem preencher a decisão nem recalcular a base.
+Modelar `cEnq` por item dentro da política de IPI devolvido, separando-o do código cadastral atual e do IPI apenas informativo da memória. Deve iniciar vazio, não confirmado e sem grupo XML.

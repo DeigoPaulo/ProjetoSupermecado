@@ -415,6 +415,9 @@ def _extrair_tributos_itens(rascunho, memoria, parametros):
                     "modalidade_base_candidata": "",
                     "modalidade_base_fonte": "DECISAO_CONTADOR_PENDENTE",
                     "modalidade_base_confirmada": False,
+                    "reducao_base_candidata": "",
+                    "reducao_base_fonte": "DECISAO_CONTADOR_PENDENTE",
+                    "reducao_base_confirmada": False,
                 })
         itens.append({
             "nitem_novo": indice,

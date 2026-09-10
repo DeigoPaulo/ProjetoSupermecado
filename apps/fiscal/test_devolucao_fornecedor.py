@@ -771,12 +771,20 @@ class PreparacaoDevolucaoFornecedorTests(TestCase):
         self.assertEqual(grupos["icms"]["modalidade_base_candidata"], "")
         self.assertEqual(grupos["icms"]["modalidade_base_fonte"], "DECISAO_CONTADOR_PENDENTE")
         self.assertFalse(grupos["icms"]["modalidade_base_confirmada"])
+        self.assertEqual(grupos["icms"]["reducao_base_candidata"], "")
+        self.assertEqual(grupos["icms"]["reducao_base_fonte"], "DECISAO_CONTADOR_PENDENTE")
+        self.assertFalse(grupos["icms"]["reducao_base_confirmada"])
         self.assertFalse(tributos["validacao"]["dados_completos"])
         self.assertIn(
             "MODBC_CANDIDATA_PENDENTE",
             {pendencia["codigo"] for pendencia in tributos["validacao"]["pendencias"]},
         )
         self.assertFalse(tributos["validacao"]["permite_aplicar_modalidade_base_icms"])
+        self.assertIn(
+            "PREDBC_CANDIDATA_PENDENTE",
+            {pendencia["codigo"] for pendencia in tributos["validacao"]["pendencias"]},
+        )
+        self.assertFalse(tributos["validacao"]["permite_aplicar_reducao_base_icms"])
         self.assertEqual(grupos["ipi_memoria"]["estado"], "NAO_EQUIVALE_IPI_DEVOLVIDO")
         self.assertEqual(grupos["ibs"]["estado"], "VIGENCIA_E_LEIAUTE_PENDENTES")
         self.assertFalse(tributos["validacao"]["permite_emissao"])
@@ -881,8 +889,8 @@ class PreparacaoDevolucaoFornecedorTests(TestCase):
         inventario = extrair_contrato_devolucao(rascunho.pk, self.revisor)["inventario_dados"]
         self.assertTrue(inventario["validacao"]["estrutura_valida"])
         self.assertGreater(inventario["validacao"]["quantidade_campos_atomicos"], 90)
-        self.assertEqual(inventario["validacao"]["quantidade_campos_atomicos"], 109)
-        self.assertEqual(inventario["validacao"]["quantidade_lacunas_modelagem"], 5)
+        self.assertEqual(inventario["validacao"]["quantidade_campos_atomicos"], 110)
+        self.assertEqual(inventario["validacao"]["quantidade_lacunas_modelagem"], 4)
         self.assertTrue(all(item["expoe_valor"] is False for item in inventario["conteudo"]["itens"]))
         self.assertFalse(inventario["validacao"]["permite_emissao"])
 
@@ -955,6 +963,8 @@ class PreparacaoDevolucaoFornecedorTests(TestCase):
         self.assertContains(resposta, "não calcula tributos")
         self.assertContains(resposta, "modBC candidato")
         self.assertContains(resposta, "não recalcula a base")
+        self.assertContains(resposta, "pRedBC candidato")
+        self.assertContains(resposta, "não aplica redução")
         self.assertContains(resposta, "Ajustes comerciais por item")
         self.assertContains(resposta, "não são reaplicados")
         self.assertContains(resposta, "Ficha de transporte pendente ou superada")

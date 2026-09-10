@@ -61,6 +61,10 @@ def _definicoes():
         "tributos_itens", "itens[].grupos.icms.modalidade_base_candidata",
         "DECISAO_CONTADOR", "BLOQUEIO",
     ))
+    campos.append((
+        "tributos_itens", "itens[].grupos.icms.reducao_base_candidata",
+        "DECISAO_CONTADOR", "BLOQUEIO",
+    ))
     campos += [
         ("ajustes_comerciais", f"itens[].{nome}", "RATEIO_APROVADO", "CONDICIONADO")
         for nome in ("frete", "seguro", "outras_despesas", "desconto")
@@ -115,7 +119,6 @@ def _definicoes():
 CAMPOS_ATOMICOS = _definicoes()
 
 LACUNAS_MODELAGEM = (
-    ("tributos_itens.itens[].icms.reducao_base", "NFe/infNFe/det/imposto/ICMS/*/pRedBC", "REDUCAO_BASE_ICMS_NAO_MODELADA", "CONTADOR_E_CONTRATO"),
     ("ipi_devolvido.enquadramento", "NFe/infNFe/det/imposto/IPI/cEnq", "ENQUADRAMENTO_IPI_NAO_MODELADO_NA_DEVOLUCAO", "CONTADOR_E_CONTRATO"),
     ("tributos_itens.variantes_pis_cofins", "NFe/infNFe/det/imposto/PIS|COFINS/*", "VARIANTES_PIS_COFINS_NAO_MODELADAS", "CONTADOR_E_CONTRATO"),
     ("serializador_devolucao", "NFe", "GERADOR_ESPECIFICO_NAO_IMPLEMENTADO", "CODIGO"),

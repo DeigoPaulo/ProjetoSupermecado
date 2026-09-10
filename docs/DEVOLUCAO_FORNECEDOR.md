@@ -1,5 +1,7 @@
 # Devolução ao fornecedor — preparação fiscal segura
 
+Ciclo 91 — 10/09/2026: `pRedBC` foi incluído no grupo ICMS como percentual candidato vazio e não confirmado. Cadastro do produto, XML histórico e memória não preenchem a decisão; percentual informado continua pendente e não modifica a base. O inventário passou a 110 campos e quatro lacunas; 149 testes conjuntos passaram. Próximo passo: enquadramento legal do IPI (`cEnq`).
+
 Ciclo 90 — 10/09/2026: `modBC` foi incluído somente no grupo ICMS como candidato vazio e não confirmado. O XSD preservado reconhece 0 a 3, mas o sistema não escolhe nenhum código nem reutiliza o valor 3 fixado no emissor antigo. Bases e totais permanecem inalterados e apenas conferíveis. O inventário passou a 109 campos e cinco lacunas; 147 testes conjuntos passaram. Próximo passo: `pRedBC` como hipótese contábil pendente.
 
 Ciclo 89 — 10/09/2026: `indTot` foi incluído por item como decisão ainda vazia e não confirmada. O sistema não copia esse indicador do XML, não escolhe 0/1 e não usa o campo para incluir ou excluir valores. A conferência da memória aprovada continua isolada, enquanto aplicação, XML, Focus, SEFAZ direta e emissão permanecem bloqueados. O inventário passou a 108 campos e seis lacunas; 145 testes conjuntos passaram. Próximo passo: modelar `modBC` por hipótese do contador, sem default.

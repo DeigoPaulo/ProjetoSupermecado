@@ -1,5 +1,24 @@
 # Roadmap de evolucao pos-piloto
 
+## Ponto de retomada — ciclo 91, 10/09/2026
+
+O grupo ICMS do contrato tributário passou a representar `pRedBC` como candidata vazia, fonte `DECISAO_CONTADOR_PENDENTE` e confirmação falsa. O formato foi confrontado com `TDec_0302a04` do XSD preservado e o contrato limita o percentual candidato à faixa segura de 0 a 100, com duas a quatro casas quando houver parte decimal. Nem o campo existente no cadastro atual do produto, nem o XML histórico, nem diferenças entre bases preenchem a decisão. A base aprovada continua somente reproduzida. O inventário passou a 110 campos e quatro lacunas.
+
+- [x] Confirmar no XSD preservado o formato lexical usado por `pRedBC`.
+- [x] Manter a redução exclusivamente no grupo ICMS.
+- [x] Iniciar candidata vazia, sem copiar cadastro atual, XML histórico ou memória.
+- [x] Fixar fonte em decisão pendente do contador e confirmação falsa.
+- [x] Validar percentuais candidatos de 0 a 100, sem aplicá-los.
+- [x] Rejeitar formato/percentual inválido, fonte alterada e confirmação direta.
+- [x] Manter `permite_aplicar_reducao_base_icms=False`, XML e emissão bloqueados.
+- [x] Provar que a candidata não modifica `vBC`, alíquota, valor ou totalização.
+- [x] Exibir `pRedBC` pendente na prévia somente leitura.
+- [x] Remover `REDUCAO_BASE_ICMS_NAO_MODELADA`; restam quatro lacunas.
+- [x] Validar a regressão conjunta de 149 testes.
+- [ ] Próximo passo: modelar o enquadramento legal do IPI (`cEnq`) separadamente do IPI da memória, vazio e não confirmado.
+
+Sem migração, decisão tributária, geração de XML, acesso a credencial/certificado, alteração de Focus/SEFAZ direta, ambiente ou transmissão. Detalhes em [REDUCAO_BASE_ICMS_DEVOLUCAO.md](REDUCAO_BASE_ICMS_DEVOLUCAO.md).
+
 ## Ponto de retomada — ciclo 90, 10/09/2026
 
 O grupo ICMS do contrato `supplier_return_item_tax_values_v1` passou a transportar a modalidade de base como candidata vazia, fonte `DECISAO_CONTADOR_PENDENTE` e confirmação falsa. O XSD oficial preservado confirma os códigos 0, 1, 2 e 3, mas nenhum deles é escolhido pelo sistema; em especial, o valor 3 fixado no emissor antigo não é herdado. A integridade da memória tributária permanece separada da completude da decisão fiscal, portanto bases e totais continuam somente conferíveis e não são recalculados. O inventário passou a 109 campos e cinco lacunas.
@@ -15,7 +34,7 @@ O grupo ICMS do contrato `supplier_return_item_tax_values_v1` passou a transport
 - [x] Exibir `modBC` pendente na prévia somente leitura.
 - [x] Remover a lacuna `MODALIDADE_BASE_ICMS_NAO_MODELADA`; restam cinco.
 - [x] Validar a regressão conjunta de 147 testes.
-- [ ] Próximo passo: modelar `pRedBC` por item como hipótese contábil vazia e não confirmada, sem copiar o cadastro do produto nem recalcular a base.
+- [x] Próximo passo concluído no ciclo 91: `pRedBC` modelado como hipótese contábil vazia e não confirmada, sem copiar cadastro nem recalcular a base.
 
 Sem migração, decisão tributária, geração de XML, acesso a credencial/certificado, alteração de Focus/SEFAZ direta, ambiente ou transmissão. Detalhes em [MODALIDADE_BASE_ICMS_DEVOLUCAO.md](MODALIDADE_BASE_ICMS_DEVOLUCAO.md).
 

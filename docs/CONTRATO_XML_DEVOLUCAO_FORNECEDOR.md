@@ -1,5 +1,7 @@
 # Contrato proposto do XML de devolução ao fornecedor
 
+Ciclo 91 — 10/09/2026: o grupo ICMS recebeu `reducao_base_candidata`, fonte contábil pendente e confirmação falsa. Percentual com formato válido continua bloqueado e não altera a base da memória. Nenhuma fonte cadastral ou histórica é copiada. O inventário soma 110 campos e quatro lacunas; 149 testes passaram. Próximo passo: `cEnq` do IPI.
+
 Ciclo 90 — 10/09/2026: o grupo ICMS recebeu `modalidade_base_candidata`, fonte contábil pendente e confirmação falsa. Códigos 0 a 3 são apenas formatos reconhecidos pelo XSD; candidato preenchido continua bloqueado. A decisão não altera `vBC`, memória ou totalização e não chega aos adaptadores. O inventário soma 109 campos e cinco lacunas; 147 testes passaram. Próximo passo: `pRedBC`.
 
 Ciclo 89 — 10/09/2026: `indTot` entrou no contrato de produtos somente como candidato vazio, fonte `DECISAO_FISCAL_PENDENTE` e confirmação falsa. 0 e 1 não são aplicados automaticamente. A totalização diagnóstica passou a distinguir origem comercial completa de decisão fiscal pendente e continua sem formar `vNF`. O inventário soma 108 campos e seis lacunas; 145 testes passaram. Próximo passo: modalidade da base do ICMS (`modBC`).
