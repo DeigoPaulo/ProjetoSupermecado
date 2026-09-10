@@ -1,5 +1,7 @@
 # Devolução ao fornecedor — preparação fiscal segura
 
+Ciclo 80 — 10/09/2026: ICMS-ST/FCP recebeu contrato próprio e bloqueado. Valores da memória são apenas referência; hipótese, grupos fiscais, texto complementar e totais continuam vazios. O sistema rejeita inferência por código, regime ou generalização das orientações GO 21305/21349. Foram aprovados 123 testes. Próximo passo: política de vigência e leiaute para IBS/CBS/RTC.
+
 Ciclo 79 — 10/09/2026: IPI devolvido recebeu contrato próprio por item. O IPI da memória é apenas referência e não alimenta `impostoDevol`. Hipótese, `pDevol`, `vIPIDevol`, justificativa e total permanecem vazios; cópia ou cálculo automático é rejeitado. Foram aprovados 120 testes. Próximo passo: separar hipóteses de ICMS-ST/FCP sem ativá-las automaticamente.
 
 Ciclo 78 — 10/09/2026: observações internas e textos fiscais foram separados por contrato. A prévia mostra apenas presença e contagem, nunca o conteúdo das anotações. `infAdic` e `infAdProd` permanecem vazios; cópia automática ou preenchimento sem aprovação específica é rejeitado. Foram aprovados 117 testes. Próximo passo: grupo próprio de IPI devolvido, sem reaproveitar o IPI da memória.

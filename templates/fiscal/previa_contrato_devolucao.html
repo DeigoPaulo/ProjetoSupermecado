@@ -39,6 +39,12 @@
     {% for item in resultado.ipi_devolvido.conteudo.itens %}<tr><td>{{ item.nitem_novo }}</td><td>{{ item.ipi_memoria.valor|default:"Pendente" }}</td><td>Não definido</td><td>Não definido</td></tr>{% empty %}<tr><td colspan="4">Nenhum item disponível.</td></tr>{% endfor %}
   </tbody></table>
 </section>
+<section class="panel mt-panel"><div class="panel-title">ICMS-ST e FCP</div>
+  <p><strong>Hipótese ainda não definida.</strong> Valores da memória são apenas referência. O sistema não infere tratamento por código, regime ou orientação genérica e não prepara grupo XML.</p>
+  <table><thead><tr><th>Item</th><th>ICMS-ST da memória</th><th>FCP da memória</th><th>Tratamento fiscal</th></tr></thead><tbody>
+    {% for item in resultado.icms_st_fcp.conteudo.itens %}<tr><td>{{ item.nitem_novo }}</td><td>{{ item.referencia_memoria.icms_st.valor|default:"Pendente" }}</td><td>{{ item.referencia_memoria.fcp.valor|default:"Pendente" }}</td><td>Não definido</td></tr>{% empty %}<tr><td colspan="4">Nenhum item disponível.</td></tr>{% endfor %}
+  </tbody></table>
+</section>
 <section class="panel mt-panel"><div class="panel-title">Ajustes comerciais por item</div>
   <p><strong>{% if resultado.ajustes_comerciais.validacao.origem_completa %}Rateio ligado à cadeia final aprovada{% else %}Rateio final ainda pendente{% endif %}.</strong> Frete, seguro, despesas e desconto são apenas conferidos; não são reaplicados às bases tributárias.</p>
   <table><thead><tr><th>Item</th><th>Base</th><th>Frete</th><th>Seguro</th><th>Despesas</th><th>Desconto</th><th>Total informado</th></tr></thead><tbody>
@@ -99,6 +105,7 @@
   <ul>{% for item in resultado.pagamento_fiscal.validacao.bloqueios %}<li>{{ item.grupo }}: {{ item.codigo }}</li>{% endfor %}</ul>
   <ul>{% for item in resultado.observacoes_fiscais.validacao.bloqueios %}<li>{{ item.grupo }}: {{ item.codigo }}</li>{% endfor %}</ul>
   <ul>{% for item in resultado.ipi_devolvido.validacao.bloqueios %}<li>{{ item.grupo }}: {{ item.codigo }}</li>{% endfor %}</ul>
+  <ul>{% for item in resultado.icms_st_fcp.validacao.bloqueios %}<li>{{ item.grupo }}: {{ item.codigo }}</li>{% endfor %}</ul>
   {% for erro in resultado.validacao.erros %}<p>{{ erro.caminho }}: {{ erro.codigo }}</p>{% endfor %}
   </details>
 </section>

@@ -1,5 +1,19 @@
 # Roadmap de evolucao pos-piloto
 
+## Ponto de retomada — ciclo 80, 10/09/2026
+
+Criado o contrato `supplier_return_icms_st_fcp_hypothesis_v1` para separar valores de referência da futura decisão sobre ICMS-ST/FCP. Cada item preserva base, alíquota e valor informados na memória, mas hipótese, grupos fiscais, informação complementar e totais ficam vazios. O validador proíbe copiar valores ou inferir tratamento por código ICMS, regime ou generalização das orientações GO 21305/21349.
+
+- [x] Estruturar ICMS-ST e FCP por item com origem e hashes comuns.
+- [x] Preservar os valores da memória somente como referência.
+- [x] Manter hipótese, destino fiscal, texto complementar e totais não definidos.
+- [x] Bloquear inferência por CST/CSOSN, regime ou orientação genérica de Goiás.
+- [x] Integrar o diagnóstico à prévia protegida sem produzir grupo XML.
+- [x] Validar 123 testes conjuntos dos contratos e do fluxo de devolução.
+- [ ] Próximo passo: estruturar IBS/CBS/RTC com política explícita de vigência e leiaute, mantendo grupos e totais bloqueados até confirmação normativa e homologação.
+
+Sem migração, definição de hipótese ST/FCP, geração de XML, acesso a certificado ou transmissão neste ciclo.
+
 ## Ponto de retomada — ciclo 79, 10/09/2026
 
 Criado o contrato `supplier_return_returned_ipi_policy_v1` para manter `impostoDevol` separado do IPI informado na memória. Cada item preserva a referência aprovada de IPI, mas permanece no estado `HIPOTESE_NAO_APROVADA`; `pDevol`, `vIPIDevol`, justificativa fiscal e total ficam vazios. O validador rejeita cópia, cálculo automático ou preenchimento desses campos.
@@ -10,7 +24,7 @@ Criado o contrato `supplier_return_returned_ipi_policy_v1` para manter `impostoD
 - [x] Rejeitar cópia do IPI da memória e cálculo automático de percentual.
 - [x] Integrar o diagnóstico à prévia protegida sem produzir grupo XML.
 - [x] Validar 120 testes conjuntos dos contratos e do fluxo de devolução.
-- [ ] Próximo passo: estruturar ICMS-ST/FCP por hipótese explícita, mantendo destaque/restituição e valores bloqueados até orientação aprovada para o caso real.
+- [x] Estruturar ICMS-ST/FCP por hipótese explícita, mantendo destaque/restituição e valores bloqueados até orientação aprovada para o caso real (ciclo 80).
 
 Sem migração, cálculo de IPI devolvido, geração de XML, acesso a certificado ou transmissão neste ciclo.
 

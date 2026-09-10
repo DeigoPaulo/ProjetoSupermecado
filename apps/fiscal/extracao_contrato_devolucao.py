@@ -18,6 +18,7 @@ from .identidade_partes_devolucao import (
     CONTRATO_IDENTIDADE_PARTES,
     validar_identidade_partes_devolucao,
 )
+from .icms_st_fcp_contrato import construir_icms_st_fcp
 from .ipi_devolvido_contrato import construir_ipi_devolvido
 from .models import ConfiguracaoFiscal, DocumentoDFeRecebido, RascunhoDevolucaoFornecedor
 from .pacote_contabil import analisar_xml_nfe
@@ -639,4 +640,5 @@ def extrair_contrato_devolucao(rascunho_id, usuario):
                     rascunho, memoria, parametros, parecer, transporte_extraido
                 ),
                 "ipi_devolvido": construir_ipi_devolvido(tributos_extraidos),
+                "icms_st_fcp": construir_icms_st_fcp(tributos_extraidos),
                 "pendencias_dossie": [e for e in dossie["etapas"] if e["estado"] in ("Pendente", "Desatualizado", "Inconsistente", "Bloqueado")]}
