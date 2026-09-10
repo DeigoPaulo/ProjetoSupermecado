@@ -795,6 +795,12 @@ class PreparacaoDevolucaoFornecedorTests(TestCase):
             [item["grupo"] for item in portao["conteudo"]["verificacoes"]][-3:],
             ["ipi_devolvido", "icms_st_fcp", "rtc"],
         )
+        rastreabilidade = extrair_contrato_devolucao(rascunho.pk, self.revisor)["rastreabilidade_leiaute"]
+        self.assertTrue(rastreabilidade["validacao"]["estrutura_valida"])
+        self.assertEqual(rastreabilidade["validacao"]["quantidade_grupos"], 13)
+        self.assertFalse(rastreabilidade["validacao"]["permite_focus"])
+        self.assertFalse(rastreabilidade["validacao"]["permite_sefaz_direta"])
+        self.assertFalse(rastreabilidade["validacao"]["permite_emissao"])
 
     def test_extracao_referencias_bloqueia_protocolo_ou_snapshot_divergente(self):
         rascunho, _, _, _ = self._reflexos_registrados()
@@ -879,6 +885,10 @@ class PreparacaoDevolucaoFornecedorTests(TestCase):
         self.assertContains(resposta, "Portão consolidado de prontidão")
         self.assertContains(resposta, "Estrutura reunida não significa NF-e pronta")
         self.assertContains(resposta, "não altera Focus, SEFAZ direta, certificados ou ambientes")
+        self.assertContains(resposta, "Rastreabilidade do leiaute e dos canais")
+        self.assertContains(resposta, "famílias de campos mapeadas")
+        self.assertContains(resposta, "Recebe XML integral; depende do gerador")
+        self.assertContains(resposta, "Paridade Focus: não validada")
         conteudo_previa = resposta.content.decode().split('<div id="previa-contrato-fiscal">', 1)[1].split('</main>', 1)[0]
         self.assertNotIn("<form", conteudo_previa)
         self.assertEqual(resposta["Cache-Control"], "private, no-store")

@@ -1,5 +1,18 @@
 # Roadmap de evolucao pos-piloto
 
+## Ponto de retomada — ciclo 83, 10/09/2026
+
+Criado o contrato `supplier_return_layout_traceability_v1`, com 37 famílias de campos distribuídas pelos 13 subcontratos. A matriz liga cada origem neutra ao destino no leiaute, à cobertura observada no conversor Focus e ao comportamento do adaptador SEFAZ direto. Foram confirmadas lacunas Focus em referências por item, ajustes, transporte completo, totais, `infAdProd`, IPI devolvido e RTC. O canal direto preserva a `NFe` recebida, mas continua dependente de um gerador específico que não existe.
+
+- [x] Vincular os 13 contratos aos destinos principais do `leiauteNFe_v4.00.xsd` preservado.
+- [x] Separar cobertura do conversor Focus de capacidades não comprovadas da API externa.
+- [x] Registrar que a SEFAZ direta não reconstrói conteúdo, sem confundir transporte integral com prontidão.
+- [x] Proibir serialização, Focus, SEFAZ direta e emissão em todas as linhas da matriz.
+- [x] Exibir o resumo na prévia protegida e validar 132 testes conjuntos.
+- [ ] Próximo passo: classificar as 37 famílias como obrigatórias, opcionais ou condicionadas por fonte normativa, mantendo decisões tributárias dependentes do contador e sem criar XML.
+
+Sem migração, geração de XML, instalação de schema, acesso a credencial/certificado, mudança de canal/ambiente ou transmissão neste ciclo. Detalhes em [MATRIZ_RASTREABILIDADE_DEVOLUCAO.md](MATRIZ_RASTREABILIDADE_DEVOLUCAO.md).
+
 ## Ponto de retomada — ciclo 82, 10/09/2026
 
 Criado o portão diagnóstico `supplier_return_readiness_gate_v1`. Ele confere em ordem os 13 subcontratos da devolução, separa estrutura consolidada de origens conferidas, agrega os bloqueios e impede que qualquer bloco libere XML ou emissão. Os sete portões externos — análise normativa integral, matriz tributária, dados reais, casos aprovados pelo contador, schema aplicável, paridade Focus e paridade SEFAZ direta — permanecem explicitamente desligados.

@@ -1,5 +1,7 @@
 # Contrato proposto do XML de devolução ao fornecedor
 
+Ciclo 83 — 10/09/2026: implementada a matriz executável `supplier_return_layout_traceability_v1`, cobrindo 37 famílias dos 13 contratos. Cada linha registra caminho neutro, destino XSD, cobertura do conversor Focus, passagem sem reconstrução pela SEFAZ direta e serialização local obrigatoriamente falsa. Isso demonstra que o transporte direto não completa conteúdo e que o conversor Focus atual perderia grupos relevantes. A prévia foi ampliada e 132 testes passaram. A classificação normativa de obrigatoriedade é o próximo bloqueio.
+
 Ciclo 82 — 10/09/2026: implementado `supplier_return_readiness_gate_v1`, que consolida os 13 subcontratos sem convertê-los em autorização. O validador falha fechado diante de contrato divergente, origem incompleta ou tentativa de liberar XML/emissão. Análise normativa integral, matriz tributária aprovada, dados reais, casos do contador, schema aplicável e paridade separada de Focus/SEFAZ direta permanecem falsas e visíveis. A prévia protegida foi ampliada e 129 testes passaram. O próximo passo é a matriz campo a campo contrato–leiaute/XSD–adaptadores, sem serialização.
 
 Ciclo 81 — 10/09/2026: implementado `supplier_return_rtc_vigency_policy_v1`. O contrato registra a NT 2026.007 v1.00, hash, páginas e datas documentais, sem ativação por calendário. IBS/CBS da memória são apenas referência; enquadramento, classificação, grupos e totais ficam vazios até confirmação de vigência, implantação GO, leiaute e homologação. Foram aprovados 126 testes.

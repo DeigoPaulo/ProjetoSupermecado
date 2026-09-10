@@ -18,6 +18,13 @@
     {% for item in resultado.portao_prontidao.conteudo.verificacoes %}<tr><td>{{ item.grupo }}</td><td>{% if item.estrutura_valida %}Conferida{% else %}Pendente{% endif %}</td><td>{% if item.origem_conferida %}Conferida{% else %}Pendente{% endif %}</td><td>Bloqueados</td></tr>{% endfor %}
   </tbody></table>
 </section>
+<section class="panel mt-panel"><div class="panel-title">Rastreabilidade do leiaute e dos canais</div>
+  <p><strong>{{ resultado.rastreabilidade_leiaute.validacao.quantidade_campos }} famílias de campos mapeadas.</strong> O mapeamento identifica destinos no XSD e lacunas dos adaptadores; não gera XML e não autoriza nenhum canal.</p>
+  <table><thead><tr><th>Bloco</th><th>Focus</th><th>SEFAZ direta</th><th>Serialização local</th></tr></thead><tbody>
+    {% for grupo in resultado.rastreabilidade_leiaute.conteudo.grupos %}<tr><td>{{ grupo.grupo }}</td><td>{% for campo in grupo.campos %}{{ campo.focus }}{% if not forloop.last %}, {% endif %}{% endfor %}</td><td>Recebe XML integral; depende do gerador</td><td>Bloqueada</td></tr>{% endfor %}
+  </tbody></table>
+  <p>Paridade Focus: não validada. Paridade SEFAZ direta: não validada. O pacote XSD preservado ainda não foi aprovado para uso operacional.</p>
+</section>
 <section class="panel mt-panel"><div class="panel-title">Transporte</div>
   <p><strong>{% if resultado.transporte.validacao.origem_completa %}Ficha atual conferida{% else %}Ficha de transporte pendente ou superada{% endif %}.</strong> Os dados permanecem somente para validação; nenhum grupo XML é produzido.</p>
   <table><tbody>

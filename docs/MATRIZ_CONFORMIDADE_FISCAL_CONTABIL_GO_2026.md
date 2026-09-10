@@ -1,5 +1,7 @@
 # Matriz de conformidade fiscal e contábil — Goiás 2026
 
+Ciclo 83 — 10/09/2026: a rastreabilidade executável relaciona 37 famílias do contrato neutro ao XSD e aos canais. Focus possui cobertura parcial no conversor local; SEFAZ direta preserva o XML, mas depende do gerador ausente. Referências por item, ajustes, transporte detalhado, totais, `infAdProd`, IPI devolvido, ST/FCP e RTC permanecem sem paridade comprovada. Todos os canais seguem bloqueados e 132 testes passaram. Próximo passo: classificar obrigatoriedade por XSD, MOC/NT, Goiás e contador.
+
 Ciclo 82 — 10/09/2026: criado portão consolidado e não emissivo para os 13 subcontratos da devolução. O diagnóstico diferencia integridade estrutural, completude das origens e prontidão externa; os portões de análise normativa, matriz tributária, dados reais, aceite do contador, schema e paridade dos dois provedores ficam fechados. A tela protegida informa expressamente que estrutura reunida não significa NF-e pronta. Foram aprovados 129 testes; nenhuma flag, credencial, certificado ou ambiente foi alterado. Próximo passo: matriz de rastreabilidade por campo para o leiaute/XSD e para Focus/SEFAZ direta.
 
 Ciclo 81 — 10/09/2026: implementado contrato de vigência IBS/CBS/RTC. A NT 2026.007 v1.00, hash e datas documentais ficam registrados, mas não ativam regras. Enquadramento, classificação, grupos e totais seguem vazios até confirmação normativa, implantação em Goiás e homologação. A prévia foi ampliada e 126 testes passaram.

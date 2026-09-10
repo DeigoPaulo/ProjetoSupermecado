@@ -35,6 +35,7 @@ from .referencias_item_devolucao import (
     validar_referencias_item_devolucao,
 )
 from .rtc_devolucao_contrato import construir_rtc_devolucao
+from .rastreabilidade_leiaute_devolucao import construir_rastreabilidade_leiaute_devolucao
 from .tributos_itens_devolucao import (
     CONTRATO_TRIBUTOS_ITENS,
     ESTADOS_GRUPOS,
@@ -646,4 +647,5 @@ def extrair_contrato_devolucao(rascunho_id, usuario):
                 "rtc": construir_rtc_devolucao(tributos_extraidos),
                 "pendencias_dossie": [e for e in dossie["etapas"] if e["estado"] in ("Pendente", "Desatualizado", "Inconsistente", "Bloqueado")]}
         resultado["portao_prontidao"] = construir_portao_prontidao(resultado)
+        resultado["rastreabilidade_leiaute"] = construir_rastreabilidade_leiaute_devolucao()
         return resultado
