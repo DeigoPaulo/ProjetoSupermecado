@@ -361,6 +361,9 @@ def _extrair_produtos(rascunho, memoria, parametros):
             "codigo_pis": parametro.codigo_pis if origem_aprovada else "",
             "codigo_cofins": parametro.codigo_cofins if origem_aprovada else "",
             "codigo_cbenef": parametro.codigo_cbenef if origem_aprovada else "",
+            "inclui_total_candidato": "",
+            "inclui_total_fonte": "DECISAO_FISCAL_PENDENTE",
+            "inclui_total_confirmado": False,
         })
     conteudo = {
         "contrato": CONTRATO_PRODUTOS,

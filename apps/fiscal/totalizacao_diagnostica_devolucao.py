@@ -56,7 +56,11 @@ def _origem_comum(produtos, tributos, ajustes):
 
 
 def construir_totalizacao_diagnostica(produtos, tributos, ajustes):
-    produtos_ok = bool(produtos["validacao"].get("dados_completos"))
+    produtos_ok = bool(
+        produtos["validacao"].get(
+            "origem_completa", produtos["validacao"].get("dados_completos")
+        )
+    )
     tributos_ok = bool(tributos["validacao"].get("origem_completa"))
     ajustes_ok = bool(ajustes["validacao"].get("origem_completa"))
     origem = _origem_comum(produtos, tributos, ajustes) if produtos_ok and tributos_ok and ajustes_ok else {

@@ -1,5 +1,22 @@
 # Roadmap de evolucao pos-piloto
 
+## Ponto de retomada — ciclo 89, 10/09/2026
+
+O contrato `supplier_return_products_v1` passou a representar `indTot` por item como candidato explicitamente vazio, com fonte fiscal pendente e confirmação falsa. O validador reconhece 0 e 1 somente como candidatos não confirmados, recusa fonte trocada ou confirmação direta e nunca permite aplicação, XML ou emissão. A completude da origem dos valores foi separada da decisão fiscal para que a totalização diagnóstica continue conferindo a memória aprovada sem usar o novo campo. O inventário passou a 108 campos atômicos e seis lacunas.
+
+- [x] Incluir candidato, fonte e estado de confirmação de `indTot` por item.
+- [x] Iniciar o candidato vazio, sem copiar o XML original nem assumir 0 ou 1.
+- [x] Rejeitar fonte alterada e promoção direta para confirmado.
+- [x] Manter `permite_aplicar_indtot=False`, geração de XML e emissão bloqueadas.
+- [x] Separar origem comercial completa de decisão fiscal completa.
+- [x] Provar que o campo não altera `valor_produtos`, soma diagnóstica ou `vNF`.
+- [x] Exibir o estado pendente na prévia fiscal somente leitura.
+- [x] Remover `INDTOT_NAO_MODELADO` do inventário; restam seis lacunas.
+- [x] Validar a regressão conjunta de 145 testes.
+- [ ] Próximo passo: modelar `modBC` por hipótese de ICMS e decisão do contador, sem default, cálculo ou serialização.
+
+Sem migração, decisão tributária, geração de XML, acesso a credencial/certificado, alteração de Focus/SEFAZ direta, ambiente ou transmissão. Detalhes em [INDTOT_DEVOLUCAO.md](INDTOT_DEVOLUCAO.md).
+
 ## Ponto de retomada — ciclo 88, 10/09/2026
 
 O contrato `supplier_return_identity_parties_v1` passou a transportar `indicador_ie_candidato`, sua fonte cadastral e a confirmação obrigatoriamente falsa. Valores 1, 2 e 9 são aceitos somente como candidatos; valor ausente continua pendente e qualquer tentativa de confirmação direta é erro estrutural. A prévia protegida mostra o candidato como não confirmado. O inventário passou a 107 campos atômicos e sete lacunas de modelagem.
@@ -12,7 +29,7 @@ O contrato `supplier_return_identity_parties_v1` passou a transportar `indicador
 - [x] Exibir o candidato e o bloqueio na prévia fiscal somente leitura.
 - [x] Adicionar o campo ao inventário e encerrar a lacuna `IND_IE_DESTINATARIO_NAO_MODELADO`.
 - [x] Validar o fluxo afetado em regressão conjunta de 107 testes.
-- [ ] Próximo passo: modelar `indTot` por item como decisão explícita e não confirmada, sem assumir valor padrão nem alterar totalização.
+- [x] Próximo passo concluído no ciclo 89: `indTot` modelado como candidato explícito e não confirmado, sem valor padrão nem efeito na totalização.
 
 Sem migração, confirmação fiscal, geração de XML, acesso a credencial/certificado, mudança de Focus/SEFAZ direta, ambiente ou transmissão. Detalhes em [INDICADOR_IE_DESTINATARIO_DEVOLUCAO.md](INDICADOR_IE_DESTINATARIO_DEVOLUCAO.md).
 

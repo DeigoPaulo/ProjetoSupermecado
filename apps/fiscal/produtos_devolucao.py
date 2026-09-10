@@ -14,6 +14,7 @@ _CAMPOS_ITEM = {
     "valor_produtos", "unidade_tributavel", "quantidade_tributavel",
     "valor_unitario_tributavel", "tipo_codigo_icms", "origem_icms",
     "codigo_icms", "codigo_ipi", "codigo_pis", "codigo_cofins", "codigo_cbenef",
+    "inclui_total_candidato", "inclui_total_fonte", "inclui_total_confirmado",
 }
 
 
@@ -129,19 +130,35 @@ def validar_produtos_devolucao(conteudo):
         for campo in ("codigo_icms", "codigo_ipi", "codigo_pis", "codigo_cofins", "codigo_cbenef"):
             if not isinstance(item.get(campo), str) or not item[campo]:
                 pendencia(f"{caminho}.{campo}", "CLASSIFICACAO_PENDENTE")
+        inclui_total = item.get("inclui_total_candidato")
+        if inclui_total not in {"", "0", "1"}:
+            erro(f"{caminho}.inclui_total_candidato", "INDTOT_CANDIDATO_INVALIDO")
+        elif not inclui_total:
+            pendencia(f"{caminho}.inclui_total_candidato", "INDTOT_CANDIDATO_PENDENTE")
+        else:
+            pendencia(f"{caminho}.inclui_total_candidato", "INDTOT_NAO_CONFIRMADO")
+        if item.get("inclui_total_fonte") != "DECISAO_FISCAL_PENDENTE":
+            erro(f"{caminho}.inclui_total_fonte", "INDTOT_FONTE_INVALIDA")
+        if item.get("inclui_total_confirmado") is not False:
+            erro(f"{caminho}.inclui_total_confirmado", "INDTOT_CONFIRMACAO_DIRETA_PROIBIDA")
     bloqueios = [{"grupo": "produtos", "codigo": item["codigo"]} for item in pendencias]
     bloqueios.extend((
         {"grupo": "produtos", "codigo": "PARIDADE_XML_E_XSD_PENDENTE"},
         {"grupo": "xml", "codigo": "GERACAO_NAO_IMPLEMENTADA"},
         {"grupo": "transmissao", "codigo": "HOMOLOGACAO_PENDENTE"},
     ))
+    pendencias_decisao_indtot = {"INDTOT_CANDIDATO_PENDENTE", "INDTOT_NAO_CONFIRMADO"}
     return {
         "contrato": CONTRATO_VALIDACAO_PRODUTOS,
         "estrutura_valida": not erros,
+        "origem_completa": not erros and not any(
+            item["codigo"] not in pendencias_decisao_indtot for item in pendencias
+        ),
         "dados_completos": not erros and not pendencias,
         "erros": erros,
         "pendencias": pendencias,
         "bloqueios": bloqueios,
+        "permite_aplicar_indtot": False,
         "permite_gerar_xml": False,
         "permite_emissao": False,
     }

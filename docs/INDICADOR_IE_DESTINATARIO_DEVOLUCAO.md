@@ -22,4 +22,4 @@ O indicador não escolhe os demais dados do destinatário, não resolve divergê
 
 ## Verificação e próximo passo
 
-A regressão conjunta aprovou 107 testes. O inventário passou a 107 campos atômicos e sete lacunas. O próximo passo é estruturar `indTot` por item como decisão vazia e não confirmada, sem assumir que o item compõe o total e sem recalcular valores.
+A regressão conjunta do ciclo aprovou 107 testes. O passo seguinte foi concluído no ciclo 89: `indTot` agora é decisão vazia e não confirmada, sem efeito na totalização. O próximo bloqueio é `modBC` por hipótese do contador.

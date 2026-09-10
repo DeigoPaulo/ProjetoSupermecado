@@ -21,15 +21,41 @@ class ProdutosDevolucaoTests(SimpleTestCase):
                 "valor_unitario_tributavel": "10.00", "tipo_codigo_icms": "CST",
                 "origem_icms": "0", "codigo_icms": "00", "codigo_ipi": "NA",
                 "codigo_pis": "01", "codigo_cofins": "01", "codigo_cbenef": "NA",
+                "inclui_total_candidato": "", "inclui_total_fonte": "DECISAO_FISCAL_PENDENTE",
+                "inclui_total_confirmado": False,
             }],
         }
 
     def test_contrato_completo_somente_confere_sem_emitir(self):
         resultado = validar_produtos_devolucao(self.contrato())
         self.assertTrue(resultado["estrutura_valida"])
-        self.assertTrue(resultado["dados_completos"])
+        self.assertTrue(resultado["origem_completa"])
+        self.assertFalse(resultado["dados_completos"])
+        self.assertIn("INDTOT_CANDIDATO_PENDENTE", {item["codigo"] for item in resultado["pendencias"]})
+        self.assertFalse(resultado["permite_aplicar_indtot"])
         self.assertFalse(resultado["permite_gerar_xml"])
         self.assertFalse(resultado["permite_emissao"])
+
+    def test_indtot_valido_continua_nao_confirmado_e_nao_afeta_total(self):
+        contrato = self.contrato()
+        contrato["itens"][0]["inclui_total_candidato"] = "1"
+        resultado = validar_produtos_devolucao(contrato)
+        self.assertTrue(resultado["estrutura_valida"])
+        self.assertIn("INDTOT_NAO_CONFIRMADO", {item["codigo"] for item in resultado["pendencias"]})
+        self.assertEqual(contrato["itens"][0]["valor_produtos"], "20.00")
+        self.assertFalse(resultado["permite_aplicar_indtot"])
+
+    def test_rejeita_fonte_ou_confirmacao_direta_do_indtot(self):
+        contrato = self.contrato()
+        contrato["itens"][0].update({
+            "inclui_total_candidato": "1", "inclui_total_fonte": "XML_ORIGINAL",
+            "inclui_total_confirmado": True,
+        })
+        resultado = validar_produtos_devolucao(contrato)
+        self.assertFalse(resultado["estrutura_valida"])
+        codigos = {item["codigo"] for item in resultado["erros"]}
+        self.assertIn("INDTOT_FONTE_INVALIDA", codigos)
+        self.assertIn("INDTOT_CONFIRMACAO_DIRETA_PROIBIDA", codigos)
 
     def test_memoria_nao_aprovada_e_dados_ausentes_ficam_pendentes(self):
         contrato = self.contrato()

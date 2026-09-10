@@ -742,13 +742,22 @@ class PreparacaoDevolucaoFornecedorTests(TestCase):
         produtos = extrair_contrato_devolucao(rascunho.pk, self.revisor)["produtos"]
         item = produtos["conteudo"]["itens"][0]
         self.assertTrue(produtos["validacao"]["estrutura_valida"])
-        self.assertTrue(produtos["validacao"]["dados_completos"])
+        self.assertTrue(produtos["validacao"]["origem_completa"])
+        self.assertFalse(produtos["validacao"]["dados_completos"])
         self.assertTrue(item["memoria_aprovada"])
         self.assertEqual(item["quantidade_comercial"], "1.000")
         self.assertEqual(item["valor_unitario_comercial"], "10.00")
         self.assertEqual(item["valor_produtos"], "10.00")
         self.assertEqual(item["cfop"], "5202")
         self.assertEqual(item["codigo_icms"], "00")
+        self.assertEqual(item["inclui_total_candidato"], "")
+        self.assertEqual(item["inclui_total_fonte"], "DECISAO_FISCAL_PENDENTE")
+        self.assertFalse(item["inclui_total_confirmado"])
+        self.assertIn(
+            "INDTOT_CANDIDATO_PENDENTE",
+            {pendencia["codigo"] for pendencia in produtos["validacao"]["pendencias"]},
+        )
+        self.assertFalse(produtos["validacao"]["permite_aplicar_indtot"])
         self.assertFalse(produtos["validacao"]["permite_emissao"])
         self.assertFalse(DocumentoFiscal.objects.exists())
 
@@ -863,8 +872,8 @@ class PreparacaoDevolucaoFornecedorTests(TestCase):
         inventario = extrair_contrato_devolucao(rascunho.pk, self.revisor)["inventario_dados"]
         self.assertTrue(inventario["validacao"]["estrutura_valida"])
         self.assertGreater(inventario["validacao"]["quantidade_campos_atomicos"], 90)
-        self.assertEqual(inventario["validacao"]["quantidade_campos_atomicos"], 107)
-        self.assertEqual(inventario["validacao"]["quantidade_lacunas_modelagem"], 7)
+        self.assertEqual(inventario["validacao"]["quantidade_campos_atomicos"], 108)
+        self.assertEqual(inventario["validacao"]["quantidade_lacunas_modelagem"], 6)
         self.assertTrue(all(item["expoe_valor"] is False for item in inventario["conteudo"]["itens"]))
         self.assertFalse(inventario["validacao"]["permite_emissao"])
 
@@ -930,7 +939,9 @@ class PreparacaoDevolucaoFornecedorTests(TestCase):
         self.assertContains(resposta, "aplicação bloqueada")
         self.assertContains(resposta, "Dados ainda incompletos")
         self.assertContains(resposta, "Produtos da devolução")
-        self.assertContains(resposta, "Produtos estruturados")
+        self.assertContains(resposta, "Produtos ainda possuem pendências")
+        self.assertContains(resposta, "indTot candidato")
+        self.assertContains(resposta, "não participa da totalização")
         self.assertContains(resposta, "Bases e valores tributários por item")
         self.assertContains(resposta, "não calcula tributos")
         self.assertContains(resposta, "Ajustes comerciais por item")

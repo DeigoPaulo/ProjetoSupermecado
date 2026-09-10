@@ -46,7 +46,7 @@ def _definicoes():
         "tipo_codigo_icms": "PARAMETRIZACAO_CONTADOR", "origem_icms": "PARAMETRIZACAO_CONTADOR",
         "codigo_icms": "PARAMETRIZACAO_CONTADOR", "codigo_ipi": "PARAMETRIZACAO_CONTADOR",
         "codigo_pis": "PARAMETRIZACAO_CONTADOR", "codigo_cofins": "PARAMETRIZACAO_CONTADOR",
-        "codigo_cbenef": "PARAMETRIZACAO_CONTADOR",
+        "codigo_cbenef": "PARAMETRIZACAO_CONTADOR", "inclui_total_candidato": "DECISAO_FISCAL",
     }
     opcionais = {"ean", "ean_tributavel", "cest"}
     campos += [
@@ -111,7 +111,6 @@ def _definicoes():
 CAMPOS_ATOMICOS = _definicoes()
 
 LACUNAS_MODELAGEM = (
-    ("produtos.itens[].inclui_total", "NFe/infNFe/det/prod/indTot", "INDTOT_NAO_MODELADO", "CONTRATO"),
     ("tributos_itens.itens[].icms.modalidade_base", "NFe/infNFe/det/imposto/ICMS/*/modBC", "MODALIDADE_BASE_ICMS_NAO_MODELADA", "CONTADOR_E_CONTRATO"),
     ("tributos_itens.itens[].icms.reducao_base", "NFe/infNFe/det/imposto/ICMS/*/pRedBC", "REDUCAO_BASE_ICMS_NAO_MODELADA", "CONTADOR_E_CONTRATO"),
     ("ipi_devolvido.enquadramento", "NFe/infNFe/det/imposto/IPI/cEnq", "ENQUADRAMENTO_IPI_NAO_MODELADO_NA_DEVOLUCAO", "CONTADOR_E_CONTRATO"),

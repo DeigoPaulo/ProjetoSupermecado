@@ -1,8 +1,8 @@
 # Inventário atômico de dados da devolução
 
-10/09/2026 · atualizado no ciclo 88 · diagnóstico somente leitura.
+10/09/2026 · atualizado no ciclo 89 · diagnóstico somente leitura.
 
-O contrato `supplier_return_atomic_data_inventory_v1` acompanha 107 campos atômicos dos blocos de identificação, partes, referências, produtos, tributos, ajustes, transporte, totais, pagamento fiscal, observações, IPI devolvido, ICMS-ST/FCP e RTC. O inventário não inclui os valores: registra apenas fonte, ocorrências, quantidade preenchida e estado de disponibilidade.
+O contrato `supplier_return_atomic_data_inventory_v1` acompanha 108 campos atômicos dos blocos de identificação, partes, referências, produtos, tributos, ajustes, transporte, totais, pagamento fiscal, observações, IPI devolvido, ICMS-ST/FCP e RTC. O inventário não inclui os valores: registra apenas fonte, ocorrências, quantidade preenchida e estado de disponibilidade.
 
 ## Fontes reconhecidas
 
@@ -21,13 +21,12 @@ O contrato `supplier_return_atomic_data_inventory_v1` acompanha 107 campos atôm
 
 ## Lacunas de modelagem restantes
 
-1. `indTot` ainda não está modelado no produto da devolução.
-2. Modalidade de base do ICMS ainda não está modelada.
-3. Redução da base de ICMS ainda não está modelada.
-4. Enquadramento legal `cEnq` do IPI não está no contrato da devolução.
-5. Variantes de cálculo de PIS/COFINS ainda não estão discriminadas.
-6. Gerador específico de XML da devolução não existe.
-7. O conversor Focus não possui paridade para todos os grupos da devolução.
+1. Modalidade de base do ICMS ainda não está modelada.
+2. Redução da base de ICMS ainda não está modelada.
+3. Enquadramento legal `cEnq` do IPI não está no contrato da devolução.
+4. Variantes de cálculo de PIS/COFINS ainda não estão discriminadas.
+5. Gerador específico de XML da devolução não existe.
+6. O conversor Focus não possui paridade para todos os grupos da devolução.
 
 ## Regra de segurança cadastral
 
@@ -35,4 +34,4 @@ O XML original é evidência histórica e pode fornecer dados da operação rece
 
 ## Próximo marco
 
-Modelar `indTot` por item como decisão explícita, inicialmente vazia e não confirmada. Nenhum item deve compor ou deixar de compor o total por default, e a totalização atual não deve ser alterada.
+Modelar `modBC` por hipótese de ICMS como decisão explícita do contador. O campo deve iniciar vazio e não pode selecionar modalidade, recalcular base ou produzir XML por default.
