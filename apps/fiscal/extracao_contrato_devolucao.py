@@ -31,6 +31,10 @@ from .tributos_itens_devolucao import (
     ESTADOS_GRUPOS,
     validar_tributos_itens_devolucao,
 )
+from .transporte_contrato_devolucao import (
+    CONTRATO_TRANSPORTE,
+    validar_transporte_devolucao,
+)
 
 
 LIMITE_XML_ORIGEM_BYTES = 5 * 1024 * 1024
@@ -442,6 +446,38 @@ def _extrair_ajustes_comerciais(rascunho, memoria, parametros, rateio, reflexos)
     return {"conteudo": conteudo, "validacao": validar_ajustes_comerciais_devolucao(conteudo)}
 
 
+def _extrair_transporte(rascunho, memoria, parametros, ficha):
+    memoria_aprovada, revisao = _memoria_aprovada_e_integra(memoria, parametros)
+    origem_atual = bool(
+        memoria_aprovada and ficha and ficha.memoria_id == memoria.pk
+        and _hash_conteudo_revisao(ficha.conteudo_snapshot) == ficha.conteudo_sha256
+        and ficha.conteudo_snapshot.get("rascunho_id") == rascunho.pk
+        and ficha.conteudo_snapshot.get("memoria_id") == memoria.pk
+        and ficha.conteudo_snapshot.get("memoria_sha256") == memoria.conteudo_sha256
+        and ficha.conteudo_snapshot.get("revisao_sha256") == revisao.conteudo_sha256
+    )
+    dados_vazios = {
+        "modalidade": "", "nome": "", "documento": "", "inscricao_estadual": "",
+        "endereco": "", "municipio": "", "uf": "", "quantidade_volumes": None,
+        "especie": "", "marca": "", "numeracao": "", "peso_liquido": "",
+        "peso_bruto": "", "observacao": "",
+    }
+    dados = {**dados_vazios, **(ficha.conteudo_snapshot.get("dados", {}) if origem_atual else {})}
+    conteudo = {
+        "contrato": CONTRATO_TRANSPORTE,
+        "operacao": "DEVOLUCAO_COMPRA",
+        "permite_emissao": False,
+        "origem_atual": origem_atual,
+        "ficha_id": ficha.pk if ficha else 0,
+        "ficha_sha256": ficha.conteudo_sha256 if ficha else "",
+        "memoria_id": memoria.pk if memoria else 0,
+        "memoria_sha256": memoria.conteudo_sha256 if memoria else "",
+        "revisao_memoria_sha256": revisao.conteudo_sha256 if revisao else "",
+        "dados": dados,
+    }
+    return {"conteudo": conteudo, "validacao": validar_transporte_devolucao(conteudo)}
+
+
 def extrair_contrato_devolucao(rascunho_id, usuario):
     if not has_role(usuario, REVISAO_FISCAL):
         raise ValidationError("Sem permissão para consultar o contrato fiscal.")
@@ -510,7 +546,8 @@ def extrair_contrato_devolucao(rascunho_id, usuario):
         grupo("classificacao", [("parametros", parametros), ("parecer", parecer)], ["parametros", "parecer", "parametros_atuais", "parecer_atual"])
         grupo("bases_valores", bases, ["memoria", "revisao_memoria", "reflexos", "origem_atual"])
         grupo("ajustes_comerciais", [("composicao", composicao), ("revisao_composicao", getattr(composicao, "revisao", None)), ("rateio", rateio)], ["composicao", "rateio", "composicao_atual", "origem_atual"])
-        grupo("transporte", [("transporte", rascunho.transportes.order_by("-versao").first())], ["transporte"])
+        transporte = rascunho.transportes.order_by("-versao").first()
+        grupo("transporte", [("transporte", transporte)], ["transporte"])
         grupo("observacoes", [("parecer", parecer)], ["parecer"])
         contrato = {"contrato": CONTRATO, "rascunho_id": rascunho.pk,
                     "empresa_id": rascunho.entrada_compra.filial.empresa_id, "modelo": "55",
@@ -523,4 +560,5 @@ def extrair_contrato_devolucao(rascunho_id, usuario):
                 "ajustes_comerciais": _extrair_ajustes_comerciais(
                     rascunho, memoria, parametros, rateio, reflexos
                 ),
+                "transporte": _extrair_transporte(rascunho, memoria, parametros, transporte),
                 "pendencias_dossie": [e for e in dossie["etapas"] if e["estado"] in ("Pendente", "Desatualizado", "Inconsistente", "Bloqueado")]}

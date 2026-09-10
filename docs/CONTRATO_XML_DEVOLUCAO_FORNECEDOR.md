@@ -1,5 +1,7 @@
 # Contrato proposto do XML de devolução ao fornecedor
 
+Ciclo 75 — 10/09/2026: implementado `supplier_return_transport_input_v1`. O contrato somente lê a ficha logística vinculada à memória final aprovada, confere a cadeia de hashes e valida modalidade, transportador, CPF/CNPJ, volumes e pesos. Ficha ausente ou superada permanece pendente. O grupo XML `transp` não é produzido; 108 testes passaram.
+
 Ciclo 74 — 10/09/2026: implementado `supplier_return_commercial_adjustments_v1`. O contrato replica o rateio somente quando a cadeia final de reflexos e memória está aprovada, confere linhas e totais e mantém hashes das duas etapas históricas. Frete, seguro, despesas e desconto não são somados novamente a bases já revisadas. O mapeamento XML continua bloqueado; 105 testes passaram.
 
 Ciclo 73 — 10/09/2026: implementado `supplier_return_item_tax_values_v1`. O contrato replica os números da memória aprovada, exige seus hashes e vínculo por item e não contém fórmula tributária. Os estados dos grupos impedem confundir números informados com suporte ao XML: matriz de ICMS/PIS/COFINS, hipótese ST/FCP, grupo próprio de IPI devolvido e vigência IBS/CBS continuam pendentes. A prévia protegida foi ampliada e 102 testes passaram.
@@ -51,7 +53,7 @@ Escopo inicial proposto: devolução de compra pelo supermercado ao fornecedor, 
 | IPI devolvido | ainda sem grupo específico | eventual `impostoDevol` e total correspondente | Modelar os campos e a hipótese aplicável; IPI informado na memória não implica IPI devolvido |
 | ICMS-ST/FCP | orientação e memória, ainda genéricas | grupos específicos e/ou informações complementares conforme hipótese | Bloquear até parametrizar a hipótese contábil e os campos exigidos; não destacar ST automaticamente |
 | IBS/CBS | bases/valores e orientação textual | grupos RTC do leiaute vigente | Falta fechar classificações, grupos, totais e regras por vigência; não considerar memória genérica suficiente |
-| transporte | ficha logística | `transp` | Usar ficha ligada à memória final aprovada; validar grupos condicionais e documento do transportador |
+| transporte | ficha logística | `transp` | Contrato/extrator implementados no ciclo 75; serialização, paridade XSD e casos reais continuam bloqueados |
 | total fiscal | ainda não definido | `total` | Total comercial não é `vNF`; especificar cada parcela, exceção e total novo da RTC com fonte e teste |
 | pagamento | política documentada, não implementada | `pag/detPag`: `tPag=90`, `vPag=0.00` no escopo proposto | MOC YA02-04/YA03-30; confirmar regras complementares aplicáveis; não gerar recebíveis, cobrança, troco ou pagamentos de venda |
 | observações | parecer e fundamento aprovado | `infAdic` | Separar texto interno de informação fiscal exigida, sem credenciais ou dados indevidos |
@@ -79,7 +81,7 @@ As orientações foram consultadas para identificar riscos e requisitos. Não su
 
 - [x] Mapear fontes existentes, acoplamentos e lacunas (ciclo 61).
 - [ ] Obter e ler integralmente MOC/NT e XSD aplicáveis; fixar versões e hashes em evidência local.
-- [ ] Completar o contrato neutro e seu validador somente leitura; envelope e referência chave+nItem com escopo da empresa estão implementados, mas identificação, partes, produtos, tributos e totais ainda não.
+- [ ] Completar o contrato neutro e seu validador somente leitura; envelope, referência chave+nItem, identificação, partes, produtos, valores, ajustes e transporte estão estruturados, mas total fiscal, pagamento, observações e grupos tributários especiais ainda não.
 - [ ] Fechar dados faltantes e casos esperados com o contador, especialmente ST, IPI devolvido, RTC, total fiscal e pagamento.
 - [ ] Implementar gerador separado com casos sintéticos e validação XSD; manter transmissão bloqueada.
 - [ ] Testar paridade de conteúdo Focus/direta e homologar separadamente com credenciais reais autorizadas.

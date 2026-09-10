@@ -1,6 +1,6 @@
 # Devolução: confronto documental e plano de validação
 
-10/09/2026 · atualizado no ciclo 70 · análise técnica parcial, sem homologação ou autorização de emissão.
+10/09/2026 · atualizado no ciclo 75 · análise técnica parcial, sem homologação ou autorização de emissão.
 
 ## Evidência e limite da análise
 
@@ -74,3 +74,7 @@ O contrato `supplier_return_item_tax_values_v1` transporta bases, alíquotas e v
 ## Implementação do ciclo 74
 
 O contrato `supplier_return_commercial_adjustments_v1` liga o rateio à cadeia final aprovada, mas preserva a memória anterior que originou os ajustes. Base, frete, seguro, despesas, desconto e total informado são conferidos por linha e no conjunto. O bloqueio `NAO_REAPLICAR_A_BASES_TRIBUTARIAS` impede tratar esses valores como novos impactos depois que os reflexos já foram incorporados e revisados.
+
+## Implementação do ciclo 75
+
+O contrato `supplier_return_transport_input_v1` usa somente a ficha vinculada à memória final aprovada e confere ficha, memória e revisão por identificadores e hashes. As regras condicionais impedem combinar modalidade sem transporte com transportador ou volumes, exigem identificação coerente quando informada e conferem pesos. O resultado apenas prepara e diagnostica dados; não cria `transp`, XML ou autorização de emissão.

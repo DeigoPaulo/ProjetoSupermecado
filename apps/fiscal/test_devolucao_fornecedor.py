@@ -722,6 +722,15 @@ class PreparacaoDevolucaoFornecedorTests(TestCase):
         self.assertIn("NAO_REAPLICAR_A_BASES_TRIBUTARIAS", {item["codigo"] for item in ajustes["validacao"]["bloqueios"]})
         self.assertFalse(ajustes["validacao"]["permite_emissao"])
 
+        registrar_transporte(rascunho, dados=self._dados_transporte(), responsavel=self.revisor)
+        transporte = extrair_contrato_devolucao(rascunho.pk, self.revisor)["transporte"]
+        self.assertTrue(transporte["validacao"]["estrutura_valida"])
+        self.assertTrue(transporte["validacao"]["origem_completa"])
+        self.assertEqual(transporte["conteudo"]["dados"]["modalidade"], "9")
+        self.assertEqual(transporte["conteudo"]["dados"]["quantidade_volumes"], 0)
+        self.assertEqual(transporte["conteudo"]["dados"]["peso_liquido"], "0.000")
+        self.assertFalse(transporte["validacao"]["permite_emissao"])
+
     def test_extracao_referencias_bloqueia_protocolo_ou_snapshot_divergente(self):
         rascunho, _, _, _ = self._reflexos_registrados()
         dfe = DocumentoDFeRecebido.objects.get(entrada_compra=self.entrada)
@@ -787,6 +796,8 @@ class PreparacaoDevolucaoFornecedorTests(TestCase):
         self.assertContains(resposta, "não calcula tributos")
         self.assertContains(resposta, "Ajustes comerciais por item")
         self.assertContains(resposta, "não são reaplicados")
+        self.assertContains(resposta, "Ficha de transporte pendente ou superada")
+        self.assertContains(resposta, "nenhum grupo XML é produzido")
         conteudo_previa = resposta.content.decode().split('<div id="previa-contrato-fiscal">', 1)[1].split('</main>', 1)[0]
         self.assertNotIn("<form", conteudo_previa)
         self.assertEqual(resposta["Cache-Control"], "private, no-store")

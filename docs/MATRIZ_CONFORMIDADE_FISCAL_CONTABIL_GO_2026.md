@@ -1,5 +1,7 @@
 # Matriz de conformidade fiscal e contábil — Goiás 2026
 
+Ciclo 75 — 10/09/2026: a ficha logística foi ligada ao contrato somente leitura da devolução. Apenas a versão correspondente à memória final aprovada e com hashes íntegros é aceita. As combinações de modalidade, transportador, documento, volumes e pesos são validadas, mas nenhum grupo `transp` é gerado. A regressão conjunta passou com 108 testes; totalização e homologação continuam pendentes.
+
 Ciclo 74 — 10/09/2026: ajustes comerciais do rateio foram estruturados com cadeia de aprovação e hashes até a memória final. Linhas e totais são conferidos sem reaplicar valores às bases. A prévia mostra base, frete, seguro, despesas, desconto e total informado por item; geração continua bloqueada. A regressão conjunta passou com 105 testes.
 
 Ciclo 73 — 10/09/2026: valores tributários por item agora possuem contrato e extração somente leitura, condicionados à memória revisada aprovada e aos vínculos íntegros. Nenhuma fórmula foi adicionada. ICMS/PIS/COFINS ainda dependem da matriz de cenários; ST/FCP, IPI devolvido e IBS/CBS mantêm bloqueios próprios. A prévia foi ampliada e 102 testes passaram.

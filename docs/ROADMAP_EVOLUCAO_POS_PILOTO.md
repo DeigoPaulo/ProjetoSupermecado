@@ -1,5 +1,18 @@
 # Roadmap de evolucao pos-piloto
 
+## Ponto de retomada — ciclo 75, 10/09/2026
+
+Criado o contrato `supplier_return_transport_input_v1` para expor a ficha logística sem transformá-la em XML. A extração só aceita a ficha ligada à última memória final aprovada e confere novamente os hashes da ficha, da memória e da revisão. Modalidade, transportador, documento, volumes e pesos são validados com suas regras condicionais; a ausência da ficha ou uma origem superada aparecem como pendência explícita.
+
+- [x] Estruturar transporte com IDs e hashes da ficha, memória e revisão.
+- [x] Exigir a última memória final aprovada e íntegra como origem.
+- [x] Validar modalidade sem transporte, dados do transportador, CPF/CNPJ, volumes e pesos.
+- [x] Integrar estado e bloqueios à prévia protegida, sem gerar o grupo `transp`.
+- [x] Validar 108 testes conjuntos dos contratos e do fluxo de devolução.
+- [ ] Próximo passo: estruturar a totalização diagnóstica, separando total comercial, bases, tributos e grupos ainda não suportados, sem calcular ou declarar `vNF`.
+
+Sem migração, geração de XML, acesso a certificado, alteração de ambiente ou transmissão neste ciclo.
+
 ## Ponto de retomada — ciclo 74, 10/09/2026
 
 Criado o contrato `supplier_return_commercial_adjustments_v1` para os ajustes informados no rateio. A extração exige a cadeia composição/rateio/reflexos aprovados/memória revisada aprovada e preserva a memória histórica que originou cada linha. Frete, seguro, despesas, desconto, base e total são apenas reproduzidos e conferidos por item e no total; o contrato proíbe reaplicar esses componentes às bases tributárias.
@@ -10,7 +23,7 @@ Criado o contrato `supplier_return_commercial_adjustments_v1` para os ajustes in
 - [x] Conferir somas informadas sem preencher valores nem alterar bases.
 - [x] Integrar o diagnóstico à prévia protegida.
 - [x] Validar 105 testes conjuntos dos contratos e do fluxo de devolução.
-- [ ] Próximo passo: estruturar o grupo de transporte a partir da ficha ligada à memória final, validando campos condicionais sem gerar XML.
+- [x] Estruturar o grupo de transporte a partir da ficha ligada à memória final, validando campos condicionais sem gerar XML (ciclo 75).
 
 Sem migração, reaplicação de valores, cálculo tributário, XML ou transmissão neste ciclo.
 
