@@ -1,3 +1,4 @@
+import hashlib
 from datetime import date
 from decimal import Decimal
 
@@ -60,7 +61,7 @@ from .extracao_contrato_devolucao import extrair_contrato_devolucao
 
 
 class PreparacaoDevolucaoFornecedorTests(TestCase):
-    CHAVE = "52260811111111000111550010000001231000001230"
+    CHAVE = "52260811111111000111550010000001231000001232"
 
     def setUp(self):
         self.usuario = get_user_model().objects.create_user("compras_devolucao")
@@ -631,6 +632,17 @@ class PreparacaoDevolucaoFornecedorTests(TestCase):
         self.assertFalse(resultado["validacao"]["permite_emissao"])
         self.assertEqual(resultado["conteudo"]["grupos"]["origem"]["estado"], "REFERENCIADO")
         self.assertEqual(resultado["conteudo"]["grupos"]["pagamento"]["estado"], "NAO_SUPORTADO")
+        referencias = resultado["referencias_itens"]
+        self.assertTrue(referencias["origem_conferida"])
+        self.assertTrue(referencias["validacao_estrutural"]["estrutura_valida"])
+        self.assertEqual(referencias["conteudo"]["itens"], [{
+            "nitem_novo": 1, "chave_acesso": self.CHAVE, "nitem_original": 1,
+        }])
+        self.assertNotIn(
+            "INTEGRACAO_AUTENTICADA_PENDENTE",
+            {item["codigo"] for item in referencias["bloqueios"]},
+        )
+        self.assertFalse(referencias["permite_gerar_xml"])
         refs = resultado["conteudo"]["grupos"]["bases_valores"]["referencias"]
         self.assertIn({"tipo": "memoria", "id": memoria.pk, "sha256": memoria.conteudo_sha256}, refs)
         origem = memoria.reflexos_origem.rateio.composicao.memoria
@@ -648,6 +660,35 @@ class PreparacaoDevolucaoFornecedorTests(TestCase):
         resultado = extrair_contrato_devolucao(rascunho.pk, self.revisor)
         self.assertEqual(resultado["conteudo"]["grupos"]["origem"]["estado"], "DIVERGENTE")
         self.assertEqual(resultado["conteudo"]["grupos"]["bases_valores"]["estado"], "DIVERGENTE")
+        self.assertFalse(resultado["referencias_itens"]["origem_conferida"])
+        verificacoes = {item["codigo"]: item["ok"] for item in resultado["referencias_itens"]["verificacoes"]}
+        self.assertFalse(verificacoes["HASH_XML"])
+
+    def test_extracao_referencias_bloqueia_protocolo_ou_snapshot_divergente(self):
+        rascunho, _, _, _ = self._reflexos_registrados()
+        dfe = DocumentoDFeRecebido.objects.get(entrada_compra=self.entrada)
+        dfe.xml_conteudo = dfe.xml_conteudo.replace("<cStat>100</cStat>", "<cStat>101</cStat>")
+        dfe.save(update_fields=["xml_conteudo"])
+        rascunho.xml_origem_sha256 = hashlib.sha256(dfe.xml_conteudo.encode("utf-8")).hexdigest()
+        rascunho.save(update_fields=["xml_origem_sha256"])
+        resultado = extrair_contrato_devolucao(rascunho.pk, self.revisor)["referencias_itens"]
+        verificacoes = {item["codigo"]: item for item in resultado["verificacoes"]}
+        self.assertFalse(resultado["origem_conferida"])
+        self.assertFalse(verificacoes["PROTOCOLO_AUTORIZADO"]["ok"])
+        self.assertEqual(verificacoes["PROTOCOLO_AUTORIZADO"]["detalhe"], "NFE_NAO_AUTORIZADA")
+        self.assertFalse(resultado["permite_emissao"])
+
+        dfe.xml_conteudo = self._xml()
+        dfe.save(update_fields=["xml_conteudo"])
+        rascunho.xml_origem_sha256 = hashlib.sha256(dfe.xml_conteudo.encode("utf-8")).hexdigest()
+        rascunho.save(update_fields=["xml_origem_sha256"])
+        item = rascunho.itens.get()
+        item.item_xml_snapshot = {**item.item_xml_snapshot, "valor_icms": "99.99"}
+        item.save(update_fields=["item_xml_snapshot"])
+        resultado = extrair_contrato_devolucao(rascunho.pk, self.revisor)["referencias_itens"]
+        verificacoes = {item["codigo"]: item["ok"] for item in resultado["verificacoes"]}
+        self.assertFalse(resultado["origem_conferida"])
+        self.assertFalse(verificacoes["NITEM_E_SNAPSHOT"])
 
     def test_extracao_contrato_isola_empresa(self):
         rascunho, _, _, _ = self._reflexos_registrados()
@@ -674,6 +715,8 @@ class PreparacaoDevolucaoFornecedorTests(TestCase):
         resposta = self.client.get(url)
         self.assertContains(resposta, "XML e emissão bloqueados")
         self.assertContains(resposta, "Referência encontrada, não significa aprovação")
+        self.assertContains(resposta, "Origem técnica conferida")
+        self.assertContains(resposta, "nItem original")
         conteudo_previa = resposta.content.decode().split('<div id="previa-contrato-fiscal">', 1)[1].split('</main>', 1)[0]
         self.assertNotIn("<form", conteudo_previa)
         self.assertEqual(resposta["Cache-Control"], "private, no-store")

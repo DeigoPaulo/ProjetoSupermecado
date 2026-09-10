@@ -1,6 +1,6 @@
 # Devolução: confronto documental e plano de validação
 
-10/09/2026 · ciclo 67 · análise técnica parcial, sem homologação ou autorização de emissão.
+10/09/2026 · atualizado no ciclo 70 · análise técnica parcial, sem homologação ou autorização de emissão.
 
 ## Evidência e limite da análise
 
@@ -38,8 +38,8 @@ A NT 2026.007 p. 3 informa homologação em 01/09/2026 e produção em 03/11/202
 
 ## Confronto com o código
 
-- `apps/fiscal/devolucao_fornecedor.py` preserva `numero_item_xml` e snapshot do item original: há matéria-prima para a referência, mas isso ainda não é validação VC ou serialização.
-- `apps/fiscal/contrato_devolucao.py` e sua extração contêm referências internas e hashes, não o conjunto chave+nItem fiscal. Não considerar o envelope atual suficiente para emitir.
+- `apps/fiscal/devolucao_fornecedor.py` preserva `numero_item_xml` e snapshot do item original; no ciclo 70, `extracao_contrato_devolucao.py` passou a confrontá-los com o XML autorizado e seu hash.
+- `apps/fiscal/contrato_devolucao.py` mantém o envelope interno, enquanto `referencias_item_devolucao.py` valida o conjunto fiscal chave+nItem. A extração liga os dois diagnósticos, mas continua insuficiente para emitir.
 - `apps/fiscal/focus_sefaz_adapter.py`: não foi localizado mapeamento de `NFref` ou `DFeReferenciado`; exigir documentação Focus e testes de paridade antes desse canal.
 - `apps/fiscal/services.py`: despacho do modelo 55 para venda e total de IPI devolvido fixo continuam impedindo reutilização segura para esta operação.
 
@@ -49,12 +49,12 @@ A NT 2026.007 p. 3 informa homologação em 01/09/2026 e produção em 03/11/202
 - [x] Registrar pagamento, IPI e divergência de cronograma com versão/página/regra rastreáveis.
 - [x] Implementar validador puro e não emissivo de referências por item, separado do envelope interno; entrada explícita da operação e versão da política, sem ativação automática por data (ciclo 68).
 - [x] Testar estrutura: item ausente; chave inválida e dígito verificador; nItem original ausente/inválido; par duplicado; mesma chave com itens distintos; NFref simultâneo; modelo 65 e múltiplas origens fora do escopo inicial. Partes, NFA/CNPJ alfanumérico e XML original permanecem para a extração autenticada.
-- [ ] Integrar a extração autenticada usando chave e nItem conferidos no XML original; manter isolamento por empresa, integridade e bloqueios existentes.
+- [x] Integrar a extração autenticada usando chave e nItem conferidos no XML original; manter isolamento por empresa, integridade e bloqueios existentes (ciclo 70).
 - [ ] Testar pagamento sem cobrança e grupo IPI devolvido com casos aprovados pelo contador; completar matriz tributária/totalização e análise das NT/tabelas restantes.
 - [ ] Confirmar cronograma oficial e pacote aplicável antes de instalar schemas ou criar gerador separado; homologar Focus e direta independentemente.
 
-Neste ciclo foram alterados apenas documentos. Nenhum XML gerado, schema instalado, certificado acessado, migração aplicada, lançamento financeiro criado ou transmissão realizada.
+No ciclo 70, serviço, testes, prévia e documentação foram alterados. Nenhum XML foi gerado, schema instalado, certificado acessado, migração aplicada ou transmissão realizada.
 
 ## Implementação do ciclo 68
 
-O contrato puro `supplier_return_item_references_v1`, em `apps/fiscal/referencias_item_devolucao.py`, valida modelo/operação/política explícitos, proíbe NFref no cabeçalho, exige chave de 44 dígitos com DV válido e nItem original, rejeita duplicidades do par chave+nItem e da sequência do novo documento e nunca libera XML ou emissão. Múltiplas chaves são estruturalmente reconhecidas, mas retornam bloqueio de escopo do produto. A validação ampliada aprovou 91 testes do novo contrato, envelope e fluxo de devolução; o check do Django não encontrou problemas. Ainda não consulta XML/banco, confere partes, aplica vigência ou alimenta Focus/SEFAZ.
+O contrato puro `supplier_return_item_references_v1`, em `apps/fiscal/referencias_item_devolucao.py`, valida modelo/operação/política explícitos, proíbe NFref no cabeçalho, exige chave de 44 dígitos com DV válido e nItem original, rejeita duplicidades do par chave+nItem e da sequência do novo documento e nunca libera XML ou emissão. Múltiplas chaves são estruturalmente reconhecidas, mas retornam bloqueio de escopo do produto. No ciclo 70, a extração passou a conferir o contrato contra banco, XML, protocolo, partes e snapshots; 92 testes conjuntos passaram. Vigência, assinatura digital, conteúdo tributário, XSD e canais externos permanecem pendentes.

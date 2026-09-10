@@ -11,6 +11,15 @@
   {% for grupo in grupos %}<tr><td>{{ grupo.nome }}</td><td>{{ grupo.estado }}</td><td>{% for ref in grupo.referencias %}<details><summary>{{ ref.tipo }} · #{{ ref.id }}</summary><p style="overflow-wrap:anywhere">SHA-256: {{ ref.sha256 }}</p></details>{% empty %}Sem referência disponível{% endfor %}</td></tr>{% endfor %}
   </tbody></table>
 </section>
+<section class="panel mt-panel"><div class="panel-title">Referências dos itens no XML original</div>
+  <p><strong>{% if resultado.referencias_itens.origem_conferida %}Origem técnica conferida{% else %}Origem com pendências{% endif %}.</strong> A conferência verifica protocolo, chave, empresa, filial e nItem; não valida a tributação nem libera emissão.</p>
+  <table><thead><tr><th>Item da devolução</th><th>Chave original</th><th>nItem original</th></tr></thead><tbody>
+  {% for item in resultado.referencias_itens.conteudo.itens %}<tr><td>{{ item.nitem_novo }}</td><td style="overflow-wrap:anywhere">{{ item.chave_acesso }}</td><td>{{ item.nitem_original }}</td></tr>{% empty %}<tr><td colspan="3">Nenhum item disponível.</td></tr>{% endfor %}
+  </tbody></table>
+  <details><summary>Ver conferências da origem</summary>
+    <ul>{% for item in resultado.referencias_itens.verificacoes %}<li>{% if item.ok %}Conferido{% else %}Pendente{% endif %}: {{ item.rotulo }}{% if item.detalhe %} ({{ item.detalhe }}){% endif %}</li>{% endfor %}</ul>
+  </details>
+</section>
 <section class="panel mt-panel"><div class="panel-title">Pendências do dossiê</div>
   {% for etapa in resultado.pendencias_dossie %}<p><strong>{{ etapa.titulo }} — {{ etapa.estado }}</strong>: {{ etapa.detalhe }}</p>{% endfor %}
 </section>
@@ -18,6 +27,7 @@
   <p>Campos fiscais ainda precisam ser implementados e conferidos. Fontes integrais, schemas e homologação continuam pendentes. Nenhuma referência encontrada remove estes bloqueios.</p>
   <details><summary>Ver códigos de diagnóstico</summary>
   <ul>{% for item in resultado.validacao.bloqueios %}<li>{{ item.grupo }}: {{ item.codigo }}</li>{% endfor %}</ul>
+  <ul>{% for item in resultado.referencias_itens.bloqueios %}<li>{{ item.grupo }}: {{ item.codigo }}</li>{% endfor %}</ul>
   {% for erro in resultado.validacao.erros %}<p>{{ erro.caminho }}: {{ erro.codigo }}</p>{% endfor %}
   </details>
 </section>

@@ -1,5 +1,7 @@
 # Contrato proposto do XML de devolução ao fornecedor
 
+Ciclo 70 — 10/09/2026: a referência por item deixou de ser apenas uma entrada arbitrária do validador. A extração protegida monta chave+nItem do rascunho e cruza DF-e, empresa, filial, hash congelado, protocolo autorizado, modelo, chave em todas as fontes, emitente/fornecedor, destinatário/filial e snapshot de cada nItem. A prévia somente leitura apresenta os resultados. Isso autentica a origem interna da referência, mas não valida assinatura digital, mérito tributário, vigência ou XSD e não gera XML.
+
 Ciclo 68 — 10/09/2026: validador puro de referências por item implementado com política explícita, DV da chave, nItem original, duplicidades e proibição de NFref no cabeçalho. Múltiplas origens não são declaradas inválidas pela SEFAZ, mas ficam fora do escopo inicial. O resultado sempre bloqueia XML e emissão. Dez testes novos e sete testes do envelope passaram; próximo passo é extrair e confrontar esses dados com o XML original no serviço autenticado.
 
 Ciclo 67 — 10/09/2026: [confronto documental](REGRAS_DOCUMENTAIS_DEVOLUCAO_2026.md) corrigiu a proposta de referência para `det/DFeReferenciado` com chave e nItem original, conforme NT 2025.002 v1.51. Cronograma contém divergência histórica registrada; não há ativação automática. Pagamento sem pagamento/valor zero e grupo próprio de IPI devolvido documentados, sem implementação fiscal. Próximo passo: validador isolado de referências por item e testes, mantendo XML/emissão bloqueados.
@@ -69,7 +71,7 @@ As orientações foram consultadas para identificar riscos e requisitos. Não su
 
 - [x] Mapear fontes existentes, acoplamentos e lacunas (ciclo 61).
 - [ ] Obter e ler integralmente MOC/NT e XSD aplicáveis; fixar versões e hashes em evidência local.
-- [ ] Implementar o contrato neutro e seu validador somente leitura, com bloqueios por grupo e escopo da empresa; sem número, XML ou cobrança.
+- [ ] Completar o contrato neutro e seu validador somente leitura; envelope e referência chave+nItem com escopo da empresa estão implementados, mas identificação, partes, produtos, tributos e totais ainda não.
 - [ ] Fechar dados faltantes e casos esperados com o contador, especialmente ST, IPI devolvido, RTC, total fiscal e pagamento.
 - [ ] Implementar gerador separado com casos sintéticos e validação XSD; manter transmissão bloqueada.
 - [ ] Testar paridade de conteúdo Focus/direta e homologar separadamente com credenciais reais autorizadas.

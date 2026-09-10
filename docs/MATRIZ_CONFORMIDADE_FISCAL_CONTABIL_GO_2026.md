@@ -1,5 +1,7 @@
 # Matriz de conformidade fiscal e contábil — Goiás 2026
 
+Ciclo 70 — 10/09/2026: extração autenticada de chave+nItem implementada no serviço protegido e na prévia somente leitura. São conferidos escopo da empresa/filial, hash congelado, protocolo cStat 100, modelo 55, chave em cinco fontes, partes e snapshot do item. Divergências permanecem bloqueantes e 92 testes passaram. Isto não valida assinatura digital, tributação, vigência, XSD ou homologação.
+
 Ciclo 68 — 10/09/2026: validador estrutural não emissivo do grupo DFeReferenciado por item implementado e testado. Cobertura inclui DV da chave, nItem, duplicidades, NFref simultâneo, modelo/operação/política e múltiplas origens fora do escopo inicial. Permanecem pendentes confronto autenticado do XML e das partes, NFA/CNPJ alfanumérico, vigência em Goiás, conteúdo tributário, totalização, contador e homologação.
 
 ## Retomada atual — ciclo 67, 10/09/2026
@@ -7,7 +9,7 @@ Ciclo 68 — 10/09/2026: validador estrutural não emissivo do grupo DFeReferenc
 Confronto dos trechos oficiais de devolução registrado em [REGRAS_DOCUMENTAIS_DEVOLUCAO_2026.md](REGRAS_DOCUMENTAIS_DEVOLUCAO_2026.md). Corrigida a proposta de referência do cabeçalho para chave+nItem original em DFeReferenciado por item. A NT v1.51 indica 05/10/2026 na regra específica, mas tem divergência no histórico: confirmação operacional continua pendente. Documentados pagamento sem pagamento/valor zero e IPI devolvido separado; isso não decide enquadramento tributário nem acerto financeiro do fornecedor.
 
 - [x] Confrontar referência, pagamento e estrutura de IPI devolvido com os trechos oficiais, registrando limites e divergências.
-- [ ] Próximo passo: implementar e testar validador puro de referências fiscais por item; depois integrar extração autenticada, sem XML ou emissão.
+- [x] Implementar e testar validador puro de referências fiscais por item e integrar extração autenticada, sem XML ou emissão (ciclos 68 e 70).
 - [ ] Completar análise tributária/RTC, tabelas e vigências; confirmar pacote e hipóteses com o contador antes do gerador/homologação.
 
 Apenas documentação alterada neste ciclo; sem mudança de código executável, banco, configuração, cobrança ou transmissão. Registros abaixo são históricos, não o ponto atual de retomada.

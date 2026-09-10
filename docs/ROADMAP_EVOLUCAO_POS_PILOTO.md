@@ -1,5 +1,18 @@
 # Roadmap de evolucao pos-piloto
 
+## Ponto de retomada — ciclo 70, 10/09/2026
+
+A extração protegida da devolução agora produz as referências fiscais chave+nItem a partir do rascunho e as confronta com o XML integral preservado. A conferência exige DF-e da mesma empresa e filial, hash congelado, protocolo com cStat 100, chave idêntica no XML/protocolo/DF-e/compra/rascunho, modelo 55, fornecedor como emitente, filial como destinatária e igualdade do nItem e de seu snapshot. A prévia somente leitura de Administrador/Contabilidade mostra o resultado e os bloqueios, sem permitir edição.
+
+- [x] Integrar o validador de referências à extração autenticada e ao escopo da empresa.
+- [x] Conferir protocolo, chave, modelo, partes, nItem e snapshot do XML original.
+- [x] Falhar fechado diante de hash, protocolo ou retrato do item divergente.
+- [x] Expor a conferência na prévia protegida, mantendo XML e emissão bloqueados.
+- [x] Validar 92 testes dos contratos e do fluxo completo de devolução; check do Django sem problemas.
+- [ ] Próximo passo: estruturar os grupos de identificação, emitente e destinatário do contrato neutro, com snapshots completos e validação somente leitura.
+
+Sem migração, acesso a certificado, geração de XML ou chamada a Focus/SEFAZ neste ciclo.
+
 ## Ponto de retomada — ciclo 69, 10/09/2026
 
 O pagamento do PDV agora começa com a decisão clara “CPF na nota? Não/Sim”. Nenhuma opção vem escolhida na tela; o operador precisa responder antes de finalizar. “Sim” abre e focaliza o CPF, admite digitação ou pinpad e exige 11 dígitos com verificadores válidos. “Não” limpa o documento e grava consumidor não identificado. O CPF de cliente cadastrado não é mais incluído automaticamente sem essa escolha. CNPJ permanece fora desse atalho e deve seguir NF-e modelo 55.
@@ -9,7 +22,7 @@ O pagamento do PDV agora começa com a decisão clara “CPF na nota? Não/Sim�
 - [x] Impedir inclusão automática do documento do cadastro sem escolha expressa do consumidor.
 - [x] Manter captura opcional pelo pinpad e digitação manual, sem expor documento em diagnóstico.
 - [x] Validar sintaxe JavaScript, check do Django, 88 testes completos de PDV/vendas e testes fiscais focados.
-- [ ] Retomar no ciclo seguinte a extração autenticada de chave+nItem da devolução a partir do XML original.
+- [x] Retomar no ciclo seguinte a extração autenticada de chave+nItem da devolução a partir do XML original (ciclo 70).
 
 Sem migração, mudança de banco, transmissão fiscal ou alteração financeira neste ciclo.
 
@@ -18,7 +31,7 @@ Sem migração, mudança de banco, transmissão fiscal ou alteração financeira
 Implementado o contrato puro e não emissivo de referências da devolução por item. Valida chave de 44 dígitos e DV, nItem original, unicidade, política/operação/modelo explícitos e ausência de NFref no cabeçalho. Múltiplas origens recebem bloqueio de escopo, sem serem tratadas como proibição fiscal. A validação ampliada aprovou 91 testes do novo contrato, envelope e fluxo de devolução; check do Django sem problemas. Não houve banco, XML, schema, certificado, cobrança ou transmissão.
 
 - [x] Implementar e testar o validador estrutural de DFeReferenciado por item.
-- [ ] Próximo passo: extração autenticada de chave+nItem a partir do dossiê/XML original, conferindo integridade, modelo e partes no escopo da empresa.
+- [x] Extração autenticada de chave+nItem a partir do dossiê/XML original, conferindo integridade, modelo e partes no escopo da empresa (ciclo 70).
 - [ ] Depois: completar matriz tributária, totais e vigências antes de criar o gerador separado e homologar cada canal.
 
 ## Retomada atual — ciclo 67, 10/09/2026

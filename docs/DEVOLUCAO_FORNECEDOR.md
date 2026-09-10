@@ -1,5 +1,7 @@
 # Devolução ao fornecedor — preparação fiscal segura
 
+Ciclo 70 — 10/09/2026: o contrato chave+nItem foi ligado à extração autenticada. O serviço restrito a Administrador/Contabilidade confere empresa, filial, hash do XML, protocolo cStat 100, chave em todas as fontes, modelo 55, partes, nItem e snapshot original. A prévia mostra a matriz de conferências e falha fechado nas divergências. A regressão de 92 testes passou. XML e emissão permanecem bloqueados. Próximo passo: identificação, emitente e destinatário do contrato neutro.
+
 Ciclo 68 — 10/09/2026: referências fiscais por item agora possuem validador puro, com chave/DV, nItem original, duplicidades, proibição de NFref simultâneo e bloqueio explícito de múltiplas origens no escopo inicial. São 10 testes novos, além dos 7 do envelope já existente. A validação não acessa o dossiê, não gera XML e não libera Focus ou SEFAZ. Próximo passo: extração autenticada e confronto com XML/partes.
 
 ## Retomada atual — ciclo 67, 10/09/2026
@@ -7,7 +9,7 @@ Ciclo 68 — 10/09/2026: referências fiscais por item agora possuem validador p
 Confronto dos trechos oficiais de devolução registrado em [REGRAS_DOCUMENTAIS_DEVOLUCAO_2026.md](REGRAS_DOCUMENTAIS_DEVOLUCAO_2026.md). Corrigida a proposta de referência do cabeçalho para chave+nItem original em DFeReferenciado por item. A NT v1.51 indica 05/10/2026 na regra específica, mas tem divergência no histórico: confirmação operacional continua pendente. Documentados pagamento sem pagamento/valor zero e IPI devolvido separado; isso não decide enquadramento tributário nem acerto financeiro do fornecedor.
 
 - [x] Confrontar referência, pagamento e estrutura de IPI devolvido com os trechos oficiais, registrando limites e divergências.
-- [ ] Próximo passo: implementar e testar validador puro de referências fiscais por item; depois integrar extração autenticada, sem XML ou emissão.
+- [x] Implementar e testar validador puro e integrar a extração autenticada de referências por item, sem XML ou emissão (ciclos 68 e 70).
 - [ ] Completar análise tributária/RTC, tabelas e vigências; confirmar pacote e hipóteses com o contador antes do gerador/homologação.
 
 Apenas documentação alterada neste ciclo; sem mudança de código executável, banco, configuração, cobrança ou transmissão. Registros abaixo são históricos, não o ponto atual de retomada.
@@ -19,10 +21,10 @@ Ciclo 66 — 10/09/2026: bloqueio de obtenção das fontes superado com sessão 
 Ciclo 64 (09/09/2026): prévia protegida das referências fiscais disponível pela tela de revisão da devolução. Rota somente GET, restrita a Administrador/Contabilidade e à empresa do usuário, com cache desabilitado. Mostra grupos, referências, hashes, pendências e bloqueios, sem edição ou emissão. A etapa de extração do ciclo 63 foi salva no commit 7efa868 após restabelecimento da execução. Próximo passo: obter e analisar integralmente as fontes oficiais e schemas pendentes para fechar a matriz de capacidade fiscal; a prévia não substitui essa validação.
 
 - [x] Ciclo 63: extração de referências do dossiê em serviço somente leitura, restrita à empresa e aos perfis fiscais, com hashes conferidos e pendências separadas. Não equivale a validação completa dos dados fiscais.
-- [ ] Disponibilizar prévia protegida do contrato e bloqueios na tela de revisão, sem edição manual das referências, XML ou emissão.
+- [x] Disponibilizar prévia protegida do contrato e bloqueios na tela de revisão, sem edição manual das referências, XML ou emissão (ciclos 64 e 70).
 
 - [x] Ciclo 62: contrato preliminar de referências e validador estrutural isolado, com sete testes e bloqueios permanentes de XML/emissão.
-- [ ] Integrar extração autenticada do dossiê ao contrato, verificando escopo, hashes e atualidade no banco. Identificadores declarados no envelope não são autorização nem evidência autenticada.
+- [x] Integrar extração autenticada do dossiê ao contrato, verificando escopo, hashes, protocolo, partes, nItem e atualidade no banco (ciclos 63 e 70).
 
 - [x] Ciclo 61: mapeamento preliminar de dados e bloqueios do XML em [CONTRATO_XML_DEVOLUCAO_FORNECEDOR.md](CONTRATO_XML_DEVOLUCAO_FORNECEDOR.md). Não equivale a contrato implementado ou validação normativa.
 - [ ] Obter MOC/NT/XSD integrais e confirmar versões/vigências antes de fechar o contrato e gerar XML; as tentativas de leitura integral retornaram erro neste ciclo.
