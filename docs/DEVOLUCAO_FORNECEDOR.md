@@ -1,5 +1,7 @@
 # Devolução ao fornecedor — preparação fiscal segura
 
+Ciclo 90 — 10/09/2026: `modBC` foi incluído somente no grupo ICMS como candidato vazio e não confirmado. O XSD preservado reconhece 0 a 3, mas o sistema não escolhe nenhum código nem reutiliza o valor 3 fixado no emissor antigo. Bases e totais permanecem inalterados e apenas conferíveis. O inventário passou a 109 campos e cinco lacunas; 147 testes conjuntos passaram. Próximo passo: `pRedBC` como hipótese contábil pendente.
+
 Ciclo 89 — 10/09/2026: `indTot` foi incluído por item como decisão ainda vazia e não confirmada. O sistema não copia esse indicador do XML, não escolhe 0/1 e não usa o campo para incluir ou excluir valores. A conferência da memória aprovada continua isolada, enquanto aplicação, XML, Focus, SEFAZ direta e emissão permanecem bloqueados. O inventário passou a 108 campos e seis lacunas; 145 testes conjuntos passaram. Próximo passo: modelar `modBC` por hipótese do contador, sem default.
 
 Ciclo 88 — 10/09/2026: `indIEDest` entrou no contrato apenas como candidato vindo do cadastro atual. A confirmação permanece falsa, a aplicação é proibida e tanto ausência quanto valor válido continuam pendentes de decisão humana. A prévia mostra esse estado sem permitir edição. O inventário passou a 107 campos e sete lacunas; 107 testes integrados passaram. Próximo passo: `indTot` explícito por item, sem default.

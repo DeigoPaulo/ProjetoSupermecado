@@ -1,5 +1,24 @@
 # Roadmap de evolucao pos-piloto
 
+## Ponto de retomada — ciclo 90, 10/09/2026
+
+O grupo ICMS do contrato `supplier_return_item_tax_values_v1` passou a transportar a modalidade de base como candidata vazia, fonte `DECISAO_CONTADOR_PENDENTE` e confirmação falsa. O XSD oficial preservado confirma os códigos 0, 1, 2 e 3, mas nenhum deles é escolhido pelo sistema; em especial, o valor 3 fixado no emissor antigo não é herdado. A integridade da memória tributária permanece separada da completude da decisão fiscal, portanto bases e totais continuam somente conferíveis e não são recalculados. O inventário passou a 109 campos e cinco lacunas.
+
+- [x] Confirmar no XSD preservado os códigos 0, 1, 2 e 3 de `modBC`.
+- [x] Manter a modalidade exclusivamente no grupo ICMS.
+- [x] Iniciar candidata vazia, sem copiar XML, cadastro ou emissor antigo.
+- [x] Fixar a fonte em decisão pendente do contador e confirmação falsa.
+- [x] Rejeitar código fora da enumeração, fonte alterada e confirmação direta.
+- [x] Manter `permite_aplicar_modalidade_base_icms=False`, XML e emissão bloqueados.
+- [x] Separar origem tributária íntegra de decisão fiscal completa.
+- [x] Provar que a candidata não modifica base, alíquota, valor ou totalização.
+- [x] Exibir `modBC` pendente na prévia somente leitura.
+- [x] Remover a lacuna `MODALIDADE_BASE_ICMS_NAO_MODELADA`; restam cinco.
+- [x] Validar a regressão conjunta de 147 testes.
+- [ ] Próximo passo: modelar `pRedBC` por item como hipótese contábil vazia e não confirmada, sem copiar o cadastro do produto nem recalcular a base.
+
+Sem migração, decisão tributária, geração de XML, acesso a credencial/certificado, alteração de Focus/SEFAZ direta, ambiente ou transmissão. Detalhes em [MODALIDADE_BASE_ICMS_DEVOLUCAO.md](MODALIDADE_BASE_ICMS_DEVOLUCAO.md).
+
 ## Ponto de retomada — ciclo 89, 10/09/2026
 
 O contrato `supplier_return_products_v1` passou a representar `indTot` por item como candidato explicitamente vazio, com fonte fiscal pendente e confirmação falsa. O validador reconhece 0 e 1 somente como candidatos não confirmados, recusa fonte trocada ou confirmação direta e nunca permite aplicação, XML ou emissão. A completude da origem dos valores foi separada da decisão fiscal para que a totalização diagnóstica continue conferindo a memória aprovada sem usar o novo campo. O inventário passou a 108 campos atômicos e seis lacunas.
@@ -13,7 +32,7 @@ O contrato `supplier_return_products_v1` passou a representar `indTot` por item 
 - [x] Exibir o estado pendente na prévia fiscal somente leitura.
 - [x] Remover `INDTOT_NAO_MODELADO` do inventário; restam seis lacunas.
 - [x] Validar a regressão conjunta de 145 testes.
-- [ ] Próximo passo: modelar `modBC` por hipótese de ICMS e decisão do contador, sem default, cálculo ou serialização.
+- [x] Próximo passo concluído no ciclo 90: `modBC` modelado como candidato do contador, sem default, cálculo ou serialização.
 
 Sem migração, decisão tributária, geração de XML, acesso a credencial/certificado, alteração de Focus/SEFAZ direta, ambiente ou transmissão. Detalhes em [INDTOT_DEVOLUCAO.md](INDTOT_DEVOLUCAO.md).
 

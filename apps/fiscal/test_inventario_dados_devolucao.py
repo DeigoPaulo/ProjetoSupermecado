@@ -15,9 +15,10 @@ class InventarioDadosDevolucaoTests(SimpleTestCase):
         self.assertTrue(resultado["validacao"]["estrutura_valida"])
         self.assertEqual(resultado["validacao"]["quantidade_campos_atomicos"], len(CAMPOS_ATOMICOS))
         self.assertGreater(len(CAMPOS_ATOMICOS), 90)
-        self.assertEqual(resultado["validacao"]["quantidade_campos_atomicos"], 108)
-        self.assertEqual(resultado["validacao"]["quantidade_lacunas_modelagem"], 6)
+        self.assertEqual(resultado["validacao"]["quantidade_campos_atomicos"], 109)
+        self.assertEqual(resultado["validacao"]["quantidade_lacunas_modelagem"], 5)
         codigos = {item["codigo"] for item in resultado["conteudo"]["lacunas_modelagem"]}
+        self.assertNotIn("MODALIDADE_BASE_ICMS_NAO_MODELADA", codigos)
         self.assertNotIn("INDTOT_NAO_MODELADO", codigos)
         self.assertNotIn("IND_IE_DESTINATARIO_NAO_MODELADO", codigos)
         self.assertNotIn("CADASTRO_FORNECEDOR_NAO_CONFRONTADO_COM_XML", codigos)

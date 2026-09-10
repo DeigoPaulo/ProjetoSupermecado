@@ -410,6 +410,12 @@ def _extrair_tributos_itens(rascunho, memoria, parametros):
                 "aliquota": format(getattr(item, f"aliquota_{origem}"), ".4f") if origem_aprovada else "",
                 "valor": format(getattr(item, f"valor_{origem}"), ".2f") if origem_aprovada else "",
             }
+            if nome == "icms":
+                grupos[nome].update({
+                    "modalidade_base_candidata": "",
+                    "modalidade_base_fonte": "DECISAO_CONTADOR_PENDENTE",
+                    "modalidade_base_confirmada": False,
+                })
         itens.append({
             "nitem_novo": indice,
             "nitem_original": int(item_rascunho.numero_item_xml) if str(item_rascunho.numero_item_xml).isdigit() else item_rascunho.numero_item_xml,

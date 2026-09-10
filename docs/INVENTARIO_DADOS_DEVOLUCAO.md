@@ -1,8 +1,8 @@
 # Inventário atômico de dados da devolução
 
-10/09/2026 · atualizado no ciclo 89 · diagnóstico somente leitura.
+10/09/2026 · atualizado no ciclo 90 · diagnóstico somente leitura.
 
-O contrato `supplier_return_atomic_data_inventory_v1` acompanha 108 campos atômicos dos blocos de identificação, partes, referências, produtos, tributos, ajustes, transporte, totais, pagamento fiscal, observações, IPI devolvido, ICMS-ST/FCP e RTC. O inventário não inclui os valores: registra apenas fonte, ocorrências, quantidade preenchida e estado de disponibilidade.
+O contrato `supplier_return_atomic_data_inventory_v1` acompanha 109 campos atômicos dos blocos de identificação, partes, referências, produtos, tributos, ajustes, transporte, totais, pagamento fiscal, observações, IPI devolvido, ICMS-ST/FCP e RTC. O inventário não inclui os valores: registra apenas fonte, ocorrências, quantidade preenchida e estado de disponibilidade.
 
 ## Fontes reconhecidas
 
@@ -21,12 +21,11 @@ O contrato `supplier_return_atomic_data_inventory_v1` acompanha 108 campos atôm
 
 ## Lacunas de modelagem restantes
 
-1. Modalidade de base do ICMS ainda não está modelada.
-2. Redução da base de ICMS ainda não está modelada.
-3. Enquadramento legal `cEnq` do IPI não está no contrato da devolução.
-4. Variantes de cálculo de PIS/COFINS ainda não estão discriminadas.
-5. Gerador específico de XML da devolução não existe.
-6. O conversor Focus não possui paridade para todos os grupos da devolução.
+1. Redução da base de ICMS ainda não está modelada.
+2. Enquadramento legal `cEnq` do IPI não está no contrato da devolução.
+3. Variantes de cálculo de PIS/COFINS ainda não estão discriminadas.
+4. Gerador específico de XML da devolução não existe.
+5. O conversor Focus não possui paridade para todos os grupos da devolução.
 
 ## Regra de segurança cadastral
 
@@ -34,4 +33,4 @@ O XML original é evidência histórica e pode fornecer dados da operação rece
 
 ## Próximo marco
 
-Modelar `modBC` por hipótese de ICMS como decisão explícita do contador. O campo deve iniciar vazio e não pode selecionar modalidade, recalcular base ou produzir XML por default.
+Modelar `pRedBC` por item como hipótese explícita do contador, inicialmente vazia e não confirmada. O cadastro atual do produto e o XML histórico podem ser evidências separadas, mas não devem preencher a decisão nem recalcular a base.

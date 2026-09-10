@@ -20,6 +20,9 @@ _CAMPOS_ITEM = {
     "memoria_sha256", "revisao_sha256", "origem_aprovada", "grupos",
 }
 _CAMPOS_GRUPO = {"estado", "codigo", "base", "aliquota", "valor"}
+_CAMPOS_GRUPO_ICMS = _CAMPOS_GRUPO | {
+    "modalidade_base_candidata", "modalidade_base_fonte", "modalidade_base_confirmada",
+}
 
 
 def _decimal_exato(valor, casas):
@@ -85,7 +88,8 @@ def validar_tributos_itens_devolucao(conteudo):
         for nome, estado in ESTADOS_GRUPOS.items():
             grupo = grupos.get(nome)
             grupo_caminho = f"{caminho}.grupos.{nome}"
-            if not isinstance(grupo, dict) or set(grupo) != _CAMPOS_GRUPO:
+            campos_grupo = _CAMPOS_GRUPO_ICMS if nome == "icms" else _CAMPOS_GRUPO
+            if not isinstance(grupo, dict) or set(grupo) != campos_grupo:
                 erro(grupo_caminho, "CAMPOS_INVALIDOS")
                 continue
             if grupo.get("estado") != estado:
@@ -96,6 +100,18 @@ def validar_tributos_itens_devolucao(conteudo):
                 for campo, casas in (("base", 2), ("aliquota", 4), ("valor", 2)):
                     if not _decimal_exato(grupo.get(campo), casas):
                         pendencia(f"{grupo_caminho}.{campo}", "VALOR_TRIBUTARIO_PENDENTE")
+            if nome == "icms":
+                modalidade = grupo.get("modalidade_base_candidata")
+                if modalidade not in {"", "0", "1", "2", "3"}:
+                    erro(f"{grupo_caminho}.modalidade_base_candidata", "MODBC_CANDIDATA_INVALIDA")
+                elif not modalidade:
+                    pendencia(f"{grupo_caminho}.modalidade_base_candidata", "MODBC_CANDIDATA_PENDENTE")
+                else:
+                    pendencia(f"{grupo_caminho}.modalidade_base_candidata", "MODBC_NAO_CONFIRMADA")
+                if grupo.get("modalidade_base_fonte") != "DECISAO_CONTADOR_PENDENTE":
+                    erro(f"{grupo_caminho}.modalidade_base_fonte", "MODBC_FONTE_INVALIDA")
+                if grupo.get("modalidade_base_confirmada") is not False:
+                    erro(f"{grupo_caminho}.modalidade_base_confirmada", "MODBC_CONFIRMACAO_DIRETA_PROIBIDA")
     bloqueios = [{"grupo": "bases_valores", "codigo": item["codigo"]} for item in pendencias]
     bloqueios.extend((
         {"grupo": "classificacao", "codigo": "MATRIZ_TRIBUTARIA_NAO_HOMOLOGADA"},
@@ -105,14 +121,19 @@ def validar_tributos_itens_devolucao(conteudo):
         {"grupo": "xml", "codigo": "GERACAO_NAO_IMPLEMENTADA"},
         {"grupo": "transmissao", "codigo": "HOMOLOGACAO_PENDENTE"},
     ))
+    pendencias_decisao_modbc = {"MODBC_CANDIDATA_PENDENTE", "MODBC_NAO_CONFIRMADA"}
     return {
         "contrato": CONTRATO_VALIDACAO_TRIBUTOS_ITENS,
         "estrutura_valida": not erros,
-        "origem_completa": not erros and not pendencias,
+        "origem_completa": not erros and not any(
+            item["codigo"] not in pendencias_decisao_modbc for item in pendencias
+        ),
+        "dados_completos": not erros and not pendencias,
         "escopo_fiscal_suportado": False,
         "erros": erros,
         "pendencias": pendencias,
         "bloqueios": bloqueios,
+        "permite_aplicar_modalidade_base_icms": False,
         "permite_gerar_xml": False,
         "permite_emissao": False,
     }

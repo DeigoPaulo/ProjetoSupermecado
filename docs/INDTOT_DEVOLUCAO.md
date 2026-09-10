@@ -14,4 +14,4 @@ O novo campo não filtra itens, não altera `valor_produtos`, não recalcula tot
 
 ## Próximo passo
 
-Modelar a modalidade de determinação da base do ICMS (`modBC`) como decisão do contador por hipótese tributária, também sem default, cálculo ou serialização.
+O passo seguinte foi concluído no ciclo 90: `modBC` agora é candidato do contador, vazio e não confirmado, sem cálculo ou serialização. A próxima lacuna é `pRedBC`.

@@ -17,6 +17,11 @@ class TributosItensDevolucaoTests(SimpleTestCase):
             }
             for nome, estado in ESTADOS_GRUPOS.items()
         }
+        grupos["icms"].update({
+            "modalidade_base_candidata": "",
+            "modalidade_base_fonte": "DECISAO_CONTADOR_PENDENTE",
+            "modalidade_base_confirmada": False,
+        })
         return {
             "contrato": CONTRATO_TRIBUTOS_ITENS,
             "operacao": "DEVOLUCAO_COMPRA",
@@ -33,8 +38,36 @@ class TributosItensDevolucaoTests(SimpleTestCase):
         resultado = validar_tributos_itens_devolucao(self.contrato())
         self.assertTrue(resultado["estrutura_valida"])
         self.assertTrue(resultado["origem_completa"])
+        self.assertFalse(resultado["dados_completos"])
+        self.assertIn("MODBC_CANDIDATA_PENDENTE", {item["codigo"] for item in resultado["pendencias"]})
+        self.assertFalse(resultado["permite_aplicar_modalidade_base_icms"])
         self.assertFalse(resultado["escopo_fiscal_suportado"])
         self.assertFalse(resultado["permite_emissao"])
+
+    def test_modbc_valida_continua_nao_confirmada_e_nao_altera_base(self):
+        contrato = self.contrato()
+        icms = contrato["itens"][0]["grupos"]["icms"]
+        icms["modalidade_base_candidata"] = "3"
+        resultado = validar_tributos_itens_devolucao(contrato)
+        self.assertTrue(resultado["estrutura_valida"])
+        self.assertTrue(resultado["origem_completa"])
+        self.assertIn("MODBC_NAO_CONFIRMADA", {item["codigo"] for item in resultado["pendencias"]})
+        self.assertEqual(icms["base"], "10.00")
+        self.assertFalse(resultado["permite_aplicar_modalidade_base_icms"])
+
+    def test_rejeita_codigo_fonte_ou_confirmacao_direta_de_modbc(self):
+        contrato = self.contrato()
+        icms = contrato["itens"][0]["grupos"]["icms"]
+        icms.update({
+            "modalidade_base_candidata": "4", "modalidade_base_fonte": "EMISSOR_ANTIGO",
+            "modalidade_base_confirmada": True,
+        })
+        resultado = validar_tributos_itens_devolucao(contrato)
+        self.assertFalse(resultado["estrutura_valida"])
+        codigos = {item["codigo"] for item in resultado["erros"]}
+        self.assertIn("MODBC_CANDIDATA_INVALIDA", codigos)
+        self.assertIn("MODBC_FONTE_INVALIDA", codigos)
+        self.assertIn("MODBC_CONFIRMACAO_DIRETA_PROIBIDA", codigos)
 
     def test_memoria_pendente_nao_exige_numeros_inventados(self):
         contrato = self.contrato()
