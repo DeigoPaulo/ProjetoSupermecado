@@ -1,5 +1,19 @@
 # Roadmap de evolucao pos-piloto
 
+## Ponto de retomada — ciclo 72, 10/09/2026
+
+Criado o contrato puro `supplier_return_products_v1` e integrado à extração protegida. Cada item preserva o vínculo com rascunho, produto, nItem original, XML, parametrização e memória. Quantidade vem da seleção congelada; código, descrição, NCM, CEST, unidades e valores unitários vêm do snapshot do XML; CFOP, valor da operação e classificações só são expostos quando a memória está aprovada e toda a cadeia de hashes confere. O serviço apenas compara quantidade × unitário com o valor informado, sem preencher ou recalcular esse valor.
+
+- [x] Preservar no snapshot documental unidade, quantidade e valor unitário tributáveis.
+- [x] Estruturar produtos com origem explícita para identidade, quantidade, valor e classificação.
+- [x] Bloquear valores/classificações enquanto a memória não estiver aprovada e íntegra.
+- [x] Validar nItem, identificadores, hashes, NCM/CEST/CFOP, unidades, decimais, duplicidades e total informado.
+- [x] Expor produtos e pendências na prévia protegida.
+- [x] Validar 99 testes conjuntos dos contratos e do fluxo de devolução.
+- [ ] Próximo passo: estruturar bases e valores tributários por item a partir da memória aprovada, mantendo ICMS-ST/FCP, IPI devolvido e IBS/CBS separados por hipótese e vigência.
+
+Sem migração, alteração de cadastro, cálculo tributário automático, XML ou transmissão neste ciclo.
+
 ## Ponto de retomada — ciclo 71, 10/09/2026
 
 Criado o contrato puro `supplier_return_identity_parties_v1` para identificação, emitente e destinatário da NF-e de devolução. A extração protegida usa natureza do parecer, cadastro atual da filial, IE/CRT da configuração fiscal e identidade/endereço do fornecedor preservados no XML original. Estrutura e completude são resultados separados: campos ausentes aparecem na prévia, sem preenchimento presumido. O contrato mantém bloqueios de vigência, CNPJ alfanumérico, XML e homologação.
@@ -10,7 +24,7 @@ Criado o contrato puro `supplier_return_identity_parties_v1` para identificaçã
 - [x] Validar campos, fontes, formatos e tentativa de habilitar emissão em serviço puro.
 - [x] Integrar o diagnóstico à extração e à prévia exclusiva de Administrador/Contabilidade.
 - [x] Validar 95 testes conjuntos do contrato e do fluxo de devolução.
-- [ ] Próximo passo: estruturar o grupo de produtos da devolução com quantidades, unidades, valores e classificações vindos dos snapshots aprovados, sem cálculo automático.
+- [x] Estruturar o grupo de produtos da devolução com quantidades, unidades, valores e classificações vindos dos snapshots aprovados, sem cálculo automático (ciclo 72).
 
 Sem migração, gravação cadastral, certificado, XML ou transmissão neste ciclo.
 

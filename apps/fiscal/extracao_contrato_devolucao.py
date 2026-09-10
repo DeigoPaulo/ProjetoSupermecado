@@ -16,6 +16,7 @@ from .identidade_partes_devolucao import (
 )
 from .models import ConfiguracaoFiscal, DocumentoDFeRecebido, RascunhoDevolucaoFornecedor
 from .pacote_contabil import analisar_xml_nfe
+from .produtos_devolucao import CONTRATO_PRODUTOS, validar_produtos_devolucao
 from .referencias_item_devolucao import (
     CONTRATO_REFERENCIAS_ITEM,
     POLITICA_REFERENCIAS_ITEM,
@@ -236,6 +237,79 @@ def _extrair_identidade_partes(rascunho, xml, parecer):
     return {"conteudo": conteudo, "validacao": validacao}
 
 
+def _extrair_produtos(rascunho, memoria, parametros):
+    itens_rascunho = list(
+        rascunho.itens.select_related("item_entrada__produto").order_by("item_entrada_id")
+    )
+    itens_parametros = {
+        item.item_rascunho_id: item
+        for item in parametros.itens.all()
+    } if parametros else {}
+    itens_memoria = {
+        item.item_rascunho_id: item
+        for item in memoria.itens.all()
+    } if memoria else {}
+    revisao = getattr(memoria, "revisao_fiscal", None) if memoria else None
+    memoria_aprovada = bool(
+        memoria and revisao and revisao.decisao == "APROVAR"
+        and _hash_conteudo_revisao(memoria.conteudo_snapshot) == memoria.conteudo_sha256
+        and _hash_conteudo_revisao(revisao.conteudo_snapshot) == revisao.conteudo_sha256
+        and revisao.conteudo_snapshot.get("memoria_sha256") == memoria.conteudo_sha256
+        and parametros and _hash_conteudo_revisao(parametros.conteudo_snapshot) == parametros.conteudo_sha256
+    )
+    itens = []
+    for indice, item in enumerate(itens_rascunho, 1):
+        snapshot = item.item_xml_snapshot or {}
+        parametro = itens_parametros.get(item.pk)
+        item_memoria = itens_memoria.get(item.pk)
+        origem_aprovada = bool(
+            memoria_aprovada and parametro and item_memoria
+            and item_memoria.item_parametrizacao_id == parametro.pk
+            and parametro.numero_item_xml == item.numero_item_xml
+            and item_memoria.numero_item_xml == item.numero_item_xml
+        )
+        itens.append({
+            "nitem_novo": indice,
+            "nitem_original": int(item.numero_item_xml) if str(item.numero_item_xml).isdigit() else item.numero_item_xml,
+            "item_rascunho_id": item.pk,
+            "produto_id": item.item_entrada.produto_id,
+            "xml_origem_sha256": rascunho.xml_origem_sha256,
+            "parametrizacao_id": parametros.pk if parametros else 0,
+            "parametrizacao_sha256": parametros.conteudo_sha256 if parametros else "",
+            "memoria_id": memoria.pk if memoria else 0,
+            "memoria_sha256": memoria.conteudo_sha256 if memoria else "",
+            "memoria_aprovada": origem_aprovada,
+            "codigo_produto": snapshot.get("codigo_produto", ""),
+            "ean": snapshot.get("ean", ""),
+            "ean_tributavel": snapshot.get("ean_tributavel", ""),
+            "descricao": snapshot.get("descricao", ""),
+            "ncm": snapshot.get("ncm", ""),
+            "cest": snapshot.get("cest", ""),
+            "cfop": parametros.parecer.cfop if origem_aprovada else "",
+            "unidade_comercial": snapshot.get("unidade", ""),
+            "quantidade_comercial": format(item.quantidade, ".3f"),
+            "valor_unitario_comercial": snapshot.get("valor_unitario", "") if origem_aprovada else "",
+            "valor_produtos": format(item_memoria.valor_operacao, ".2f") if origem_aprovada else "",
+            "unidade_tributavel": snapshot.get("unidade_tributavel", "") if origem_aprovada else "",
+            "quantidade_tributavel": snapshot.get("quantidade_tributavel", "") if origem_aprovada else "",
+            "valor_unitario_tributavel": snapshot.get("valor_unitario_tributavel", "") if origem_aprovada else "",
+            "tipo_codigo_icms": parametro.tipo_codigo_icms if origem_aprovada else "",
+            "origem_icms": parametro.origem_icms if origem_aprovada else "",
+            "codigo_icms": parametro.codigo_icms if origem_aprovada else "",
+            "codigo_ipi": parametro.codigo_ipi if origem_aprovada else "",
+            "codigo_pis": parametro.codigo_pis if origem_aprovada else "",
+            "codigo_cofins": parametro.codigo_cofins if origem_aprovada else "",
+            "codigo_cbenef": parametro.codigo_cbenef if origem_aprovada else "",
+        })
+    conteudo = {
+        "contrato": CONTRATO_PRODUTOS,
+        "operacao": "DEVOLUCAO_COMPRA",
+        "permite_emissao": False,
+        "itens": itens,
+    }
+    return {"conteudo": conteudo, "validacao": validar_produtos_devolucao(conteudo)}
+
+
 def extrair_contrato_devolucao(rascunho_id, usuario):
     if not has_role(usuario, REVISAO_FISCAL):
         raise ValidationError("Sem permissão para consultar o contrato fiscal.")
@@ -312,4 +386,5 @@ def extrair_contrato_devolucao(rascunho_id, usuario):
         return {"conteudo": contrato, "validacao": validar_contrato_devolucao(contrato),
                 "referencias_itens": _extrair_referencias_itens(rascunho, dfe, xml),
                 "identidade_partes": _extrair_identidade_partes(rascunho, xml, parecer),
+                "produtos": _extrair_produtos(rascunho, memoria, parametros),
                 "pendencias_dossie": [e for e in dossie["etapas"] if e["estado"] in ("Pendente", "Desatualizado", "Inconsistente", "Bloqueado")]}

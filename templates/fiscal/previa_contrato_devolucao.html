@@ -11,6 +11,15 @@
   {% for grupo in grupos %}<tr><td>{{ grupo.nome }}</td><td>{{ grupo.estado }}</td><td>{% for ref in grupo.referencias %}<details><summary>{{ ref.tipo }} · #{{ ref.id }}</summary><p style="overflow-wrap:anywhere">SHA-256: {{ ref.sha256 }}</p></details>{% empty %}Sem referência disponível{% endfor %}</td></tr>{% endfor %}
   </tbody></table>
 </section>
+<section class="panel mt-panel"><div class="panel-title">Produtos da devolução</div>
+  <p><strong>{% if resultado.produtos.validacao.dados_completos %}Produtos estruturados a partir de origens aprovadas{% else %}Produtos ainda possuem pendências{% endif %}.</strong> Quantidades vêm do rascunho; dados comerciais vêm do XML original; valor e classificação somente aparecem quando a memória está aprovada.</p>
+  <table><thead><tr><th>Item</th><th>Produto</th><th>Quantidade</th><th>Valor informado</th><th>Origem aprovada</th></tr></thead><tbody>
+    {% for item in resultado.produtos.conteudo.itens %}<tr><td>{{ item.nitem_novo }} / original {{ item.nitem_original }}</td><td>{{ item.descricao }}<br><small>NCM {{ item.ncm|default:"pendente" }} · CFOP {{ item.cfop|default:"pendente" }}</small></td><td>{{ item.quantidade_comercial }} {{ item.unidade_comercial }}</td><td>{{ item.valor_produtos|default:"Pendente" }}</td><td>{% if item.memoria_aprovada %}Sim{% else %}Não{% endif %}</td></tr>{% empty %}<tr><td colspan="5">Nenhum produto selecionado.</td></tr>{% endfor %}
+  </tbody></table>
+  <details><summary>Ver pendências dos produtos</summary>
+    <ul>{% for item in resultado.produtos.validacao.pendencias %}<li>{{ item.caminho }}: {{ item.codigo }}</li>{% empty %}<li>Nenhuma pendência estrutural de produto.</li>{% endfor %}</ul>
+  </details>
+</section>
 <section class="panel mt-panel"><div class="panel-title">Identificação, emitente e destinatário</div>
   <p><strong>{% if resultado.identidade_partes.validacao.dados_completos %}Dados estruturados completos{% else %}Dados ainda incompletos{% endif %}.</strong> A origem de cada grupo é fixa; campos ausentes não são preenchidos por suposição.</p>
   <table><thead><tr><th>Grupo</th><th>Identificação</th><th>Origem</th></tr></thead><tbody>
@@ -40,6 +49,7 @@
   <ul>{% for item in resultado.validacao.bloqueios %}<li>{{ item.grupo }}: {{ item.codigo }}</li>{% endfor %}</ul>
   <ul>{% for item in resultado.referencias_itens.bloqueios %}<li>{{ item.grupo }}: {{ item.codigo }}</li>{% endfor %}</ul>
   <ul>{% for item in resultado.identidade_partes.validacao.bloqueios %}<li>{{ item.grupo }}: {{ item.codigo }}</li>{% endfor %}</ul>
+  <ul>{% for item in resultado.produtos.validacao.bloqueios %}<li>{{ item.grupo }}: {{ item.codigo }}</li>{% endfor %}</ul>
   {% for erro in resultado.validacao.erros %}<p>{{ erro.caminho }}: {{ erro.codigo }}</p>{% endfor %}
   </details>
 </section>

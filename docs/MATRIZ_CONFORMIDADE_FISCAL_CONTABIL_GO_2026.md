@@ -1,5 +1,7 @@
 # Matriz de conformidade fiscal e contábil — Goiás 2026
 
+Ciclo 72 — 10/09/2026: grupo de produtos estruturado sem cálculo automático. Snapshot original fornece identidade fiscal e unidades; rascunho fornece quantidade; cadeia aprovada fornece CFOP, valor e classificações. Ausência, memória não aprovada, hash inválido, divergência aritmética ou formato fora do contrato bloqueiam. A prévia protegida foi ampliada e 99 testes passaram. Paridade XSD, conversões especiais e homologação permanecem pendentes.
+
 Ciclo 71 — 10/09/2026: identificação e partes da devolução foram estruturadas em contrato puro e integradas à extração/tela protegidas. O serviço identifica a origem de cada campo e lista ausências sem aplicar defaults. O cadastro do fornecedor ainda não possui IE/endereço fiscal estruturado; o snapshot original é preservado, mas não substitui validação atual. CNPJ alfanumérico, decisões de identificação, vigências, XML e homologação seguem bloqueados. A regressão conjunta passou com 95 testes.
 
 Ciclo 70 — 10/09/2026: extração autenticada de chave+nItem implementada no serviço protegido e na prévia somente leitura. São conferidos escopo da empresa/filial, hash congelado, protocolo cStat 100, modelo 55, chave em cinco fontes, partes e snapshot do item. Divergências permanecem bloqueantes e 92 testes passaram. Isto não valida assinatura digital, tributação, vigência, XSD ou homologação.

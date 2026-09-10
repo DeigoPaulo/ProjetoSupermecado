@@ -144,7 +144,7 @@ class PreparacaoDevolucaoFornecedorTests(TestCase):
           <emit><CNPJ>11111111000111</CNPJ><xNome>Fornecedor Origem Ltda</xNome><xFant>Fornecedor Origem</xFant><IE>123456789</IE>
           <enderEmit><xLgr>Rua do Fornecedor</xLgr><nro>20</nro><xBairro>Centro</xBairro><cMun>5208707</cMun><xMun>Goiânia</xMun><UF>GO</UF><CEP>74000000</CEP></enderEmit></emit>
           <dest><CNPJ>22222222000122</CNPJ></dest>
-          <det nItem="1"><prod><cProd>7891111111111</cProd><xProd>Produto recebido</xProd><NCM>10063021</NCM><CFOP>5102</CFOP><uCom>UN</uCom><qCom>2.0000</qCom><vUnCom>10.00</vUnCom><vProd>20.00</vProd></prod>
+          <det nItem="1"><prod><cProd>7891111111111</cProd><xProd>Produto recebido</xProd><NCM>10063021</NCM><CFOP>5102</CFOP><uCom>UN</uCom><qCom>2.0000</qCom><vUnCom>10.00</vUnCom><uTrib>UN</uTrib><qTrib>2.0000</qTrib><vUnTrib>10.00</vUnTrib><vProd>20.00</vProd></prod>
           <imposto><ICMS><ICMS00><orig>0</orig><CST>00</CST><vBC>20.00</vBC><pICMS>17.00</pICMS><vICMS>3.40</vICMS></ICMS00></ICMS></imposto></det>
           </infNFe></NFe><protNFe><infProt><chNFe>{self.CHAVE}</chNFe><cStat>100</cStat></infProt></protNFe>
         </nfeProc>"""
@@ -674,6 +674,31 @@ class PreparacaoDevolucaoFornecedorTests(TestCase):
         verificacoes = {item["codigo"]: item["ok"] for item in resultado["referencias_itens"]["verificacoes"]}
         self.assertFalse(verificacoes["HASH_XML"])
 
+    def test_extracao_produtos_usa_somente_memoria_aprovada_sem_recalcular(self):
+        rascunho, memoria, _ = self._memoria_revisada_para_correcao()
+        antes = extrair_contrato_devolucao(rascunho.pk, self.revisor)["produtos"]
+        self.assertFalse(antes["conteudo"]["itens"][0]["memoria_aprovada"])
+        self.assertEqual(antes["conteudo"]["itens"][0]["valor_produtos"], "")
+        revisar_memoria_calculo_devolucao_fornecedor(
+            rascunho,
+            memoria_id=memoria.pk,
+            decisao="APROVAR",
+            justificativa="Memória conferida para estruturar a prévia dos produtos.",
+            revisor=self.segundo_revisor,
+        )
+        produtos = extrair_contrato_devolucao(rascunho.pk, self.revisor)["produtos"]
+        item = produtos["conteudo"]["itens"][0]
+        self.assertTrue(produtos["validacao"]["estrutura_valida"])
+        self.assertTrue(produtos["validacao"]["dados_completos"])
+        self.assertTrue(item["memoria_aprovada"])
+        self.assertEqual(item["quantidade_comercial"], "1.000")
+        self.assertEqual(item["valor_unitario_comercial"], "10.00")
+        self.assertEqual(item["valor_produtos"], "10.00")
+        self.assertEqual(item["cfop"], "5202")
+        self.assertEqual(item["codigo_icms"], "00")
+        self.assertFalse(produtos["validacao"]["permite_emissao"])
+        self.assertFalse(DocumentoFiscal.objects.exists())
+
     def test_extracao_referencias_bloqueia_protocolo_ou_snapshot_divergente(self):
         rascunho, _, _, _ = self._reflexos_registrados()
         dfe = DocumentoDFeRecebido.objects.get(entrada_compra=self.entrada)
@@ -733,6 +758,8 @@ class PreparacaoDevolucaoFornecedorTests(TestCase):
         self.assertContains(resposta, "nItem original")
         self.assertContains(resposta, "Identificação, emitente e destinatário")
         self.assertContains(resposta, "Dados ainda incompletos")
+        self.assertContains(resposta, "Produtos da devolução")
+        self.assertContains(resposta, "Produtos estruturados")
         conteudo_previa = resposta.content.decode().split('<div id="previa-contrato-fiscal">', 1)[1].split('</main>', 1)[0]
         self.assertNotIn("<form", conteudo_previa)
         self.assertEqual(resposta["Cache-Control"], "private, no-store")

@@ -62,3 +62,7 @@ O contrato puro `supplier_return_item_references_v1`, em `apps/fiscal/referencia
 ## Implementação do ciclo 71
 
 O contrato `supplier_return_identity_parties_v1` separa identificação, emitente e destinatário e registra a fonte de cada parte. A extração usa o parecer e os cadastros da filial/configuração para o emitente e preserva o emitente da NF-e original como destinatário proposto, sempre ligado ao fornecedor da entrada. Ausências de IE, CRT, endereço, município e decisões de identificação são pendências explícitas. O escopo numérico de CNPJ é temporário e bloqueia a futura forma alfanumérica até implementação e testes específicos. Nenhum resultado libera geração ou emissão.
+
+## Implementação do ciclo 72
+
+O contrato `supplier_return_products_v1` preserva o vínculo completo do item e só aceita valor/classificação da memória aprovada e íntegra. Campos comerciais e tributáveis são lidos do snapshot original; não são substituídos pelo cadastro atual. A coerência do valor informado é validada contra quantidade e unitário, mas o serviço não calcula nem preenche o valor. A validação continua anterior ao XML e mantém bloqueios de XSD, geração e homologação.
