@@ -1,5 +1,21 @@
 # Roadmap de evolucao pos-piloto
 
+## Ponto de retomada — ciclo 88, 10/09/2026
+
+O contrato `supplier_return_identity_parties_v1` passou a transportar `indicador_ie_candidato`, sua fonte cadastral e a confirmação obrigatoriamente falsa. Valores 1, 2 e 9 são aceitos somente como candidatos; valor ausente continua pendente e qualquer tentativa de confirmação direta é erro estrutural. A prévia protegida mostra o candidato como não confirmado. O inventário passou a 107 campos atômicos e sete lacunas de modelagem.
+
+- [x] Incluir o indicador de IE candidato no destinatário sem usar o XML como origem.
+- [x] Fixar a fonte em `CADASTRO_FORNECEDOR_ATUAL`.
+- [x] Manter `indicador_ie_confirmado=False` e rejeitar promoção direta para confirmado.
+- [x] Tratar candidato ausente e candidato válido como pendências distintas.
+- [x] Proibir aplicação do candidato, XML e emissão no resultado da validação.
+- [x] Exibir o candidato e o bloqueio na prévia fiscal somente leitura.
+- [x] Adicionar o campo ao inventário e encerrar a lacuna `IND_IE_DESTINATARIO_NAO_MODELADO`.
+- [x] Validar o fluxo afetado em regressão conjunta de 107 testes.
+- [ ] Próximo passo: modelar `indTot` por item como decisão explícita e não confirmada, sem assumir valor padrão nem alterar totalização.
+
+Sem migração, confirmação fiscal, geração de XML, acesso a credencial/certificado, mudança de Focus/SEFAZ direta, ambiente ou transmissão. Detalhes em [INDICADOR_IE_DESTINATARIO_DEVOLUCAO.md](INDICADOR_IE_DESTINATARIO_DEVOLUCAO.md).
+
 ## Ponto de retomada — ciclo 87, 10/09/2026
 
 Criado `supplier_return_supplier_registration_xml_comparison_v1`, que confronta 13 campos do cadastro atual do fornecedor com o emitente da NF-e original. A comparação normaliza somente apresentação equivalente — pontuação de CNPJ/IE/CEP, caixa e acentos — e mantém diferenças reais como divergência. Cadastro, XML e resultado não são gravados ou sobrescritos. A prévia protegida de Administração/Contabilidade mostra as duas fontes e o diagnóstico; Compras e Financeiro continuam sem acesso.
@@ -12,7 +28,8 @@ Criado `supplier_return_supplier_registration_xml_comparison_v1`, que confronta 
 - [x] Integrar a comparação à extração e à prévia fiscal somente leitura.
 - [x] Remover do inventário a lacuna de confronto concluída; restam oito lacunas estruturais.
 - [x] Validar o fluxo afetado em regressão conjunta de 107 testes.
-- [ ] Próximo passo: modelar `indIEDest` no contrato de identidade usando o indicador atual apenas como dado candidato, sem resolver divergências nem liberar emissão.
+- [x] Modelar `indIEDest` no contrato de identidade usando o indicador atual apenas como dado candidato, sem resolver divergências nem liberar emissão.
+- [ ] Modelar `indTot` por item como decisão explícita, vazia e não confirmada.
 
 Sem migração, atualização cadastral, geração de XML, acesso a credencial/certificado, mudança de canal/ambiente ou transmissão. Detalhes em [CONFRONTO_CADASTRO_XML_FORNECEDOR.md](CONFRONTO_CADASTRO_XML_FORNECEDOR.md).
 

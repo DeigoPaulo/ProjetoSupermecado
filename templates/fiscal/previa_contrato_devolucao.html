@@ -109,6 +109,7 @@
     <tr><td>Operação</td><td>NF-e 55 · finalidade 4 · saída</td><td>Dossiê da devolução</td></tr>
     <tr><td>Emitente</td><td>{{ resultado.identidade_partes.conteudo.emitente.razao_social }} · {{ resultado.identidade_partes.conteudo.emitente.cnpj }}</td><td>Filial e configuração fiscal</td></tr>
     <tr><td>Destinatário</td><td>{{ resultado.identidade_partes.conteudo.destinatario.razao_social|default:"Não identificado" }} · {{ resultado.identidade_partes.conteudo.destinatario.cnpj }}</td><td>XML original e cadastro do fornecedor</td></tr>
+    <tr><td>Indicador de IE candidato</td><td>{{ resultado.identidade_partes.conteudo.destinatario.indicador_ie_candidato|default:"Pendente" }} · não confirmado</td><td>Cadastro atual do fornecedor; aplicação bloqueada</td></tr>
   </tbody></table>
   <details><summary>Ver dados pendentes</summary>
     <ul>{% for item in resultado.identidade_partes.validacao.pendencias %}<li>{{ item.caminho }}: {{ item.codigo }}</li>{% empty %}<li>Nenhuma pendência estrutural nestes grupos.</li>{% endfor %}</ul>

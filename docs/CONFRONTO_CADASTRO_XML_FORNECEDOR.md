@@ -28,4 +28,4 @@ A antiga lacuna `CADASTRO_FORNECEDOR_NAO_CONFRONTADO_COM_XML` foi encerrada. O i
 
 ## Próximo passo
 
-Adicionar `indIEDest` ao contrato de identidade como dado candidato proveniente do cadastro atual. Ele não deve resolver divergências, selecionar os demais campos, gerar XML ou liberar emissão.
+O `indIEDest` candidato foi incorporado no ciclo 88 e permanece não confirmado. O próximo passo é modelar `indTot` por item sem valor padrão e sem alterar totalização.

@@ -1,5 +1,7 @@
 # Devolução ao fornecedor — preparação fiscal segura
 
+Ciclo 88 — 10/09/2026: `indIEDest` entrou no contrato apenas como candidato vindo do cadastro atual. A confirmação permanece falsa, a aplicação é proibida e tanto ausência quanto valor válido continuam pendentes de decisão humana. A prévia mostra esse estado sem permitir edição. O inventário passou a 107 campos e sete lacunas; 107 testes integrados passaram. Próximo passo: `indTot` explícito por item, sem default.
+
 Ciclo 87 — 10/09/2026: implementado o confronto não emissivo de 13 campos entre cadastro atual e XML histórico. Formatações equivalentes são normalizadas, enquanto divergências e ausências permanecem explícitas. A tela protegida mostra as duas fontes, não grava escolhas e mantém Focus, SEFAZ direta, XML e emissão bloqueados. A lacuna de confronto saiu do inventário, que passou de nove para oito lacunas; 107 testes passaram. Próximo passo: modelar `indIEDest` como candidato no contrato de identidade.
 
 Ciclo 86 — 10/09/2026: o fornecedor recebeu dez campos fiscais opcionais, com coerência entre indicador/IE e validação de endereço estruturado completo. Registros existentes permanecem vazios, o endereço comercial é preservado e nenhum XML preenche o cadastro. A lacuna do inventário passou a ser o confronto ainda ausente entre cadastro atual e XML histórico. A regressão integrada passou com 101 testes. Próximo passo: implementar essa comparação como diagnóstico não emissivo.

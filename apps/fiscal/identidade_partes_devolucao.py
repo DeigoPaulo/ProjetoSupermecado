@@ -16,6 +16,7 @@ _CAMPOS_EMITENTE = {
 }
 _CAMPOS_DESTINATARIO = {
     "fonte", "fornecedor_id", "cnpj", "razao_social", "nome_fantasia",
+    "indicador_ie_candidato", "indicador_ie_fonte", "indicador_ie_confirmado",
     "inscricao_estadual", "logradouro", "numero", "complemento", "bairro",
     "codigo_municipio", "municipio", "uf", "cep",
 }
@@ -89,6 +90,14 @@ def validar_identidade_partes_devolucao(conteudo):
         erro("destinatario.fonte", "FONTE_INVALIDA")
     if type(destinatario.get("fornecedor_id")) is not int or destinatario.get("fornecedor_id", 0) <= 0:
         erro("destinatario.fornecedor_id", "IDENTIFICADOR_INVALIDO")
+    if destinatario.get("indicador_ie_fonte") != "CADASTRO_FORNECEDOR_ATUAL":
+        erro("destinatario.indicador_ie_fonte", "FONTE_INDICADOR_IE_INVALIDA")
+    if destinatario.get("indicador_ie_confirmado") is not False:
+        erro("destinatario.indicador_ie_confirmado", "CONFIRMACAO_INDICADOR_IE_PROIBIDA")
+    if destinatario.get("indicador_ie_candidato") not in {"1", "2", "9"}:
+        pendencia("destinatario.indicador_ie_candidato", "IND_IE_DESTINATARIO_CANDIDATO_PENDENTE")
+    else:
+        pendencia("destinatario.indicador_ie_candidato", "IND_IE_DESTINATARIO_NAO_CONFIRMADO")
     _validar_parte(destinatario, "destinatario", pendencia, exige_crt=False)
 
     bloqueios = [{"grupo": item["caminho"].split(".", 1)[0], "codigo": item["codigo"]} for item in pendencias]
@@ -105,6 +114,7 @@ def validar_identidade_partes_devolucao(conteudo):
         "erros": erros,
         "pendencias": pendencias,
         "bloqueios": bloqueios,
+        "permite_aplicar_indicador_ie": False,
         "permite_gerar_xml": False,
         "permite_emissao": False,
     }

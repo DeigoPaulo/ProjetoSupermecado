@@ -1,5 +1,7 @@
 # Matriz de conformidade fiscal e contábil — Goiás 2026
 
+Ciclo 88 — 10/09/2026: o indicador de IE do fornecedor passou a aparecer no destinatário somente como candidato cadastral não confirmado. O validador impede promoção direta, mantém decisão humana obrigatória e não libera XML ou canal. O inventário agora acompanha 107 campos e sete lacunas restantes; 107 testes passaram.
+
 Ciclo 87 — 10/09/2026: o cadastro atual e o emitente histórico passaram a ser confrontados em 13 campos dentro da prévia fiscal restrita. Coincidência não autoriza uso; ausência e divergência continuam bloqueios para decisão humana. Nenhum dado é gravado, nenhuma fonte prevalece automaticamente e os dois canais permanecem desligados. O inventário registra oito lacunas restantes e 107 testes passaram.
 
 Ciclo 86 — 10/09/2026: o fornecedor passou a ter indicador/IE e endereço fiscal estruturado opcionais, incluindo município IBGE. As validações recusam IE incoerente e endereço fiscal parcial, mas não exigem dados enquanto não houver cadastro real. O XML não atualiza esses campos; 101 testes integrados passaram. Permanece pendente confrontar o cadastro vigente com o emitente histórico antes de qualquer uso fiscal.

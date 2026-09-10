@@ -1,6 +1,8 @@
 # Devolução: confronto documental e plano de validação
 
-10/09/2026 · atualizado no ciclo 87 · análise técnica parcial, sem homologação ou autorização de emissão.
+10/09/2026 · atualizado no ciclo 88 · análise técnica parcial, sem homologação ou autorização de emissão.
+
+O ciclo 88 transporta o indicador de IE do cadastro para o contrato somente como candidato. O campo não é considerado confirmado, não substitui a análise do confronto e não pode chegar a XML ou transmissão. Ausência e presença válida continuam gerando pendência explícita.
 
 O ciclo 87 acrescentou confronto de 13 campos entre cadastro atual e emitente histórico. A normalização serve apenas para evitar falsa divergência de pontuação, caixa ou acento; não corrige conteúdo. As duas fontes aparecem na prévia protegida e nenhuma delas é escolhida, alterada ou enviada a um canal fiscal.
 

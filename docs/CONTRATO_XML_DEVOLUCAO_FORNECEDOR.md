@@ -1,5 +1,7 @@
 # Contrato proposto do XML de devolução ao fornecedor
 
+Ciclo 88 — 10/09/2026: o destinatário recebeu `indicador_ie_candidato`, fonte cadastral fixa e confirmação falsa. O validador aceita 1, 2 ou 9 apenas como candidato pendente, recusa confirmação direta e não permite aplicação, XML ou emissão. A prévia restrita mostra o bloqueio. O inventário soma 107 campos e sete lacunas; 107 testes passaram. Próximo passo: modelar `indTot` sem default.
+
 Ciclo 87 — 10/09/2026: criado `supplier_return_supplier_registration_xml_comparison_v1` para confrontar 13 campos atuais e históricos. O validador recalcula estados e resumo, recusa política alterada e nunca permite sobrescrita ou canal fiscal. A prévia restrita exibe as duas fontes para conferência humana. O inventário passou a oito lacunas e 107 testes integrados passaram. Próximo passo: `indIEDest` candidato no contrato de identidade, ainda não emissivo.
 
 Ciclo 86 — 10/09/2026: o cadastro fiscal estruturado do fornecedor foi criado com dez campos opcionais e validações locais. O contrato ainda usa o XML original como fonte histórica do destinatário; por isso, a antiga lacuna cadastral foi substituída por `CADASTRO_FORNECEDOR_NAO_CONFRONTADO_COM_XML`. Nenhuma fonte é sobrescrita, os canais continuam bloqueados e 101 testes integrados passaram. Próximo passo: contrato explícito de comparação cadastro–XML.

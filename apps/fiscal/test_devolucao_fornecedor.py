@@ -651,6 +651,10 @@ class PreparacaoDevolucaoFornecedorTests(TestCase):
         self.assertEqual(identidade["conteudo"]["identificacao"]["natureza_operacao"], "Devolução de compra para comercialização")
         self.assertEqual(identidade["conteudo"]["destinatario"]["cnpj"], "11111111000111")
         self.assertEqual(identidade["conteudo"]["destinatario"]["codigo_municipio"], "5208707")
+        self.assertEqual(identidade["conteudo"]["destinatario"]["indicador_ie_candidato"], "")
+        self.assertEqual(identidade["conteudo"]["destinatario"]["indicador_ie_fonte"], "CADASTRO_FORNECEDOR_ATUAL")
+        self.assertFalse(identidade["conteudo"]["destinatario"]["indicador_ie_confirmado"])
+        self.assertFalse(identidade["validacao"]["permite_aplicar_indicador_ie"])
         self.assertEqual(identidade["conteudo"]["emitente"]["cnpj"], "22222222000122")
         self.assertFalse(identidade["validacao"]["permite_emissao"])
         confronto = resultado["confronto_fornecedor_xml"]
@@ -700,7 +704,8 @@ class PreparacaoDevolucaoFornecedorTests(TestCase):
             setattr(self.fornecedor, campo, valor)
         self.fornecedor.save(update_fields=list(dados_atuais))
 
-        resultado = extrair_contrato_devolucao(rascunho.pk, self.revisor)["confronto_fornecedor_xml"]
+        extracao = extrair_contrato_devolucao(rascunho.pk, self.revisor)
+        resultado = extracao["confronto_fornecedor_xml"]
 
         campos = {item["campo"]: item for item in resultado["conteudo"]["campos"]}
         self.assertTrue(resultado["validacao"]["estrutura_valida"])
@@ -710,6 +715,14 @@ class PreparacaoDevolucaoFornecedorTests(TestCase):
         self.assertEqual(campos["numero"]["estado"], "DIVERGENTE")
         self.assertFalse(resultado["validacao"]["sem_divergencias"])
         self.assertFalse(resultado["validacao"]["permite_sobrescrever"])
+        identidade = extracao["identidade_partes"]
+        self.assertEqual(identidade["conteudo"]["destinatario"]["indicador_ie_candidato"], "1")
+        self.assertFalse(identidade["conteudo"]["destinatario"]["indicador_ie_confirmado"])
+        self.assertIn(
+            "IND_IE_DESTINATARIO_NAO_CONFIRMADO",
+            {item["codigo"] for item in identidade["validacao"]["pendencias"]},
+        )
+        self.assertFalse(identidade["validacao"]["permite_aplicar_indicador_ie"])
         self.fornecedor.refresh_from_db()
         self.assertEqual(self.fornecedor.numero, "999")
         self.assertFalse(DocumentoFiscal.objects.exists())
@@ -850,7 +863,8 @@ class PreparacaoDevolucaoFornecedorTests(TestCase):
         inventario = extrair_contrato_devolucao(rascunho.pk, self.revisor)["inventario_dados"]
         self.assertTrue(inventario["validacao"]["estrutura_valida"])
         self.assertGreater(inventario["validacao"]["quantidade_campos_atomicos"], 90)
-        self.assertEqual(inventario["validacao"]["quantidade_lacunas_modelagem"], 8)
+        self.assertEqual(inventario["validacao"]["quantidade_campos_atomicos"], 107)
+        self.assertEqual(inventario["validacao"]["quantidade_lacunas_modelagem"], 7)
         self.assertTrue(all(item["expoe_valor"] is False for item in inventario["conteudo"]["itens"]))
         self.assertFalse(inventario["validacao"]["permite_emissao"])
 
@@ -912,6 +926,8 @@ class PreparacaoDevolucaoFornecedorTests(TestCase):
         self.assertContains(resposta, "Origem técnica conferida")
         self.assertContains(resposta, "nItem original")
         self.assertContains(resposta, "Identificação, emitente e destinatário")
+        self.assertContains(resposta, "Indicador de IE candidato")
+        self.assertContains(resposta, "aplicação bloqueada")
         self.assertContains(resposta, "Dados ainda incompletos")
         self.assertContains(resposta, "Produtos da devolução")
         self.assertContains(resposta, "Produtos estruturados")

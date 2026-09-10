@@ -37,6 +37,8 @@ class IdentidadePartesDevolucaoTests(SimpleTestCase):
             },
             "destinatario": {
                 "fonte": "XML_ORIGINAL_E_CADASTRO_FORNECEDOR", "fornecedor_id": 2,
+                "indicador_ie_candidato": "1", "indicador_ie_fonte": "CADASTRO_FORNECEDOR_ATUAL",
+                "indicador_ie_confirmado": False,
                 **{**endereco, "cnpj": "22222222000122"},
             },
         }
@@ -44,7 +46,9 @@ class IdentidadePartesDevolucaoTests(SimpleTestCase):
     def test_contrato_completo_e_nao_emissivo(self):
         resultado = validar_identidade_partes_devolucao(self.contrato())
         self.assertTrue(resultado["estrutura_valida"])
-        self.assertTrue(resultado["dados_completos"])
+        self.assertFalse(resultado["dados_completos"])
+        self.assertIn("IND_IE_DESTINATARIO_NAO_CONFIRMADO", {item["codigo"] for item in resultado["pendencias"]})
+        self.assertFalse(resultado["permite_aplicar_indicador_ie"])
         self.assertFalse(resultado["permite_gerar_xml"])
         self.assertFalse(resultado["permite_emissao"])
 
@@ -58,7 +62,7 @@ class IdentidadePartesDevolucaoTests(SimpleTestCase):
         self.assertFalse(resultado["dados_completos"])
         self.assertEqual(
             {item["codigo"] for item in resultado["pendencias"]},
-            {"CONSUMIDOR_FINAL_PENDENTE", "INSCRICAO_ESTADUAL_PENDENTE", "CEP_PENDENTE"},
+            {"CONSUMIDOR_FINAL_PENDENTE", "INSCRICAO_ESTADUAL_PENDENTE", "CEP_PENDENTE", "IND_IE_DESTINATARIO_NAO_CONFIRMADO"},
         )
         self.assertFalse(resultado["permite_emissao"])
 
@@ -68,6 +72,7 @@ class IdentidadePartesDevolucaoTests(SimpleTestCase):
             lambda item: item.update({"permite_emissao": True}),
             lambda item: item["identificacao"].update({"modelo": "65"}),
             lambda item: item["emitente"].update({"fonte": "FORMULARIO_LIVRE"}),
+            lambda item: item["destinatario"].update({"indicador_ie_confirmado": True}),
         ):
             contrato = self.contrato()
             alterar(contrato)

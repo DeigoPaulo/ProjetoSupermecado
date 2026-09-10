@@ -28,6 +28,10 @@ def _definicoes():
             "bairro", "codigo_municipio", "municipio", "uf", "cep",
         )
     ]
+    campos.append((
+        "identidade_partes", "destinatario.indicador_ie_candidato",
+        "CADASTRO_FORNECEDOR_ATUAL", "BLOQUEIO",
+    ))
     campos += [
         ("referencias_itens", "itens[].chave_acesso", "XML_ORIGINAL_E_DOSSIE", "BLOQUEIO"),
         ("referencias_itens", "itens[].nitem_original", "XML_ORIGINAL_E_RASCUNHO", "BLOQUEIO"),
@@ -107,7 +111,6 @@ def _definicoes():
 CAMPOS_ATOMICOS = _definicoes()
 
 LACUNAS_MODELAGEM = (
-    ("destinatario.indicador_ie", "NFe/infNFe/dest/indIEDest", "IND_IE_DESTINATARIO_NAO_MODELADO", "CADASTRO_E_CONTRATO"),
     ("produtos.itens[].inclui_total", "NFe/infNFe/det/prod/indTot", "INDTOT_NAO_MODELADO", "CONTRATO"),
     ("tributos_itens.itens[].icms.modalidade_base", "NFe/infNFe/det/imposto/ICMS/*/modBC", "MODALIDADE_BASE_ICMS_NAO_MODELADA", "CONTADOR_E_CONTRATO"),
     ("tributos_itens.itens[].icms.reducao_base", "NFe/infNFe/det/imposto/ICMS/*/pRedBC", "REDUCAO_BASE_ICMS_NAO_MODELADA", "CONTADOR_E_CONTRATO"),

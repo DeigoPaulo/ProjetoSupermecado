@@ -253,6 +253,9 @@ def _extrair_identidade_partes(rascunho, xml, parecer):
         "destinatario": {
             "fonte": "XML_ORIGINAL_E_CADASTRO_FORNECEDOR",
             "fornecedor_id": entrada.fornecedor_id,
+            "indicador_ie_candidato": entrada.fornecedor.indicador_ie,
+            "indicador_ie_fonte": "CADASTRO_FORNECEDOR_ATUAL",
+            "indicador_ie_confirmado": False,
             **emitente_original,
         },
     }
