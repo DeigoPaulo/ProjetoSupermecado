@@ -1,5 +1,19 @@
 # Roadmap de evolucao pos-piloto
 
+## Ponto de retomada — ciclo 81, 10/09/2026
+
+Criado o contrato `supplier_return_rtc_vigency_policy_v1` para manter IBS/CBS/RTC condicionado à confirmação normativa e operacional. A NT 2026.007 v1.00, seu SHA-256 e as datas documentais são registrados como evidência, mas não ativam nada. Os valores da memória são apenas referência; enquadramento, classificação, grupos e totais ficam vazios enquanto leitura integral, implantação em Goiás, leiaute aplicável e homologação não estiverem confirmados.
+
+- [x] Preservar IBS/CBS da memória somente como referência vinculada.
+- [x] Registrar versão, hash, páginas e datas documentais da NT analisada.
+- [x] Impedir ativação automática por data ou mera presença de schema.
+- [x] Manter enquadramento, classificação, grupos e totais RTC não definidos.
+- [x] Integrar o diagnóstico à prévia protegida sem produzir grupo XML.
+- [x] Validar 126 testes conjuntos dos contratos e do fluxo de devolução.
+- [ ] Próximo passo: consolidar um portão de prontidão que confira todos os subcontratos e liste, sem ambiguidade, o que ainda impede a futura geração de XML.
+
+Sem migração, ativação de RTC, instalação de schema, geração de XML, acesso a certificado ou transmissão neste ciclo.
+
 ## Ponto de retomada — ciclo 80, 10/09/2026
 
 Criado o contrato `supplier_return_icms_st_fcp_hypothesis_v1` para separar valores de referência da futura decisão sobre ICMS-ST/FCP. Cada item preserva base, alíquota e valor informados na memória, mas hipótese, grupos fiscais, informação complementar e totais ficam vazios. O validador proíbe copiar valores ou inferir tratamento por código ICMS, regime ou generalização das orientações GO 21305/21349.
@@ -10,7 +24,7 @@ Criado o contrato `supplier_return_icms_st_fcp_hypothesis_v1` para separar valor
 - [x] Bloquear inferência por CST/CSOSN, regime ou orientação genérica de Goiás.
 - [x] Integrar o diagnóstico à prévia protegida sem produzir grupo XML.
 - [x] Validar 123 testes conjuntos dos contratos e do fluxo de devolução.
-- [ ] Próximo passo: estruturar IBS/CBS/RTC com política explícita de vigência e leiaute, mantendo grupos e totais bloqueados até confirmação normativa e homologação.
+- [x] Estruturar IBS/CBS/RTC com política explícita de vigência e leiaute, mantendo grupos e totais bloqueados até confirmação normativa e homologação (ciclo 81).
 
 Sem migração, definição de hipótese ST/FCP, geração de XML, acesso a certificado ou transmissão neste ciclo.
 

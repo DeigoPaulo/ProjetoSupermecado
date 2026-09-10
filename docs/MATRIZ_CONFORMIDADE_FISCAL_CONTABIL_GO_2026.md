@@ -1,5 +1,7 @@
 # Matriz de conformidade fiscal e contábil — Goiás 2026
 
+Ciclo 81 — 10/09/2026: implementado contrato de vigência IBS/CBS/RTC. A NT 2026.007 v1.00, hash e datas documentais ficam registrados, mas não ativam regras. Enquadramento, classificação, grupos e totais seguem vazios até confirmação normativa, implantação em Goiás e homologação. A prévia foi ampliada e 126 testes passaram.
+
 Ciclo 80 — 10/09/2026: implementado contrato específico e bloqueado para ICMS-ST/FCP. Valores da memória aparecem somente como referência; hipótese, destino fiscal, informação complementar e totais ficam vazios. Inferência por código/regime e generalização das orientações GO são proibidas. A prévia foi ampliada e 123 testes passaram; enquadramento real e homologação continuam pendentes.
 
 Ciclo 79 — 10/09/2026: implementado contrato específico e bloqueado para IPI devolvido. O IPI da memória aparece apenas como referência; `pDevol`, `vIPIDevol`, justificativa por item e total ficam vazios. Cópia e cálculo automático são proibidos. A prévia restrita foi ampliada e 120 testes passaram; hipótese real, serialização e homologação continuam pendentes.

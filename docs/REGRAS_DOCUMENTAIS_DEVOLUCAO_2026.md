@@ -1,6 +1,6 @@
 # Devolução: confronto documental e plano de validação
 
-10/09/2026 · atualizado no ciclo 80 · análise técnica parcial, sem homologação ou autorização de emissão.
+10/09/2026 · atualizado no ciclo 81 · análise técnica parcial, sem homologação ou autorização de emissão.
 
 ## Evidência e limite da análise
 
@@ -98,3 +98,7 @@ O contrato `supplier_return_returned_ipi_policy_v1` representa `impostoDevol` se
 ## Implementação do ciclo 80
 
 O contrato `supplier_return_icms_st_fcp_hypothesis_v1` preserva ICMS-ST e FCP da memória somente como referência. Hipótese, grupos de destino, informação complementar e totais permanecem vazios. As orientações GO 21305 e 21349 são registradas como evidências, sem aplicação automática ao caso. O validador proíbe inferir por CST/CSOSN, regime ou texto genérico e não produz XML.
+
+## Implementação do ciclo 81
+
+O contrato `supplier_return_rtc_vigency_policy_v1` registra a NT 2026.007 v1.00, o SHA-256 da evidência local, páginas analisadas e datas documentais de homologação/produção. Nenhuma data ou schema ativa o grupo. IBS/CBS da memória permanecem referência; enquadramento, classificação, grupos e totais RTC ficam vazios até confirmação da vigência, implantação em Goiás, leiaute aplicável e homologação independente.

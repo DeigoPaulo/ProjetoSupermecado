@@ -1,5 +1,7 @@
 # Devolução ao fornecedor — preparação fiscal segura
 
+Ciclo 81 — 10/09/2026: IBS/CBS/RTC recebeu contrato de vigência bloqueado. A NT 2026.007 v1.00, hash e datas ficam registrados como evidência, sem ativação automática. Valores da memória não definem enquadramento, classificação, grupos ou totais. Foram aprovados 126 testes. Próximo passo: portão consolidado de prontidão dos subcontratos.
+
 Ciclo 80 — 10/09/2026: ICMS-ST/FCP recebeu contrato próprio e bloqueado. Valores da memória são apenas referência; hipótese, grupos fiscais, texto complementar e totais continuam vazios. O sistema rejeita inferência por código, regime ou generalização das orientações GO 21305/21349. Foram aprovados 123 testes. Próximo passo: política de vigência e leiaute para IBS/CBS/RTC.
 
 Ciclo 79 — 10/09/2026: IPI devolvido recebeu contrato próprio por item. O IPI da memória é apenas referência e não alimenta `impostoDevol`. Hipótese, `pDevol`, `vIPIDevol`, justificativa e total permanecem vazios; cópia ou cálculo automático é rejeitado. Foram aprovados 120 testes. Próximo passo: separar hipóteses de ICMS-ST/FCP sem ativá-las automaticamente.

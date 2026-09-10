@@ -45,6 +45,12 @@
     {% for item in resultado.icms_st_fcp.conteudo.itens %}<tr><td>{{ item.nitem_novo }}</td><td>{{ item.referencia_memoria.icms_st.valor|default:"Pendente" }}</td><td>{{ item.referencia_memoria.fcp.valor|default:"Pendente" }}</td><td>Não definido</td></tr>{% empty %}<tr><td colspan="4">Nenhum item disponível.</td></tr>{% endfor %}
   </tbody></table>
 </section>
+<section class="panel mt-panel"><div class="panel-title">IBS/CBS e RTC</div>
+  <p><strong>Vigência operacional não confirmada.</strong> A data documental não ativa grupos. Implantação em Goiás, classificação, leiaute e homologação continuam pendentes.</p>
+  <table><thead><tr><th>Item</th><th>IBS da memória</th><th>CBS da memória</th><th>Grupos RTC</th></tr></thead><tbody>
+    {% for item in resultado.rtc.conteudo.itens %}<tr><td>{{ item.nitem_novo }}</td><td>{{ item.referencia_memoria.ibs.valor|default:"Pendente" }}</td><td>{{ item.referencia_memoria.cbs.valor|default:"Pendente" }}</td><td>Não definidos</td></tr>{% empty %}<tr><td colspan="4">Nenhum item disponível.</td></tr>{% endfor %}
+  </tbody></table>
+</section>
 <section class="panel mt-panel"><div class="panel-title">Ajustes comerciais por item</div>
   <p><strong>{% if resultado.ajustes_comerciais.validacao.origem_completa %}Rateio ligado à cadeia final aprovada{% else %}Rateio final ainda pendente{% endif %}.</strong> Frete, seguro, despesas e desconto são apenas conferidos; não são reaplicados às bases tributárias.</p>
   <table><thead><tr><th>Item</th><th>Base</th><th>Frete</th><th>Seguro</th><th>Despesas</th><th>Desconto</th><th>Total informado</th></tr></thead><tbody>
@@ -106,6 +112,7 @@
   <ul>{% for item in resultado.observacoes_fiscais.validacao.bloqueios %}<li>{{ item.grupo }}: {{ item.codigo }}</li>{% endfor %}</ul>
   <ul>{% for item in resultado.ipi_devolvido.validacao.bloqueios %}<li>{{ item.grupo }}: {{ item.codigo }}</li>{% endfor %}</ul>
   <ul>{% for item in resultado.icms_st_fcp.validacao.bloqueios %}<li>{{ item.grupo }}: {{ item.codigo }}</li>{% endfor %}</ul>
+  <ul>{% for item in resultado.rtc.validacao.bloqueios %}<li>{{ item.grupo }}: {{ item.codigo }}</li>{% endfor %}</ul>
   {% for erro in resultado.validacao.erros %}<p>{{ erro.caminho }}: {{ erro.codigo }}</p>{% endfor %}
   </details>
 </section>

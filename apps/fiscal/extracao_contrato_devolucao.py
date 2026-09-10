@@ -33,6 +33,7 @@ from .referencias_item_devolucao import (
     POLITICA_REFERENCIAS_ITEM,
     validar_referencias_item_devolucao,
 )
+from .rtc_devolucao_contrato import construir_rtc_devolucao
 from .tributos_itens_devolucao import (
     CONTRATO_TRIBUTOS_ITENS,
     ESTADOS_GRUPOS,
@@ -641,4 +642,5 @@ def extrair_contrato_devolucao(rascunho_id, usuario):
                 ),
                 "ipi_devolvido": construir_ipi_devolvido(tributos_extraidos),
                 "icms_st_fcp": construir_icms_st_fcp(tributos_extraidos),
+                "rtc": construir_rtc_devolucao(tributos_extraidos),
                 "pendencias_dossie": [e for e in dossie["etapas"] if e["estado"] in ("Pendente", "Desatualizado", "Inconsistente", "Bloqueado")]}

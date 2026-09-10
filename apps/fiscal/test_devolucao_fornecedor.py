@@ -775,6 +775,16 @@ class PreparacaoDevolucaoFornecedorTests(TestCase):
         self.assertEqual(st_fcp["conteudo"]["totais"]["icms_st"], "")
         self.assertFalse(st_fcp["validacao"]["permite_emissao"])
 
+        rtc = extrair_contrato_devolucao(rascunho.pk, self.revisor)["rtc"]
+        self.assertTrue(rtc["validacao"]["estrutura_valida"])
+        self.assertTrue(rtc["validacao"]["origem_completa"])
+        self.assertEqual(rtc["conteudo"]["itens"][0]["referencia_memoria"]["ibs"]["valor"], "0.00")
+        self.assertEqual(rtc["conteudo"]["itens"][0]["classificacao_rtc"]["estado"], "NAO_CONFIRMADA")
+        self.assertEqual(rtc["conteudo"]["itens"][0]["destino_fiscal"]["grupo_ibs"], "")
+        self.assertEqual(rtc["conteudo"]["totais"]["rtc"], "")
+        self.assertFalse(rtc["validacao"]["vigencia_confirmada"])
+        self.assertFalse(rtc["validacao"]["permite_emissao"])
+
     def test_extracao_referencias_bloqueia_protocolo_ou_snapshot_divergente(self):
         rascunho, _, _, _ = self._reflexos_registrados()
         dfe = DocumentoDFeRecebido.objects.get(entrada_compra=self.entrada)
@@ -853,6 +863,8 @@ class PreparacaoDevolucaoFornecedorTests(TestCase):
         self.assertContains(resposta, "não é copiado para")
         self.assertContains(resposta, "ICMS-ST e FCP")
         self.assertContains(resposta, "Hipótese ainda não definida")
+        self.assertContains(resposta, "IBS/CBS e RTC")
+        self.assertContains(resposta, "A data documental não ativa grupos")
         conteudo_previa = resposta.content.decode().split('<div id="previa-contrato-fiscal">', 1)[1].split('</main>', 1)[0]
         self.assertNotIn("<form", conteudo_previa)
         self.assertEqual(resposta["Cache-Control"], "private, no-store")

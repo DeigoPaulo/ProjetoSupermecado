@@ -1,5 +1,7 @@
 # Contrato proposto do XML de devolução ao fornecedor
 
+Ciclo 81 — 10/09/2026: implementado `supplier_return_rtc_vigency_policy_v1`. O contrato registra a NT 2026.007 v1.00, hash, páginas e datas documentais, sem ativação por calendário. IBS/CBS da memória são apenas referência; enquadramento, classificação, grupos e totais ficam vazios até confirmação de vigência, implantação GO, leiaute e homologação. Foram aprovados 126 testes.
+
 Ciclo 80 — 10/09/2026: implementado `supplier_return_icms_st_fcp_hypothesis_v1`. A memória é preservada apenas como referência; hipótese, grupos de destino, informação complementar e totais ficam vazios. Inferência por código/regime e generalização das orientações GO 21305/21349 são proibidas. Não há serialização; 123 testes passaram.
 
 Ciclo 79 — 10/09/2026: implementado `supplier_return_returned_ipi_policy_v1`. O contrato preserva o IPI informado na memória somente como referência e cria campos separados, vazios e bloqueados para `pDevol`, `vIPIDevol`, justificativa e total. Cópia ou cálculo automático é erro. Não há serialização de `impostoDevol`; 120 testes passaram.
@@ -62,7 +64,7 @@ Escopo inicial proposto: devolução de compra pelo supermercado ao fornecedor, 
 | ajustes comerciais | composição, rateio, reflexos e memória final | frete, seguro, despesas e desconto por produto | Contrato/extrator implementados no ciclo 74; mapeamento XML permanece bloqueado |
 | IPI devolvido | contrato separado com IPI da memória apenas como referência | eventual `impostoDevol` e total correspondente | Estrutura bloqueada implementada no ciclo 79; hipótese, valores, justificativa, total e serialização dependem de aprovação específica |
 | ICMS-ST/FCP | contrato de hipótese com memória apenas como referência | grupos específicos e/ou informações complementares conforme hipótese | Estrutura bloqueada implementada no ciclo 80; hipótese, grupos, texto, totais e serialização exigem aprovação do caso real |
-| IBS/CBS | bases/valores e orientação textual | grupos RTC do leiaute vigente | Falta fechar classificações, grupos, totais e regras por vigência; não considerar memória genérica suficiente |
+| IBS/CBS | contrato de vigência com memória apenas como referência | grupos RTC do leiaute vigente | Estrutura bloqueada implementada no ciclo 81; implantação GO, enquadramento, classificação, leiaute, totais e homologação não confirmados |
 | transporte | ficha logística | `transp` | Contrato/extrator implementados no ciclo 75; serialização, paridade XSD e casos reais continuam bloqueados |
 | total fiscal | diagnóstico de produtos, ajustes e tributos informados | `total` | Contrato/extrator diagnóstico no ciclo 76; `vNF`, IPI devolvido, totais RTC e serialização permanecem bloqueados |
 | pagamento | política isolada e não emissiva | `pag/detPag`: `tPag=90`, `vPag=0.00` no escopo proposto | Contrato/extrator implementados no ciclo 77; serialização e regras complementares continuam bloqueadas; nenhum efeito operacional |
