@@ -16,6 +16,9 @@ class InventarioDadosDevolucaoTests(SimpleTestCase):
         self.assertEqual(resultado["validacao"]["quantidade_campos_atomicos"], len(CAMPOS_ATOMICOS))
         self.assertGreater(len(CAMPOS_ATOMICOS), 90)
         self.assertEqual(resultado["validacao"]["quantidade_lacunas_modelagem"], 9)
+        codigos = {item["codigo"] for item in resultado["conteudo"]["lacunas_modelagem"]}
+        self.assertIn("CADASTRO_FORNECEDOR_NAO_CONFRONTADO_COM_XML", codigos)
+        self.assertNotIn("FORNECEDOR_SEM_CADASTRO_FISCAL_ESTRUTURADO", codigos)
         self.assertTrue(all(item["expoe_valor"] is False for item in resultado["conteudo"]["itens"]))
         self.assertFalse(resultado["validacao"]["permite_gerar_xml"])
         self.assertFalse(resultado["validacao"]["permite_focus"])

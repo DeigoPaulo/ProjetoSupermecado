@@ -54,6 +54,65 @@
 
   <section class="form-section">
     <div class="form-section-header">
+      <h2>Cadastro fiscal estruturado</h2>
+      <p>Dados opcionais para conferência fiscal futura. O sistema não copia nem atualiza estes campos a partir do XML de uma compra.</p>
+    </div>
+    <div class="form-grid">
+      <div class="field">
+        {{ form.indicador_ie.label_tag }}
+        {{ form.indicador_ie }}
+        {{ form.indicador_ie.errors }}
+      </div>
+      <div class="field">
+        {{ form.inscricao_estadual.label_tag }}
+        {{ form.inscricao_estadual }}
+        {{ form.inscricao_estadual.errors }}
+      </div>
+      <div class="field span-2">
+        {{ form.logradouro.label_tag }}
+        {{ form.logradouro }}
+        {{ form.logradouro.errors }}
+      </div>
+      <div class="field">
+        {{ form.numero.label_tag }}
+        {{ form.numero }}
+        {{ form.numero.errors }}
+      </div>
+      <div class="field">
+        {{ form.complemento.label_tag }}
+        {{ form.complemento }}
+        {{ form.complemento.errors }}
+      </div>
+      <div class="field">
+        {{ form.bairro.label_tag }}
+        {{ form.bairro }}
+        {{ form.bairro.errors }}
+      </div>
+      <div class="field">
+        {{ form.cep.label_tag }}
+        {{ form.cep }}
+        {{ form.cep.errors }}
+      </div>
+      <div class="field">
+        {{ form.municipio.label_tag }}
+        {{ form.municipio }}
+        {{ form.municipio.errors }}
+      </div>
+      <div class="field">
+        {{ form.uf.label_tag }}
+        {{ form.uf }}
+        {{ form.uf.errors }}
+      </div>
+      <div class="field">
+        {{ form.codigo_municipio_ibge.label_tag }}
+        {{ form.codigo_municipio_ibge }}
+        {{ form.codigo_municipio_ibge.errors }}
+      </div>
+    </div>
+  </section>
+
+  <section class="form-section">
+    <div class="form-section-header">
       <h2>Contato e entrega</h2>
       <p>Informações usadas para pedidos de compra e previsão de recebimento.</p>
     </div>

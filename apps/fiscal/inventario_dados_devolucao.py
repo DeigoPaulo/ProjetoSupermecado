@@ -108,7 +108,7 @@ CAMPOS_ATOMICOS = _definicoes()
 
 LACUNAS_MODELAGEM = (
     ("destinatario.indicador_ie", "NFe/infNFe/dest/indIEDest", "IND_IE_DESTINATARIO_NAO_MODELADO", "CADASTRO_E_CONTRATO"),
-    ("destinatario.dados_fiscais_estruturados", "NFe/infNFe/dest|enderDest", "FORNECEDOR_SEM_CADASTRO_FISCAL_ESTRUTURADO", "CADASTRO"),
+    ("destinatario.confronto_cadastro_xml", "NFe/infNFe/dest|enderDest", "CADASTRO_FORNECEDOR_NAO_CONFRONTADO_COM_XML", "CONTRATO"),
     ("produtos.itens[].inclui_total", "NFe/infNFe/det/prod/indTot", "INDTOT_NAO_MODELADO", "CONTRATO"),
     ("tributos_itens.itens[].icms.modalidade_base", "NFe/infNFe/det/imposto/ICMS/*/modBC", "MODALIDADE_BASE_ICMS_NAO_MODELADA", "CONTADOR_E_CONTRATO"),
     ("tributos_itens.itens[].icms.reducao_base", "NFe/infNFe/det/imposto/ICMS/*/pRedBC", "REDUCAO_BASE_ICMS_NAO_MODELADA", "CONTADOR_E_CONTRATO"),

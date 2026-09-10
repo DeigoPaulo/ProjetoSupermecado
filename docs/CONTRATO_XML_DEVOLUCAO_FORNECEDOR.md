@@ -1,5 +1,7 @@
 # Contrato proposto do XML de devolução ao fornecedor
 
+Ciclo 86 — 10/09/2026: o cadastro fiscal estruturado do fornecedor foi criado com dez campos opcionais e validações locais. O contrato ainda usa o XML original como fonte histórica do destinatário; por isso, a antiga lacuna cadastral foi substituída por `CADASTRO_FORNECEDOR_NAO_CONFRONTADO_COM_XML`. Nenhuma fonte é sobrescrita, os canais continuam bloqueados e 101 testes integrados passaram. Próximo passo: contrato explícito de comparação cadastro–XML.
+
 Ciclo 85 — 10/09/2026: implementado `supplier_return_atomic_data_inventory_v1`, com 106 campos e nove lacunas fixadas por validador. O resultado nunca inclui valores, não aceita remover lacunas, expor conteúdo ou liberar serialização. A principal lacuna cadastral é o fornecedor sem IE, indicador IE, endereço fiscal estruturado e município IBGE. O XML original continua apenas como origem histórica. A prévia foi ampliada e 138 testes passaram.
 
 Ciclo 84 — 10/09/2026: implementada a classificação `supplier_return_field_requirement_matrix_v1`. Cada família registra cardinalidade, categoria, fontes, dependência do contador e vigência operacional. O validador rejeita promoção de regra, aprovação antecipada e qualquer aplicação. `DFeReferenciado`, pagamento, IPI devolvido e RTC mantêm as distinções documentais próprias. A prévia foi ampliada e 135 testes passaram. Próximo passo: granularidade atômica e inventário de disponibilidade dos dados.

@@ -1,5 +1,20 @@
 # Roadmap de evolucao pos-piloto
 
+## Ponto de retomada — ciclo 86, 10/09/2026
+
+O fornecedor passou a possuir cadastro fiscal estruturado opcional: indicador de IE, inscrição estadual, logradouro, número, complemento, bairro, CEP, município, UF e código IBGE. Campos vazios continuam aceitos sem valor fiscal presumido; quando IE ou endereço são iniciados, as validações exigem coerência e completude. O endereço comercial livre foi preservado e nenhum importador XML escreve nos novos campos.
+
+- [x] Criar dez campos fiscais opcionais sem preencher registros existentes.
+- [x] Exigir IE somente para indicador contribuinte e exigir IE quando ele for selecionado.
+- [x] Validar endereço fiscal como conjunto completo, com IBGE de sete dígitos, UF de duas letras e CEP de oito dígitos.
+- [x] Exibir uma seção fiscal separada no cadastro, explicando que o XML não a atualiza.
+- [x] Preservar endereço comercial, isolamento por empresa e administração do cadastro.
+- [x] Substituir no inventário a lacuna cadastral pela lacuna de confronto cadastro–XML.
+- [x] Validar cadastro e integração fiscal em regressão conjunta de 101 testes.
+- [ ] Próximo passo: criar confronto não emissivo entre o cadastro atual do fornecedor e o emitente histórico do XML, exibindo divergências sem sobrescrever nenhuma fonte.
+
+Migração `fornecedores.0004` somente aditiva e 101 testes aprovados. Sem consulta externa, importação automática, geração de XML, acesso a credencial/certificado, mudança de canal/ambiente ou transmissão. Detalhes em [CADASTRO_FISCAL_FORNECEDOR.md](CADASTRO_FISCAL_FORNECEDOR.md).
+
 ## Ponto de retomada — ciclo 85, 10/09/2026
 
 Criado `supplier_return_atomic_data_inventory_v1`, que decompõe os blocos fiscais em 106 campos acompanhados e informa somente fonte, ocorrências e disponibilidade, sem expor valores. O inventário confirmou nove lacunas de modelagem: cadastro fiscal estruturado do fornecedor, `indIEDest`, `indTot`, modalidade/redução de base ICMS, `cEnq` do IPI, variantes PIS/COFINS, gerador específico e paridade Focus. O XML original permanece evidência histórica e não pode atualizar cadastro automaticamente.
@@ -10,7 +25,8 @@ Criado `supplier_return_atomic_data_inventory_v1`, que decompõe os blocos fisca
 - [x] Registrar nove lacunas de cadastro, contrato, hipótese, código e adaptador.
 - [x] Impedir uso do XML histórico como cadastro atual ou preenchimento por default.
 - [x] Integrar o diagnóstico à prévia protegida e validar 138 testes conjuntos.
-- [ ] Próximo passo: estruturar IE, indicador de IE, endereço fiscal e município IBGE no fornecedor, opcionais e sem importação automática do XML; depois confrontar cadastro atual e XML histórico sem emitir.
+- [x] Estruturar IE, indicador de IE, endereço fiscal e município IBGE no fornecedor, opcionais e sem importação automática do XML.
+- [ ] Confrontar cadastro atual e XML histórico sem emitir ou sobrescrever dados.
 
 Sem migração, exposição de valores, geração de XML, acesso a credencial/certificado, mudança de canal/ambiente ou transmissão neste ciclo. Detalhes em [INVENTARIO_DADOS_DEVOLUCAO.md](INVENTARIO_DADOS_DEVOLUCAO.md).
 

@@ -1,6 +1,8 @@
 # Devolução: confronto documental e plano de validação
 
-10/09/2026 · atualizado no ciclo 85 · análise técnica parcial, sem homologação ou autorização de emissão.
+10/09/2026 · atualizado no ciclo 86 · análise técnica parcial, sem homologação ou autorização de emissão.
+
+O ciclo 86 criou os campos fiscais opcionais do fornecedor e suas validações locais. O cadastro vazio continua permitido e o XML não preenche nem altera esses dados. A comparação entre cadastro atual e XML histórico será um contrato separado, somente diagnóstico e bloqueado para emissão.
 
 O ciclo 85 decompôs os dados em 106 campos no [inventário atômico](INVENTARIO_DADOS_DEVOLUCAO.md). A origem e a disponibilidade são informadas sem expor valores. O XML preservado continua evidência histórica e não preenche nem atualiza automaticamente o cadastro fiscal do fornecedor.
 

@@ -1,6 +1,6 @@
 # Inventário atômico de dados da devolução
 
-10/09/2026 · ciclo 85 · diagnóstico somente leitura.
+10/09/2026 · atualizado no ciclo 86 · diagnóstico somente leitura.
 
 O contrato `supplier_return_atomic_data_inventory_v1` acompanha 106 campos atômicos dos blocos de identificação, partes, referências, produtos, tributos, ajustes, transporte, totais, pagamento fiscal, observações, IPI devolvido, ICMS-ST/FCP e RTC. O inventário não inclui os valores: registra apenas fonte, ocorrências, quantidade preenchida e estado de disponibilidade.
 
@@ -22,7 +22,7 @@ O contrato `supplier_return_atomic_data_inventory_v1` acompanha 106 campos atôm
 ## Lacunas de modelagem confirmadas
 
 1. `indIEDest` ainda não existe no contrato de destinatário.
-2. Fornecedor possui CNPJ, razão social e endereço livre, mas não possui IE, indicador de IE, CEP/endereço fiscal estruturado, UF/município e código IBGE em campos próprios.
+2. O cadastro estruturado do fornecedor existe desde o ciclo 86, mas ainda não é confrontado com o emitente histórico do XML no contrato da devolução.
 3. `indTot` ainda não está modelado no produto da devolução.
 4. Modalidade de base do ICMS ainda não está modelada.
 5. Redução da base de ICMS ainda não está modelada.
@@ -37,4 +37,4 @@ O XML original é evidência histórica e pode fornecer dados da operação rece
 
 ## Próximo marco
 
-Estruturar no cadastro do fornecedor IE, indicador de IE e endereço fiscal em campos próprios, com município IBGE e validações locais. Os campos devem permanecer opcionais enquanto não houver dados reais, sem defaults e sem importação automática do XML. Depois, o contrato de identidade poderá confrontar cadastro atual e XML histórico e manter qualquer divergência como bloqueio não emissivo.
+Criar o confronto não emissivo entre os campos atuais do fornecedor e o emitente histórico do XML. A comparação deverá apontar ausências e divergências para decisão humana, sem escolher automaticamente uma fonte, alterar o cadastro ou liberar geração/emissão.

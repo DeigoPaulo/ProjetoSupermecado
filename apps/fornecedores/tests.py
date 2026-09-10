@@ -6,15 +6,22 @@ from apps.compras.forms import EntradaCompraForm, PedidoCompraForm, RespostaCota
 from apps.empresas.models import Empresa, Filial
 from apps.financeiro.forms import ContaFinanceiraForm
 
-from .models import Fornecedor
+from .forms import FornecedorForm
+from .models import Fornecedor, IndicadorInscricaoEstadual
 
 
 class FornecedorViewsTests(TestCase):
     def setUp(self):
         self.user = get_user_model().objects.create_superuser("admin", "admin@example.com", "123")
+        self.empresa = Empresa.objects.create(
+            razao_social="Mercado dos testes Ltda",
+            nome_fantasia="Mercado dos testes",
+            cnpj="00.000.000/0001-00",
+        )
         self.client = Client(HTTP_HOST="localhost")
         self.client.force_login(self.user)
         self.fornecedor = Fornecedor.objects.create(
+            empresa=self.empresa,
             razao_social="Fornecedor Teste Ltda",
             nome_fantasia="Fornecedor Teste",
             cnpj="11.111.111/0001-11",
@@ -27,8 +34,87 @@ class FornecedorViewsTests(TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertContains(response, "Identificação")
         self.assertContains(response, "Contato e entrega")
+        self.assertContains(response, "Cadastro fiscal estruturado")
+        self.assertContains(response, "não copia nem atualiza estes campos a partir do XML")
         self.assertContains(response, "consultar CNPJ automaticamente")
         self.assertContains(response, "previsão de recebimento")
+
+    def test_dados_fiscais_sao_opcionais_e_nao_recebem_defaults(self):
+        fornecedor = Fornecedor.objects.create(razao_social="Fornecedor sem dados fiscais")
+
+        self.assertEqual(fornecedor.indicador_ie, "")
+        self.assertEqual(fornecedor.inscricao_estadual, "")
+        self.assertEqual(fornecedor.codigo_municipio_ibge, "")
+        self.assertEqual(fornecedor.uf, "")
+        self.assertEqual(fornecedor.cep, "")
+
+    def test_formulario_persiste_cadastro_fiscal_estruturado_completo(self):
+        dados = {
+            "empresa": self.empresa.pk,
+            "razao_social": "Fornecedor fiscal completo",
+            "nome_fantasia": "",
+            "cnpj": "",
+            "telefone": "",
+            "email": "",
+            "endereco": "Endereço comercial preservado",
+            "indicador_ie": IndicadorInscricaoEstadual.CONTRIBUINTE,
+            "inscricao_estadual": "123456789",
+            "logradouro": "Avenida Goiás",
+            "numero": "100",
+            "complemento": "Sala 2",
+            "bairro": "Centro",
+            "codigo_municipio_ibge": "5208707",
+            "municipio": "Goiânia",
+            "uf": "GO",
+            "cep": "74000-000",
+            "condicao_pagamento": "",
+            "prazo_entrega_dias": 0,
+            "is_active": True,
+        }
+
+        form = FornecedorForm(data=dados, user=self.user)
+
+        self.assertTrue(form.is_valid(), form.errors)
+        fornecedor = form.save()
+        self.assertEqual(fornecedor.codigo_municipio_ibge, "5208707")
+        self.assertEqual(fornecedor.inscricao_estadual, "123456789")
+        self.assertEqual(fornecedor.endereco, "Endereço comercial preservado")
+
+    def test_formulario_rejeita_ie_sem_indicador_contribuinte(self):
+        form = FornecedorForm(
+            data={
+                "empresa": self.empresa.pk,
+                "razao_social": "Fornecedor IE incoerente",
+                "indicador_ie": IndicadorInscricaoEstadual.ISENTO,
+                "inscricao_estadual": "123456789",
+                "prazo_entrega_dias": 0,
+                "is_active": True,
+            },
+            user=self.user,
+        )
+
+        self.assertFalse(form.is_valid())
+        self.assertIn("inscricao_estadual", form.errors)
+
+    def test_formulario_rejeita_endereco_fiscal_parcial(self):
+        form = FornecedorForm(
+            data={
+                "empresa": self.empresa.pk,
+                "razao_social": "Fornecedor endereço incompleto",
+                "logradouro": "Rua sem demais dados",
+                "codigo_municipio_ibge": "123",
+                "uf": "G",
+                "cep": "7400",
+                "prazo_entrega_dias": 0,
+                "is_active": True,
+            },
+            user=self.user,
+        )
+
+        self.assertFalse(form.is_valid())
+        for campo in ("numero", "bairro", "municipio", "codigo_municipio_ibge", "uf", "cep"):
+            with self.subTest(campo=campo):
+                self.assertIn(campo, form.errors)
 
     def test_busca_json_retorna_fornecedor_para_select2(self):
         response = self.client.get("/fornecedores/busca.json", {"q": "Teste"})

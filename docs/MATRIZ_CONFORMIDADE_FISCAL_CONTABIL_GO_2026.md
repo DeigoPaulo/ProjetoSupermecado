@@ -1,5 +1,7 @@
 # Matriz de conformidade fiscal e contábil — Goiás 2026
 
+Ciclo 86 — 10/09/2026: o fornecedor passou a ter indicador/IE e endereço fiscal estruturado opcionais, incluindo município IBGE. As validações recusam IE incoerente e endereço fiscal parcial, mas não exigem dados enquanto não houver cadastro real. O XML não atualiza esses campos; 101 testes integrados passaram. Permanece pendente confrontar o cadastro vigente com o emitente histórico antes de qualquer uso fiscal.
+
 Ciclo 85 — 10/09/2026: inventariados 106 campos atômicos e nove lacunas de modelagem. O fornecedor ainda não possui cadastro fiscal estruturado suficiente para confrontar atualidade de IE/endereço/município com o XML original. Também faltam `indIEDest`, `indTot`, detalhes de base ICMS, `cEnq`, variantes PIS/COFINS, gerador e paridade Focus. Nenhum valor é exposto pelo inventário e 138 testes passaram. Próximo passo: completar o cadastro fiscal opcional do fornecedor sem importar XML automaticamente.
 
 Ciclo 84 — 10/09/2026: classificadas 37 famílias por XSD, MOC/NT, condicionantes de Goiás e decisão do contador. A existência de um grupo no schema não o ativa. Referência por item e pagamento têm regra contextual documentada; IPI devolvido, ST/FCP, RTC e totais associados continuam condicionados. Nenhuma família possui aplicação operacional e 135 testes passaram. Próximo passo: decomposição atômica e inventário dos dados ausentes.
