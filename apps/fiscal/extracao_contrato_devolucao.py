@@ -21,6 +21,7 @@ from .identidade_partes_devolucao import (
 from .models import ConfiguracaoFiscal, DocumentoDFeRecebido, RascunhoDevolucaoFornecedor
 from .pacote_contabil import analisar_xml_nfe
 from .produtos_devolucao import CONTRATO_PRODUTOS, validar_produtos_devolucao
+from .pagamento_fiscal_devolucao import construir_politica_pagamento_devolucao
 from .referencias_item_devolucao import (
     CONTRATO_REFERENCIAS_ITEM,
     POLITICA_REFERENCIAS_ITEM,
@@ -568,4 +569,5 @@ def extrair_contrato_devolucao(rascunho_id, usuario):
                 "totalizacao": construir_totalizacao_diagnostica(
                     produtos_extraidos, tributos_extraidos, ajustes_extraidos
                 ),
+                "pagamento_fiscal": construir_politica_pagamento_devolucao(),
                 "pendencias_dossie": [e for e in dossie["etapas"] if e["estado"] in ("Pendente", "Desatualizado", "Inconsistente", "Bloqueado")]}

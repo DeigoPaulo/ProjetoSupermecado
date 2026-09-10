@@ -1,5 +1,7 @@
 # Matriz de conformidade fiscal e contábil — Goiás 2026
 
+Ciclo 77 — 10/09/2026: implementada a política isolada `tPag=90`/`vPag=0.00` para devolução modelo 55/finalidade 4. O contrato rejeita uso do total comercial e qualquer efeito operacional; o fluxo de venda existente não é chamado. A prévia restrita foi ampliada e 114 testes passaram. Serialização, regras complementares e homologação seguem bloqueadas.
+
 Ciclo 76 — 10/09/2026: implementada totalização somente diagnóstica dos valores já informados. O contrato exige a mesma memória aprovada para produtos, tributos e ajustes, confere somas e mantém separados os grupos tributários. `vNF`, IPI devolvido e totais RTC ficam vazios e não podem ser inferidos. A prévia foi ampliada e 111 testes passaram; geração e homologação permanecem bloqueadas.
 
 Ciclo 75 — 10/09/2026: a ficha logística foi ligada ao contrato somente leitura da devolução. Apenas a versão correspondente à memória final aprovada e com hashes íntegros é aceita. As combinações de modalidade, transportador, documento, volumes e pesos são validadas, mas nenhum grupo `transp` é gerado. A regressão conjunta passou com 108 testes; totalização e homologação continuam pendentes.

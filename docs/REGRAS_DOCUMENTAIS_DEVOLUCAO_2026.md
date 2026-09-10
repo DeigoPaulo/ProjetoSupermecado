@@ -1,6 +1,6 @@
 # Devolução: confronto documental e plano de validação
 
-10/09/2026 · atualizado no ciclo 76 · análise técnica parcial, sem homologação ou autorização de emissão.
+10/09/2026 · atualizado no ciclo 77 · análise técnica parcial, sem homologação ou autorização de emissão.
 
 ## Evidência e limite da análise
 
@@ -50,7 +50,7 @@ A NT 2026.007 p. 3 informa homologação em 01/09/2026 e produção em 03/11/202
 - [x] Implementar validador puro e não emissivo de referências por item, separado do envelope interno; entrada explícita da operação e versão da política, sem ativação automática por data (ciclo 68).
 - [x] Testar estrutura: item ausente; chave inválida e dígito verificador; nItem original ausente/inválido; par duplicado; mesma chave com itens distintos; NFref simultâneo; modelo 65 e múltiplas origens fora do escopo inicial. Partes, NFA/CNPJ alfanumérico e XML original permanecem para a extração autenticada.
 - [x] Integrar a extração autenticada usando chave e nItem conferidos no XML original; manter isolamento por empresa, integridade e bloqueios existentes (ciclo 70).
-- [ ] Testar pagamento sem cobrança e grupo IPI devolvido com casos aprovados pelo contador; completar matriz tributária/totalização e análise das NT/tabelas restantes.
+- [ ] Homologar a política de pagamento e o grupo IPI devolvido com casos aprovados pelo contador; completar matriz tributária e análise das NT/tabelas restantes. O contrato estrutural de pagamento foi implementado no ciclo 77, mas não substitui esse aceite.
 - [ ] Confirmar cronograma oficial e pacote aplicável antes de instalar schemas ou criar gerador separado; homologar Focus e direta independentemente.
 
 No ciclo 70, serviço, testes, prévia e documentação foram alterados. Nenhum XML foi gerado, schema instalado, certificado acessado, migração aplicada ou transmissão realizada.
@@ -82,3 +82,7 @@ O contrato `supplier_return_transport_input_v1` usa somente a ficha vinculada à
 ## Implementação do ciclo 76
 
 O contrato `supplier_return_diagnostic_totals_v1` totaliza separadamente os valores comerciais e cada base/valor tributário já informado, exigindo que produtos, tributos e ajustes pertençam à mesma memória aprovada. A comparação entre produtos e base comercial é diagnóstica. `vNF`, `vIPIDevol` e totais RTC permanecem vazios e qualquer preenchimento nessa etapa é erro bloqueante; nenhuma fórmula fiscal nova foi criada.
+
+## Implementação do ciclo 77
+
+O contrato `supplier_return_fiscal_payment_policy_v1` fixa `tPag=90` e `vPag=0.00` exclusivamente para a preparação da devolução de compra modelo 55/finalidade 4. O validador rejeita qualquer forma ou valor alternativo, o uso do total comercial e qualquer efeito operacional. A política aparece apenas na prévia fiscal restrita e não produz `pag/detPag`, XML ou transmissão.

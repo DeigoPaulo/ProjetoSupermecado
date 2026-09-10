@@ -740,6 +740,13 @@ class PreparacaoDevolucaoFornecedorTests(TestCase):
         self.assertEqual(totalizacao["conteudo"]["totais_fiscais_nao_definidos"]["valor_nota"], "")
         self.assertFalse(totalizacao["validacao"]["permite_emissao"])
 
+        pagamento = extrair_contrato_devolucao(rascunho.pk, self.revisor)["pagamento_fiscal"]
+        self.assertTrue(pagamento["validacao"]["estrutura_valida"])
+        self.assertEqual(pagamento["conteudo"]["politica"]["tpag"], "90")
+        self.assertEqual(pagamento["conteudo"]["politica"]["vpag"], "0.00")
+        self.assertTrue(all(valor is False for valor in pagamento["conteudo"]["efeitos_operacionais"].values()))
+        self.assertFalse(pagamento["validacao"]["permite_emissao"])
+
     def test_extracao_referencias_bloqueia_protocolo_ou_snapshot_divergente(self):
         rascunho, _, _, _ = self._reflexos_registrados()
         dfe = DocumentoDFeRecebido.objects.get(entrada_compra=self.entrada)
@@ -809,6 +816,8 @@ class PreparacaoDevolucaoFornecedorTests(TestCase):
         self.assertContains(resposta, "nenhum grupo XML é produzido")
         self.assertContains(resposta, "Totalização diagnóstica")
         self.assertContains(resposta, "Esta conferência não forma o valor total da NF-e")
+        self.assertContains(resposta, "Tratamento fiscal de pagamento")
+        self.assertContains(resposta, "Não usa o total comercial")
         conteudo_previa = resposta.content.decode().split('<div id="previa-contrato-fiscal">', 1)[1].split('</main>', 1)[0]
         self.assertNotIn("<form", conteudo_previa)
         self.assertEqual(resposta["Cache-Control"], "private, no-store")

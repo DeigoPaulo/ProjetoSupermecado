@@ -26,6 +26,9 @@
     <tr><th>Valor da NF-e</th><td>Não definido</td><th>IPI devolvido / totais RTC</th><td>Não definidos</td></tr>
   </tbody></table>
 </section>
+<section class="panel mt-panel"><div class="panel-title">Tratamento fiscal de pagamento</div>
+  <p><strong>Sem pagamento fiscal.</strong> Política interna proposta: código {{ resultado.pagamento_fiscal.conteudo.politica.tpag }} e valor {{ resultado.pagamento_fiscal.conteudo.politica.vpag }}. Não usa o total comercial, não produz efeito operacional e ainda não gera grupo XML.</p>
+</section>
 <section class="panel mt-panel"><div class="panel-title">Ajustes comerciais por item</div>
   <p><strong>{% if resultado.ajustes_comerciais.validacao.origem_completa %}Rateio ligado à cadeia final aprovada{% else %}Rateio final ainda pendente{% endif %}.</strong> Frete, seguro, despesas e desconto são apenas conferidos; não são reaplicados às bases tributárias.</p>
   <table><thead><tr><th>Item</th><th>Base</th><th>Frete</th><th>Seguro</th><th>Despesas</th><th>Desconto</th><th>Total informado</th></tr></thead><tbody>
@@ -83,6 +86,7 @@
   <ul>{% for item in resultado.ajustes_comerciais.validacao.bloqueios %}<li>{{ item.grupo }}: {{ item.codigo }}</li>{% endfor %}</ul>
   <ul>{% for item in resultado.transporte.validacao.bloqueios %}<li>{{ item.grupo }}: {{ item.codigo }}</li>{% endfor %}</ul>
   <ul>{% for item in resultado.totalizacao.validacao.bloqueios %}<li>{{ item.grupo }}: {{ item.codigo }}</li>{% endfor %}</ul>
+  <ul>{% for item in resultado.pagamento_fiscal.validacao.bloqueios %}<li>{{ item.grupo }}: {{ item.codigo }}</li>{% endfor %}</ul>
   {% for erro in resultado.validacao.erros %}<p>{{ erro.caminho }}: {{ erro.codigo }}</p>{% endfor %}
   </details>
 </section>

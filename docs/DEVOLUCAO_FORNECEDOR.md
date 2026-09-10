@@ -1,5 +1,7 @@
 # Devolução ao fornecedor — preparação fiscal segura
 
+Ciclo 77 — 10/09/2026: o tratamento `tPag=90`/`vPag=0.00` recebeu contrato puro e painel na prévia restrita. Ele só aceita devolução de compra modelo 55/finalidade 4, não usa o total comercial e obriga todos os efeitos operacionais a permanecerem desligados. O fluxo comum de vendas não foi reutilizado. Foram aprovados 114 testes. Próximo passo: separar observações internas de textos fiscais.
+
 Ciclo 76 — 10/09/2026: produtos, ajustes e valores tributários informados receberam uma totalização exclusivamente diagnóstica. As três origens precisam estar completas e apontar para a mesma memória. O serviço soma para conferência, mas não calcula imposto nem forma `vNF`; IPI devolvido e totais RTC continuam vazios. Foram aprovados 111 testes. Próximo passo: política fiscal `tPag=90`/`vPag=0.00`, ainda sem XML ou efeito operacional.
 
 Ciclo 75 — 10/09/2026: transporte recebeu contrato puro, extração e painel na prévia. A ficha só é considerada atual quando pertence à última memória final aprovada e toda a cadeia de hashes permanece íntegra. Modalidade, identificação do transportador, volumes e pesos são conferidos sem defaults; ficha ausente ou superada vira pendência. Foram aprovados 108 testes. Próximo passo: totalização diagnóstica, sem calcular `vNF`.

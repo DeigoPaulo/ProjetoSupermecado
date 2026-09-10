@@ -1,5 +1,19 @@
 # Roadmap de evolucao pos-piloto
 
+## Ponto de retomada — ciclo 77, 10/09/2026
+
+Criado o contrato `supplier_return_fiscal_payment_policy_v1`, isolado do fluxo comum de vendas. Para devolução de compra modelo 55/finalidade 4, a única política aceita nesta etapa é `tPag=90` e `vPag=0.00`. O contrato proíbe usar o total comercial e exige que geração de título, movimento de caixa, acionamento de meio de pagamento e cálculo de troco permaneçam falsos.
+
+- [x] Estruturar `tPag=90` e `vPag=0.00` como política fiscal explícita.
+- [x] Restringir o contrato à devolução de compra, modelo 55 e finalidade 4.
+- [x] Rejeitar uso do total comercial ou valor diferente de zero.
+- [x] Rejeitar qualquer efeito operacional e manter o fluxo de vendas desacoplado.
+- [x] Integrar a política à prévia protegida, sem gerar `pag/detPag`.
+- [x] Validar 114 testes conjuntos dos contratos e do fluxo de devolução.
+- [ ] Próximo passo: estruturar observações fiscais separando conteúdo interno de `infAdic` e `infAdProd`, sem copiar texto livre automaticamente para o XML.
+
+Sem migração, lançamento operacional, geração de XML, acesso a certificado ou transmissão neste ciclo.
+
 ## Ponto de retomada — ciclo 76, 10/09/2026
 
 Criado o contrato `supplier_return_diagnostic_totals_v1` para consolidar somente valores já informados nas origens aprovadas. Produtos, base comercial, frete, seguro, despesas, desconto, bases e valores tributários são somados para conferência e precisam apontar para a mesma memória. O diagnóstico não forma `vNF`: valor da nota, IPI devolvido e totais RTC permanecem deliberadamente vazios e bloqueados.
@@ -10,7 +24,7 @@ Criado o contrato `supplier_return_diagnostic_totals_v1` para consolidar somente
 - [x] Recusar preenchimento antecipado de `vNF`, IPI devolvido e totais RTC.
 - [x] Integrar o diagnóstico à prévia protegida.
 - [x] Validar 111 testes conjuntos dos contratos e do fluxo de devolução.
-- [ ] Próximo passo: estruturar a política fiscal de pagamento `tPag=90` e `vPag=0.00` como contrato não emissivo, sem produzir efeitos operacionais.
+- [x] Estruturar a política fiscal de pagamento `tPag=90` e `vPag=0.00` como contrato não emissivo, sem produzir efeitos operacionais (ciclo 77).
 
 Sem migração, cálculo de `vNF`, geração de XML, acesso a certificado ou transmissão neste ciclo.
 
