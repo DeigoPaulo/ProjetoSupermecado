@@ -1,5 +1,7 @@
 # Matriz de conformidade fiscal e contábil — Goiás 2026
 
+Ciclo 92 — 10/09/2026: `cEnq` foi isolado por item como decisão do contador, vazio e não confirmado. O XSD preservado sustenta 1 a 3 caracteres e obrigatoriedade apenas dentro de `IPI`; não sustenta código ou aplicação ao caso. IPI da memória e `impostoDevol` permanecem separados. O inventário passou a 111 campos e três lacunas, a matriz a 38 famílias e 153 testes passaram. Próximo passo: variantes de PIS/COFINS.
+
 Ciclo 88 — 10/09/2026: o indicador de IE do fornecedor passou a aparecer no destinatário somente como candidato cadastral não confirmado. O validador impede promoção direta, mantém decisão humana obrigatória e não libera XML ou canal. O inventário agora acompanha 107 campos e sete lacunas restantes; 107 testes passaram.
 
 Ciclo 87 — 10/09/2026: o cadastro atual e o emitente histórico passaram a ser confrontados em 13 campos dentro da prévia fiscal restrita. Coincidência não autoriza uso; ausência e divergência continuam bloqueios para decisão humana. Nenhum dado é gravado, nenhuma fonte prevalece automaticamente e os dois canais permanecem desligados. O inventário registra oito lacunas restantes e 107 testes passaram.

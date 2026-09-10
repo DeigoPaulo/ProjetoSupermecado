@@ -4,7 +4,9 @@
 
 Atualização do ciclo 85: as famílias foram decompostas em 106 campos no [inventário atômico](INVENTARIO_DADOS_DEVOLUCAO.md), que também registra nove lacunas de cadastro/modelagem. A classificação normativa abaixo permanece bloqueada para aplicação operacional.
 
-O contrato `supplier_return_field_requirement_matrix_v1` classifica as 37 famílias rastreadas sem transformar cardinalidade de XSD em decisão fiscal. O escopo permanece restrito a NF-e modelo 55, finalidade 4, saída, com uma NF-e de origem. Leitura normativa integral, vigência operacional em Goiás e caso real aprovado pelo contador continuam falsos.
+Atualização do ciclo 92: a matriz passou a 38 famílias. `cEnq` é 1-1 somente dentro do grupo `IPI`; a presença desse grupo continua condicionada à hipótese fiscal e o código depende do contador.
+
+O contrato `supplier_return_field_requirement_matrix_v1` classifica as 38 famílias rastreadas sem transformar cardinalidade de XSD em decisão fiscal. O escopo permanece restrito a NF-e modelo 55, finalidade 4, saída, com uma NF-e de origem. Leitura normativa integral, vigência operacional em Goiás e caso real aprovado pelo contador continuam falsos.
 
 ## Critério empregado
 
@@ -16,6 +18,7 @@ O contrato `supplier_return_field_requirement_matrix_v1` classifica as 37 famíl
 | `CONDICIONADO_VALOR` | Informado quando o componente existe e deve reconciliar item e total. |
 | `CONDICIONADO_MODALIDADE` / `CONDICIONADO_PRESENCA` | Depende do transporte escolhido ou dos dados físicos efetivamente informados. |
 | `CONDICIONADO_ENQUADRAMENTO` / `CONDICIONADO_HIPOTESE` | Depende do tratamento tributário aprovado para o caso concreto. |
+| `CONDICIONADO_GRUPO_IPI` | O campo é estruturalmente obrigatório dentro de `IPI`, mas a presença do grupo depende da hipótese fiscal aprovada. |
 | `OPCIONAL_CONTROLADO` | O leiaute admite ausência; qualquer conteúdo exige origem fiscal aprovada e nunca recebe anotação interna automaticamente. |
 | `PENDENTE_HIPOTESES` / `PENDENTE_VIGENCIA_E_ENQUADRAMENTO` | A evidência atual ainda não permite fechar conteúdo ou aplicação operacional. |
 
@@ -25,6 +28,7 @@ O contrato `supplier_return_field_requirement_matrix_v1` classifica as 37 famíl
 - `DFeReferenciado` possui ocorrência opcional no XSD, mas as regras VC02/VC03 da NT 2025.002 v1.51 exigem chave e `nItem` no contexto tratado. O cronograma e a implantação por UF ainda precisam ser confirmados antes do uso operacional.
 - Para finalidade 4, a regra YA02-04 exige `tPag=90`. `vPag` é estruturalmente obrigatório no detalhamento e o contrato adota `0.00`, coerente com YA03-30.
 - `impostoDevol` é opcional como grupo. Se a hipótese for aplicável, `pDevol` e `vIPIDevol` internos tornam-se obrigatórios e o motivo deve ser tratado em `infAdProd`; a decisão de enquadramento continua com o contador.
+- `cEnq` é obrigatório dentro de `IPI`, mas isso não torna o próprio grupo `IPI` obrigatório em toda devolução. Seu valor permanece pendente de decisão do contador.
 - Frete, seguro, despesas e desconto são condicionados à existência dos valores, com reconciliação entre itens e totais. Não se presume incidência tributária.
 - Transportador e volumes dependem da modalidade e da operação física; `modFrete` permanece estruturalmente necessário.
 - ICMS, PIS, COFINS, ST/FCP e seus totais dependem de regime, hipótese e orientação do caso concreto. As orientações GO 21305/21349 não foram generalizadas.

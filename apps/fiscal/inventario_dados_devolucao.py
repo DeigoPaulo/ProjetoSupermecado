@@ -96,6 +96,7 @@ def _definicoes():
         ("pagamento_fiscal", "politica.vpag", "POLITICA_DOCUMENTAL", "BLOQUEIO"),
         ("observacoes_fiscais", "textos_fiscais.infadic", "TEXTO_FISCAL_APROVADO", "POLITICA"),
         ("observacoes_fiscais", "textos_fiscais.itens[].infadprod", "TEXTO_FISCAL_APROVADO", "POLITICA"),
+        ("ipi_devolvido", "itens[].enquadramento_ipi.valor_candidato", "DECISAO_CONTADOR", "POLITICA"),
         ("ipi_devolvido", "itens[].imposto_devol.pdevol", "HIPOTESE_CONTADOR", "POLITICA"),
         ("ipi_devolvido", "itens[].imposto_devol.vipidevol", "HIPOTESE_CONTADOR", "POLITICA"),
         ("ipi_devolvido", "total.vipidevol", "HIPOTESE_CONTADOR", "POLITICA"),
@@ -119,7 +120,6 @@ def _definicoes():
 CAMPOS_ATOMICOS = _definicoes()
 
 LACUNAS_MODELAGEM = (
-    ("ipi_devolvido.enquadramento", "NFe/infNFe/det/imposto/IPI/cEnq", "ENQUADRAMENTO_IPI_NAO_MODELADO_NA_DEVOLUCAO", "CONTADOR_E_CONTRATO"),
     ("tributos_itens.variantes_pis_cofins", "NFe/infNFe/det/imposto/PIS|COFINS/*", "VARIANTES_PIS_COFINS_NAO_MODELADAS", "CONTADOR_E_CONTRATO"),
     ("serializador_devolucao", "NFe", "GERADOR_ESPECIFICO_NAO_IMPLEMENTADO", "CODIGO"),
     ("focus.grupos_devolucao", "JSON Focus", "PARIDADE_FOCUS_INCOMPLETA", "ADAPTADOR"),

@@ -72,6 +72,7 @@ MAPEAMENTOS = (
         ("textos_fiscais.itens[].infadprod", "NFe/infNFe/det/infAdProd", "NAO_MAPEADO"),
     )),
     ("ipi_devolvido", (
+        ("itens[].enquadramento_ipi.valor_candidato", "NFe/infNFe/det/imposto/IPI/cEnq", "PARCIAL"),
         ("itens[].imposto_devol.pdevol", "NFe/infNFe/det/impostoDevol/pDevol", "NAO_MAPEADO"),
         ("itens[].imposto_devol.vipidevol", "NFe/infNFe/det/impostoDevol/IPI/vIPIDevol", "NAO_MAPEADO"),
         ("total.vipidevol", "NFe/infNFe/total/ICMSTot/vIPIDevol", "NAO_MAPEADO"),

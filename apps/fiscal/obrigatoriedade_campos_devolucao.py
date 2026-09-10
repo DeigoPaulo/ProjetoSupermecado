@@ -55,6 +55,7 @@ CLASSIFICACOES = {
     ("pagamento_fiscal", "politica.vpag"): _r("OBRIGATORIO_REGRA_CONTEXTO", "1-1", (XSD, MOC)),
     ("observacoes_fiscais", "textos_fiscais.infadic"): _r("OPCIONAL_CONTROLADO", "0-1", (XSD, CONTADOR), contador=True),
     ("observacoes_fiscais", "textos_fiscais.itens[].infadprod"): _r("CONDICIONADO_HIPOTESE", "0-1", (XSD, MOC, CONTADOR), contador=True),
+    ("ipi_devolvido", "itens[].enquadramento_ipi.valor_candidato"): _r("CONDICIONADO_GRUPO_IPI", "1-1_DENTRO_IPI", (XSD, CONTADOR), contador=True),
     ("ipi_devolvido", "itens[].imposto_devol.pdevol"): _r("CONDICIONADO_HIPOTESE", "0-1/1-1", (XSD, MOC, CONTADOR), contador=True),
     ("ipi_devolvido", "itens[].imposto_devol.vipidevol"): _r("CONDICIONADO_HIPOTESE", "0-1/1-1", (XSD, MOC, CONTADOR), contador=True),
     ("ipi_devolvido", "total.vipidevol"): _r("CONDICIONADO_HIPOTESE", "1-1", (XSD, MOC, CONTADOR), contador=True),

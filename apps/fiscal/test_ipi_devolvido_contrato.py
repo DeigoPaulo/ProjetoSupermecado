@@ -29,6 +29,17 @@ class IpiDevolvidoContratoTests(SimpleTestCase):
         self.assertTrue(resultado["validacao"]["estrutura_valida"])
         self.assertTrue(resultado["validacao"]["origem_completa"])
         self.assertEqual(resultado["conteudo"]["itens"][0]["ipi_memoria"]["valor"], "0.00")
+        enquadramento = resultado["conteudo"]["itens"][0]["enquadramento_ipi"]
+        self.assertEqual(enquadramento["valor_candidato"], "")
+        self.assertEqual(enquadramento["fonte"], "DECISAO_CONTADOR_PENDENTE")
+        self.assertEqual(enquadramento["estado_disponibilidade"], "NAO_DEFINIDO")
+        self.assertEqual(enquadramento["obrigatoriedade_estrutural"], "OBRIGATORIO_DENTRO_DO_GRUPO_IPI")
+        self.assertEqual(enquadramento["obrigatoriedade_contextual"], "GRUPO_IPI_DEPENDE_DA_HIPOTESE_DO_ITEM")
+        self.assertTrue(enquadramento["depende_decisao_contador"])
+        self.assertEqual(enquadramento["destino_xml_futuro"], "NFe/infNFe/det/imposto/IPI/cEnq")
+        self.assertFalse(enquadramento["confirmado"])
+        self.assertFalse(resultado["validacao"]["dados_fiscais_completos"])
+        self.assertFalse(resultado["validacao"]["permite_aplicar_enquadramento_ipi"])
         self.assertEqual(resultado["conteudo"]["itens"][0]["imposto_devol"]["pdevol"], "")
         self.assertEqual(resultado["conteudo"]["total"]["vipidevol"], "")
         self.assertFalse(resultado["validacao"]["permite_emissao"])
@@ -49,3 +60,42 @@ class IpiDevolvidoContratoTests(SimpleTestCase):
         resultado = validar_ipi_devolvido(conteudo)
         self.assertFalse(resultado["estrutura_valida"])
         self.assertIn("AUTOMACAO_PROIBIDA", {item["codigo"] for item in resultado["erros"]})
+
+    def test_candidato_lexicalmente_valido_continua_sem_confirmacao_ou_efeito(self):
+        conteudo = deepcopy(construir_ipi_devolvido(self.tributos())["conteudo"])
+        enquadramento = conteudo["itens"][0]["enquadramento_ipi"]
+        enquadramento["valor_candidato"] = "999"
+        enquadramento["estado_disponibilidade"] = "CANDIDATO_NAO_CONFIRMADO"
+        resultado = validar_ipi_devolvido(conteudo)
+        self.assertTrue(resultado["estrutura_valida"])
+        self.assertTrue(resultado["origem_completa"])
+        self.assertFalse(resultado["enquadramento_ipi_definido"])
+        self.assertIn("CENQ_NAO_CONFIRMADO", {item["codigo"] for item in resultado["pendencias"]})
+        self.assertEqual(conteudo["itens"][0]["ipi_memoria"]["valor"], "0.00")
+        self.assertEqual(conteudo["itens"][0]["imposto_devol"]["vipidevol"], "")
+
+    def test_nao_infere_cenq_de_cadastro_xml_ou_memoria(self):
+        tributos = self.tributos()
+        item = tributos["conteudo"]["itens"][0]
+        item["codigo_enquadramento_ipi"] = "999"
+        item["grupos"]["ipi_memoria"]["cenq"] = "999"
+        enquadramento = construir_ipi_devolvido(tributos)["conteudo"]["itens"][0]["enquadramento_ipi"]
+        self.assertEqual(enquadramento["valor_candidato"], "")
+        self.assertEqual(enquadramento["estado_disponibilidade"], "NAO_DEFINIDO")
+        self.assertEqual(enquadramento["fonte"], "DECISAO_CONTADOR_PENDENTE")
+
+    def test_rejeita_default_inferencia_fonte_ou_confirmacao_antecipada_do_cenq(self):
+        base = construir_ipi_devolvido(self.tributos())["conteudo"]
+        casos = (
+            ("valor_candidato", "1234", "CENQ_CANDIDATO_INVALIDO"),
+            ("fonte", "CADASTRO_PRODUTO_ATUAL", "FONTE_CENQ_INVALIDA"),
+            ("confirmado", True, "CONFIRMACAO_CENQ_ANTECIPADA"),
+            ("destino_xml_futuro", "impostoDevol", "DESTINO_CENQ_INVALIDO"),
+        )
+        for campo, valor, codigo in casos:
+            with self.subTest(campo=campo):
+                conteudo = deepcopy(base)
+                conteudo["itens"][0]["enquadramento_ipi"][campo] = valor
+                resultado = validar_ipi_devolvido(conteudo)
+                self.assertFalse(resultado["estrutura_valida"])
+                self.assertIn(codigo, {item["codigo"] for item in resultado["erros"]})

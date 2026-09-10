@@ -1,5 +1,28 @@
 # Roadmap de evolucao pos-piloto
 
+## Ponto de retomada — ciclo 92, 10/09/2026
+
+O contrato `supplier_return_returned_ipi_policy_v1` passou a representar o enquadramento legal do IPI por item como decisão própria, separada tanto do IPI informativo da memória quanto de `impostoDevol`. O XSD preservado confirma `cEnq` com cardinalidade 1-1 dentro de `IPI` e tipo `TString` de 1 a 3 caracteres; ele não prova, isoladamente, que o grupo IPI se aplique ao caso nem qual código deva ser usado. Por isso o candidato nasce vazio, com fonte `DECISAO_CONTADOR_PENDENTE`, disponibilidade `NAO_DEFINIDO`, confirmação falsa e destino futuro `NFe/infNFe/det/imposto/IPI/cEnq`. O inventário passou a 111 campos e três lacunas; a rastreabilidade e a matriz de obrigatoriedade passaram a 38 famílias.
+
+- [x] Confirmar no XSD preservado cardinalidade, posição e formato lexical de `cEnq`.
+- [x] Separar `cEnq`, IPI da memória e `impostoDevol` em estruturas independentes.
+- [x] Iniciar o candidato vazio, sem copiar cadastro atual, XML histórico ou memória.
+- [x] Registrar fonte, disponibilidade, obrigação estrutural, obrigação contextual, dependência do contador e destino XML futuro.
+- [x] Aceitar candidato de 1 a 3 caracteres apenas como hipótese não confirmada, sem presumir restrição numérica ausente do XSD.
+- [x] Rejeitar formato inválido, fonte trocada, metadados divergentes e confirmação antecipada.
+- [x] Separar integridade da origem de completude fiscal e manter `permite_aplicar_enquadramento_ipi=False`.
+- [x] Provar que o candidato não altera IPI da memória, `impostoDevol`, totalização ou emissão.
+- [x] Exibir `cEnq` pendente na prévia somente leitura.
+- [x] Remover `ENQUADRAMENTO_IPI_NAO_MODELADO_NA_DEVOLUCAO`; restam três lacunas.
+- [x] Validar a regressão conjunta de 153 testes.
+- [ ] Próximo passo, não iniciado neste ciclo: discriminar variantes de PIS/COFINS sem cálculo, default ou serialização.
+
+Arquivos de implementação alterados: `apps/fiscal/ipi_devolvido_contrato.py`, `apps/fiscal/inventario_dados_devolucao.py`, `apps/fiscal/rastreabilidade_leiaute_devolucao.py`, `apps/fiscal/obrigatoriedade_campos_devolucao.py` e `templates/fiscal/previa_contrato_devolucao.html`. Testes alterados: `apps/fiscal/test_ipi_devolvido_contrato.py`, `apps/fiscal/test_inventario_dados_devolucao.py`, `apps/fiscal/test_rastreabilidade_leiaute_devolucao.py`, `apps/fiscal/test_obrigatoriedade_campos_devolucao.py` e `apps/fiscal/test_devolucao_fornecedor.py`. Documentos alterados ou criados: este roadmap, [ENQUADRAMENTO_IPI_DEVOLUCAO.md](ENQUADRAMENTO_IPI_DEVOLUCAO.md), `INVENTARIO_DADOS_DEVOLUCAO.md`, `MATRIZ_RASTREABILIDADE_DEVOLUCAO.md`, `CLASSIFICACAO_OBRIGATORIEDADE_DEVOLUCAO.md`, `DEVOLUCAO_FORNECEDOR.md`, `CONTRATO_XML_DEVOLUCAO_FORNECEDOR.md`, `MATRIZ_CONFORMIDADE_FISCAL_CONTABIL_GO_2026.md` e `REDUCAO_BASE_ICMS_DEVOLUCAO.md`.
+
+Migrações: nenhuma. Riscos remanescentes: tabela/código aplicável não aprovados, hipótese de IPI devolvido ainda aberta, pacote XSD não promovido e paridade Focus/SEFAZ não homologada. Decisões não tomadas: código `cEnq`, presença do grupo IPI, CST, valores, justificativa, geração de XML, provedor e ambiente. Dependências externas: validação do contador para casos reais, confirmação normativa integral e futura homologação separada dos canais.
+
+Sem migração, decisão tributária, geração de XML, acesso a credencial/certificado, alteração de Focus/SEFAZ direta, ambiente ou transmissão. O trabalho para antes de PIS/COFINS conforme o plano aprovado.
+
 ## Ponto de retomada — ciclo 91, 10/09/2026
 
 O grupo ICMS do contrato tributário passou a representar `pRedBC` como candidata vazia, fonte `DECISAO_CONTADOR_PENDENTE` e confirmação falsa. O formato foi confrontado com `TDec_0302a04` do XSD preservado e o contrato limita o percentual candidato à faixa segura de 0 a 100, com duas a quatro casas quando houver parte decimal. Nem o campo existente no cadastro atual do produto, nem o XML histórico, nem diferenças entre bases preenchem a decisão. A base aprovada continua somente reproduzida. O inventário passou a 110 campos e quatro lacunas.
@@ -15,7 +38,7 @@ O grupo ICMS do contrato tributário passou a representar `pRedBC` como candidat
 - [x] Exibir `pRedBC` pendente na prévia somente leitura.
 - [x] Remover `REDUCAO_BASE_ICMS_NAO_MODELADA`; restam quatro lacunas.
 - [x] Validar a regressão conjunta de 149 testes.
-- [ ] Próximo passo: modelar o enquadramento legal do IPI (`cEnq`) separadamente do IPI da memória, vazio e não confirmado.
+- [x] Próximo passo concluído no ciclo 92: `cEnq` modelado como decisão contábil vazia e não confirmada, sem copiar cadastro, XML ou memória.
 
 Sem migração, decisão tributária, geração de XML, acesso a credencial/certificado, alteração de Focus/SEFAZ direta, ambiente ou transmissão. Detalhes em [REDUCAO_BASE_ICMS_DEVOLUCAO.md](REDUCAO_BASE_ICMS_DEVOLUCAO.md).
 

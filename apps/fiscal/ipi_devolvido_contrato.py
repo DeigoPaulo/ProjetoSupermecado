@@ -11,9 +11,14 @@ _CAMPOS_FONTES = {
 }
 _CAMPOS_ITEM = {
     "nitem_novo", "nitem_original", "item_rascunho_id", "estado",
-    "ipi_memoria", "imposto_devol",
+    "ipi_memoria", "enquadramento_ipi", "imposto_devol",
 }
 _CAMPOS_IPI_MEMORIA = {"estado", "codigo", "base", "aliquota", "valor"}
+_CAMPOS_ENQUADRAMENTO_IPI = {
+    "valor_candidato", "fonte", "estado_disponibilidade",
+    "obrigatoriedade_estrutural", "obrigatoriedade_contextual",
+    "depende_decisao_contador", "destino_xml_futuro", "confirmado",
+}
 _CAMPOS_IMPOSTO_DEVOL = {"pdevol", "vipidevol", "infadprod_aprovada"}
 _CAMPOS_POLITICA = {
     "copiar_ipi_memoria", "calcular_percentual", "exige_hipotese_aprovada",
@@ -54,6 +59,16 @@ def construir_ipi_devolvido(tributos):
                 "aliquota": grupo.get("aliquota", ""),
                 "valor": grupo.get("valor", ""),
             },
+            "enquadramento_ipi": {
+                "valor_candidato": "",
+                "fonte": "DECISAO_CONTADOR_PENDENTE",
+                "estado_disponibilidade": "NAO_DEFINIDO",
+                "obrigatoriedade_estrutural": "OBRIGATORIO_DENTRO_DO_GRUPO_IPI",
+                "obrigatoriedade_contextual": "GRUPO_IPI_DEPENDE_DA_HIPOTESE_DO_ITEM",
+                "depende_decisao_contador": True,
+                "destino_xml_futuro": "NFe/infNFe/det/imposto/IPI/cEnq",
+                "confirmado": False,
+            },
             "imposto_devol": {
                 "pdevol": "",
                 "vipidevol": "",
@@ -85,13 +100,17 @@ def construir_ipi_devolvido(tributos):
 
 def validar_ipi_devolvido(conteudo):
     erros = []
-    pendencias = []
+    pendencias_origem = []
+    pendencias_decisao = []
 
     def erro(caminho, codigo):
         erros.append({"caminho": caminho, "codigo": codigo})
 
     def pendencia(caminho, codigo):
-        pendencias.append({"caminho": caminho, "codigo": codigo})
+        pendencias_origem.append({"caminho": caminho, "codigo": codigo})
+
+    def pendencia_decisao(caminho, codigo):
+        pendencias_decisao.append({"caminho": caminho, "codigo": codigo})
 
     if not isinstance(conteudo, dict):
         erro("$", "OBJETO_OBRIGATORIO")
@@ -153,6 +172,39 @@ def validar_ipi_devolvido(conteudo):
             for campo, casas in (("base", 2), ("aliquota", 4), ("valor", 2)):
                 if not _decimal_exato(ipi_memoria.get(campo), casas):
                     pendencia(f"{caminho}.ipi_memoria.{campo}", "VALOR_ORIGEM_PENDENTE")
+        enquadramento = item.get("enquadramento_ipi")
+        if not isinstance(enquadramento, dict) or set(enquadramento) != _CAMPOS_ENQUADRAMENTO_IPI:
+            erro(f"{caminho}.enquadramento_ipi", "CAMPOS_INVALIDOS")
+        else:
+            candidato = enquadramento.get("valor_candidato")
+            if not isinstance(candidato, str):
+                erro(f"{caminho}.enquadramento_ipi.valor_candidato", "CENQ_CANDIDATO_INVALIDO")
+                candidato = ""
+            elif candidato and (
+                not 1 <= len(candidato) <= 3
+                or candidato != candidato.strip()
+                or any(not 33 <= ord(caractere) <= 255 for caractere in candidato)
+            ):
+                erro(f"{caminho}.enquadramento_ipi.valor_candidato", "CENQ_CANDIDATO_INVALIDO")
+            estado_esperado = "CANDIDATO_NAO_CONFIRMADO" if candidato else "NAO_DEFINIDO"
+            if enquadramento.get("estado_disponibilidade") != estado_esperado:
+                erro(f"{caminho}.enquadramento_ipi.estado_disponibilidade", "ESTADO_CENQ_INVALIDO")
+            if enquadramento.get("fonte") != "DECISAO_CONTADOR_PENDENTE":
+                erro(f"{caminho}.enquadramento_ipi.fonte", "FONTE_CENQ_INVALIDA")
+            if enquadramento.get("obrigatoriedade_estrutural") != "OBRIGATORIO_DENTRO_DO_GRUPO_IPI":
+                erro(f"{caminho}.enquadramento_ipi.obrigatoriedade_estrutural", "OBRIGATORIEDADE_CENQ_INVALIDA")
+            if enquadramento.get("obrigatoriedade_contextual") != "GRUPO_IPI_DEPENDE_DA_HIPOTESE_DO_ITEM":
+                erro(f"{caminho}.enquadramento_ipi.obrigatoriedade_contextual", "OBRIGATORIEDADE_CENQ_INVALIDA")
+            if enquadramento.get("depende_decisao_contador") is not True:
+                erro(f"{caminho}.enquadramento_ipi.depende_decisao_contador", "DECISAO_CONTADOR_OBRIGATORIA")
+            if enquadramento.get("destino_xml_futuro") != "NFe/infNFe/det/imposto/IPI/cEnq":
+                erro(f"{caminho}.enquadramento_ipi.destino_xml_futuro", "DESTINO_CENQ_INVALIDO")
+            if enquadramento.get("confirmado") is not False:
+                erro(f"{caminho}.enquadramento_ipi.confirmado", "CONFIRMACAO_CENQ_ANTECIPADA")
+            pendencia_decisao(
+                f"{caminho}.enquadramento_ipi.valor_candidato",
+                "CENQ_NAO_CONFIRMADO" if candidato else "CENQ_CANDIDATO_PENDENTE",
+            )
         imposto_devol = item.get("imposto_devol")
         if not isinstance(imposto_devol, dict) or set(imposto_devol) != _CAMPOS_IMPOSTO_DEVOL:
             erro(f"{caminho}.imposto_devol", "CAMPOS_INVALIDOS")
@@ -183,6 +235,7 @@ def validar_ipi_devolvido(conteudo):
         if politica.get(campo) is not True:
             erro(f"politica.{campo}", "APROVACAO_ESPECIFICA_OBRIGATORIA")
 
+    pendencias = pendencias_origem + pendencias_decisao
     bloqueios = [{"grupo": "ipi_devolvido", "codigo": item["codigo"]} for item in pendencias]
     bloqueios.extend((
         {"grupo": "ipi_devolvido", "codigo": "HIPOTESE_CONTABIL_NAO_APROVADA"},
@@ -194,12 +247,15 @@ def validar_ipi_devolvido(conteudo):
     return {
         "contrato": CONTRATO_VALIDACAO_IPI_DEVOLVIDO,
         "estrutura_valida": not erros,
-        "origem_completa": not erros and not pendencias,
+        "origem_completa": not erros and not pendencias_origem,
+        "dados_fiscais_completos": False,
+        "enquadramento_ipi_definido": False,
         "hipotese_definida": False,
         "escopo_fiscal_suportado": False,
         "erros": erros,
         "pendencias": pendencias,
         "bloqueios": bloqueios,
+        "permite_aplicar_enquadramento_ipi": False,
         "permite_gerar_xml": False,
         "permite_emissao": False,
     }

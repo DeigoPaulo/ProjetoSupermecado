@@ -13,7 +13,7 @@ class RastreabilidadeLeiauteDevolucaoTests(SimpleTestCase):
         resultado = construir_rastreabilidade_leiaute_devolucao()
         self.assertTrue(resultado["validacao"]["estrutura_valida"])
         self.assertEqual(resultado["validacao"]["quantidade_grupos"], 13)
-        self.assertEqual(resultado["validacao"]["quantidade_campos"], 37)
+        self.assertEqual(resultado["validacao"]["quantidade_campos"], 38)
         self.assertFalse(resultado["validacao"]["permite_gerar_xml"])
         self.assertFalse(resultado["validacao"]["permite_focus"])
         self.assertFalse(resultado["validacao"]["permite_sefaz_direta"])
@@ -31,6 +31,7 @@ class RastreabilidadeLeiauteDevolucaoTests(SimpleTestCase):
         }
         self.assertEqual(campos[("referencias_itens", "itens[].chave_acesso")]["focus"], "NAO_MAPEADO")
         self.assertEqual(campos[("ipi_devolvido", "itens[].imposto_devol.vipidevol")]["focus"], "NAO_MAPEADO")
+        self.assertEqual(campos[("ipi_devolvido", "itens[].enquadramento_ipi.valor_candidato")]["focus"], "PARCIAL")
         self.assertEqual(campos[("pagamento_fiscal", "politica.tpag")]["focus"], "MAPEADO")
         self.assertTrue(all(
             campo["sefaz_direta"] == "SEM_TRANSFORMACAO_DE_CONTEUDO"

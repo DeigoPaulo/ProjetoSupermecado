@@ -22,4 +22,4 @@ A candidata não recalcula nem altera base, alíquota ou valor já informados. `
 
 ## Próximo passo
 
-Modelar o enquadramento legal do IPI (`cEnq`) dentro da política de IPI devolvido, separado do valor informativo da memória e sem copiar automaticamente o cadastro atual.
+Concluído no ciclo 92: o enquadramento legal do IPI (`cEnq`) foi modelado dentro da política de IPI devolvido, separado do valor informativo da memória e sem copiar automaticamente o cadastro atual. O próximo passo é discriminar variantes de PIS/COFINS.

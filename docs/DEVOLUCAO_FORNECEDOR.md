@@ -1,5 +1,7 @@
 # Devolução ao fornecedor — preparação fiscal segura
 
+Ciclo 92 — 10/09/2026: `cEnq` recebeu contrato explícito por item, separado do IPI da memória e de `impostoDevol`. O campo nasce vazio, depende do contador, registra obrigação estrutural e contextual e não pode ser aplicado. O inventário passou a 111 campos e três lacunas; 153 testes conjuntos passaram. Próximo passo: variantes de PIS/COFINS, ainda não iniciadas.
+
 Ciclo 91 — 10/09/2026: `pRedBC` foi incluído no grupo ICMS como percentual candidato vazio e não confirmado. Cadastro do produto, XML histórico e memória não preenchem a decisão; percentual informado continua pendente e não modifica a base. O inventário passou a 110 campos e quatro lacunas; 149 testes conjuntos passaram. Próximo passo: enquadramento legal do IPI (`cEnq`).
 
 Ciclo 90 — 10/09/2026: `modBC` foi incluído somente no grupo ICMS como candidato vazio e não confirmado. O XSD preservado reconhece 0 a 3, mas o sistema não escolhe nenhum código nem reutiliza o valor 3 fixado no emissor antigo. Bases e totais permanecem inalterados e apenas conferíveis. O inventário passou a 109 campos e cinco lacunas; 147 testes conjuntos passaram. Próximo passo: `pRedBC` como hipótese contábil pendente.

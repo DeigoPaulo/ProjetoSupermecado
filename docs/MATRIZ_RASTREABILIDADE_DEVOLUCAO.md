@@ -12,6 +12,8 @@ Atualização do ciclo 90: `modBC` foi isolado no grupo ICMS como candidato cont
 
 Atualização do ciclo 91: `pRedBC` foi modelado como hipótese contábil vazia e não confirmada, sem copiar cadastro, XML ou memória e sem alterar a base. O inventário acompanha 110 campos e quatro lacunas.
 
+Atualização do ciclo 92: `cEnq` foi isolado do IPI da memória e de `impostoDevol`, vazio e dependente do contador. A matriz passou a 38 famílias e o inventário a 111 campos com três lacunas; nenhum canal foi liberado.
+
 Esta matriz confronta o contrato neutro da devolução com o pacote XSD preservado e com o código atual dos dois canais. “Focus” significa apenas a cobertura observada no conversor do ERP; não afirma limite comercial ou técnico da API externa. “SEFAZ direta” indica que o adaptador transporta a `NFe` local sem reconstruir seus campos; isso não resolve a ausência do gerador nem comprova schema, assinatura, regra de negócio ou homologação.
 
 Evidência XSD: `PL_010f_v1.04/leiauteNFe_v4.00.xsd`, SHA-256 `2bace939973916d54184ff3e2740041a932de5d79772f3363504504160f22542`. O pacote está preservado, mas não aprovado nem instalado para uso operacional.
@@ -28,7 +30,7 @@ Evidência XSD: `PL_010f_v1.04/leiauteNFe_v4.00.xsd`, SHA-256 `2bace939973916d54
 | Totalização | `total/ICMSTot` e grupos aplicáveis | Não mapeada explicitamente | Preserva XML recebido | Bloqueado |
 | Pagamento fiscal | `pag/detPag/tPag`, `vPag` | Mapeado | Preserva XML recebido | Bloqueado |
 | Observações | `infAdic/infCpl`, `det/infAdProd` | Somente `infCpl` mapeado | Preserva XML recebido | Bloqueado |
-| IPI devolvido | `det/impostoDevol`, `ICMSTot/vIPIDevol` | Não mapeado | Preserva XML recebido | Hipótese pendente |
+| IPI e IPI devolvido | `det/imposto/IPI/cEnq`, `det/impostoDevol`, `ICMSTot/vIPIDevol` | `cEnq` parcial; devolução não mapeada | Preserva XML recebido | Hipótese pendente |
 | ICMS-ST/FCP | grupos ICMS e totais conforme hipótese | Não comprovado | Preserva XML recebido | Hipótese pendente |
 | IBS/CBS/RTC | `det/imposto/IBSCBS`, `total/IBSCBSTot` | Não mapeado | Preserva XML recebido | Vigência/leiaute pendentes |
 

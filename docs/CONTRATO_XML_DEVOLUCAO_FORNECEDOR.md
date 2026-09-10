@@ -1,5 +1,7 @@
 # Contrato proposto do XML de devolução ao fornecedor
 
+Ciclo 92 — 10/09/2026: `cEnq` foi modelado como candidato vazio e não confirmado, com destino futuro `det/imposto/IPI/cEnq`. O XSD o exige apenas quando o grupo IPI existe; a aplicação do grupo e o código permanecem decisões contábeis. Cadastro, XML histórico e memória não são fontes automáticas. O inventário soma 111 campos e três lacunas; 153 testes passaram. Próximo passo: variantes de PIS/COFINS.
+
 Ciclo 91 — 10/09/2026: o grupo ICMS recebeu `reducao_base_candidata`, fonte contábil pendente e confirmação falsa. Percentual com formato válido continua bloqueado e não altera a base da memória. Nenhuma fonte cadastral ou histórica é copiada. O inventário soma 110 campos e quatro lacunas; 149 testes passaram. Próximo passo: `cEnq` do IPI.
 
 Ciclo 90 — 10/09/2026: o grupo ICMS recebeu `modalidade_base_candidata`, fonte contábil pendente e confirmação falsa. Códigos 0 a 3 são apenas formatos reconhecidos pelo XSD; candidato preenchido continua bloqueado. A decisão não altera `vBC`, memória ou totalização e não chega aos adaptadores. O inventário soma 109 campos e cinco lacunas; 147 testes passaram. Próximo passo: `pRedBC`.
