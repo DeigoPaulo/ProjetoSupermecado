@@ -1,5 +1,19 @@
 # Roadmap de evolucao pos-piloto
 
+## Ponto de retomada — ciclo 74, 10/09/2026
+
+Criado o contrato `supplier_return_commercial_adjustments_v1` para os ajustes informados no rateio. A extração exige a cadeia composição/rateio/reflexos aprovados/memória revisada aprovada e preserva a memória histórica que originou cada linha. Frete, seguro, despesas, desconto, base e total são apenas reproduzidos e conferidos por item e no total; o contrato proíbe reaplicar esses componentes às bases tributárias.
+
+- [x] Estruturar ajustes por item e totais com IDs e hashes de toda a origem.
+- [x] Exigir reflexos e memória final aprovados, além da integridade do rateio.
+- [x] Preservar a distinção entre memória histórica do rateio e memória revisada final.
+- [x] Conferir somas informadas sem preencher valores nem alterar bases.
+- [x] Integrar o diagnóstico à prévia protegida.
+- [x] Validar 105 testes conjuntos dos contratos e do fluxo de devolução.
+- [ ] Próximo passo: estruturar o grupo de transporte a partir da ficha ligada à memória final, validando campos condicionais sem gerar XML.
+
+Sem migração, reaplicação de valores, cálculo tributário, XML ou transmissão neste ciclo.
+
 ## Ponto de retomada — ciclo 73, 10/09/2026
 
 Criado o contrato `supplier_return_item_tax_values_v1` para transportar, sem recalcular, as bases, alíquotas e valores da memória revisada aprovada. Cada linha exige vínculo exato entre rascunho, parametrização, memória, revisão e nItem. ICMS, PIS e COFINS permanecem pendentes da matriz; ICMS-ST/FCP ficam em hipótese não confirmada; IPI da memória não é tratado como `impostoDevol`; IBS/CBS permanecem bloqueados por vigência e leiaute. A prévia apresenta esses estados sem declarar suporte fiscal.
@@ -10,7 +24,7 @@ Criado o contrato `supplier_return_item_tax_values_v1` para transportar, sem rec
 - [x] Validar formatos decimais sem criar fórmulas ou recalcular tributos.
 - [x] Integrar a extração e a prévia protegida.
 - [x] Validar 102 testes conjuntos dos contratos e do fluxo de devolução.
-- [ ] Próximo passo: estruturar ajustes comerciais por item a partir do rateio aprovado, conferindo os totais informados sem aplicá-los novamente às bases.
+- [x] Estruturar ajustes comerciais por item a partir do rateio aprovado, conferindo os totais informados sem aplicá-los novamente às bases (ciclo 74).
 
 Sem migração, cálculo tributário, XML, certificado ou transmissão neste ciclo.
 

@@ -11,6 +11,12 @@
   {% for grupo in grupos %}<tr><td>{{ grupo.nome }}</td><td>{{ grupo.estado }}</td><td>{% for ref in grupo.referencias %}<details><summary>{{ ref.tipo }} · #{{ ref.id }}</summary><p style="overflow-wrap:anywhere">SHA-256: {{ ref.sha256 }}</p></details>{% empty %}Sem referência disponível{% endfor %}</td></tr>{% endfor %}
   </tbody></table>
 </section>
+<section class="panel mt-panel"><div class="panel-title">Ajustes comerciais por item</div>
+  <p><strong>{% if resultado.ajustes_comerciais.validacao.origem_completa %}Rateio ligado à cadeia final aprovada{% else %}Rateio final ainda pendente{% endif %}.</strong> Frete, seguro, despesas e desconto são apenas conferidos; não são reaplicados às bases tributárias.</p>
+  <table><thead><tr><th>Item</th><th>Base</th><th>Frete</th><th>Seguro</th><th>Despesas</th><th>Desconto</th><th>Total informado</th></tr></thead><tbody>
+    {% for item in resultado.ajustes_comerciais.conteudo.itens %}<tr><td>{{ item.nitem_novo }}</td><td>{{ item.valor_base|default:"Pendente" }}</td><td>{{ item.frete|default:"Pendente" }}</td><td>{{ item.seguro|default:"Pendente" }}</td><td>{{ item.outras_despesas|default:"Pendente" }}</td><td>{{ item.desconto|default:"Pendente" }}</td><td>{{ item.total_informado|default:"Pendente" }}</td></tr>{% endfor %}
+  </tbody></table>
+</section>
 <section class="panel mt-panel"><div class="panel-title">Bases e valores tributários por item</div>
   <p><strong>{% if resultado.tributos_itens.validacao.origem_completa %}Origem aprovada e íntegra{% else %}Origem tributária ainda pendente{% endif %}.</strong> Os números são reproduzidos da memória; esta tela não calcula tributos nem confirma a hipótese fiscal.</p>
   {% for item in resultado.tributos_itens.conteudo.itens %}<details><summary>Item {{ item.nitem_novo }} · original {{ item.nitem_original }}</summary>
@@ -59,6 +65,7 @@
   <ul>{% for item in resultado.identidade_partes.validacao.bloqueios %}<li>{{ item.grupo }}: {{ item.codigo }}</li>{% endfor %}</ul>
   <ul>{% for item in resultado.produtos.validacao.bloqueios %}<li>{{ item.grupo }}: {{ item.codigo }}</li>{% endfor %}</ul>
   <ul>{% for item in resultado.tributos_itens.validacao.bloqueios %}<li>{{ item.grupo }}: {{ item.codigo }}</li>{% endfor %}</ul>
+  <ul>{% for item in resultado.ajustes_comerciais.validacao.bloqueios %}<li>{{ item.grupo }}: {{ item.codigo }}</li>{% endfor %}</ul>
   {% for erro in resultado.validacao.erros %}<p>{{ erro.caminho }}: {{ erro.codigo }}</p>{% endfor %}
   </details>
 </section>

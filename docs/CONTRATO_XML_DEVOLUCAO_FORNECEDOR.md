@@ -1,5 +1,7 @@
 # Contrato proposto do XML de devolução ao fornecedor
 
+Ciclo 74 — 10/09/2026: implementado `supplier_return_commercial_adjustments_v1`. O contrato replica o rateio somente quando a cadeia final de reflexos e memória está aprovada, confere linhas e totais e mantém hashes das duas etapas históricas. Frete, seguro, despesas e desconto não são somados novamente a bases já revisadas. O mapeamento XML continua bloqueado; 105 testes passaram.
+
 Ciclo 73 — 10/09/2026: implementado `supplier_return_item_tax_values_v1`. O contrato replica os números da memória aprovada, exige seus hashes e vínculo por item e não contém fórmula tributária. Os estados dos grupos impedem confundir números informados com suporte ao XML: matriz de ICMS/PIS/COFINS, hipótese ST/FCP, grupo próprio de IPI devolvido e vigência IBS/CBS continuam pendentes. A prévia protegida foi ampliada e 102 testes passaram.
 
 Ciclo 72 — 10/09/2026: implementado `supplier_return_products_v1`. O contrato recebe dados comerciais do snapshot original e CFOP, valor da operação e classificação da cadeia de memória aprovada. A extração não usa o cadastro mutável para substituir o retrato fiscal nem calcula valores ausentes. Quantidade × unitário é somente uma conferência do valor expressamente informado. Unidade, quantidade e valor tributáveis foram incluídos no analisador documental. Geração, XSD e transmissão seguem bloqueados; 99 testes passaram.
@@ -45,7 +47,7 @@ Escopo inicial proposto: devolução de compra pelo supermercado ao fornecedor, 
 | produtos | itens selecionados, snapshot original e memória aprovada | `det/prod` | Contrato/extrator implementados no ciclo 72; paridade XSD, conversões especiais e cenários reais ainda pendentes |
 | classificação | parametrização aprovada por item | grupos CST/CSOSN e CFOP | Matriz de capacidade por grupo, regime e vigência; código cadastrado não garante suporte à serialização |
 | bases e valores | memória revisada aprovada | `det/imposto` | Contrato/extrator implementados no ciclo 73; matriz por hipótese e serialização continuam bloqueadas |
-| ajustes comerciais | composição e rateio de origem | frete, seguro, despesas e desconto por produto | Conferir totais e não reaplicar impactos já incorporados às bases |
+| ajustes comerciais | composição, rateio, reflexos e memória final | frete, seguro, despesas e desconto por produto | Contrato/extrator implementados no ciclo 74; mapeamento XML permanece bloqueado |
 | IPI devolvido | ainda sem grupo específico | eventual `impostoDevol` e total correspondente | Modelar os campos e a hipótese aplicável; IPI informado na memória não implica IPI devolvido |
 | ICMS-ST/FCP | orientação e memória, ainda genéricas | grupos específicos e/ou informações complementares conforme hipótese | Bloquear até parametrizar a hipótese contábil e os campos exigidos; não destacar ST automaticamente |
 | IBS/CBS | bases/valores e orientação textual | grupos RTC do leiaute vigente | Falta fechar classificações, grupos, totais e regras por vigência; não considerar memória genérica suficiente |

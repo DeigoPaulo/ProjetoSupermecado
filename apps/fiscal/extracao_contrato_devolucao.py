@@ -7,6 +7,10 @@ from django.db import transaction
 
 from apps.accounts.permissions import REVISAO_FISCAL, has_role
 from apps.clientes.escopo import empresa_id_do_usuario
+from .ajustes_comerciais_devolucao import (
+    CONTRATO_AJUSTES_COMERCIAIS,
+    validar_ajustes_comerciais_devolucao,
+)
 from .contrato_devolucao import CONTRATO, GRUPOS, validar_contrato_devolucao
 from .devolucao_fornecedor import _hash_conteudo_revisao
 from .dossie_devolucao import diagnosticar_dossie
@@ -375,6 +379,69 @@ def _extrair_tributos_itens(rascunho, memoria, parametros):
     return {"conteudo": conteudo, "validacao": validar_tributos_itens_devolucao(conteudo)}
 
 
+def _extrair_ajustes_comerciais(rascunho, memoria, parametros, rateio, reflexos):
+    memoria_aprovada, revisao_memoria = _memoria_aprovada_e_integra(memoria, parametros)
+    revisao_reflexos = getattr(reflexos, "revisao", None) if reflexos else None
+    origem_aprovada = bool(
+        memoria_aprovada and rateio and reflexos and revisao_reflexos
+        and memoria.reflexos_origem_id == reflexos.pk
+        and reflexos.rateio_id == rateio.pk
+        and revisao_reflexos.decisao == "APROVAR"
+        and _hash_conteudo_revisao(rateio.conteudo_snapshot) == rateio.conteudo_sha256
+        and _hash_conteudo_revisao(reflexos.conteudo_snapshot) == reflexos.conteudo_sha256
+        and _hash_conteudo_revisao(revisao_reflexos.conteudo_snapshot) == revisao_reflexos.conteudo_sha256
+        and revisao_reflexos.conteudo_snapshot.get("reflexos_sha256") == reflexos.conteudo_sha256
+    )
+    linhas_rateio = {
+        linha.get("item_rascunho_id"): linha
+        for linha in (rateio.conteudo_snapshot.get("itens", []) if origem_aprovada else [])
+    }
+    itens_memoria_rateio = {
+        item.item_rascunho_id: item for item in rateio.composicao.memoria.itens.all()
+    } if origem_aprovada else {}
+    itens = []
+    for indice, item_rascunho in enumerate(rascunho.itens.order_by("item_entrada_id"), 1):
+        linha = linhas_rateio.get(item_rascunho.pk, {})
+        item_memoria = itens_memoria_rateio.get(item_rascunho.pk)
+        itens.append({
+            "nitem_novo": indice,
+            "nitem_original": int(item_rascunho.numero_item_xml) if str(item_rascunho.numero_item_xml).isdigit() else item_rascunho.numero_item_xml,
+            "item_rascunho_id": item_rascunho.pk,
+            "item_memoria_id": item_memoria.pk if item_memoria and linha.get("item_memoria_id") == item_memoria.pk else 0,
+            "valor_base": linha.get("base", ""),
+            "frete": linha.get("frete", ""),
+            "seguro": linha.get("seguro", ""),
+            "outras_despesas": linha.get("despesas", ""),
+            "desconto": linha.get("desconto", ""),
+            "total_informado": linha.get("total", ""),
+        })
+    dados_totais = rateio.composicao.conteudo_snapshot.get("dados", {}) if origem_aprovada else {}
+    totais = {
+        "valor_base": dados_totais.get("valor_base", ""),
+        "frete": dados_totais.get("frete", ""),
+        "seguro": dados_totais.get("seguro", ""),
+        "outras_despesas": dados_totais.get("despesas", ""),
+        "desconto": dados_totais.get("desconto", ""),
+        "total_informado": dados_totais.get("total", ""),
+    }
+    conteudo = {
+        "contrato": CONTRATO_AJUSTES_COMERCIAIS,
+        "operacao": "DEVOLUCAO_COMPRA",
+        "permite_emissao": False,
+        "origem_aprovada": origem_aprovada,
+        "rateio_id": rateio.pk if rateio else 0,
+        "rateio_sha256": rateio.conteudo_sha256 if rateio else "",
+        "reflexos_id": reflexos.pk if reflexos else 0,
+        "reflexos_sha256": reflexos.conteudo_sha256 if reflexos else "",
+        "memoria_id": memoria.pk if memoria else 0,
+        "memoria_sha256": memoria.conteudo_sha256 if memoria else "",
+        "revisao_memoria_sha256": revisao_memoria.conteudo_sha256 if revisao_memoria else "",
+        "itens": itens,
+        "totais": totais,
+    }
+    return {"conteudo": conteudo, "validacao": validar_ajustes_comerciais_devolucao(conteudo)}
+
+
 def extrair_contrato_devolucao(rascunho_id, usuario):
     if not has_role(usuario, REVISAO_FISCAL):
         raise ValidationError("Sem permissão para consultar o contrato fiscal.")
@@ -453,4 +520,7 @@ def extrair_contrato_devolucao(rascunho_id, usuario):
                 "identidade_partes": _extrair_identidade_partes(rascunho, xml, parecer),
                 "produtos": _extrair_produtos(rascunho, memoria, parametros),
                 "tributos_itens": _extrair_tributos_itens(rascunho, memoria, parametros),
+                "ajustes_comerciais": _extrair_ajustes_comerciais(
+                    rascunho, memoria, parametros, rateio, reflexos
+                ),
                 "pendencias_dossie": [e for e in dossie["etapas"] if e["estado"] in ("Pendente", "Desatualizado", "Inconsistente", "Bloqueado")]}

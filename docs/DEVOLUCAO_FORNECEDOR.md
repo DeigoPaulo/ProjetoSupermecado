@@ -1,5 +1,7 @@
 # Devolução ao fornecedor — preparação fiscal segura
 
+Ciclo 74 — 10/09/2026: ajustes comerciais receberam contrato puro, extração e painel. O serviço só expõe o rateio quando reflexos e memória revisada final estão aprovados e íntegros; preserva também a memória histórica que originou as linhas. Somas são conferidas, e um bloqueio expresso impede reaplicação às bases. Foram aprovados 105 testes. Próximo passo: grupo de transporte.
+
 Ciclo 73 — 10/09/2026: bases, alíquotas e valores por item receberam contrato puro, extração e painel. Somente memória revisada aprovada e íntegra alimenta os números. Grupos sensíveis mantêm estados separados: ST/FCP sem hipótese confirmada, IPI da memória sem equivalência automática com IPI devolvido e IBS/CBS sem vigência/leiaute fechados. O contrato não calcula e nunca libera emissão. Foram aprovados 102 testes. Próximo passo: ajustes comerciais do rateio aprovado.
 
 Ciclo 72 — 10/09/2026: produtos receberam contrato puro, extração autenticada e painel na prévia. O item liga nItem, snapshot XML, parametrização e memória; valor e classificação só aparecem após aprovação e integridade da cadeia. Unidade/quantidade/valor tributáveis passaram a ser preservados no snapshot. O validador confere formatos, duplicidades e coerência aritmética, sem calcular ou preencher valores. Foram aprovados 99 testes. Próximo passo: bases e valores tributários por item.

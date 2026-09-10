@@ -710,6 +710,18 @@ class PreparacaoDevolucaoFornecedorTests(TestCase):
         self.assertEqual(grupos["ibs"]["estado"], "VIGENCIA_E_LEIAUTE_PENDENTES")
         self.assertFalse(tributos["validacao"]["permite_emissao"])
 
+        ajustes = extrair_contrato_devolucao(rascunho.pk, self.revisor)["ajustes_comerciais"]
+        item_ajuste = ajustes["conteudo"]["itens"][0]
+        self.assertTrue(ajustes["validacao"]["origem_completa"])
+        self.assertEqual(item_ajuste["valor_base"], "10.00")
+        self.assertEqual(item_ajuste["frete"], "2.00")
+        self.assertEqual(item_ajuste["seguro"], "1.00")
+        self.assertEqual(item_ajuste["outras_despesas"], "0.50")
+        self.assertEqual(item_ajuste["desconto"], "0.50")
+        self.assertEqual(item_ajuste["total_informado"], "13.00")
+        self.assertIn("NAO_REAPLICAR_A_BASES_TRIBUTARIAS", {item["codigo"] for item in ajustes["validacao"]["bloqueios"]})
+        self.assertFalse(ajustes["validacao"]["permite_emissao"])
+
     def test_extracao_referencias_bloqueia_protocolo_ou_snapshot_divergente(self):
         rascunho, _, _, _ = self._reflexos_registrados()
         dfe = DocumentoDFeRecebido.objects.get(entrada_compra=self.entrada)
@@ -773,6 +785,8 @@ class PreparacaoDevolucaoFornecedorTests(TestCase):
         self.assertContains(resposta, "Produtos estruturados")
         self.assertContains(resposta, "Bases e valores tributários por item")
         self.assertContains(resposta, "não calcula tributos")
+        self.assertContains(resposta, "Ajustes comerciais por item")
+        self.assertContains(resposta, "não são reaplicados")
         conteudo_previa = resposta.content.decode().split('<div id="previa-contrato-fiscal">', 1)[1].split('</main>', 1)[0]
         self.assertNotIn("<form", conteudo_previa)
         self.assertEqual(resposta["Cache-Control"], "private, no-store")

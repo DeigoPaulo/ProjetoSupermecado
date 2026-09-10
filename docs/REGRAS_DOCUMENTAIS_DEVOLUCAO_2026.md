@@ -70,3 +70,7 @@ O contrato `supplier_return_products_v1` preserva o vínculo completo do item e 
 ## Implementação do ciclo 73
 
 O contrato `supplier_return_item_tax_values_v1` transporta bases, alíquotas e valores exatamente como aprovados na memória revisada. O vínculo de cada item com parametrização, rascunho e nItem é conferido antes da exposição. Os estados fixos dos grupos impedem usar os números como prova de hipótese fiscal: IPI da memória não vira `impostoDevol`, ST/FCP não ganha regra genérica e IBS/CBS não recebe vigência presumida. O resultado permanece não emissivo.
+
+## Implementação do ciclo 74
+
+O contrato `supplier_return_commercial_adjustments_v1` liga o rateio à cadeia final aprovada, mas preserva a memória anterior que originou os ajustes. Base, frete, seguro, despesas, desconto e total informado são conferidos por linha e no conjunto. O bloqueio `NAO_REAPLICAR_A_BASES_TRIBUTARIAS` impede tratar esses valores como novos impactos depois que os reflexos já foram incorporados e revisados.
