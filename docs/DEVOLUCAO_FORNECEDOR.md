@@ -1,5 +1,7 @@
 # Devolução ao fornecedor — preparação fiscal segura
 
+Ciclo 68 — 10/09/2026: referências fiscais por item agora possuem validador puro, com chave/DV, nItem original, duplicidades, proibição de NFref simultâneo e bloqueio explícito de múltiplas origens no escopo inicial. São 10 testes novos, além dos 7 do envelope já existente. A validação não acessa o dossiê, não gera XML e não libera Focus ou SEFAZ. Próximo passo: extração autenticada e confronto com XML/partes.
+
 ## Retomada atual — ciclo 67, 10/09/2026
 
 Confronto dos trechos oficiais de devolução registrado em [REGRAS_DOCUMENTAIS_DEVOLUCAO_2026.md](REGRAS_DOCUMENTAIS_DEVOLUCAO_2026.md). Corrigida a proposta de referência do cabeçalho para chave+nItem original em DFeReferenciado por item. A NT v1.51 indica 05/10/2026 na regra específica, mas tem divergência no histórico: confirmação operacional continua pendente. Documentados pagamento sem pagamento/valor zero e IPI devolvido separado; isso não decide enquadramento tributário nem acerto financeiro do fornecedor.

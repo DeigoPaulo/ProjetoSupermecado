@@ -1,5 +1,7 @@
 # Matriz de conformidade fiscal e contábil — Goiás 2026
 
+Ciclo 68 — 10/09/2026: validador estrutural não emissivo do grupo DFeReferenciado por item implementado e testado. Cobertura inclui DV da chave, nItem, duplicidades, NFref simultâneo, modelo/operação/política e múltiplas origens fora do escopo inicial. Permanecem pendentes confronto autenticado do XML e das partes, NFA/CNPJ alfanumérico, vigência em Goiás, conteúdo tributário, totalização, contador e homologação.
+
 ## Retomada atual — ciclo 67, 10/09/2026
 
 Confronto dos trechos oficiais de devolução registrado em [REGRAS_DOCUMENTAIS_DEVOLUCAO_2026.md](REGRAS_DOCUMENTAIS_DEVOLUCAO_2026.md). Corrigida a proposta de referência do cabeçalho para chave+nItem original em DFeReferenciado por item. A NT v1.51 indica 05/10/2026 na regra específica, mas tem divergência no histórico: confirmação operacional continua pendente. Documentados pagamento sem pagamento/valor zero e IPI devolvido separado; isso não decide enquadramento tributário nem acerto financeiro do fornecedor.

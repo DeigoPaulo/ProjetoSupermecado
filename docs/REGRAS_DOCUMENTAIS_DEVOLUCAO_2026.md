@@ -47,10 +47,14 @@ A NT 2026.007 p. 3 informa homologação em 01/09/2026 e produção em 03/11/202
 
 - [x] Corrigir o destino documental proposto e separar restrição do produto de regra oficial.
 - [x] Registrar pagamento, IPI e divergência de cronograma com versão/página/regra rastreáveis.
-- [ ] Implementar validador puro e não emissivo de referências por item, separado do envelope interno; entrada explícita da operação e versão da política, sem ativação automática por data.
-- [ ] Testar: item ausente; chave inválida; nItem original ausente/inválido; par duplicado; mesma chave com itens distintos; NFref simultâneo; modelo 65; múltiplas origens fora do escopo inicial; partes divergentes; XML original indisponível. Não generalizar identidade extraída da chave para NFA/CNPJ alfanumérico.
+- [x] Implementar validador puro e não emissivo de referências por item, separado do envelope interno; entrada explícita da operação e versão da política, sem ativação automática por data (ciclo 68).
+- [x] Testar estrutura: item ausente; chave inválida e dígito verificador; nItem original ausente/inválido; par duplicado; mesma chave com itens distintos; NFref simultâneo; modelo 65 e múltiplas origens fora do escopo inicial. Partes, NFA/CNPJ alfanumérico e XML original permanecem para a extração autenticada.
 - [ ] Integrar a extração autenticada usando chave e nItem conferidos no XML original; manter isolamento por empresa, integridade e bloqueios existentes.
 - [ ] Testar pagamento sem cobrança e grupo IPI devolvido com casos aprovados pelo contador; completar matriz tributária/totalização e análise das NT/tabelas restantes.
 - [ ] Confirmar cronograma oficial e pacote aplicável antes de instalar schemas ou criar gerador separado; homologar Focus e direta independentemente.
 
 Neste ciclo foram alterados apenas documentos. Nenhum XML gerado, schema instalado, certificado acessado, migração aplicada, lançamento financeiro criado ou transmissão realizada.
+
+## Implementação do ciclo 68
+
+O contrato puro `supplier_return_item_references_v1`, em `apps/fiscal/referencias_item_devolucao.py`, valida modelo/operação/política explícitos, proíbe NFref no cabeçalho, exige chave de 44 dígitos com DV válido e nItem original, rejeita duplicidades do par chave+nItem e da sequência do novo documento e nunca libera XML ou emissão. Múltiplas chaves são estruturalmente reconhecidas, mas retornam bloqueio de escopo do produto. A validação ampliada aprovou 91 testes do novo contrato, envelope e fluxo de devolução; o check do Django não encontrou problemas. Ainda não consulta XML/banco, confere partes, aplica vigência ou alimenta Focus/SEFAZ.

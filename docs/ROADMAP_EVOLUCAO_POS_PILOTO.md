@@ -1,5 +1,13 @@
 # Roadmap de evolucao pos-piloto
 
+## Ponto de retomada — ciclo 68, 10/09/2026
+
+Implementado o contrato puro e não emissivo de referências da devolução por item. Valida chave de 44 dígitos e DV, nItem original, unicidade, política/operação/modelo explícitos e ausência de NFref no cabeçalho. Múltiplas origens recebem bloqueio de escopo, sem serem tratadas como proibição fiscal. A validação ampliada aprovou 91 testes do novo contrato, envelope e fluxo de devolução; check do Django sem problemas. Não houve banco, XML, schema, certificado, cobrança ou transmissão.
+
+- [x] Implementar e testar o validador estrutural de DFeReferenciado por item.
+- [ ] Próximo passo: extração autenticada de chave+nItem a partir do dossiê/XML original, conferindo integridade, modelo e partes no escopo da empresa.
+- [ ] Depois: completar matriz tributária, totais e vigências antes de criar o gerador separado e homologar cada canal.
+
 ## Retomada atual — ciclo 67, 10/09/2026
 
 Confronto dos trechos oficiais de devolução registrado em [REGRAS_DOCUMENTAIS_DEVOLUCAO_2026.md](REGRAS_DOCUMENTAIS_DEVOLUCAO_2026.md). Corrigida a proposta de referência do cabeçalho para chave+nItem original em DFeReferenciado por item. A NT v1.51 indica 05/10/2026 na regra específica, mas tem divergência no histórico: confirmação operacional continua pendente. Documentados pagamento sem pagamento/valor zero e IPI devolvido separado; isso não decide enquadramento tributário nem acerto financeiro do fornecedor.
