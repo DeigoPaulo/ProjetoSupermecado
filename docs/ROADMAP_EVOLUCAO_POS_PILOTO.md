@@ -1,5 +1,7 @@
 # Roadmap de evolucao pos-piloto
 
+Ciclo 66 — 10/09/2026: bloqueio de obtenção das fontes superado com sessão HTTP/cookies. ZIP oficial 010f e PDFs MOC Anexo I, NT 2025.002 v1.51 e NT 2026.007 v1.00 preservados em docs/evidencias/nfe_2026_09_10, com inventário e hashes no README da pasta. ZIP passou CRC e XSD raiz compilou em memória sem rede; identificação dos PDFs conferida. Não houve instalação, alteração fiscal, banco ou emissão. Leitura normativa integral e validação de vigências permanecem pendentes: próximo passo é confrontar regras de devolução com o contrato e os dados do sistema. Os bloqueios históricos de acesso descritos abaixo não representam mais falta dos arquivos; a aprovação do pacote continua pendente.
+
 ## Ponto de retomada — ciclo 65, 09/09/2026
 
 Bloqueio documental confirmado: `fiscal_schemas` contém somente README.md, sem pacote XSD. Nova tentativa de abrir a página oficial de schemas indicada pelo projeto retornou redirecionamento circular; a leitura integral do MOC/NT permanece pendente. Não houve alteração de regras, configuração, certificado, banco ou emissão. Não contar esta verificação como módulo fiscal concluído.
