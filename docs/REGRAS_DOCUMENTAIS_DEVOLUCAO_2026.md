@@ -1,6 +1,6 @@
 # Devolução: confronto documental e plano de validação
 
-10/09/2026 · atualizado no ciclo 77 · análise técnica parcial, sem homologação ou autorização de emissão.
+10/09/2026 · atualizado no ciclo 78 · análise técnica parcial, sem homologação ou autorização de emissão.
 
 ## Evidência e limite da análise
 
@@ -86,3 +86,7 @@ O contrato `supplier_return_diagnostic_totals_v1` totaliza separadamente os valo
 ## Implementação do ciclo 77
 
 O contrato `supplier_return_fiscal_payment_policy_v1` fixa `tPag=90` e `vPag=0.00` exclusivamente para a preparação da devolução de compra modelo 55/finalidade 4. O validador rejeita qualquer forma ou valor alternativo, o uso do total comercial e qualquer efeito operacional. A política aparece apenas na prévia fiscal restrita e não produz `pag/detPag`, XML ou transmissão.
+
+## Implementação do ciclo 78
+
+O contrato `supplier_return_fiscal_notes_policy_v1` classifica motivo, fundamentação e observações existentes como fontes internas por padrão. Somente IDs, hashes, presença e contagem entram no diagnóstico; os textos não são reproduzidos. `infAdic` e `infAdProd` permanecem vazios, e qualquer tentativa de preenchê-los ou habilitar exportação automática é bloqueada até existir conteúdo fiscal específico, aprovado e testado.

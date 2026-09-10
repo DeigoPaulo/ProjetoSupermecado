@@ -747,6 +747,16 @@ class PreparacaoDevolucaoFornecedorTests(TestCase):
         self.assertTrue(all(valor is False for valor in pagamento["conteudo"]["efeitos_operacionais"].values()))
         self.assertFalse(pagamento["validacao"]["permite_emissao"])
 
+        observacoes = extrair_contrato_devolucao(rascunho.pk, self.revisor)["observacoes_fiscais"]
+        self.assertTrue(observacoes["validacao"]["estrutura_valida"])
+        self.assertTrue(observacoes["validacao"]["origem_completa"])
+        self.assertTrue(observacoes["conteudo"]["inventario_interno"]["motivo_operacional_presente"])
+        self.assertEqual(observacoes["conteudo"]["inventario_interno"]["observacoes_parametros"], 1)
+        self.assertEqual(observacoes["conteudo"]["inventario_interno"]["observacoes_memoria"], 1)
+        self.assertEqual(observacoes["conteudo"]["textos_fiscais"]["infadic"], "")
+        self.assertEqual(observacoes["conteudo"]["textos_fiscais"]["itens"][0]["infadprod"], "")
+        self.assertFalse(observacoes["validacao"]["permite_emissao"])
+
     def test_extracao_referencias_bloqueia_protocolo_ou_snapshot_divergente(self):
         rascunho, _, _, _ = self._reflexos_registrados()
         dfe = DocumentoDFeRecebido.objects.get(entrada_compra=self.entrada)
@@ -818,6 +828,9 @@ class PreparacaoDevolucaoFornecedorTests(TestCase):
         self.assertContains(resposta, "Esta conferência não forma o valor total da NF-e")
         self.assertContains(resposta, "Tratamento fiscal de pagamento")
         self.assertContains(resposta, "Não usa o total comercial")
+        self.assertContains(resposta, "Separação das observações")
+        self.assertContains(resposta, "não recebem cópia automática")
+        self.assertNotContains(resposta, "Orientação formal do responsável contábil para este caso concreto")
         conteudo_previa = resposta.content.decode().split('<div id="previa-contrato-fiscal">', 1)[1].split('</main>', 1)[0]
         self.assertNotIn("<form", conteudo_previa)
         self.assertEqual(resposta["Cache-Control"], "private, no-store")

@@ -1,5 +1,7 @@
 # Matriz de conformidade fiscal e contábil — Goiás 2026
 
+Ciclo 78 — 10/09/2026: implementada a separação obrigatória entre anotações internas e futuros textos fiscais. A extração confere a cadeia aprovada e mostra somente inventário, IDs e hashes; não expõe o conteúdo. `infAdic`/`infAdProd` ficam vazios e a exportação automática é proibida. A prévia restrita foi ampliada e 117 testes passaram; serialização e homologação seguem bloqueadas.
+
 Ciclo 77 — 10/09/2026: implementada a política isolada `tPag=90`/`vPag=0.00` para devolução modelo 55/finalidade 4. O contrato rejeita uso do total comercial e qualquer efeito operacional; o fluxo de venda existente não é chamado. A prévia restrita foi ampliada e 114 testes passaram. Serialização, regras complementares e homologação seguem bloqueadas.
 
 Ciclo 76 — 10/09/2026: implementada totalização somente diagnóstica dos valores já informados. O contrato exige a mesma memória aprovada para produtos, tributos e ajustes, confere somas e mantém separados os grupos tributários. `vNF`, IPI devolvido e totais RTC ficam vazios e não podem ser inferidos. A prévia foi ampliada e 111 testes passaram; geração e homologação permanecem bloqueadas.

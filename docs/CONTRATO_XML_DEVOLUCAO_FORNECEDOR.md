@@ -1,5 +1,7 @@
 # Contrato proposto do XML de devolução ao fornecedor
 
+Ciclo 78 — 10/09/2026: implementado `supplier_return_fiscal_notes_policy_v1`. O contrato inventaria fontes internas por IDs, hashes e contagens, sem copiar seu conteúdo. `infAdic` e `infAdProd` ficam vazios e o validador rejeita exportação automática ou texto não aprovado. Ainda não há serialização; 117 testes passaram.
+
 Ciclo 77 — 10/09/2026: implementado `supplier_return_fiscal_payment_policy_v1`. A política isolada exige `tPag=90`, `vPag=0.00`, devolução modelo 55/finalidade 4 e nenhum efeito operacional. Total comercial não pode alimentar o pagamento. Ainda não há serialização de `pag/detPag`; regras complementares e homologação permanecem bloqueadas. Foram aprovados 114 testes.
 
 Ciclo 76 — 10/09/2026: implementado `supplier_return_diagnostic_totals_v1`. Ele consolida valores comerciais e tributários já informados quando produtos, tributos e ajustes pertencem à mesma memória aprovada. A soma é apenas conferência; `vNF`, IPI devolvido e totais RTC não podem ser preenchidos. O mapeamento XML segue bloqueado e 111 testes passaram.
@@ -60,7 +62,7 @@ Escopo inicial proposto: devolução de compra pelo supermercado ao fornecedor, 
 | transporte | ficha logística | `transp` | Contrato/extrator implementados no ciclo 75; serialização, paridade XSD e casos reais continuam bloqueados |
 | total fiscal | diagnóstico de produtos, ajustes e tributos informados | `total` | Contrato/extrator diagnóstico no ciclo 76; `vNF`, IPI devolvido, totais RTC e serialização permanecem bloqueados |
 | pagamento | política isolada e não emissiva | `pag/detPag`: `tPag=90`, `vPag=0.00` no escopo proposto | Contrato/extrator implementados no ciclo 77; serialização e regras complementares continuam bloqueadas; nenhum efeito operacional |
-| observações | parecer e fundamento aprovado | `infAdic` | Separar texto interno de informação fiscal exigida, sem credenciais ou dados indevidos |
+| observações | inventário de parecer, itens, memória e transporte | `infAdic` e `infAdProd` | Contrato/extrator implementados no ciclo 78; textos permanecem vazios até aprovação específica e serialização segue bloqueada |
 | envelope técnico | somente na futura emissão | número, série, chave, datas, ambiente, assinatura | Fora do validador preliminar; sem reserva de número, certificado, chamada externa ou XML nesta etapa |
 
 O contrato deve transportar IDs e hashes de todas as origens e decisões, além da cadeia de correção da memória. Deve registrar `permite_emissao=false` no estágio preliminar. O resultado do validador deverá distinguir ausência, divergência, origem superada e grupo não suportado. Qualquer grupo desconhecido bloqueia; nunca omitir silenciosamente.
@@ -85,7 +87,7 @@ As orientações foram consultadas para identificar riscos e requisitos. Não su
 
 - [x] Mapear fontes existentes, acoplamentos e lacunas (ciclo 61).
 - [ ] Obter e ler integralmente MOC/NT e XSD aplicáveis; fixar versões e hashes em evidência local.
-- [ ] Completar o contrato neutro e seu validador somente leitura; envelope, referência chave+nItem, identificação, partes, produtos, valores, ajustes, transporte, diagnóstico de totais e política de pagamento estão estruturados, mas total fiscal serializável, observações e grupos tributários especiais ainda não.
+- [ ] Completar o contrato neutro e seu validador somente leitura; grupos gerais e políticas de pagamento/observações estão estruturados, mas total fiscal serializável e grupos tributários especiais ainda não.
 - [ ] Fechar dados faltantes e casos esperados com o contador, especialmente ST, IPI devolvido, RTC, total fiscal e pagamento.
 - [ ] Implementar gerador separado com casos sintéticos e validação XSD; manter transmissão bloqueada.
 - [ ] Testar paridade de conteúdo Focus/direta e homologar separadamente com credenciais reais autorizadas.

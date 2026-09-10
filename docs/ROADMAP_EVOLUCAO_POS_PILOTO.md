@@ -1,5 +1,19 @@
 # Roadmap de evolucao pos-piloto
 
+## Ponto de retomada — ciclo 78, 10/09/2026
+
+Criado o contrato `supplier_return_fiscal_notes_policy_v1` para separar anotações internas de futuros textos fiscais. A extração confere parecer, parametrização, memória e revisão, mas expõe somente IDs, hashes e um inventário de presença/contagem. Motivo operacional, fundamentações e observações não são copiados para a prévia nem para os campos fiscais. `infAdic` e `infAdProd` permanecem vazios, e qualquer preenchimento ou exportação automática é rejeitado.
+
+- [x] Inventariar fontes internas sem reproduzir seus textos no contrato ou na prévia.
+- [x] Exigir cadeia final aprovada e hashes de parecer, parâmetros, memória e revisão.
+- [x] Manter `infAdic` e `infAdProd` vazios até aprovação fiscal específica.
+- [x] Rejeitar cópia automática ou injeção antecipada de texto fiscal.
+- [x] Integrar o diagnóstico à prévia protegida sem expor conteúdo interno.
+- [x] Validar 117 testes conjuntos dos contratos e do fluxo de devolução.
+- [ ] Próximo passo: estruturar o grupo específico de IPI devolvido por item, separado do IPI da memória e sem presumir hipótese, percentual ou valor.
+
+Sem migração, cópia de texto para XML, geração de XML, acesso a certificado ou transmissão neste ciclo.
+
 ## Ponto de retomada — ciclo 77, 10/09/2026
 
 Criado o contrato `supplier_return_fiscal_payment_policy_v1`, isolado do fluxo comum de vendas. Para devolução de compra modelo 55/finalidade 4, a única política aceita nesta etapa é `tPag=90` e `vPag=0.00`. O contrato proíbe usar o total comercial e exige que geração de título, movimento de caixa, acionamento de meio de pagamento e cálculo de troco permaneçam falsos.
@@ -10,7 +24,7 @@ Criado o contrato `supplier_return_fiscal_payment_policy_v1`, isolado do fluxo c
 - [x] Rejeitar qualquer efeito operacional e manter o fluxo de vendas desacoplado.
 - [x] Integrar a política à prévia protegida, sem gerar `pag/detPag`.
 - [x] Validar 114 testes conjuntos dos contratos e do fluxo de devolução.
-- [ ] Próximo passo: estruturar observações fiscais separando conteúdo interno de `infAdic` e `infAdProd`, sem copiar texto livre automaticamente para o XML.
+- [x] Estruturar observações fiscais separando conteúdo interno de `infAdic` e `infAdProd`, sem copiar texto livre automaticamente para o XML (ciclo 78).
 
 Sem migração, lançamento operacional, geração de XML, acesso a certificado ou transmissão neste ciclo.
 

@@ -22,6 +22,10 @@ from .models import ConfiguracaoFiscal, DocumentoDFeRecebido, RascunhoDevolucaoF
 from .pacote_contabil import analisar_xml_nfe
 from .produtos_devolucao import CONTRATO_PRODUTOS, validar_produtos_devolucao
 from .pagamento_fiscal_devolucao import construir_politica_pagamento_devolucao
+from .observacoes_fiscais_devolucao import (
+    CONTRATO_OBSERVACOES,
+    validar_observacoes_fiscais_devolucao,
+)
 from .referencias_item_devolucao import (
     CONTRATO_REFERENCIAS_ITEM,
     POLITICA_REFERENCIAS_ITEM,
@@ -480,6 +484,65 @@ def _extrair_transporte(rascunho, memoria, parametros, ficha):
     return {"conteudo": conteudo, "validacao": validar_transporte_devolucao(conteudo)}
 
 
+def _extrair_observacoes_fiscais(rascunho, memoria, parametros, parecer, transporte):
+    memoria_aprovada, revisao = _memoria_aprovada_e_integra(memoria, parametros)
+    origem_aprovada = bool(
+        memoria_aprovada and parametros and parecer
+        and parametros.parecer_id == parecer.pk
+        and memoria.parametrizacao_id == parametros.pk
+        and _hash_conteudo_revisao(parecer.conteudo_snapshot) == parecer.conteudo_sha256
+        and parametros.conteudo_snapshot.get("parecer_id") == parecer.pk
+        and parametros.conteudo_snapshot.get("parecer_sha256") == parecer.conteudo_sha256
+        and memoria.conteudo_snapshot.get("parametrizacao_id") == parametros.pk
+        and memoria.conteudo_snapshot.get("parametrizacao_sha256") == parametros.conteudo_sha256
+    )
+    itens_parametros = parametros.conteudo_snapshot.get("itens", []) if origem_aprovada else []
+    itens_memoria = memoria.conteudo_snapshot.get("itens", []) if origem_aprovada else []
+    transporte_atual = bool(transporte["validacao"].get("origem_completa"))
+    conteudo = {
+        "contrato": CONTRATO_OBSERVACOES,
+        "operacao": "DEVOLUCAO_COMPRA",
+        "permite_emissao": False,
+        "origem_aprovada": origem_aprovada,
+        "fontes": {
+            "parecer_id": parecer.pk if parecer else 0,
+            "parecer_sha256": parecer.conteudo_sha256 if parecer else "",
+            "parametrizacao_id": parametros.pk if parametros else 0,
+            "parametrizacao_sha256": parametros.conteudo_sha256 if parametros else "",
+            "memoria_id": memoria.pk if memoria else 0,
+            "memoria_sha256": memoria.conteudo_sha256 if memoria else "",
+            "revisao_memoria_sha256": revisao.conteudo_sha256 if revisao else "",
+        },
+        "inventario_interno": {
+            "motivo_operacional_presente": bool(rascunho.motivo_operacional) if origem_aprovada else False,
+            "fundamentacao_parecer_presente": bool(parecer.fundamentacao) if origem_aprovada else False,
+            "observacoes_parametros": sum(bool(item.get("observacao")) for item in itens_parametros),
+            "observacoes_memoria": sum(bool(item.get("observacao")) for item in itens_memoria),
+            "observacao_transporte_presente": bool(
+                transporte["conteudo"]["dados"].get("observacao")
+            ) if transporte_atual else False,
+        },
+        "textos_fiscais": {
+            "infadic": "",
+            "itens": [
+                {
+                    "nitem_novo": indice,
+                    "nitem_original": int(item.numero_item_xml) if str(item.numero_item_xml).isdigit() else item.numero_item_xml,
+                    "item_rascunho_id": item.pk,
+                    "infadprod": "",
+                }
+                for indice, item in enumerate(rascunho.itens.order_by("item_entrada_id"), 1)
+            ],
+        },
+        "politica": {
+            "classificacao_interna_obrigatoria": True,
+            "exportacao_automatica": False,
+            "exige_texto_fiscal_aprovado": True,
+        },
+    }
+    return {"conteudo": conteudo, "validacao": validar_observacoes_fiscais_devolucao(conteudo)}
+
+
 def extrair_contrato_devolucao(rascunho_id, usuario):
     if not has_role(usuario, REVISAO_FISCAL):
         raise ValidationError("Sem permissão para consultar o contrato fiscal.")
@@ -559,15 +622,19 @@ def extrair_contrato_devolucao(rascunho_id, usuario):
         ajustes_extraidos = _extrair_ajustes_comerciais(
             rascunho, memoria, parametros, rateio, reflexos
         )
+        transporte_extraido = _extrair_transporte(rascunho, memoria, parametros, transporte)
         return {"conteudo": contrato, "validacao": validar_contrato_devolucao(contrato),
                 "referencias_itens": _extrair_referencias_itens(rascunho, dfe, xml),
                 "identidade_partes": _extrair_identidade_partes(rascunho, xml, parecer),
                 "produtos": produtos_extraidos,
                 "tributos_itens": tributos_extraidos,
                 "ajustes_comerciais": ajustes_extraidos,
-                "transporte": _extrair_transporte(rascunho, memoria, parametros, transporte),
+                "transporte": transporte_extraido,
                 "totalizacao": construir_totalizacao_diagnostica(
                     produtos_extraidos, tributos_extraidos, ajustes_extraidos
                 ),
                 "pagamento_fiscal": construir_politica_pagamento_devolucao(),
+                "observacoes_fiscais": _extrair_observacoes_fiscais(
+                    rascunho, memoria, parametros, parecer, transporte_extraido
+                ),
                 "pendencias_dossie": [e for e in dossie["etapas"] if e["estado"] in ("Pendente", "Desatualizado", "Inconsistente", "Bloqueado")]}
