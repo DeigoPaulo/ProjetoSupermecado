@@ -58,3 +58,7 @@ No ciclo 70, serviço, testes, prévia e documentação foram alterados. Nenhum 
 ## Implementação do ciclo 68
 
 O contrato puro `supplier_return_item_references_v1`, em `apps/fiscal/referencias_item_devolucao.py`, valida modelo/operação/política explícitos, proíbe NFref no cabeçalho, exige chave de 44 dígitos com DV válido e nItem original, rejeita duplicidades do par chave+nItem e da sequência do novo documento e nunca libera XML ou emissão. Múltiplas chaves são estruturalmente reconhecidas, mas retornam bloqueio de escopo do produto. No ciclo 70, a extração passou a conferir o contrato contra banco, XML, protocolo, partes e snapshots; 92 testes conjuntos passaram. Vigência, assinatura digital, conteúdo tributário, XSD e canais externos permanecem pendentes.
+
+## Implementação do ciclo 71
+
+O contrato `supplier_return_identity_parties_v1` separa identificação, emitente e destinatário e registra a fonte de cada parte. A extração usa o parecer e os cadastros da filial/configuração para o emitente e preserva o emitente da NF-e original como destinatário proposto, sempre ligado ao fornecedor da entrada. Ausências de IE, CRT, endereço, município e decisões de identificação são pendências explícitas. O escopo numérico de CNPJ é temporário e bloqueia a futura forma alfanumérica até implementação e testes específicos. Nenhum resultado libera geração ou emissão.

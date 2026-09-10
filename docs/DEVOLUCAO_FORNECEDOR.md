@@ -1,5 +1,7 @@
 # Devolução ao fornecedor — preparação fiscal segura
 
+Ciclo 71 — 10/09/2026: identificação, emitente e destinatário receberam contrato puro, extração protegida e visualização na prévia. Natureza vem do parecer; dados do emitente vêm da filial/configuração fiscal; dados do destinatário vêm do emitente da NF-e original vinculado ao fornecedor. Campos faltantes são listados, sem defaults. O escopo atual ainda exige CNPJ numérico, e CNPJ alfanumérico permanece bloqueado. Foram aprovados 95 testes. Próximo passo: grupo de produtos.
+
 Ciclo 70 — 10/09/2026: o contrato chave+nItem foi ligado à extração autenticada. O serviço restrito a Administrador/Contabilidade confere empresa, filial, hash do XML, protocolo cStat 100, chave em todas as fontes, modelo 55, partes, nItem e snapshot original. A prévia mostra a matriz de conferências e falha fechado nas divergências. A regressão de 92 testes passou. XML e emissão permanecem bloqueados. Próximo passo: identificação, emitente e destinatário do contrato neutro.
 
 Ciclo 68 — 10/09/2026: referências fiscais por item agora possuem validador puro, com chave/DV, nItem original, duplicidades, proibição de NFref simultâneo e bloqueio explícito de múltiplas origens no escopo inicial. São 10 testes novos, além dos 7 do envelope já existente. A validação não acessa o dossiê, não gera XML e não libera Focus ou SEFAZ. Próximo passo: extração autenticada e confronto com XML/partes.

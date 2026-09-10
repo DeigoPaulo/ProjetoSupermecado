@@ -10,7 +10,11 @@ from apps.clientes.escopo import empresa_id_do_usuario
 from .contrato_devolucao import CONTRATO, GRUPOS, validar_contrato_devolucao
 from .devolucao_fornecedor import _hash_conteudo_revisao
 from .dossie_devolucao import diagnosticar_dossie
-from .models import DocumentoDFeRecebido, RascunhoDevolucaoFornecedor
+from .identidade_partes_devolucao import (
+    CONTRATO_IDENTIDADE_PARTES,
+    validar_identidade_partes_devolucao,
+)
+from .models import ConfiguracaoFiscal, DocumentoDFeRecebido, RascunhoDevolucaoFornecedor
 from .pacote_contabil import analisar_xml_nfe
 from .referencias_item_devolucao import (
     CONTRATO_REFERENCIAS_ITEM,
@@ -41,7 +45,16 @@ def _texto(elemento, nome):
 
 def _ler_identidade_xml_autorizado(xml):
     """Lê apenas identidade/protocolo do XML, sem validar tributos ou gerar saída."""
-    vazio = {"chave": "", "modelo": "", "emitente_cnpj": "", "destinatario_cnpj": "", "nitens": []}
+    emitente_vazio = {
+        "cnpj": "", "razao_social": "", "nome_fantasia": "",
+        "inscricao_estadual": "", "logradouro": "", "numero": "",
+        "complemento": "", "bairro": "", "codigo_municipio": "",
+        "municipio": "", "uf": "", "cep": "",
+    }
+    vazio = {
+        "chave": "", "modelo": "", "emitente_cnpj": "", "destinatario_cnpj": "",
+        "emitente": emitente_vazio, "nitens": [],
+    }
     if not isinstance(xml, str) or not xml.strip():
         return vazio, "XML_AUSENTE"
     conteudo = xml.encode("utf-8")
@@ -72,11 +85,26 @@ def _ler_identidade_xml_autorizado(xml):
     destinatario = _primeiro(inf_nfe, "dest")
     if ide is None or emitente is None or destinatario is None:
         return vazio, "PARTES_OU_IDENTIFICACAO_AUSENTES"
+    endereco_emitente = _primeiro(emitente, "enderEmit")
     return {
         "chave": chave,
         "modelo": _texto(ide, "mod"),
         "emitente_cnpj": _digitos(_texto(emitente, "CNPJ")),
         "destinatario_cnpj": _digitos(_texto(destinatario, "CNPJ")),
+        "emitente": {
+            "cnpj": _digitos(_texto(emitente, "CNPJ")),
+            "razao_social": _texto(emitente, "xNome"),
+            "nome_fantasia": _texto(emitente, "xFant"),
+            "inscricao_estadual": _texto(emitente, "IE"),
+            "logradouro": _texto(endereco_emitente, "xLgr"),
+            "numero": _texto(endereco_emitente, "nro"),
+            "complemento": _texto(endereco_emitente, "xCpl"),
+            "bairro": _texto(endereco_emitente, "xBairro"),
+            "codigo_municipio": _texto(endereco_emitente, "cMun"),
+            "municipio": _texto(endereco_emitente, "xMun"),
+            "uf": _texto(endereco_emitente, "UF"),
+            "cep": _digitos(_texto(endereco_emitente, "CEP")),
+        },
         "nitens": [(item.attrib.get("nItem") or "").strip() for item in inf_nfe if _nome_local(item) == "det"],
     }, ""
 
@@ -154,6 +182,60 @@ def _extrair_referencias_itens(rascunho, dfe, xml):
     }
 
 
+def _extrair_identidade_partes(rascunho, xml, parecer):
+    entrada = rascunho.entrada_compra
+    filial = entrada.filial
+    empresa = filial.empresa
+    identidade_xml, erro_xml = _ler_identidade_xml_autorizado(xml)
+    emitente_original = identidade_xml["emitente"]
+    configuracao = ConfiguracaoFiscal.objects.filter(filial=filial, ativo=True).first()
+    uf_destino = emitente_original.get("uf", "")
+    destino_operacao = "1" if filial.uf and filial.uf == uf_destino else "2" if filial.uf and uf_destino else ""
+    conteudo = {
+        "contrato": CONTRATO_IDENTIDADE_PARTES,
+        "operacao": "DEVOLUCAO_COMPRA",
+        "permite_emissao": False,
+        "identificacao": {
+            "modelo": "55",
+            "finalidade": "4",
+            "tipo_operacao": "1",
+            "natureza_operacao": parecer.natureza_operacao if parecer else "",
+            "codigo_municipio_fato_gerador": filial.codigo_municipio_ibge,
+            "destino_operacao": destino_operacao,
+            "consumidor_final": "",
+            "presenca_comprador": "",
+        },
+        "emitente": {
+            "fonte": "FILIAL_E_CONFIGURACAO_FISCAL",
+            "filial_id": filial.pk,
+            "cnpj": _digitos(filial.cnpj or empresa.cnpj),
+            "razao_social": empresa.razao_social,
+            "nome_fantasia": filial.nome,
+            "inscricao_estadual": configuracao.inscricao_estadual if configuracao else "",
+            "crt": configuracao.crt if configuracao else "",
+            "logradouro": filial.logradouro,
+            "numero": filial.numero,
+            "complemento": filial.complemento,
+            "bairro": filial.bairro,
+            "codigo_municipio": filial.codigo_municipio_ibge,
+            "municipio": filial.municipio,
+            "uf": filial.uf,
+            "cep": _digitos(filial.cep),
+        },
+        "destinatario": {
+            "fonte": "XML_ORIGINAL_E_CADASTRO_FORNECEDOR",
+            "fornecedor_id": entrada.fornecedor_id,
+            **emitente_original,
+        },
+    }
+    validacao = validar_identidade_partes_devolucao(conteudo)
+    if erro_xml:
+        validacao["dados_completos"] = False
+        validacao["pendencias"].append({"caminho": "destinatario", "codigo": erro_xml})
+        validacao["bloqueios"].append({"grupo": "destinatario", "codigo": erro_xml})
+    return {"conteudo": conteudo, "validacao": validacao}
+
+
 def extrair_contrato_devolucao(rascunho_id, usuario):
     if not has_role(usuario, REVISAO_FISCAL):
         raise ValidationError("Sem permissão para consultar o contrato fiscal.")
@@ -229,4 +311,5 @@ def extrair_contrato_devolucao(rascunho_id, usuario):
                     "operacao": "DEVOLUCAO_COMPRA", "permite_emissao": False, "grupos": grupos}
         return {"conteudo": contrato, "validacao": validar_contrato_devolucao(contrato),
                 "referencias_itens": _extrair_referencias_itens(rascunho, dfe, xml),
+                "identidade_partes": _extrair_identidade_partes(rascunho, xml, parecer),
                 "pendencias_dossie": [e for e in dossie["etapas"] if e["estado"] in ("Pendente", "Desatualizado", "Inconsistente", "Bloqueado")]}

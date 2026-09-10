@@ -11,6 +11,17 @@
   {% for grupo in grupos %}<tr><td>{{ grupo.nome }}</td><td>{{ grupo.estado }}</td><td>{% for ref in grupo.referencias %}<details><summary>{{ ref.tipo }} · #{{ ref.id }}</summary><p style="overflow-wrap:anywhere">SHA-256: {{ ref.sha256 }}</p></details>{% empty %}Sem referência disponível{% endfor %}</td></tr>{% endfor %}
   </tbody></table>
 </section>
+<section class="panel mt-panel"><div class="panel-title">Identificação, emitente e destinatário</div>
+  <p><strong>{% if resultado.identidade_partes.validacao.dados_completos %}Dados estruturados completos{% else %}Dados ainda incompletos{% endif %}.</strong> A origem de cada grupo é fixa; campos ausentes não são preenchidos por suposição.</p>
+  <table><thead><tr><th>Grupo</th><th>Identificação</th><th>Origem</th></tr></thead><tbody>
+    <tr><td>Operação</td><td>NF-e 55 · finalidade 4 · saída</td><td>Dossiê da devolução</td></tr>
+    <tr><td>Emitente</td><td>{{ resultado.identidade_partes.conteudo.emitente.razao_social }} · {{ resultado.identidade_partes.conteudo.emitente.cnpj }}</td><td>Filial e configuração fiscal</td></tr>
+    <tr><td>Destinatário</td><td>{{ resultado.identidade_partes.conteudo.destinatario.razao_social|default:"Não identificado" }} · {{ resultado.identidade_partes.conteudo.destinatario.cnpj }}</td><td>XML original e cadastro do fornecedor</td></tr>
+  </tbody></table>
+  <details><summary>Ver dados pendentes</summary>
+    <ul>{% for item in resultado.identidade_partes.validacao.pendencias %}<li>{{ item.caminho }}: {{ item.codigo }}</li>{% empty %}<li>Nenhuma pendência estrutural nestes grupos.</li>{% endfor %}</ul>
+  </details>
+</section>
 <section class="panel mt-panel"><div class="panel-title">Referências dos itens no XML original</div>
   <p><strong>{% if resultado.referencias_itens.origem_conferida %}Origem técnica conferida{% else %}Origem com pendências{% endif %}.</strong> A conferência verifica protocolo, chave, empresa, filial e nItem; não valida a tributação nem libera emissão.</p>
   <table><thead><tr><th>Item da devolução</th><th>Chave original</th><th>nItem original</th></tr></thead><tbody>
@@ -28,6 +39,7 @@
   <details><summary>Ver códigos de diagnóstico</summary>
   <ul>{% for item in resultado.validacao.bloqueios %}<li>{{ item.grupo }}: {{ item.codigo }}</li>{% endfor %}</ul>
   <ul>{% for item in resultado.referencias_itens.bloqueios %}<li>{{ item.grupo }}: {{ item.codigo }}</li>{% endfor %}</ul>
+  <ul>{% for item in resultado.identidade_partes.validacao.bloqueios %}<li>{{ item.grupo }}: {{ item.codigo }}</li>{% endfor %}</ul>
   {% for erro in resultado.validacao.erros %}<p>{{ erro.caminho }}: {{ erro.codigo }}</p>{% endfor %}
   </details>
 </section>

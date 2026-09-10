@@ -1,5 +1,19 @@
 # Roadmap de evolucao pos-piloto
 
+## Ponto de retomada — ciclo 71, 10/09/2026
+
+Criado o contrato puro `supplier_return_identity_parties_v1` para identificação, emitente e destinatário da NF-e de devolução. A extração protegida usa natureza do parecer, cadastro atual da filial, IE/CRT da configuração fiscal e identidade/endereço do fornecedor preservados no XML original. Estrutura e completude são resultados separados: campos ausentes aparecem na prévia, sem preenchimento presumido. O contrato mantém bloqueios de vigência, CNPJ alfanumérico, XML e homologação.
+
+- [x] Estruturar identificação como modelo 55, finalidade de devolução e operação de saída.
+- [x] Estruturar emitente a partir da filial e configuração fiscal, sem expor credenciais.
+- [x] Estruturar destinatário a partir do XML original e vínculo cadastral do fornecedor.
+- [x] Validar campos, fontes, formatos e tentativa de habilitar emissão em serviço puro.
+- [x] Integrar o diagnóstico à extração e à prévia exclusiva de Administrador/Contabilidade.
+- [x] Validar 95 testes conjuntos do contrato e do fluxo de devolução.
+- [ ] Próximo passo: estruturar o grupo de produtos da devolução com quantidades, unidades, valores e classificações vindos dos snapshots aprovados, sem cálculo automático.
+
+Sem migração, gravação cadastral, certificado, XML ou transmissão neste ciclo.
+
 ## Ponto de retomada — ciclo 70, 10/09/2026
 
 A extração protegida da devolução agora produz as referências fiscais chave+nItem a partir do rascunho e as confronta com o XML integral preservado. A conferência exige DF-e da mesma empresa e filial, hash congelado, protocolo com cStat 100, chave idêntica no XML/protocolo/DF-e/compra/rascunho, modelo 55, fornecedor como emitente, filial como destinatária e igualdade do nItem e de seu snapshot. A prévia somente leitura de Administrador/Contabilidade mostra o resultado e os bloqueios, sem permitir edição.
@@ -9,7 +23,7 @@ A extração protegida da devolução agora produz as referências fiscais chave
 - [x] Falhar fechado diante de hash, protocolo ou retrato do item divergente.
 - [x] Expor a conferência na prévia protegida, mantendo XML e emissão bloqueados.
 - [x] Validar 92 testes dos contratos e do fluxo completo de devolução; check do Django sem problemas.
-- [ ] Próximo passo: estruturar os grupos de identificação, emitente e destinatário do contrato neutro, com snapshots completos e validação somente leitura.
+- [x] Estruturar os grupos de identificação, emitente e destinatário do contrato neutro, com snapshots e validação somente leitura (ciclo 71).
 
 Sem migração, acesso a certificado, geração de XML ou chamada a Focus/SEFAZ neste ciclo.
 

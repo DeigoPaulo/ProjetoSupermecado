@@ -1,5 +1,7 @@
 # Contrato proposto do XML de devolução ao fornecedor
 
+Ciclo 71 — 10/09/2026: implementado o contrato não emissivo `supplier_return_identity_parties_v1`. Identificação fixa apenas modelo/finalidade/direção; natureza vem do parecer e decisões ainda não confirmadas permanecem vazias. Emitente usa filial e configuração fiscal sem credenciais. Destinatário usa o emitente preservado no XML original e o ID do fornecedor. O validador separa formato de completude e bloqueia CNPJ alfanumérico, vigências, XML e homologação. A prévia protegida mostra as pendências; 95 testes passaram.
+
 Ciclo 70 — 10/09/2026: a referência por item deixou de ser apenas uma entrada arbitrária do validador. A extração protegida monta chave+nItem do rascunho e cruza DF-e, empresa, filial, hash congelado, protocolo autorizado, modelo, chave em todas as fontes, emitente/fornecedor, destinatário/filial e snapshot de cada nItem. A prévia somente leitura apresenta os resultados. Isso autentica a origem interna da referência, mas não valida assinatura digital, mérito tributário, vigência ou XSD e não gera XML.
 
 Ciclo 68 — 10/09/2026: validador puro de referências por item implementado com política explícita, DV da chave, nItem original, duplicidades e proibição de NFref no cabeçalho. Múltiplas origens não são declaradas inválidas pela SEFAZ, mas ficam fora do escopo inicial. O resultado sempre bloqueia XML e emissão. Dez testes novos e sete testes do envelope passaram; próximo passo é extrair e confrontar esses dados com o XML original no serviço autenticado.
@@ -33,9 +35,9 @@ Escopo inicial proposto: devolução de compra pelo supermercado ao fornecedor, 
 | Grupo do contrato | Fonte existente | Destino XML proposto | Condição para avançar |
 |---|---|---|---|
 | origem | rascunho, chave, XML e hashes | `det/DFeReferenciado/chaveAcesso` e `nItem`, conforme política/vigência conferida | Validar chave, modelo, partes, duplicidade e ausência de NFref simultâneo; não confundir nItem original com a sequência do novo documento; ver confronto do ciclo 67 |
-| identificação | parecer, filial e configuração | `ide`: modelo, finalidade, direção, destino e natureza | Confirmar finalidade de devolução no leiaute vigente; não herdar finalidade normal ou consumidor final da venda |
-| emitente | filial/configuração fiscal | `emit` e endereço | Snapshot completo e validado de CNPJ, IE, CRT e município; dados reais ainda pendentes |
-| destinatário | fornecedor e XML de origem | `dest` e endereço | Validar identidade e dados atuais; não copiar cegamente ou inverter partes em operações fora do escopo |
+| identificação | parecer, filial e configuração | `ide`: modelo, finalidade, direção, destino e natureza | Contrato/extrator implementados no ciclo 71; consumidor final, presença, vigência e caso real ainda pendentes |
+| emitente | filial/configuração fiscal | `emit` e endereço | Contrato/extrator implementados; completar IE, CRT, município e endereço reais na filial |
+| destinatário | fornecedor e XML de origem | `dest` e endereço | Snapshot original estruturado; cadastro atual ainda não possui IE/endereço estruturado e exige evolução antes da emissão |
 | produtos | itens selecionados e snapshot original | `det/prod` | Mapear código, descrição, NCM, unidades, quantidades, preços, GTIN e eventual CEST; tratar conversões e precisão explicitamente |
 | classificação | parametrização aprovada por item | grupos CST/CSOSN e CFOP | Matriz de capacidade por grupo, regime e vigência; código cadastrado não garante suporte à serialização |
 | bases e valores | memória revisada aprovada | `det/imposto` | Exigir vínculo íntegro a reflexos aprovados, bases finais exatas, valores/aliquotas conferidos; não recalcular pela política de vendas |

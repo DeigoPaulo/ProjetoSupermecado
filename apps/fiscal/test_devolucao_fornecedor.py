@@ -141,7 +141,9 @@ class PreparacaoDevolucaoFornecedorTests(TestCase):
     def _xml(self):
         return f"""<nfeProc xmlns="http://www.portalfiscal.inf.br/nfe" versao="4.00">
           <NFe><infNFe Id="NFe{self.CHAVE}"><ide><mod>55</mod><finNFe>1</finNFe><dhEmi>2026-09-01T10:00:00-03:00</dhEmi></ide>
-          <emit><CNPJ>11111111000111</CNPJ></emit><dest><CNPJ>22222222000122</CNPJ></dest>
+          <emit><CNPJ>11111111000111</CNPJ><xNome>Fornecedor Origem Ltda</xNome><xFant>Fornecedor Origem</xFant><IE>123456789</IE>
+          <enderEmit><xLgr>Rua do Fornecedor</xLgr><nro>20</nro><xBairro>Centro</xBairro><cMun>5208707</cMun><xMun>Goiânia</xMun><UF>GO</UF><CEP>74000000</CEP></enderEmit></emit>
+          <dest><CNPJ>22222222000122</CNPJ></dest>
           <det nItem="1"><prod><cProd>7891111111111</cProd><xProd>Produto recebido</xProd><NCM>10063021</NCM><CFOP>5102</CFOP><uCom>UN</uCom><qCom>2.0000</qCom><vUnCom>10.00</vUnCom><vProd>20.00</vProd></prod>
           <imposto><ICMS><ICMS00><orig>0</orig><CST>00</CST><vBC>20.00</vBC><pICMS>17.00</pICMS><vICMS>3.40</vICMS></ICMS00></ICMS></imposto></det>
           </infNFe></NFe><protNFe><infProt><chNFe>{self.CHAVE}</chNFe><cStat>100</cStat></infProt></protNFe>
@@ -643,6 +645,14 @@ class PreparacaoDevolucaoFornecedorTests(TestCase):
             {item["codigo"] for item in referencias["bloqueios"]},
         )
         self.assertFalse(referencias["permite_gerar_xml"])
+        identidade = resultado["identidade_partes"]
+        self.assertTrue(identidade["validacao"]["estrutura_valida"])
+        self.assertFalse(identidade["validacao"]["dados_completos"])
+        self.assertEqual(identidade["conteudo"]["identificacao"]["natureza_operacao"], "Devolução de compra para comercialização")
+        self.assertEqual(identidade["conteudo"]["destinatario"]["cnpj"], "11111111000111")
+        self.assertEqual(identidade["conteudo"]["destinatario"]["codigo_municipio"], "5208707")
+        self.assertEqual(identidade["conteudo"]["emitente"]["cnpj"], "22222222000122")
+        self.assertFalse(identidade["validacao"]["permite_emissao"])
         refs = resultado["conteudo"]["grupos"]["bases_valores"]["referencias"]
         self.assertIn({"tipo": "memoria", "id": memoria.pk, "sha256": memoria.conteudo_sha256}, refs)
         origem = memoria.reflexos_origem.rateio.composicao.memoria
@@ -677,6 +687,10 @@ class PreparacaoDevolucaoFornecedorTests(TestCase):
         self.assertFalse(verificacoes["PROTOCOLO_AUTORIZADO"]["ok"])
         self.assertEqual(verificacoes["PROTOCOLO_AUTORIZADO"]["detalhe"], "NFE_NAO_AUTORIZADA")
         self.assertFalse(resultado["permite_emissao"])
+        identidade = extrair_contrato_devolucao(rascunho.pk, self.revisor)["identidade_partes"]
+        self.assertTrue(identidade["validacao"]["estrutura_valida"])
+        self.assertFalse(identidade["validacao"]["dados_completos"])
+        self.assertIn("NFE_NAO_AUTORIZADA", {item["codigo"] for item in identidade["validacao"]["pendencias"]})
 
         dfe.xml_conteudo = self._xml()
         dfe.save(update_fields=["xml_conteudo"])
@@ -717,6 +731,8 @@ class PreparacaoDevolucaoFornecedorTests(TestCase):
         self.assertContains(resposta, "Referência encontrada, não significa aprovação")
         self.assertContains(resposta, "Origem técnica conferida")
         self.assertContains(resposta, "nItem original")
+        self.assertContains(resposta, "Identificação, emitente e destinatário")
+        self.assertContains(resposta, "Dados ainda incompletos")
         conteudo_previa = resposta.content.decode().split('<div id="previa-contrato-fiscal">', 1)[1].split('</main>', 1)[0]
         self.assertNotIn("<form", conteudo_previa)
         self.assertEqual(resposta["Cache-Control"], "private, no-store")
