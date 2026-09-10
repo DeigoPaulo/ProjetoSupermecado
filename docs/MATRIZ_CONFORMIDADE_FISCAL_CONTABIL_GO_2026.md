@@ -1,5 +1,7 @@
 # Matriz de conformidade fiscal e contábil — Goiás 2026
 
+Ciclo 73 — 10/09/2026: valores tributários por item agora possuem contrato e extração somente leitura, condicionados à memória revisada aprovada e aos vínculos íntegros. Nenhuma fórmula foi adicionada. ICMS/PIS/COFINS ainda dependem da matriz de cenários; ST/FCP, IPI devolvido e IBS/CBS mantêm bloqueios próprios. A prévia foi ampliada e 102 testes passaram.
+
 Ciclo 72 — 10/09/2026: grupo de produtos estruturado sem cálculo automático. Snapshot original fornece identidade fiscal e unidades; rascunho fornece quantidade; cadeia aprovada fornece CFOP, valor e classificações. Ausência, memória não aprovada, hash inválido, divergência aritmética ou formato fora do contrato bloqueiam. A prévia protegida foi ampliada e 99 testes passaram. Paridade XSD, conversões especiais e homologação permanecem pendentes.
 
 Ciclo 71 — 10/09/2026: identificação e partes da devolução foram estruturadas em contrato puro e integradas à extração/tela protegidas. O serviço identifica a origem de cada campo e lista ausências sem aplicar defaults. O cadastro do fornecedor ainda não possui IE/endereço fiscal estruturado; o snapshot original é preservado, mas não substitui validação atual. CNPJ alfanumérico, decisões de identificação, vigências, XML e homologação seguem bloqueados. A regressão conjunta passou com 95 testes.

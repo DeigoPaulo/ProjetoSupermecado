@@ -699,6 +699,17 @@ class PreparacaoDevolucaoFornecedorTests(TestCase):
         self.assertFalse(produtos["validacao"]["permite_emissao"])
         self.assertFalse(DocumentoFiscal.objects.exists())
 
+        tributos = extrair_contrato_devolucao(rascunho.pk, self.revisor)["tributos_itens"]
+        grupos = tributos["conteudo"]["itens"][0]["grupos"]
+        self.assertTrue(tributos["validacao"]["origem_completa"])
+        self.assertFalse(tributos["validacao"]["escopo_fiscal_suportado"])
+        self.assertEqual(grupos["icms"]["base"], "10.00")
+        self.assertEqual(grupos["icms"]["aliquota"], "17.0000")
+        self.assertEqual(grupos["icms"]["valor"], "1.70")
+        self.assertEqual(grupos["ipi_memoria"]["estado"], "NAO_EQUIVALE_IPI_DEVOLVIDO")
+        self.assertEqual(grupos["ibs"]["estado"], "VIGENCIA_E_LEIAUTE_PENDENTES")
+        self.assertFalse(tributos["validacao"]["permite_emissao"])
+
     def test_extracao_referencias_bloqueia_protocolo_ou_snapshot_divergente(self):
         rascunho, _, _, _ = self._reflexos_registrados()
         dfe = DocumentoDFeRecebido.objects.get(entrada_compra=self.entrada)
@@ -760,6 +771,8 @@ class PreparacaoDevolucaoFornecedorTests(TestCase):
         self.assertContains(resposta, "Dados ainda incompletos")
         self.assertContains(resposta, "Produtos da devolução")
         self.assertContains(resposta, "Produtos estruturados")
+        self.assertContains(resposta, "Bases e valores tributários por item")
+        self.assertContains(resposta, "não calcula tributos")
         conteudo_previa = resposta.content.decode().split('<div id="previa-contrato-fiscal">', 1)[1].split('</main>', 1)[0]
         self.assertNotIn("<form", conteudo_previa)
         self.assertEqual(resposta["Cache-Control"], "private, no-store")

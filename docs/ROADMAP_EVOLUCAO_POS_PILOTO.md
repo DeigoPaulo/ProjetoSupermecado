@@ -1,5 +1,19 @@
 # Roadmap de evolucao pos-piloto
 
+## Ponto de retomada — ciclo 73, 10/09/2026
+
+Criado o contrato `supplier_return_item_tax_values_v1` para transportar, sem recalcular, as bases, alíquotas e valores da memória revisada aprovada. Cada linha exige vínculo exato entre rascunho, parametrização, memória, revisão e nItem. ICMS, PIS e COFINS permanecem pendentes da matriz; ICMS-ST/FCP ficam em hipótese não confirmada; IPI da memória não é tratado como `impostoDevol`; IBS/CBS permanecem bloqueados por vigência e leiaute. A prévia apresenta esses estados sem declarar suporte fiscal.
+
+- [x] Estruturar bases, alíquotas, valores, códigos e hashes por item.
+- [x] Exigir memória revisada aprovada, íntegra e ligada ao mesmo item/parametrização/nItem.
+- [x] Manter ICMS-ST/FCP, IPI devolvido e IBS/CBS em estados separados e bloqueantes.
+- [x] Validar formatos decimais sem criar fórmulas ou recalcular tributos.
+- [x] Integrar a extração e a prévia protegida.
+- [x] Validar 102 testes conjuntos dos contratos e do fluxo de devolução.
+- [ ] Próximo passo: estruturar ajustes comerciais por item a partir do rateio aprovado, conferindo os totais informados sem aplicá-los novamente às bases.
+
+Sem migração, cálculo tributário, XML, certificado ou transmissão neste ciclo.
+
 ## Ponto de retomada — ciclo 72, 10/09/2026
 
 Criado o contrato puro `supplier_return_products_v1` e integrado à extração protegida. Cada item preserva o vínculo com rascunho, produto, nItem original, XML, parametrização e memória. Quantidade vem da seleção congelada; código, descrição, NCM, CEST, unidades e valores unitários vêm do snapshot do XML; CFOP, valor da operação e classificações só são expostos quando a memória está aprovada e toda a cadeia de hashes confere. O serviço apenas compara quantidade × unitário com o valor informado, sem preencher ou recalcular esse valor.
@@ -10,7 +24,7 @@ Criado o contrato puro `supplier_return_products_v1` e integrado à extração p
 - [x] Validar nItem, identificadores, hashes, NCM/CEST/CFOP, unidades, decimais, duplicidades e total informado.
 - [x] Expor produtos e pendências na prévia protegida.
 - [x] Validar 99 testes conjuntos dos contratos e do fluxo de devolução.
-- [ ] Próximo passo: estruturar bases e valores tributários por item a partir da memória aprovada, mantendo ICMS-ST/FCP, IPI devolvido e IBS/CBS separados por hipótese e vigência.
+- [x] Estruturar bases e valores tributários por item a partir da memória aprovada, mantendo ICMS-ST/FCP, IPI devolvido e IBS/CBS separados por hipótese e vigência (ciclo 73).
 
 Sem migração, alteração de cadastro, cálculo tributário automático, XML ou transmissão neste ciclo.
 

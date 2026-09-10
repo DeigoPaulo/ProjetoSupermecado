@@ -1,5 +1,7 @@
 # Contrato proposto do XML de devolução ao fornecedor
 
+Ciclo 73 — 10/09/2026: implementado `supplier_return_item_tax_values_v1`. O contrato replica os números da memória aprovada, exige seus hashes e vínculo por item e não contém fórmula tributária. Os estados dos grupos impedem confundir números informados com suporte ao XML: matriz de ICMS/PIS/COFINS, hipótese ST/FCP, grupo próprio de IPI devolvido e vigência IBS/CBS continuam pendentes. A prévia protegida foi ampliada e 102 testes passaram.
+
 Ciclo 72 — 10/09/2026: implementado `supplier_return_products_v1`. O contrato recebe dados comerciais do snapshot original e CFOP, valor da operação e classificação da cadeia de memória aprovada. A extração não usa o cadastro mutável para substituir o retrato fiscal nem calcula valores ausentes. Quantidade × unitário é somente uma conferência do valor expressamente informado. Unidade, quantidade e valor tributáveis foram incluídos no analisador documental. Geração, XSD e transmissão seguem bloqueados; 99 testes passaram.
 
 Ciclo 71 — 10/09/2026: implementado o contrato não emissivo `supplier_return_identity_parties_v1`. Identificação fixa apenas modelo/finalidade/direção; natureza vem do parecer e decisões ainda não confirmadas permanecem vazias. Emitente usa filial e configuração fiscal sem credenciais. Destinatário usa o emitente preservado no XML original e o ID do fornecedor. O validador separa formato de completude e bloqueia CNPJ alfanumérico, vigências, XML e homologação. A prévia protegida mostra as pendências; 95 testes passaram.
@@ -42,7 +44,7 @@ Escopo inicial proposto: devolução de compra pelo supermercado ao fornecedor, 
 | destinatário | fornecedor e XML de origem | `dest` e endereço | Snapshot original estruturado; cadastro atual ainda não possui IE/endereço estruturado e exige evolução antes da emissão |
 | produtos | itens selecionados, snapshot original e memória aprovada | `det/prod` | Contrato/extrator implementados no ciclo 72; paridade XSD, conversões especiais e cenários reais ainda pendentes |
 | classificação | parametrização aprovada por item | grupos CST/CSOSN e CFOP | Matriz de capacidade por grupo, regime e vigência; código cadastrado não garante suporte à serialização |
-| bases e valores | memória revisada aprovada | `det/imposto` | Exigir vínculo íntegro a reflexos aprovados, bases finais exatas, valores/aliquotas conferidos; não recalcular pela política de vendas |
+| bases e valores | memória revisada aprovada | `det/imposto` | Contrato/extrator implementados no ciclo 73; matriz por hipótese e serialização continuam bloqueadas |
 | ajustes comerciais | composição e rateio de origem | frete, seguro, despesas e desconto por produto | Conferir totais e não reaplicar impactos já incorporados às bases |
 | IPI devolvido | ainda sem grupo específico | eventual `impostoDevol` e total correspondente | Modelar os campos e a hipótese aplicável; IPI informado na memória não implica IPI devolvido |
 | ICMS-ST/FCP | orientação e memória, ainda genéricas | grupos específicos e/ou informações complementares conforme hipótese | Bloquear até parametrizar a hipótese contábil e os campos exigidos; não destacar ST automaticamente |

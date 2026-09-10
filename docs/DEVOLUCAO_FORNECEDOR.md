@@ -1,5 +1,7 @@
 # Devolução ao fornecedor — preparação fiscal segura
 
+Ciclo 73 — 10/09/2026: bases, alíquotas e valores por item receberam contrato puro, extração e painel. Somente memória revisada aprovada e íntegra alimenta os números. Grupos sensíveis mantêm estados separados: ST/FCP sem hipótese confirmada, IPI da memória sem equivalência automática com IPI devolvido e IBS/CBS sem vigência/leiaute fechados. O contrato não calcula e nunca libera emissão. Foram aprovados 102 testes. Próximo passo: ajustes comerciais do rateio aprovado.
+
 Ciclo 72 — 10/09/2026: produtos receberam contrato puro, extração autenticada e painel na prévia. O item liga nItem, snapshot XML, parametrização e memória; valor e classificação só aparecem após aprovação e integridade da cadeia. Unidade/quantidade/valor tributáveis passaram a ser preservados no snapshot. O validador confere formatos, duplicidades e coerência aritmética, sem calcular ou preencher valores. Foram aprovados 99 testes. Próximo passo: bases e valores tributários por item.
 
 Ciclo 71 — 10/09/2026: identificação, emitente e destinatário receberam contrato puro, extração protegida e visualização na prévia. Natureza vem do parecer; dados do emitente vêm da filial/configuração fiscal; dados do destinatário vêm do emitente da NF-e original vinculado ao fornecedor. Campos faltantes são listados, sem defaults. O escopo atual ainda exige CNPJ numérico, e CNPJ alfanumérico permanece bloqueado. Foram aprovados 95 testes. Próximo passo: grupo de produtos.

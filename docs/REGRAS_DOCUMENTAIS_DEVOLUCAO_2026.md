@@ -66,3 +66,7 @@ O contrato `supplier_return_identity_parties_v1` separa identificação, emitent
 ## Implementação do ciclo 72
 
 O contrato `supplier_return_products_v1` preserva o vínculo completo do item e só aceita valor/classificação da memória aprovada e íntegra. Campos comerciais e tributáveis são lidos do snapshot original; não são substituídos pelo cadastro atual. A coerência do valor informado é validada contra quantidade e unitário, mas o serviço não calcula nem preenche o valor. A validação continua anterior ao XML e mantém bloqueios de XSD, geração e homologação.
+
+## Implementação do ciclo 73
+
+O contrato `supplier_return_item_tax_values_v1` transporta bases, alíquotas e valores exatamente como aprovados na memória revisada. O vínculo de cada item com parametrização, rascunho e nItem é conferido antes da exposição. Os estados fixos dos grupos impedem usar os números como prova de hipótese fiscal: IPI da memória não vira `impostoDevol`, ST/FCP não ganha regra genérica e IBS/CBS não recebe vigência presumida. O resultado permanece não emissivo.

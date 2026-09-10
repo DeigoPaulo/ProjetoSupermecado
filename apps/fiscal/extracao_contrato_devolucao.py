@@ -22,6 +22,11 @@ from .referencias_item_devolucao import (
     POLITICA_REFERENCIAS_ITEM,
     validar_referencias_item_devolucao,
 )
+from .tributos_itens_devolucao import (
+    CONTRATO_TRIBUTOS_ITENS,
+    ESTADOS_GRUPOS,
+    validar_tributos_itens_devolucao,
+)
 
 
 LIMITE_XML_ORIGEM_BYTES = 5 * 1024 * 1024
@@ -237,6 +242,18 @@ def _extrair_identidade_partes(rascunho, xml, parecer):
     return {"conteudo": conteudo, "validacao": validacao}
 
 
+def _memoria_aprovada_e_integra(memoria, parametros):
+    revisao = getattr(memoria, "revisao_fiscal", None) if memoria else None
+    aprovada = bool(
+        memoria and revisao and revisao.decisao == "APROVAR"
+        and _hash_conteudo_revisao(memoria.conteudo_snapshot) == memoria.conteudo_sha256
+        and _hash_conteudo_revisao(revisao.conteudo_snapshot) == revisao.conteudo_sha256
+        and revisao.conteudo_snapshot.get("memoria_sha256") == memoria.conteudo_sha256
+        and parametros and _hash_conteudo_revisao(parametros.conteudo_snapshot) == parametros.conteudo_sha256
+    )
+    return aprovada, revisao
+
+
 def _extrair_produtos(rascunho, memoria, parametros):
     itens_rascunho = list(
         rascunho.itens.select_related("item_entrada__produto").order_by("item_entrada_id")
@@ -249,14 +266,7 @@ def _extrair_produtos(rascunho, memoria, parametros):
         item.item_rascunho_id: item
         for item in memoria.itens.all()
     } if memoria else {}
-    revisao = getattr(memoria, "revisao_fiscal", None) if memoria else None
-    memoria_aprovada = bool(
-        memoria and revisao and revisao.decisao == "APROVAR"
-        and _hash_conteudo_revisao(memoria.conteudo_snapshot) == memoria.conteudo_sha256
-        and _hash_conteudo_revisao(revisao.conteudo_snapshot) == revisao.conteudo_sha256
-        and revisao.conteudo_snapshot.get("memoria_sha256") == memoria.conteudo_sha256
-        and parametros and _hash_conteudo_revisao(parametros.conteudo_snapshot) == parametros.conteudo_sha256
-    )
+    memoria_aprovada, _revisao = _memoria_aprovada_e_integra(memoria, parametros)
     itens = []
     for indice, item in enumerate(itens_rascunho, 1):
         snapshot = item.item_xml_snapshot or {}
@@ -308,6 +318,61 @@ def _extrair_produtos(rascunho, memoria, parametros):
         "itens": itens,
     }
     return {"conteudo": conteudo, "validacao": validar_produtos_devolucao(conteudo)}
+
+
+def _extrair_tributos_itens(rascunho, memoria, parametros):
+    memoria_aprovada, revisao = _memoria_aprovada_e_integra(memoria, parametros)
+    itens_memoria = {
+        item.item_rascunho_id: item for item in memoria.itens.select_related("item_parametrizacao")
+    } if memoria else {}
+    itens = []
+    for indice, item_rascunho in enumerate(rascunho.itens.order_by("item_entrada_id"), 1):
+        item = itens_memoria.get(item_rascunho.pk)
+        origem_aprovada = bool(
+            memoria_aprovada and item and parametros
+            and item.item_parametrizacao.parametrizacao_id == parametros.pk
+            and item.item_parametrizacao.item_rascunho_id == item_rascunho.pk
+            and item.item_parametrizacao.numero_item_xml == item_rascunho.numero_item_xml
+            and item.numero_item_xml == item_rascunho.numero_item_xml
+        )
+        parametro = item.item_parametrizacao if origem_aprovada else None
+        grupos = {}
+        codigos = {
+            "icms": parametro.codigo_icms if parametro else "",
+            "pis": parametro.codigo_pis if parametro else "",
+            "cofins": parametro.codigo_cofins if parametro else "",
+            "icms_st": parametro.codigo_icms if parametro else "",
+            "fcp": parametro.codigo_icms if parametro else "",
+            "ipi_memoria": parametro.codigo_ipi if parametro else "",
+            "ibs": "",
+            "cbs": "",
+        }
+        for nome, estado in ESTADOS_GRUPOS.items():
+            origem = "ipi" if nome == "ipi_memoria" else nome
+            grupos[nome] = {
+                "estado": estado,
+                "codigo": codigos[nome],
+                "base": format(getattr(item, f"base_{origem}"), ".2f") if origem_aprovada else "",
+                "aliquota": format(getattr(item, f"aliquota_{origem}"), ".4f") if origem_aprovada else "",
+                "valor": format(getattr(item, f"valor_{origem}"), ".2f") if origem_aprovada else "",
+            }
+        itens.append({
+            "nitem_novo": indice,
+            "nitem_original": int(item_rascunho.numero_item_xml) if str(item_rascunho.numero_item_xml).isdigit() else item_rascunho.numero_item_xml,
+            "item_rascunho_id": item_rascunho.pk,
+            "memoria_id": memoria.pk if memoria else 0,
+            "memoria_sha256": memoria.conteudo_sha256 if memoria else "",
+            "revisao_sha256": revisao.conteudo_sha256 if revisao else "",
+            "origem_aprovada": origem_aprovada,
+            "grupos": grupos,
+        })
+    conteudo = {
+        "contrato": CONTRATO_TRIBUTOS_ITENS,
+        "operacao": "DEVOLUCAO_COMPRA",
+        "permite_emissao": False,
+        "itens": itens,
+    }
+    return {"conteudo": conteudo, "validacao": validar_tributos_itens_devolucao(conteudo)}
 
 
 def extrair_contrato_devolucao(rascunho_id, usuario):
@@ -387,4 +452,5 @@ def extrair_contrato_devolucao(rascunho_id, usuario):
                 "referencias_itens": _extrair_referencias_itens(rascunho, dfe, xml),
                 "identidade_partes": _extrair_identidade_partes(rascunho, xml, parecer),
                 "produtos": _extrair_produtos(rascunho, memoria, parametros),
+                "tributos_itens": _extrair_tributos_itens(rascunho, memoria, parametros),
                 "pendencias_dossie": [e for e in dossie["etapas"] if e["estado"] in ("Pendente", "Desatualizado", "Inconsistente", "Bloqueado")]}
