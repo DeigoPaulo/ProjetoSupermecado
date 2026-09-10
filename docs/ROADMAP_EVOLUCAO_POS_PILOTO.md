@@ -495,6 +495,89 @@ O ERP ja possui uma base operacional, financeira gerencial, fiscal preparada por
 - O arquivo interno de evidências fiscais foi concluído estruturalmente em 24/08/2026 pela migration `0031`. Cada documento preserva, sem substituir versões anteriores, o XML entregue ao adaptador, o retorno normalizado, o XML autorizado, as consultas e os eventos de cancelamento/CC-e. Os registros são append-only, idempotentes por referência e encadeados por SHA-256; alterações/exclusões pela aplicação são bloqueadas e o Master visualiza somente o diagnóstico de integridade, sem conteúdo fiscal. A validação anterior passou com 280 testes. Após a implementação da âncora externa, a validação ampla de fiscal e configurações passou com 283 testes. A etapa seguinte acrescentou o comando estrito `verificar_integridade_evidencias_fiscais`, manifesto sanitizado `fiscal_evidence_anchor_v1`, promoção atômica, comparação com a âncora externa anterior, bloqueio de regressão/remoção da cauda, inclusão no backup com SHA-256 e conferência após restauração antes do serviço iniciar. Dois backups temporários consecutivos confirmaram a continuidade externa. O ciclo seguinte concluiu o alerta operacional sanitizado: backup, restauração e verificação manual podem registrar o resultado na auditoria sem XML, chave, CNPJ, certificado ou credencial; estados repetidos não duplicam o histórico e somente o Master visualiza a situação, a origem e o horário no Super Admin e na tela de Backup. Após esse alerta, a validação ampla de fiscal e configurações passou com 285 testes. Em 25/08/2026, a cópia secundária criptografada foi concluída estruturalmente: permanece desligada por padrão, exige confirmação explícita de NAS/rede/disco externo, recusa destino igual ou interno ao principal, copia somente `.zip.aes`, recalcula SHA-256, promove atomicamente e possui retenção independente. Uma execução completa com banco e destinos temporários confirmou hashes idênticos, ausência de ZIP aberto e limpeza dos arquivos parciais; a repetição após o endurecimento concorrente confirmou o mesmo resultado. A validação ampla de fiscal e configurações permaneceu aprovada com 285 testes. O ciclo seguinte concluiu o histórico operacional sanitizado: cada execução real gera identificação idempotente, registra sucesso ou falha, etapa, criptografia, destino secundário e confirmação do hash sem armazenar caminhos, nomes de rede, arquivos, senha ou conteúdo. Somente o Master vê as últimas execuções no Super Admin e em Backup; a última falha vira pendência alta, enquanto `-ValidarSomente` não polui o histórico. Uma simulação com banco temporário confirmou um sucesso e uma falha controlada na cópia secundária sem vazamento de caminho ou senha. A validação ampla de fiscal e configurações passou com 286 testes. O ciclo seguinte acrescentou o monitor sanitizado `backup_freshness_v1`: desligado por padrão com `LOCAL_BACKUP_MAX_AGE_HOURS=0`, ele usa a idade do último backup bem-sucedido, diferencia “Sem sucesso”, “Em dia” e “Atrasado” e gera pendência alta somente ao Master quando a política ativa é descumprida. Os testes focados cobriram os estados e a separação entre última execução e último sucesso; a validação ampla de fiscal e configurações passou com 287 testes. O ciclo seguinte unificou o painel, `verificar_pos_implantacao` e `gerar_evidencia_aceite` pela política `backup_age_policy_v1`: o ambiente é a fonte padrão, `0` bloqueia o aceite, o argumento opcional é identificado como substituição explícita e a checagem física do pacote continua sem expor caminhos. Sete testes focados confirmaram política ausente, ambiente ativo, substituição por argumento, aceite e manifesto; a suíte ampliada de fiscal, configurações, pós-instalação e aceite passou com 292 testes. O ciclo atual endureceu a checagem física pelo contrato `local_backup_package_validation_v1`: o pacote mais recente só libera o aceite depois de validar o arquivo SHA-256 correspondente, nome vinculado, ZIP integral e seguro, contrato `erp_local_backup_v2`, dump lógico, banco declarado e âncora fiscal. Pacotes AES-256 também são descriptografados e inspecionados localmente quando `BACKUP_ENCRYPTION_PASSPHRASE` está disponível; sem a senha, o checksum pode ser confirmado, mas o aceite permanece bloqueado sem expor segredo ou caminho. Sete testes focados cobrem pacote válido, adulteração, contrato incompatível, caminho inseguro e AES-256; a suíte ampliada de fiscal, configurações, pós-instalação e aceite passou com 296 testes. Em 28/08/2026, o restaurador ganhou o ensaio `local_restore_rehearsal_v1`: depois da validação completa, `-EnsaiarIsolado` copia o snapshot SQLite para uma área temporária, verifica `PRAGMA integrity_check` antes e depois, aplica migrations, executa o Django check e compara a cadeia fiscal com a âncora do pacote, sempre declarando que serviço e dados ativos não foram alterados e limpando a área ao final. Um ciclo real com banco temporário gerou somente `.zip.aes`, removeu o ZIP aberto e aprovou a restauração isolada sem expor caminho ou senha. O ciclo seguinte estendeu o mesmo contrato ao PostgreSQL: o operador precisa fornecer um banco já criado, vazio e nomeado com o prefixo `deigo_rehearsal_`, confirmar explicitamente o alvo e manter a senha somente no ambiente. O restaurador recusa o banco ativo/origem, confirma zero objetos antes de executar `pg_restore --single-transaction`, não usa `--clean`, aplica migrations, Django check e integridade fiscal e preserva o banco temporário para inspeção. Como `pg_restore` e um servidor PostgreSQL não estão disponíveis neste ambiente, as travas e a sintaxe foram validadas localmente, mas o restore real continua pendente para a máquina de homologação. Um pacote PostgreSQL sintético confirmou, sem conexão, os bloqueios por ausência de confirmação, nome fora do prefixo e host ausente. A regressão completa do caminho SQLite revelou que `Compress-Archive` omitia mídia declarada quando a pasta estava vazia; o backup agora cria entradas de diretório vazias no ZIP, e um novo ciclo AES-256 com mídia vazia aprovou restauração, migrations, âncora fiscal, ausência de alteração ativa e limpeza temporária. O ciclo seguinte endureceu a mídia de instalação limpa pelo contrato `detech_server_offline_package_validation_v2`: a Central só libera o pacote offline depois de exigir servidor, runtime Python, wheelhouse, PostgreSQL, WinSW, iniciador e apps desktop declarados uma única vez; conferir hashes e tamanhos; bloquear caminhos, links, duplicidades e arquivos extras; abrir o ZIP interno do servidor; validar que o wheelhouse contém pacotes `.whl`; e comparar os manifestos dos apps com os executáveis. Dez testes focados cobrem o pacote válido e adulterações, inclusive a falha antes silenciosa de wheelhouse ausente. O ciclo seguinte integrou o mesmo contrato ao empacotador: a mídia nasce em ZIP temporário, só é promovida após aprovação e preserva o artefato anterior em falha. Dois ensaios completos com componentes sintéticos confirmaram a promoção válida e o bloqueio sem resíduos quando o wheelhouse continha arquivo indevido. O ensaio também revelou e corrigiu duas dependências ocultas do build antigo: o hash agora usa SHA-256 nativo do .NET sem depender do perfil PowerShell, e a cópia intermediária não declarada do wheelhouse é removida antes da compactação final. ZIP e checksum são preparados antes da promoção, e qualquer exceção limpa os temporários. O ciclo seguinte criou `publish_detech_server_offline.ps1`: ele exige o checksum vinculado da origem, revalida origem e cópia temporária, promove ZIP e sidecar com cópias de rollback e remove todos os resíduos. Três ensaios reais confirmaram publicação válida, recusa de origem adulterada e preservação byte a byte do pacote anterior durante substituição forçada inválida. O ciclo seguinte adicionou `detech_server_offline_publication_validation_v1` à Central: o download offline agora exige `.zip.sha256` presente, hash correspondente e nome final vinculado, sem expor caminhos. Três testes novos cobrem publicação íntegra, sidecar ausente e hash/nome divergentes. A interface Master separa o estado do instalador offline do pacote técnico, evitando que a indisponibilidade de um esconda o outro. A suíte completa de fiscal e configurações permaneceu aprovada com 351 testes. O ciclo seguinte integrou a publicação offline à prontidão e ao aceite pelo contrato `local_installation_media_policy_v1`: cada implantação de servidor local é registrada como **com rede** ou **offline**. Com rede, a mídia pendente permanece recomendação; offline, ZIP e SHA-256 íntegros tornam-se obrigatórios e bloqueiam prontidão, dossiê e aceite. O Master ganhou ações separadas para gerar os dois tipos de evidência, e a política escolhida fica registrada na auditoria sem expor caminhos ou segredos. Sete testes novos cobrem mídia opcional, bloqueio offline, liberação íntegra, validação do dossiê e escolha na interface. A suíte completa de fiscal e configurações permaneceu aprovada com 358 testes. A homologação sob a conta `SYSTEM` em NAS ou disco externo real e a política legal de retenção continuam dependentes da infraestrutura definitiva.
 - Próximo marco externo: quando existirem dados reais, registrar software/responsável EFD, validar uma amostra real com o contador e arquivar a referência do aceite. Até lá, continuar somente frentes internas que não dependam de inventar enquadramento tributário; Focus, SEFAZ direta e produção permanecem desligados.
 
+## Frente prioritária — fechamento financeiro e gerencial pós-piloto
+
+Esta frente registra as lacunas financeiras, contábeis e fiscais identificadas na auditoria sem recriar os módulos operacionais já existentes. PDV, caixa, contas a pagar e receber, contas de movimento, transferências, livro financeiro, plano de contas, centros de custo, conciliação, recebíveis eletrônicos, compras, estoque, pacote do contador e núcleo fiscal permanecem como base. Os itens abaixo tratam somente de evolução, reconciliação, proteção e homologação ainda não comprovadas.
+
+### DRE 2.0 e CMV
+
+- [ ] Evoluir a DRE gerencial para separar explicitamente receita bruta, cancelamentos, devoluções, descontos, receita líquida, CMV, lucro bruto, despesas operacionais, perdas, taxas financeiras, resultado operacional, resultado antes dos tributos e resultado líquido.
+- [ ] Formalizar o cálculo de CMV por período com base no custo congelado no momento da venda e reconciliação com o fechamento contábil de estoque.
+- [ ] Validar devoluções, cancelamentos, perdas e ajustes para que não distorçam CMV, receita líquida ou margem.
+- [ ] Garantir que taxas de cartão, PIX, antecipações, chargebacks e divergências de adquirentes tenham classificação financeira/contábil coerente e impacto correto na DRE.
+- [ ] Criar testes de reconciliação entre vendas, CMV, estoque final, perdas e resultado gerencial.
+
+Critério de aceite:
+
+A DRE de um período deve ser reproduzível, conciliável com vendas, estoque e financeiro, e explicável por conta contábil e centro de custo.
+
+### Fechamento mensal financeiro-contábil
+
+- [ ] Definir um fechamento mensal formal por empresa/filial, com data de corte e responsável.
+- [ ] Exigir conciliação bancária, recebíveis eletrônicos, contas a pagar/receber e inventário contábil em estado aceitável antes do fechamento.
+- [ ] Criar snapshot ou referência imutável dos saldos, DRE, CMV, inventário valorizado e documentos fiscais do período.
+- [ ] Bloquear alterações retroativas que afetem período fechado ou exigir fluxo formal de reabertura/ajuste auditado.
+- [ ] Registrar divergências pendentes no fechamento em vez de ocultá-las.
+- [ ] Integrar o fechamento mensal ao pacote do contador v2.
+
+Critério de aceite:
+
+Um mês fechado deve poder ser reprocessado para conferência sem alterar seus totais históricos, salvo mediante reabertura ou ajuste auditado.
+
+### Concorrência e integridade da numeração fiscal
+
+- [ ] Auditar a reserva de numeração de NF-e/NFC-e sob concorrência real com vários PDVs simultâneos.
+- [ ] Garantir lock transacional ou estratégia equivalente na combinação filial + modelo + série + ambiente.
+- [ ] Criar testes concorrentes para impedir número duplicado, salto indevido por retry e dupla emissão da mesma venda.
+- [ ] Validar idempotência ponta a ponta entre venda, DocumentoFiscal, fila, retransmissão e consulta SEFAZ.
+
+Critério de aceite:
+
+Nenhum cenário de concorrência, retry ou falha de rede pode gerar dois documentos para a mesma operação nem reutilizar a mesma numeração fiscal.
+
+### Proteção de CSC e segredos fiscais
+
+- [ ] Revisar o armazenamento de CSC e confirmar proteção criptografada em repouso no mesmo nível de criticidade do certificado A1 e sua senha.
+- [ ] Impedir exposição de CSC em logs, admin, formulários, serializações, traces, exportações e pacotes de diagnóstico.
+- [ ] Definir fluxo auditado de inclusão, rotação e revogação do CSC.
+- [ ] Criar testes específicos de não exposição de segredo.
+
+Critério de aceite:
+
+CSC, senha e material privado do certificado não podem ser recuperados em texto claro por interfaces comuns, logs ou exportações.
+
+### Homologação real SEFAZ GO
+
+- [ ] Revalidar endpoints, schemas e Notas Técnicas vigentes antes do primeiro teste externo.
+- [ ] Configurar filial piloto com CNPJ/IE, certificado A1, CSC, séries e credenciamento válidos por canal seguro.
+- [ ] Executar em homologação: autorização, consulta, rejeições controladas, cancelamento, inutilização, status do serviço e contingência NFC-e.
+- [ ] Testar recuperação após timeout ou queda de rede sem duplicidade.
+- [ ] Validar DF-e, manifestação e eventos com credenciais reais de homologação quando aplicável.
+- [ ] Arquivar evidências técnicas e obter aceite fiscal/contábil antes de qualquer liberação de produção.
+- [ ] Manter `SEFAZ_DIRETA_NETWORK_ENABLED` e `SEFAZ_DIRETA_ALLOW_PRODUCTION` sob liberação explícita e independente.
+
+Critério de aceite:
+
+Nenhuma capacidade deve ser classificada como pronta para produção somente por testes offline; deve existir evidência de homologação real da filial piloto.
+
+### IBS/CBS e evolução tributária
+
+- [ ] Manter IBS/CBS como parcial enquanto cálculo, grupos XML, schemas vigentes e aceite fiscal não estiverem confirmados.
+- [ ] Implementar regras por vigência e versão de leiaute sem hard-code no PDV.
+- [ ] Exigir validação do contador para classificações tributárias e cenários que dependam de enquadramento.
+- [ ] Criar regressão fiscal com cenários legado e transição antes de ativar emissão homologada.
+
+Critério de aceite:
+
+A ativação de IBS/CBS deve depender de configuração explícita, schema homologado e evidência de testes; nenhuma data isolada deve habilitar o recurso automaticamente.
+
+### Dependências externas desta frente
+
+- Credenciais reais/sandbox, A1, CSC, IE e credenciamento da filial piloto.
+- Arquivos reais anonimizados de adquirentes/bancos para homologação de conciliação.
+- Aceite do contador sobre plano de contas, CMV, DRE, classificações, IBS/CBS e pacote contábil.
+- Ambiente de homologação com banco e infraestrutura equivalentes ao piloto.
+
 ## Disciplina de atualização
 
 - Toda frente iniciada deve ser marcada no checklist com data, estado atual, travas de segurança e próximo marco verificável.
