@@ -57,17 +57,24 @@ class AbrirCaixaForm(forms.ModelForm):
 class FinalizarVendaForm(forms.Form):
     caixa = forms.ModelChoiceField(label="Caixa", queryset=Caixa.objects.none())
     cliente = forms.ModelChoiceField(label="Cliente", queryset=None, required=False, empty_label="Cliente avulso")
+    cpf_na_nota = forms.ChoiceField(
+        label="CPF na nota?",
+        choices=(("NAO", "Não"), ("SIM", "Sim")),
+        required=False,
+        widget=forms.RadioSelect(attrs={"class": "pdv-cpf-choice"}),
+    )
     documento_consumidor_tipo = forms.ChoiceField(
         label="Documento na nota",
         choices=TipoDocumentoConsumidor.choices,
         required=False,
         initial=TipoDocumentoConsumidor.NAO_IDENTIFICADO,
+        widget=forms.HiddenInput(),
     )
     documento_consumidor = forms.CharField(
-        label="CPF/CNPJ na nota",
+        label="CPF na nota",
         required=False,
         max_length=32,
-        widget=forms.TextInput(attrs={"autocomplete": "off", "inputmode": "numeric", "placeholder": "Opcional"}),
+        widget=forms.TextInput(attrs={"autocomplete": "off", "inputmode": "numeric", "placeholder": "Digite os 11 números"}),
     )
     desconto = forms.DecimalField(label="Desconto", max_digits=12, decimal_places=2, min_value=0, initial=0)
     vencimento_financeiro = forms.DateField(
@@ -105,6 +112,18 @@ class FinalizarVendaForm(forms.Form):
             self.fields["caixa"].initial = primeiro_caixa
         self.fields["cliente"].queryset = clientes_para_usuario(user, Cliente.objects.filter(is_active=True))
         self.fields["vencimento_financeiro"].initial = timezone.localdate() + timedelta(days=30)
+
+    def clean(self):
+        dados = super().clean()
+        decisao = dados.get("cpf_na_nota")
+        if decisao == "SIM":
+            dados["documento_consumidor_tipo"] = TipoDocumentoConsumidor.CPF
+            if not str(dados.get("documento_consumidor") or "").strip():
+                self.add_error("documento_consumidor", "Informe o CPF solicitado pelo consumidor.")
+        else:
+            dados["documento_consumidor_tipo"] = TipoDocumentoConsumidor.NAO_IDENTIFICADO
+            dados["documento_consumidor"] = ""
+        return dados
 
 
 class PreVendaForm(forms.Form):

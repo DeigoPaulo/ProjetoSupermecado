@@ -185,9 +185,6 @@ def _usa_csosn(configuracao):
 def _documento_consumidor_nfce(venda):
     tipo = venda.documento_consumidor_tipo
     documento = _somente_digitos(venda.documento_consumidor)
-    if not documento and venda.cliente and venda.cliente.cpf_cnpj:
-        documento = _somente_digitos(venda.cliente.cpf_cnpj)
-        tipo = TipoDocumentoConsumidor.CPF if len(documento) == 11 else TipoDocumentoConsumidor.CNPJ
     if tipo == TipoDocumentoConsumidor.NAO_IDENTIFICADO or not documento:
         return None
     if tipo == TipoDocumentoConsumidor.CPF and len(documento) == 11:

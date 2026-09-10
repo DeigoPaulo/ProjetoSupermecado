@@ -22,6 +22,7 @@ from apps.vendas.models import EstornoParcialPagamento, FormaPagamento, PreVenda
 from apps.vendas.services import cancelar_venda, finalizar_venda, registrar_devolucao_venda
 
 from .models import AcessoPdvNuvem, Caixa, CanalAtualizacaoPdv, EventoDispositivoTerminal, ModoIntegracaoTef, ProtocoloBalanca, ProvedorTef, Sangria, StatusAcessoPdvNuvem, StatusCaixa, StatusLicencaTerminal, Suprimento, TerminalPdv
+from .forms import FinalizarVendaForm
 from .services_acesso import acesso_pdv_nuvem_aprovado, decidir_acesso_pdv_nuvem, solicitar_acesso_pdv_nuvem
 
 def criar_artefato_pdv_teste(caminho, conteudo, versao="0.1.0", assinado=False):
@@ -593,6 +594,42 @@ class AcessoPdvNuvemTests(TestCase):
         self.assertContains(resposta, 'id="pdv-capture-document"')
         self.assertContains(resposta, "Shift+F4")
 
+    def test_pagamento_exige_pergunta_explicita_de_cpf_na_nota(self):
+        self.client.force_login(self.operador)
+
+        resposta = self.client.get("/pdv/")
+
+        self.assertContains(resposta, "CPF na nota?")
+        self.assertContains(resposta, "Confirme a escolha do consumidor antes de receber o pagamento.")
+        self.assertContains(resposta, 'name="cpf_na_nota"', count=2)
+        self.assertContains(resposta, 'value="NAO"')
+        self.assertContains(resposta, 'value="SIM"')
+        self.assertContains(resposta, 'id="pdv-cpf-document"')
+
+    def test_formulario_converte_resposta_sim_em_cpf_e_nao_limpa_documento(self):
+        caixa = Caixa.objects.create(
+            filial=self.filial,
+            usuario_abertura=self.operador,
+            valor_inicial=Decimal("100.00"),
+        )
+        formulario = FinalizarVendaForm(
+            {
+                "caixa": caixa.pk,
+                "cliente": "",
+                "cpf_na_nota": "SIM",
+                "documento_consumidor_tipo": "NAO_IDENTIFICADO",
+                "documento_consumidor": "123.456.789-09",
+                "desconto": "0",
+                "vencimento_financeiro": "",
+                "valor_recebido": "",
+            },
+            user=self.operador,
+        )
+
+        self.assertTrue(formulario.is_valid(), formulario.errors)
+        self.assertEqual(formulario.cleaned_data["documento_consumidor_tipo"], "CPF")
+        self.assertEqual(formulario.cleaned_data["documento_consumidor"], "123.456.789-09")
+
     def test_finalizar_venda_volta_ao_pdv_limpa_carrinho_e_mostra_popup(self):
         categoria = Categoria.objects.create(nome="Mercearia")
         produto = Produto.objects.create(codigo_barras="789100000001", nome="Arroz", categoria=categoria, preco_custo=Decimal("10"), preco_venda=Decimal("15"))
@@ -616,6 +653,7 @@ class AcessoPdvNuvemTests(TestCase):
             "/pdv/",
             {
                 "action": "finish",
+                "cpf_na_nota": "NAO",
                 "caixa": caixa.id,
                 "cliente": "",
                 "desconto": "0",
@@ -632,6 +670,7 @@ class AcessoPdvNuvemTests(TestCase):
         self.assertContains(resposta, "pdv-cash-drawer-action")
         self.assertContains(resposta, "pagamento_em_dinheiro")
         venda = Venda.objects.get()
+        self.assertEqual(venda.documento_consumidor, "")
         self.assertContains(resposta, f'data-print-url="/pdv/vendas/{venda.id}/recibo/"')
         self.assertContains(resposta, f'data-desktop-print-url="/pdv/vendas/{venda.id}/impressao-desktop.json"')
         self.assertEqual(self.client.session["pdv_cart"], {})

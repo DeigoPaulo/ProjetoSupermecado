@@ -409,6 +409,21 @@ class VendaServiceTests(TestCase):
         self.assertEqual(venda.documento_consumidor, "12345678909")
         self.assertIn("<CPF>12345678909</CPF>", documento.xml_conteudo)
 
+    def test_finalizar_venda_rejeita_cpf_com_digitos_verificadores_invalidos(self):
+        with self.assertRaisesMessage(ValidationError, "CPF válido"):
+            finalizar_venda(
+                caixa=self.caixa,
+                usuario=self.usuario,
+                itens=[{"produto": self.produto, "quantidade": Decimal("1.000")}],
+                pagamentos=[{"forma_pagamento": self.dinheiro, "valor": Decimal("25.00")}],
+                documento_consumidor_tipo=TipoDocumentoConsumidor.CPF,
+                documento_consumidor="111.111.111-11",
+            )
+
+        self.assertFalse(Venda.objects.exists())
+        self.estoque.refresh_from_db()
+        self.assertEqual(self.estoque.quantidade_atual, Decimal("10.000"))
+
     def test_finalizar_venda_com_cnpj_na_nota_bloqueia_nfce_automatica(self):
         with self.assertRaisesMessage(ValidationError, "NF-e modelo 55"):
             finalizar_venda(

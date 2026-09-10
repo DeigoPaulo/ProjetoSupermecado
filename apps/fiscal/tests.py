@@ -23,6 +23,7 @@ from cryptography.x509.oid import NameOID
 
 from apps.accounts.models import PerfilUsuario, TipoPerfil
 from apps.auditoria.models import LogAuditoria
+from apps.clientes.models import Cliente
 from apps.empresas.models import Empresa, Filial
 from apps.fornecedores.models import Fornecedor
 from apps.pdv.models import Caixa
@@ -1002,6 +1003,22 @@ class FiscalTests(TestCase):
         self.assertIn("<dest>", documento.xml_conteudo)
         self.assertIn("<CPF>12345678909</CPF>", documento.xml_conteudo)
         self.assertIn("<indIEDest>9</indIEDest>", documento.xml_conteudo)
+
+    def test_preparar_nfce_nao_usa_cpf_do_cliente_sem_escolha_explicita(self):
+        cliente = Cliente.objects.create(
+            empresa=self.empresa,
+            nome="Consumidor cadastrado",
+            cpf_cnpj="123.456.789-09",
+        )
+        self.venda.cliente = cliente
+        self.venda.documento_consumidor_tipo = TipoDocumentoConsumidor.NAO_IDENTIFICADO
+        self.venda.documento_consumidor = ""
+        self.venda.save(update_fields=["cliente", "documento_consumidor_tipo", "documento_consumidor"])
+
+        documento = preparar_documento_venda(self.venda, self.user)
+
+        self.assertNotIn("<CPF>", documento.xml_conteudo)
+        self.assertNotIn("12345678909", documento.xml_conteudo)
 
     def test_preparar_nfce_recusa_cnpj_e_preserva_numero_da_serie(self):
         self.venda.documento_consumidor_tipo = TipoDocumentoConsumidor.CNPJ

@@ -1,5 +1,18 @@
 # Roadmap de evolucao pos-piloto
 
+## Ponto de retomada — ciclo 69, 10/09/2026
+
+O pagamento do PDV agora começa com a decisão clara “CPF na nota? Não/Sim”. Nenhuma opção vem escolhida na tela; o operador precisa responder antes de finalizar. “Sim” abre e focaliza o CPF, admite digitação ou pinpad e exige 11 dígitos com verificadores válidos. “Não” limpa o documento e grava consumidor não identificado. O CPF de cliente cadastrado não é mais incluído automaticamente sem essa escolha. CNPJ permanece fora desse atalho e deve seguir NF-e modelo 55.
+
+- [x] Tornar a decisão de CPF explícita antes do recebimento e adequada ao teclado do caixa.
+- [x] Validar CPF no navegador e novamente no servidor, inclusive dígitos verificadores e sequências repetidas.
+- [x] Impedir inclusão automática do documento do cadastro sem escolha expressa do consumidor.
+- [x] Manter captura opcional pelo pinpad e digitação manual, sem expor documento em diagnóstico.
+- [x] Validar sintaxe JavaScript, check do Django, 88 testes completos de PDV/vendas e testes fiscais focados.
+- [ ] Retomar no ciclo seguinte a extração autenticada de chave+nItem da devolução a partir do XML original.
+
+Sem migração, mudança de banco, transmissão fiscal ou alteração financeira neste ciclo.
+
 ## Ponto de retomada — ciclo 68, 10/09/2026
 
 Implementado o contrato puro e não emissivo de referências da devolução por item. Valida chave de 44 dígitos e DV, nItem original, unicidade, política/operação/modelo explícitos e ausência de NFref no cabeçalho. Múltiplas origens recebem bloqueio de escopo, sem serem tratadas como proibição fiscal. A validação ampliada aprovou 91 testes do novo contrato, envelope e fluxo de devolução; check do Django sem problemas. Não houve banco, XML, schema, certificado, cobrança ou transmissão.

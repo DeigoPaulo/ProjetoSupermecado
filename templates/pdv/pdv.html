@@ -172,7 +172,7 @@
           <div class="pdv-summary-total"><span>Total final</span><strong id="pdv-total-final">R$ {{ total|floatformat:2 }}</strong></div>
           <div class="pdv-change-line"><span>Troco estimado</span><strong id="pdv-troco-estimado">R$ 0,00</strong></div>
         </div>
-        <div class="pdv-payment-modal" id="pdv-payment-modal" aria-hidden="true">
+        <div class="pdv-payment-modal{% if finish_form.errors %} is-open{% endif %}" id="pdv-payment-modal" aria-hidden="{% if finish_form.errors %}false{% else %}true{% endif %}">
           <div class="pdv-payment-dialog">
             <div class="pdv-payment-header">
               <div>
@@ -181,20 +181,26 @@
               </div>
               <button type="button" id="pdv-close-payment" aria-label="Fechar"><i class="fa-solid fa-xmark"></i></button>
             </div>
-            <div class="pdv-payment-adjustments">
+            <div class="pdv-cpf-question" role="group" aria-labelledby="pdv-cpf-question-title">
+              <div>
+                <strong id="pdv-cpf-question-title">CPF na nota?</strong>
+                <span>Confirme a escolha do consumidor antes de receber o pagamento.</span>
+              </div>
+              <div class="pdv-cpf-options">{{ finish_form.cpf_na_nota }}</div>
+              {{ finish_form.documento_consumidor_tipo }}
+              {% if finish_form.cpf_na_nota.errors %}<span class="pdv-cpf-error">{{ finish_form.cpf_na_nota.errors|striptags }}</span>{% endif %}
+            </div>
+            <div class="pdv-cpf-document" id="pdv-cpf-document" hidden>
               <label class="form-field">
-                <span>CPF/CNPJ na nota</span>
-                {{ finish_form.documento_consumidor_tipo }}
-              </label>
-              <label class="form-field">
-                <span>Documento</span>
+                <span>CPF do consumidor</span>
                 <span class="pdv-document-capture">
                   {{ finish_form.documento_consumidor }}
-                  <button type="button" id="pdv-capture-document" title="Ler CPF/CNPJ no pinpad" aria-label="Ler CPF/CNPJ no pinpad" hidden>
+                  <button type="button" id="pdv-capture-document" title="Ler CPF no pinpad" aria-label="Ler CPF no pinpad" hidden>
                     <i class="fa-solid fa-credit-card"></i><kbd>Shift+F4</kbd>
                   </button>
                 </span>
               </label>
+              {% if finish_form.documento_consumidor.errors %}<span class="pdv-cpf-error">{{ finish_form.documento_consumidor.errors|striptags }}</span>{% endif %}
             </div>
             <div class="pdv-payment-adjustments">
               <label class="form-field"><span>Desconto da venda</span>{{ finish_form.desconto }}</label>

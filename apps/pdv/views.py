@@ -672,6 +672,7 @@ def pdv(request):
         if finish_form.is_valid():
             items, total = _cart_items(cart)
             dados_venda = finish_form.cleaned_data.copy()
+            dados_venda.pop("cpf_na_nota", None)
             valor_recebido = dados_venda.pop("valor_recebido", None)
             supervisor_desconto = None
             if dados_venda["desconto"] > 0:
@@ -731,6 +732,12 @@ def pdv(request):
                 request.session.modified = True
                 messages.success(request, f"Venda {venda.id} finalizada com sucesso.")
                 return redirect("pdv:pdv")
+        else:
+            erros = "; ".join(
+                " ".join(str(mensagem) for mensagem in mensagens)
+                for mensagens in finish_form.errors.values()
+            )
+            messages.error(request, erros or "Confira os dados antes de finalizar a venda.")
     elif request.method == "POST" and request.POST.get("action") == "create_delivery":
         add_form = AdicionarItemForm()
         finish_form = FinalizarVendaForm(user=request.user)

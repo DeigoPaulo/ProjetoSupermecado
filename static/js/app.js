@@ -856,6 +856,8 @@ document.addEventListener("DOMContentLoaded", function () {
     var paymentFeedback = document.getElementById("pdv-payment-feedback");
     var documentTypeInput = document.getElementById("id_documento_consumidor_tipo");
     var documentInput = document.getElementById("id_documento_consumidor");
+    var cpfDecisionInputs = document.querySelectorAll('input[name="cpf_na_nota"]');
+    var cpfDocumentPanel = document.getElementById("pdv-cpf-document");
     var captureDocumentButton = document.getElementById("pdv-capture-document");
     var resumo = document.querySelector(".pdv-summary");
     var descontoDisplay = document.getElementById("pdv-desconto-display");
@@ -1098,12 +1100,51 @@ document.addEventListener("DOMContentLoaded", function () {
       }
     }
 
+    function decisaoCpfNaNota() {
+      var selecionado = Array.prototype.find.call(cpfDecisionInputs, function (input) { return input.checked; });
+      return selecionado ? selecionado.value : "";
+    }
+
+    function cpfValidoNoPdv(valor) {
+      var cpf = String(valor || "").replace(/\D/g, "");
+      if (cpf.length !== 11 || /^([0-9])\1{10}$/.test(cpf)) return false;
+      var numeros = cpf.split("").map(Number);
+      for (var tamanho = 9; tamanho <= 10; tamanho += 1) {
+        var soma = 0;
+        for (var indice = 0; indice < tamanho; indice += 1) soma += numeros[indice] * (tamanho + 1 - indice);
+        var digito = (soma * 10) % 11;
+        if (digito === 10) digito = 0;
+        if (numeros[tamanho] !== digito) return false;
+      }
+      return true;
+    }
+
+    function atualizarCpfNaNota() {
+      var decisao = decisaoCpfNaNota();
+      var informar = decisao === "SIM";
+      if (cpfDocumentPanel) cpfDocumentPanel.hidden = !informar;
+      if (documentInput) documentInput.required = informar;
+      if (documentTypeInput) documentTypeInput.value = informar ? "CPF" : "NAO_IDENTIFICADO";
+      if (decisao === "NAO" && documentInput) documentInput.value = "";
+    }
+
     function abrirPagamentos() {
       if (!paymentModal) return;
       paymentModal.classList.add("is-open");
       paymentModal.setAttribute("aria-hidden", "false");
       atualizarAutorizacaoDesconto();
+      atualizarCpfNaNota();
       atualizarResumoPdv();
+      var cpfEscolhido = decisaoCpfNaNota();
+      var firstCpfDecision = cpfDecisionInputs && cpfDecisionInputs[0];
+      if (!cpfEscolhido && firstCpfDecision) {
+        firstCpfDecision.focus();
+        return;
+      }
+      if (cpfEscolhido === "SIM" && documentInput && !documentInput.value.trim()) {
+        documentInput.focus();
+        return;
+      }
       var firstSelect = paymentModal.querySelector("select");
       if (firstSelect) firstSelect.focus();
     }
@@ -1130,10 +1171,15 @@ document.addEventListener("DOMContentLoaded", function () {
         return;
       }
       captureDocumentButton.disabled = true;
-      informarPagamentoFeedback("Aguardando CPF/CNPJ no pinpad...");
-      Promise.resolve(bridge({ tipo: (documentTypeInput && documentTypeInput.value) || "AUTO" })).then(function (resultado) {
+      informarPagamentoFeedback("Aguardando CPF no pinpad...");
+      Promise.resolve(bridge({ tipo: "CPF" })).then(function (resultado) {
         if (resultado && resultado.status === "ok") {
-          if (documentTypeInput) documentTypeInput.value = resultado.tipo;
+          if (resultado.tipo && resultado.tipo !== "CPF") {
+            informarPagamentoFeedback("CNPJ deve seguir o fluxo de NF-e modelo 55. Informe um CPF ou escolha Não.");
+            if (documentInput) { documentInput.value = ""; documentInput.focus(); }
+            return;
+          }
+          if (documentTypeInput) documentTypeInput.value = "CPF";
           if (documentInput) { documentInput.value = resultado.documento; documentInput.focus(); documentInput.select(); }
           informarPagamentoFeedback("Documento recebido do pinpad.");
           return;
@@ -1234,6 +1280,17 @@ document.addEventListener("DOMContentLoaded", function () {
 
     function validarFinalizacaoVendaPdv() {
       if (!finishForm) return false;
+      var decisaoCpf = decisaoCpfNaNota();
+      if (!decisaoCpf) {
+        informarPagamentoFeedback("Responda se o consumidor deseja CPF na nota.");
+        if (cpfDecisionInputs && cpfDecisionInputs[0]) cpfDecisionInputs[0].focus();
+        return false;
+      }
+      if (decisaoCpf === "SIM" && !cpfValidoNoPdv(documentInput && documentInput.value)) {
+        informarPagamentoFeedback("Informe um CPF válido com 11 números.");
+        if (documentInput) { documentInput.focus(); documentInput.select(); }
+        return false;
+      }
       var desconto = Math.max(decimalFromInput(descontoInput && descontoInput.value), 0);
       if (desconto > 0 && (!discountSupervisor || !discountSupervisor.value.trim() || !discountPassword || !discountPassword.value)) {
         informarPagamentoFeedback("Informe usuário e senha do supervisor ou administrador para autorizar o desconto.");
@@ -1806,6 +1863,17 @@ document.addEventListener("DOMContentLoaded", function () {
     if (finalizeButton) finalizeButton.addEventListener("click", abrirPagamentos);
     if (finishShortcut) finishShortcut.addEventListener("click", abrirPagamentos);
     if (captureDocumentButton) captureDocumentButton.addEventListener("click", capturarDocumentoPinpad);
+    cpfDecisionInputs.forEach(function (input) {
+      input.addEventListener("change", function () {
+        atualizarCpfNaNota();
+        informarPagamentoFeedback("");
+        if (input.value === "SIM" && input.checked && documentInput) documentInput.focus();
+        if (input.value === "NAO" && input.checked) {
+          var firstSelect = paymentModal && paymentModal.querySelector("select");
+          if (firstSelect) firstSelect.focus();
+        }
+      });
+    });
     document.addEventListener("supermercado:desktop-ready", atualizarCapacidadeDocumentoPinpad);
     atualizarCapacidadeDocumentoPinpad();
     if (paymentDeliveryButton) paymentDeliveryButton.addEventListener("click", function () { abrirEntregaDoPagamento(false); });
@@ -2282,6 +2350,12 @@ document.addEventListener("DOMContentLoaded", function () {
         return;
       }
       if (paymentModal && paymentModal.classList.contains("is-open")) {
+        if (key === "Enter" && document.activeElement && document.activeElement.name === "cpf_na_nota") {
+          event.preventDefault();
+          document.activeElement.checked = true;
+          document.activeElement.dispatchEvent(new Event("change", { bubbles: true }));
+          return;
+        }
         if (event.shiftKey && key === "F4") {
           event.preventDefault();
           capturarDocumentoPinpad();
@@ -2368,6 +2442,7 @@ document.addEventListener("DOMContentLoaded", function () {
       window.setTimeout(function () { message.remove(); }, message.classList.contains("error") ? 3800 : 1800);
     });
     atualizarAutorizacaoDesconto();
+    atualizarCpfNaNota();
     atualizarResumoPdv();
   }
 });

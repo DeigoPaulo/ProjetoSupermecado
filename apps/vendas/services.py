@@ -211,6 +211,21 @@ def _somente_digitos(valor):
     return "".join(caractere for caractere in str(valor or "") if caractere.isdigit())
 
 
+def _cpf_valido(valor):
+    cpf = _somente_digitos(valor)
+    if len(cpf) != 11 or len(set(cpf)) == 1:
+        return False
+    numeros = [int(digito) for digito in cpf]
+    for tamanho in (9, 10):
+        soma = sum(numeros[indice] * (tamanho + 1 - indice) for indice in range(tamanho))
+        digito = (soma * 10) % 11
+        if digito == 10:
+            digito = 0
+        if numeros[tamanho] != digito:
+            return False
+    return True
+
+
 def _normalizar_documento_consumidor(tipo, documento, *, preparar_fiscal):
     tipo = (tipo or TipoDocumentoConsumidor.NAO_IDENTIFICADO).upper()
     documento = str(documento or "").strip()
@@ -220,8 +235,8 @@ def _normalizar_documento_consumidor(tipo, documento, *, preparar_fiscal):
         tipo = TipoDocumentoConsumidor.CPF if len(_somente_digitos(documento)) <= 11 else TipoDocumentoConsumidor.CNPJ
     if tipo in {TipoDocumentoConsumidor.CPF, TipoDocumentoConsumidor.CNPJ}:
         documento = _somente_digitos(documento)
-    if tipo == TipoDocumentoConsumidor.CPF and len(documento) != 11:
-        raise ValidationError("CPF na nota deve conter 11 digitos.")
+    if tipo == TipoDocumentoConsumidor.CPF and not _cpf_valido(documento):
+        raise ValidationError("Informe um CPF válido para a nota.")
     if tipo == TipoDocumentoConsumidor.CNPJ and len(documento) != 14:
         raise ValidationError("CNPJ na nota deve conter 14 digitos.")
     if tipo == TipoDocumentoConsumidor.CNPJ and preparar_fiscal:
