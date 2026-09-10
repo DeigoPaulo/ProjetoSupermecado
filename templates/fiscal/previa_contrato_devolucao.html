@@ -37,7 +37,7 @@
   <table><thead><tr><th>Bloco</th><th>Campo</th><th>Fonte</th><th>Disponibilidade</th></tr></thead><tbody>
     {% for item in resultado.inventario_dados.conteudo.itens %}<tr><td>{{ item.grupo }}</td><td>{{ item.campo }}</td><td>{{ item.fonte_primaria }}</td><td>{{ item.estado }}</td></tr>{% endfor %}
   </tbody></table>
-  <p><strong>Lacuna cadastral:</strong> o XML original preserva dados históricos do fornecedor, mas não substitui um cadastro fiscal estruturado e atual.</p>
+  <p><strong>Cadastro fiscal disponível:</strong> o confronto com o XML histórico aparece abaixo, mas não escolhe nem sobrescreve nenhuma fonte.</p>
   <details><summary>Ver lacunas de modelagem</summary><ul>{% for item in resultado.inventario_dados.conteudo.lacunas_modelagem %}<li>{{ item.campo }}: {{ item.codigo }}</li>{% endfor %}</ul></details>
 </section>
 <section class="panel mt-panel"><div class="panel-title">Transporte</div>
@@ -114,6 +114,13 @@
     <ul>{% for item in resultado.identidade_partes.validacao.pendencias %}<li>{{ item.caminho }}: {{ item.codigo }}</li>{% empty %}<li>Nenhuma pendência estrutural nestes grupos.</li>{% endfor %}</ul>
   </details>
 </section>
+<section class="panel mt-panel"><div class="panel-title">Confronto do fornecedor com o XML histórico</div>
+  <p><strong>{% if resultado.confronto_fornecedor_xml.validacao.cadastro_completo %}Cadastro fiscal estruturado completo{% else %}Cadastro fiscal ainda incompleto{% endif %}.</strong> {% if resultado.confronto_fornecedor_xml.validacao.sem_divergencias %}Nenhuma divergência de conteúdo foi encontrada nos campos comparáveis{% else %}Há divergências que exigem conferência humana{% endif %}. Este diagnóstico não atualiza o fornecedor, não escolhe uma fonte e não libera emissão.</p>
+  <table><thead><tr><th>Campo</th><th>Cadastro atual</th><th>XML histórico</th><th>Resultado</th></tr></thead><tbody>
+    {% for item in resultado.confronto_fornecedor_xml.conteudo.campos %}<tr><td>{{ item.rotulo }}</td><td>{{ item.valor_cadastro|default:"Não informado" }}</td><td>{{ item.valor_xml_historico|default:"Sem equivalente ou não informado" }}</td><td>{{ item.estado_rotulo }}</td></tr>{% endfor %}
+  </tbody></table>
+  <p>Mesmo com coincidência integral, indicador de IE, regra tributária, leiaute e homologação permanecem pendentes. Focus e SEFAZ direta continuam desligados para esta devolução.</p>
+</section>
 <section class="panel mt-panel"><div class="panel-title">Referências dos itens no XML original</div>
   <p><strong>{% if resultado.referencias_itens.origem_conferida %}Origem técnica conferida{% else %}Origem com pendências{% endif %}.</strong> A conferência verifica protocolo, chave, empresa, filial e nItem; não valida a tributação nem libera emissão.</p>
   <table><thead><tr><th>Item da devolução</th><th>Chave original</th><th>nItem original</th></tr></thead><tbody>
@@ -132,6 +139,7 @@
   <ul>{% for item in resultado.validacao.bloqueios %}<li>{{ item.grupo }}: {{ item.codigo }}</li>{% endfor %}</ul>
   <ul>{% for item in resultado.referencias_itens.bloqueios %}<li>{{ item.grupo }}: {{ item.codigo }}</li>{% endfor %}</ul>
   <ul>{% for item in resultado.identidade_partes.validacao.bloqueios %}<li>{{ item.grupo }}: {{ item.codigo }}</li>{% endfor %}</ul>
+  <ul>{% for item in resultado.confronto_fornecedor_xml.validacao.bloqueios %}<li>{{ item.grupo }}: {{ item.codigo }}</li>{% endfor %}</ul>
   <ul>{% for item in resultado.produtos.validacao.bloqueios %}<li>{{ item.grupo }}: {{ item.codigo }}</li>{% endfor %}</ul>
   <ul>{% for item in resultado.tributos_itens.validacao.bloqueios %}<li>{{ item.grupo }}: {{ item.codigo }}</li>{% endfor %}</ul>
   <ul>{% for item in resultado.ajustes_comerciais.validacao.bloqueios %}<li>{{ item.grupo }}: {{ item.codigo }}</li>{% endfor %}</ul>

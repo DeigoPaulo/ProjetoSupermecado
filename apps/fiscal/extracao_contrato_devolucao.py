@@ -12,6 +12,7 @@ from .ajustes_comerciais_devolucao import (
     validar_ajustes_comerciais_devolucao,
 )
 from .contrato_devolucao import CONTRATO, GRUPOS, validar_contrato_devolucao
+from .confronto_cadastro_xml_fornecedor import construir_confronto_cadastro_xml_fornecedor
 from .devolucao_fornecedor import _hash_conteudo_revisao
 from .dossie_devolucao import diagnosticar_dossie
 from .identidade_partes_devolucao import (
@@ -261,6 +262,32 @@ def _extrair_identidade_partes(rascunho, xml, parecer):
         validacao["pendencias"].append({"caminho": "destinatario", "codigo": erro_xml})
         validacao["bloqueios"].append({"grupo": "destinatario", "codigo": erro_xml})
     return {"conteudo": conteudo, "validacao": validacao}
+
+
+def _extrair_confronto_fornecedor_xml(rascunho, xml):
+    fornecedor = rascunho.entrada_compra.fornecedor
+    identidade_xml, erro_xml = _ler_identidade_xml_autorizado(xml)
+    cadastro = {
+        "cnpj": fornecedor.cnpj,
+        "razao_social": fornecedor.razao_social,
+        "nome_fantasia": fornecedor.nome_fantasia,
+        "indicador_ie": fornecedor.indicador_ie,
+        "inscricao_estadual": fornecedor.inscricao_estadual,
+        "logradouro": fornecedor.logradouro,
+        "numero": fornecedor.numero,
+        "complemento": fornecedor.complemento,
+        "bairro": fornecedor.bairro,
+        "codigo_municipio_ibge": fornecedor.codigo_municipio_ibge,
+        "municipio": fornecedor.municipio,
+        "uf": fornecedor.uf,
+        "cep": fornecedor.cep,
+    }
+    return construir_confronto_cadastro_xml_fornecedor(
+        fornecedor_id=fornecedor.pk,
+        cadastro=cadastro,
+        xml_historico=identidade_xml["emitente"],
+        erro_xml=erro_xml,
+    )
 
 
 def _memoria_aprovada_e_integra(memoria, parametros):
@@ -633,6 +660,7 @@ def extrair_contrato_devolucao(rascunho_id, usuario):
         resultado = {"conteudo": contrato, "validacao": validar_contrato_devolucao(contrato),
                 "referencias_itens": _extrair_referencias_itens(rascunho, dfe, xml),
                 "identidade_partes": _extrair_identidade_partes(rascunho, xml, parecer),
+                "confronto_fornecedor_xml": _extrair_confronto_fornecedor_xml(rascunho, xml),
                 "produtos": produtos_extraidos,
                 "tributos_itens": tributos_extraidos,
                 "ajustes_comerciais": ajustes_extraidos,

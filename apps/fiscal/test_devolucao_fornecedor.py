@@ -653,6 +653,13 @@ class PreparacaoDevolucaoFornecedorTests(TestCase):
         self.assertEqual(identidade["conteudo"]["destinatario"]["codigo_municipio"], "5208707")
         self.assertEqual(identidade["conteudo"]["emitente"]["cnpj"], "22222222000122")
         self.assertFalse(identidade["validacao"]["permite_emissao"])
+        confronto = resultado["confronto_fornecedor_xml"]
+        self.assertTrue(confronto["validacao"]["estrutura_valida"])
+        self.assertFalse(confronto["validacao"]["cadastro_completo"])
+        self.assertFalse(confronto["validacao"]["permite_sobrescrever"])
+        self.assertFalse(confronto["validacao"]["permite_focus"])
+        self.assertFalse(confronto["validacao"]["permite_sefaz_direta"])
+        self.assertFalse(confronto["validacao"]["permite_emissao"])
         refs = resultado["conteudo"]["grupos"]["bases_valores"]["referencias"]
         self.assertIn({"tipo": "memoria", "id": memoria.pk, "sha256": memoria.conteudo_sha256}, refs)
         origem = memoria.reflexos_origem.rateio.composicao.memoria
@@ -673,6 +680,39 @@ class PreparacaoDevolucaoFornecedorTests(TestCase):
         self.assertFalse(resultado["referencias_itens"]["origem_conferida"])
         verificacoes = {item["codigo"]: item["ok"] for item in resultado["referencias_itens"]["verificacoes"]}
         self.assertFalse(verificacoes["HASH_XML"])
+
+    def test_confronto_fornecedor_xml_detecta_divergencia_sem_sobrescrever(self):
+        rascunho, _, _, _ = self._reflexos_registrados()
+        dados_atuais = {
+            "nome_fantasia": "Fornecedor Origem",
+            "indicador_ie": "1",
+            "inscricao_estadual": "123456789",
+            "logradouro": "Rua do Fornecedor",
+            "numero": "999",
+            "complemento": "",
+            "bairro": "Centro",
+            "codigo_municipio_ibge": "5208707",
+            "municipio": "Goiânia",
+            "uf": "GO",
+            "cep": "74000-000",
+        }
+        for campo, valor in dados_atuais.items():
+            setattr(self.fornecedor, campo, valor)
+        self.fornecedor.save(update_fields=list(dados_atuais))
+
+        resultado = extrair_contrato_devolucao(rascunho.pk, self.revisor)["confronto_fornecedor_xml"]
+
+        campos = {item["campo"]: item for item in resultado["conteudo"]["campos"]}
+        self.assertTrue(resultado["validacao"]["estrutura_valida"])
+        self.assertTrue(resultado["validacao"]["cadastro_completo"])
+        self.assertTrue(resultado["validacao"]["xml_historico_completo"])
+        self.assertEqual(campos["cnpj"]["estado"], "COINCIDENTE")
+        self.assertEqual(campos["numero"]["estado"], "DIVERGENTE")
+        self.assertFalse(resultado["validacao"]["sem_divergencias"])
+        self.assertFalse(resultado["validacao"]["permite_sobrescrever"])
+        self.fornecedor.refresh_from_db()
+        self.assertEqual(self.fornecedor.numero, "999")
+        self.assertFalse(DocumentoFiscal.objects.exists())
 
     def test_extracao_produtos_usa_somente_memoria_aprovada_sem_recalcular(self):
         rascunho, memoria, _ = self._memoria_revisada_para_correcao()
@@ -810,7 +850,7 @@ class PreparacaoDevolucaoFornecedorTests(TestCase):
         inventario = extrair_contrato_devolucao(rascunho.pk, self.revisor)["inventario_dados"]
         self.assertTrue(inventario["validacao"]["estrutura_valida"])
         self.assertGreater(inventario["validacao"]["quantidade_campos_atomicos"], 90)
-        self.assertEqual(inventario["validacao"]["quantidade_lacunas_modelagem"], 9)
+        self.assertEqual(inventario["validacao"]["quantidade_lacunas_modelagem"], 8)
         self.assertTrue(all(item["expoe_valor"] is False for item in inventario["conteudo"]["itens"]))
         self.assertFalse(inventario["validacao"]["permite_emissao"])
 
@@ -906,7 +946,11 @@ class PreparacaoDevolucaoFornecedorTests(TestCase):
         self.assertContains(resposta, "Decisão pendente")
         self.assertContains(resposta, "Inventário atômico dos dados")
         self.assertContains(resposta, "nenhum valor fiscal é exposto")
-        self.assertContains(resposta, "não substitui um cadastro fiscal estruturado e atual")
+        self.assertContains(resposta, "não escolhe nem sobrescreve nenhuma fonte")
+        self.assertContains(resposta, "Confronto do fornecedor com o XML histórico")
+        self.assertContains(resposta, "Cadastro fiscal ainda incompleto")
+        self.assertContains(resposta, "não atualiza o fornecedor")
+        self.assertContains(resposta, "Focus e SEFAZ direta continuam desligados")
         conteudo_previa = resposta.content.decode().split('<div id="previa-contrato-fiscal">', 1)[1].split('</main>', 1)[0]
         self.assertNotIn("<form", conteudo_previa)
         self.assertEqual(resposta["Cache-Control"], "private, no-store")

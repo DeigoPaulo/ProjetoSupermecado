@@ -1,6 +1,6 @@
 # Inventário atômico de dados da devolução
 
-10/09/2026 · atualizado no ciclo 86 · diagnóstico somente leitura.
+10/09/2026 · atualizado no ciclo 87 · diagnóstico somente leitura.
 
 O contrato `supplier_return_atomic_data_inventory_v1` acompanha 106 campos atômicos dos blocos de identificação, partes, referências, produtos, tributos, ajustes, transporte, totais, pagamento fiscal, observações, IPI devolvido, ICMS-ST/FCP e RTC. O inventário não inclui os valores: registra apenas fonte, ocorrências, quantidade preenchida e estado de disponibilidade.
 
@@ -19,17 +19,16 @@ O contrato `supplier_return_atomic_data_inventory_v1` acompanha 106 campos atôm
 | Texto fiscal aprovado | Futuro `infAdic`/`infAdProd`, hoje intencionalmente vazios. |
 | Vigência e contador | IPI devolvido, ST/FCP e RTC ainda não definidos. |
 
-## Lacunas de modelagem confirmadas
+## Lacunas de modelagem restantes
 
 1. `indIEDest` ainda não existe no contrato de destinatário.
-2. O cadastro estruturado do fornecedor existe desde o ciclo 86, mas ainda não é confrontado com o emitente histórico do XML no contrato da devolução.
-3. `indTot` ainda não está modelado no produto da devolução.
-4. Modalidade de base do ICMS ainda não está modelada.
-5. Redução da base de ICMS ainda não está modelada.
-6. Enquadramento legal `cEnq` do IPI não está no contrato da devolução.
-7. Variantes de cálculo de PIS/COFINS ainda não estão discriminadas.
-8. Gerador específico de XML da devolução não existe.
-9. O conversor Focus não possui paridade para todos os grupos da devolução.
+2. `indTot` ainda não está modelado no produto da devolução.
+3. Modalidade de base do ICMS ainda não está modelada.
+4. Redução da base de ICMS ainda não está modelada.
+5. Enquadramento legal `cEnq` do IPI não está no contrato da devolução.
+6. Variantes de cálculo de PIS/COFINS ainda não estão discriminadas.
+7. Gerador específico de XML da devolução não existe.
+8. O conversor Focus não possui paridade para todos os grupos da devolução.
 
 ## Regra de segurança cadastral
 
@@ -37,4 +36,4 @@ O XML original é evidência histórica e pode fornecer dados da operação rece
 
 ## Próximo marco
 
-Criar o confronto não emissivo entre os campos atuais do fornecedor e o emitente histórico do XML. A comparação deverá apontar ausências e divergências para decisão humana, sem escolher automaticamente uma fonte, alterar o cadastro ou liberar geração/emissão.
+Modelar `indIEDest` no contrato de identidade a partir do indicador atual do fornecedor, mantendo-o apenas como candidato e preservando os bloqueios de divergência, geração e emissão.

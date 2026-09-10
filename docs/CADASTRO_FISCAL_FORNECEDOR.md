@@ -29,8 +29,10 @@ O campo antigo de endereço comercial não é alterado pelos novos campos. Os fl
 
 ## Próximo passo
 
-Construir um contrato de confronto cadastro–XML que compare cada campo sem expor dados além da tela fiscal protegida. Ausência ou divergência deve virar pendência explícita; a comparação não poderá sobrescrever fontes nem autorizar emissão.
+O confronto cadastro–XML foi concluído no ciclo 87 sem sobrescrever fontes. O próximo passo é incorporar o indicador de IE ao contrato não emissivo do destinatário, sem transformar coincidência em autorização.
 
 ## Verificação
 
 A regressão conjunta do cadastro, fluxo de devolução, contrato, identidade e inventário aprovou 101 testes. A migração é somente aditiva e não contém rotina de preenchimento de dados.
+
+No ciclo 87, a regressão foi ampliada para 107 testes com o contrato de confronto, sua integração à prévia protegida e o bloqueio de formatos fiscais incoerentes.

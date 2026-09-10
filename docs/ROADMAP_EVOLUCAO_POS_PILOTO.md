@@ -1,5 +1,21 @@
 # Roadmap de evolucao pos-piloto
 
+## Ponto de retomada — ciclo 87, 10/09/2026
+
+Criado `supplier_return_supplier_registration_xml_comparison_v1`, que confronta 13 campos do cadastro atual do fornecedor com o emitente da NF-e original. A comparação normaliza somente apresentação equivalente — pontuação de CNPJ/IE/CEP, caixa e acentos — e mantém diferenças reais como divergência. Cadastro, XML e resultado não são gravados ou sobrescritos. A prévia protegida de Administração/Contabilidade mostra as duas fontes e o diagnóstico; Compras e Financeiro continuam sem acesso.
+
+- [x] Comparar identidade, IE e endereço fiscal campo a campo.
+- [x] Distinguir coincidência, divergência e ausência em cada fonte.
+- [x] Tratar indicador de IE como dado atual sem equivalente direto no emitente histórico.
+- [x] Rejeitar adulteração de estado, resumo ou política do contrato.
+- [x] Proibir fonte preferencial automática, sobrescrita, XML, Focus, SEFAZ direta e emissão.
+- [x] Integrar a comparação à extração e à prévia fiscal somente leitura.
+- [x] Remover do inventário a lacuna de confronto concluída; restam oito lacunas estruturais.
+- [x] Validar o fluxo afetado em regressão conjunta de 107 testes.
+- [ ] Próximo passo: modelar `indIEDest` no contrato de identidade usando o indicador atual apenas como dado candidato, sem resolver divergências nem liberar emissão.
+
+Sem migração, atualização cadastral, geração de XML, acesso a credencial/certificado, mudança de canal/ambiente ou transmissão. Detalhes em [CONFRONTO_CADASTRO_XML_FORNECEDOR.md](CONFRONTO_CADASTRO_XML_FORNECEDOR.md).
+
 ## Ponto de retomada — ciclo 86, 10/09/2026
 
 O fornecedor passou a possuir cadastro fiscal estruturado opcional: indicador de IE, inscrição estadual, logradouro, número, complemento, bairro, CEP, município, UF e código IBGE. Campos vazios continuam aceitos sem valor fiscal presumido; quando IE ou endereço são iniciados, as validações exigem coerência e completude. O endereço comercial livre foi preservado e nenhum importador XML escreve nos novos campos.
@@ -11,7 +27,8 @@ O fornecedor passou a possuir cadastro fiscal estruturado opcional: indicador de
 - [x] Preservar endereço comercial, isolamento por empresa e administração do cadastro.
 - [x] Substituir no inventário a lacuna cadastral pela lacuna de confronto cadastro–XML.
 - [x] Validar cadastro e integração fiscal em regressão conjunta de 101 testes.
-- [ ] Próximo passo: criar confronto não emissivo entre o cadastro atual do fornecedor e o emitente histórico do XML, exibindo divergências sem sobrescrever nenhuma fonte.
+- [x] Criar confronto não emissivo entre o cadastro atual do fornecedor e o emitente histórico do XML, exibindo divergências sem sobrescrever nenhuma fonte.
+- [ ] Modelar o indicador de IE do destinatário como candidato não emissivo no contrato de identidade.
 
 Migração `fornecedores.0004` somente aditiva e 101 testes aprovados. Sem consulta externa, importação automática, geração de XML, acesso a credencial/certificado, mudança de canal/ambiente ou transmissão. Detalhes em [CADASTRO_FISCAL_FORNECEDOR.md](CADASTRO_FISCAL_FORNECEDOR.md).
 

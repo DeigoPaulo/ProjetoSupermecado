@@ -1,5 +1,7 @@
 # Devolução ao fornecedor — preparação fiscal segura
 
+Ciclo 87 — 10/09/2026: implementado o confronto não emissivo de 13 campos entre cadastro atual e XML histórico. Formatações equivalentes são normalizadas, enquanto divergências e ausências permanecem explícitas. A tela protegida mostra as duas fontes, não grava escolhas e mantém Focus, SEFAZ direta, XML e emissão bloqueados. A lacuna de confronto saiu do inventário, que passou de nove para oito lacunas; 107 testes passaram. Próximo passo: modelar `indIEDest` como candidato no contrato de identidade.
+
 Ciclo 86 — 10/09/2026: o fornecedor recebeu dez campos fiscais opcionais, com coerência entre indicador/IE e validação de endereço estruturado completo. Registros existentes permanecem vazios, o endereço comercial é preservado e nenhum XML preenche o cadastro. A lacuna do inventário passou a ser o confronto ainda ausente entre cadastro atual e XML histórico. A regressão integrada passou com 101 testes. Próximo passo: implementar essa comparação como diagnóstico não emissivo.
 
 Ciclo 85 — 10/09/2026: o inventário `supplier_return_atomic_data_inventory_v1` acompanha 106 campos sem expor seus valores. Foram confirmadas nove lacunas, com destaque para o cadastro fiscal não estruturado do fornecedor e campos ausentes de ICMS, IPI, produto e destinatário. XML histórico não substitui cadastro atual. A prévia foi ampliada e 138 testes passaram. Próximo passo: estruturar os campos fiscais opcionais do fornecedor e confrontá-los com o XML sem copiar automaticamente.
