@@ -18,6 +18,8 @@ EVIDENCIA_XSD = {
     "evidencia_arquivada": True,
     "hash_reproduzivel": True,
     "instalado_em_fiscal_schemas": False,
+    "contrato_auditoria_offline": "fiscal_schema_package_audit_v1",
+    "auditoria_offline_disponivel": True,
     "pacote_aprovado": False,
 }
 FONTES_CODIGO = {

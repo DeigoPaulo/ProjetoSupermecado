@@ -1,5 +1,7 @@
 # Contrato proposto do XML de devolução ao fornecedor
 
+Ciclo 96 — 11/09/2026: a auditoria `fiscal_schema_package_audit_v1` passou a conferir offline hash, CRC, segurança dos membros, cinco XSDs, quatro dependências e compilação da raiz do pacote 010f. O relatório não instala, não aprova e não altera configuração; a promoção versionada permanece apenas candidata. Próximo passo: compatibilidade automática entre a matriz atômica e a estrutura auditada.
+
 Ciclo 95 — 11/09/2026: criado o portão `supplier_return_offline_generator_input_plan_v1`. O ZIP 010f e o XSD interno tiveram hashes reproduzidos; a sequência direta de `infNFe` foi registrada com 21 blocos e cardinalidades. O pacote continua arquivado, porém não instalado nem aprovado. Qualquer origem, decisão ou portão pendente mantém a entrada recusada, sem XML ou emissão. A regressão aprovou 158 testes da devolução e 428 testes fiscais. Próximo passo: auditoria offline automatizada do pacote e desenho da promoção versionada.
 
 Ciclo 93 — 11/09/2026: os grupos PIS/COFINS passaram a registrar candidatos separados de variante e modalidade de cálculo, com decisão contábil pendente e destinos futuros no XSD. Nenhum CST, base, alíquota ou valor determina automaticamente a escolha; `PISOutr`/`COFINSOutr` exigem modalidade explícita. O inventário soma 115 campos e duas lacunas; a matriz soma 42 famílias e 156 testes passaram. Próximo passo: consolidar campo, origem, regra e XML.

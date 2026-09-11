@@ -32,6 +32,9 @@ O documento registra apenas data e serial do certificado; senha e chave privada
 permanecem no armazenamento criptografado e nunca sao inseridas no XML ou log.
 Defina `FISCAL_LOCAL_XML_SIGNATURE_ENABLED=False` somente quando o provedor
 configurado for responsavel pela assinatura.
+## Auditoria antes da instalação
+
+Antes de qualquer promoção, execute `python manage.py auditar_pacote_xsd` com o ZIP local, o SHA-256 esperado e a versão candidata. O comando valida integridade, dependências e compilação offline sem escrever neste diretório. Um resultado íntegro não aprova aplicabilidade, não instala o pacote e não altera configuração; a instalação continua dependendo de aprovação humana explícita.
 ## Instalacao controlada
 
 Use o comando abaixo depois que o responsavel fiscal aprovar o pacote e registrar

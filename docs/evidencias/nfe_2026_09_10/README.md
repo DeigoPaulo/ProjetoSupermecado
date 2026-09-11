@@ -28,6 +28,11 @@ Listagem de schemas consultada: https://www.nfe.fazenda.gov.br/portal/listaConte
 | tiposBasico_v4.00.xsd | 772619c85723e598840667ca66e7298a250442df47eeb94b397d2a333ce62047 |
 | xmldsig-core-schema_v1.01.xsd | f56744a5f51c03f027de13f39f869307091781a9ef1d91b1ebe14719ce28e1ac |
 
+## Auditoria automatizada do ciclo 96
+
+O comando `auditar_pacote_xsd` reproduziu o SHA-256 do ZIP, validou CRC, caminhos, cinco arquivos XSD, quatro dependências relativas e compilou offline `PL_010f_v1.04/nfe_v4.00.xsd`. O contrato retornado foi `fiscal_schema_package_audit_v1`, com estado `INTEGRO_TECNICAMENTE_SEM_PROMOCAO`. Nenhum arquivo foi instalado, nenhuma configuração foi alterada e o pacote permanece sem aprovação normativa/operacional.
+
+Detalhes em [AUDITORIA_PACOTE_XSD.md](../../AUDITORIA_PACOTE_XSD.md).
 ## Constatações iniciais de estrutura, não política tributária
 
 No leiaute baixado, finNFe usa TFinNFe e sua documentação identifica 4 como devolução/retorno. NFref admite de zero a 999 ocorrências no XSD e contém a alternativa refNFe. Essa opcionalidade estrutural não dispensa regras de negócio que exigem referência.

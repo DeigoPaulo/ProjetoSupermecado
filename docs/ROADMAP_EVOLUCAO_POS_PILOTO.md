@@ -1,5 +1,23 @@
 # Roadmap de evolucao pos-piloto
 
+## Ponto de retomada — ciclo 96, 11/09/2026
+
+Criado o contrato `fiscal_schema_package_audit_v1` e o comando `auditar_pacote_xsd`, separando verificação técnica de instalação/promoção. A auditoria confere offline o hash do ZIP, CRC, limites, caminhos, duplicidades, conteúdo exclusivamente XSD, dependências relativas e compilação do schema raiz. O pacote 010f arquivado passou com cinco XSDs e quatro dependências. O resultado declara apenas integridade técnica: aplicabilidade, aprovação, instalação, configuração, XML e transmissão permanecem falsos.
+
+- [x] Validar arquivo local regular, tamanho e SHA-256 esperado antes de abrir o ZIP.
+- [x] Conferir CRC, limites de quantidade/tamanho e métodos de compressão.
+- [x] Recusar travessia, links, letra de unidade e duplicidades sensíveis ao Windows.
+- [x] Exigir somente XSD e exatamente um schema raiz.
+- [x] Resolver `include`, `import` e `redefine` exclusivamente dentro do pacote.
+- [x] Compilar a raiz em área temporária, sem rede nem extração persistente.
+- [x] Auditar o pacote real 010f e reproduzir o inventário de cinco XSDs.
+- [x] Validar 17 testes focados e 435 testes da suíte fiscal completa.
+- [x] Definir a promoção candidata para `pacotes/<versão>` sem executá-la.
+- [x] Manter aprovação normativa, instalação, ativação, XML, assinatura e transmissão bloqueados.
+- [ ] Próximo passo: confrontar os destinos não pendentes da matriz atômica com o pacote XSD auditado e produzir relatório de compatibilidade, sem serializar XML ou promover schema.
+
+Arquivos: `apps/fiscal/auditoria_pacote_xsd.py`, `apps/fiscal/management/commands/auditar_pacote_xsd.py` e seus testes. Documentação: [AUDITORIA_PACOTE_XSD.md](AUDITORIA_PACOTE_XSD.md). Migrações: nenhuma.
+
 ## Ponto de retomada — ciclo 95, 11/09/2026
 
 O limite de entrada do futuro gerador foi formalizado no contrato `supplier_return_offline_generator_input_plan_v1`, ainda sem serialização. A leitura direta da evidência arquivada confirmou os 21 filhos de `NFe/infNFe`, suas posições e cardinalidades. Os oito blocos usados pela devolução foram distinguidos dos treze blocos atualmente fora de escopo, sem tratar estes últimos como dispensados. Os hashes do ZIP 010f e do XSD principal foram reproduzidos. A evidência existe no repositório, mas o pacote continua não instalado em `fiscal_schemas`, não aprovado e não promovido para operação.
@@ -14,7 +32,7 @@ O limite de entrada do futuro gerador foi formalizado no contrato `supplier_retu
 - [x] Integrar o portão à extração e à prévia fiscal somente leitura.
 - [x] Validar 158 testes da devolução e 428 testes da suíte fiscal completa.
 - [x] Manter XML, assinatura, certificado, Focus, SEFAZ direta e emissão desativados.
-- [ ] Próximo passo: automatizar a auditoria offline do pacote XSD e definir a promoção versionada para `fiscal_schemas`, sem instalar, aprovar, ativar ou gerar XML automaticamente.
+- [x] Próximo passo concluído no ciclo 96: auditoria offline e promoção versionada especificadas, sem instalação, aprovação, ativação ou XML.
 
 Arquivos: `apps/fiscal/plano_gerador_devolucao.py`, `apps/fiscal/extracao_contrato_devolucao.py`, `apps/fiscal/rastreabilidade_leiaute_devolucao.py` e `templates/fiscal/previa_contrato_devolucao.html`. Documentação: [PLANO_GERADOR_OFFLINE_DEVOLUCAO.md](PLANO_GERADOR_OFFLINE_DEVOLUCAO.md). Migrações: nenhuma.
 

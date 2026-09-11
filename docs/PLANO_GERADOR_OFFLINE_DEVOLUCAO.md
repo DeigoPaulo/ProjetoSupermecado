@@ -55,4 +55,4 @@ A confirmação da ordem na evidência arquivada é separada da aprovação oper
 
 ## Próximo passo
 
-Automatizar a auditoria offline do pacote XSD arquivado — ZIP/CRC, hashes, conjunto de dependências e schema raiz — e especificar sua promoção versionada para `fiscal_schemas`. A auditoria não deve instalar, aprovar ou ativar o pacote automaticamente e não deve gerar XML.
+A auditoria offline e o plano de promoção foram concluídos no ciclo 96 em [AUDITORIA_PACOTE_XSD.md](AUDITORIA_PACOTE_XSD.md). O próximo passo é confrontar automaticamente os destinos não pendentes da matriz atômica com a estrutura auditada, sem serializar XML ou promover o schema.
