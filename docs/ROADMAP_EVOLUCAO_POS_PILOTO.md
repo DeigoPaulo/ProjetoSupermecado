@@ -629,6 +629,24 @@ Critério de aceite:
 
 CSC, senha e material privado do certificado não podem ser recuperados em texto claro por interfaces comuns, logs ou exportações.
 
+### Vinculação fiscal dos pagamentos eletrônicos na NFC-e GO
+
+Esta é uma frente complementar obrigatória antes da homologação real da NFC-e e não altera a sequência da trilha fiscal interna atual. A implementação deverá seguir o XSD e as regras vigentes confirmadas para Goiás, sem copiar literalmente exemplos externos nem presumir que cartão e PIX usam exatamente os mesmos campos condicionais.
+
+- [x] Capturar no PDV o estado confirmado, identificador externo, NSU e código de autorização do TEF/PIX e impedir a finalização de transação eletrônica incompleta.
+- [x] Mapear as formas operacionais para `tPag` 03 (crédito), 04 (débito) e 17 (PIX), preservando o valor de cada parcela em `vPag`.
+- [ ] Estruturar no cadastro/retorno do adaptador os dados fiscais ainda ausentes, incluindo CNPJ da credenciadora ou instituição e bandeira quando aplicável, sem valores padrão.
+- [ ] Serializar no XML da NFC-e o grupo condicional de integração de pagamento, incluindo `tpIntegra`, `CNPJ`, `tBand` e `cAut` somente conforme a forma e o leiaute aplicáveis.
+- [ ] Alimentar `cAut` exclusivamente com a autorização confirmada pelo adaptador; não usar NSU, identificador externo ou texto digitado como substituto automático.
+- [ ] Tratar PIX dinâmico integrado conforme a estrutura vigente, sem inventar bandeira e sem assumir o grupo de cartão quando o XSD/regra aplicável determinar outra estrutura.
+- [ ] Impedir `tpIntegra=1` quando não houver integração real e bloquear emissão diante de dados obrigatórios ausentes ou contraditórios.
+- [ ] Fechar a paridade separadamente no conversor Focus e no XML transportado pela SEFAZ direta, garantindo que nenhum campo seja perdido ou reconstruído de forma divergente.
+- [ ] Criar testes de cartão, PIX, pagamento dividido e rejeições controladas, seguidos de homologação com TEF/adquirente e SEFAZ-GO reais.
+
+Critério de aceite:
+
+Cada parcela eletrônica da NFC-e deve manter vínculo auditável entre a confirmação do TEF/PIX, os dados persistidos e o grupo fiscal efetivamente transmitido. A aprovação exige validação XSD, paridade dos dois canais e evidência de homologação real; simulador não libera produção.
+
 ### Homologação real SEFAZ GO
 
 - [ ] Revalidar endpoints, schemas e Notas Técnicas vigentes antes do primeiro teste externo.
