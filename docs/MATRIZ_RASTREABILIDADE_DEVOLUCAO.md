@@ -14,6 +14,8 @@ Atualização do ciclo 91: `pRedBC` foi modelado como hipótese contábil vazia 
 
 Atualização do ciclo 92: `cEnq` foi isolado do IPI da memória e de `impostoDevol`, vazio e dependente do contador. A matriz passou a 38 famílias e o inventário a 111 campos com três lacunas; nenhum canal foi liberado.
 
+Atualização do ciclo 93: variantes e modalidades de PIS/COFINS foram decompostas como candidatas vazias e não confirmadas. A matriz passou a 42 famílias e o inventário a 115 campos com duas lacunas. O mapeamento registra destinos possíveis, sem escolher estrutura ou liberar canal.
+
 Esta matriz confronta o contrato neutro da devolução com o pacote XSD preservado e com o código atual dos dois canais. “Focus” significa apenas a cobertura observada no conversor do ERP; não afirma limite comercial ou técnico da API externa. “SEFAZ direta” indica que o adaptador transporta a `NFe` local sem reconstruir seus campos; isso não resolve a ausência do gerador nem comprova schema, assinatura, regra de negócio ou homologação.
 
 Evidência XSD: `PL_010f_v1.04/leiauteNFe_v4.00.xsd`, SHA-256 `2bace939973916d54184ff3e2740041a932de5d79772f3363504504160f22542`. O pacote está preservado, mas não aprovado nem instalado para uso operacional.

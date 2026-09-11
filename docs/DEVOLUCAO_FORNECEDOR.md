@@ -1,5 +1,7 @@
 # Devolução ao fornecedor — preparação fiscal segura
 
+Ciclo 93 — 11/09/2026: PIS e COFINS receberam variante e modalidade candidatas por item, vazias e não confirmadas. O XSD preservado sustenta `Aliq`, `Qtde`, `NT` e `Outr`; a compatibilidade é validada somente quando existe escolha explícita. CST e memória não selecionam a estrutura. O inventário passou a 115 campos e duas lacunas; 156 testes passaram. Próximo passo: matriz atômica consolidada.
+
 Ciclo 92 — 10/09/2026: `cEnq` recebeu contrato explícito por item, separado do IPI da memória e de `impostoDevol`. O campo nasce vazio, depende do contador, registra obrigação estrutural e contextual e não pode ser aplicado. O inventário passou a 111 campos e três lacunas; 153 testes conjuntos passaram. Próximo passo: variantes de PIS/COFINS, ainda não iniciadas.
 
 Ciclo 91 — 10/09/2026: `pRedBC` foi incluído no grupo ICMS como percentual candidato vazio e não confirmado. Cadastro do produto, XML histórico e memória não preenchem a decisão; percentual informado continua pendente e não modifica a base. O inventário passou a 110 campos e quatro lacunas; 149 testes conjuntos passaram. Próximo passo: enquadramento legal do IPI (`cEnq`).

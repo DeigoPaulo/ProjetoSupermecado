@@ -45,7 +45,11 @@ MAPEAMENTOS = (
     ("tributos_itens", (
         ("itens[].grupos.icms", "NFe/infNFe/det/imposto/ICMS/*", "PARCIAL"),
         ("itens[].grupos.pis", "NFe/infNFe/det/imposto/PIS/*", "PARCIAL"),
+        ("itens[].grupos.pis.variante_candidata", "NFe/infNFe/det/imposto/PIS/PISAliq|PISQtde|PISNT|PISOutr", "PARCIAL"),
+        ("itens[].grupos.pis.modalidade_calculo_candidata", "NFe/infNFe/det/imposto/PIS/*/vBC|pPIS|qBCProd|vAliqProd", "PARCIAL"),
         ("itens[].grupos.cofins", "NFe/infNFe/det/imposto/COFINS/*", "PARCIAL"),
+        ("itens[].grupos.cofins.variante_candidata", "NFe/infNFe/det/imposto/COFINS/COFINSAliq|COFINSQtde|COFINSNT|COFINSOutr", "PARCIAL"),
+        ("itens[].grupos.cofins.modalidade_calculo_candidata", "NFe/infNFe/det/imposto/COFINS/*/vBC|pCOFINS|qBCProd|vAliqProd", "PARCIAL"),
     )),
     ("ajustes_comerciais", (
         ("itens[].frete", "NFe/infNFe/det/prod/vFrete", "NAO_MAPEADO"),

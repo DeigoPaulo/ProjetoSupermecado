@@ -9,10 +9,10 @@ from .obrigatoriedade_campos_devolucao import (
 
 
 class ObrigatoriedadeCamposDevolucaoTests(SimpleTestCase):
-    def test_classifica_38_familias_sem_aplicacao_operacional(self):
+    def test_classifica_42_familias_sem_aplicacao_operacional(self):
         resultado = construir_obrigatoriedade_campos_devolucao()
         self.assertTrue(resultado["validacao"]["estrutura_valida"])
-        self.assertEqual(resultado["validacao"]["quantidade_campos"], 38)
+        self.assertEqual(resultado["validacao"]["quantidade_campos"], 42)
         self.assertGreater(resultado["validacao"]["quantidade_pendentes"], 0)
         self.assertFalse(resultado["validacao"]["analise_normativa_integral"])
         self.assertTrue(all(item["aplicacao_operacional"] is False for item in resultado["conteudo"]["itens"]))
@@ -38,6 +38,12 @@ class ObrigatoriedadeCamposDevolucaoTests(SimpleTestCase):
         self.assertEqual(cenq["categoria"], "CONDICIONADO_GRUPO_IPI")
         self.assertEqual(cenq["cardinalidade_xsd"], "1-1_DENTRO_IPI")
         self.assertTrue(cenq["exige_decisao_contador"])
+        variante_pis = itens[("tributos_itens", "itens[].grupos.pis.variante_candidata")]
+        self.assertEqual(variante_pis["categoria"], "CONDICIONADO_GRUPO_CONTRIBUICAO")
+        self.assertEqual(variante_pis["cardinalidade_xsd"], "0-1_GRUPO/1-1_ESCOLHA")
+        modalidade_cofins = itens[("tributos_itens", "itens[].grupos.cofins.modalidade_calculo_candidata")]
+        self.assertEqual(modalidade_cofins["categoria"], "CONDICIONADO_VARIANTE_CONTRIBUICAO")
+        self.assertTrue(modalidade_cofins["exige_decisao_contador"])
         rtc = itens[("rtc", "totais.rtc")]
         self.assertEqual(rtc["categoria"], "PENDENTE_VIGENCIA_E_ENQUADRAMENTO")
 

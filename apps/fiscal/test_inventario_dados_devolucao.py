@@ -15,8 +15,8 @@ class InventarioDadosDevolucaoTests(SimpleTestCase):
         self.assertTrue(resultado["validacao"]["estrutura_valida"])
         self.assertEqual(resultado["validacao"]["quantidade_campos_atomicos"], len(CAMPOS_ATOMICOS))
         self.assertGreater(len(CAMPOS_ATOMICOS), 90)
-        self.assertEqual(resultado["validacao"]["quantidade_campos_atomicos"], 111)
-        self.assertEqual(resultado["validacao"]["quantidade_lacunas_modelagem"], 3)
+        self.assertEqual(resultado["validacao"]["quantidade_campos_atomicos"], 115)
+        self.assertEqual(resultado["validacao"]["quantidade_lacunas_modelagem"], 2)
         codigos = {item["codigo"] for item in resultado["conteudo"]["lacunas_modelagem"]}
         self.assertNotIn("REDUCAO_BASE_ICMS_NAO_MODELADA", codigos)
         self.assertNotIn("MODALIDADE_BASE_ICMS_NAO_MODELADA", codigos)
@@ -25,6 +25,7 @@ class InventarioDadosDevolucaoTests(SimpleTestCase):
         self.assertNotIn("CADASTRO_FORNECEDOR_NAO_CONFRONTADO_COM_XML", codigos)
         self.assertNotIn("FORNECEDOR_SEM_CADASTRO_FISCAL_ESTRUTURADO", codigos)
         self.assertNotIn("ENQUADRAMENTO_IPI_NAO_MODELADO_NA_DEVOLUCAO", codigos)
+        self.assertNotIn("VARIANTES_PIS_COFINS_NAO_MODELADAS", codigos)
         self.assertTrue(all(item["expoe_valor"] is False for item in resultado["conteudo"]["itens"]))
         self.assertFalse(resultado["validacao"]["permite_gerar_xml"])
         self.assertFalse(resultado["validacao"]["permite_focus"])
@@ -38,6 +39,10 @@ class InventarioDadosDevolucaoTests(SimpleTestCase):
                 "enquadramento_ipi": {"valor_candidato": ""},
                 "imposto_devol": {"pdevol": ""},
             }]}},
+            "tributos_itens": {"conteudo": {"itens": [{"grupos": {
+                "pis": {"variante_candidata": "", "modalidade_calculo_candidata": ""},
+                "cofins": {"variante_candidata": "", "modalidade_calculo_candidata": ""},
+            }}]}},
         }
         inventario = construir_inventario_dados_devolucao(extracao)["conteudo"]["itens"]
         itens = {(item["grupo"], item["campo"]): item for item in inventario}
@@ -45,6 +50,8 @@ class InventarioDadosDevolucaoTests(SimpleTestCase):
         self.assertEqual(itens[("produtos", "itens[].ean")]["estado"], "CONDICIONADO_NAO_INFORMADO")
         self.assertEqual(itens[("ipi_devolvido", "itens[].imposto_devol.pdevol")]["estado"], "NAO_DEFINIDO_POR_POLITICA")
         self.assertEqual(itens[("ipi_devolvido", "itens[].enquadramento_ipi.valor_candidato")]["estado"], "NAO_DEFINIDO_POR_POLITICA")
+        self.assertEqual(itens[("tributos_itens", "itens[].grupos.pis.variante_candidata")]["estado"], "NAO_DEFINIDO_POR_POLITICA")
+        self.assertEqual(itens[("tributos_itens", "itens[].grupos.cofins.modalidade_calculo_candidata")]["estado"], "NAO_DEFINIDO_POR_POLITICA")
         self.assertEqual(itens[("produtos", "itens[].descricao")]["preenchidas"], 1)
         self.assertNotIn("Produto de teste", str(inventario))
 

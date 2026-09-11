@@ -1,8 +1,8 @@
 # Inventário atômico de dados da devolução
 
-10/09/2026 · atualizado no ciclo 92 · diagnóstico somente leitura.
+11/09/2026 · atualizado no ciclo 93 · diagnóstico somente leitura.
 
-O contrato `supplier_return_atomic_data_inventory_v1` acompanha 111 campos atômicos dos blocos de identificação, partes, referências, produtos, tributos, ajustes, transporte, totais, pagamento fiscal, observações, IPI devolvido, ICMS-ST/FCP e RTC. O inventário não inclui os valores: registra apenas fonte, ocorrências, quantidade preenchida e estado de disponibilidade.
+O contrato `supplier_return_atomic_data_inventory_v1` acompanha 115 campos atômicos dos blocos de identificação, partes, referências, produtos, tributos, ajustes, transporte, totais, pagamento fiscal, observações, IPI devolvido, ICMS-ST/FCP e RTC. O inventário não inclui os valores: registra apenas fonte, ocorrências, quantidade preenchida e estado de disponibilidade.
 
 ## Fontes reconhecidas
 
@@ -21,9 +21,8 @@ O contrato `supplier_return_atomic_data_inventory_v1` acompanha 111 campos atôm
 
 ## Lacunas de modelagem restantes
 
-1. Variantes de cálculo de PIS/COFINS ainda não estão discriminadas.
-2. Gerador específico de XML da devolução não existe.
-3. O conversor Focus não possui paridade para todos os grupos da devolução.
+1. Gerador específico de XML da devolução não existe.
+2. O conversor Focus não possui paridade para todos os grupos da devolução.
 
 ## Regra de segurança cadastral
 
@@ -31,4 +30,4 @@ O XML original é evidência histórica e pode fornecer dados da operação rece
 
 ## Próximo marco
 
-Discriminar as variantes de PIS/COFINS no contrato tributário, mantendo hipótese, cálculo, XML e emissão bloqueados até evidência e decisão contábil suficientes.
+Consolidar a matriz atômica campo → origem → regra → destino XML, mantendo serialização e emissão bloqueadas.

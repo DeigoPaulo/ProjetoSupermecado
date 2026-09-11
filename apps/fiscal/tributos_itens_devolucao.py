@@ -25,6 +25,33 @@ _CAMPOS_GRUPO_ICMS = _CAMPOS_GRUPO | {
     "modalidade_base_candidata", "modalidade_base_fonte", "modalidade_base_confirmada",
     "reducao_base_candidata", "reducao_base_fonte", "reducao_base_confirmada",
 }
+_CAMPOS_GRUPO_CONTRIBUICAO = _CAMPOS_GRUPO | {
+    "variante_candidata", "modalidade_calculo_candidata", "variante_fonte",
+    "estado_variante", "grupo_opcional_xsd", "depende_decisao_contador",
+    "destino_xml_futuro", "variante_confirmada",
+}
+VARIANTES_CONTRIBUICOES = {
+    "pis": {
+        "PISAliq": ({"01", "02"}, {"PERCENTUAL"}),
+        "PISQtde": ({"03"}, {"QUANTIDADE"}),
+        "PISNT": ({"04", "05", "06", "07", "08", "09"}, {"SEM_CALCULO"}),
+        "PISOutr": ({
+            "49", "50", "51", "52", "53", "54", "55", "56",
+            "60", "61", "62", "63", "64", "65", "66", "67",
+            "70", "71", "72", "73", "74", "75", "98", "99",
+        }, {"PERCENTUAL", "QUANTIDADE"}),
+    },
+    "cofins": {
+        "COFINSAliq": ({"01", "02"}, {"PERCENTUAL"}),
+        "COFINSQtde": ({"03"}, {"QUANTIDADE"}),
+        "COFINSNT": ({"04", "05", "06", "07", "08", "09"}, {"SEM_CALCULO"}),
+        "COFINSOutr": ({
+            "49", "50", "51", "52", "53", "54", "55", "56",
+            "60", "61", "62", "63", "64", "65", "66", "67",
+            "70", "71", "72", "73", "74", "75", "98", "99",
+        }, {"PERCENTUAL", "QUANTIDADE"}),
+    },
+}
 
 
 def _decimal_exato(valor, casas):
@@ -100,7 +127,12 @@ def validar_tributos_itens_devolucao(conteudo):
         for nome, estado in ESTADOS_GRUPOS.items():
             grupo = grupos.get(nome)
             grupo_caminho = f"{caminho}.grupos.{nome}"
-            campos_grupo = _CAMPOS_GRUPO_ICMS if nome == "icms" else _CAMPOS_GRUPO
+            if nome == "icms":
+                campos_grupo = _CAMPOS_GRUPO_ICMS
+            elif nome in VARIANTES_CONTRIBUICOES:
+                campos_grupo = _CAMPOS_GRUPO_CONTRIBUICAO
+            else:
+                campos_grupo = _CAMPOS_GRUPO
             if not isinstance(grupo, dict) or set(grupo) != campos_grupo:
                 erro(grupo_caminho, "CAMPOS_INVALIDOS")
                 continue
@@ -135,6 +167,40 @@ def validar_tributos_itens_devolucao(conteudo):
                     erro(f"{grupo_caminho}.reducao_base_fonte", "PREDBC_FONTE_INVALIDA")
                 if grupo.get("reducao_base_confirmada") is not False:
                     erro(f"{grupo_caminho}.reducao_base_confirmada", "PREDBC_CONFIRMACAO_DIRETA_PROIBIDA")
+            elif nome in VARIANTES_CONTRIBUICOES:
+                prefixo = nome.upper()
+                variante = grupo.get("variante_candidata")
+                modalidade = grupo.get("modalidade_calculo_candidata")
+                opcoes = VARIANTES_CONTRIBUICOES[nome]
+                if variante == "":
+                    pendencia(f"{grupo_caminho}.variante_candidata", f"VARIANTE_{prefixo}_PENDENTE")
+                    if modalidade != "":
+                        erro(f"{grupo_caminho}.modalidade_calculo_candidata", f"MODALIDADE_{prefixo}_SEM_VARIANTE")
+                    estado_esperado = "NAO_DEFINIDA"
+                elif variante not in opcoes:
+                    erro(f"{grupo_caminho}.variante_candidata", f"VARIANTE_{prefixo}_INVALIDA")
+                    estado_esperado = "CANDIDATA_NAO_CONFIRMADA"
+                else:
+                    csts, modalidades = opcoes[variante]
+                    if grupo.get("codigo") not in csts:
+                        erro(f"{grupo_caminho}.codigo", f"CST_{prefixo}_INCOMPATIVEL_COM_VARIANTE")
+                    if modalidade not in modalidades:
+                        erro(f"{grupo_caminho}.modalidade_calculo_candidata", f"MODALIDADE_{prefixo}_INCOMPATIVEL")
+                    pendencia(f"{grupo_caminho}.variante_candidata", f"VARIANTE_{prefixo}_NAO_CONFIRMADA")
+                    estado_esperado = "CANDIDATA_NAO_CONFIRMADA"
+                if grupo.get("estado_variante") != estado_esperado:
+                    erro(f"{grupo_caminho}.estado_variante", f"ESTADO_VARIANTE_{prefixo}_INVALIDO")
+                if grupo.get("variante_fonte") != "DECISAO_CONTADOR_PENDENTE":
+                    erro(f"{grupo_caminho}.variante_fonte", f"FONTE_VARIANTE_{prefixo}_INVALIDA")
+                if grupo.get("grupo_opcional_xsd") is not True:
+                    erro(f"{grupo_caminho}.grupo_opcional_xsd", f"CARDINALIDADE_{prefixo}_INVALIDA")
+                if grupo.get("depende_decisao_contador") is not True:
+                    erro(f"{grupo_caminho}.depende_decisao_contador", f"DECISAO_CONTADOR_{prefixo}_OBRIGATORIA")
+                destino = f"NFe/infNFe/det/imposto/{'PIS' if nome == 'pis' else 'COFINS'}/*"
+                if grupo.get("destino_xml_futuro") != destino:
+                    erro(f"{grupo_caminho}.destino_xml_futuro", f"DESTINO_{prefixo}_INVALIDO")
+                if grupo.get("variante_confirmada") is not False:
+                    erro(f"{grupo_caminho}.variante_confirmada", f"CONFIRMACAO_VARIANTE_{prefixo}_ANTECIPADA")
     bloqueios = [{"grupo": "bases_valores", "codigo": item["codigo"]} for item in pendencias]
     bloqueios.extend((
         {"grupo": "classificacao", "codigo": "MATRIZ_TRIBUTARIA_NAO_HOMOLOGADA"},
@@ -148,11 +214,15 @@ def validar_tributos_itens_devolucao(conteudo):
         "MODBC_CANDIDATA_PENDENTE", "MODBC_NAO_CONFIRMADA",
         "PREDBC_CANDIDATA_PENDENTE", "PREDBC_NAO_CONFIRMADA",
     }
+    pendencias_decisoes = pendencias_decisoes_icms | {
+        "VARIANTE_PIS_PENDENTE", "VARIANTE_PIS_NAO_CONFIRMADA",
+        "VARIANTE_COFINS_PENDENTE", "VARIANTE_COFINS_NAO_CONFIRMADA",
+    }
     return {
         "contrato": CONTRATO_VALIDACAO_TRIBUTOS_ITENS,
         "estrutura_valida": not erros,
         "origem_completa": not erros and not any(
-            item["codigo"] not in pendencias_decisoes_icms for item in pendencias
+            item["codigo"] not in pendencias_decisoes for item in pendencias
         ),
         "dados_completos": not erros and not pendencias,
         "escopo_fiscal_suportado": False,
@@ -161,6 +231,7 @@ def validar_tributos_itens_devolucao(conteudo):
         "bloqueios": bloqueios,
         "permite_aplicar_modalidade_base_icms": False,
         "permite_aplicar_reducao_base_icms": False,
+        "permite_aplicar_variantes_pis_cofins": False,
         "permite_gerar_xml": False,
         "permite_emissao": False,
     }

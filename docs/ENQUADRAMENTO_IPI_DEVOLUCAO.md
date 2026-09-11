@@ -31,4 +31,4 @@ A integridade da memória é avaliada separadamente da decisão fiscal: uma orig
 
 Ainda dependem do contador e da análise normativa integral: aplicabilidade do grupo IPI, CST, código de enquadramento, eventual `impostoDevol`, justificativa e valores. Focus e SEFAZ direta deverão ser homologados separadamente depois que existir um gerador neutro; nenhuma configuração de canal foi alterada.
 
-Próximo passo técnico: discriminar as variantes de PIS/COFINS sem inferir CST, fórmula, base ou valor e parar novamente antes de qualquer serialização.
+Concluído no ciclo 93: variantes e modalidades de PIS/COFINS foram discriminadas sem inferir CST, fórmula, base ou valor. O próximo passo é consolidar a matriz atômica campo → origem → regra → destino XML antes de qualquer serialização.

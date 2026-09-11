@@ -1,5 +1,7 @@
 # Matriz de conformidade fiscal e contábil — Goiás 2026
 
+Ciclo 93 — 11/09/2026: variantes `Aliq`, `Qtde`, `NT` e `Outr` de PIS/COFINS foram modeladas como escolhas explícitas não confirmadas. A modalidade interna também permanece vazia; CST e números da memória não geram decisão automática. O inventário passou a 115 campos e duas lacunas, a rastreabilidade a 42 famílias e 156 testes passaram. Próximo passo: matriz atômica consolidada antes do gerador.
+
 Ciclo 92 — 10/09/2026: `cEnq` foi isolado por item como decisão do contador, vazio e não confirmado. O XSD preservado sustenta 1 a 3 caracteres e obrigatoriedade apenas dentro de `IPI`; não sustenta código ou aplicação ao caso. IPI da memória e `impostoDevol` permanecem separados. O inventário passou a 111 campos e três lacunas, a matriz a 38 famílias e 153 testes passaram. Próximo passo: variantes de PIS/COFINS.
 
 Ciclo 88 — 10/09/2026: o indicador de IE do fornecedor passou a aparecer no destinatário somente como candidato cadastral não confirmado. O validador impede promoção direta, mantém decisão humana obrigatória e não libera XML ou canal. O inventário agora acompanha 107 campos e sete lacunas restantes; 107 testes passaram.

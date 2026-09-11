@@ -1,5 +1,27 @@
 # Roadmap de evolucao pos-piloto
 
+## Ponto de retomada — ciclo 93, 11/09/2026
+
+Os grupos PIS e COFINS do contrato `supplier_return_item_tax_values_v1` passaram a representar separadamente a variante estrutural candidata e sua modalidade de cálculo candidata. O XSD preservado confirma quatro escolhas exclusivas por contribuição (`Aliq`, `Qtde`, `NT` e `Outr`); em `Outr`, percentual e quantidade continuam alternativas internas. Os candidatos nascem vazios, com fonte `DECISAO_CONTADOR_PENDENTE`, estado `NAO_DEFINIDA` e confirmação falsa. O sistema não deduz a escolha pelo CST nem pelos números da memória. Quando uma escolha é fornecida para validação, apenas a compatibilidade estrutural com o CST e a modalidade é conferida, sem aplicar cálculo ou gerar grupo XML. O inventário passou a 115 campos e duas lacunas; rastreabilidade e obrigatoriedade passaram a 42 famílias.
+
+- [x] Confirmar no XSD preservado os grupos opcionais e as quatro escolhas de PIS/COFINS.
+- [x] Representar variante e modalidade de cálculo separadamente para PIS e COFINS.
+- [x] Iniciar todos os candidatos vazios e não confirmados, dependentes do contador.
+- [x] Registrar cardinalidade, fonte e destino XML futuro sem criar serializador.
+- [x] Validar compatibilidade entre variante explicitamente candidata, CST informado e modalidade escolhida.
+- [x] Exigir modalidade explícita para `PISOutr` e `COFINSOutr`.
+- [x] Recusar variante inválida, CST incompatível, fonte trocada e confirmação antecipada.
+- [x] Provar que base, alíquota, valor, totalização e canais não sofrem alteração.
+- [x] Manter `permite_aplicar_variantes_pis_cofins=False`, XML e emissão bloqueados.
+- [x] Exibir variantes e modalidades pendentes na prévia somente leitura.
+- [x] Remover `VARIANTES_PIS_COFINS_NAO_MODELADAS`; restam duas lacunas.
+- [x] Validar a regressão conjunta de 156 testes.
+- [ ] Próximo passo: consolidar a matriz atômica campo → origem → regra → destino XML antes de qualquer gerador.
+
+Arquivos de implementação alterados: `apps/fiscal/tributos_itens_devolucao.py`, `apps/fiscal/extracao_contrato_devolucao.py`, `apps/fiscal/inventario_dados_devolucao.py`, `apps/fiscal/rastreabilidade_leiaute_devolucao.py`, `apps/fiscal/obrigatoriedade_campos_devolucao.py` e `templates/fiscal/previa_contrato_devolucao.html`. Testes alterados: `apps/fiscal/test_tributos_itens_devolucao.py`, `apps/fiscal/test_inventario_dados_devolucao.py`, `apps/fiscal/test_rastreabilidade_leiaute_devolucao.py`, `apps/fiscal/test_obrigatoriedade_campos_devolucao.py` e `apps/fiscal/test_devolucao_fornecedor.py`. Migrações: nenhuma. Decisões ainda pendentes: aplicabilidade dos grupos, variantes reais, modalidades, CSTs e valores do caso concreto. Dependências externas: decisão do contador, análise normativa integral e posterior homologação de cada canal. Detalhes em [VARIANTES_PIS_COFINS_DEVOLUCAO.md](VARIANTES_PIS_COFINS_DEVOLUCAO.md).
+
+Sem cálculo novo, decisão tributária, XML, credencial, certificado, mudança de ambiente ou transmissão.
+
 ## Ponto de retomada — ciclo 92, 10/09/2026
 
 O contrato `supplier_return_returned_ipi_policy_v1` passou a representar o enquadramento legal do IPI por item como decisão própria, separada tanto do IPI informativo da memória quanto de `impostoDevol`. O XSD preservado confirma `cEnq` com cardinalidade 1-1 dentro de `IPI` e tipo `TString` de 1 a 3 caracteres; ele não prova, isoladamente, que o grupo IPI se aplique ao caso nem qual código deva ser usado. Por isso o candidato nasce vazio, com fonte `DECISAO_CONTADOR_PENDENTE`, disponibilidade `NAO_DEFINIDO`, confirmação falsa e destino futuro `NFe/infNFe/det/imposto/IPI/cEnq`. O inventário passou a 111 campos e três lacunas; a rastreabilidade e a matriz de obrigatoriedade passaram a 38 famílias.
@@ -15,7 +37,7 @@ O contrato `supplier_return_returned_ipi_policy_v1` passou a representar o enqua
 - [x] Exibir `cEnq` pendente na prévia somente leitura.
 - [x] Remover `ENQUADRAMENTO_IPI_NAO_MODELADO_NA_DEVOLUCAO`; restam três lacunas.
 - [x] Validar a regressão conjunta de 153 testes.
-- [ ] Próximo passo, não iniciado neste ciclo: discriminar variantes de PIS/COFINS sem cálculo, default ou serialização.
+- [x] Próximo passo concluído no ciclo 93: variantes e modalidades de PIS/COFINS modeladas como decisões vazias e não confirmadas.
 
 Arquivos de implementação alterados: `apps/fiscal/ipi_devolvido_contrato.py`, `apps/fiscal/inventario_dados_devolucao.py`, `apps/fiscal/rastreabilidade_leiaute_devolucao.py`, `apps/fiscal/obrigatoriedade_campos_devolucao.py` e `templates/fiscal/previa_contrato_devolucao.html`. Testes alterados: `apps/fiscal/test_ipi_devolvido_contrato.py`, `apps/fiscal/test_inventario_dados_devolucao.py`, `apps/fiscal/test_rastreabilidade_leiaute_devolucao.py`, `apps/fiscal/test_obrigatoriedade_campos_devolucao.py` e `apps/fiscal/test_devolucao_fornecedor.py`. Documentos alterados ou criados: este roadmap, [ENQUADRAMENTO_IPI_DEVOLUCAO.md](ENQUADRAMENTO_IPI_DEVOLUCAO.md), `INVENTARIO_DADOS_DEVOLUCAO.md`, `MATRIZ_RASTREABILIDADE_DEVOLUCAO.md`, `CLASSIFICACAO_OBRIGATORIEDADE_DEVOLUCAO.md`, `DEVOLUCAO_FORNECEDOR.md`, `CONTRATO_XML_DEVOLUCAO_FORNECEDOR.md`, `MATRIZ_CONFORMIDADE_FISCAL_CONTABIL_GO_2026.md` e `REDUCAO_BASE_ICMS_DEVOLUCAO.md`.
 

@@ -66,6 +66,11 @@ def _definicoes():
         "DECISAO_CONTADOR", "BLOQUEIO",
     ))
     campos += [
+        ("tributos_itens", f"itens[].grupos.{grupo}.{campo}", "DECISAO_CONTADOR", "POLITICA")
+        for grupo in ("pis", "cofins")
+        for campo in ("variante_candidata", "modalidade_calculo_candidata")
+    ]
+    campos += [
         ("ajustes_comerciais", f"itens[].{nome}", "RATEIO_APROVADO", "CONDICIONADO")
         for nome in ("frete", "seguro", "outras_despesas", "desconto")
     ]
@@ -120,7 +125,6 @@ def _definicoes():
 CAMPOS_ATOMICOS = _definicoes()
 
 LACUNAS_MODELAGEM = (
-    ("tributos_itens.variantes_pis_cofins", "NFe/infNFe/det/imposto/PIS|COFINS/*", "VARIANTES_PIS_COFINS_NAO_MODELADAS", "CONTADOR_E_CONTRATO"),
     ("serializador_devolucao", "NFe", "GERADOR_ESPECIFICO_NAO_IMPLEMENTADO", "CODIGO"),
     ("focus.grupos_devolucao", "JSON Focus", "PARIDADE_FOCUS_INCOMPLETA", "ADAPTADOR"),
 )

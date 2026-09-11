@@ -6,7 +6,9 @@ Atualização do ciclo 85: as famílias foram decompostas em 106 campos no [inve
 
 Atualização do ciclo 92: a matriz passou a 38 famílias. `cEnq` é 1-1 somente dentro do grupo `IPI`; a presença desse grupo continua condicionada à hipótese fiscal e o código depende do contador.
 
-O contrato `supplier_return_field_requirement_matrix_v1` classifica as 38 famílias rastreadas sem transformar cardinalidade de XSD em decisão fiscal. O escopo permanece restrito a NF-e modelo 55, finalidade 4, saída, com uma NF-e de origem. Leitura normativa integral, vigência operacional em Goiás e caso real aprovado pelo contador continuam falsos.
+Atualização do ciclo 93: a matriz passou a 42 famílias. PIS e COFINS são grupos 0-1 no item e possuem uma escolha interna exclusiva quando presentes; variantes com cálculo exigem a modalidade estrutural correspondente. Aplicabilidade e conteúdo continuam dependentes do contador.
+
+O contrato `supplier_return_field_requirement_matrix_v1` classifica as 42 famílias rastreadas sem transformar cardinalidade de XSD em decisão fiscal. O escopo permanece restrito a NF-e modelo 55, finalidade 4, saída, com uma NF-e de origem. Leitura normativa integral, vigência operacional em Goiás e caso real aprovado pelo contador continuam falsos.
 
 ## Critério empregado
 
@@ -19,6 +21,8 @@ O contrato `supplier_return_field_requirement_matrix_v1` classifica as 38 famíl
 | `CONDICIONADO_MODALIDADE` / `CONDICIONADO_PRESENCA` | Depende do transporte escolhido ou dos dados físicos efetivamente informados. |
 | `CONDICIONADO_ENQUADRAMENTO` / `CONDICIONADO_HIPOTESE` | Depende do tratamento tributário aprovado para o caso concreto. |
 | `CONDICIONADO_GRUPO_IPI` | O campo é estruturalmente obrigatório dentro de `IPI`, mas a presença do grupo depende da hipótese fiscal aprovada. |
+| `CONDICIONADO_GRUPO_CONTRIBUICAO` | PIS/COFINS é opcional no item; quando presente, exige uma variante estrutural exclusiva. |
+| `CONDICIONADO_VARIANTE_CONTRIBUICAO` | A modalidade percentual, quantidade ou sem cálculo deve ser compatível com a variante explicitamente escolhida. |
 | `OPCIONAL_CONTROLADO` | O leiaute admite ausência; qualquer conteúdo exige origem fiscal aprovada e nunca recebe anotação interna automaticamente. |
 | `PENDENTE_HIPOTESES` / `PENDENTE_VIGENCIA_E_ENQUADRAMENTO` | A evidência atual ainda não permite fechar conteúdo ou aplicação operacional. |
 

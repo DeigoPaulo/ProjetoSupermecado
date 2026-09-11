@@ -419,6 +419,18 @@ def _extrair_tributos_itens(rascunho, memoria, parametros):
                     "reducao_base_fonte": "DECISAO_CONTADOR_PENDENTE",
                     "reducao_base_confirmada": False,
                 })
+            elif nome in {"pis", "cofins"}:
+                grupo_xml = "PIS" if nome == "pis" else "COFINS"
+                grupos[nome].update({
+                    "variante_candidata": "",
+                    "modalidade_calculo_candidata": "",
+                    "variante_fonte": "DECISAO_CONTADOR_PENDENTE",
+                    "estado_variante": "NAO_DEFINIDA",
+                    "grupo_opcional_xsd": True,
+                    "depende_decisao_contador": True,
+                    "destino_xml_futuro": f"NFe/infNFe/det/imposto/{grupo_xml}/*",
+                    "variante_confirmada": False,
+                })
         itens.append({
             "nitem_novo": indice,
             "nitem_original": int(item_rascunho.numero_item_xml) if str(item_rascunho.numero_item_xml).isdigit() else item_rascunho.numero_item_xml,
