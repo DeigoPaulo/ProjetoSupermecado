@@ -601,6 +601,14 @@ A ativação de IBS/CBS deve depender de configuração explícita, schema homol
 - Aceite do contador sobre plano de contas, CMV, DRE, classificações, IBS/CBS e pacote contábil.
 - Ambiente de homologação com banco e infraestrutura equivalentes ao piloto.
 
+## Frente futura — UX 2.0 e usabilidade
+
+A avaliação de interface registrada como referência identifica oportunidades de melhoria em navegação, hierarquia de informação, responsividade, acessibilidade e redução de carga cognitiva, sem necessidade de redesign completo. O plano detalhado está em [ROADMAP_UX_USABILIDADE.md](ROADMAP_UX_USABILIDADE.md).
+
+A frente deve ser iniciada após a conclusão da trilha fiscal interna atual e da primeira etapa da DRE 2.0/CMV, salvo correção crítica de usabilidade que afete operação ou segurança. O PDV atual deve ser preservado como referência de operação orientada a teclado; mudanças futuras devem priorizar redução de erro, tempo operacional e clareza.
+
+- [ ] Iniciar UX 2.0 conforme o roadmap próprio após os marcos técnicos anteriores.
+
 ## Disciplina de atualização
 
 - Toda frente iniciada deve ser marcada no checklist com data, estado atual, travas de segurança e próximo marco verificável.
