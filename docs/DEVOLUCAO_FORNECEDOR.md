@@ -1,5 +1,7 @@
 # Devolução ao fornecedor — preparação fiscal segura
 
+Ciclo 98 — 11/09/2026: os 105 caminhos confirmados foram distribuídos em oito blocos na ordem do XSD (`ide`, `emit`, `dest`, `det`, `total`, `transp`, `pag` e `infAdic`). Cada campo e bloco permanece bloqueado; o plano não contém valores nem cria árvore XML. Próximo passo: especificar `ide` campo a campo.
+
 Ciclo 97 — 11/09/2026: o contrato `supplier_return_atomic_xsd_compatibility_v1` confrontou os 115 destinos com o pacote 010f auditado. Foram confirmados 105 caminhos, oito marcadores RTC permaneceram pendentes, duas bases totais sem tag própria foram reconhecidas e nenhuma divergência estrutural foi encontrada. O relatório não libera aplicabilidade, schema, XML ou canal. Próximo passo: plano de construção por bloco.
 
 Ciclo 96 — 11/09/2026: a auditoria `fiscal_schema_package_audit_v1` passou a conferir offline hash, CRC, segurança dos membros, cinco XSDs, quatro dependências e compilação da raiz do pacote 010f. O relatório não instala, não aprova e não altera configuração; a promoção versionada permanece apenas candidata. Próximo passo: compatibilidade automática entre a matriz atômica e a estrutura auditada.

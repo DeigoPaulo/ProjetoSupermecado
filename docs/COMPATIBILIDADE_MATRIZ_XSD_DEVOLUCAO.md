@@ -47,4 +47,4 @@ A validação passou em 21 testes focados e na suíte fiscal completa com 440 te
 
 ## Próximo passo
 
-Transformar os 105 caminhos confirmados em um plano de construção por bloco, sem valores e sem criar XML, registrando cardinalidade, ordem, alternativas e condições que ainda impedem cada campo de chegar a um serializador.
+O plano por bloco foi concluído no ciclo 98 em [PLANO_BLOCOS_XSD_DEVOLUCAO.md](PLANO_BLOCOS_XSD_DEVOLUCAO.md). O próximo passo é especificar o bloco `ide` campo a campo, ainda sem valores ou XML.

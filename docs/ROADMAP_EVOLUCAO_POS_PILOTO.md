@@ -1,5 +1,24 @@
 # Roadmap de evolucao pos-piloto
 
+## Ponto de retomada — ciclo 98, 11/09/2026
+
+Criado `supplier_return_xsd_block_build_plan_v1`, que distribui os 105 caminhos confirmados em oito blocos na ordem e cardinalidade do XSD: `ide` 5, `emit` 11, `dest` 11, `det` 50, `total` 15, `transp` 10, `pag` 2 e `infAdic` 1. Cada campo preserva regra, estado do inventário, alternativas e bloqueios. O plano não contém valores, não cria árvore XML e mantém todos os blocos não prontos.
+
+- [x] Agrupar os 105 caminhos confirmados pelos blocos diretos de `infNFe`.
+- [x] Preservar posição e cardinalidade apuradas no XSD auditado.
+- [x] Registrar regra, estado do inventário, alternativas e bloqueios por campo.
+- [x] Manter os treze blocos fora do escopo sem presumir dispensa fiscal.
+- [x] Exigir bloqueio de serialização em todos os campos.
+- [x] Fixar bloqueios globais de aplicabilidade, instalação, aprovação e serializador.
+- [x] Rejeitar ordem, contagem, cardinalidade, campo/bloco liberado e política alterada.
+- [x] Corrigir validação para acumular adulteração de contagem e de campo interno.
+- [x] Validar 19 testes focados da cadeia matriz–auditoria–compatibilidade–plano.
+- [x] Validar 444 testes da suíte fiscal completa.
+- [x] Manter valores, árvore XML, promoção, assinatura e transmissão desativados.
+- [ ] Próximo passo: especificar o primeiro bloco `ide` campo a campo, com fontes, formatos, cardinalidades e bloqueios contextuais, ainda sem valores ou XML.
+
+Arquivos: `apps/fiscal/plano_blocos_xsd_devolucao.py` e `apps/fiscal/test_plano_blocos_xsd_devolucao.py`. Documentação: [PLANO_BLOCOS_XSD_DEVOLUCAO.md](PLANO_BLOCOS_XSD_DEVOLUCAO.md). Migrações: nenhuma.
+
 ## Ponto de retomada — ciclo 97, 11/09/2026
 
 Criado o contrato `supplier_return_atomic_xsd_compatibility_v1` e o comando `confrontar_matriz_xsd_devolucao`. O verificador percorre a estrutura dos XSDs auditados e exige todas as alternativas documentadas nos destinos da matriz. O pacote 010f confirmou 105 caminhos, manteve oito marcadores de leiaute RTC pendente, reconheceu duas ausências deliberadas de tag total de base PIS/COFINS e não encontrou divergência estrutural. Compatibilidade não significa aplicabilidade, vigência ou autorização para serializar.
@@ -14,7 +33,7 @@ Criado o contrato `supplier_return_atomic_xsd_compatibility_v1` e o comando `con
 - [x] Validar 21 testes focados e 440 testes da suíte fiscal completa.
 - [x] Rejeitar adulteração de matriz, destino, classificação, resumo e política.
 - [x] Manter schema sem promoção e XML, assinatura, Focus, SEFAZ direta e emissão bloqueados.
-- [ ] Próximo passo: criar plano de construção por bloco para os 105 caminhos confirmados, registrando ordem, cardinalidade, alternativas e bloqueios, ainda sem valores ou XML.
+- [x] Próximo passo concluído no ciclo 98: 105 caminhos organizados em oito blocos, sem valores ou XML.
 
 Arquivos: `apps/fiscal/compatibilidade_matriz_xsd.py`, `apps/fiscal/management/commands/confrontar_matriz_xsd_devolucao.py` e seus testes. Documentação: [COMPATIBILIDADE_MATRIZ_XSD_DEVOLUCAO.md](COMPATIBILIDADE_MATRIZ_XSD_DEVOLUCAO.md). Migrações: nenhuma.
 
