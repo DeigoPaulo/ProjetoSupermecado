@@ -55,4 +55,4 @@ A confirmação da ordem na evidência arquivada é separada da aprovação oper
 
 ## Próximo passo
 
-A auditoria offline e o plano de promoção foram concluídos no ciclo 96 em [AUDITORIA_PACOTE_XSD.md](AUDITORIA_PACOTE_XSD.md). O próximo passo é confrontar automaticamente os destinos não pendentes da matriz atômica com a estrutura auditada, sem serializar XML ou promover o schema.
+O confronto automático foi concluído no ciclo 97 em [COMPATIBILIDADE_MATRIZ_XSD_DEVOLUCAO.md](COMPATIBILIDADE_MATRIZ_XSD_DEVOLUCAO.md), sem divergências estruturais nos destinos não pendentes. O próximo passo é criar o plano de construção por bloco, ainda sem valores ou XML.

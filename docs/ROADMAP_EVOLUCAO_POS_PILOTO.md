@@ -1,5 +1,23 @@
 # Roadmap de evolucao pos-piloto
 
+## Ponto de retomada — ciclo 97, 11/09/2026
+
+Criado o contrato `supplier_return_atomic_xsd_compatibility_v1` e o comando `confrontar_matriz_xsd_devolucao`. O verificador percorre a estrutura dos XSDs auditados e exige todas as alternativas documentadas nos destinos da matriz. O pacote 010f confirmou 105 caminhos, manteve oito marcadores de leiaute RTC pendente, reconheceu duas ausências deliberadas de tag total de base PIS/COFINS e não encontrou divergência estrutural. Compatibilidade não significa aplicabilidade, vigência ou autorização para serializar.
+
+- [x] Religar a matriz somente depois de validar sua integridade e auditar novamente o ZIP.
+- [x] Percorrer elementos globais, tipos complexos, sequências, escolhas, grupos e extensões.
+- [x] Interpretar caminhos literais, curingas e alternativas documentadas.
+- [x] Exigir que todas as alternativas listadas existam em algum caminho estrutural válido.
+- [x] Separar marcadores de leiaute pendente e ausência deliberada de tag total.
+- [x] Confirmar 105 caminhos, oito pendências de leiaute e duas ausências documentadas, com zero divergência.
+- [x] Criar comando JSON reproduzível e sem escrita persistente.
+- [x] Validar 21 testes focados e 440 testes da suíte fiscal completa.
+- [x] Rejeitar adulteração de matriz, destino, classificação, resumo e política.
+- [x] Manter schema sem promoção e XML, assinatura, Focus, SEFAZ direta e emissão bloqueados.
+- [ ] Próximo passo: criar plano de construção por bloco para os 105 caminhos confirmados, registrando ordem, cardinalidade, alternativas e bloqueios, ainda sem valores ou XML.
+
+Arquivos: `apps/fiscal/compatibilidade_matriz_xsd.py`, `apps/fiscal/management/commands/confrontar_matriz_xsd_devolucao.py` e seus testes. Documentação: [COMPATIBILIDADE_MATRIZ_XSD_DEVOLUCAO.md](COMPATIBILIDADE_MATRIZ_XSD_DEVOLUCAO.md). Migrações: nenhuma.
+
 ## Ponto de retomada — ciclo 96, 11/09/2026
 
 Criado o contrato `fiscal_schema_package_audit_v1` e o comando `auditar_pacote_xsd`, separando verificação técnica de instalação/promoção. A auditoria confere offline o hash do ZIP, CRC, limites, caminhos, duplicidades, conteúdo exclusivamente XSD, dependências relativas e compilação do schema raiz. O pacote 010f arquivado passou com cinco XSDs e quatro dependências. O resultado declara apenas integridade técnica: aplicabilidade, aprovação, instalação, configuração, XML e transmissão permanecem falsos.
@@ -14,7 +32,7 @@ Criado o contrato `fiscal_schema_package_audit_v1` e o comando `auditar_pacote_x
 - [x] Validar 17 testes focados e 435 testes da suíte fiscal completa.
 - [x] Definir a promoção candidata para `pacotes/<versão>` sem executá-la.
 - [x] Manter aprovação normativa, instalação, ativação, XML, assinatura e transmissão bloqueados.
-- [ ] Próximo passo: confrontar os destinos não pendentes da matriz atômica com o pacote XSD auditado e produzir relatório de compatibilidade, sem serializar XML ou promover schema.
+- [x] Próximo passo concluído no ciclo 97: 105 destinos confirmados, oito pendentes e duas ausências totais documentadas, sem XML ou promoção.
 
 Arquivos: `apps/fiscal/auditoria_pacote_xsd.py`, `apps/fiscal/management/commands/auditar_pacote_xsd.py` e seus testes. Documentação: [AUDITORIA_PACOTE_XSD.md](AUDITORIA_PACOTE_XSD.md). Migrações: nenhuma.
 

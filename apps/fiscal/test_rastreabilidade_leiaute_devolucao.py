@@ -24,6 +24,8 @@ class RastreabilidadeLeiauteDevolucaoTests(SimpleTestCase):
         self.assertFalse(evidencia["instalado_em_fiscal_schemas"])
         self.assertEqual(evidencia["contrato_auditoria_offline"], "fiscal_schema_package_audit_v1")
         self.assertTrue(evidencia["auditoria_offline_disponivel"])
+        self.assertEqual(evidencia["contrato_compatibilidade_matriz"], "supplier_return_atomic_xsd_compatibility_v1")
+        self.assertTrue(evidencia["compatibilidade_matriz_disponivel"])
         self.assertFalse(evidencia["pacote_aprovado"])
         self.assertTrue(all(
             campo["serializacao_local_implementada"] is False

@@ -59,4 +59,4 @@ Nenhuma dessas etapas posteriores foi executada no ciclo 96.
 
 ## Próximo passo
 
-Confrontar automaticamente os destinos não pendentes da matriz atômica da devolução com a estrutura do pacote auditado e gerar um relatório de compatibilidade, ainda sem serializar XML nem promover o schema.
+O confronto foi concluído no ciclo 97 em [COMPATIBILIDADE_MATRIZ_XSD_DEVOLUCAO.md](COMPATIBILIDADE_MATRIZ_XSD_DEVOLUCAO.md): 105 destinos confirmados, oito pendentes e duas ausências totais documentadas, sem divergência. O próximo passo é criar um plano de construção por bloco, ainda sem valores ou XML.

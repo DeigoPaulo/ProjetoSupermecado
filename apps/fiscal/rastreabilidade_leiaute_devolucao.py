@@ -20,6 +20,8 @@ EVIDENCIA_XSD = {
     "instalado_em_fiscal_schemas": False,
     "contrato_auditoria_offline": "fiscal_schema_package_audit_v1",
     "auditoria_offline_disponivel": True,
+    "contrato_compatibilidade_matriz": "supplier_return_atomic_xsd_compatibility_v1",
+    "compatibilidade_matriz_disponivel": True,
     "pacote_aprovado": False,
 }
 FONTES_CODIGO = {

@@ -34,4 +34,4 @@ A prévia protegida mostra a matriz em uma seção recolhida por padrão. Nenhum
 
 ## Próximo passo
 
-O limite e a ordem estrutural foram concluídos no ciclo 95 em [PLANO_GERADOR_OFFLINE_DEVOLUCAO.md](PLANO_GERADOR_OFFLINE_DEVOLUCAO.md). O próximo passo é automatizar a auditoria offline do pacote XSD e definir sua promoção versionada, sem instalar, aprovar, ativar ou gerar XML automaticamente.
+A auditoria do pacote foi concluída no ciclo 96 e o confronto estrutural no ciclo 97 em [COMPATIBILIDADE_MATRIZ_XSD_DEVOLUCAO.md](COMPATIBILIDADE_MATRIZ_XSD_DEVOLUCAO.md). Foram confirmados 105 destinos, com oito marcadores pendentes e duas ausências totais documentadas. O próximo passo é o plano de construção por bloco, ainda sem valores ou XML.
