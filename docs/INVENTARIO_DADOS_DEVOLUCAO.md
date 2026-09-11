@@ -1,6 +1,6 @@
 # Inventário atômico de dados da devolução
 
-11/09/2026 · atualizado no ciclo 93 · diagnóstico somente leitura.
+11/09/2026 · atualizado no ciclo 94 · diagnóstico somente leitura.
 
 O contrato `supplier_return_atomic_data_inventory_v1` acompanha 115 campos atômicos dos blocos de identificação, partes, referências, produtos, tributos, ajustes, transporte, totais, pagamento fiscal, observações, IPI devolvido, ICMS-ST/FCP e RTC. O inventário não inclui os valores: registra apenas fonte, ocorrências, quantidade preenchida e estado de disponibilidade.
 
@@ -28,6 +28,10 @@ O contrato `supplier_return_atomic_data_inventory_v1` acompanha 115 campos atôm
 
 O XML original é evidência histórica e pode fornecer dados da operação recebida. Ele não atualiza nem substitui automaticamente o cadastro fiscal vigente do fornecedor. Uma futura conferência deve mostrar divergências entre cadastro e XML para decisão humana, sem sobrescrever nenhum dos dois lados.
 
+## Matriz consolidada
+
+O ciclo 94 vinculou todos os 115 campos à sua regra e ao destino futuro no leiaute. A especificação está em [MATRIZ_ATOMICA_XML_DEVOLUCAO.md](MATRIZ_ATOMICA_XML_DEVOLUCAO.md). O destino não autoriza uso: todos permanecem com serialização desativada.
+
 ## Próximo marco
 
-Consolidar a matriz atômica campo → origem → regra → destino XML, mantendo serialização e emissão bloqueadas.
+Especificar o limite de entrada e a ordem estrutural do gerador offline, com recusa fechada para qualquer pendência e sem assinatura ou transmissão.

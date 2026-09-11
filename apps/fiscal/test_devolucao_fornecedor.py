@@ -903,6 +903,13 @@ class PreparacaoDevolucaoFornecedorTests(TestCase):
         self.assertEqual(inventario["validacao"]["quantidade_lacunas_modelagem"], 2)
         self.assertTrue(all(item["expoe_valor"] is False for item in inventario["conteudo"]["itens"]))
         self.assertFalse(inventario["validacao"]["permite_emissao"])
+        matriz_atomica = extrair_contrato_devolucao(rascunho.pk, self.revisor)["matriz_atomica"]
+        self.assertTrue(matriz_atomica["validacao"]["estrutura_valida"])
+        self.assertEqual(matriz_atomica["validacao"]["quantidade_campos"], 115)
+        self.assertEqual(matriz_atomica["validacao"]["quantidade_destinos_documentados"], 115)
+        self.assertFalse(matriz_atomica["validacao"]["permite_gerar_xml"])
+        self.assertFalse(matriz_atomica["validacao"]["permite_focus"])
+        self.assertFalse(matriz_atomica["validacao"]["permite_sefaz_direta"])
 
     def test_extracao_referencias_bloqueia_protocolo_ou_snapshot_divergente(self):
         rascunho, _, _, _ = self._reflexos_registrados()

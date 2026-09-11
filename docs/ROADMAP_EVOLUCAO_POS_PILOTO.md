@@ -1,5 +1,25 @@
 # Roadmap de evolucao pos-piloto
 
+## Ponto de retomada — ciclo 94, 11/09/2026
+
+Os 115 campos do inventário da devolução foram consolidados no contrato `supplier_return_atomic_xml_matrix_v1`. Cada registro contém campo, fonte primária, tratamento da ausência, regra de aplicação, destino futuro no XML e estado do inventário. As 115 referências de destino são verificáveis e não duplicadas; pontos cujo leiaute vigente ainda não foi aprovado ficam marcados explicitamente como pendentes. O mapeamento distingue dados exigidos antes do gerador, campos condicionados e decisões que só podem existir após aprovação. Destino documentado não significa aplicabilidade fiscal nem autorização de serialização.
+
+- [x] Reunir os 115 campos do inventário em uma matriz única e validável.
+- [x] Associar a cada campo sua fonte primária e regra de ausência/aplicação.
+- [x] Documentar 115 destinos futuros no leiaute da NF-e.
+- [x] Preservar a evidência e o hash do pacote XSD já inventariado.
+- [x] Registrar explicitamente que bases totais informativas de PIS/COFINS não possuem tag total própria em `ICMSTot`.
+- [x] Rejeitar campo duplicado, fonte/regra/destino divergente e evidência XSD adulterada.
+- [x] Manter `serializacao_implementada=False` para todos os campos.
+- [x] Integrar a matriz à extração e à prévia fiscal somente leitura.
+- [x] Manter Focus, SEFAZ direta, XML e emissão bloqueados.
+- [x] Validar a regressão conjunta de 164 testes da devolução.
+- [ ] Próximo passo: especificar o limite de entrada e a ordem estrutural do gerador offline, com recusa fechada de qualquer origem ou decisão pendente, ainda sem assinatura ou transmissão.
+
+Arquivos de implementação: `apps/fiscal/matriz_atomica_devolucao.py`, `apps/fiscal/extracao_contrato_devolucao.py` e `templates/fiscal/previa_contrato_devolucao.html`. Testes: `apps/fiscal/test_matriz_atomica_devolucao.py` e `apps/fiscal/test_devolucao_fornecedor.py`. Documentação: [MATRIZ_ATOMICA_XML_DEVOLUCAO.md](MATRIZ_ATOMICA_XML_DEVOLUCAO.md), `INVENTARIO_DADOS_DEVOLUCAO.md`, `MATRIZ_RASTREABILIDADE_DEVOLUCAO.md` e este roadmap. Migrações: nenhuma.
+
+Decisões tributárias continuam pendentes do contador e da análise normativa. O pacote XSD continua não promovido, a paridade Focus não foi fechada e a SEFAZ direta apenas transportará um futuro XML integral. Nenhuma credencial, certificado, ambiente ou feature flag foi acessado ou alterado.
+
 ## Ponto de retomada — ciclo 93, 11/09/2026
 
 Os grupos PIS e COFINS do contrato `supplier_return_item_tax_values_v1` passaram a representar separadamente a variante estrutural candidata e sua modalidade de cálculo candidata. O XSD preservado confirma quatro escolhas exclusivas por contribuição (`Aliq`, `Qtde`, `NT` e `Outr`); em `Outr`, percentual e quantidade continuam alternativas internas. Os candidatos nascem vazios, com fonte `DECISAO_CONTADOR_PENDENTE`, estado `NAO_DEFINIDA` e confirmação falsa. O sistema não deduz a escolha pelo CST nem pelos números da memória. Quando uma escolha é fornecida para validação, apenas a compatibilidade estrutural com o CST e a modalidade é conferida, sem aplicar cálculo ou gerar grupo XML. O inventário passou a 115 campos e duas lacunas; rastreabilidade e obrigatoriedade passaram a 42 famílias.
@@ -16,7 +36,7 @@ Os grupos PIS e COFINS do contrato `supplier_return_item_tax_values_v1` passaram
 - [x] Exibir variantes e modalidades pendentes na prévia somente leitura.
 - [x] Remover `VARIANTES_PIS_COFINS_NAO_MODELADAS`; restam duas lacunas.
 - [x] Validar a regressão conjunta de 156 testes.
-- [ ] Próximo passo: consolidar a matriz atômica campo → origem → regra → destino XML antes de qualquer gerador.
+- [x] Próximo passo concluído no ciclo 94: matriz atômica consolidada com 115 destinos, sem serialização.
 
 Arquivos de implementação alterados: `apps/fiscal/tributos_itens_devolucao.py`, `apps/fiscal/extracao_contrato_devolucao.py`, `apps/fiscal/inventario_dados_devolucao.py`, `apps/fiscal/rastreabilidade_leiaute_devolucao.py`, `apps/fiscal/obrigatoriedade_campos_devolucao.py` e `templates/fiscal/previa_contrato_devolucao.html`. Testes alterados: `apps/fiscal/test_tributos_itens_devolucao.py`, `apps/fiscal/test_inventario_dados_devolucao.py`, `apps/fiscal/test_rastreabilidade_leiaute_devolucao.py`, `apps/fiscal/test_obrigatoriedade_campos_devolucao.py` e `apps/fiscal/test_devolucao_fornecedor.py`. Migrações: nenhuma. Decisões ainda pendentes: aplicabilidade dos grupos, variantes reais, modalidades, CSTs e valores do caso concreto. Dependências externas: decisão do contador, análise normativa integral e posterior homologação de cada canal. Detalhes em [VARIANTES_PIS_COFINS_DEVOLUCAO.md](VARIANTES_PIS_COFINS_DEVOLUCAO.md).
 

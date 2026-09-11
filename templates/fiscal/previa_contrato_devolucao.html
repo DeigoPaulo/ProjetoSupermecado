@@ -40,6 +40,14 @@
   <p><strong>Cadastro fiscal disponível:</strong> o confronto com o XML histórico aparece abaixo, mas não escolhe nem sobrescreve nenhuma fonte.</p>
   <details><summary>Ver lacunas de modelagem</summary><ul>{% for item in resultado.inventario_dados.conteudo.lacunas_modelagem %}<li>{{ item.campo }}: {{ item.codigo }}</li>{% endfor %}</ul></details>
 </section>
+<section class="panel mt-panel"><div class="panel-title">Matriz atômica para o futuro XML</div>
+  <p><strong>{{ resultado.matriz_atomica.validacao.quantidade_destinos_documentados }} de {{ resultado.matriz_atomica.validacao.quantidade_campos }} campos possuem destino documentado.</strong> Isso é rastreabilidade, não geração de XML. Focus e SEFAZ direta continuam desligados.</p>
+  <details><summary>Ver campo, origem, regra e destino</summary>
+    <table><thead><tr><th>Campo</th><th>Origem</th><th>Regra</th><th>Destino futuro</th></tr></thead><tbody>
+      {% for item in resultado.matriz_atomica.conteudo.itens %}<tr><td>{{ item.grupo }} · {{ item.campo }}</td><td>{{ item.fonte_primaria }}</td><td>{{ item.regra_aplicacao }}</td><td>{{ item.destino_xml_futuro }}</td></tr>{% endfor %}
+    </tbody></table>
+  </details>
+</section>
 <section class="panel mt-panel"><div class="panel-title">Transporte</div>
   <p><strong>{% if resultado.transporte.validacao.origem_completa %}Ficha atual conferida{% else %}Ficha de transporte pendente ou superada{% endif %}.</strong> Os dados permanecem somente para validação; nenhum grupo XML é produzido.</p>
   <table><tbody>
