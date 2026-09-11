@@ -1,6 +1,6 @@
 # Inventário atômico de dados da devolução
 
-11/09/2026 · atualizado no ciclo 94 · diagnóstico somente leitura.
+11/09/2026 · atualizado no ciclo 95 · diagnóstico somente leitura.
 
 O contrato `supplier_return_atomic_data_inventory_v1` acompanha 115 campos atômicos dos blocos de identificação, partes, referências, produtos, tributos, ajustes, transporte, totais, pagamento fiscal, observações, IPI devolvido, ICMS-ST/FCP e RTC. O inventário não inclui os valores: registra apenas fonte, ocorrências, quantidade preenchida e estado de disponibilidade.
 
@@ -34,4 +34,4 @@ O ciclo 94 vinculou todos os 115 campos à sua regra e ao destino futuro no leia
 
 ## Próximo marco
 
-Especificar o limite de entrada e a ordem estrutural do gerador offline, com recusa fechada para qualquer pendência e sem assinatura ou transmissão.
+O portão de entrada e a ordem estrutural foram concluídos no ciclo 95. O próximo marco é automatizar a auditoria offline do pacote XSD arquivado e desenhar sua promoção versionada, sem instalação ou ativação automática.

@@ -18,6 +18,11 @@ class RastreabilidadeLeiauteDevolucaoTests(SimpleTestCase):
         self.assertFalse(resultado["validacao"]["permite_focus"])
         self.assertFalse(resultado["validacao"]["permite_sefaz_direta"])
         self.assertFalse(resultado["validacao"]["permite_emissao"])
+        evidencia = resultado["conteudo"]["evidencia_xsd"]
+        self.assertTrue(evidencia["evidencia_arquivada"])
+        self.assertTrue(evidencia["hash_reproduzivel"])
+        self.assertFalse(evidencia["instalado_em_fiscal_schemas"])
+        self.assertFalse(evidencia["pacote_aprovado"])
         self.assertTrue(all(
             campo["serializacao_local_implementada"] is False
             for grupo in resultado["conteudo"]["grupos"] for campo in grupo["campos"]

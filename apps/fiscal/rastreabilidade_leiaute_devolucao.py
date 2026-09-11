@@ -12,6 +12,12 @@ EVIDENCIA_XSD = {
     "pacote": "PL_010f_v1.04",
     "arquivo_principal": "leiauteNFe_v4.00.xsd",
     "sha256_arquivo_principal": "2bace939973916d54184ff3e2740041a932de5d79772f3363504504160f22542",
+    "arquivo_evidencia": "docs/evidencias/nfe_2026_09_10/schemas_010f.zip",
+    "sha256_arquivo_evidencia": "b8589490a58a09a993a80e6ac4d7ed10f20892061ecfc56719337098d4b95998",
+    "entrada_arquivo_principal": "PL_010f_v1.04/leiauteNFe_v4.00.xsd",
+    "evidencia_arquivada": True,
+    "hash_reproduzivel": True,
+    "instalado_em_fiscal_schemas": False,
     "pacote_aprovado": False,
 }
 FONTES_CODIGO = {

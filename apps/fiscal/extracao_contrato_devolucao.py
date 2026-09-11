@@ -27,6 +27,7 @@ from .models import ConfiguracaoFiscal, DocumentoDFeRecebido, RascunhoDevolucaoF
 from .pacote_contabil import analisar_xml_nfe
 from .produtos_devolucao import CONTRATO_PRODUTOS, validar_produtos_devolucao
 from .pagamento_fiscal_devolucao import construir_politica_pagamento_devolucao
+from .plano_gerador_devolucao import construir_plano_gerador_offline
 from .portao_prontidao_devolucao import construir_portao_prontidao
 from .observacoes_fiscais_devolucao import (
     CONTRATO_OBSERVACOES,
@@ -709,4 +710,5 @@ def extrair_contrato_devolucao(rascunho_id, usuario):
         resultado["obrigatoriedade_campos"] = construir_obrigatoriedade_campos_devolucao()
         resultado["inventario_dados"] = construir_inventario_dados_devolucao(resultado)
         resultado["matriz_atomica"] = construir_matriz_atomica_devolucao(resultado["inventario_dados"])
+        resultado["plano_gerador_offline"] = construir_plano_gerador_offline(resultado)
         return resultado

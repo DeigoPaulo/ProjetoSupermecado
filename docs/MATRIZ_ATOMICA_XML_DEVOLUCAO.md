@@ -34,4 +34,4 @@ A prévia protegida mostra a matriz em uma seção recolhida por padrão. Nenhum
 
 ## Próximo passo
 
-Especificar o limite de entrada do gerador offline da devolução e sua ordem estrutural, fazendo-o recusar qualquer contrato com decisão ou origem pendente. Essa etapa ainda não deve assinar, transmitir, acessar certificados ou alterar provedores.
+O limite e a ordem estrutural foram concluídos no ciclo 95 em [PLANO_GERADOR_OFFLINE_DEVOLUCAO.md](PLANO_GERADOR_OFFLINE_DEVOLUCAO.md). O próximo passo é automatizar a auditoria offline do pacote XSD e definir sua promoção versionada, sem instalar, aprovar, ativar ou gerar XML automaticamente.

@@ -48,6 +48,14 @@
     </tbody></table>
   </details>
 </section>
+<section class="panel mt-panel"><div class="panel-title">Portão do futuro gerador offline</div>
+  <p><strong>Entrada recusada: {{ resultado.plano_gerador_offline.validacao.quantidade_bloqueios }} bloqueios identificados.</strong> A ordem de {{ resultado.plano_gerador_offline.validacao.quantidade_etapas }} blocos foi apurada no XSD arquivado, com hash reproduzível, mas o schema ainda não está instalado nem aprovado para uso operacional.</p>
+  <p>Nenhum XML é produzido. Certificado, assinatura, Focus, SEFAZ direta e ambientes permanecem intocados.</p>
+  <details><summary>Ver ordem do XSD e bloqueios</summary>
+    <ol>{% for item in resultado.plano_gerador_offline.conteudo.ordem_estrutural %}<li>{{ item.elemento }} ({{ item.min_ocorrencias }}–{{ item.max_ocorrencias }}) — {{ item.escopo }}</li>{% endfor %}</ol>
+    <ul>{% for item in resultado.plano_gerador_offline.conteudo.bloqueios %}<li>{{ item.grupo }} · {{ item.campo }}: {{ item.codigo }}</li>{% endfor %}</ul>
+  </details>
+</section>
 <section class="panel mt-panel"><div class="panel-title">Transporte</div>
   <p><strong>{% if resultado.transporte.validacao.origem_completa %}Ficha atual conferida{% else %}Ficha de transporte pendente ou superada{% endif %}.</strong> Os dados permanecem somente para validação; nenhum grupo XML é produzido.</p>
   <table><tbody>

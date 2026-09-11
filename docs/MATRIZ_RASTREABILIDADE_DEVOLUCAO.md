@@ -18,6 +18,8 @@ Atualização do ciclo 93: variantes e modalidades de PIS/COFINS foram decompost
 
 Atualização do ciclo 94: [MATRIZ_ATOMICA_XML_DEVOLUCAO.md](MATRIZ_ATOMICA_XML_DEVOLUCAO.md) liga os 115 campos, individualmente, à fonte, regra e destino futuro. Esta página permanece como resumo das 42 famílias e dos canais; nenhuma das duas matrizes autoriza serialização.
 
+Atualização do ciclo 95: [PLANO_GERADOR_OFFLINE_DEVOLUCAO.md](PLANO_GERADOR_OFFLINE_DEVOLUCAO.md) registra os 21 blocos diretos de `infNFe` e suas cardinalidades conforme o XSD arquivado. A evidência e os hashes são reproduzíveis, mas o pacote não está instalado nem aprovado; o portão recusa toda entrada e não produz XML.
+
 Esta matriz confronta o contrato neutro da devolução com o pacote XSD preservado e com o código atual dos dois canais. “Focus” significa apenas a cobertura observada no conversor do ERP; não afirma limite comercial ou técnico da API externa. “SEFAZ direta” indica que o adaptador transporta a `NFe` local sem reconstruir seus campos; isso não resolve a ausência do gerador nem comprova schema, assinatura, regra de negócio ou homologação.
 
 Evidência XSD: `PL_010f_v1.04/leiauteNFe_v4.00.xsd`, SHA-256 `2bace939973916d54184ff3e2740041a932de5d79772f3363504504160f22542`. O pacote está preservado, mas não aprovado nem instalado para uso operacional.

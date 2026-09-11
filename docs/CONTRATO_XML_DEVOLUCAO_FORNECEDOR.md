@@ -1,5 +1,7 @@
 # Contrato proposto do XML de devolução ao fornecedor
 
+Ciclo 95 — 11/09/2026: criado o portão `supplier_return_offline_generator_input_plan_v1`. O ZIP 010f e o XSD interno tiveram hashes reproduzidos; a sequência direta de `infNFe` foi registrada com 21 blocos e cardinalidades. O pacote continua arquivado, porém não instalado nem aprovado. Qualquer origem, decisão ou portão pendente mantém a entrada recusada, sem XML ou emissão. A regressão aprovou 158 testes da devolução e 428 testes fiscais. Próximo passo: auditoria offline automatizada do pacote e desenho da promoção versionada.
+
 Ciclo 93 — 11/09/2026: os grupos PIS/COFINS passaram a registrar candidatos separados de variante e modalidade de cálculo, com decisão contábil pendente e destinos futuros no XSD. Nenhum CST, base, alíquota ou valor determina automaticamente a escolha; `PISOutr`/`COFINSOutr` exigem modalidade explícita. O inventário soma 115 campos e duas lacunas; a matriz soma 42 famílias e 156 testes passaram. Próximo passo: consolidar campo, origem, regra e XML.
 
 Ciclo 92 — 10/09/2026: `cEnq` foi modelado como candidato vazio e não confirmado, com destino futuro `det/imposto/IPI/cEnq`. O XSD o exige apenas quando o grupo IPI existe; a aplicação do grupo e o código permanecem decisões contábeis. Cadastro, XML histórico e memória não são fontes automáticas. O inventário soma 111 campos e três lacunas; 153 testes passaram. Próximo passo: variantes de PIS/COFINS.

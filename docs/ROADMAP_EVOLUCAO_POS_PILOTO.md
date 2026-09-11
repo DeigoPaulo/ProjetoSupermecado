@@ -1,5 +1,23 @@
 # Roadmap de evolucao pos-piloto
 
+## Ponto de retomada — ciclo 95, 11/09/2026
+
+O limite de entrada do futuro gerador foi formalizado no contrato `supplier_return_offline_generator_input_plan_v1`, ainda sem serialização. A leitura direta da evidência arquivada confirmou os 21 filhos de `NFe/infNFe`, suas posições e cardinalidades. Os oito blocos usados pela devolução foram distinguidos dos treze blocos atualmente fora de escopo, sem tratar estes últimos como dispensados. Os hashes do ZIP 010f e do XSD principal foram reproduzidos. A evidência existe no repositório, mas o pacote continua não instalado em `fiscal_schemas`, não aprovado e não promovido para operação.
+
+- [x] Reproduzir os hashes do ZIP arquivado e do `leiauteNFe_v4.00.xsd` interno.
+- [x] Corrigir a distinção entre evidência arquivada e schema instalado/aprovado.
+- [x] Registrar a ordem e cardinalidade dos 21 blocos diretos de `infNFe`.
+- [x] Marcar separadamente blocos mapeados e blocos fora do escopo atual.
+- [x] Definir requisitos explícitos para os subcontratos e portões externos.
+- [x] Recusar qualquer campo indisponível, destino pendente ou decisão/origem incompleta.
+- [x] Tornar obrigatórios os bloqueios de instalação, aprovação, ordem operacional e serializador.
+- [x] Integrar o portão à extração e à prévia fiscal somente leitura.
+- [x] Validar 158 testes da devolução e 428 testes da suíte fiscal completa.
+- [x] Manter XML, assinatura, certificado, Focus, SEFAZ direta e emissão desativados.
+- [ ] Próximo passo: automatizar a auditoria offline do pacote XSD e definir a promoção versionada para `fiscal_schemas`, sem instalar, aprovar, ativar ou gerar XML automaticamente.
+
+Arquivos: `apps/fiscal/plano_gerador_devolucao.py`, `apps/fiscal/extracao_contrato_devolucao.py`, `apps/fiscal/rastreabilidade_leiaute_devolucao.py` e `templates/fiscal/previa_contrato_devolucao.html`. Documentação: [PLANO_GERADOR_OFFLINE_DEVOLUCAO.md](PLANO_GERADOR_OFFLINE_DEVOLUCAO.md). Migrações: nenhuma.
+
 ## Ponto de retomada — ciclo 94, 11/09/2026
 
 Os 115 campos do inventário da devolução foram consolidados no contrato `supplier_return_atomic_xml_matrix_v1`. Cada registro contém campo, fonte primária, tratamento da ausência, regra de aplicação, destino futuro no XML e estado do inventário. As 115 referências de destino são verificáveis e não duplicadas; pontos cujo leiaute vigente ainda não foi aprovado ficam marcados explicitamente como pendentes. O mapeamento distingue dados exigidos antes do gerador, campos condicionados e decisões que só podem existir após aprovação. Destino documentado não significa aplicabilidade fiscal nem autorização de serialização.
@@ -14,7 +32,7 @@ Os 115 campos do inventário da devolução foram consolidados no contrato `supp
 - [x] Integrar a matriz à extração e à prévia fiscal somente leitura.
 - [x] Manter Focus, SEFAZ direta, XML e emissão bloqueados.
 - [x] Validar a regressão conjunta de 164 testes da devolução.
-- [ ] Próximo passo: especificar o limite de entrada e a ordem estrutural do gerador offline, com recusa fechada de qualquer origem ou decisão pendente, ainda sem assinatura ou transmissão.
+- [x] Próximo passo concluído no ciclo 95: limite de entrada e ordem estrutural apurados, com recusa fechada e sem assinatura ou transmissão.
 
 Arquivos de implementação: `apps/fiscal/matriz_atomica_devolucao.py`, `apps/fiscal/extracao_contrato_devolucao.py` e `templates/fiscal/previa_contrato_devolucao.html`. Testes: `apps/fiscal/test_matriz_atomica_devolucao.py` e `apps/fiscal/test_devolucao_fornecedor.py`. Documentação: [MATRIZ_ATOMICA_XML_DEVOLUCAO.md](MATRIZ_ATOMICA_XML_DEVOLUCAO.md), `INVENTARIO_DADOS_DEVOLUCAO.md`, `MATRIZ_RASTREABILIDADE_DEVOLUCAO.md` e este roadmap. Migrações: nenhuma.
 

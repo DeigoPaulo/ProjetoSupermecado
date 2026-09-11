@@ -910,6 +910,13 @@ class PreparacaoDevolucaoFornecedorTests(TestCase):
         self.assertFalse(matriz_atomica["validacao"]["permite_gerar_xml"])
         self.assertFalse(matriz_atomica["validacao"]["permite_focus"])
         self.assertFalse(matriz_atomica["validacao"]["permite_sefaz_direta"])
+        plano_gerador = extrair_contrato_devolucao(rascunho.pk, self.revisor)["plano_gerador_offline"]
+        self.assertTrue(plano_gerador["validacao"]["estrutura_valida"])
+        self.assertEqual(plano_gerador["validacao"]["quantidade_etapas"], 21)
+        self.assertGreater(plano_gerador["validacao"]["quantidade_bloqueios"], 0)
+        self.assertFalse(plano_gerador["validacao"]["entrada_aceita"])
+        self.assertFalse(plano_gerador["validacao"]["permite_gerar_xml"])
+        self.assertFalse(plano_gerador["validacao"]["permite_sefaz_direta"])
 
     def test_extracao_referencias_bloqueia_protocolo_ou_snapshot_divergente(self):
         rascunho, _, _, _ = self._reflexos_registrados()

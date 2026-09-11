@@ -1,5 +1,7 @@
 # Devolução ao fornecedor — preparação fiscal segura
 
+Ciclo 95 — 11/09/2026: criado o portão `supplier_return_offline_generator_input_plan_v1`. O ZIP 010f e o XSD interno tiveram hashes reproduzidos; a sequência direta de `infNFe` foi registrada com 21 blocos e cardinalidades. O pacote continua arquivado, porém não instalado nem aprovado. Qualquer origem, decisão ou portão pendente mantém a entrada recusada, sem XML ou emissão. A regressão aprovou 158 testes da devolução e 428 testes fiscais. Próximo passo: auditoria offline automatizada do pacote e desenho da promoção versionada.
+
 Ciclo 93 — 11/09/2026: PIS e COFINS receberam variante e modalidade candidatas por item, vazias e não confirmadas. O XSD preservado sustenta `Aliq`, `Qtde`, `NT` e `Outr`; a compatibilidade é validada somente quando existe escolha explícita. CST e memória não selecionam a estrutura. O inventário passou a 115 campos e duas lacunas; 156 testes passaram. Próximo passo: matriz atômica consolidada.
 
 Ciclo 92 — 10/09/2026: `cEnq` recebeu contrato explícito por item, separado do IPI da memória e de `impostoDevol`. O campo nasce vazio, depende do contador, registra obrigação estrutural e contextual e não pode ser aplicado. O inventário passou a 111 campos e três lacunas; 153 testes conjuntos passaram. Próximo passo: variantes de PIS/COFINS, ainda não iniciadas.
