@@ -108,5 +108,5 @@ def construir_politica_identidades_fiscais():
             "sefaz_direta_ativada": False,
             "emissao_liberada": False,
         },
-        "proximo_passo": "ADOTAR_CATALOGO_SOMENTE_EM_TESTES_NOVOS_OU_MODIFICADOS",
+        "proximo_passo": "PROTEGER_IMPORTACAO_DO_CATALOGO_CONTRA_CODIGO_RUNTIME",
     }

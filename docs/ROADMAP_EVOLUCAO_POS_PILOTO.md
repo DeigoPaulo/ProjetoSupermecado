@@ -1,5 +1,23 @@
 # Roadmap de evolucao pos-piloto
 
+## Ponto de retomada — ciclo 110, 14/09/2026
+
+Concluída a primeira adoção gradual de `fiscal_test_identity_catalog_v1` em um novo caso do portão puro de leitura dupla. O cenário usa o papel `FILIAL` para comparar forma canônica e mascarada, preserva a entrada e confirma que o diagnóstico não expõe o documento.
+
+- [x] Adotar o catálogo em um caso novo, sem substituir teste ou fixture existente.
+- [x] Ler o ambiente `test` da configuração efetiva por `override_settings`.
+- [x] Exercitar a fronteira isolada `FILIAL`, sem consumidor operacional.
+- [x] Confirmar equivalência entre representação pura e mascarada.
+- [x] Confirmar ausência das duas representações no diagnóstico retornado.
+- [x] Confirmar que a lista de entrada permanece inalterada.
+- [x] Manter inventário estático em 703 arquivos, 332 candidatos, 56 arquivos com candidatos e zero `_REVISAR`.
+- [x] Não substituir nenhum dos 332 candidatos existentes.
+- [x] Validar 17 testes puros do catálogo/portão, 53 testes focados acumulados e 514 testes da suíte fiscal completa.
+- [x] Manter banco, modelos, migrações, credenciais, certificados, licenças, ambientes, Focus, SEFAZ direta e emissão inalterados.
+- [ ] Próximo passo: criar uma verificação estática que recuse importação do catálogo por código de runtime antes de ampliar sua adoção.
+
+Arquivos: `apps/fiscal/test_portao_leitura_dupla_cnpj.py` e `apps/fiscal/portao_leitura_dupla_cnpj.py`. Documentação: [CATALOGO_IDENTIDADES_FISCAIS_TESTE.md](CATALOGO_IDENTIDADES_FISCAIS_TESTE.md). Migrações: nenhuma.
+
 ## Ponto de retomada — ciclo 109, 14/09/2026
 
 Criado `fiscal_test_identity_catalog_v1`, catálogo central destinado somente a testes novos ou naturalmente modificados. Os quatro papéis usam bases alfanuméricas determinísticas identificadas por `TST`, calculam o DV pelo normalizador isolado e continuam sem qualquer alegação de titularidade.
@@ -17,7 +35,7 @@ Criado `fiscal_test_identity_catalog_v1`, catálogo central destinado somente a 
 - [x] Confirmar que o único candidato adicional pertence ao teste da nova classificação.
 - [x] Validar seis testes próprios, 52 testes focados acumulados e 513 testes da suíte fiscal completa.
 - [x] Manter base, modelos, migrações, credenciais, certificados, licenças, ambientes, Focus, SEFAZ direta e emissão inalterados.
-- [ ] Próximo passo: adotar o catálogo apenas em um primeiro teste novo ou naturalmente modificado, medindo o inventário e sem reescrever fixtures em massa.
+- [x] Próximo passo concluído no ciclo 110: primeiro caso novo adotado no portão isolado de leitura dupla, sem reescrever fixtures.
 
 Arquivos: `apps/fiscal/test_support_identidades_fiscais.py`, `apps/fiscal/test_catalogo_identidades_fiscais.py`, `apps/fiscal/inventario_estatico_identidades_fiscais.py`, `apps/fiscal/test_inventario_estatico_identidades_fiscais.py` e `apps/fiscal/politica_identidades_fiscais.py`. Documentação: [CATALOGO_IDENTIDADES_FISCAIS_TESTE.md](CATALOGO_IDENTIDADES_FISCAIS_TESTE.md). Migrações: nenhuma.
 

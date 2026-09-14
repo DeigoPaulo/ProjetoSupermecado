@@ -1,9 +1,10 @@
-from django.test import SimpleTestCase
+from django.test import SimpleTestCase, override_settings
 
 from .portao_leitura_dupla_cnpj import (
     descrever_portao_leitura_dupla_cnpj,
     resolver_cnpj_por_leitura_dupla,
 )
+from .test_support_identidades_fiscais import obter_identidade_fiscal_teste
 
 
 class PortaoLeituraDuplaCNPJTests(SimpleTestCase):
@@ -26,6 +27,27 @@ class PortaoLeituraDuplaCNPJTests(SimpleTestCase):
         self.assertFalse(resultado["diagnostico"]["match_textual_exato"])
         self.assertTrue(resultado["diagnostico"]["cadastro_diverge_do_canonico"])
         self.assertEqual(registros[0]["valor"], "04.252.011/0001-10")
+
+    @override_settings(ENVIRONMENT="test")
+    def test_novo_caso_usa_catalogo_sem_expor_ou_persistir_identidade(self):
+        cnpj_puro = obter_identidade_fiscal_teste(
+            "FILIAL", finalidade="TESTE_UNITARIO"
+        )
+        cnpj_mascarado = obter_identidade_fiscal_teste(
+            "FILIAL", finalidade="TESTE_UNITARIO", mascarado=True
+        )
+        registros = [self.registro("catalogo-filial", cnpj_mascarado)]
+
+        resultado = resolver_cnpj_por_leitura_dupla(
+            cnpj_puro, registros, fronteira="FILIAL", empresa_id=1
+        )
+
+        self.assertEqual(resultado["status"], "ENCONTRADO_UNICO")
+        self.assertEqual(resultado["identificador"], "catalogo-filial")
+        self.assertTrue(resultado["diagnostico"]["cadastro_diverge_do_canonico"])
+        self.assertNotIn(cnpj_puro, str(resultado))
+        self.assertNotIn(cnpj_mascarado, str(resultado))
+        self.assertEqual(registros[0]["valor"], cnpj_mascarado)
 
     def test_recusa_ambiguidade_mesmo_com_um_match_textual_exato(self):
         registros = [

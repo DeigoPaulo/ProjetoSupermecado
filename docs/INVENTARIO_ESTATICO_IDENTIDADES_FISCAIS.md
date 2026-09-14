@@ -43,6 +43,6 @@ python manage.py inventariar_identidades_fiscais_estaticas --detalhes
 
 ## Próximo passo
 
-O catálogo central foi definido no ciclo 109 em [CATALOGO_IDENTIDADES_FISCAIS_TESTE.md](CATALOGO_IDENTIDADES_FISCAIS_TESTE.md), sem substituir em massa os candidatos existentes. O próximo passo é adotá-lo em um primeiro teste novo ou naturalmente modificado, mantendo a medição do inventário e a proibição em runtime, homologação e produção.
+O catálogo central foi definido no ciclo 109 em [CATALOGO_IDENTIDADES_FISCAIS_TESTE.md](CATALOGO_IDENTIDADES_FISCAIS_TESTE.md), sem substituir em massa os candidatos existentes, e recebeu seu primeiro uso gradual no ciclo 110. O inventário permaneceu em 332 candidatos. O próximo passo é criar uma verificação estática que recuse sua importação por código de runtime antes de ampliar a adoção.
 
-Com a cadeia ampliada do ciclo 109, foram aprovados 52 testes focados e 513 testes da suíte fiscal completa. Nenhuma migração foi gerada.
+Com a primeira adoção do ciclo 110, foram aprovados 53 testes focados e 514 testes da suíte fiscal completa. Nenhuma migração foi gerada.

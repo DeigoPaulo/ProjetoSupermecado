@@ -20,12 +20,14 @@ As bases usam o prefixo textual `TST`, e os dígitos verificadores são calculad
 
 ## Adoção
 
-Novos testes devem selecionar um papel por código e informar explicitamente ambiente e finalidade. Testes existentes só adotarão o catálogo quando forem modificados por outro motivo e quando a alteração não reduzir a cobertura de formatos inválidos, exemplos normativos, XML ou chaves fiscais.
+Novos testes devem selecionar um papel por código e informar explicitamente a finalidade; o ambiente é lido da configuração real do sistema. Testes existentes só adotarão o catálogo quando forem modificados por outro motivo e quando a alteração não reduzir a cobertura de formatos inválidos, exemplos normativos, XML ou chaves fiscais.
+
+O primeiro uso gradual foi concluído no ciclo 110 em um novo caso do portão de leitura dupla. O teste usa o papel `FILIAL`, comprova equivalência entre forma pura e mascarada, ausência do documento no diagnóstico e preservação da entrada. Nenhum literal anterior foi substituído.
 
 O catálogo não deve ser importado por código operacional. Validade estrutural e dígito verificador correto continuam sem provar propriedade, situação cadastral ou autorização fiscal.
 
 ## Próximo passo
 
-Aplicar o catálogo em um primeiro teste novo ou naturalmente modificado, mantendo medição do inventário e sem reescrever fixtures em massa. Nenhuma migração, configuração fiscal, credencial, certificado ou ambiente foi alterado.
+Criar uma verificação estática que impeça importações do catálogo por código de runtime antes de ampliar gradualmente sua adoção. Nenhuma migração, configuração fiscal, credencial, certificado ou ambiente foi alterado.
 
-Foram aprovados seis testes próprios, 52 testes focados acumulados e 513 testes da suíte fiscal completa.
+No ciclo 109 foram aprovados os seis testes próprios. Após a primeira adoção do ciclo 110, a cadeia acumula 53 testes focados e 514 testes da suíte fiscal completa aprovados.

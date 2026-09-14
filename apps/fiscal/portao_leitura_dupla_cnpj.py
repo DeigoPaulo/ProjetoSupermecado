@@ -146,5 +146,5 @@ def descrever_portao_leitura_dupla_cnpj():
             "sefaz_direta_ativada": False,
             "emissao_liberada": False,
         },
-        "proximo_passo": "DEFINIR_CATALOGO_CENTRAL_DE_IDENTIDADES_DE_TESTE_SEM_TROCA_EM_MASSA",
+        "proximo_passo": "PROTEGER_IMPORTACAO_DO_CATALOGO_CONTRA_CODIGO_RUNTIME",
     }
