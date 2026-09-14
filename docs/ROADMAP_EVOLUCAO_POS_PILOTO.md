@@ -1,5 +1,25 @@
 # Roadmap de evolucao pos-piloto
 
+## Ponto de retomada — ciclo 100, 14/09/2026
+
+Criado `supplier_return_emit_field_specification_v1`, que descreve os 11 campos mapeados do emitente sem ler valores ou alterar o cadastro. O contrato registra a escolha CNPJ/CPF, `enderEmit` e suas posições internas, cardinalidades e formatos do XSD 010f. Também torna explícitas quatro lacunas entre o XSD e a validação atual: CNPJ alfanumérico, comprimentos mínimos de texto, formato da IE e domínio da UF.
+
+- [x] Confrontar os 11 caminhos de `emit` com matriz e plano íntegros.
+- [x] Registrar a escolha estrutural CNPJ/CPF sem presumir a identidade do caso real.
+- [x] Registrar posições de `emit` e posições internas de `TEnderEmi`.
+- [x] Confirmar cardinalidade 0–1 da IE e 1–1 dos demais campos no respectivo contexto.
+- [x] Registrar tipos, comprimentos, padrões e enumerações do XSD auditado.
+- [x] Registrar que o CNPJ alfanumérico do XSD ainda não é suportado pelo contrato atual.
+- [x] Registrar diferenças de mínimo textual, formato da IE e domínio da UF.
+- [x] Exigir bloqueios da origem, de compatibilidade e de serialização por campo.
+- [x] Rejeitar matriz/plano adulterado e definição, bloqueio, lacuna, contagem ou política alterada.
+- [x] Validar 24 testes focados da cadeia até o bloco `emit`.
+- [x] Validar 452 testes da suíte fiscal completa.
+- [x] Manter cadastro, valores, XML, assinatura, transmissão, Focus e SEFAZ direta inalterados.
+- [ ] Próximo passo: planejar a compatibilidade do cadastro do emitente com o XSD antes de qualquer alteração de dados.
+
+Arquivos: `apps/fiscal/especificacao_emit_devolucao.py` e `apps/fiscal/test_especificacao_emit_devolucao.py`. Documentação: [ESPECIFICACAO_BLOCO_EMIT_DEVOLUCAO.md](ESPECIFICACAO_BLOCO_EMIT_DEVOLUCAO.md). Migrações: nenhuma.
+
 ## Ponto de retomada — ciclo 99, 14/09/2026
 
 Criado `supplier_return_ide_field_specification_v1`, que confronta a matriz atômica e o plano por blocos para descrever os cinco campos já mapeados em `ide`. Foram registradas as posições na sequência completa, cardinalidade 1–1, fontes primárias e definições exatas do XSD auditado: comprimento de `natOp`, domínio de `idDest`, padrão IBGE de `cMunFG` e domínios de `indFinal` e `indPres`. Estrutura XSD não foi tratada como decisão fiscal.
@@ -14,7 +34,7 @@ Criado `supplier_return_ide_field_specification_v1`, que confronta a matriz atô
 - [x] Rejeitar matriz/plano adulterado e divergências de definição, cardinalidade, bloqueio, contagem ou política.
 - [x] Validar 20 testes focados da cadeia e 448 testes da suíte fiscal completa.
 - [x] Manter valores, elementos XML, assinatura, transmissão, Focus e SEFAZ direta desativados.
-- [ ] Próximo passo: especificar o bloco `emit` campo a campo, ainda sem valores ou XML.
+- [x] Próximo passo concluído no ciclo 100: bloco `emit` especificado e lacunas de compatibilidade registradas, sem valores ou XML.
 
 Arquivos: `apps/fiscal/especificacao_ide_devolucao.py` e `apps/fiscal/test_especificacao_ide_devolucao.py`. Documentação: [ESPECIFICACAO_BLOCO_IDE_DEVOLUCAO.md](ESPECIFICACAO_BLOCO_IDE_DEVOLUCAO.md). Migrações: nenhuma.
 
