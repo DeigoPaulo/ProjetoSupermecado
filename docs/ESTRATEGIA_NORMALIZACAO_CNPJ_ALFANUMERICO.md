@@ -54,6 +54,6 @@ Todas as fases continuam com execução operacional bloqueada. Modelos, dados, m
 
 ## Próximo passo
 
-Auditoria e portão puro foram concluídos nos ciclos 104 e 105. O próximo passo é ensaiar um adaptador somente leitura de Empresa e Filial, sem substituir as buscas atuais, conforme [PORTAO_LEITURA_DUPLA_CNPJ.md](PORTAO_LEITURA_DUPLA_CNPJ.md).
+Auditoria, portão puro e adaptador sombra foram concluídos nos ciclos 104 a 106. O próximo passo é definir a política de identidades fiscais de desenvolvimento e teste, sem modificar a base atual, conforme [ADAPTADOR_SOMBRA_CNPJ_EMPRESA_FILIAL.md](ADAPTADOR_SOMBRA_CNPJ_EMPRESA_FILIAL.md).
 
 Foram aprovados 15 testes focados e 467 testes da suíte fiscal completa.

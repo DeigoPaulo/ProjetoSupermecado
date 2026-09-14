@@ -1,5 +1,24 @@
 # Roadmap de evolucao pos-piloto
 
+## Ponto de retomada — ciclo 106, 14/09/2026
+
+Criado `alphanumeric_cnpj_company_branch_shadow_adapter_v1`. O adaptador reproduz em observação a busca atual de Empresa ativa e a busca de Filial escopada pela empresa, compara seus resultados com o portão canônico e não interfere na identidade utilizada pelo sistema. O relatório agregado não expõe CNPJ nem IDs.
+
+- [x] Preservar no ensaio o filtro atual de Empresa ativa.
+- [x] Preservar no ensaio o escopo obrigatório da Filial pela empresa.
+- [x] Executar busca textual atual e portão canônico sem trocar o resultado operacional.
+- [x] Classificar concordância, ganho canônico, recusa segura, ambiguidade e divergência.
+- [x] Não permitir que igualdade textual prevaleça sobre ambiguidade canônica.
+- [x] Omitir CNPJ, ID de Empresa e ID de Filial do relatório.
+- [x] Capturar SQL nos testes e exigir exclusivamente `SELECT`.
+- [x] Executar ensaio local agregado: 16 observações, 34 consultas somente `SELECT`.
+- [x] Confirmar 16 casos em que a busca legada seleciona e o portão recusa DV inválido.
+- [x] Validar 29 testes focados e 490 testes da suíte fiscal completa.
+- [x] Manter buscas atuais, dados, modelos, migrações, credenciais, licenças, ambientes, Focus, SEFAZ direta e emissão inalterados.
+- [ ] Próximo passo: definir política de identidades fiscais de desenvolvimento e teste sem modificar a base atual.
+
+Arquivos: `apps/fiscal/adaptador_sombra_cnpj.py` e `apps/fiscal/test_adaptador_sombra_cnpj.py`. Documentação: [ADAPTADOR_SOMBRA_CNPJ_EMPRESA_FILIAL.md](ADAPTADOR_SOMBRA_CNPJ_EMPRESA_FILIAL.md). Migrações: nenhuma.
+
 ## Ponto de retomada — ciclo 105, 14/09/2026
 
 Criado `alphanumeric_cnpj_dual_read_gate_v1`, um portão puro e ainda sem consumidores para comparar CNPJ textual e canônico nas fronteiras Empresa, Filial, Licença e Credencial. A seleção só ocorre com um candidato válido; fronteira e escopo são aplicados antes da comparação, cadastro inválido não é corrigido e igualdade textual nunca desambigua duas identidades canônicas.
@@ -16,7 +35,7 @@ Criado `alphanumeric_cnpj_dual_read_gate_v1`, um portão puro e ainda sem consum
 - [x] Validar CNPJ alfanumérico oficial em fronteira isolada.
 - [x] Validar 21 testes focados e 482 testes da suíte fiscal completa.
 - [x] Manter banco, modelos, migrações, buscas reais, licença, credenciais, ambientes, Focus, SEFAZ direta e emissão inalterados.
-- [ ] Próximo passo: ensaiar adaptador somente leitura de Empresa e Filial, em paralelo às buscas atuais e sem alterar o resultado operacional.
+- [x] Próximo passo concluído no ciclo 106: adaptador somente leitura ensaiado em paralelo, sem alterar o resultado operacional.
 
 Arquivos: `apps/fiscal/portao_leitura_dupla_cnpj.py` e `apps/fiscal/test_portao_leitura_dupla_cnpj.py`. Documentação: [PORTAO_LEITURA_DUPLA_CNPJ.md](PORTAO_LEITURA_DUPLA_CNPJ.md). Migrações: nenhuma.
 

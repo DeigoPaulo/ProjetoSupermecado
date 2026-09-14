@@ -34,6 +34,6 @@ Nenhum model, consulta, tela, sincronização, licença, credencial, integraçã
 
 ## Próximo passo
 
-Construir um adaptador somente leitura para Empresa e Filial que alimente esse portão e possa ser ensaiado em paralelo às buscas atuais, sem mudar o resultado operacional. O adaptador deverá capturar somente `SELECT`, proteger diagnósticos e permanecer bloqueado diante dos dados locais inválidos e da colisão já identificada.
+O adaptador sombra de Empresa e Filial foi concluído e ensaiado no ciclo 106, conforme [ADAPTADOR_SOMBRA_CNPJ_EMPRESA_FILIAL.md](ADAPTADOR_SOMBRA_CNPJ_EMPRESA_FILIAL.md). O próximo passo é definir a política de identidades fiscais de desenvolvimento e teste sem modificar a base atual.
 
 Foram aprovados 21 testes focados e 482 testes da suíte fiscal completa.

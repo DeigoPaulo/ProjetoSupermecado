@@ -146,5 +146,5 @@ def descrever_portao_leitura_dupla_cnpj():
             "sefaz_direta_ativada": False,
             "emissao_liberada": False,
         },
-        "proximo_passo": "ENSAIAR_ADAPTADOR_SOMENTE_LEITURA_DE_EMPRESA_E_FILIAL_SEM_TROCAR_CONSUMIDORES",
+        "proximo_passo": "DEFINIR_POLITICA_IDENTIDADES_FISCAIS_DESENVOLVIMENTO_TESTE_SEM_ALTERAR_BASE",
     }

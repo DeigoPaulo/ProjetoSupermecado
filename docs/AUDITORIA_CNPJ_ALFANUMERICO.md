@@ -57,6 +57,6 @@ A opção `--estrito` termina com erro quando houver bloqueios, mas também não
 
 ## Próximo passo
 
-O portão puro foi concluído no ciclo 105 em [PORTAO_LEITURA_DUPLA_CNPJ.md](PORTAO_LEITURA_DUPLA_CNPJ.md). O próximo passo é ensaiar um adaptador somente leitura de Empresa e Filial, sem substituir as buscas atuais e sem liberar consumidores enquanto houver colisões bloqueantes.
+O portão puro e o adaptador sombra foram concluídos nos ciclos 105 e 106. O próximo passo é definir a política de identidades fiscais de desenvolvimento e teste, sem substituir buscas atuais ou liberar consumidores enquanto houver bloqueios.
 
 Foram aprovados 11 testes focados da auditoria/estratégia e 472 testes da suíte fiscal completa.

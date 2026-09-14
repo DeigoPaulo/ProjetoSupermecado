@@ -217,7 +217,7 @@ def construir_estrategia_normalizacao_cnpj(evidencia):
             "ativar_sefaz_direta": False,
             "emitir": False,
         },
-        "proximo_passo": "ENSAIAR_ADAPTADOR_SOMENTE_LEITURA_DE_EMPRESA_E_FILIAL_SEM_TROCAR_CONSUMIDORES",
+        "proximo_passo": "DEFINIR_POLITICA_IDENTIDADES_FISCAIS_DESENVOLVIMENTO_TESTE_SEM_ALTERAR_BASE",
     }
     return {"conteudo": conteudo, "validacao": validar_estrategia_normalizacao_cnpj(conteudo)}
 
@@ -292,7 +292,7 @@ def validar_estrategia_normalizacao_cnpj(conteudo):
         "ativar_sefaz_direta", "emitir",
     } or any(valor is not False for valor in politica.values()):
         erro("politica", "POLITICA_INVALIDA")
-    if conteudo.get("proximo_passo") != "ENSAIAR_ADAPTADOR_SOMENTE_LEITURA_DE_EMPRESA_E_FILIAL_SEM_TROCAR_CONSUMIDORES":
+    if conteudo.get("proximo_passo") != "DEFINIR_POLITICA_IDENTIDADES_FISCAIS_DESENVOLVIMENTO_TESTE_SEM_ALTERAR_BASE":
         erro("proximo_passo", "PROXIMO_PASSO_INVALIDO")
 
     return {
