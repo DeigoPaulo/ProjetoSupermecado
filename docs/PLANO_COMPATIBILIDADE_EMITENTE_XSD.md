@@ -42,4 +42,4 @@ A implementação original passou em 28 testes focados da cadeia e em 456 testes
 
 ## Próximo passo
 
-Definir o contrato de normalização canônica e retrocompatibilidade para CNPJ e chave de acesso, enumerando todos os consumidores antes de alterar qualquer implementação compartilhada. A evidência normativa está em [EVIDENCIA_CNPJ_ALFANUMERICO_DFE.md](EVIDENCIA_CNPJ_ALFANUMERICO_DFE.md).
+Construir a auditoria somente leitura de CNPJs vazios, inválidos e colidentes conforme a estratégia definida no ciclo 103, sem modificar o banco nem tratar dados de desenvolvimento como aceite de produção. A evidência normativa está em [EVIDENCIA_CNPJ_ALFANUMERICO_DFE.md](EVIDENCIA_CNPJ_ALFANUMERICO_DFE.md) e a estratégia em [ESTRATEGIA_NORMALIZACAO_CNPJ_ALFANUMERICO.md](ESTRATEGIA_NORMALIZACAO_CNPJ_ALFANUMERICO.md).

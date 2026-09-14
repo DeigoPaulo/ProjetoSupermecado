@@ -1,5 +1,26 @@
 # Roadmap de evolucao pos-piloto
 
+## Ponto de retomada — ciclo 103, 14/09/2026
+
+Criado `alphanumeric_cnpj_canonicalization_strategy_v1`, com normalização pura e isolada, cálculo oficial dos DVs do CNPJ e da chave e prévia de colisões sem acesso ao banco. O inventário registra 23 consumidores em cadastro, interface, identidade, licenciamento, vendas, compras/DF-e, fiscal, devolução, DANFE e canais. Nenhum consumidor operacional passou a usar a rotina neste ciclo.
+
+- [x] Definir representação canônica com 14 caracteres, sem pontuação e em maiúsculas.
+- [x] Aceitar somente forma pura ou máscara oficial completa.
+- [x] Preservar zeros à esquerda e compatibilidade integral do CNPJ numérico.
+- [x] Rejeitar símbolos extras, máscara parcial, Unicode e DV alfanumérico.
+- [x] Separar canonicalização de validação do DV.
+- [x] Reproduzir o DV `35` do exemplo oficial `12.ABC.345/01DE-35`.
+- [x] Calcular e validar chave de 44 posições com CNPJ alfanumérico em teste isolado.
+- [x] Detectar colisões entre versões mascarada/pura e maiúscula/minúscula sem alterar a entrada.
+- [x] Inventariar 23 consumidores e seus riscos.
+- [x] Organizar transição em seis fases, todas operacionalmente bloqueadas.
+- [x] Proibir fallback para o normalizador antigo que descarta letras.
+- [x] Validar 15 testes focados e 467 testes da suíte fiscal completa.
+- [x] Manter banco, modelos, migrações, consumidores, credenciais, ambientes, Focus, SEFAZ direta e emissão inalterados.
+- [ ] Próximo passo: construir auditoria somente leitura de vazios, inválidos e colisões; a base atual será apenas ensaio, não aceite de produção.
+
+Arquivos: `apps/fiscal/estrategia_normalizacao_cnpj.py` e `apps/fiscal/test_estrategia_normalizacao_cnpj.py`. Documentação: [ESTRATEGIA_NORMALIZACAO_CNPJ_ALFANUMERICO.md](ESTRATEGIA_NORMALIZACAO_CNPJ_ALFANUMERICO.md). Migrações: nenhuma.
+
 ## Ponto de retomada — ciclo 102, 14/09/2026
 
 Criado `alphanumeric_cnpj_official_evidence_v1`, que preserva e verifica por SHA-256 quatro PDFs oficiais e o pacote XSD 010f. A regra normativa deixou de ser pendência: CNPJ com 12 posições alfanuméricas e dois DVs numéricos, coexistência com o formato antigo, chave de acesso de 44 posições com letras no trecho do CNPJ, cálculo por ASCII menos 48 e módulo 11, e produção NF-e/NFC-e desde 01/07/2026. A constatação não liberou alterações operacionais.
@@ -16,7 +37,7 @@ Criado `alphanumeric_cnpj_official_evidence_v1`, que preserva e verifica por SHA
 - [x] Não inventar restrição de letras que a NT Conjunta deixou pendente e que a Receita/XSD posterior não adotaram.
 - [x] Validar 13 testes focados e 461 testes da suíte fiscal completa.
 - [x] Manter modelos, dados, migrações, geradores, credenciais, ambientes, Focus, SEFAZ direta e emissão inalterados.
-- [ ] Próximo passo: definir normalização canônica e retrocompatibilidade, com inventário de consumidores e testes de colisão, sem migrar dados reais.
+- [x] Próximo passo concluído no ciclo 103: normalização canônica, inventário de consumidores e prévia de colisões definidos sem migrar dados reais.
 
 Arquivos: `apps/fiscal/evidencia_cnpj_alfanumerico.py` e `apps/fiscal/test_evidencia_cnpj_alfanumerico.py`. Documentação: [EVIDENCIA_CNPJ_ALFANUMERICO_DFE.md](EVIDENCIA_CNPJ_ALFANUMERICO_DFE.md). Evidências: [evidencias/cnpj_alfanumerico_2026_09_14/README.md](evidencias/cnpj_alfanumerico_2026_09_14/README.md). Migrações: nenhuma.
 

@@ -39,6 +39,6 @@ Portanto, nenhuma mudança operacional foi liberada. Modelos, dados, geradores, 
 
 ## Próximo passo
 
-Definir e testar a estratégia de normalização canônica e retrocompatibilidade, ainda sem alterar cadastros reais: preservar `A-Z0-9`, remover apenas pontuação admitida, converter letras para maiúsculas, manter zeros à esquerda e impedir colisões com identidades numéricas já existentes. A estratégia deverá listar cada consumidor antes de qualquer troca compartilhada.
+Etapa concluída no ciclo 103 em [ESTRATEGIA_NORMALIZACAO_CNPJ_ALFANUMERICO.md](ESTRATEGIA_NORMALIZACAO_CNPJ_ALFANUMERICO.md). O próximo passo é construir a auditoria somente leitura de valores inválidos e colisões, sem modificar o banco.
 
 Foram aprovados 13 testes focados e 461 testes da suíte fiscal completa.
