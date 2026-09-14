@@ -54,6 +54,6 @@ Todas as fases continuam com execução operacional bloqueada. Modelos, dados, m
 
 ## Próximo passo
 
-Construir uma auditoria somente leitura que percorra Empresa, Filial, Fornecedor, Cliente e identificadores fiscais armazenados, classifique vazios, inválidos e colisões canônicas e gere um relatório sem revelar credenciais nem modificar registros. A execução no banco atual servirá apenas como ensaio técnico; sem o CNPJ real, não valerá como aceite do cadastro de produção.
+Etapa concluída no ciclo 104 em [AUDITORIA_CNPJ_ALFANUMERICO.md](AUDITORIA_CNPJ_ALFANUMERICO.md). O próximo passo é definir o portão de leitura dupla, sem regravar dados e sem permitir seleção ambígua de identidade.
 
 Foram aprovados 15 testes focados e 467 testes da suíte fiscal completa.

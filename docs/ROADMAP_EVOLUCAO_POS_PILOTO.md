@@ -1,5 +1,25 @@
 # Roadmap de evolucao pos-piloto
 
+## Ponto de retomada — ciclo 104, 14/09/2026
+
+Criado `alphanumeric_cnpj_readonly_audit_v1` e o comando `auditar_cnpj_alfanumerico`. A auditoria usa somente `SELECT`, protege CNPJs e chaves com ocultação/impressão digital, ignora CPF reconhecido no campo misto e classifica repetições como esperadas, revisáveis ou bloqueantes. O ensaio local não é aceite de produção e não consultou credenciais.
+
+- [x] Consultar Empresa, Filial, Fornecedor, Cliente e CNPJ de referência em DF-e.
+- [x] Consultar chaves em Documento Fiscal, sincronização, Entrada de Compra, Evidência e DF-e/eventos.
+- [x] Separar formato, DV, ausência obrigatória e vazio permitido.
+- [x] Reconhecer CPF no campo misto de Cliente sem tratá-lo como CNPJ inválido.
+- [x] Ocultar identificadores completos e usar impressão digital SHA-256 reduzida.
+- [x] Não consultar tokens, certificados, senhas ou outras credenciais.
+- [x] Capturar SQL nos testes e exigir exclusivamente consultas `SELECT`.
+- [x] Distinguir equivalência empresa–filial, papéis distintos e colisão bloqueante.
+- [x] Executar ensaio local: 20 documentos, três chaves, 17 DVs inválidos, seis equivalências esperadas e uma colisão bloqueante.
+- [x] Marcar resultado local como ensaio sem aceite de produção.
+- [x] Validar 11 testes focados da auditoria/estratégia e 472 testes da suíte fiscal completa.
+- [x] Manter dados, modelos, migrações, normalizadores atuais, credenciais, ambientes, Focus, SEFAZ direta e emissão inalterados.
+- [ ] Próximo passo: definir portão de leitura dupla sem escrita e com recusa obrigatória de identidade ambígua.
+
+Arquivos: `apps/fiscal/auditoria_cnpj_alfanumerico.py`, `apps/fiscal/management/commands/auditar_cnpj_alfanumerico.py` e `apps/fiscal/test_auditoria_cnpj_alfanumerico.py`. Documentação: [AUDITORIA_CNPJ_ALFANUMERICO.md](AUDITORIA_CNPJ_ALFANUMERICO.md). Migrações: nenhuma.
+
 ## Ponto de retomada — ciclo 103, 14/09/2026
 
 Criado `alphanumeric_cnpj_canonicalization_strategy_v1`, com normalização pura e isolada, cálculo oficial dos DVs do CNPJ e da chave e prévia de colisões sem acesso ao banco. O inventário registra 23 consumidores em cadastro, interface, identidade, licenciamento, vendas, compras/DF-e, fiscal, devolução, DANFE e canais. Nenhum consumidor operacional passou a usar a rotina neste ciclo.
@@ -17,7 +37,7 @@ Criado `alphanumeric_cnpj_canonicalization_strategy_v1`, com normalização pura
 - [x] Proibir fallback para o normalizador antigo que descarta letras.
 - [x] Validar 15 testes focados e 467 testes da suíte fiscal completa.
 - [x] Manter banco, modelos, migrações, consumidores, credenciais, ambientes, Focus, SEFAZ direta e emissão inalterados.
-- [ ] Próximo passo: construir auditoria somente leitura de vazios, inválidos e colisões; a base atual será apenas ensaio, não aceite de produção.
+- [x] Próximo passo concluído no ciclo 104: auditoria somente leitura criada e ensaiada sem transformar a base local em aceite de produção.
 
 Arquivos: `apps/fiscal/estrategia_normalizacao_cnpj.py` e `apps/fiscal/test_estrategia_normalizacao_cnpj.py`. Documentação: [ESTRATEGIA_NORMALIZACAO_CNPJ_ALFANUMERICO.md](ESTRATEGIA_NORMALIZACAO_CNPJ_ALFANUMERICO.md). Migrações: nenhuma.
 

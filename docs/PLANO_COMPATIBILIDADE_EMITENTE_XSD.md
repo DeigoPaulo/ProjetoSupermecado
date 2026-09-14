@@ -42,4 +42,4 @@ A implementação original passou em 28 testes focados da cadeia e em 456 testes
 
 ## Próximo passo
 
-Construir a auditoria somente leitura de CNPJs vazios, inválidos e colidentes conforme a estratégia definida no ciclo 103, sem modificar o banco nem tratar dados de desenvolvimento como aceite de produção. A evidência normativa está em [EVIDENCIA_CNPJ_ALFANUMERICO_DFE.md](EVIDENCIA_CNPJ_ALFANUMERICO_DFE.md) e a estratégia em [ESTRATEGIA_NORMALIZACAO_CNPJ_ALFANUMERICO.md](ESTRATEGIA_NORMALIZACAO_CNPJ_ALFANUMERICO.md).
+Definir o portão de leitura dupla conforme a auditoria do ciclo 104: comparar por canônico sem regravar o banco, registrar divergências e recusar seleção ambígua de empresa, filial, licença ou credencial. A auditoria está em [AUDITORIA_CNPJ_ALFANUMERICO.md](AUDITORIA_CNPJ_ALFANUMERICO.md).
