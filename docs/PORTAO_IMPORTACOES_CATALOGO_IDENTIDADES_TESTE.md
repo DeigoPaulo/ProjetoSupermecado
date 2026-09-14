@@ -26,14 +26,14 @@ python manage.py auditar_importacoes_catalogo_teste
 python manage.py auditar_importacoes_catalogo_teste --detalhes
 ```
 
-O comando termina com erro quando encontra importação operacional ou arquivo que não pôde ser analisado, permitindo seu uso futuro na rotina padrão de verificação/CI.
+O comando termina com erro quando encontra importação operacional ou arquivo que não pôde ser analisado. Desde o ciclo 112, `scripts/test_regression.ps1` o executa antes de qualquer suíte nos perfis rápido e completo.
 
 ## Estado
 
 O projeto atual possui somente importações autorizadas em testes e nenhuma importação do catálogo em runtime. Focus, SEFAZ direta, ambientes, credenciais, certificados e emissão permanecem inalterados e desligados conforme seus próprios portões.
 
-Foram analisados 638 arquivos Python, com quatro referências autorizadas em testes, nenhuma em runtime e nenhum erro de leitura ou sintaxe. Sete testes próprios e 521 testes da suíte fiscal completa foram aprovados.
+Foram analisados 638 arquivos Python, com quatro referências autorizadas em testes, nenhuma em runtime e nenhum erro de leitura ou sintaxe. Após a integração à regressão padrão, oito testes próprios e 522 testes da suíte fiscal completa foram aprovados.
 
 ## Próximo passo
 
-Integrar o comando à rotina padrão de verificação do projeto sem ativar canais fiscais nem ampliar automaticamente a substituição de identidades existentes.
+Verificar automaticamente que o catálogo e os testes associados ficam fora do empacotamento de produção, sem ativar canais fiscais nem ampliar automaticamente a substituição de identidades existentes.

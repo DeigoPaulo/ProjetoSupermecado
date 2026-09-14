@@ -109,7 +109,7 @@ def auditar_importacoes_catalogo_teste(base_dir, *, incluir_detalhes=False):
             "libera_producao": False,
             "libera_emissao": False,
         },
-        "proximo_passo": "INTEGRAR_PORTAO_A_ROTINA_PADRAO_DE_VERIFICACAO",
+        "proximo_passo": "VERIFICAR_EXCLUSAO_DO_CATALOGO_NO_EMPACOTAMENTO",
     }
     if incluir_detalhes or not conforme:
         resultado["violacoes"] = violacoes

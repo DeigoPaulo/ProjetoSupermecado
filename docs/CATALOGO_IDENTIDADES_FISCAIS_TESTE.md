@@ -28,6 +28,6 @@ O catálogo não deve ser importado por código operacional. Validade estrutural
 
 ## Próximo passo
 
-O portão estático foi criado no ciclo 111 em [PORTAO_IMPORTACOES_CATALOGO_IDENTIDADES_TESTE.md](PORTAO_IMPORTACOES_CATALOGO_IDENTIDADES_TESTE.md) e não encontrou uso em runtime. O próximo passo é integrá-lo à rotina padrão de verificação antes de ampliar gradualmente a adoção. Nenhuma migração, configuração fiscal, credencial, certificado ou ambiente foi alterado.
+O portão estático foi criado no ciclo 111 em [PORTAO_IMPORTACOES_CATALOGO_IDENTIDADES_TESTE.md](PORTAO_IMPORTACOES_CATALOGO_IDENTIDADES_TESTE.md), não encontrou uso em runtime e foi integrado à regressão padrão no ciclo 112. O próximo passo é verificar automaticamente sua exclusão do empacotamento de produção. Nenhuma migração, configuração fiscal, credencial, certificado ou ambiente foi alterado.
 
-No ciclo 109 foram aprovados os seis testes próprios. Após o portão do ciclo 111, a cadeia acumula 60 testes focados e 521 testes da suíte fiscal completa aprovados.
+No ciclo 109 foram aprovados os seis testes próprios. Após a integração do ciclo 112, a cadeia acumula 61 testes focados e 522 testes da suíte fiscal completa aprovados.

@@ -1,5 +1,23 @@
 # Roadmap de evolucao pos-piloto
 
+## Ponto de retomada — ciclo 112, 14/09/2026
+
+O portão `fiscal_test_catalog_import_gate_v1` foi integrado a `scripts/test_regression.ps1` antes da criação dos argumentos e da execução das suítes. A proteção vale para os perfis rápido e completo e interrompe a regressão imediatamente diante de não conformidade.
+
+- [x] Reutilizar a rotina padrão existente, sem criar fluxo paralelo.
+- [x] Executar `auditar_importacoes_catalogo_teste` antes de qualquer grupo de testes.
+- [x] Aplicar a mesma barreira aos perfis rápido e completo.
+- [x] Interromper a rotina quando o comando retornar código diferente de zero.
+- [x] Testar automaticamente presença, ordem anterior aos testes e tratamento de falha.
+- [x] Validar a sintaxe PowerShell da rotina sem erros.
+- [x] Executar o portão integrado: 638 arquivos Python, quatro referências autorizadas e zero em runtime.
+- [x] Atualizar README e roteiro de estabilização para usar a regressão padrão.
+- [x] Validar oito testes próprios acumulados, 61 testes focados acumulados e 522 testes da suíte fiscal completa.
+- [x] Manter código operacional, banco, modelos, migrações, credenciais, certificados, ambientes, Focus, SEFAZ direta e emissão inalterados.
+- [ ] Próximo passo: verificar automaticamente que catálogo e testes associados não entram no empacotamento de produção.
+
+Arquivos: `scripts/test_regression.ps1`, `apps/fiscal/test_auditoria_importacoes_catalogo_teste.py`, `apps/fiscal/auditoria_importacoes_catalogo_teste.py`, `README.md` e `docs/LIMPEZA_ESTABILIZACAO.md`. Documentação relacionada: [PORTAO_IMPORTACOES_CATALOGO_IDENTIDADES_TESTE.md](PORTAO_IMPORTACOES_CATALOGO_IDENTIDADES_TESTE.md). Migrações: nenhuma.
+
 ## Ponto de retomada — ciclo 111, 14/09/2026
 
 Criado `fiscal_test_catalog_import_gate_v1` e o comando `auditar_importacoes_catalogo_teste`. O portão analisa a árvore sintática dos arquivos Python sem importar módulos e recusa referências diretas ou dinâmicas ao catálogo fora das fronteiras reconhecidas de teste.
@@ -15,7 +33,7 @@ Criado `fiscal_test_catalog_import_gate_v1` e o comando `auditar_importacoes_cat
 - [x] Reexecutar inventário geral: 707 arquivos, 332 candidatos em 56 arquivos e zero `_REVISAR`.
 - [x] Validar sete testes próprios, 60 testes focados acumulados e 521 testes da suíte fiscal completa.
 - [x] Manter código operacional, dados, modelos, migrações, credenciais, certificados, ambientes, Focus, SEFAZ direta e emissão inalterados.
-- [ ] Próximo passo: integrar o comando à rotina padrão de verificação do projeto, sem ativar canais fiscais.
+- [x] Próximo passo concluído no ciclo 112: comando integrado antes das suítes nos perfis rápido e completo.
 
 Arquivos: `apps/fiscal/auditoria_importacoes_catalogo_teste.py`, `apps/fiscal/management/commands/auditar_importacoes_catalogo_teste.py` e `apps/fiscal/test_auditoria_importacoes_catalogo_teste.py`. Documentação: [PORTAO_IMPORTACOES_CATALOGO_IDENTIDADES_TESTE.md](PORTAO_IMPORTACOES_CATALOGO_IDENTIDADES_TESTE.md). Migrações: nenhuma.
 

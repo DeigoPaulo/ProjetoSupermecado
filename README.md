@@ -48,8 +48,10 @@ Depois do setup:
 ```powershell
 .\.venv\Scripts\python.exe manage.py check
 .\.venv\Scripts\python.exe manage.py makemigrations --check --dry-run
-.\.venv\Scripts\python.exe manage.py test
+.\scripts\test_regression.ps1 -Perfil completo
 ```
+
+A rotina de regressão executa primeiro o portão estático do catálogo fiscal de teste e interrompe antes das suítes se houver importação por código operacional.
 
 ## Regras técnicas
 

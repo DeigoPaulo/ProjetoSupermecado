@@ -80,6 +80,21 @@ class AuditoriaImportacoesCatalogoTesteTests(SimpleTestCase):
         self.assertEqual(resultado["resumo"]["importacoes_runtime_bloqueadas"], 0)
         self.assertTrue(resultado["seguranca"]["analise_ast_sem_importar_modulos"])
 
+    def test_rotina_padrao_executa_portao_antes_dos_testes(self):
+        rotina = (Path(settings.BASE_DIR) / "scripts/test_regression.ps1").read_text(
+            encoding="utf-8"
+        )
+        chamada_portao = '& $Python $Manage "auditar_importacoes_catalogo_teste"'
+        inicio_testes = '$ArgumentosBase = @($Manage, "test", "-v", "1")'
+        self.assertIn(chamada_portao, rotina)
+        self.assertIn(inicio_testes, rotina)
+        self.assertLess(rotina.index(chamada_portao), rotina.index(inicio_testes))
+        trecho_portao = rotina[
+            rotina.index(chamada_portao):rotina.index(inicio_testes)
+        ]
+        self.assertIn("$LASTEXITCODE -ne 0", trecho_portao)
+        self.assertIn("throw", trecho_portao)
+
 
 class ComandoAuditoriaImportacoesCatalogoTesteTests(TestCase):
     def test_comando_conforme_nao_consulta_banco(self):

@@ -17,6 +17,12 @@ if (-not (Test-Path -LiteralPath $Manage)) {
     throw "manage.py nao encontrado em $Manage."
 }
 
+Write-Host "`nExecutando: portao do catalogo fiscal de teste" -ForegroundColor Cyan
+& $Python $Manage "auditar_importacoes_catalogo_teste"
+if ($LASTEXITCODE -ne 0) {
+    throw "Falha na regressao: catalogo fiscal de teste importado fora dos testes."
+}
+
 $ArgumentosBase = @($Manage, "test", "-v", "1")
 if ($KeepDb) {
     $ArgumentosBase += "--keepdb"

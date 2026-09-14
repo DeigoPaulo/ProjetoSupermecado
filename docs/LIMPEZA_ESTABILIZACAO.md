@@ -37,11 +37,13 @@ Execute na raiz:
 .\.venv\Scripts\python.exe -m pip check
 .\.venv\Scripts\python.exe manage.py check
 .\.venv\Scripts\python.exe manage.py makemigrations --check --dry-run
-.\.venv\Scripts\python.exe manage.py test
+.\scripts\test_regression.ps1 -Perfil completo
 .\.venv\Scripts\python.exe -m unittest discover -s desktop_pdv -p "test_*.py"
 .\.venv\Scripts\python.exe -m unittest discover -s desktop_admin -p "test_*.py"
 git diff --check
 ```
+
+`test_regression.ps1` executa o portão `auditar_importacoes_catalogo_teste` antes de iniciar qualquer grupo de testes e falha imediatamente se o catálogo aparecer em código operacional.
 
 Para a configuração de produção, execute também `manage.py check --deploy` com `DEBUG=false`, chave secreta forte, hosts, origens CSRF, HTTPS, cookies seguros e HSTS configurados.
 

@@ -47,6 +47,6 @@ Nenhum valor existente foi reescrito e a base local não foi alterada.
 
 ## Próximo passo
 
-O inventário foi concluído no ciclo 108 em [INVENTARIO_ESTATICO_IDENTIDADES_FISCAIS.md](INVENTARIO_ESTATICO_IDENTIDADES_FISCAIS.md), o catálogo central protegido foi definido no ciclo 109 em [CATALOGO_IDENTIDADES_FISCAIS_TESTE.md](CATALOGO_IDENTIDADES_FISCAIS_TESTE.md), seu primeiro uso gradual ocorreu no ciclo 110 e o portão contra importação em runtime foi concluído no ciclo 111. O próximo passo é integrar esse portão à rotina padrão de verificação, ainda sem substituição em massa.
+O inventário foi concluído no ciclo 108 em [INVENTARIO_ESTATICO_IDENTIDADES_FISCAIS.md](INVENTARIO_ESTATICO_IDENTIDADES_FISCAIS.md), o catálogo central protegido foi definido no ciclo 109 em [CATALOGO_IDENTIDADES_FISCAIS_TESTE.md](CATALOGO_IDENTIDADES_FISCAIS_TESTE.md), seu primeiro uso gradual ocorreu no ciclo 110, o portão contra importação em runtime foi concluído no ciclo 111 e integrado à regressão padrão no ciclo 112. O próximo passo é verificar sua exclusão do empacotamento, ainda sem substituição em massa.
 
 Foram aprovados 37 testes focados e 498 testes da suíte fiscal completa. Nenhuma migração foi gerada.
