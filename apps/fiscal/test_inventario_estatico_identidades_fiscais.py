@@ -17,6 +17,7 @@ from .inventario_estatico_identidades_fiscais import (
 class ClassificacaoCandidatosFiscaisTests(SimpleTestCase):
     def test_classifica_finalidades_sem_depender_do_valor(self):
         casos = [
+            ("apps/fiscal/test_support_identidades_fiscais.py", 'cnpj = "TSTEMPRESA0112"', "BLOCO_14", "CATALOGO_CENTRAL_TESTE"),
             ("apps/empresas/services_lookup.py", '"mascara": "00.000.000/0000-00"', "CNPJ_MASCARADO", "MASCARA_VISUAL"),
             ("apps/configuracoes/management/commands/popular_demo.py", 'DEMO_CNPJ = "99.999.999/0001-99"', "CNPJ_MASCARADO", "DEMONSTRACAO_LOCAL"),
             ("apps/fiscal/test_x.py", 'chave = "52260812345678000199550010000001231000001234"', "CHAVE_44", "CHAVE_FISCAL_TESTE"),

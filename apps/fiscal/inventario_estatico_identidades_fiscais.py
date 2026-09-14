@@ -31,6 +31,8 @@ def _arquivo_teste(caminho):
 def classificar_candidato(caminho, linha, tipo):
     caminho_normalizado = caminho.replace("\\", "/")
     contexto = linha.lower()
+    if caminho_normalizado.endswith("apps/fiscal/test_support_identidades_fiscais.py"):
+        return "CATALOGO_CENTRAL_TESTE"
     if caminho_normalizado.endswith("apps/fiscal/inventario_estatico_identidades_fiscais.py"):
         return "REGRA_CLASSIFICADOR"
     if caminho_normalizado.endswith("apps/empresas/services_lookup.py") and "00.000.000/0000-00" in linha:
@@ -151,7 +153,7 @@ def inventariar_identidades_fiscais_estaticas(base_dir, *, incluir_ocorrencias=F
             "libera_producao": False,
             "libera_emissao": False,
         },
-        "proximo_passo": "DEFINIR_CATALOGO_CENTRAL_DE_IDENTIDADES_DE_TESTE_SEM_TROCA_EM_MASSA",
+        "proximo_passo": "ADOTAR_CATALOGO_SOMENTE_EM_TESTES_NOVOS_OU_MODIFICADOS",
     }
     if incluir_ocorrencias:
         resultado["ocorrencias"] = ocorrencias

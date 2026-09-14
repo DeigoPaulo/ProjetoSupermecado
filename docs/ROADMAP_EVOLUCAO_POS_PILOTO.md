@@ -1,5 +1,26 @@
 # Roadmap de evolucao pos-piloto
 
+## Ponto de retomada — ciclo 109, 14/09/2026
+
+Criado `fiscal_test_identity_catalog_v1`, catálogo central destinado somente a testes novos ou naturalmente modificados. Os quatro papéis usam bases alfanuméricas determinísticas identificadas por `TST`, calculam o DV pelo normalizador isolado e continuam sem qualquer alegação de titularidade.
+
+- [x] Definir papéis distintos para empresa matriz, filial, fornecedor e cliente pessoa jurídica.
+- [x] Gerar identificadores determinísticos com DV estruturalmente válido, sem cadastrar dados.
+- [x] Ler o ambiente efetivamente configurado, sem aceitar ambiente informado pelo chamador.
+- [x] Permitir somente `development`/`test` e finalidades de teste unitário ou integração local.
+- [x] Recusar homologação, produção, finalidade operacional e código desconhecido.
+- [x] Não expor documentos completos na descrição do catálogo.
+- [x] Manter explícito que validade estrutural não prova titularidade.
+- [x] Excluir o suporte de artefatos gerados por `git archive` usando a regra existente para `test_*.py`.
+- [x] Preservar os 331 candidatos anteriores, sem substituição em massa.
+- [x] Reexecutar inventário: 703 arquivos, 332 candidatos em 56 arquivos e zero categorias `_REVISAR`.
+- [x] Confirmar que o único candidato adicional pertence ao teste da nova classificação.
+- [x] Validar seis testes próprios, 52 testes focados acumulados e 513 testes da suíte fiscal completa.
+- [x] Manter base, modelos, migrações, credenciais, certificados, licenças, ambientes, Focus, SEFAZ direta e emissão inalterados.
+- [ ] Próximo passo: adotar o catálogo apenas em um primeiro teste novo ou naturalmente modificado, medindo o inventário e sem reescrever fixtures em massa.
+
+Arquivos: `apps/fiscal/test_support_identidades_fiscais.py`, `apps/fiscal/test_catalogo_identidades_fiscais.py`, `apps/fiscal/inventario_estatico_identidades_fiscais.py`, `apps/fiscal/test_inventario_estatico_identidades_fiscais.py` e `apps/fiscal/politica_identidades_fiscais.py`. Documentação: [CATALOGO_IDENTIDADES_FISCAIS_TESTE.md](CATALOGO_IDENTIDADES_FISCAIS_TESTE.md). Migrações: nenhuma.
+
 ## Ponto de retomada — ciclo 108, 14/09/2026
 
 Criado `static_fiscal_identity_candidate_inventory_v1` e o comando `inventariar_identidades_fiscais_estaticas`. O inventário estático usa delimitadores literais, duas posições finais numéricas e contexto fiscal na própria linha para evitar códigos/palavras. O relatório protege os valores e classifica todos os candidatos por finalidade.
@@ -17,7 +38,7 @@ Criado `static_fiscal_identity_candidate_inventory_v1` e o comando `inventariar_
 - [x] Disponibilizar resumo padrão e detalhes protegidos por hash opcional.
 - [x] Validar 46 testes focados e 507 testes da suíte fiscal completa.
 - [x] Manter fontes, fixtures, base, modelos, migrações, credenciais, ambientes, Focus, SEFAZ direta e emissão inalterados.
-- [ ] Próximo passo: definir catálogo central para novos testes, sem substituição em massa.
+- [x] Próximo passo concluído no ciclo 109: catálogo central protegido criado para adoção gradual, sem substituição em massa.
 
 Arquivos: `apps/fiscal/inventario_estatico_identidades_fiscais.py`, `apps/fiscal/management/commands/inventariar_identidades_fiscais_estaticas.py` e `apps/fiscal/test_inventario_estatico_identidades_fiscais.py`. Documentação: [INVENTARIO_ESTATICO_IDENTIDADES_FISCAIS.md](INVENTARIO_ESTATICO_IDENTIDADES_FISCAIS.md). Migrações: nenhuma.
 

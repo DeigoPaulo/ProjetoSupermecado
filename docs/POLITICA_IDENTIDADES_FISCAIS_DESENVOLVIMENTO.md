@@ -47,6 +47,6 @@ Nenhum valor existente foi reescrito e a base local não foi alterada.
 
 ## Próximo passo
 
-O inventário foi concluído no ciclo 108 em [INVENTARIO_ESTATICO_IDENTIDADES_FISCAIS.md](INVENTARIO_ESTATICO_IDENTIDADES_FISCAIS.md). O próximo passo é definir um catálogo central para novos testes, sem substituição em massa.
+O inventário foi concluído no ciclo 108 em [INVENTARIO_ESTATICO_IDENTIDADES_FISCAIS.md](INVENTARIO_ESTATICO_IDENTIDADES_FISCAIS.md), e o catálogo central protegido foi definido no ciclo 109 em [CATALOGO_IDENTIDADES_FISCAIS_TESTE.md](CATALOGO_IDENTIDADES_FISCAIS_TESTE.md). O próximo passo é adotá-lo apenas em testes novos ou naturalmente modificados, sem substituição em massa.
 
 Foram aprovados 37 testes focados e 498 testes da suíte fiscal completa. Nenhuma migração foi gerada.

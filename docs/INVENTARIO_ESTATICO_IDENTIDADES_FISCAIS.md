@@ -14,19 +14,19 @@ Para evitar capturar variáveis e palavras, valores precisam estar delimitados p
 
 ## Resultado consolidado
 
-Foram lidos 700 arquivos. Cinquenta e seis contêm 331 candidatos protegidos:
+Após o ciclo 109, foram lidos 703 arquivos. Cinquenta e seis contêm 332 candidatos protegidos:
 
 - 208 identidades de modelo em testes;
 - 61 casos de validação de documento;
 - 19 chaves fiscais de teste;
 - 10 trechos XML fiscais de teste;
-- 19 valores usados para testar o próprio classificador;
+- 20 valores usados para testar o próprio classificador;
 - seis exemplos de configuração em documentação;
 - dois exemplos normativos documentados;
 - quatro marcadores dos comandos de demonstração;
 - uma máscara visual e uma regra interna do classificador.
 
-Por representação, são 178 máscaras, 131 blocos de 14 posições e 22 chaves de 44 posições. Algumas chaves pertencem aos testes do classificador e, por isso, a soma por finalidade permanece coerente sem classificar todas como chave fiscal funcional.
+Por representação, são 178 máscaras, 132 blocos de 14 posições e 22 chaves de 44 posições. O único candidato acrescentado é a entrada que testa a classificação do catálogo central; o catálogo gera seus documentos a partir de bases de 12 posições e não adiciona identidade operacional fixa. Algumas chaves pertencem aos testes do classificador e, por isso, a soma por finalidade permanece coerente sem classificar todas como chave fiscal funcional.
 
 ## Diagnóstico
 
@@ -43,6 +43,6 @@ python manage.py inventariar_identidades_fiscais_estaticas --detalhes
 
 ## Próximo passo
 
-Definir um catálogo central de identidades para novos testes, com finalidade e restrições explícitas, sem substituir em massa os 331 candidatos existentes. A adoção deverá começar somente em testes novos ou modificados e continuar proibida em runtime, homologação e produção.
+O catálogo central foi definido no ciclo 109 em [CATALOGO_IDENTIDADES_FISCAIS_TESTE.md](CATALOGO_IDENTIDADES_FISCAIS_TESTE.md), sem substituir em massa os candidatos existentes. O próximo passo é adotá-lo em um primeiro teste novo ou naturalmente modificado, mantendo a medição do inventário e a proibição em runtime, homologação e produção.
 
-Foram aprovados 46 testes focados e 507 testes da suíte fiscal completa. Nenhuma migração foi gerada.
+Com a cadeia ampliada do ciclo 109, foram aprovados 52 testes focados e 513 testes da suíte fiscal completa. Nenhuma migração foi gerada.
