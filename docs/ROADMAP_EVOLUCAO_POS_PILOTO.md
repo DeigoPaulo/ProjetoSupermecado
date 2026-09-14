@@ -1,5 +1,25 @@
 # Roadmap de evolucao pos-piloto
 
+## Ponto de retomada — ciclo 105, 14/09/2026
+
+Criado `alphanumeric_cnpj_dual_read_gate_v1`, um portão puro e ainda sem consumidores para comparar CNPJ textual e canônico nas fronteiras Empresa, Filial, Licença e Credencial. A seleção só ocorre com um candidato válido; fronteira e escopo são aplicados antes da comparação, cadastro inválido não é corrigido e igualdade textual nunca desambigua duas identidades canônicas.
+
+- [x] Exigir consulta com formato e DV oficiais válidos.
+- [x] Exigir fronteira explícita entre Empresa, Filial, Licença e Credencial.
+- [x] Exigir escopo da empresa quando os candidatos forem escopados.
+- [x] Comparar igualdade textual e canônica sem regravar valores.
+- [x] Registrar divergência entre valor armazenado e forma canônica.
+- [x] Recusar mais de uma correspondência mesmo quando uma delas for textual exata.
+- [x] Não selecionar nem corrigir silenciosamente cadastro com formato ou DV inválido.
+- [x] Recusar candidato malformado ou sem origem/identificador.
+- [x] Não devolver CNPJ completo no diagnóstico; usar impressão digital reduzida.
+- [x] Validar CNPJ alfanumérico oficial em fronteira isolada.
+- [x] Validar 21 testes focados e 482 testes da suíte fiscal completa.
+- [x] Manter banco, modelos, migrações, buscas reais, licença, credenciais, ambientes, Focus, SEFAZ direta e emissão inalterados.
+- [ ] Próximo passo: ensaiar adaptador somente leitura de Empresa e Filial, em paralelo às buscas atuais e sem alterar o resultado operacional.
+
+Arquivos: `apps/fiscal/portao_leitura_dupla_cnpj.py` e `apps/fiscal/test_portao_leitura_dupla_cnpj.py`. Documentação: [PORTAO_LEITURA_DUPLA_CNPJ.md](PORTAO_LEITURA_DUPLA_CNPJ.md). Migrações: nenhuma.
+
 ## Ponto de retomada — ciclo 104, 14/09/2026
 
 Criado `alphanumeric_cnpj_readonly_audit_v1` e o comando `auditar_cnpj_alfanumerico`. A auditoria usa somente `SELECT`, protege CNPJs e chaves com ocultação/impressão digital, ignora CPF reconhecido no campo misto e classifica repetições como esperadas, revisáveis ou bloqueantes. O ensaio local não é aceite de produção e não consultou credenciais.
@@ -16,7 +36,7 @@ Criado `alphanumeric_cnpj_readonly_audit_v1` e o comando `auditar_cnpj_alfanumer
 - [x] Marcar resultado local como ensaio sem aceite de produção.
 - [x] Validar 11 testes focados da auditoria/estratégia e 472 testes da suíte fiscal completa.
 - [x] Manter dados, modelos, migrações, normalizadores atuais, credenciais, ambientes, Focus, SEFAZ direta e emissão inalterados.
-- [ ] Próximo passo: definir portão de leitura dupla sem escrita e com recusa obrigatória de identidade ambígua.
+- [x] Próximo passo concluído no ciclo 105: portão puro definido sem escrita e com recusa obrigatória de identidade ambígua.
 
 Arquivos: `apps/fiscal/auditoria_cnpj_alfanumerico.py`, `apps/fiscal/management/commands/auditar_cnpj_alfanumerico.py` e `apps/fiscal/test_auditoria_cnpj_alfanumerico.py`. Documentação: [AUDITORIA_CNPJ_ALFANUMERICO.md](AUDITORIA_CNPJ_ALFANUMERICO.md). Migrações: nenhuma.
 

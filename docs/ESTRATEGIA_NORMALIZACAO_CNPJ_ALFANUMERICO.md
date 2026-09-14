@@ -44,8 +44,8 @@ O campo único atual de `Empresa.cnpj` opera sobre o texto armazenado, não sobr
 ## Transição em seis fases
 
 1. Normalizador puro isolado — concluído neste ciclo, sem acoplamento.
-2. Auditoria somente leitura — pendente.
-3. Leitura dupla controlada — pendente.
+2. Auditoria somente leitura — concluída sem aceite de produção no ciclo 104.
+3. Leitura dupla controlada — portão puro concluído, ainda sem consumidores, no ciclo 105.
 4. Escrita canônica por fronteira — pendente.
 5. Chave, XML, QR Code e DANFE — pendente.
 6. Homologação separada de Focus e SEFAZ direta — pendente.
@@ -54,6 +54,6 @@ Todas as fases continuam com execução operacional bloqueada. Modelos, dados, m
 
 ## Próximo passo
 
-Etapa concluída no ciclo 104 em [AUDITORIA_CNPJ_ALFANUMERICO.md](AUDITORIA_CNPJ_ALFANUMERICO.md). O próximo passo é definir o portão de leitura dupla, sem regravar dados e sem permitir seleção ambígua de identidade.
+Auditoria e portão puro foram concluídos nos ciclos 104 e 105. O próximo passo é ensaiar um adaptador somente leitura de Empresa e Filial, sem substituir as buscas atuais, conforme [PORTAO_LEITURA_DUPLA_CNPJ.md](PORTAO_LEITURA_DUPLA_CNPJ.md).
 
 Foram aprovados 15 testes focados e 467 testes da suíte fiscal completa.

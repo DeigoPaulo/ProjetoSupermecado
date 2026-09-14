@@ -57,6 +57,6 @@ A opção `--estrito` termina com erro quando houver bloqueios, mas também não
 
 ## Próximo passo
 
-Definir o portão de leitura dupla. A implementação deverá comparar pela forma canônica sem regravar o banco, registrar divergências entre texto bruto e canônico e impedir que um resultado ambíguo selecione empresa, filial, licença ou credencial. Primeiro será construída em funções isoladas e testes; nenhum consumidor será trocado enquanto o ensaio ou a futura base real tiverem colisões bloqueantes.
+O portão puro foi concluído no ciclo 105 em [PORTAO_LEITURA_DUPLA_CNPJ.md](PORTAO_LEITURA_DUPLA_CNPJ.md). O próximo passo é ensaiar um adaptador somente leitura de Empresa e Filial, sem substituir as buscas atuais e sem liberar consumidores enquanto houver colisões bloqueantes.
 
 Foram aprovados 11 testes focados da auditoria/estratégia e 472 testes da suíte fiscal completa.

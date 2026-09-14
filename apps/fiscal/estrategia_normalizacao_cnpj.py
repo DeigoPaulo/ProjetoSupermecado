@@ -49,8 +49,8 @@ CONSUMIDORES = (
 
 FASES = (
     (1, "NORMALIZADOR_PURO_ISOLADO", "CONCLUIDA_SEM_ACOPLAMENTO"),
-    (2, "AUDITORIA_SOMENTE_LEITURA", "PENDENTE"),
-    (3, "LEITURA_DUPLA_CONTROLADA", "PENDENTE"),
+    (2, "AUDITORIA_SOMENTE_LEITURA", "CONCLUIDA_SEM_ACEITE_PRODUCAO"),
+    (3, "LEITURA_DUPLA_CONTROLADA", "CONCLUIDA_ISOLADA_SEM_CONSUMIDORES"),
     (4, "ESCRITA_CANONICA_POR_FRONTEIRA", "PENDENTE"),
     (5, "CHAVE_XML_QRCODE_E_DANFE", "PENDENTE"),
     (6, "HOMOLOGACAO_SEPARADA_DOS_CANAIS", "PENDENTE"),
@@ -217,7 +217,7 @@ def construir_estrategia_normalizacao_cnpj(evidencia):
             "ativar_sefaz_direta": False,
             "emitir": False,
         },
-        "proximo_passo": "CONSTRUIR_AUDITORIA_SOMENTE_LEITURA_DE_COLISOES_E_INVALIDOS",
+        "proximo_passo": "ENSAIAR_ADAPTADOR_SOMENTE_LEITURA_DE_EMPRESA_E_FILIAL_SEM_TROCAR_CONSUMIDORES",
     }
     return {"conteudo": conteudo, "validacao": validar_estrategia_normalizacao_cnpj(conteudo)}
 
@@ -292,7 +292,7 @@ def validar_estrategia_normalizacao_cnpj(conteudo):
         "ativar_sefaz_direta", "emitir",
     } or any(valor is not False for valor in politica.values()):
         erro("politica", "POLITICA_INVALIDA")
-    if conteudo.get("proximo_passo") != "CONSTRUIR_AUDITORIA_SOMENTE_LEITURA_DE_COLISOES_E_INVALIDOS":
+    if conteudo.get("proximo_passo") != "ENSAIAR_ADAPTADOR_SOMENTE_LEITURA_DE_EMPRESA_E_FILIAL_SEM_TROCAR_CONSUMIDORES":
         erro("proximo_passo", "PROXIMO_PASSO_INVALIDO")
 
     return {
