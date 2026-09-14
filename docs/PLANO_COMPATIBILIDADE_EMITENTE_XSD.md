@@ -15,7 +15,7 @@ O plano transforma as lacunas do bloco `emit` em uma sequência controlada de tr
 
 ## Cinco frentes
 
-1. CNPJ alfanumérico: confirmar a regra oficial da chave de acesso e dos demais identificadores antes de escolher a representação canônica.
+1. CNPJ alfanumérico: regra oficial confirmada no ciclo 102; falta definir a normalização canônica e a retrocompatibilidade antes de modificar qualquer consumidor.
 2. Mínimos textuais: auditar dados reais e criar validação fiscal explícita, sem truncamento silencioso.
 3. Inscrição estadual: separar a capacidade ampla do banco da validação aplicável ao XML e ao caso tributário.
 4. UF: reutilizar uma única lista oficial entre modelo e fronteira fiscal.
@@ -29,7 +29,7 @@ O XML é produzido antes do adaptador de canal; portanto, a futura correção de
 
 ## Ordem obrigatória
 
-1. Confirmar regra normativa do CNPJ alfanumérico.
+1. Confirmar regra normativa do CNPJ alfanumérico. Concluído no ciclo 102, com fontes preservadas e verificadas por hash.
 2. Definir normalização canônica e retrocompatibilidade.
 3. Auditar dados reais somente em leitura.
 4. Implementar validadores compatíveis e testes.
@@ -38,8 +38,8 @@ O XML é produzido antes do adaptador de canal; portanto, a futura correção de
 
 Todos os portões e permissões de execução nascem falsos. A ausência do CNPJ real impede a auditoria da etapa 3, mas não impede avançar na etapa 1 com as fontes oficiais já preservadas.
 
-A implementação passou em 28 testes focados da cadeia e em 456 testes da suíte fiscal completa.
+A implementação original passou em 28 testes focados da cadeia e em 456 testes da suíte fiscal completa. Após a evidência normativa do ciclo 102, a cadeia focada passou a 33 testes e a suíte fiscal completa a 461 testes.
 
 ## Próximo passo
 
-Confrontar a regra do CNPJ alfanumérico com a Nota Técnica oficial preservada, especialmente composição da chave de acesso, identificação em serviços e cronograma de vigência. O resultado continuará sem alterar dados ou código operacional.
+Definir o contrato de normalização canônica e retrocompatibilidade para CNPJ e chave de acesso, enumerando todos os consumidores antes de alterar qualquer implementação compartilhada. A evidência normativa está em [EVIDENCIA_CNPJ_ALFANUMERICO_DFE.md](EVIDENCIA_CNPJ_ALFANUMERICO_DFE.md).

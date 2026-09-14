@@ -1,5 +1,25 @@
 # Roadmap de evolucao pos-piloto
 
+## Ponto de retomada — ciclo 102, 14/09/2026
+
+Criado `alphanumeric_cnpj_official_evidence_v1`, que preserva e verifica por SHA-256 quatro PDFs oficiais e o pacote XSD 010f. A regra normativa deixou de ser pendência: CNPJ com 12 posições alfanuméricas e dois DVs numéricos, coexistência com o formato antigo, chave de acesso de 44 posições com letras no trecho do CNPJ, cálculo por ASCII menos 48 e módulo 11, e produção NF-e/NFC-e desde 01/07/2026. A constatação não liberou alterações operacionais.
+
+- [x] Preservar Manual de cálculo do DV e Perguntas e respostas da Receita Federal.
+- [x] Preservar NT Conjunta DF-e 2025.001 v1.00 e NT NF-e/NFC-e 2026.004 v1.01.
+- [x] Registrar SHA-256 das quatro fontes e reutilizar o hash do XSD 010f.
+- [x] Confirmar CNPJ `[A-Z0-9]{12}[0-9]{2}` e coexistência com CNPJs numéricos.
+- [x] Confirmar DV do CNPJ por ASCII menos 48, módulo 11 e pesos de 2 a 9.
+- [x] Confirmar chave de acesso de 44 posições com padrão `[0-9]{6}[A-Z0-9]{12}[0-9]{26}`.
+- [x] Confirmar DV da chave por ASCII menos 48 e módulo 11 sobre as 43 posições anteriores.
+- [x] Confirmar implantação NF-e/NFC-e até 15/06/2026 em homologação e em 01/07/2026 em produção.
+- [x] Registrar impacto adicional no código de barras, com Code 128 C/A quando houver letras.
+- [x] Não inventar restrição de letras que a NT Conjunta deixou pendente e que a Receita/XSD posterior não adotaram.
+- [x] Validar 13 testes focados e 461 testes da suíte fiscal completa.
+- [x] Manter modelos, dados, migrações, geradores, credenciais, ambientes, Focus, SEFAZ direta e emissão inalterados.
+- [ ] Próximo passo: definir normalização canônica e retrocompatibilidade, com inventário de consumidores e testes de colisão, sem migrar dados reais.
+
+Arquivos: `apps/fiscal/evidencia_cnpj_alfanumerico.py` e `apps/fiscal/test_evidencia_cnpj_alfanumerico.py`. Documentação: [EVIDENCIA_CNPJ_ALFANUMERICO_DFE.md](EVIDENCIA_CNPJ_ALFANUMERICO_DFE.md). Evidências: [evidencias/cnpj_alfanumerico_2026_09_14/README.md](evidencias/cnpj_alfanumerico_2026_09_14/README.md). Migrações: nenhuma.
+
 ## Ponto de retomada — ciclo 101, 14/09/2026
 
 Criado `issuer_xsd_compatibility_plan_v1`, que organiza cinco frentes, seis pontos de acoplamento e seis etapas bloqueadas para compatibilizar o emitente com o XSD. O levantamento confirmou que a largura atual dos campos não exige migração imediata, mas a semântica numérica do CNPJ atravessa interface, sincronização, licenciamento, buscas, compras, DF-e, chave de acesso e geradores. Também foi registrada a ausência de `enderEmit` nos geradores existentes de NFC-e e NF-e de pedido online, sem confundir código existente com canal ativo.
@@ -17,7 +37,7 @@ Criado `issuer_xsd_compatibility_plan_v1`, que organiza cinco frentes, seis pont
 - [x] Validar 28 testes focados da cadeia até o plano de compatibilidade.
 - [x] Validar 456 testes da suíte fiscal completa.
 - [x] Manter dados reais, modelos, migrações, XML, credenciais, ambientes, Focus e SEFAZ direta inalterados.
-- [ ] Próximo passo: confirmar nas fontes oficiais a regra do CNPJ alfanumérico, chave de acesso e vigência.
+- [x] Próximo passo concluído no ciclo 102: regra oficial, chave de acesso e vigência confirmadas com fontes preservadas.
 
 Arquivos: `apps/fiscal/plano_compatibilidade_emitente_xsd.py` e `apps/fiscal/test_plano_compatibilidade_emitente_xsd.py`. Documentação: [PLANO_COMPATIBILIDADE_EMITENTE_XSD.md](PLANO_COMPATIBILIDADE_EMITENTE_XSD.md). Migrações: nenhuma.
 
