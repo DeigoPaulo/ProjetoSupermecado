@@ -1,5 +1,26 @@
 # Roadmap de evolucao pos-piloto
 
+## Ponto de retomada — ciclo 101, 14/09/2026
+
+Criado `issuer_xsd_compatibility_plan_v1`, que organiza cinco frentes, seis pontos de acoplamento e seis etapas bloqueadas para compatibilizar o emitente com o XSD. O levantamento confirmou que a largura atual dos campos não exige migração imediata, mas a semântica numérica do CNPJ atravessa interface, sincronização, licenciamento, buscas, compras, DF-e, chave de acesso e geradores. Também foi registrada a ausência de `enderEmit` nos geradores existentes de NFC-e e NF-e de pedido online, sem confundir código existente com canal ativo.
+
+- [x] Mapear armazenamento de Empresa, Filial e Configuração Fiscal.
+- [x] Mapear máscara, consulta, sincronização, licenciamento, compras, DF-e e geração fiscal.
+- [x] Confirmar que largura do CNPJ comporta 14 caracteres, sem concluir compatibilidade semântica.
+- [x] Manter possível migração do CNPJ como `NAO_DEFINIDA` até confirmar normalização e chave de acesso.
+- [x] Planejar mínimos textuais na fronteira fiscal, sem truncar nem estreitar colunas.
+- [x] Planejar validação da IE sem reduzir a capacidade do banco antecipadamente.
+- [x] Confirmar que as escolhas de UF dos modelos correspondem a `TUfEmi`.
+- [x] Registrar ausência de `enderEmit` nos dois geradores existentes.
+- [x] Ordenar seis etapas, da confirmação normativa à homologação separada dos canais.
+- [x] Manter todos os portões e permissões de mudança falsos.
+- [x] Validar 28 testes focados da cadeia até o plano de compatibilidade.
+- [x] Validar 456 testes da suíte fiscal completa.
+- [x] Manter dados reais, modelos, migrações, XML, credenciais, ambientes, Focus e SEFAZ direta inalterados.
+- [ ] Próximo passo: confirmar nas fontes oficiais a regra do CNPJ alfanumérico, chave de acesso e vigência.
+
+Arquivos: `apps/fiscal/plano_compatibilidade_emitente_xsd.py` e `apps/fiscal/test_plano_compatibilidade_emitente_xsd.py`. Documentação: [PLANO_COMPATIBILIDADE_EMITENTE_XSD.md](PLANO_COMPATIBILIDADE_EMITENTE_XSD.md). Migrações: nenhuma.
+
 ## Ponto de retomada — ciclo 100, 14/09/2026
 
 Criado `supplier_return_emit_field_specification_v1`, que descreve os 11 campos mapeados do emitente sem ler valores ou alterar o cadastro. O contrato registra a escolha CNPJ/CPF, `enderEmit` e suas posições internas, cardinalidades e formatos do XSD 010f. Também torna explícitas quatro lacunas entre o XSD e a validação atual: CNPJ alfanumérico, comprimentos mínimos de texto, formato da IE e domínio da UF.
@@ -16,7 +37,7 @@ Criado `supplier_return_emit_field_specification_v1`, que descreve os 11 campos 
 - [x] Validar 24 testes focados da cadeia até o bloco `emit`.
 - [x] Validar 452 testes da suíte fiscal completa.
 - [x] Manter cadastro, valores, XML, assinatura, transmissão, Focus e SEFAZ direta inalterados.
-- [ ] Próximo passo: planejar a compatibilidade do cadastro do emitente com o XSD antes de qualquer alteração de dados.
+- [x] Próximo passo concluído no ciclo 101: compatibilidade organizada em etapas e portões, sem alteração de dados.
 
 Arquivos: `apps/fiscal/especificacao_emit_devolucao.py` e `apps/fiscal/test_especificacao_emit_devolucao.py`. Documentação: [ESPECIFICACAO_BLOCO_EMIT_DEVOLUCAO.md](ESPECIFICACAO_BLOCO_EMIT_DEVOLUCAO.md). Migrações: nenhuma.
 
