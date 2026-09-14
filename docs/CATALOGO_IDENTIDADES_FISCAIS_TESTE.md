@@ -22,12 +22,12 @@ As bases usam o prefixo textual `TST`, e os dígitos verificadores são calculad
 
 Novos testes devem selecionar um papel por código e informar explicitamente a finalidade; o ambiente é lido da configuração real do sistema. Testes existentes só adotarão o catálogo quando forem modificados por outro motivo e quando a alteração não reduzir a cobertura de formatos inválidos, exemplos normativos, XML ou chaves fiscais.
 
-O primeiro uso gradual foi concluído no ciclo 110 em um novo caso do portão de leitura dupla. O teste usa o papel `FILIAL`, comprova equivalência entre forma pura e mascarada, ausência do documento no diagnóstico e preservação da entrada. Nenhum literal anterior foi substituído.
+O primeiro uso gradual foi concluído no ciclo 110 em um novo caso do portão de leitura dupla. No ciclo 114, os testes novos do portão puro de escrita também passaram a obter identidades de Filial e Fornecedor pelo catálogo, inclusive derivando o caso de DV inválido sem adicionar identidade fixa. Nenhum literal anterior foi substituído.
 
 O catálogo não deve ser importado por código operacional. Validade estrutural e dígito verificador correto continuam sem provar propriedade, situação cadastral ou autorização fiscal.
 
 ## Próximo passo
 
-O portão estático foi criado no ciclo 111 em [PORTAO_IMPORTACOES_CATALOGO_IDENTIDADES_TESTE.md](PORTAO_IMPORTACOES_CATALOGO_IDENTIDADES_TESTE.md), não encontrou uso em runtime e foi integrado à regressão padrão no ciclo 112. A exclusão do pacote foi comprovada no ciclo 113 em [VERIFICACAO_EMPACOTAMENTO_CATALOGO_TESTE.md](VERIFICACAO_EMPACOTAMENTO_CATALOGO_TESTE.md). O próximo passo é retomar o portão puro de escrita canônica. Nenhuma migração, configuração fiscal, credencial, certificado ou ambiente foi alterado.
+O portão estático foi criado no ciclo 111 em [PORTAO_IMPORTACOES_CATALOGO_IDENTIDADES_TESTE.md](PORTAO_IMPORTACOES_CATALOGO_IDENTIDADES_TESTE.md), não encontrou uso em runtime e foi integrado à regressão padrão no ciclo 112. A exclusão do pacote foi comprovada no ciclo 113 em [VERIFICACAO_EMPACOTAMENTO_CATALOGO_TESTE.md](VERIFICACAO_EMPACOTAMENTO_CATALOGO_TESTE.md). O portão puro de escrita foi concluído no ciclo 114 em [PORTAO_ESCRITA_CANONICA_CNPJ.md](PORTAO_ESCRITA_CANONICA_CNPJ.md). O próximo passo é especificar o adaptador sombra de escrita sem persistência. Nenhuma migração, configuração fiscal, credencial, certificado ou ambiente foi alterado.
 
-No ciclo 109 foram aprovados os seis testes próprios. Após a verificação do ciclo 113, a cadeia acumula 62 testes focados e 523 testes da suíte fiscal completa aprovados.
+No ciclo 109 foram aprovados os seis testes próprios. Após o uso no portão de escrita do ciclo 114, a cadeia acumula 70 testes focados e 531 testes da suíte fiscal completa aprovados.

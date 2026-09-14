@@ -87,9 +87,11 @@ class EstrategiaNormalizacaoCNPJTests(SimpleTestCase):
         self.assertEqual(resultado["validacao"]["quantidade_fases"], 6)
         conteudo = resultado["conteudo"]
         self.assertTrue(conteudo["conclusao"]["estrategia_definida"])
+        self.assertTrue(conteudo["conclusao"]["portao_escrita_puro_definido"])
         self.assertFalse(conteudo["conclusao"]["consumidor_operacional_alterado"])
         self.assertTrue(all(not item["alteracao_liberada"] for item in conteudo["consumidores"]))
         self.assertTrue(all(not item["execucao_operacional_liberada"] for item in conteudo["fases"]))
+        self.assertEqual(conteudo["fases"][3]["estado"], "CONCLUIDA_ISOLADA_SEM_CONSUMIDORES")
         self.assertTrue(all(valor is False for valor in conteudo["politica"].values()))
 
     def test_recusa_evidencia_e_contrato_adulterados(self):

@@ -1,5 +1,26 @@
 # Roadmap de evolucao pos-piloto
 
+## Ponto de retomada — ciclo 114, 14/09/2026
+
+Criado `alphanumeric_cnpj_canonical_write_gate_v1`, portão puro que prepara a escrita canônica de CNPJ nas fronteiras Empresa, Filial, Cliente pessoa jurídica e Fornecedor pessoa jurídica. O contrato não consulta banco, não altera objetos e mantém a persistência bloqueada em todos os resultados.
+
+- [x] Separar criação e atualização sem acoplar formulários, modelos ou serviços.
+- [x] Exigir escopo da empresa para Filial, Cliente pessoa jurídica e Fornecedor pessoa jurídica.
+- [x] Exigir formato oficial e dígito verificador válido para a proposta.
+- [x] Preparar representação canônica em criação, sem autorizar persistência.
+- [x] Reconhecer atualização equivalente sem propor troca de identidade.
+- [x] Exigir valor atual válido em atualização e impedir correção automática do legado.
+- [x] Manter troca de identidade bloqueada até controles externos de colisão, titularidade, autorização e auditoria.
+- [x] Proteger o valor atual completo no diagnóstico por impressão digital reduzida.
+- [x] Marcar somente a fase estrutural 4 como concluída, preservando todos os consumidores operacionais desligados.
+- [x] Confirmar 640 arquivos Python, cinco importações do catálogo autorizadas em testes e zero em runtime.
+- [x] Reexecutar inventário geral: 711 arquivos, 332 candidatos em 56 arquivos e zero `_REVISAR`.
+- [x] Validar 14 testes do ciclo, 70 testes focados acumulados e 531 testes da suíte fiscal completa.
+- [x] Manter banco, modelos, migrações, credenciais, certificados, ambientes, Focus, SEFAZ direta e emissão inalterados.
+- [ ] Próximo passo: especificar adaptador sombra de escrita, ainda sem persistência ou consumidor operacional.
+
+Arquivos: `apps/fiscal/portao_escrita_canonica_cnpj.py`, `apps/fiscal/test_portao_escrita_canonica_cnpj.py`, `apps/fiscal/estrategia_normalizacao_cnpj.py` e contratos auxiliares de retomada. Documentação: [PORTAO_ESCRITA_CANONICA_CNPJ.md](PORTAO_ESCRITA_CANONICA_CNPJ.md). Migrações: nenhuma.
+
 ## Ponto de retomada — ciclo 113, 14/09/2026
 
 Confirmada automaticamente a exclusão do catálogo fiscal de teste na fronteira real de empacotamento. O teste usa `git archive`, como `package_local_server.ps1`, e a defesa adicional injeta o catálogo em um pacote adulterado para confirmar a recusa por `local_server_package_content_v1`.
@@ -15,7 +36,7 @@ Confirmada automaticamente a exclusão do catálogo fiscal de teste na fronteira
 - [x] Reexecutar inventário geral: 708 arquivos, 332 candidatos em 56 arquivos e zero `_REVISAR`.
 - [x] Manter empacotador, publicador, Central, artefatos publicados e ambientes inalterados.
 - [x] Manter banco, modelos, migrações, credenciais, certificados, Focus, SEFAZ direta e emissão inalterados.
-- [ ] Próximo passo: definir portão puro de escrita canônica do CNPJ alfanumérico, sem consumidor operacional.
+- [x] Próximo passo concluído no ciclo 114: portão puro de escrita canônica definido, sem consumidor operacional.
 
 Arquivos: `apps/fiscal/test_auditoria_importacoes_catalogo_teste.py` e `apps/configuracoes/tests.py`. Documentação: [VERIFICACAO_EMPACOTAMENTO_CATALOGO_TESTE.md](VERIFICACAO_EMPACOTAMENTO_CATALOGO_TESTE.md). Migrações: nenhuma.
 

@@ -109,7 +109,7 @@ def auditar_importacoes_catalogo_teste(base_dir, *, incluir_detalhes=False):
             "libera_producao": False,
             "libera_emissao": False,
         },
-        "proximo_passo": "DEFINIR_PORTAO_DE_ESCRITA_CANONICA_SEM_CONSUMIDOR_OPERACIONAL",
+        "proximo_passo": "ESPECIFICAR_ADAPTADOR_SOMBRA_DE_ESCRITA_SEM_PERSISTENCIA",
     }
     if incluir_detalhes or not conforme:
         resultado["violacoes"] = violacoes

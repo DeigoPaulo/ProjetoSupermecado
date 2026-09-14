@@ -51,7 +51,7 @@ FASES = (
     (1, "NORMALIZADOR_PURO_ISOLADO", "CONCLUIDA_SEM_ACOPLAMENTO"),
     (2, "AUDITORIA_SOMENTE_LEITURA", "CONCLUIDA_SEM_ACEITE_PRODUCAO"),
     (3, "LEITURA_DUPLA_CONTROLADA", "CONCLUIDA_ISOLADA_SEM_CONSUMIDORES"),
-    (4, "ESCRITA_CANONICA_POR_FRONTEIRA", "PENDENTE"),
+    (4, "ESCRITA_CANONICA_POR_FRONTEIRA", "CONCLUIDA_ISOLADA_SEM_CONSUMIDORES"),
     (5, "CHAVE_XML_QRCODE_E_DANFE", "PENDENTE"),
     (6, "HOMOLOGACAO_SEPARADA_DOS_CANAIS", "PENDENTE"),
 )
@@ -200,6 +200,7 @@ def construir_estrategia_normalizacao_cnpj(evidencia):
         "conclusao": {
             "estrategia_definida": True,
             "normalizador_puro_testavel": True,
+            "portao_escrita_puro_definido": True,
             "consumidor_operacional_alterado": False,
             "auditoria_dados_reais_pendente": True,
             "migracao_de_largura_necessaria": False,
@@ -217,7 +218,7 @@ def construir_estrategia_normalizacao_cnpj(evidencia):
             "ativar_sefaz_direta": False,
             "emitir": False,
         },
-        "proximo_passo": "DEFINIR_CATALOGO_CENTRAL_DE_IDENTIDADES_DE_TESTE_SEM_TROCA_EM_MASSA",
+        "proximo_passo": "ESPECIFICAR_ADAPTADOR_SOMBRA_DE_ESCRITA_SEM_PERSISTENCIA",
     }
     return {"conteudo": conteudo, "validacao": validar_estrategia_normalizacao_cnpj(conteudo)}
 
@@ -279,6 +280,7 @@ def validar_estrategia_normalizacao_cnpj(conteudo):
     if conteudo.get("conclusao") != {
         "estrategia_definida": True,
         "normalizador_puro_testavel": True,
+        "portao_escrita_puro_definido": True,
         "consumidor_operacional_alterado": False,
         "auditoria_dados_reais_pendente": True,
         "migracao_de_largura_necessaria": False,
@@ -292,7 +294,7 @@ def validar_estrategia_normalizacao_cnpj(conteudo):
         "ativar_sefaz_direta", "emitir",
     } or any(valor is not False for valor in politica.values()):
         erro("politica", "POLITICA_INVALIDA")
-    if conteudo.get("proximo_passo") != "DEFINIR_CATALOGO_CENTRAL_DE_IDENTIDADES_DE_TESTE_SEM_TROCA_EM_MASSA":
+    if conteudo.get("proximo_passo") != "ESPECIFICAR_ADAPTADOR_SOMBRA_DE_ESCRITA_SEM_PERSISTENCIA":
         erro("proximo_passo", "PROXIMO_PASSO_INVALIDO")
 
     return {

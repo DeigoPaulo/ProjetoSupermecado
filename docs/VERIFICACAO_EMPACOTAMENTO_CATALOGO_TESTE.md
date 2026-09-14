@@ -29,4 +29,4 @@ A verificação não gerou instalador, não substituiu artefato, não publicou a
 
 ## Próximo passo
 
-Com a cadeia catálogo → importação → regressão → empacotamento protegida, retomar a estratégia principal do CNPJ alfanumérico pela definição de um portão puro de escrita canônica, ainda sem conectá-lo a formulários, modelos ou banco.
+Com a cadeia catálogo → importação → regressão → empacotamento protegida, o portão puro de escrita canônica foi concluído no ciclo 114 em [PORTAO_ESCRITA_CANONICA_CNPJ.md](PORTAO_ESCRITA_CANONICA_CNPJ.md), ainda sem formulários, modelos ou banco. O próximo passo é especificar o adaptador sombra de escrita sem persistência.
