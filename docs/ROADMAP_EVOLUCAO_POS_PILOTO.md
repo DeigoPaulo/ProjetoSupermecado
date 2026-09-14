@@ -1,5 +1,26 @@
 # Roadmap de evolucao pos-piloto
 
+## Ponto de retomada — ciclo 108, 14/09/2026
+
+Criado `static_fiscal_identity_candidate_inventory_v1` e o comando `inventariar_identidades_fiscais_estaticas`. O inventário estático usa delimitadores literais, duas posições finais numéricas e contexto fiscal na própria linha para evitar códigos/palavras. O relatório protege os valores e classifica todos os candidatos por finalidade.
+
+- [x] Ler somente fontes sob `apps` e `docs`, sem consultar banco.
+- [x] Reconhecer máscara completa, bloco CNPJ de 14 posições e chave de 44 posições.
+- [x] Exigir duas posições finais numéricas nos candidatos a CNPJ alfanumérico.
+- [x] Exigir aspas, crases ou tags XML para não capturar nomes de código.
+- [x] Exigir contexto de identidade na mesma linha para blocos de 14 posições.
+- [x] Classificar máscara, demonstração, modelo, validação, XML, chave, documentação e regras do inventário.
+- [x] Reduzir falsos positivos do primeiro ensaio de 3.602 para 331 candidatos.
+- [x] Inventariar 700 arquivos, com 331 candidatos distribuídos em 56 arquivos.
+- [x] Zerar categorias `_REVISAR` após revisão por caminho e linha sem expor valores.
+- [x] Confirmar ausência de identidade operacional fixa escondida no runtime.
+- [x] Disponibilizar resumo padrão e detalhes protegidos por hash opcional.
+- [x] Validar 46 testes focados e 507 testes da suíte fiscal completa.
+- [x] Manter fontes, fixtures, base, modelos, migrações, credenciais, ambientes, Focus, SEFAZ direta e emissão inalterados.
+- [ ] Próximo passo: definir catálogo central para novos testes, sem substituição em massa.
+
+Arquivos: `apps/fiscal/inventario_estatico_identidades_fiscais.py`, `apps/fiscal/management/commands/inventariar_identidades_fiscais_estaticas.py` e `apps/fiscal/test_inventario_estatico_identidades_fiscais.py`. Documentação: [INVENTARIO_ESTATICO_IDENTIDADES_FISCAIS.md](INVENTARIO_ESTATICO_IDENTIDADES_FISCAIS.md). Migrações: nenhuma.
+
 ## Ponto de retomada — ciclo 107, 14/09/2026
 
 Criado `fiscal_identity_development_policy_v1`. A política separa exemplo normativo, dado fictício de desenvolvimento, identidade real pendente e identidade real verificada; deixa explícito que formato/DV válido não provam titularidade e não libera qualquer canal fiscal. Os comandos que gravam bases fictícias agora são bloqueados antes do banco em homologação e produção.
@@ -16,7 +37,7 @@ Criado `fiscal_identity_development_policy_v1`. A política separa exemplo norma
 - [x] Registrar que a busca é conservadora e ainda exige classificação semântica dos valores.
 - [x] Validar 37 testes focados e 498 testes da suíte fiscal completa.
 - [x] Manter base local, fixtures, modelos, migrações, credenciais, licenças, ambientes fiscais, Focus, SEFAZ direta e emissão inalterados.
-- [ ] Próximo passo: classificar estaticamente os candidatos por finalidade sem reescrever valores.
+- [x] Próximo passo concluído no ciclo 108: candidatos classificados estaticamente sem reescrever valores.
 
 Arquivos: `apps/fiscal/politica_identidades_fiscais.py`, `apps/fiscal/test_politica_identidades_fiscais.py`, `apps/configuracoes/management/commands/criar_dados_iniciais.py` e `apps/configuracoes/management/commands/popular_demo.py`. Documentação: [POLITICA_IDENTIDADES_FISCAIS_DESENVOLVIMENTO.md](POLITICA_IDENTIDADES_FISCAIS_DESENVOLVIMENTO.md). Migrações: nenhuma.
 

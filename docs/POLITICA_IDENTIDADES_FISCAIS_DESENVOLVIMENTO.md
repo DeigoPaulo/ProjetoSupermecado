@@ -47,6 +47,6 @@ Nenhum valor existente foi reescrito e a base local não foi alterada.
 
 ## Próximo passo
 
-Classificar os candidatos encontrados por finalidade: identidade de modelo, XML/chave fiscal, teste de validação, demonstração ou simples máscara visual. Esse inventário deverá ser estático e somente leitura; nenhuma troca em massa será feita.
+O inventário foi concluído no ciclo 108 em [INVENTARIO_ESTATICO_IDENTIDADES_FISCAIS.md](INVENTARIO_ESTATICO_IDENTIDADES_FISCAIS.md). O próximo passo é definir um catálogo central para novos testes, sem substituição em massa.
 
 Foram aprovados 37 testes focados e 498 testes da suíte fiscal completa. Nenhuma migração foi gerada.

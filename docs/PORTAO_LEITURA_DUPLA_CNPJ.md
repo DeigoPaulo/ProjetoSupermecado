@@ -34,6 +34,6 @@ Nenhum model, consulta, tela, sincronização, licença, credencial, integraçã
 
 ## Próximo passo
 
-O adaptador sombra e a política de identidades de desenvolvimento foram concluídos nos ciclos 106 e 107. O próximo passo é classificar estaticamente os candidatos por finalidade, sem reescrever valores.
+O adaptador sombra, a política e o inventário estático foram concluídos nos ciclos 106 a 108. O próximo passo é definir um catálogo central para novos testes, sem substituição em massa.
 
 Foram aprovados 21 testes focados e 482 testes da suíte fiscal completa.

@@ -54,6 +54,6 @@ Todas as fases continuam com execução operacional bloqueada. Modelos, dados, m
 
 ## Próximo passo
 
-Auditoria, portão puro, adaptador sombra e política de identidades de desenvolvimento foram concluídos nos ciclos 104 a 107. O próximo passo é classificar estaticamente os candidatos por finalidade, sem reescrever valores, conforme [POLITICA_IDENTIDADES_FISCAIS_DESENVOLVIMENTO.md](POLITICA_IDENTIDADES_FISCAIS_DESENVOLVIMENTO.md).
+Auditoria, portão puro, adaptador sombra, política e inventário estático foram concluídos nos ciclos 104 a 108. O próximo passo é definir um catálogo central para novos testes, sem substituição em massa, conforme [INVENTARIO_ESTATICO_IDENTIDADES_FISCAIS.md](INVENTARIO_ESTATICO_IDENTIDADES_FISCAIS.md).
 
 Foram aprovados 15 testes focados e 467 testes da suíte fiscal completa.

@@ -146,5 +146,5 @@ def descrever_portao_leitura_dupla_cnpj():
             "sefaz_direta_ativada": False,
             "emissao_liberada": False,
         },
-        "proximo_passo": "INVENTARIAR_FIXTURES_FISCAIS_POR_FINALIDADE_SEM_REESCREVER_VALORES",
+        "proximo_passo": "DEFINIR_CATALOGO_CENTRAL_DE_IDENTIDADES_DE_TESTE_SEM_TROCA_EM_MASSA",
     }

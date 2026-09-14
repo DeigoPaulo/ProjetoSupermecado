@@ -43,6 +43,6 @@ O resultado confirma a situação apontada na auditoria do ciclo 104. Esses regi
 
 ## Próximo passo
 
-A política foi definida no ciclo 107 em [POLITICA_IDENTIDADES_FISCAIS_DESENVOLVIMENTO.md](POLITICA_IDENTIDADES_FISCAIS_DESENVOLVIMENTO.md). O próximo passo é classificar estaticamente os candidatos de testes, XML, chaves e documentação por finalidade, sem reescrever valores.
+A política e o inventário estático foram concluídos nos ciclos 107 e 108. O próximo passo é definir um catálogo central para novos testes, sem substituição em massa.
 
 Foram aprovados 29 testes focados e 490 testes da suíte fiscal completa. Nenhuma migração foi gerada.

@@ -148,5 +148,5 @@ def ensaiar_adaptador_sombra_empresa_filial():
             "libera_licenca": False,
             "libera_emissao": False,
         },
-        "proximo_passo": "INVENTARIAR_FIXTURES_FISCAIS_POR_FINALIDADE_SEM_REESCREVER_VALORES",
+        "proximo_passo": "DEFINIR_CATALOGO_CENTRAL_DE_IDENTIDADES_DE_TESTE_SEM_TROCA_EM_MASSA",
     }
