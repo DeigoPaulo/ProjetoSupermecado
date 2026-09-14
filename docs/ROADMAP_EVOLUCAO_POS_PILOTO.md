@@ -1,5 +1,38 @@
 # Roadmap de evolucao pos-piloto
 
+## Controle de escopo e retomada — 14/09/2026
+
+A frente atual pertence à transição do CNPJ alfanumérico planejada no ciclo 103, dentro da prioridade fiscal. Os registros de ciclos abaixo são histórico de execução, não uma lista de funcionalidades operacionais concluídas.
+
+- [x] Normalizador, auditoria local, leitura comparativa e preparação pura de escrita implementados e testados.
+- [x] Desdobramentos técnicos acrescentados nos ciclos 109–113: catálogo de teste, adoção, controle de importações, regressão e exclusão do pacote. Estes trabalhos apoiam a frente original, mas não concluem a integração cadastral.
+- [ ] Fase 4 original: escrita canônica por fronteira. Estado real: parcial; apenas o portão isolado está pronto. Nenhum cadastro operacional utiliza a nova escrita.
+- [x] Próxima entrega delimitada da fase 4 concluída no ciclo 115: comparação isolada com os formulários de Empresa/Filial, divergências e colisões comprovadas e pontos de integração identificados, sem persistência.
+- [ ] Após essa comparação, atualizar a pendência de integração da própria fase 4, identificando o que depende de correção de dados e o que pode ser validado localmente. Não declarar a fase completa apenas por existir um adaptador de observação.
+- [ ] Fases 5 e 6 originais: chave/XML/QR Code/DANFE e homologação dos canais continuam pendentes.
+
+Novas tarefas devem indicar o item original que atendem, a lacuna concreta e o critério de conclusão antes da implementação. Melhorias opcionais vão para pendências futuras e não substituem automaticamente a próxima entrega. Contagem de testes e quantidade de ciclos não medem conclusão funcional.
+
+## Ponto de retomada — ciclo 115, 14/09/2026
+
+Concluída a comparação delimitada da fase 4 entre os formulários atuais de Empresa/Filial e o portão canônico. O observador usa os próprios `EmpresaForm` e `FilialForm`, trabalha sobre cópia da instância em atualização, consulta colisões apenas com `SELECT` e nunca chama `save()`.
+
+- [x] Reutilizar o caminho real de validação dos formulários, sem criar formulário alternativo.
+- [x] Confirmar que o cadastro atual aceita CNPJ com DV inválido.
+- [x] Confirmar que a unicidade textual de Empresa não detecta representações canonicamente equivalentes.
+- [x] Confirmar que Filial não possui unicidade de CNPJ e exige verificação dentro do escopo da empresa.
+- [x] Detectar colisão canônica de Empresa e Filial sem alterar a decisão ou salvar dados.
+- [x] Excluir a própria identidade na comparação de uma atualização equivalente.
+- [x] Proteger CNPJ e identificadores internos no diagnóstico.
+- [x] Identificar os pontos futuros de integração em `EmpresaForm.clean_cnpj` e `FilialForm.clean_cnpj`, antes das validações do modelo.
+- [x] Confirmar 642 arquivos Python, seis importações autorizadas em testes e zero em runtime.
+- [x] Reexecutar inventário geral: 714 arquivos, 332 candidatos em 56 arquivos e zero `_REVISAR`.
+- [x] Validar sete testes próprios, 39 testes focados do ciclo, 77 testes focados acumulados e 538 testes da suíte fiscal completa.
+- [x] Manter modelos, formulários operacionais, migrações, dados, credenciais, certificados, ambientes e emissão inalterados.
+- [ ] Fase 4 continua parcial: revisar os dados existentes e definir a integração cadastral; a comparação isolada não autoriza escrita operacional.
+
+Arquivos: `apps/fiscal/adaptador_sombra_escrita_cnpj.py` e `apps/fiscal/test_adaptador_sombra_escrita_cnpj.py`. Documentação: [ADAPTADOR_SOMBRA_ESCRITA_CNPJ.md](ADAPTADOR_SOMBRA_ESCRITA_CNPJ.md). Migrações: nenhuma.
+
 ## Ponto de retomada — ciclo 114, 14/09/2026
 
 Criado `alphanumeric_cnpj_canonical_write_gate_v1`, portão puro que prepara a escrita canônica de CNPJ nas fronteiras Empresa, Filial, Cliente pessoa jurídica e Fornecedor pessoa jurídica. O contrato não consulta banco, não altera objetos e mantém a persistência bloqueada em todos os resultados.
@@ -17,7 +50,7 @@ Criado `alphanumeric_cnpj_canonical_write_gate_v1`, portão puro que prepara a e
 - [x] Reexecutar inventário geral: 711 arquivos, 332 candidatos em 56 arquivos e zero `_REVISAR`.
 - [x] Validar 14 testes do ciclo, 70 testes focados acumulados e 531 testes da suíte fiscal completa.
 - [x] Manter banco, modelos, migrações, credenciais, certificados, ambientes, Focus, SEFAZ direta e emissão inalterados.
-- [ ] Próximo passo: especificar adaptador sombra de escrita, ainda sem persistência ou consumidor operacional.
+- [x] Próximo passo concluído no ciclo 115: comparação sombra executada sobre os formulários reais, sem persistência ou consumidor operacional.
 
 Arquivos: `apps/fiscal/portao_escrita_canonica_cnpj.py`, `apps/fiscal/test_portao_escrita_canonica_cnpj.py`, `apps/fiscal/estrategia_normalizacao_cnpj.py` e contratos auxiliares de retomada. Documentação: [PORTAO_ESCRITA_CANONICA_CNPJ.md](PORTAO_ESCRITA_CANONICA_CNPJ.md). Migrações: nenhuma.
 

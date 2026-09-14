@@ -218,7 +218,7 @@ def construir_estrategia_normalizacao_cnpj(evidencia):
             "ativar_sefaz_direta": False,
             "emitir": False,
         },
-        "proximo_passo": "ESPECIFICAR_ADAPTADOR_SOMBRA_DE_ESCRITA_SEM_PERSISTENCIA",
+        "proximo_passo": "DEFINIR_INTEGRACAO_DA_FASE_4_APOS_REVISAR_DADOS",
     }
     return {"conteudo": conteudo, "validacao": validar_estrategia_normalizacao_cnpj(conteudo)}
 
@@ -294,7 +294,7 @@ def validar_estrategia_normalizacao_cnpj(conteudo):
         "ativar_sefaz_direta", "emitir",
     } or any(valor is not False for valor in politica.values()):
         erro("politica", "POLITICA_INVALIDA")
-    if conteudo.get("proximo_passo") != "ESPECIFICAR_ADAPTADOR_SOMBRA_DE_ESCRITA_SEM_PERSISTENCIA":
+    if conteudo.get("proximo_passo") != "DEFINIR_INTEGRACAO_DA_FASE_4_APOS_REVISAR_DADOS":
         erro("proximo_passo", "PROXIMO_PASSO_INVALIDO")
 
     return {

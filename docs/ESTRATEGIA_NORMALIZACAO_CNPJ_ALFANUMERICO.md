@@ -46,7 +46,7 @@ O campo único atual de `Empresa.cnpj` opera sobre o texto armazenado, não sobr
 1. Normalizador puro isolado — concluído neste ciclo, sem acoplamento.
 2. Auditoria somente leitura — concluída sem aceite de produção no ciclo 104.
 3. Leitura dupla controlada — portão puro concluído, ainda sem consumidores, no ciclo 105.
-4. Escrita canônica por fronteira — pendente.
+4. Escrita canônica por fronteira — parcial: portão puro concluído no ciclo 114 e comparação com os cadastros concluída no ciclo 115; revisão de dados e integração operacional pendentes. O estado técnico de conclusão isolada não significa conclusão funcional da fase.
 5. Chave, XML, QR Code e DANFE — pendente.
 6. Homologação separada de Focus e SEFAZ direta — pendente.
 
@@ -54,6 +54,10 @@ Todas as fases continuam com execução operacional bloqueada. Modelos, dados, m
 
 ## Próximo passo
 
-Auditoria, portão puro, adaptador sombra, política e inventário estático foram concluídos nos ciclos 104 a 108. O próximo passo é definir um catálogo central para novos testes, sem substituição em massa, conforme [INVENTARIO_ESTATICO_IDENTIDADES_FISCAIS.md](INVENTARIO_ESTATICO_IDENTIDADES_FISCAIS.md).
+Auditoria, portão de leitura, adaptador de observação, política e inventário foram concluídos nos ciclos 104 a 108. O catálogo e suas proteções foram acrescentados nos ciclos 109 a 113; a preparação pura da escrita foi concluída no ciclo 114. São entregas de apoio à transição, sem consumidores operacionais integrados.
+
+A comparação da proposta canônica com o caminho existente de cadastro de Empresa/Filial foi concluída no ciclo 115. Ela comprovou que os formulários atuais aceitam DV inválido e que a igualdade textual não impede colisões entre representações equivalentes. Os pontos de integração são `EmpresaForm.clean_cnpj` e `FilialForm.clean_cnpj` antes das validações do modelo.
+
+A próxima entrega permanece dentro da fase 4: revisar os dados existentes e definir a integração cadastral. A escrita operacional só poderá ser planejada depois de separar cadastros válidos, inválidos e colisões, sem correção automática.
 
 Foram aprovados 15 testes focados e 467 testes da suíte fiscal completa.

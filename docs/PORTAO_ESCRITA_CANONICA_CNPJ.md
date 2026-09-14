@@ -27,4 +27,4 @@ Foram aprovados oito testes próprios, 14 testes do ciclo com a estratégia, 70 
 
 ## Próximo passo
 
-Especificar um adaptador sombra de escrita que compare a proposta com o comportamento atual sem salvar dados, antes de escolher qualquer fronteira operacional.
+O adaptador sombra foi concluído no ciclo 115 em [ADAPTADOR_SOMBRA_ESCRITA_CNPJ.md](ADAPTADOR_SOMBRA_ESCRITA_CNPJ.md). O próximo passo da fase 4 é revisar os dados existentes e definir a integração cadastral, sem correção automática.

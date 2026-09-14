@@ -146,5 +146,5 @@ def descrever_portao_leitura_dupla_cnpj():
             "sefaz_direta_ativada": False,
             "emissao_liberada": False,
         },
-        "proximo_passo": "ESPECIFICAR_ADAPTADOR_SOMBRA_DE_ESCRITA_SEM_PERSISTENCIA",
+        "proximo_passo": "DEFINIR_INTEGRACAO_DA_FASE_4_APOS_REVISAR_DADOS",
     }
