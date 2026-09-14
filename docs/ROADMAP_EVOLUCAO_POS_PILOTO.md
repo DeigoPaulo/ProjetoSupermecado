@@ -1,5 +1,23 @@
 # Roadmap de evolucao pos-piloto
 
+## Ponto de retomada — ciclo 99, 14/09/2026
+
+Criado `supplier_return_ide_field_specification_v1`, que confronta a matriz atômica e o plano por blocos para descrever os cinco campos já mapeados em `ide`. Foram registradas as posições na sequência completa, cardinalidade 1–1, fontes primárias e definições exatas do XSD auditado: comprimento de `natOp`, domínio de `idDest`, padrão IBGE de `cMunFG` e domínios de `indFinal` e `indPres`. Estrutura XSD não foi tratada como decisão fiscal.
+
+- [x] Confirmar a ordem completa: `natOp` 3, `idDest` 11, `cMunFG` 12, `indFinal` 21 e `indPres` 22.
+- [x] Registrar cardinalidade 1–1 para os cinco campos.
+- [x] Registrar tipos, comprimentos, padrão e enumerações do pacote 010f auditado.
+- [x] Reaproveitar fontes, tratamento da ausência, regra e estado da matriz sem transportar valores.
+- [x] Distinguir candidato calculável de decisão fiscal confirmada para `idDest`.
+- [x] Manter `indFinal` e `indPres` dependentes de decisão fiscal explícita.
+- [x] Exigir bloqueio contextual e `SERIALIZACAO_NAO_IMPLEMENTADA` em cada campo.
+- [x] Rejeitar matriz/plano adulterado e divergências de definição, cardinalidade, bloqueio, contagem ou política.
+- [x] Validar 20 testes focados da cadeia e 448 testes da suíte fiscal completa.
+- [x] Manter valores, elementos XML, assinatura, transmissão, Focus e SEFAZ direta desativados.
+- [ ] Próximo passo: especificar o bloco `emit` campo a campo, ainda sem valores ou XML.
+
+Arquivos: `apps/fiscal/especificacao_ide_devolucao.py` e `apps/fiscal/test_especificacao_ide_devolucao.py`. Documentação: [ESPECIFICACAO_BLOCO_IDE_DEVOLUCAO.md](ESPECIFICACAO_BLOCO_IDE_DEVOLUCAO.md). Migrações: nenhuma.
+
 ## Ponto de retomada — ciclo 98, 11/09/2026
 
 Criado `supplier_return_xsd_block_build_plan_v1`, que distribui os 105 caminhos confirmados em oito blocos na ordem e cardinalidade do XSD: `ide` 5, `emit` 11, `dest` 11, `det` 50, `total` 15, `transp` 10, `pag` 2 e `infAdic` 1. Cada campo preserva regra, estado do inventário, alternativas e bloqueios. O plano não contém valores, não cria árvore XML e mantém todos os blocos não prontos.
@@ -15,7 +33,7 @@ Criado `supplier_return_xsd_block_build_plan_v1`, que distribui os 105 caminhos 
 - [x] Validar 19 testes focados da cadeia matriz–auditoria–compatibilidade–plano.
 - [x] Validar 444 testes da suíte fiscal completa.
 - [x] Manter valores, árvore XML, promoção, assinatura e transmissão desativados.
-- [ ] Próximo passo: especificar o primeiro bloco `ide` campo a campo, com fontes, formatos, cardinalidades e bloqueios contextuais, ainda sem valores ou XML.
+- [x] Próximo passo concluído no ciclo 99: bloco `ide` especificado campo a campo, sem valores ou XML.
 
 Arquivos: `apps/fiscal/plano_blocos_xsd_devolucao.py` e `apps/fiscal/test_plano_blocos_xsd_devolucao.py`. Documentação: [PLANO_BLOCOS_XSD_DEVOLUCAO.md](PLANO_BLOCOS_XSD_DEVOLUCAO.md). Migrações: nenhuma.
 
