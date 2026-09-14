@@ -146,5 +146,5 @@ def descrever_portao_leitura_dupla_cnpj():
             "sefaz_direta_ativada": False,
             "emissao_liberada": False,
         },
-        "proximo_passo": "VERIFICAR_EXCLUSAO_DO_CATALOGO_NO_EMPACOTAMENTO",
+        "proximo_passo": "DEFINIR_PORTAO_DE_ESCRITA_CANONICA_SEM_CONSUMIDOR_OPERACIONAL",
     }

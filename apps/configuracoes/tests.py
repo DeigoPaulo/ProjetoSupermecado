@@ -1450,6 +1450,7 @@ class ConfiguracoesOperacionaisTests(TestCase):
                     versao="1.2.3",
                     arquivos_extras={
                         "apps/licenciamento/tests.py": b"assert True",
+                        "apps/fiscal/test_support_identidades_fiscais.py": b"CATALOGO = {}",
                         "docs/protótipos/requisitos-internos.docx": b"interno",
                     },
                 )
@@ -1460,6 +1461,7 @@ class ConfiguracoesOperacionaisTests(TestCase):
         problemas = " ".join(distribuicao["problemas"]).casefold()
         self.assertFalse(distribuicao["conteudo_valido"])
         self.assertIn("teste interno", problemas)
+        self.assertIn("test_support_identidades_fiscais.py", problemas)
         self.assertIn("documentação interna", problemas)
         self.assertEqual(download.status_code, 404)
 

@@ -153,7 +153,7 @@ def inventariar_identidades_fiscais_estaticas(base_dir, *, incluir_ocorrencias=F
             "libera_producao": False,
             "libera_emissao": False,
         },
-        "proximo_passo": "VERIFICAR_EXCLUSAO_DO_CATALOGO_NO_EMPACOTAMENTO",
+        "proximo_passo": "DEFINIR_PORTAO_DE_ESCRITA_CANONICA_SEM_CONSUMIDOR_OPERACIONAL",
     }
     if incluir_ocorrencias:
         resultado["ocorrencias"] = ocorrencias

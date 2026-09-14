@@ -1,5 +1,24 @@
 # Roadmap de evolucao pos-piloto
 
+## Ponto de retomada — ciclo 113, 14/09/2026
+
+Confirmada automaticamente a exclusão do catálogo fiscal de teste na fronteira real de empacotamento. O teste usa `git archive`, como `package_local_server.ps1`, e a defesa adicional injeta o catálogo em um pacote adulterado para confirmar a recusa por `local_server_package_content_v1`.
+
+- [x] Mapear o empacotamento real do servidor local e confirmar uso de commit rastreável com `git archive`.
+- [x] Gerar e inspecionar ZIP temporário pelo mesmo mecanismo, sem publicar artefato.
+- [x] Exigir presença do portão operacional e ausência do catálogo e dos testes associados.
+- [x] Confirmar no ensaio real 588 entradas, zero arquivos Python de teste e zero catálogo.
+- [x] Remover o ZIP temporário após a inspeção.
+- [x] Confirmar segunda barreira no validador comercial de conteúdo.
+- [x] Reinserir o caminho exato do catálogo em pacote de teste adulterado e exigir recusa.
+- [x] Validar nove testes do portão, o cenário comercial específico e 523 testes da suíte fiscal completa.
+- [x] Reexecutar inventário geral: 708 arquivos, 332 candidatos em 56 arquivos e zero `_REVISAR`.
+- [x] Manter empacotador, publicador, Central, artefatos publicados e ambientes inalterados.
+- [x] Manter banco, modelos, migrações, credenciais, certificados, Focus, SEFAZ direta e emissão inalterados.
+- [ ] Próximo passo: definir portão puro de escrita canônica do CNPJ alfanumérico, sem consumidor operacional.
+
+Arquivos: `apps/fiscal/test_auditoria_importacoes_catalogo_teste.py` e `apps/configuracoes/tests.py`. Documentação: [VERIFICACAO_EMPACOTAMENTO_CATALOGO_TESTE.md](VERIFICACAO_EMPACOTAMENTO_CATALOGO_TESTE.md). Migrações: nenhuma.
+
 ## Ponto de retomada — ciclo 112, 14/09/2026
 
 O portão `fiscal_test_catalog_import_gate_v1` foi integrado a `scripts/test_regression.ps1` antes da criação dos argumentos e da execução das suítes. A proteção vale para os perfis rápido e completo e interrompe a regressão imediatamente diante de não conformidade.
@@ -14,7 +33,7 @@ O portão `fiscal_test_catalog_import_gate_v1` foi integrado a `scripts/test_reg
 - [x] Atualizar README e roteiro de estabilização para usar a regressão padrão.
 - [x] Validar oito testes próprios acumulados, 61 testes focados acumulados e 522 testes da suíte fiscal completa.
 - [x] Manter código operacional, banco, modelos, migrações, credenciais, certificados, ambientes, Focus, SEFAZ direta e emissão inalterados.
-- [ ] Próximo passo: verificar automaticamente que catálogo e testes associados não entram no empacotamento de produção.
+- [x] Próximo passo concluído no ciclo 113: exclusão comprovada no ZIP real e recusa confirmada após reinserção manual.
 
 Arquivos: `scripts/test_regression.ps1`, `apps/fiscal/test_auditoria_importacoes_catalogo_teste.py`, `apps/fiscal/auditoria_importacoes_catalogo_teste.py`, `README.md` e `docs/LIMPEZA_ESTABILIZACAO.md`. Documentação relacionada: [PORTAO_IMPORTACOES_CATALOGO_IDENTIDADES_TESTE.md](PORTAO_IMPORTACOES_CATALOGO_IDENTIDADES_TESTE.md). Migrações: nenhuma.
 

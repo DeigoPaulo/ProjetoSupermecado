@@ -1,5 +1,7 @@
 import io
 import json
+import subprocess
+import zipfile
 from pathlib import Path
 from tempfile import TemporaryDirectory
 
@@ -94,6 +96,34 @@ class AuditoriaImportacoesCatalogoTesteTests(SimpleTestCase):
         ]
         self.assertIn("$LASTEXITCODE -ne 0", trecho_portao)
         self.assertIn("throw", trecho_portao)
+
+    def test_git_archive_exclui_catalogo_e_arquivos_de_teste(self):
+        with TemporaryDirectory() as temporario:
+            arquivo_zip = Path(temporario) / "apps-producao.zip"
+            subprocess.run(
+                [
+                    "git", "archive", "--format=zip", f"--output={arquivo_zip}",
+                    "HEAD", "--", "apps",
+                ],
+                cwd=settings.BASE_DIR,
+                check=True,
+                capture_output=True,
+            )
+            with zipfile.ZipFile(arquivo_zip) as pacote:
+                nomes = [nome.replace("\\", "/") for nome in pacote.namelist()]
+
+        self.assertIn("apps/fiscal/auditoria_importacoes_catalogo_teste.py", nomes)
+        self.assertNotIn("apps/fiscal/test_support_identidades_fiscais.py", nomes)
+        self.assertNotIn("apps/fiscal/test_catalogo_identidades_fiscais.py", nomes)
+        testes_python = []
+        for nome in nomes:
+            partes = nome.casefold().split("/")
+            base = partes[-1]
+            if nome.casefold().endswith(".py") and (
+                base == "tests.py" or base.startswith("test_") or "tests" in partes
+            ):
+                testes_python.append(nome)
+        self.assertEqual(testes_python, [])
 
 
 class ComandoAuditoriaImportacoesCatalogoTesteTests(TestCase):

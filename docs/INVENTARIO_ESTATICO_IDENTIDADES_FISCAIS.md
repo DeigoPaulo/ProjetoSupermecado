@@ -14,7 +14,7 @@ Para evitar capturar variáveis e palavras, valores precisam estar delimitados p
 
 ## Resultado consolidado
 
-Após o ciclo 111, foram lidos 707 arquivos. Cinquenta e seis contêm 332 candidatos protegidos:
+Após o ciclo 113, foram lidos 708 arquivos. Cinquenta e seis contêm 332 candidatos protegidos:
 
 - 208 identidades de modelo em testes;
 - 61 casos de validação de documento;
@@ -43,6 +43,6 @@ python manage.py inventariar_identidades_fiscais_estaticas --detalhes
 
 ## Próximo passo
 
-O catálogo central foi definido no ciclo 109 em [CATALOGO_IDENTIDADES_FISCAIS_TESTE.md](CATALOGO_IDENTIDADES_FISCAIS_TESTE.md), sem substituir em massa os candidatos existentes, e recebeu seu primeiro uso gradual no ciclo 110. O portão contra importação em runtime foi concluído no ciclo 111 e integrado à regressão padrão no ciclo 112. O inventário permaneceu em 332 candidatos. O próximo passo é verificar a exclusão do catálogo no empacotamento de produção.
+O catálogo central foi definido no ciclo 109 em [CATALOGO_IDENTIDADES_FISCAIS_TESTE.md](CATALOGO_IDENTIDADES_FISCAIS_TESTE.md), sem substituir em massa os candidatos existentes, e recebeu seu primeiro uso gradual no ciclo 110. O portão contra importação em runtime foi concluído no ciclo 111, integrado à regressão padrão no ciclo 112 e confirmado no empacotamento no ciclo 113. O inventário permaneceu em 332 candidatos. O próximo passo é retomar o portão puro de escrita canônica.
 
-Com a integração do ciclo 112, foram aprovados 61 testes focados e 522 testes da suíte fiscal completa. Nenhuma migração foi gerada.
+Com a verificação do ciclo 113, foram aprovados 62 testes focados e 523 testes da suíte fiscal completa. Nenhuma migração foi gerada.

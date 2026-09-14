@@ -32,8 +32,8 @@ O comando termina com erro quando encontra importação operacional ou arquivo q
 
 O projeto atual possui somente importações autorizadas em testes e nenhuma importação do catálogo em runtime. Focus, SEFAZ direta, ambientes, credenciais, certificados e emissão permanecem inalterados e desligados conforme seus próprios portões.
 
-Foram analisados 638 arquivos Python, com quatro referências autorizadas em testes, nenhuma em runtime e nenhum erro de leitura ou sintaxe. Após a integração à regressão padrão, oito testes próprios e 522 testes da suíte fiscal completa foram aprovados.
+Foram analisados 638 arquivos Python, com quatro referências autorizadas em testes, nenhuma em runtime e nenhum erro de leitura ou sintaxe. Após a verificação do empacotamento, nove testes próprios e 523 testes da suíte fiscal completa foram aprovados.
 
 ## Próximo passo
 
-Verificar automaticamente que o catálogo e os testes associados ficam fora do empacotamento de produção, sem ativar canais fiscais nem ampliar automaticamente a substituição de identidades existentes.
+A exclusão do empacotamento foi comprovada no ciclo 113 em [VERIFICACAO_EMPACOTAMENTO_CATALOGO_TESTE.md](VERIFICACAO_EMPACOTAMENTO_CATALOGO_TESTE.md). O próximo passo é retomar o CNPJ alfanumérico com um portão puro de escrita canônica, sem consumidor operacional.
