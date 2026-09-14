@@ -54,6 +54,6 @@ Todas as fases continuam com execução operacional bloqueada. Modelos, dados, m
 
 ## Próximo passo
 
-Auditoria, portão puro e adaptador sombra foram concluídos nos ciclos 104 a 106. O próximo passo é definir a política de identidades fiscais de desenvolvimento e teste, sem modificar a base atual, conforme [ADAPTADOR_SOMBRA_CNPJ_EMPRESA_FILIAL.md](ADAPTADOR_SOMBRA_CNPJ_EMPRESA_FILIAL.md).
+Auditoria, portão puro, adaptador sombra e política de identidades de desenvolvimento foram concluídos nos ciclos 104 a 107. O próximo passo é classificar estaticamente os candidatos por finalidade, sem reescrever valores, conforme [POLITICA_IDENTIDADES_FISCAIS_DESENVOLVIMENTO.md](POLITICA_IDENTIDADES_FISCAIS_DESENVOLVIMENTO.md).
 
 Foram aprovados 15 testes focados e 467 testes da suíte fiscal completa.

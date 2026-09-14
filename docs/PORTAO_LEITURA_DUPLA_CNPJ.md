@@ -34,6 +34,6 @@ Nenhum model, consulta, tela, sincronização, licença, credencial, integraçã
 
 ## Próximo passo
 
-O adaptador sombra de Empresa e Filial foi concluído e ensaiado no ciclo 106, conforme [ADAPTADOR_SOMBRA_CNPJ_EMPRESA_FILIAL.md](ADAPTADOR_SOMBRA_CNPJ_EMPRESA_FILIAL.md). O próximo passo é definir a política de identidades fiscais de desenvolvimento e teste sem modificar a base atual.
+O adaptador sombra e a política de identidades de desenvolvimento foram concluídos nos ciclos 106 e 107. O próximo passo é classificar estaticamente os candidatos por finalidade, sem reescrever valores.
 
 Foram aprovados 21 testes focados e 482 testes da suíte fiscal completa.

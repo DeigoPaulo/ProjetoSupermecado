@@ -1,5 +1,25 @@
 # Roadmap de evolucao pos-piloto
 
+## Ponto de retomada — ciclo 107, 14/09/2026
+
+Criado `fiscal_identity_development_policy_v1`. A política separa exemplo normativo, dado fictício de desenvolvimento, identidade real pendente e identidade real verificada; deixa explícito que formato/DV válido não provam titularidade e não libera qualquer canal fiscal. Os comandos que gravam bases fictícias agora são bloqueados antes do banco em homologação e produção.
+
+- [x] Separar validade estrutural de verificação de titularidade.
+- [x] Classificar exemplo normativo, fictício de desenvolvimento, real pendente e real verificada.
+- [x] Restringir exemplos e dados fictícios a `development` e `test` com finalidade não operacional.
+- [x] Proibir exemplo/fictício em credencial, licença, certificado, homologação, produção e emissão.
+- [x] Manter portões fiscais próprios mesmo para futura identidade real verificada.
+- [x] Proteger `criar_dados_iniciais` contra execução em homologação e produção.
+- [x] Proteger `popular_demo` contra execução em homologação e produção.
+- [x] Confirmar nos testes que a recusa acontece com zero consultas SQL.
+- [x] Inventariar inicialmente 48 arquivos de teste, três executáveis e cinco documentos com padrões candidatos.
+- [x] Registrar que a busca é conservadora e ainda exige classificação semântica dos valores.
+- [x] Validar 37 testes focados e 498 testes da suíte fiscal completa.
+- [x] Manter base local, fixtures, modelos, migrações, credenciais, licenças, ambientes fiscais, Focus, SEFAZ direta e emissão inalterados.
+- [ ] Próximo passo: classificar estaticamente os candidatos por finalidade sem reescrever valores.
+
+Arquivos: `apps/fiscal/politica_identidades_fiscais.py`, `apps/fiscal/test_politica_identidades_fiscais.py`, `apps/configuracoes/management/commands/criar_dados_iniciais.py` e `apps/configuracoes/management/commands/popular_demo.py`. Documentação: [POLITICA_IDENTIDADES_FISCAIS_DESENVOLVIMENTO.md](POLITICA_IDENTIDADES_FISCAIS_DESENVOLVIMENTO.md). Migrações: nenhuma.
+
 ## Ponto de retomada — ciclo 106, 14/09/2026
 
 Criado `alphanumeric_cnpj_company_branch_shadow_adapter_v1`. O adaptador reproduz em observação a busca atual de Empresa ativa e a busca de Filial escopada pela empresa, compara seus resultados com o portão canônico e não interfere na identidade utilizada pelo sistema. O relatório agregado não expõe CNPJ nem IDs.
@@ -15,7 +35,7 @@ Criado `alphanumeric_cnpj_company_branch_shadow_adapter_v1`. O adaptador reprodu
 - [x] Confirmar 16 casos em que a busca legada seleciona e o portão recusa DV inválido.
 - [x] Validar 29 testes focados e 490 testes da suíte fiscal completa.
 - [x] Manter buscas atuais, dados, modelos, migrações, credenciais, licenças, ambientes, Focus, SEFAZ direta e emissão inalterados.
-- [ ] Próximo passo: definir política de identidades fiscais de desenvolvimento e teste sem modificar a base atual.
+- [x] Próximo passo concluído no ciclo 107: política de identidades fiscais definida e comandos fictícios protegidos sem modificar a base atual.
 
 Arquivos: `apps/fiscal/adaptador_sombra_cnpj.py` e `apps/fiscal/test_adaptador_sombra_cnpj.py`. Documentação: [ADAPTADOR_SOMBRA_CNPJ_EMPRESA_FILIAL.md](ADAPTADOR_SOMBRA_CNPJ_EMPRESA_FILIAL.md). Migrações: nenhuma.
 

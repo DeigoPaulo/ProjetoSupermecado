@@ -43,6 +43,6 @@ O resultado confirma a situação apontada na auditoria do ciclo 104. Esses regi
 
 ## Próximo passo
 
-Definir uma política explícita para identidades fiscais de desenvolvimento e teste. Ela deverá separar exemplos oficiais válidos, dados fictícios deliberadamente inválidos e o futuro cadastro real, sem modificar a base atual nem permitir que fixtures sejam confundidas com homologação ou produção.
+A política foi definida no ciclo 107 em [POLITICA_IDENTIDADES_FISCAIS_DESENVOLVIMENTO.md](POLITICA_IDENTIDADES_FISCAIS_DESENVOLVIMENTO.md). O próximo passo é classificar estaticamente os candidatos de testes, XML, chaves e documentação por finalidade, sem reescrever valores.
 
 Foram aprovados 29 testes focados e 490 testes da suíte fiscal completa. Nenhuma migração foi gerada.

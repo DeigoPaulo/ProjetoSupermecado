@@ -2,7 +2,8 @@ from datetime import timedelta
 from decimal import Decimal
 
 from django.contrib.auth import get_user_model
-from django.core.management.base import BaseCommand
+from django.conf import settings
+from django.core.management.base import BaseCommand, CommandError
 from django.db import transaction
 from django.utils import timezone
 
@@ -24,6 +25,7 @@ from apps.marketplace.models import (
 from apps.pdv.models import Caixa, StatusCaixa
 from apps.produtos.models import Categoria, Marca, Produto, UnidadeMedida
 from apps.vendas.models import FormaPagamento, FormaPagamentoFilial, ItemVenda, PagamentoVenda, StatusPagamento, StatusVenda, Venda
+from apps.fiscal.politica_identidades_fiscais import avaliar_comando_dados_ficticios
 
 
 DEMO_CNPJ = "99.999.999/0001-99"
@@ -46,6 +48,11 @@ class Command(BaseCommand):
         )
 
     def handle(self, *args, **options):
+        politica = avaliar_comando_dados_ficticios("popular_demo", settings.ENVIRONMENT)
+        if not politica["permitido"]:
+            raise CommandError(
+                "A base demonstrativa so pode ser criada em desenvolvimento ou teste."
+            )
         with transaction.atomic():
             resumo = self._popular(redefinir_senhas=options["redefinir_senhas"])
             if options["simular"]:

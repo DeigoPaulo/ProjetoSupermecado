@@ -148,5 +148,5 @@ def ensaiar_adaptador_sombra_empresa_filial():
             "libera_licenca": False,
             "libera_emissao": False,
         },
-        "proximo_passo": "REVISAR_DIVERGENCIAS_E_DEFINIR_POLITICA_DE_DADOS_DE_DESENVOLVIMENTO",
+        "proximo_passo": "INVENTARIAR_FIXTURES_FISCAIS_POR_FINALIDADE_SEM_REESCREVER_VALORES",
     }

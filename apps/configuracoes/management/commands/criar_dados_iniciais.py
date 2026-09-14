@@ -1,15 +1,22 @@
-from django.core.management.base import BaseCommand
+from django.conf import settings
+from django.core.management.base import BaseCommand, CommandError
 
 from apps.configuracoes.services import criar_configuracoes_padrao
 from apps.empresas.models import Empresa, Filial
 from apps.produtos.models import Categoria, Marca
 from apps.vendas.models import FormaPagamento
+from apps.fiscal.politica_identidades_fiscais import avaliar_comando_dados_ficticios
 
 
 class Command(BaseCommand):
     help = "Cria dados iniciais para desenvolvimento do MVP."
 
     def handle(self, *args, **options):
+        politica = avaliar_comando_dados_ficticios("criar_dados_iniciais", settings.ENVIRONMENT)
+        if not politica["permitido"]:
+            raise CommandError(
+                "Dados iniciais ficticios so podem ser criados em desenvolvimento ou teste."
+            )
         empresa, _ = Empresa.objects.get_or_create(
             cnpj="00.000.000/0001-00",
             defaults={
