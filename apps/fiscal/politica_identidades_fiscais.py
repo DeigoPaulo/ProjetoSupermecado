@@ -108,5 +108,5 @@ def construir_politica_identidades_fiscais():
             "sefaz_direta_ativada": False,
             "emissao_liberada": False,
         },
-        "proximo_passo": "PROTEGER_IMPORTACAO_DO_CATALOGO_CONTRA_CODIGO_RUNTIME",
+        "proximo_passo": "INTEGRAR_PORTAO_A_ROTINA_PADRAO_DE_VERIFICACAO",
     }

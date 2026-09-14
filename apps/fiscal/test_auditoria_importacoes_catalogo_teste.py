@@ -1,0 +1,111 @@
+import io
+import json
+from pathlib import Path
+from tempfile import TemporaryDirectory
+
+from django.conf import settings
+from django.core.management import call_command
+from django.core.management.base import CommandError
+from django.db import connection
+from django.test import SimpleTestCase, TestCase
+from django.test.utils import CaptureQueriesContext
+
+from .auditoria_importacoes_catalogo_teste import auditar_importacoes_catalogo_teste
+
+
+class AuditoriaImportacoesCatalogoTesteTests(SimpleTestCase):
+    def _arquivo(self, raiz, relativo, conteudo):
+        caminho = raiz / relativo
+        caminho.parent.mkdir(parents=True, exist_ok=True)
+        caminho.write_text(conteudo, encoding="utf-8")
+
+    def test_importacoes_runtime_direta_e_dinamica_sao_bloqueadas(self):
+        with TemporaryDirectory() as temporario:
+            raiz = Path(temporario)
+            self._arquivo(
+                raiz,
+                "apps/operacional.py",
+                "from apps.fiscal.test_support_identidades_fiscais import obter_identidade_fiscal_teste\n"
+                "import importlib\n"
+                "importlib.import_module('apps.fiscal.test_support_identidades_fiscais')\n"
+                "from importlib import import_module\n"
+                "import_module('apps.fiscal.test_support_identidades_fiscais')\n",
+            )
+            resultado = auditar_importacoes_catalogo_teste(raiz, incluir_detalhes=True)
+        self.assertFalse(resultado["conforme"])
+        self.assertEqual(resultado["resumo"]["importacoes_runtime_bloqueadas"], 3)
+        self.assertEqual(
+            {item["mecanismo"] for item in resultado["violacoes"]},
+            {"IMPORT_FROM", "IMPORT_DINAMICO"},
+        )
+
+    def test_importacao_em_arquivo_de_teste_e_permitida(self):
+        with TemporaryDirectory() as temporario:
+            raiz = Path(temporario)
+            self._arquivo(
+                raiz,
+                "apps/fiscal/test_exemplo.py",
+                "from .test_support_identidades_fiscais import obter_identidade_fiscal_teste\n",
+            )
+            resultado = auditar_importacoes_catalogo_teste(raiz)
+        self.assertTrue(resultado["conforme"])
+        self.assertEqual(resultado["resumo"]["importacoes_permitidas_em_testes"], 1)
+        self.assertNotIn("violacoes", resultado)
+
+    def test_texto_sem_chamada_de_importacao_nao_e_falso_positivo(self):
+        with TemporaryDirectory() as temporario:
+            raiz = Path(temporario)
+            self._arquivo(
+                raiz,
+                "apps/descricao.py",
+                "MODULO_PROIBIDO = 'apps.fiscal.test_support_identidades_fiscais'\n",
+            )
+            resultado = auditar_importacoes_catalogo_teste(raiz)
+        self.assertTrue(resultado["conforme"])
+        self.assertEqual(resultado["resumo"]["importacoes_runtime_bloqueadas"], 0)
+
+    def test_erro_de_sintaxe_fecha_o_portao(self):
+        with TemporaryDirectory() as temporario:
+            raiz = Path(temporario)
+            self._arquivo(raiz, "apps/quebrado.py", "def incompleto(\n")
+            resultado = auditar_importacoes_catalogo_teste(raiz, incluir_detalhes=True)
+        self.assertFalse(resultado["conforme"])
+        self.assertEqual(resultado["resumo"]["erros_leitura_ou_sintaxe"], 1)
+        self.assertEqual(resultado["erros"][0]["tipo"], "SyntaxError")
+
+    def test_projeto_atual_nao_possui_importacao_operacional(self):
+        resultado = auditar_importacoes_catalogo_teste(settings.BASE_DIR)
+        self.assertTrue(resultado["conforme"])
+        self.assertGreaterEqual(resultado["resumo"]["importacoes_permitidas_em_testes"], 2)
+        self.assertEqual(resultado["resumo"]["importacoes_runtime_bloqueadas"], 0)
+        self.assertTrue(resultado["seguranca"]["analise_ast_sem_importar_modulos"])
+
+
+class ComandoAuditoriaImportacoesCatalogoTesteTests(TestCase):
+    def test_comando_conforme_nao_consulta_banco(self):
+        saida = io.StringIO()
+        with CaptureQueriesContext(connection) as consultas:
+            call_command("auditar_importacoes_catalogo_teste", stdout=saida)
+        resultado = json.loads(saida.getvalue())
+        self.assertTrue(resultado["conforme"])
+        self.assertEqual(len(consultas), 0)
+
+    def test_comando_recusa_runtime_invalido(self):
+        with TemporaryDirectory() as temporario:
+            raiz = Path(temporario)
+            caminho = raiz / "apps/runtime.py"
+            caminho.parent.mkdir(parents=True)
+            caminho.write_text(
+                "import apps.fiscal.test_support_identidades_fiscais\n", encoding="utf-8"
+            )
+            saida = io.StringIO()
+            with self.assertRaisesMessage(
+                CommandError, "IMPORTACAO_CATALOGO_TESTE_FORA_DE_ARQUIVO_DE_TESTE"
+            ):
+                call_command(
+                    "auditar_importacoes_catalogo_teste",
+                    "--base-dir", str(raiz), stdout=saida,
+                )
+        resultado = json.loads(saida.getvalue())
+        self.assertFalse(resultado["conforme"])
+        self.assertEqual(resultado["resumo"]["importacoes_runtime_bloqueadas"], 1)

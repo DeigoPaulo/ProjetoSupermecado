@@ -1,5 +1,24 @@
 # Roadmap de evolucao pos-piloto
 
+## Ponto de retomada — ciclo 111, 14/09/2026
+
+Criado `fiscal_test_catalog_import_gate_v1` e o comando `auditar_importacoes_catalogo_teste`. O portão analisa a árvore sintática dos arquivos Python sem importar módulos e recusa referências diretas ou dinâmicas ao catálogo fora das fronteiras reconhecidas de teste.
+
+- [x] Analisar todos os arquivos Python sob `apps` sem executar código analisado.
+- [x] Reconhecer `import`, `from ... import`, `__import__` e `import_module` com módulo literal.
+- [x] Permitir uso somente em `test_*.py`, `tests.py` ou pasta `tests`.
+- [x] Não tratar simples menção textual ao módulo como importação.
+- [x] Fechar o portão diante de erro de leitura ou sintaxe.
+- [x] Fazer o comando terminar com erro diante de não conformidade.
+- [x] Analisar 638 arquivos Python, com quatro referências autorizadas em testes e zero em runtime.
+- [x] Confirmar zero erros de leitura/sintaxe e zero consultas ao banco.
+- [x] Reexecutar inventário geral: 707 arquivos, 332 candidatos em 56 arquivos e zero `_REVISAR`.
+- [x] Validar sete testes próprios, 60 testes focados acumulados e 521 testes da suíte fiscal completa.
+- [x] Manter código operacional, dados, modelos, migrações, credenciais, certificados, ambientes, Focus, SEFAZ direta e emissão inalterados.
+- [ ] Próximo passo: integrar o comando à rotina padrão de verificação do projeto, sem ativar canais fiscais.
+
+Arquivos: `apps/fiscal/auditoria_importacoes_catalogo_teste.py`, `apps/fiscal/management/commands/auditar_importacoes_catalogo_teste.py` e `apps/fiscal/test_auditoria_importacoes_catalogo_teste.py`. Documentação: [PORTAO_IMPORTACOES_CATALOGO_IDENTIDADES_TESTE.md](PORTAO_IMPORTACOES_CATALOGO_IDENTIDADES_TESTE.md). Migrações: nenhuma.
+
 ## Ponto de retomada — ciclo 110, 14/09/2026
 
 Concluída a primeira adoção gradual de `fiscal_test_identity_catalog_v1` em um novo caso do portão puro de leitura dupla. O cenário usa o papel `FILIAL` para comparar forma canônica e mascarada, preserva a entrada e confirma que o diagnóstico não expõe o documento.
@@ -14,7 +33,7 @@ Concluída a primeira adoção gradual de `fiscal_test_identity_catalog_v1` em u
 - [x] Não substituir nenhum dos 332 candidatos existentes.
 - [x] Validar 17 testes puros do catálogo/portão, 53 testes focados acumulados e 514 testes da suíte fiscal completa.
 - [x] Manter banco, modelos, migrações, credenciais, certificados, licenças, ambientes, Focus, SEFAZ direta e emissão inalterados.
-- [ ] Próximo passo: criar uma verificação estática que recuse importação do catálogo por código de runtime antes de ampliar sua adoção.
+- [x] Próximo passo concluído no ciclo 111: verificação estática criada e executada sem encontrar importação em runtime.
 
 Arquivos: `apps/fiscal/test_portao_leitura_dupla_cnpj.py` e `apps/fiscal/portao_leitura_dupla_cnpj.py`. Documentação: [CATALOGO_IDENTIDADES_FISCAIS_TESTE.md](CATALOGO_IDENTIDADES_FISCAIS_TESTE.md). Migrações: nenhuma.
 

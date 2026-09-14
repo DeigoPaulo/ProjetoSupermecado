@@ -1,0 +1,39 @@
+# Portão de importações do catálogo de identidades de teste
+
+14/09/2026 · ciclo 111 · contrato `fiscal_test_catalog_import_gate_v1`.
+
+## Objetivo
+
+O portão impede que `test_support_identidades_fiscais` seja importado por código operacional. Arquivos `test_*.py`, `tests.py` ou dentro de uma pasta `tests` podem usar o catálogo; qualquer importação equivalente fora dessas fronteiras torna a verificação não conforme.
+
+## Cobertura
+
+A análise usa a árvore sintática dos arquivos Python sob `apps` e reconhece:
+
+- `import` direto;
+- `from ... import ...`, inclusive relativo;
+- `__import__` com módulo literal;
+- `importlib.import_module` com módulo literal.
+
+Textos que apenas mencionam o módulo não são tratados como importação. Erro de leitura ou sintaxe fecha o portão para que um arquivo não seja ignorado silenciosamente.
+
+O relatório padrão contém contagens. Detalhes de arquivo, linha, mecanismo e módulo só aparecem com `--detalhes` ou quando há não conformidade. A execução não importa os módulos analisados, não consulta banco, não grava arquivos e não altera configurações.
+
+## Uso
+
+```text
+python manage.py auditar_importacoes_catalogo_teste
+python manage.py auditar_importacoes_catalogo_teste --detalhes
+```
+
+O comando termina com erro quando encontra importação operacional ou arquivo que não pôde ser analisado, permitindo seu uso futuro na rotina padrão de verificação/CI.
+
+## Estado
+
+O projeto atual possui somente importações autorizadas em testes e nenhuma importação do catálogo em runtime. Focus, SEFAZ direta, ambientes, credenciais, certificados e emissão permanecem inalterados e desligados conforme seus próprios portões.
+
+Foram analisados 638 arquivos Python, com quatro referências autorizadas em testes, nenhuma em runtime e nenhum erro de leitura ou sintaxe. Sete testes próprios e 521 testes da suíte fiscal completa foram aprovados.
+
+## Próximo passo
+
+Integrar o comando à rotina padrão de verificação do projeto sem ativar canais fiscais nem ampliar automaticamente a substituição de identidades existentes.
