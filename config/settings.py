@@ -145,6 +145,7 @@ WSGI_APPLICATION = 'config.wsgi.application'
 # https://docs.djangoproject.com/en/6.0/ref/settings/#databases
 
 if os.getenv("DATABASE_URL") or os.getenv("POSTGRES_DB"):
+    postgres_test_database = (os.getenv("POSTGRES_TEST_DB") or "").strip()
     DATABASES = {
         "default": {
             "ENGINE": "django.db.backends.postgresql",
@@ -156,6 +157,8 @@ if os.getenv("DATABASE_URL") or os.getenv("POSTGRES_DB"):
             "CONN_MAX_AGE": int(os.getenv("POSTGRES_CONN_MAX_AGE", "60")),
         }
     }
+    if postgres_test_database:
+        DATABASES["default"]["TEST"] = {"NAME": postgres_test_database}
 else:
     DATABASES = {
         'default': {

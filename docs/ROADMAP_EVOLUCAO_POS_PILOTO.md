@@ -13,6 +13,58 @@ A frente atual pertence à transição do CNPJ alfanumérico planejada no ciclo 
 
 Novas tarefas devem indicar o item original que atendem, a lacuna concreta e o critério de conclusão antes da implementação. Melhorias opcionais vão para pendências futuras e não substituem automaticamente a próxima entrega. Contagem de testes e quantidade de ciclos não medem conclusão funcional.
 
+## Frente prioritária — integridade crítica pré-piloto
+
+Uma auditoria independente realizada após o ciclo 115 confirmou riscos de integridade
+transacional e de invariantes de domínio que devem ser resolvidos antes do piloto. Nenhum
+item desta frente pode ser marcado concluído apenas por inspeção: são obrigatórios código e
+teste compatíveis com o mecanismo de banco que fornece a proteção.
+
+P1:
+
+- [x] concorrência na finalização da EntradaCompra;
+- [ ] unicidade lógica do DocumentoFiscal por venda/pedido;
+- [ ] segregação de série fiscal por ambiente;
+- [ ] semântica segura da baixa financeira;
+- [ ] reserva/idempotência da transmissão fiscal;
+- [ ] concorrência entre fechamento e operações do caixa;
+- [ ] testes concorrentes reais em PostgreSQL.
+
+P2:
+
+- [ ] parcelas/duplicatas da NF-e;
+- [ ] criptografia do CSC;
+- [ ] constraints de contas originadas por compra/venda;
+- [ ] contrato temporal do snapshot contábil;
+- [ ] CI inicial com PostgreSQL.
+
+O ciclo 115 permanece sendo o ponto exato de retomada da frente CNPJ. O ciclo 116 não será
+iniciado até esta frente P1 atingir estado seguro. Depois da frente de integridade, o trabalho
+retornará exatamente à fase 4 do CNPJ, sem antecipar as fases seguintes.
+
+### P1.1 concluído — 15/09/2026
+
+A causa foi confirmada: `finalizar_entrada_compra` validava o estado e carregava os itens antes
+da transação que aplicava os efeitos. A implementação agora abre a transação antes da leitura
+decisória, bloqueia a `EntradaCompra` com `select_for_update`, revalida o estado após o lock e
+carrega os itens somente então. As validações de fornecedor, conferência, itens, estoque, lote,
+custo, financeiro, pedido de origem e auditoria foram preservadas.
+
+- Estado: concluído com prova concorrente PostgreSQL.
+- Arquivos: `apps/compras/services.py`, `apps/compras/test_concorrencia_finalizacao.py`,
+  `config/settings.py`, `scripts/test_concorrencia_postgresql.ps1` e
+  `docs/TESTES_CONCORRENCIA_POSTGRESQL.md`.
+- Migrações: nenhuma.
+- SQLite: 70 testes de compras, fechamento/fluxo de estoque e efeitos financeiros da compra;
+  resultado `OK`, com um teste ignorado por exigir PostgreSQL.
+- PostgreSQL: um teste em PostgreSQL 18 real, com conta e banco descartáveis, duas conexões
+  simultâneas e resultado `OK`; exatamente uma finalização foi aceita e a outra rejeitada, sem
+  duplicação de estoque, movimentação ou conta financeira. Conta, banco e logs temporários
+  foram removidos após a validação.
+- Riscos residuais: a defesa adicional por constraint de conta/movimento permanece no backlog
+  P2; ela não foi necessária para corrigir a exclusão mútua da finalização.
+- Próximo passo exato: P1.2, unicidade lógica do `DocumentoFiscal` por venda/pedido.
+
 ## Ponto de retomada — ciclo 115, 14/09/2026
 
 Concluída a comparação delimitada da fase 4 entre os formulários atuais de Empresa/Filial e o portão canônico. O observador usa os próprios `EmpresaForm` e `FilialForm`, trabalha sobre cópia da instância em atualização, consulta colisões apenas com `SELECT` e nunca chama `save()`.

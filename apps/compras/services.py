@@ -461,26 +461,30 @@ def vincular_xml_a_pedido_manual(entrada, pedido, *, usuario, supervisor, justif
         return entrada
 
 def finalizar_entrada_compra(entrada, *, supervisor=None, ip=None):
-    entrada = EntradaCompra.objects.select_related("fornecedor", "filial__empresa").get(pk=entrada.pk)
-    if entrada.fornecedor.empresa_id and entrada.fornecedor.empresa_id != entrada.filial.empresa_id:
-        raise ValidationError("Fornecedor informado pertence a outra empresa.")
-    if entrada.status != StatusEntradaCompra.RASCUNHO:
-        raise ValidationError("Apenas entradas em rascunho podem ser finalizadas.")
-    if (
-        entrada.pedido_origem_id
-        and entrada.conferencia_status == StatusConferenciaEntrada.DIVERGENTE
-        and entrada.filial.empresa.bloquear_finalizacao_entrada_divergente
-        and not entrada.conferencia_fisica_em
-    ):
-        raise ValidationError(
-            "A entrada possui divergências. Registre a conferência física antes de finalizar ou ajuste a política da empresa."
-        )
-
-    itens = list(entrada.itens.select_related("produto"))
-    if not itens:
-        raise ValidationError("Inclua ao menos um item antes de finalizar a entrada.")
-
     with transaction.atomic():
+        entrada = (
+            EntradaCompra.objects.select_for_update()
+            .select_related("fornecedor", "filial__empresa")
+            .get(pk=entrada.pk)
+        )
+        if entrada.fornecedor.empresa_id and entrada.fornecedor.empresa_id != entrada.filial.empresa_id:
+            raise ValidationError("Fornecedor informado pertence a outra empresa.")
+        if entrada.status != StatusEntradaCompra.RASCUNHO:
+            raise ValidationError("Apenas entradas em rascunho podem ser finalizadas.")
+        if (
+            entrada.pedido_origem_id
+            and entrada.conferencia_status == StatusConferenciaEntrada.DIVERGENTE
+            and entrada.filial.empresa.bloquear_finalizacao_entrada_divergente
+            and not entrada.conferencia_fisica_em
+        ):
+            raise ValidationError(
+                "A entrada possui divergências. Registre a conferência física antes de finalizar ou ajuste a política da empresa."
+            )
+
+        itens = list(entrada.itens.select_related("produto"))
+        if not itens:
+            raise ValidationError("Inclua ao menos um item antes de finalizar a entrada.")
+
         total_produtos = 0
         for item in itens:
             if item.quantidade <= 0:
