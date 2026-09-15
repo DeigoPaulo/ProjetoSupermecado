@@ -29,6 +29,7 @@ def diagnostico_prontidao_homologacao_goias(configuracao):
     serie = SerieFiscal.objects.filter(
         filial=filial,
         tipo_documento=TipoDocumentoFiscal.NFCE,
+        ambiente=configuracao.ambiente,
         ativo=True,
     ).exists()
     documento_homologacao = DocumentoFiscal.objects.filter(

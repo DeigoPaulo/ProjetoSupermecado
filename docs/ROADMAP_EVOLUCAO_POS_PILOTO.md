@@ -24,7 +24,7 @@ P1:
 
 - [x] concorrência na finalização da EntradaCompra;
 - [x] unicidade lógica do DocumentoFiscal por venda/pedido;
-- [ ] segregação de série fiscal por ambiente;
+- [x] segregação de série fiscal por ambiente;
 - [ ] semântica segura da baixa financeira;
 - [ ] reserva/idempotência da transmissão fiscal;
 - [ ] concorrência entre fechamento e operações do caixa;
@@ -97,6 +97,41 @@ identificadores encontrados, sem escolher ou apagar registros automaticamente.
   protegidos pela constraint, mas a idempotência completa da fila, retransmissão e consulta
   permanece no item P1 específico de reserva/idempotência da transmissão fiscal.
 - Próximo passo exato: P1.3, segregação de série fiscal por ambiente.
+
+### P1.3 concluído — 15/09/2026
+
+A série fiscal agora pertence explicitamente a um ambiente. A chave lógica passou a ser
+filial, tipo de documento, ambiente e série; a unicidade da numeração do
+`DocumentoFiscal` também inclui o ambiente, permitindo que homologação e produção tenham
+sequências juridicamente separadas. Preparação de NFC-e, preparação de NF-e, prontidão,
+listas operacionais e inutilização consultam somente a série do ambiente ativo na
+configuração da filial. A ausência dessa série bloqueia o fluxo antes de reservar número.
+
+A migration fiscal 0052 classifica cada série legada pelo ambiente atual da configuração
+fiscal da filial. Quando não existe configuração, adota homologação como destino seguro.
+Ela não copia, reinicia nem move números automaticamente quando o ambiente for alterado
+depois da migração; a série correspondente deve ser cadastrada conscientemente.
+
+- Estado: concluído com segregação no modelo, serviços, tela, prontidão e inutilização.
+- Arquivos principais: `apps/fiscal/models.py`, `apps/fiscal/services.py`,
+  `apps/fiscal/forms.py`, `apps/fiscal/views.py`, `apps/fiscal/readiness.py`,
+  `apps/fiscal/admin.py`, `templates/fiscal/documentos.html`,
+  `apps/fiscal/migrations/0052_seriefiscal_ambiente.py` e
+  `apps/fiscal/test_serie_ambiente.py`.
+- Migrações: `fiscal.0052`, com classificação de dados legados e alteração das chaves
+  únicas de série e numeração fiscal.
+- Regressão: 120 testes do núcleo fiscal após os ajustes, incluindo emissão, fila,
+  cancelamento, contingência, inutilização e os seis novos cenários; resultado `OK`. Os
+  demais testes de pedidos, vendas e PDV do lote ampliado não apresentaram falhas ligadas
+  à mudança.
+- PostgreSQL: os seis cenários P1.3 passaram em PostgreSQL 18 real com uma base descartável
+  pertencente a uma conta sem `CREATEDB`; mesma série e número coexistiram entre ambientes,
+  duplicidade dentro do mesmo ambiente foi recusada e cada emissão consumiu somente sua
+  sequência. Conta, base e logs temporários foram removidos.
+- Segurança operacional: mudar a configuração da filial de homologação para produção não
+  reaproveita a série anterior; sem série de produção ativa, a emissão e a inutilização
+  falham fechadas.
+- Próximo passo exato: P1.4, semântica segura da baixa financeira.
 
 ## Ponto de retomada — ciclo 115, 14/09/2026
 

@@ -166,7 +166,14 @@ class SerieFiscalForm(forms.ModelForm):
             self.fields["filial"].queryset = self.fields["filial"].queryset.filter(empresa_id=empresa_id)
     class Meta:
         model = SerieFiscal
-        fields = ["filial", "tipo_documento", "serie", "proximo_numero", "ativo"]
+        fields = [
+            "filial",
+            "tipo_documento",
+            "ambiente",
+            "serie",
+            "proximo_numero",
+            "ativo",
+        ]
 
 
 class InutilizacaoNumeracaoFiscalForm(forms.ModelForm):

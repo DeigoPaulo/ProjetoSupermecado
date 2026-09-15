@@ -490,7 +490,7 @@ def _diagnostico_prontidao_fiscal(user):
     configuracoes_qs = configuracoes_para_usuario(user, ConfiguracaoFiscal.objects.select_related("filial"))
     configuracoes = {config.filial_id: config for config in configuracoes_qs}
     series_nfce = {
-        serie.filial_id: serie
+        (serie.filial_id, serie.ambiente): serie
         for serie in series_para_usuario(
             user,
             SerieFiscal.objects.filter(tipo_documento=TipoDocumentoFiscal.NFCE, ativo=True).select_related("filial"),
@@ -520,7 +520,7 @@ def _diagnostico_prontidao_fiscal(user):
         user, Filial.objects.select_related("empresa").order_by("empresa__nome_fantasia", "nome")
     ):
         config = configuracoes.get(filial.id)
-        serie = series_nfce.get(filial.id)
+        serie = series_nfce.get((filial.id, config.ambiente)) if config else None
         pendencias = []
         if not config:
             pendencias.append("Configuração fiscal ausente.")
@@ -744,10 +744,10 @@ def documentos(request):
     )
     configuracoes_qs = configuracoes_para_usuario(request.user)
     configuracoes_por_filial = {config.filial_id: config for config in configuracoes_qs}
-    filiais_com_serie = set(
+    filiais_ambientes_com_serie = set(
         series_para_usuario(
             request.user, SerieFiscal.objects.filter(tipo_documento=TipoDocumentoFiscal.NFCE, ativo=True)
-        ).values_list("filial_id", flat=True)
+        ).values_list("filial_id", "ambiente")
     )
     naturezas_padrao = {}
     for natureza in naturezas_para_usuario(
@@ -767,8 +767,14 @@ def documentos(request):
                 configuracao,
                 naturezas_padrao.get(venda.filial.empresa_id),
             )
-        if venda.filial_id not in filiais_com_serie:
-            pendencias.append("Cadastre uma serie NFC-e ativa para a filial.")
+        if configuracao and (
+            venda.filial_id,
+            configuracao.ambiente,
+        ) not in filiais_ambientes_com_serie:
+            pendencias.append(
+                "Cadastre uma serie NFC-e ativa para a filial no ambiente "
+                f"{configuracao.get_ambiente_display()}."
+            )
         venda.pendencias_fiscais = pendencias
         venda.pronta_fiscal = not pendencias
     logs_pendencia = {}

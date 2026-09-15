@@ -264,18 +264,19 @@
     <h2>Séries fiscais</h2>
     <div class="table-wrapper">
       <table>
-        <thead><tr><th>Filial</th><th>Tipo</th><th>Série</th><th>Próximo</th><th></th></tr></thead>
+        <thead><tr><th>Filial</th><th>Tipo</th><th>Ambiente</th><th>Série</th><th>Próximo</th><th></th></tr></thead>
         <tbody>
           {% for serie in series %}
             <tr>
               <td>{{ serie.filial }}</td>
               <td>{{ serie.get_tipo_documento_display }}</td>
+              <td>{{ serie.get_ambiente_display }}</td>
               <td>{{ serie.serie }}</td>
               <td>{{ serie.proximo_numero }}</td>
               <td><a class="secondary-button" href="{% url 'fiscal:serie_editar' serie.pk %}">Editar</a></td>
             </tr>
           {% empty %}
-            <tr><td colspan="5" class="empty">Nenhuma serie fiscal cadastrada.</td></tr>
+            <tr><td colspan="6" class="empty">Nenhuma serie fiscal cadastrada.</td></tr>
           {% endfor %}
         </tbody>
       </table>

@@ -1243,12 +1243,20 @@ def preparar_documento_venda(venda, usuario, natureza_operacao=None, ip=None):
 
     serie = (
         SerieFiscal.objects.select_for_update()
-        .filter(filial=venda.filial, tipo_documento=TipoDocumentoFiscal.NFCE, ativo=True)
+        .filter(
+            filial=venda.filial,
+            tipo_documento=TipoDocumentoFiscal.NFCE,
+            ambiente=configuracao.ambiente,
+            ativo=True,
+        )
         .order_by("serie")
         .first()
     )
     if not serie:
-        raise ValidationError("Cadastre uma serie NFC-e ativa para a filial.")
+        raise ValidationError(
+            "Cadastre uma serie NFC-e ativa para a filial no ambiente "
+            f"{configuracao.get_ambiente_display()}."
+        )
 
     natureza = natureza_operacao or NaturezaOperacao.objects.filter(
         empresa_id=venda.filial.empresa_id,
@@ -1309,12 +1317,20 @@ def preparar_documento_pedido_online(pedido, usuario, natureza_operacao=None, ip
         raise ValidationError("A configuração fiscal da filial está inativa.")
     serie = (
         SerieFiscal.objects.select_for_update()
-        .filter(filial=pedido.filial, tipo_documento=TipoDocumentoFiscal.NFE, ativo=True)
+        .filter(
+            filial=pedido.filial,
+            tipo_documento=TipoDocumentoFiscal.NFE,
+            ambiente=configuracao.ambiente,
+            ativo=True,
+        )
         .order_by("serie")
         .first()
     )
     if not serie:
-        raise ValidationError("Cadastre uma serie NF-e ativa para a filial.")
+        raise ValidationError(
+            "Cadastre uma serie NF-e ativa para a filial no ambiente "
+            f"{configuracao.get_ambiente_display()}."
+        )
     natureza = natureza_operacao or NaturezaOperacao.objects.filter(
         empresa_id=pedido.filial.empresa_id,
         tipo_documento=TipoDocumentoFiscal.NFE,
@@ -2127,10 +2143,13 @@ def solicitar_inutilizacao_numeracao(
         if not SerieFiscal.objects.select_for_update().filter(
             filial=filial,
             tipo_documento=tipo_documento,
+            ambiente=configuracao.ambiente,
             serie=serie,
             ativo=True,
         ).exists():
-            raise ValidationError("A série informada não está ativa para esta filial e documento.")
+            raise ValidationError(
+                "A série informada não está ativa para esta filial, documento e ambiente."
+            )
 
         cnpj = re.sub(r"\D", "", filial.cnpj or filial.empresa.cnpj or "")
         if len(cnpj) != 14:

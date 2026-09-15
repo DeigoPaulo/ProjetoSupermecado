@@ -149,8 +149,15 @@ class ConfiguracaoFiscalAdmin(admin.ModelAdmin):
 
 @admin.register(SerieFiscal)
 class SerieFiscalAdmin(admin.ModelAdmin):
-    list_display = ["filial", "tipo_documento", "serie", "proximo_numero", "ativo"]
-    list_filter = ["tipo_documento", "ativo"]
+    list_display = [
+        "filial",
+        "tipo_documento",
+        "ambiente",
+        "serie",
+        "proximo_numero",
+        "ativo",
+    ]
+    list_filter = ["tipo_documento", "ambiente", "ativo"]
 
 
 @admin.register(NaturezaOperacao)

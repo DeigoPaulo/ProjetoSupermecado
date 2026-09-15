@@ -190,16 +190,24 @@ class ConfiguracaoFiscal(models.Model):
 class SerieFiscal(models.Model):
     filial = models.ForeignKey("empresas.Filial", on_delete=models.PROTECT, related_name="series_fiscais")
     tipo_documento = models.CharField(max_length=10, choices=TipoDocumentoFiscal.choices, default=TipoDocumentoFiscal.NFCE)
+    ambiente = models.CharField(
+        max_length=20,
+        choices=AmbienteFiscal.choices,
+        default=AmbienteFiscal.HOMOLOGACAO,
+    )
     serie = models.PositiveIntegerField(default=1)
     proximo_numero = models.PositiveIntegerField(default=1)
     ativo = models.BooleanField(default=True)
 
     class Meta:
-        ordering = ["filial__nome", "tipo_documento", "serie"]
-        unique_together = ["filial", "tipo_documento", "serie"]
+        ordering = ["filial__nome", "tipo_documento", "ambiente", "serie"]
+        unique_together = ["filial", "tipo_documento", "ambiente", "serie"]
 
     def __str__(self):
-        return f"{self.get_tipo_documento_display()} serie {self.serie} - {self.filial}"
+        return (
+            f"{self.get_tipo_documento_display()} serie {self.serie} "
+            f"({self.get_ambiente_display()}) - {self.filial}"
+        )
 
 
 class InutilizacaoNumeracaoFiscal(models.Model):
@@ -396,7 +404,13 @@ class DocumentoFiscal(models.Model):
 
     class Meta:
         ordering = ["-criado_em"]
-        unique_together = ["filial", "tipo_documento", "serie", "numero"]
+        unique_together = [
+            "filial",
+            "tipo_documento",
+            "ambiente",
+            "serie",
+            "numero",
+        ]
         constraints = [
             models.UniqueConstraint(
                 fields=["venda"],

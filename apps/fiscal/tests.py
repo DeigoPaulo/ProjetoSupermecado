@@ -398,6 +398,13 @@ class FiscalTests(TestCase):
         )
         salvar_certificado_a1(self.configuracao, _certificado_teste(), "123456")
         SerieFiscal.objects.create(filial=self.filial, tipo_documento=TipoDocumentoFiscal.NFCE, serie=1, proximo_numero=100)
+        SerieFiscal.objects.create(
+            filial=self.filial,
+            tipo_documento=TipoDocumentoFiscal.NFCE,
+            ambiente=AmbienteFiscal.PRODUCAO,
+            serie=1,
+            proximo_numero=100,
+        )
         NaturezaOperacao.objects.create(empresa=self.filial.empresa, descricao="Venda ao consumidor", cfop="5102", tipo_documento=TipoDocumentoFiscal.NFCE)
 
     def test_emissao_rejeita_natureza_de_operacao_de_outra_empresa(self):
@@ -774,7 +781,13 @@ class FiscalTests(TestCase):
         self.assertIn("<xProd>Arroz Branco 5kg</xProd>", documento.xml_conteudo)
         self.assertIsNotNone(documento.xml_gerado_em)
         self.assertTrue(LogAuditoria.objects.filter(modulo="fiscal", acao="PREPARA_DOCUMENTO").exists())
-        self.assertEqual(SerieFiscal.objects.get(filial=self.filial).proximo_numero, 101)
+        self.assertEqual(
+            SerieFiscal.objects.get(
+                filial=self.filial,
+                ambiente=AmbienteFiscal.HOMOLOGACAO,
+            ).proximo_numero,
+            101,
+        )
 
     def test_xml_usa_crt_estruturado_para_regime_normal(self):
         documento = preparar_documento_venda(self.venda, self.user)
@@ -942,7 +955,11 @@ class FiscalTests(TestCase):
         )
         self.assertFalse(DocumentoFiscal.objects.exists())
         self.assertEqual(
-            SerieFiscal.objects.get(filial=self.filial, tipo_documento=TipoDocumentoFiscal.NFCE).proximo_numero,
+            SerieFiscal.objects.get(
+                filial=self.filial,
+                tipo_documento=TipoDocumentoFiscal.NFCE,
+                ambiente=AmbienteFiscal.HOMOLOGACAO,
+            ).proximo_numero,
             100,
         )
 
@@ -1029,7 +1046,13 @@ class FiscalTests(TestCase):
             preparar_documento_venda(self.venda, self.user)
 
         self.assertFalse(DocumentoFiscal.objects.exists())
-        self.assertEqual(SerieFiscal.objects.get(filial=self.filial).proximo_numero, 100)
+        self.assertEqual(
+            SerieFiscal.objects.get(
+                filial=self.filial,
+                ambiente=AmbienteFiscal.HOMOLOGACAO,
+            ).proximo_numero,
+            100,
+        )
 
     def test_nao_prepara_documento_duplicado_para_mesma_venda(self):
         preparar_documento_venda(self.venda, self.user)
@@ -1055,7 +1078,13 @@ class FiscalTests(TestCase):
         self.assertIn("CST ICMS", mensagem)
         self.assertIn("aliquota de ICMS", mensagem)
         self.assertFalse(DocumentoFiscal.objects.exists())
-        self.assertEqual(SerieFiscal.objects.get(filial=self.filial).proximo_numero, 100)
+        self.assertEqual(
+            SerieFiscal.objects.get(
+                filial=self.filial,
+                ambiente=AmbienteFiscal.HOMOLOGACAO,
+            ).proximo_numero,
+            100,
+        )
 
         response = self.client.get("/fiscal/")
         self.assertContains(response, "4 pendencias")
@@ -2571,7 +2600,10 @@ class FiscalTests(TestCase):
         self.assertContains(response, "Transição tributária IBS/CBS")
 
     def test_forms_serie_e_natureza_exibem_secoes_operacionais(self):
-        serie = SerieFiscal.objects.get(filial=self.filial)
+        serie = SerieFiscal.objects.get(
+            filial=self.filial,
+            ambiente=AmbienteFiscal.HOMOLOGACAO,
+        )
         natureza = NaturezaOperacao.objects.get(descricao="Venda ao consumidor")
 
         response_serie = self.client.get(f"/fiscal/series/{serie.pk}/editar/")
@@ -2585,7 +2617,10 @@ class FiscalTests(TestCase):
         self.assertContains(response_natureza, "Use CFOP com 4 digitos")
 
     def test_edicao_de_serie_e_natureza_fiscal_gera_auditoria(self):
-        serie = SerieFiscal.objects.get(filial=self.filial)
+        serie = SerieFiscal.objects.get(
+            filial=self.filial,
+            ambiente=AmbienteFiscal.HOMOLOGACAO,
+        )
         natureza = NaturezaOperacao.objects.get(descricao="Venda ao consumidor")
 
         response_serie = self.client.post(
@@ -2593,6 +2628,7 @@ class FiscalTests(TestCase):
             {
                 "filial": self.filial.pk,
                 "tipo_documento": TipoDocumentoFiscal.NFCE,
+                "ambiente": AmbienteFiscal.HOMOLOGACAO,
                 "serie": 2,
                 "proximo_numero": 150,
                 "ativo": "on",
@@ -2881,6 +2917,14 @@ class InutilizacaoFiscalTests(TestCase):
         SerieFiscal.objects.create(
             filial=self.filial,
             tipo_documento=TipoDocumentoFiscal.NFCE,
+            serie=1,
+            proximo_numero=20,
+            ativo=True,
+        )
+        SerieFiscal.objects.create(
+            filial=self.filial,
+            tipo_documento=TipoDocumentoFiscal.NFCE,
+            ambiente=AmbienteFiscal.PRODUCAO,
             serie=1,
             proximo_numero=20,
             ativo=True,
