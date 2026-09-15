@@ -23,8 +23,16 @@ $env:POSTGRES_PASSWORD = "senha_do_ambiente_de_teste"
 .\scripts\test_concorrencia_postgresql.ps1
 ```
 
+O teste de unicidade fiscal por venda e pedido usa o mesmo ambiente:
+
+```powershell
+.\scripts\test_concorrencia_postgresql.ps1 `
+    -TestLabel "apps.fiscal.test_concorrencia_preparacao.DocumentoFiscalOriginConcurrencyTests"
+```
+
 O script recusa nome de teste sem o prefixo `test_`, recusa usar a mesma base nos dois
-campos, desativa conexões persistentes e executa somente
+campos, desativa conexões persistentes e executa somente o caminho informado em
+`TestLabel`. Sem esse parâmetro, executa
 `apps.compras.test_concorrencia_finalizacao` com duas conexões simultâneas.
 
 Em uma execução comum no SQLite, o teste fica explicitamente ignorado. Um resultado

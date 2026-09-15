@@ -23,7 +23,7 @@ teste compatíveis com o mecanismo de banco que fornece a proteção.
 P1:
 
 - [x] concorrência na finalização da EntradaCompra;
-- [ ] unicidade lógica do DocumentoFiscal por venda/pedido;
+- [x] unicidade lógica do DocumentoFiscal por venda/pedido;
 - [ ] segregação de série fiscal por ambiente;
 - [ ] semântica segura da baixa financeira;
 - [ ] reserva/idempotência da transmissão fiscal;
@@ -64,6 +64,39 @@ custo, financeiro, pedido de origem e auditoria foram preservadas.
 - Riscos residuais: a defesa adicional por constraint de conta/movimento permanece no backlog
   P2; ela não foi necessária para corrigir a exclusão mútua da finalização.
 - Próximo passo exato: P1.2, unicidade lógica do `DocumentoFiscal` por venda/pedido.
+
+### P1.2 concluído — 15/09/2026
+
+A causa foi confirmada: os serviços protegiam a numeração da série, mas verificavam a
+existência de documento antes de bloquear a venda ou o pedido. Agora cada preparação
+recarrega e bloqueia sua origem com `select_for_update` antes da verificação, mantendo o
+lock até a criação do documento, a gravação do XML, o avanço da série e a auditoria.
+
+A migration fiscal 0051 adiciona uma segunda camada no banco: existe no máximo um
+`DocumentoFiscal` não cancelado por venda e no máximo um por pedido online. Documentos
+cancelados continuam no histórico e permitem uma nova preparação, como já previa o fluxo.
+Antes de criar as constraints, a migration procura duplicidades legadas e interrompe com os
+identificadores encontrados, sem escolher ou apagar registros automaticamente.
+
+- Estado: concluído com trava transacional, constraints e prova concorrente PostgreSQL.
+- Arquivos: `apps/fiscal/services.py`, `apps/fiscal/models.py`,
+  `apps/fiscal/migrations/0051_documentofiscal_unicidade_origem.py`,
+  `apps/fiscal/test_concorrencia_preparacao.py`,
+  `scripts/test_concorrencia_postgresql.ps1` e
+  `docs/TESTES_CONCORRENCIA_POSTGRESQL.md`.
+- Migrações: `fiscal.0051`, com pré-verificação não destrutiva de dados existentes.
+- SQLite: regressão de 145 testes dos fluxos fiscais, pedidos online e novas constraints;
+  resultado `OK`. Os dois testes concorrentes permanecem explicitamente ignorados nesse
+  banco, pois SQLite não fornece a semântica de lock exigida.
+- PostgreSQL: dois testes em PostgreSQL 18 real, cada um com duas conexões simultâneas;
+  resultado `OK`. Uma única NFC-e foi preparada para a venda e uma única NF-e para o pedido,
+  com a segunda requisição bloqueada e cada série avançando apenas uma vez.
+- Higiene: contas, bancos e logs temporários usados na prova foram removidos; nenhuma
+  credencial foi gravada no projeto.
+- Riscos residuais: caminhos que escrevam `DocumentoFiscal` diretamente continuam
+  protegidos pela constraint, mas a idempotência completa da fila, retransmissão e consulta
+  permanece no item P1 específico de reserva/idempotência da transmissão fiscal.
+- Próximo passo exato: P1.3, segregação de série fiscal por ambiente.
 
 ## Ponto de retomada — ciclo 115, 14/09/2026
 

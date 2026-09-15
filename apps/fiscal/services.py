@@ -10,7 +10,7 @@ from django.db.models import Q, Subquery
 from django.utils import timezone
 
 from apps.auditoria.models import LogAuditoria
-from apps.vendas.models import TipoDocumentoConsumidor
+from apps.vendas.models import TipoDocumentoConsumidor, Venda
 
 from .adapters import (
     SefazAdapterError,
@@ -1224,6 +1224,11 @@ def validar_preparacao_nfe_pedido(pedido, configuracao, natureza):
 
 @transaction.atomic
 def preparar_documento_venda(venda, usuario, natureza_operacao=None, ip=None):
+    venda = (
+        Venda.objects.select_for_update()
+        .select_related("filial__empresa")
+        .get(pk=venda.pk)
+    )
     documento_existente = venda.documentos_fiscais.exclude(status=StatusDocumentoFiscal.CANCELADO).first()
     if documento_existente:
         raise ValidationError(f"A venda {venda.id} ja possui documento fiscal em andamento.")
@@ -1286,6 +1291,13 @@ def preparar_documento_venda(venda, usuario, natureza_operacao=None, ip=None):
 
 @transaction.atomic
 def preparar_documento_pedido_online(pedido, usuario, natureza_operacao=None, ip=None):
+    from apps.marketplace.models import PedidoOnline
+
+    pedido = (
+        PedidoOnline.objects.select_for_update()
+        .select_related("filial__empresa")
+        .get(pk=pedido.pk)
+    )
     documento_existente = pedido.documentos_fiscais.exclude(status=StatusDocumentoFiscal.CANCELADO).first()
     if documento_existente:
         raise ValidationError(f"O pedido online {pedido.id} ja possui documento fiscal em andamento.")

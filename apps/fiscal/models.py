@@ -397,6 +397,20 @@ class DocumentoFiscal(models.Model):
     class Meta:
         ordering = ["-criado_em"]
         unique_together = ["filial", "tipo_documento", "serie", "numero"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["venda"],
+                condition=models.Q(venda__isnull=False)
+                & ~models.Q(status=StatusDocumentoFiscal.CANCELADO),
+                name="fisc_doc_venda_ativo_uniq",
+            ),
+            models.UniqueConstraint(
+                fields=["pedido_online"],
+                condition=models.Q(pedido_online__isnull=False)
+                & ~models.Q(status=StatusDocumentoFiscal.CANCELADO),
+                name="fisc_doc_pedido_ativo_uniq",
+            ),
+        ]
 
     def __str__(self):
         numero = self.numero or "sem número"

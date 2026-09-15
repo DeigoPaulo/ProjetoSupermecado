@@ -1,4 +1,6 @@
-param()
+param(
+    [string]$TestLabel = "apps.compras.test_concorrencia_finalizacao"
+)
 
 $ErrorActionPreference = "Stop"
 Set-StrictMode -Version Latest
@@ -26,13 +28,16 @@ if ($TestDatabase -notmatch '^test_[A-Za-z0-9_]+$') {
 if ($SourceDatabase.Equals($TestDatabase, [StringComparison]::OrdinalIgnoreCase)) {
     throw "POSTGRES_TEST_DB deve ser diferente de POSTGRES_DB."
 }
+if ($TestLabel -notmatch '^apps\.[A-Za-z0-9_.]+$') {
+    throw "TestLabel deve ser um caminho de teste Django dentro de apps."
+}
 
 [Environment]::SetEnvironmentVariable("DATABASE_URL", $null, "Process")
 [Environment]::SetEnvironmentVariable("POSTGRES_CONN_MAX_AGE", "0", "Process")
 
 Push-Location $ProjectRoot
 try {
-    & $PythonPath manage.py test apps.compras.test_concorrencia_finalizacao --verbosity 2 --noinput
+    & $PythonPath manage.py test $TestLabel --verbosity 2 --noinput
     if ($LASTEXITCODE -ne 0) {
         throw "O teste concorrente PostgreSQL falhou com código $LASTEXITCODE."
     }
