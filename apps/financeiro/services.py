@@ -194,8 +194,13 @@ def baixar_conta(*, conta, usuario, data_pagamento, valor_pago, forma_pagamento=
     conta = ContaFinanceira.objects.select_for_update().get(pk=conta.pk)
     if conta.status != StatusContaFinanceira.ABERTA:
         raise ValidationError("Apenas contas abertas podem receber baixa.")
-    if valor_pago <= 0:
-        raise ValidationError("Valor da baixa deve ser maior que zero.")
+    if valor_pago != conta.valor:
+        raise ValidationError(
+            f"A baixa deve quitar o valor integral da conta (R$ {conta.valor:.2f}). "
+            "Pagamentos parciais ou acima do total ainda não são suportados."
+        )
+    if conta_movimento and conta_movimento.filial_id != conta.filial_id:
+        raise ValidationError("A conta de movimento deve pertencer a mesma filial da conta financeira.")
     conta.status = StatusContaFinanceira.PAGA
     conta.data_pagamento = data_pagamento or timezone.localdate()
     conta.valor_pago = valor_pago
@@ -203,8 +208,6 @@ def baixar_conta(*, conta, usuario, data_pagamento, valor_pago, forma_pagamento=
     conta.conta_movimento = conta_movimento
     conta.save(update_fields=["status", "data_pagamento", "valor_pago", "forma_pagamento", "conta_movimento", "atualizado_em"])
     if conta_movimento:
-        if conta_movimento.filial_id != conta.filial_id:
-            raise ValidationError("A conta de movimento deve pertencer a mesma filial da conta financeira.")
         tipo_lancamento = TipoLancamentoFinanceiro.ENTRADA if conta.tipo == TipoContaFinanceira.RECEBER else TipoLancamentoFinanceiro.SAIDA
         registrar_lancamento(
             conta=conta_movimento,

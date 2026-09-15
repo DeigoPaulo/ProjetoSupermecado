@@ -25,7 +25,7 @@ P1:
 - [x] concorrência na finalização da EntradaCompra;
 - [x] unicidade lógica do DocumentoFiscal por venda/pedido;
 - [x] segregação de série fiscal por ambiente;
-- [ ] semântica segura da baixa financeira;
+- [x] semântica segura da baixa financeira;
 - [ ] reserva/idempotência da transmissão fiscal;
 - [ ] concorrência entre fechamento e operações do caixa;
 - [ ] testes concorrentes reais em PostgreSQL.
@@ -132,6 +132,42 @@ depois da migração; a série correspondente deve ser cadastrada conscientement
   reaproveita a série anterior; sem série de produção ativa, a emissão e a inutilização
   falham fechadas.
 - Próximo passo exato: P1.4, semântica segura da baixa financeira.
+
+### P1.4 concluído — 15/09/2026
+
+O modelo atual de `ContaFinanceira` preserva somente uma data e um valor de pagamento, sem
+histórico de várias baixas. Para não declarar uma conta quitada após pagamento parcial nem
+perder a composição financeira, a semântica segura adotada nesta etapa é baixa exclusivamente
+integral. Pagamentos parciais ou acima do total são recusados até existir um modelo próprio de
+parcelas/baixas, acréscimos, descontos e estornos.
+
+A tela informa o valor integral exigido e valida a entrada antes do envio. O serviço permanece
+como autoridade mesmo quando chamado fora da tela: bloqueia a conta com `select_for_update`,
+revalida o estado, exige igualdade exata entre valor pago e valor da conta e valida a filial da
+conta de movimento antes de qualquer mutação. A constraint de banco admite somente dois
+estados coerentes: conta paga com data e valor integral, ou conta aberta/cancelada sem dados de
+pagamento. A migration interrompe a aplicação se encontrar legado incompatível e não corrige
+valores financeiros automaticamente.
+
+- Estado: concluído com validação de interface, serviço transacional e constraint de banco.
+- Arquivos principais: `apps/financeiro/models.py`, `apps/financeiro/forms.py`,
+  `apps/financeiro/services.py`, `apps/financeiro/views.py`,
+  `templates/financeiro/baixa_form.html`,
+  `apps/financeiro/migrations/0023_conta_baixa_integral_coerente.py` e
+  `apps/financeiro/test_baixa_integral.py`.
+- Migração: `financeiro.0023`, aplicada na base local após pré-verificação; a base existente não
+  continha conta incompatível e nenhum valor foi alterado automaticamente.
+- Testes focados: seis cenários passaram em SQLite e em PostgreSQL 18 real, incluindo quitação
+  integral, recusa de valor parcial e excedente, ausência de efeitos colaterais, mensagem do
+  formulário e bloqueio de gravações inválidas diretamente no banco.
+- PostgreSQL: a prova usou conta sem `CREATEDB` e base descartável; ambas foram removidas após
+  o resultado `OK`, sem credencial gravada no projeto.
+- Regressão financeira: 66 de 67 testes passaram. O teste histórico do pacote contábil falha
+  isoladamente fora do último dia do mês porque compara um fechamento capturado no dia atual
+  com o último dia da competência. A falha não percorre a baixa financeira e corresponde à
+  pendência P2 já registrada como contrato temporal do snapshot contábil; ela não foi mascarada
+  nem corrigida dentro deste item.
+- Próximo passo exato: P1.5, reserva/idempotência da transmissão fiscal.
 
 ## Ponto de retomada — ciclo 115, 14/09/2026
 

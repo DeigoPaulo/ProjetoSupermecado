@@ -227,13 +227,28 @@ class BaixaContaForm(forms.Form):
         help_text="Selecione para registrar a entrada ou saída no livro financeiro.",
     )
 
-    def __init__(self, *args, filial=None, **kwargs):
+    def __init__(self, *args, filial=None, conta=None, **kwargs):
         super().__init__(*args, **kwargs)
+        self.conta = conta
         queryset = ContaMovimentoFinanceiro.objects.filter(ativa=True)
         if filial:
             queryset = queryset.filter(filial=filial)
         self.fields["conta_movimento"].queryset = queryset.select_related("filial")
         self.fields["conta_movimento"].widget.attrs["class"] = "select2-field"
+        if conta:
+            self.fields["valor_pago"].help_text = (
+                f"A baixa deve ser integral: R$ {conta.valor:.2f}. "
+                "Pagamentos parciais ainda não são suportados."
+            )
+
+    def clean_valor_pago(self):
+        valor_pago = self.cleaned_data["valor_pago"]
+        if self.conta and valor_pago != self.conta.valor:
+            raise ValidationError(
+                f"Informe o valor integral da conta: R$ {self.conta.valor:.2f}. "
+                "Pagamentos parciais ou acima do total não são permitidos."
+            )
+        return valor_pago
 
 
 class ContaMovimentoFinanceiroForm(forms.ModelForm):

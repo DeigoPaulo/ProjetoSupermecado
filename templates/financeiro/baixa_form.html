@@ -19,7 +19,7 @@
     <h2>Pagamento / recebimento</h2>
     <div class="form-grid form-grid-inner">
       <label class="form-field"><span>{{ form.data_pagamento.label }}</span>{{ form.data_pagamento }}{{ form.data_pagamento.errors }}</label>
-      <label class="form-field"><span>{{ form.valor_pago.label }}</span>{{ form.valor_pago }}{{ form.valor_pago.errors }}</label>
+      <label class="form-field"><span>{{ form.valor_pago.label }}</span>{{ form.valor_pago }}{{ form.valor_pago.errors }}<small>{{ form.valor_pago.help_text }}</small></label>
       <label class="form-field"><span>{{ form.forma_pagamento.label }}</span>{{ form.forma_pagamento }}{{ form.forma_pagamento.errors }}</label>
       <label class="form-field"><span>{{ form.conta_movimento.label }}</span>{{ form.conta_movimento }}{{ form.conta_movimento.errors }}<small>{{ form.conta_movimento.help_text }}</small></label>
     </div>

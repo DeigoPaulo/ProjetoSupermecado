@@ -184,6 +184,23 @@ class ContaFinanceira(models.Model):
 
     class Meta:
         ordering = ["status", "vencimento", "descricao"]
+        constraints = [
+            models.CheckConstraint(
+                condition=(
+                    models.Q(
+                        status=StatusContaFinanceira.PAGA,
+                        data_pagamento__isnull=False,
+                        valor_pago=models.F("valor"),
+                    )
+                    | models.Q(
+                        status__in=[StatusContaFinanceira.ABERTA, StatusContaFinanceira.CANCELADA],
+                        data_pagamento__isnull=True,
+                        valor_pago__isnull=True,
+                    )
+                ),
+                name="financeiro_conta_baixa_integral_coerente",
+            )
+        ]
 
     def clean(self):
         if self.cliente_id and self.filial_id and self.cliente.empresa_id != self.filial.empresa_id:

@@ -2078,7 +2078,7 @@ def baixar(request, pk):
     next_url = _next_seguro(request)
     initial = {"data_pagamento": timezone.localdate(), "valor_pago": conta.valor}
     if request.method == "POST":
-        form = BaixaContaForm(request.POST, filial=conta.filial)
+        form = BaixaContaForm(request.POST, filial=conta.filial, conta=conta)
         if form.is_valid():
             try:
                 baixar_conta(conta=conta, usuario=request.user, ip=request.META.get("REMOTE_ADDR"), **form.cleaned_data)
@@ -2088,7 +2088,7 @@ def baixar(request, pk):
                 messages.success(request, "Conta baixada com sucesso.")
                 return redirect(next_url)
     else:
-        form = BaixaContaForm(initial=initial, filial=conta.filial)
+        form = BaixaContaForm(initial=initial, filial=conta.filial, conta=conta)
     return render(request, "financeiro/baixa_form.html", {"form": form, "conta": conta, "next_url": next_url})
 
 
