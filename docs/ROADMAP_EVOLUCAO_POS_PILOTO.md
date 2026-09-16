@@ -26,7 +26,7 @@ P1:
 - [x] unicidade lógica do DocumentoFiscal por venda/pedido;
 - [x] segregação de série fiscal por ambiente;
 - [x] semântica segura da baixa financeira;
-- [ ] reserva/idempotência da transmissão fiscal;
+- [x] reserva/idempotência da transmissão fiscal;
 - [ ] concorrência entre fechamento e operações do caixa;
 - [ ] testes concorrentes reais em PostgreSQL.
 
@@ -168,6 +168,45 @@ valores financeiros automaticamente.
   pendência P2 já registrada como contrato temporal do snapshot contábil; ela não foi mascarada
   nem corrigida dentro deste item.
 - Próximo passo exato: P1.5, reserva/idempotência da transmissão fiscal.
+
+### P1.5 concluído — 16/09/2026
+
+A fila já possuía um lease baseado apenas em horário, mas o serviço de transmissão não
+identificava nem validava o proprietário da reserva. Assim, uma chamada manual podia concorrer
+com a fila e um processo antigo podia liberar ou sobrescrever o estado de outro após a expiração
+do lease. Também foi confirmado que a chave genérica de idempotência do contrato não é usada
+pelos adaptadores atuais: a Focus deduplica pela referência determinística do documento e a
+SEFAZ direta trabalha pela chave fiscal. A proteção local, portanto, precisava ser autoritativa.
+
+Cada reserva agora recebe um UUID persistido junto com o horário. A fila entrega esse token aos
+serviços de transmissão, simulação e consulta; somente o proprietário pode aplicar o retorno,
+reagendar ou liberar a reserva. Chamadas manuais adquirem a mesma reserva sob lock, e são
+bloqueadas quando outro processo já controla o documento. Uma constraint exige que horário e
+token existam ou sejam nulos sempre em conjunto.
+
+Antes da chamada externa, o documento passa de forma durável para reconciliação obrigatória.
+Se houver timeout, queda do processo ou retorno desconhecido depois do início do envio, a fila
+consulta a SEFAZ/Focus em vez de retransmitir. Uma resposta isolada de "não localizado" não
+libera novo envio: são exigidas pelo menos duas confirmações consecutivas, reduzindo o risco de
+duplicidade durante propagação do autorizador. Falhas comprovadamente anteriores ao envio
+continuam elegíveis a nova tentativa controlada.
+
+- Estado: concluído com reserva identificada, propriedade condicional e reconciliação de envio
+  incerto.
+- Arquivos principais: `apps/fiscal/models.py`, `apps/fiscal/services.py`,
+  `apps/fiscal/fila.py`, `apps/fiscal/migrations/0053_documentofiscal_reserva_token.py`,
+  `apps/fiscal/test_reserva_transmissao.py` e `apps/fiscal/tests.py`.
+- Migração: `fiscal.0053`, com pré-verificação não destrutiva e constraint de coerência entre
+  horário e token. A base local possuía zero reservas legadas e a migração foi aplicada sem
+  corrigir ou apagar documentos.
+- Regressão: 170 testes do núcleo fiscal, Focus, SEFAZ direta, compatibilidade e reserva passaram
+  em SQLite; o único cenário ignorado exige concorrência real PostgreSQL.
+- PostgreSQL: os cinco cenários P1.5 passaram em PostgreSQL 18, inclusive duas transmissões
+  simultâneas contra um adaptador bloqueado. Houve exatamente uma chamada externa, uma
+  autorização e uma tentativa; a concorrente foi recusada e a reserva terminou limpa.
+- Segurança operacional: nenhuma chamada externa foi realizada, nenhuma flag de rede ou
+  produção foi ativada e nenhuma credencial foi gravada no projeto.
+- Próximo passo exato: P1.6, concorrência entre fechamento e operações do caixa.
 
 ## Ponto de retomada — ciclo 115, 14/09/2026
 

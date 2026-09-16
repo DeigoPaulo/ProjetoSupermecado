@@ -1,6 +1,7 @@
 import hashlib
 import json
 import tempfile
+import uuid
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from unittest.mock import patch
@@ -1435,7 +1436,8 @@ class FiscalTests(TestCase):
         self.configuracao.save(update_fields=["ambiente"])
         documento = preparar_documento_venda(self.venda, self.user)
         documento.transmissao_reservada_em = django_timezone.now()
-        documento.save(update_fields=["transmissao_reservada_em"])
+        documento.transmissao_reserva_token = uuid.uuid4()
+        documento.save(update_fields=["transmissao_reservada_em", "transmissao_reserva_token"])
 
         resumo = processar_fila_fiscal()
 
@@ -1474,6 +1476,7 @@ class FiscalTests(TestCase):
         documento.tentativas_transmissao = 8
         documento.proxima_tentativa_em = django_timezone.now() + timedelta(hours=2)
         documento.transmissao_reservada_em = django_timezone.now()
+        documento.transmissao_reserva_token = uuid.uuid4()
         documento.xml_assinado_em = django_timezone.now()
         documento.certificado_serial_assinatura = "SERIAL-ANTERIOR"
         documento.mensagem_retorno = "Rejeicao fiscal de teste"
@@ -1483,6 +1486,7 @@ class FiscalTests(TestCase):
                 "tentativas_transmissao",
                 "proxima_tentativa_em",
                 "transmissao_reservada_em",
+                "transmissao_reserva_token",
                 "xml_assinado_em",
                 "certificado_serial_assinatura",
                 "mensagem_retorno",
@@ -3134,7 +3138,7 @@ class ConsultaSituacaoFiscalTests(TestCase):
     @override_settings(
         FISCAL_SEFAZ_ADAPTER="apps.fiscal.tests.FakeSefazQueryNotFoundAdapter"
     )
-    def test_nao_localizado_preserva_estado_local(self):
+    def test_nao_localizado_preserva_estado_e_mantem_reenvio_bloqueado(self):
         status_anterior = self.documento.status
         self.documento.aguardando_consulta_sefaz = True
         self.documento.save(update_fields=["aguardando_consulta_sefaz"])
@@ -3143,7 +3147,8 @@ class ConsultaSituacaoFiscalTests(TestCase):
 
         self.assertEqual(resultado.status, "NAO_LOCALIZADO")
         self.assertEqual(documento.status, status_anterior)
-        self.assertFalse(documento.aguardando_consulta_sefaz)
+        self.assertTrue(documento.aguardando_consulta_sefaz)
+        self.assertEqual(documento.confirmacoes_nao_localizado, 1)
         self.assertEqual(documento.tentativas_transmissao, 0)
         self.assertIn("não localizado", documento.mensagem_consulta_sefaz)
 

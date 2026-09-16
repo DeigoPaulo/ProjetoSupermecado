@@ -1,3 +1,4 @@
+import uuid
 from datetime import timedelta
 
 from django.conf import settings
@@ -76,7 +77,8 @@ def documentos_elegiveis_fila(*, simular_homologacao=False, agora=None, queryset
 
 
 def _reservar_documento(documento_id, agora, configuracao):
-    return bool(
+    token = uuid.uuid4()
+    reservado = bool(
         DocumentoFiscal.objects.filter(
             pk=documento_id,
             status__in=STATUS_FILA,
@@ -96,8 +98,12 @@ def _reservar_documento(documento_id, agora, configuracao):
             Q(transmissao_reservada_em__isnull=True)
             | Q(transmissao_reservada_em__lt=agora - timedelta(seconds=configuracao["lease_segundos"]))
         )
-        .update(transmissao_reservada_em=agora)
+        .update(
+            transmissao_reservada_em=agora,
+            transmissao_reserva_token=token,
+        )
     )
+    return token if reservado else None
 
 
 def diagnostico_fila_fiscal(queryset=None):
@@ -169,6 +175,7 @@ def reagendar_documento_fiscal(documento, usuario, motivo, ip=None):
     documento.confirmacoes_nao_localizado = 0
     documento.proxima_tentativa_em = timezone.now()
     documento.transmissao_reservada_em = None
+    documento.transmissao_reserva_token = None
     documento.xml_assinado_em = None
     documento.certificado_serial_assinatura = ""
     documento.save(
@@ -179,6 +186,7 @@ def reagendar_documento_fiscal(documento, usuario, motivo, ip=None):
             "confirmacoes_nao_localizado",
             "proxima_tentativa_em",
             "transmissao_reservada_em",
+            "transmissao_reserva_token",
             "xml_assinado_em",
             "certificado_serial_assinatura",
             "atualizado_em",
@@ -221,7 +229,8 @@ def retomar_consultas_documento_fiscal(documento, usuario, motivo, ip=None):
     documento.confirmacoes_nao_localizado = 0
     documento.proxima_tentativa_em = timezone.now()
     documento.transmissao_reservada_em = None
-    documento.save(update_fields=["tentativas_consulta_sefaz", "confirmacoes_nao_localizado", "proxima_tentativa_em", "transmissao_reservada_em", "atualizado_em"])
+    documento.transmissao_reserva_token = None
+    documento.save(update_fields=["tentativas_consulta_sefaz", "confirmacoes_nao_localizado", "proxima_tentativa_em", "transmissao_reservada_em", "transmissao_reserva_token", "atualizado_em"])
     LogAuditoria.objects.create(
         usuario=usuario,
         modulo="fiscal",
@@ -266,14 +275,15 @@ def processar_fila_fiscal(*, limite=50, simular_homologacao=False, forcar=False)
 
     for documento_id in list(elegiveis.values_list("id", flat=True)[:limite]):
         agora = timezone.now()
-        if not _reservar_documento(documento_id, agora, configuracao):
+        reserva_token = _reservar_documento(documento_id, agora, configuracao)
+        if not reserva_token:
             resumo["ignorados"] += 1
             continue
         documento = DocumentoFiscal.objects.select_related("usuario").get(pk=documento_id)
         try:
             if documento.aguardando_consulta_sefaz:
                 resultado, _ = consultar_situacao_documento(
-                    documento, documento.usuario
+                    documento, documento.usuario, reserva_token=reserva_token
                 )
                 resumo["processados"] += 1
                 resumo["consultados"] += 1
@@ -281,26 +291,35 @@ def processar_fila_fiscal(*, limite=50, simular_homologacao=False, forcar=False)
                     resumo["reconciliados"] += 1
                     if resultado.status == StatusDocumentoFiscal.EMITIDO:
                         resumo["emitidos"] += 1
-                    DocumentoFiscal.objects.filter(pk=documento_id).update(
+                    DocumentoFiscal.objects.filter(
+                        pk=documento_id, transmissao_reserva_token=reserva_token
+                    ).update(
                         proxima_tentativa_em=None,
                         transmissao_reservada_em=None,
+                        transmissao_reserva_token=None,
                     )
                 elif (
                     resultado.tentativas_consulta_sefaz
                     >= configuracao["max_consultas"]
                 ):
-                    DocumentoFiscal.objects.filter(pk=documento_id).update(
+                    DocumentoFiscal.objects.filter(
+                        pk=documento_id, transmissao_reserva_token=reserva_token
+                    ).update(
                         proxima_tentativa_em=None,
                         transmissao_reservada_em=None,
+                        transmissao_reserva_token=None,
                     )
                     resumo["consultas_esgotadas"] += 1
                 else:
                     atraso = atraso_proxima_tentativa(
                         resultado.tentativas_consulta_sefaz, configuracao
                     )
-                    DocumentoFiscal.objects.filter(pk=documento_id).update(
+                    DocumentoFiscal.objects.filter(
+                        pk=documento_id, transmissao_reserva_token=reserva_token
+                    ).update(
                         proxima_tentativa_em=timezone.now() + timedelta(seconds=atraso),
                         transmissao_reservada_em=None,
+                        transmissao_reserva_token=None,
                     )
                     resumo["reagendados"] += 1
                 continue
@@ -309,31 +328,40 @@ def processar_fila_fiscal(*, limite=50, simular_homologacao=False, forcar=False)
                 and simular_homologacao
             ):
                 resultado = transmitir_documento_simulado(
-                    documento, documento.usuario
+                    documento, documento.usuario, reserva_token=reserva_token
                 )
             else:
                 resultado = transmitir_documento_sefaz(
-                    documento, documento.usuario
+                    documento, documento.usuario, reserva_token=reserva_token
                 )
             resumo["processados"] += 1
             if resultado.status == StatusDocumentoFiscal.EMITIDO:
                 resumo["emitidos"] += 1
-                DocumentoFiscal.objects.filter(pk=documento_id).update(
+                DocumentoFiscal.objects.filter(
+                    pk=documento_id, transmissao_reserva_token=reserva_token
+                ).update(
                     proxima_tentativa_em=None,
                     transmissao_reservada_em=None,
+                    transmissao_reserva_token=None,
                 )
             elif resultado.status == StatusDocumentoFiscal.REJEITADO:
                 resumo["rejeitados"] += 1
-                DocumentoFiscal.objects.filter(pk=documento_id).update(
+                DocumentoFiscal.objects.filter(
+                    pk=documento_id, transmissao_reserva_token=reserva_token
+                ).update(
                     proxima_tentativa_em=None,
                     transmissao_reservada_em=None,
+                    transmissao_reserva_token=None,
                 )
             else:
                 resultado.refresh_from_db(fields=["tentativas_transmissao"])
                 atraso = atraso_proxima_tentativa(resultado.tentativas_transmissao, configuracao)
-                DocumentoFiscal.objects.filter(pk=documento_id).update(
+                DocumentoFiscal.objects.filter(
+                    pk=documento_id, transmissao_reserva_token=reserva_token
+                ).update(
                     proxima_tentativa_em=timezone.now() + timedelta(seconds=atraso),
                     transmissao_reservada_em=None,
+                    transmissao_reserva_token=None,
                 )
                 resumo["reagendados"] += 1
         except Exception as exc:
@@ -354,13 +382,16 @@ def processar_fila_fiscal(*, limite=50, simular_homologacao=False, forcar=False)
                 and documento.tentativas_consulta_sefaz >= configuracao["max_consultas"]
             )
             atraso = atraso_proxima_tentativa(tentativas, configuracao)
-            DocumentoFiscal.objects.filter(pk=documento_id).update(
+            DocumentoFiscal.objects.filter(
+                pk=documento_id, transmissao_reserva_token=reserva_token
+            ).update(
                 proxima_tentativa_em=(
                     None
                     if consulta_esgotada
                     else timezone.now() + timedelta(seconds=atraso)
                 ),
                 transmissao_reservada_em=None,
+                transmissao_reserva_token=None,
             )
             resumo["processados"] += 1
             if consulta_esgotada:

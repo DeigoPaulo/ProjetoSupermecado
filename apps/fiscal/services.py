@@ -1,4 +1,5 @@
 import re
+import uuid
 from datetime import timedelta
 from decimal import Decimal, ROUND_HALF_UP
 from xml.etree import ElementTree as ET
@@ -69,6 +70,56 @@ def _resultado_evidencia(resultado):
         )
         if hasattr(resultado, campo)
     }
+
+
+def _reserva_transmissao(documento, reserva_token=None):
+    """Confirma uma reserva da fila ou cria uma reserva exclusiva para chamada manual."""
+    gerenciada_pela_fila = reserva_token is not None
+    if gerenciada_pela_fila:
+        try:
+            token = uuid.UUID(str(reserva_token))
+        except (TypeError, ValueError, AttributeError) as exc:
+            raise ValidationError("A reserva da operação fiscal é inválida.") from exc
+        if documento.transmissao_reserva_token != token:
+            raise ValidationError(
+                "A reserva da operação fiscal não pertence a este processo. Atualize a situação antes de continuar."
+            )
+        return token, True
+
+    agora = timezone.now()
+    lease_segundos = max(
+        30, int(getattr(settings, "FISCAL_AUTO_TRANSMIT_LEASE_SECONDS", 300))
+    )
+    reserva_ativa = bool(
+        documento.transmissao_reserva_token
+        and documento.transmissao_reservada_em
+        and documento.transmissao_reservada_em
+        >= agora - timedelta(seconds=lease_segundos)
+    )
+    if reserva_ativa:
+        raise ValidationError(
+            "Este documento já está reservado por outro processo fiscal. Aguarde ou consulte a situação."
+        )
+
+    token = uuid.uuid4()
+    documento.transmissao_reservada_em = agora
+    documento.transmissao_reserva_token = token
+    documento.save(
+        update_fields=[
+            "transmissao_reservada_em",
+            "transmissao_reserva_token",
+            "atualizado_em",
+        ]
+    )
+    return token, False
+
+
+def _confirmar_reserva_transmissao(documento, token):
+    if documento.transmissao_reserva_token != token:
+        raise ValidationError(
+            "A reserva da operação fiscal expirou ou foi assumida por outro processo. "
+            "Consulte a situação antes de repetir a operação."
+        )
 
 CODIGOS_UF_IBGE = {
     "RO": "11",
@@ -1525,7 +1576,7 @@ def ativar_contingencia_svc(documento, usuario, justificativa, ip=None):
 
 
 @transaction.atomic
-def transmitir_documento_simulado(documento, usuario, ip=None):
+def transmitir_documento_simulado(documento, usuario, ip=None, reserva_token=None):
     documento = DocumentoFiscal.objects.select_for_update().get(pk=documento.pk)
     status_origem = documento.status
     if status_origem not in {StatusDocumentoFiscal.PRONTO, StatusDocumentoFiscal.CONTINGENCIA}:
@@ -1536,6 +1587,7 @@ def transmitir_documento_simulado(documento, usuario, ip=None):
         )
     if documento.ambiente != "HOMOLOGACAO":
         raise ValidationError("Transmissao simulada permitida somente em homologação. Em produção, configure o adaptador SEFAZ oficial.")
+    token, gerenciada_pela_fila = _reserva_transmissao(documento, reserva_token)
     if not documento.xml_conteudo:
         salvar_xml_documento(documento)
 
@@ -1546,7 +1598,13 @@ def transmitir_documento_simulado(documento, usuario, ip=None):
     documento.tentativas_transmissao += 1
     documento.ultima_tentativa_em = timezone.now()
     documento.mensagem_retorno = "Transmissao simulada em homologação. Substituir pelo adaptador oficial da SEFAZ em produção."
-    documento.save(update_fields=["chave_acesso", "protocolo", "status", "tentativas_transmissao", "ultima_tentativa_em", "mensagem_retorno", "atualizado_em"])
+    update_fields = ["chave_acesso", "protocolo", "status", "tentativas_transmissao", "ultima_tentativa_em", "mensagem_retorno", "atualizado_em"]
+    if not gerenciada_pela_fila:
+        _confirmar_reserva_transmissao(documento, token)
+        documento.transmissao_reservada_em = None
+        documento.transmissao_reserva_token = None
+        update_fields.extend(["transmissao_reservada_em", "transmissao_reserva_token"])
+    documento.save(update_fields=update_fields)
     LogAuditoria.objects.create(
         usuario=usuario,
         modulo="fiscal",
@@ -1560,7 +1618,7 @@ def transmitir_documento_simulado(documento, usuario, ip=None):
 
 
 
-def transmitir_documento_sefaz(documento, usuario, ip=None):
+def transmitir_documento_sefaz(documento, usuario, ip=None, reserva_token=None):
     with transaction.atomic():
         documento = (
             DocumentoFiscal.objects.select_for_update()
@@ -1582,6 +1640,7 @@ def transmitir_documento_sefaz(documento, usuario, ip=None):
             raise ValidationError(
                 "Consulte a situação da chave na SEFAZ antes de transmitir novamente."
             )
+        token, gerenciada_pela_fila = _reserva_transmissao(documento, reserva_token)
         if not documento.xml_conteudo:
             salvar_xml_documento(documento)
         documento.tentativas_transmissao += 1
@@ -1592,7 +1651,7 @@ def transmitir_documento_sefaz(documento, usuario, ip=None):
             f"{documento.xml_gerado_em.isoformat() if documento.xml_gerado_em else 'sem-xml'}"
         )
 
-    envio_realizado = False
+    envio_iniciado = False
     try:
         adapter = carregar_adaptador_sefaz(filial=documento.filial)
         if not bool(getattr(adapter, "assina_xml", False)):
@@ -1608,13 +1667,23 @@ def transmitir_documento_sefaz(documento, usuario, ip=None):
             canal=_canal_evidencia_fiscal(documento),
             chave_acesso=documento.chave_acesso,
         )
+        with transaction.atomic():
+            reservado = DocumentoFiscal.objects.select_for_update().get(pk=documento.pk)
+            _confirmar_reserva_transmissao(reservado, token)
+            reservado.aguardando_consulta_sefaz = True
+            reservado.mensagem_retorno = (
+                "Envio iniciado. A situação deve ser consultada antes de qualquer retransmissão."
+            )
+            reservado.save(
+                update_fields=["aguardando_consulta_sefaz", "mensagem_retorno", "atualizado_em"]
+            )
+        envio_iniciado = True
         retorno = adapter.transmitir(
             documento=documento,
             xml=documento.xml_conteudo,
             idempotency_key=idempotency_key,
             ambiente=documento.ambiente,
         )
-        envio_realizado = True
         resultado = normalizar_retorno_transmissao(retorno)
         registrar_evidencia_fiscal(
             documento=documento,
@@ -1659,9 +1728,14 @@ def transmitir_documento_sefaz(documento, usuario, ip=None):
             "mensagem_retorno": mensagem,
             "atualizado_em": timezone.now(),
         }
-        if envio_realizado:
+        if envio_iniciado:
             campos_falha["aguardando_consulta_sefaz"] = True
-        DocumentoFiscal.objects.filter(pk=documento.pk).update(**campos_falha)
+        if not gerenciada_pela_fila:
+            campos_falha["transmissao_reservada_em"] = None
+            campos_falha["transmissao_reserva_token"] = None
+        DocumentoFiscal.objects.filter(
+            pk=documento.pk, transmissao_reserva_token=token
+        ).update(**campos_falha)
         LogAuditoria.objects.create(
             usuario=usuario,
             modulo="fiscal",
@@ -1675,7 +1749,18 @@ def transmitir_documento_sefaz(documento, usuario, ip=None):
 
     with transaction.atomic():
         documento = DocumentoFiscal.objects.select_for_update().get(pk=documento.pk)
+        _confirmar_reserva_transmissao(documento, token)
         if documento.status == StatusDocumentoFiscal.EMITIDO:
+            if not gerenciada_pela_fila:
+                documento.transmissao_reservada_em = None
+                documento.transmissao_reserva_token = None
+                documento.save(
+                    update_fields=[
+                        "transmissao_reservada_em",
+                        "transmissao_reserva_token",
+                        "atualizado_em",
+                    ]
+                )
             return documento
 
         documento.mensagem_retorno = resultado.mensagem
@@ -1695,8 +1780,7 @@ def transmitir_documento_sefaz(documento, usuario, ip=None):
         else:
             documento.aguardando_consulta_sefaz = True
             documento.status = status_origem
-        documento.save(
-            update_fields=[
+        update_fields = [
                 "status",
                 "chave_acesso",
                 "protocolo",
@@ -1708,7 +1792,11 @@ def transmitir_documento_sefaz(documento, usuario, ip=None):
                 "confirmacoes_nao_localizado",
                 "atualizado_em",
             ]
-        )
+        if not gerenciada_pela_fila:
+            documento.transmissao_reservada_em = None
+            documento.transmissao_reserva_token = None
+            update_fields.extend(["transmissao_reservada_em", "transmissao_reserva_token"])
+        documento.save(update_fields=update_fields)
 
     acao = {
         "AUTORIZADO": "TRANSMISSAO_SEFAZ_AUTORIZADA",
@@ -1921,13 +2009,15 @@ def cancelar_documento(documento, usuario, motivo, ip=None):
 
 
 
-def consultar_situacao_documento(documento, usuario, ip=None):
+def consultar_situacao_documento(documento, usuario, ip=None, reserva_token=None):
     with transaction.atomic():
         documento = DocumentoFiscal.objects.select_for_update().get(pk=documento.pk)
         if documento.status in {StatusDocumentoFiscal.RASCUNHO, StatusDocumentoFiscal.INUTILIZADO}:
             raise ValidationError("Este documento não possui situação consultável na SEFAZ.")
         if len(documento.chave_acesso) != 44 or not documento.chave_acesso.isdigit():
             raise ValidationError("Informe uma chave de acesso fiscal válida com 44 dígitos.")
+        token, gerenciada_pela_fila = _reserva_transmissao(documento, reserva_token)
+        aguardando_consulta_antes = documento.aguardando_consulta_sefaz
         chave_acesso = documento.chave_acesso
         idempotency_key = f"fiscal-consulta:{documento.pk}:{chave_acesso}"
         documento.tentativas_consulta_sefaz += 1
@@ -1980,12 +2070,18 @@ def consultar_situacao_documento(documento, usuario, ip=None):
             if isinstance(exc, (ImproperlyConfigured, SefazAdapterError, ValidationError))
             else "Falha na comunicação com o adaptador SEFAZ durante a consulta."
         )
-        DocumentoFiscal.objects.filter(pk=documento.pk).update(
+        campos_falha = dict(
             consulta_sefaz_em=timezone.now(),
             mensagem_consulta_sefaz=mensagem,
             confirmacoes_nao_localizado=0,
             atualizado_em=timezone.now(),
         )
+        if not gerenciada_pela_fila:
+            campos_falha["transmissao_reservada_em"] = None
+            campos_falha["transmissao_reserva_token"] = None
+        DocumentoFiscal.objects.filter(
+            pk=documento.pk, transmissao_reserva_token=token
+        ).update(**campos_falha)
         LogAuditoria.objects.create(
             usuario=usuario,
             modulo="fiscal",
@@ -2000,6 +2096,7 @@ def consultar_situacao_documento(documento, usuario, ip=None):
     agora = timezone.now()
     with transaction.atomic():
         documento = DocumentoFiscal.objects.select_for_update().get(pk=documento.pk)
+        _confirmar_reserva_transmissao(documento, token)
         documento.consulta_sefaz_em = agora
         documento.mensagem_consulta_sefaz = resultado.mensagem
         confirmacoes_anteriores = documento.confirmacoes_nao_localizado
@@ -2047,7 +2144,7 @@ def consultar_situacao_documento(documento, usuario, ip=None):
             documento.protocolo = resultado.protocolo
             update_fields.extend(["status", "protocolo", "aguardando_consulta_sefaz"])
         elif resultado.status == "NAO_LOCALIZADO":
-            if documento_em_contingencia_offline(documento):
+            if aguardando_consulta_antes or documento_em_contingencia_offline(documento):
                 confirmacoes_exigidas = max(
                     2,
                     int(
@@ -2078,6 +2175,10 @@ def consultar_situacao_documento(documento, usuario, ip=None):
         else:
             documento.aguardando_consulta_sefaz = True
             update_fields.append("aguardando_consulta_sefaz")
+        if not gerenciada_pela_fila:
+            documento.transmissao_reservada_em = None
+            documento.transmissao_reserva_token = None
+            update_fields.extend(["transmissao_reservada_em", "transmissao_reserva_token"])
         documento.save(update_fields=update_fields)
 
     acao = {

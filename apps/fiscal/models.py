@@ -388,6 +388,7 @@ class DocumentoFiscal(models.Model):
     ultima_tentativa_em = models.DateTimeField(null=True, blank=True)
     proxima_tentativa_em = models.DateTimeField(null=True, blank=True)
     transmissao_reservada_em = models.DateTimeField(null=True, blank=True)
+    transmissao_reserva_token = models.UUIDField(null=True, blank=True, editable=False)
     usuario = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.PROTECT, related_name="documentos_fiscais")
     criado_em = models.DateTimeField(auto_now_add=True)
     atualizado_em = models.DateTimeField(auto_now=True)
@@ -423,6 +424,19 @@ class DocumentoFiscal(models.Model):
                 condition=models.Q(pedido_online__isnull=False)
                 & ~models.Q(status=StatusDocumentoFiscal.CANCELADO),
                 name="fisc_doc_pedido_ativo_uniq",
+            ),
+            models.CheckConstraint(
+                condition=(
+                    models.Q(
+                        transmissao_reservada_em__isnull=True,
+                        transmissao_reserva_token__isnull=True,
+                    )
+                    | models.Q(
+                        transmissao_reservada_em__isnull=False,
+                        transmissao_reserva_token__isnull=False,
+                    )
+                ),
+                name="fisc_doc_reserva_transmissao_coerente",
             ),
         ]
 
