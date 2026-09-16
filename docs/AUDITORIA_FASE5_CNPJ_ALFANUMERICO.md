@@ -23,18 +23,19 @@ O núcleo isolado já conhece a estrutura oficial da chave:
 - DV calculado por módulo 11 usando o valor ASCII menos 48;
 - código de barras Code 128 híbrido, alternando conjuntos C e A quando houver letras.
 
-Esse núcleo ainda não é usado pelo fluxo operacional. Foram confirmados 11 pontos da Fase 5:
-oito incompatíveis, dois compatíveis apenas de forma condicional e uma capacidade ausente.
+Desde o ciclo 122, esse núcleo é usado pela formação numérica operacional e pela validação
+pré-transmissão. Foram confirmados 11 pontos da Fase 5: três compatíveis offline, cinco
+incompatíveis, dois compatíveis apenas de forma condicional e uma capacidade ausente.
 Três pontos dos canais da Fase 6 também foram inventariados sem alteração.
 
 | Ordem | Componente | Estado | Diagnóstico |
 |---|---|---|---|
-| 1 | Formação da chave | Incompatível | Remove letras do CNPJ antes de montar a chave. |
-| 1 | DV da chave | Incompatível | Converte cada posição com int, aceitando somente números. |
+| 1 | Formação da chave | Compatível offline | Preserva o CNPJ canônico; o fluxo numérico usa o núcleo. |
+| 1 | DV da chave | Compatível offline | Usa módulo 11 com valor ASCII menos 48. |
 | 2 | XML NFC-e | Incompatível | Serializa o emitente após normalização somente numérica. |
 | 2 | XML NF-e | Incompatível | Repete a mesma normalização no pedido online. |
 | 2 | Id de infNFe | Condicional | Preserva a chave recebida, mas depende da formação correta. |
-| 3 | Validação do XML | Incompatível | Exige chave de 44 dígitos. |
+| 3 | Validação do XML | Compatível offline | Valida estrutura, posições e DV alfanuméricos. |
 | 3 | Retorno dos adaptadores | Incompatível | Rejeita autorização ou consulta com letras. |
 | 3 | Simulação/cancelamento/consulta | Incompatível | Os serviços ainda exigem somente dígitos. |
 | 4 | QR Code NFC-e | Incompatível | Filtra a chave e descarta todas as letras. |
@@ -50,12 +51,11 @@ pontos pertencem à Fase 6 e não devem ser misturados à integração offline d
 
 ## Sequência segura
 
-1. Centralizar formação e validação da chave no algoritmo canônico já testado.
-2. Integrar o CNPJ canônico aos XMLs offline de NFC-e e NF-e.
-3. Trocar as validações numéricas internas sem relaxar tamanho, posição ou DV.
-4. Adequar o QR Code da NFC-e e validar os dois modos previstos pelo projeto.
-5. Implementar e testar o Code 128 híbrido no DANFE.
-6. Somente depois homologar Focus e SEFAZ direta separadamente.
+1. Integrar o CNPJ canônico aos XMLs offline de NFC-e e NF-e.
+2. Trocar as validações numéricas internas sem relaxar tamanho, posição ou DV.
+3. Adequar o QR Code da NFC-e e validar os dois modos previstos pelo projeto.
+4. Implementar e testar o Code 128 híbrido no DANFE.
+5. Somente depois homologar Focus e SEFAZ direta separadamente.
 
-O próximo ciclo deve executar apenas o item 1 em testes offline, mantendo rede e produção
-desligadas.
+O próximo ciclo deve integrar chave e tag CNPJ nos dois XMLs offline como uma mudança atômica,
+mantendo rede e produção desligadas.

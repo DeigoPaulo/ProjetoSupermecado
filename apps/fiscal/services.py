@@ -28,6 +28,7 @@ from .cbenef import codigos_cbenef_go_validos
 from .cest import queryset_codigos_cest_vigentes, validar_cest
 from .cfop import validar_cfop
 from .cenarios_tributarios import pendencias_cenario_fiscal_go
+from .chave_acesso import construir_chave_acesso
 from .ncm import queryset_codigos_ncm_vigentes, validar_ncm
 from .validacoes import validar_xml_pre_transmissao
 from .qrcode_nfce import gerar_url_qrcode_nfce
@@ -156,17 +157,13 @@ def _somente_digitos(valor):
     return re.sub(r"\D", "", valor or "")
 
 
-def _digito_verificador_chave(chave_sem_dv):
-    pesos = [2, 3, 4, 5, 6, 7, 8, 9]
-    soma = sum(int(digito) * pesos[indice % len(pesos)] for indice, digito in enumerate(reversed(chave_sem_dv)))
-    resultado = 11 - (soma % 11)
-    return "0" if resultado >= 10 else str(resultado)
-
-
 def _chave_acesso_documento(documento, filial, modelo, tipo_emissao):
-    cnpj = _somente_digitos(filial.cnpj or filial.empresa.cnpj)
-    if len(cnpj) != 14:
-        raise ValidationError("CNPJ do emitente deve possuir 14 digitos para gerar a chave fiscal.")
+    cnpj = str(filial.cnpj or filial.empresa.cnpj or "").strip()
+    if any(caractere.isalpha() for caractere in cnpj):
+        raise ValidationError(
+            "A formação da chave já aceita CNPJ alfanumérico, mas a serialização XML "
+            "do emitente ainda não foi integrada. A emissão permanece bloqueada."
+        )
     codigo_uf = CODIGOS_UF_IBGE.get(filial.uf)
     if not codigo_uf:
         raise ValidationError("UF do emitente inválida para gerar a chave fiscal.")
@@ -174,8 +171,20 @@ def _chave_acesso_documento(documento, filial, modelo, tipo_emissao):
     serie = f"{documento.serie:03d}"
     numero = f"{documento.numero:09d}"
     codigo_numerico = f"{documento.pk:08d}"[-8:]
-    base = f"{codigo_uf}{data}{cnpj}{modelo}{serie}{numero}{tipo_emissao}{codigo_numerico}"
-    return f"{base}{_digito_verificador_chave(base)}", codigo_numerico
+    try:
+        chave = construir_chave_acesso(
+            codigo_uf=codigo_uf,
+            aamm=data,
+            cnpj_emitente=cnpj,
+            modelo=modelo,
+            serie=serie,
+            numero=numero,
+            tipo_emissao=tipo_emissao,
+            codigo_numerico=codigo_numerico,
+        )
+    except ValueError as exc:
+        raise ValidationError(str(exc)) from exc
+    return chave, codigo_numerico
 
 
 def documento_em_contingencia_offline(documento):

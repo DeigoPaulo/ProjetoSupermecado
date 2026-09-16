@@ -3,7 +3,7 @@
 from pathlib import Path
 
 
-CONTRATO_AUDITORIA_FASE5_CNPJ = "alphanumeric_cnpj_phase5_static_audit_v1"
+CONTRATO_AUDITORIA_FASE5_CNPJ = "alphanumeric_cnpj_phase5_static_audit_v2"
 
 
 PONTOS = (
@@ -11,24 +11,24 @@ PONTOS = (
         "codigo": "CHAVE_FORMACAO_EMITENTE",
         "escopo": "FASE_5",
         "componente": "CHAVE_ACESSO",
-        "arquivo": "apps/fiscal/services.py",
+        "arquivo": "apps/fiscal/chave_acesso.py",
         "evidencias": (
-            "cnpj = _somente_digitos(filial.cnpj or filial.empresa.cnpj)",
-            "CNPJ do emitente deve possuir 14 digitos",
+            "cnpj = canonicalizar_cnpj",
+            "calcular_dv_chave_acesso(base)",
         ),
-        "estado": "INCOMPATIVEL",
+        "estado": "COMPATIVEL_OFFLINE",
         "ordem_correcao": 1,
-        "motivo": "A formação operacional descarta letras antes de compor a chave.",
+        "motivo": "A formação central preserva o CNPJ canônico e valida a chave resultante.",
     },
     {
         "codigo": "CHAVE_DIGITO_VERIFICADOR",
         "escopo": "FASE_5",
         "componente": "CHAVE_ACESSO",
-        "arquivo": "apps/fiscal/services.py",
-        "evidencias": ("sum(int(digito)",),
-        "estado": "INCOMPATIVEL",
+        "arquivo": "apps/fiscal/chave_acesso.py",
+        "evidencias": ("calcular_dv_chave_acesso(base)",),
+        "estado": "COMPATIVEL_OFFLINE",
         "ordem_correcao": 1,
-        "motivo": "O DV operacional pressupõe que todas as 43 posições sejam numéricas.",
+        "motivo": "O DV central usa o algoritmo ASCII menos 48 já comprovado.",
     },
     {
         "codigo": "XML_NFCE_CNPJ_EMITENTE",
@@ -72,12 +72,12 @@ PONTOS = (
         "componente": "VALIDACAO",
         "arquivo": "apps/fiscal/validacoes.py",
         "evidencias": (
-            "not chave.isdigit()",
-            "_digito_verificador_valido(chave)",
+            "normalizar_chave_acesso(documento.chave_acesso or",
+            "if not chave:",
         ),
-        "estado": "INCOMPATIVEL",
+        "estado": "COMPATIVEL_OFFLINE",
         "ordem_correcao": 3,
-        "motivo": "A validação do XML exige chave exclusivamente numérica.",
+        "motivo": "A validação central aceita apenas a estrutura e o DV oficiais.",
     },
     {
         "codigo": "VALIDACAO_RETORNO_ADAPTADORES",
@@ -206,17 +206,19 @@ def auditar_fase5_cnpj(raiz_projeto):
             "condicionais_fase5": sum(
                 item["estado"] == "COMPATIVEL_CONDICIONAL" for item in fase5
             ),
+            "compativeis_offline_fase5": sum(
+                item["estado"] == "COMPATIVEL_OFFLINE" for item in fase5
+            ),
             "pontos_fase6_inventariados": len(fase6),
             "todos_achados_confirmados": all(item["achado_confirmado"] for item in resultados),
             "altera_codigo_operacional": False,
         },
         "sequencia_recomendada": [
-            "CENTRALIZAR_FORMACAO_E_VALIDACAO_DA_CHAVE",
             "INTEGRAR_CNPJ_CANONICO_AOS_XML_NFCE_E_NFE",
             "SUBSTITUIR_VALIDACOES_NUMERICAS_NOS_FLUXOS_INTERNOS",
             "ADEQUAR_QR_CODE_NFCE",
             "IMPLEMENTAR_DANFE_CODE128_HIBRIDO",
             "HOMOLOGAR_FOCUS_E_SEFAZ_DIRETA_SEPARADAMENTE",
         ],
-        "proximo_passo": "IMPLEMENTAR_NUCLEO_OPERACIONAL_DA_CHAVE_EM_TESTES_OFFLINE",
+        "proximo_passo": "INTEGRAR_CNPJ_CANONICO_AOS_XML_NFCE_E_NFE_OFFLINE",
     }

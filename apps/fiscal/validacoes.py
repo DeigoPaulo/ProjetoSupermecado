@@ -7,17 +7,10 @@ from django.core.exceptions import ValidationError
 from lxml import etree
 
 from .models import TipoDocumentoFiscal
+from .chave_acesso import normalizar_chave_acesso
 
 NFE_NS = "http://www.portalfiscal.inf.br/nfe"
 DSIG_NS = "http://www.w3.org/2000/09/xmldsig#"
-
-
-def _digito_verificador_valido(chave):
-    pesos = [2, 3, 4, 5, 6, 7, 8, 9]
-    soma = sum(int(digito) * pesos[indice % len(pesos)] for indice, digito in enumerate(reversed(chave[:-1])))
-    resultado = 11 - (soma % 11)
-    esperado = "0" if resultado >= 10 else str(resultado)
-    return chave[-1] == esperado
 
 
 def _arquivo_schema_configurado():
@@ -95,8 +88,8 @@ def validar_xml_pre_transmissao(documento, adapter):
     except ET.ParseError as exc:
         raise ValidationError("XML fiscal malformado.") from exc
 
-    chave = documento.chave_acesso or ""
-    if len(chave) != 44 or not chave.isdigit() or not _digito_verificador_valido(chave):
+    chave = normalizar_chave_acesso(documento.chave_acesso or "")
+    if not chave:
         raise ValidationError("Chave de acesso fiscal inválida.")
 
     inf_nfe = raiz.find(f"{{{NFE_NS}}}infNFe")

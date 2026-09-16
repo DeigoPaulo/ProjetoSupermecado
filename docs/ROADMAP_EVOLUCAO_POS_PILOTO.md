@@ -411,8 +411,8 @@ docs/CONSULTA_CNPJ_CEP.md. Migrações: nenhuma.
 ## Ponto de retomada — ciclo 121, 16/09/2026
 
 Concluída a auditoria estática delimitada da Fase 5 pelo contrato
-alphanumeric_cnpj_phase5_static_audit_v1. O núcleo isolado já calcula e valida a chave oficial
-alfanumérica, mas ainda não é consumido pelo caminho operacional.
+alphanumeric_cnpj_phase5_static_audit_v1. Esse registro representa o snapshot do ciclo 121; o
+estado vivo evoluiu para v2 no ciclo 122.
 
 - [x] Confirmar que a formação operacional da chave remove letras do CNPJ.
 - [x] Confirmar que o cálculo operacional do DV pressupõe 43 posições numéricas.
@@ -435,6 +435,35 @@ alfanumérica, mas ainda não é consumido pelo caminho operacional.
 
 Arquivos: apps/fiscal/auditoria_fase5_cnpj.py,
 apps/fiscal/test_auditoria_fase5_cnpj.py e
+docs/AUDITORIA_FASE5_CNPJ_ALFANUMERICO.md. Migrações: nenhuma.
+
+## Ponto de retomada — ciclo 122, 16/09/2026
+
+Criado o núcleo central fiscal_access_key_alphanumeric_v1 para formar e validar chaves de
+acesso NF-e/NFC-e. Ele reutiliza a canonicalização oficial do CNPJ e o cálculo de DV por ASCII
+menos 48, validando separadamente todas as posições numéricas da chave.
+
+- [x] Preservar exatamente o resultado anterior para CNPJ e chave exclusivamente numéricos.
+- [x] Formar a mesma chave alfanumérica a partir de CNPJ puro, mascarado ou em minúsculas.
+- [x] Exigir 44 posições, letras somente na faixa reservada ao CNPJ e DV válido.
+- [x] Integrar o gerador numérico real ao núcleo central.
+- [x] Integrar a validação pré-transmissão ao normalizador central, com prova XML offline.
+- [x] Bloquear explicitamente a geração operacional com emitente alfanumérico enquanto a tag
+  CNPJ dos XMLs ainda não estiver integrada, evitando chave e XML divergentes.
+- [x] Evoluir a auditoria viva para alphanumeric_cnpj_phase5_static_audit_v2: formação, DV e
+  validação central estão compatíveis offline; permanecem cinco incompatibilidades, dois
+  pontos condicionais e o código de barras híbrido ausente.
+- [x] Validar 10 testes finais do núcleo/auditoria e 582 testes da suíte fiscal completa, com
+  três ignorados por requisitos específicos de ambiente; check geral sem erros e nenhuma
+  migration pendente.
+- [x] Manter QR Code, DANFE, retornos dos adaptadores, Focus, SEFAZ direta, DF-e, credenciais,
+  certificados, flags, rede e produção inalterados.
+- [ ] Próximo passo: integrar de forma atômica o CNPJ canônico à formação da chave e às tags
+  emit/CNPJ dos XMLs offline de NFC-e e NF-e, removendo somente então o bloqueio preventivo.
+
+Arquivos principais: apps/fiscal/chave_acesso.py, apps/fiscal/services.py,
+apps/fiscal/validacoes.py, apps/fiscal/test_chave_acesso.py,
+apps/fiscal/auditoria_fase5_cnpj.py e
 docs/AUDITORIA_FASE5_CNPJ_ALFANUMERICO.md. Migrações: nenhuma.
 
 ## Ponto de retomada — ciclo 114, 14/09/2026
