@@ -8,7 +8,7 @@ A frente atual pertence à transição do CNPJ alfanumérico planejada no ciclo 
 - [x] Desdobramentos técnicos acrescentados nos ciclos 109–113: catálogo de teste, adoção, controle de importações, regressão e exclusão do pacote. Estes trabalhos apoiam a frente original, mas não concluem a integração cadastral.
 - [ ] Fase 4 original: escrita canônica por fronteira. Estado real: parcial; apenas o portão isolado está pronto. Nenhum cadastro operacional utiliza a nova escrita.
 - [x] Próxima entrega delimitada da fase 4 concluída no ciclo 115: comparação isolada com os formulários de Empresa/Filial, divergências e colisões comprovadas e pontos de integração identificados, sem persistência.
-- [ ] Após essa comparação, atualizar a pendência de integração da própria fase 4, identificando o que depende de correção de dados e o que pode ser validado localmente. Não declarar a fase completa apenas por existir um adaptador de observação.
+- [x] Após essa comparação, atualizar a pendência de integração da própria fase 4, identificando o que depende de correção de dados e o que pode ser validado localmente. A classificação foi concluída no ciclo 116, sem declarar a fase completa.
 - [ ] Fases 5 e 6 originais: chave/XML/QR Code/DANFE e homologação dos canais continuam pendentes.
 
 Novas tarefas devem indicar o item original que atendem, a lacuna concreta e o critério de conclusão antes da implementação. Melhorias opcionais vão para pendências futuras e não substituem automaticamente a próxima entrega. Contagem de testes e quantidade de ciclos não medem conclusão funcional.
@@ -257,6 +257,29 @@ Concluída a comparação delimitada da fase 4 entre os formulários atuais de E
 - [x] Validar sete testes próprios, 39 testes focados do ciclo, 77 testes focados acumulados e 538 testes da suíte fiscal completa.
 - [x] Manter modelos, formulários operacionais, migrações, dados, credenciais, certificados, ambientes e emissão inalterados.
 - [ ] Fase 4 continua parcial: revisar os dados existentes e definir a integração cadastral; a comparação isolada não autoriza escrita operacional.
+
+## Ponto de retomada — ciclo 116, 16/09/2026
+
+Criado `alphanumeric_cnpj_company_branch_integration_plan_v1`. A auditoria protegida foi
+repetida sobre a base local e confirmou o mesmo resultado agregado: 17 DVs inválidos, uma
+colisão bloqueante, seis equivalências esperadas Empresa–Filial, uma identidade válida, um CPF
+ignorado corretamente e um campo opcional vazio. Nenhum identificador completo foi exibido.
+
+- [x] Separar bloqueios de dados legados das validações que podem avançar localmente.
+- [x] Classificar os 17 DVs inválidos e a colisão como correção manual, nunca automática.
+- [x] Preservar as seis equivalências Empresa–Filial como situação esperada.
+- [x] Liberar somente testes locais de criação válida, DV inválido, atualização equivalente,
+  colisão canônica, legado inválido e troca de identidade.
+- [x] Manter persistência canônica, constraints e migração de conteúdo bloqueadas.
+- [x] Manter credenciais, certificados, Focus, SEFAZ direta, homologação, produção e emissão
+  fora desta decisão.
+- [ ] Fase 4 continua parcial: integrar e provar o portão nos `clean_cnpj` reais de Empresa e
+  Filial sem correção silenciosa do legado nem troca de identidade sem controle.
+
+Arquivos: `apps/fiscal/plano_integracao_escrita_cnpj.py` e
+`apps/fiscal/test_plano_integracao_escrita_cnpj.py`. Documentação:
+[PLANO_INTEGRACAO_ESCRITA_CNPJ_EMPRESA_FILIAL.md](PLANO_INTEGRACAO_ESCRITA_CNPJ_EMPRESA_FILIAL.md).
+Migrações: nenhuma.
 
 Arquivos: `apps/fiscal/adaptador_sombra_escrita_cnpj.py` e `apps/fiscal/test_adaptador_sombra_escrita_cnpj.py`. Documentação: [ADAPTADOR_SOMBRA_ESCRITA_CNPJ.md](ADAPTADOR_SOMBRA_ESCRITA_CNPJ.md). Migrações: nenhuma.
 
