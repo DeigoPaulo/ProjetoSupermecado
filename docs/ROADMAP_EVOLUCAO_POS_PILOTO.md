@@ -310,6 +310,27 @@ locais ainda aguardam decisão manual.
 - [ ] Fase 4 continua parcial: avaliar e integrar separadamente Cliente pessoa jurídica e
   Fornecedor pessoa jurídica, respeitando campos mistos CPF/CNPJ e o escopo da Empresa.
 
+## Ponto de retomada — ciclo 118, 16/09/2026
+
+Criado `alphanumeric_cnpj_customer_supplier_shadow_write_adapter_v1`. A comparação usa os
+formulários reais sem `save`, preserva CPF do Cliente fora do portão de CNPJ, mantém os campos
+vazios opcionais e verifica colisões canônicas somente dentro da Empresa.
+
+- [x] Separar CPF de Cliente do caminho de CNPJ alfanumérico.
+- [x] Preservar documento vazio opcional em Cliente e Fornecedor.
+- [x] Confirmar concordância estrutural para CNPJ válido mascarado.
+- [x] Confirmar que ambos os formulários ainda aceitam DV de CNPJ inválido.
+- [x] Detectar colisões canônicas de Cliente PJ e Fornecedor PJ no escopo da Empresa.
+- [x] Executar somente `SELECT`, sem salvar ou alterar instâncias existentes.
+- [x] Proteger CPF, CNPJ e identificadores internos no diagnóstico.
+- [ ] Integrar o portão nos formulários reais, mantendo CPF fora da canonicalização de CNPJ e
+  aplicando as mesmas travas de legado inválido e troca de identidade do ciclo 117.
+
+Arquivos: `apps/fiscal/adaptador_sombra_escrita_cnpj_partes.py` e
+`apps/fiscal/test_adaptador_sombra_escrita_cnpj_partes.py`. Documentação:
+[ADAPTADOR_SOMBRA_ESCRITA_CNPJ_CLIENTE_FORNECEDOR.md](ADAPTADOR_SOMBRA_ESCRITA_CNPJ_CLIENTE_FORNECEDOR.md).
+Migrações: nenhuma.
+
 Arquivos principais: `apps/empresas/forms.py`, `apps/empresas/test_cnpj_canonico_forms.py`,
 `apps/empresas/tests.py`, `apps/fiscal/adaptador_sombra_escrita_cnpj.py` e
 `apps/fiscal/test_adaptador_sombra_escrita_cnpj.py`. Migrações: nenhuma.
