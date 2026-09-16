@@ -185,23 +185,31 @@ document.addEventListener("DOMContentLoaded", function () {
     });
   }
 
+  var documentosEntrada = window.SupermercadoDocumentos;
+  var normalizarCnpjEntrada = documentosEntrada.normalizarCnpjEntrada;
+  var formatarCnpjEntrada = documentosEntrada.formatarCnpjEntrada;
+  var formatarCpfCnpjEntrada = documentosEntrada.formatarCpfCnpjEntrada;
+
+  function aplicarFormatacaoDocumento(seletor, formatador) {
+    document.querySelectorAll(seletor).forEach(function (campo) {
+      if (campo.dataset.documentoFormatado === "1") return;
+      campo.dataset.documentoFormatado = "1";
+      campo.addEventListener("input", function () {
+        this.value = formatador(this.value);
+      });
+      campo.value = formatador(campo.value);
+    });
+  }
+
   function aplicarMascaras() {
+    aplicarFormatacaoDocumento(".mask-cnpj, #id_cnpj, #cnpj", formatarCnpjEntrada);
+    aplicarFormatacaoDocumento(".mask-cpf-cnpj, #id_cpf_cnpj, #cpf_cnpj", formatarCpfCnpjEntrada);
     if (typeof window.jQuery === "undefined" || !window.jQuery.fn.mask) {
       window.setTimeout(aplicarMascaras, 100);
       return;
     }
 
     var $ = window.jQuery;
-    var cpfCnpjBehavior = function (val) {
-      return val.replace(/\D/g, "").length <= 11 ? "000.000.000-009" : "00.000.000/0000-00";
-    };
-    var cpfCnpjOptions = {
-      onKeyPress: function (val, e, field, options) {
-        field.mask(cpfCnpjBehavior.apply({}, arguments), options);
-      },
-    };
-
-    $(".mask-cpf-cnpj, #id_cpf_cnpj, #cpf_cnpj, #id_cnpj, #cnpj").mask(cpfCnpjBehavior, cpfCnpjOptions);
     $(".mask-phone, #id_telefone, #telefone").mask("(00) 00000-0000");
     $(".mask-cep, #id_cep, #cep").mask("00000-000");
     $(".mask-money").mask("#.##0,00", { reverse: true });
@@ -714,16 +722,18 @@ document.addEventListener("DOMContentLoaded", function () {
       if (!lookupUrl) return;
       var tipo = event.currentTarget.getAttribute("data-lookup-kind");
       var input = tipo === "cnpj" ? cnpjInput : cepInput;
-      var digits = input ? (input.value || "").replace(/\D/g, "") : "";
+      var valorConsulta = tipo === "cnpj"
+        ? normalizarCnpjEntrada(input ? input.value : "")
+        : (input ? (input.value || "").replace(/\D/g, "") : "");
       var expectedLength = tipo === "cnpj" ? 14 : 8;
-      if (digits.length !== expectedLength) {
-        setFeedback(tipo === "cnpj" ? "Informe um CNPJ com 14 dígitos." : "Informe um CEP com 8 dígitos.", true);
+      if (valorConsulta.length !== expectedLength) {
+        setFeedback(tipo === "cnpj" ? "Informe um CNPJ válido com 14 caracteres." : "Informe um CEP com 8 dígitos.", true);
         if (input) input.focus();
         return;
       }
       buttons.forEach(function (button) { button.disabled = true; });
       setFeedback(tipo === "cnpj" ? "Consultando CNPJ..." : "Consultando CEP...", false);
-      fetch(lookupUrl + "?" + tipo + "=" + encodeURIComponent(digits), { headers: { "Accept": "application/json" } })
+      fetch(lookupUrl + "?" + tipo + "=" + encodeURIComponent(valorConsulta), { headers: { "Accept": "application/json" } })
         .then(function (response) {
           return response.json().then(function (payload) {
             if (!response.ok) throw new Error(payload.mensagem || "Não foi possível consultar o cadastro.");

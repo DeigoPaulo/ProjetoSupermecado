@@ -84,7 +84,7 @@ class EmpresaForm(forms.ModelForm):
             "is_active",
         ]
         widgets = {
-            "cnpj": forms.TextInput(attrs={"class": "mask-cpf-cnpj", "data-lookup-target": "cnpj"}),
+            "cnpj": forms.TextInput(attrs={"class": "mask-cnpj", "data-lookup-target": "cnpj"}),
             "telefone": forms.TextInput(attrs={"class": "mask-phone"}),
             "cep": forms.TextInput(attrs={"class": "mask-cep", "data-lookup-target": "cep", "placeholder": "00000-000"}),
             "endereco": forms.HiddenInput(),
@@ -146,7 +146,7 @@ class FilialForm(forms.ModelForm):
             "is_active",
         ]
         widgets = {
-            "cnpj": forms.TextInput(attrs={"class": "mask-cpf-cnpj", "data-lookup-target": "cnpj"}),
+            "cnpj": forms.TextInput(attrs={"class": "mask-cnpj", "data-lookup-target": "cnpj"}),
             "telefone": forms.TextInput(attrs={"class": "mask-phone"}),
             "cep": forms.TextInput(attrs={"class": "mask-cep", "data-lookup-target": "cep", "placeholder": "00000-000"}),
             "endereco": forms.HiddenInput(),

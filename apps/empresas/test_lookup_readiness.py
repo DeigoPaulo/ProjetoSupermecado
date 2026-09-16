@@ -31,6 +31,7 @@ class ConsultaCadastroReadinessTests(TestCase):
 
     @override_settings(
         CADASTRO_CNPJ_PROVIDER_URL="https://cadastro.example/cnpj/{cnpj}",
+        CADASTRO_CNPJ_PROVIDER_SUPORTA_ALFANUMERICO=True,
         CADASTRO_CEP_PROVIDER_URL="https://cep.example/{cep}",
         CADASTRO_LOOKUP_TIMEOUT_SEGUNDOS=3,
     )
@@ -40,5 +41,6 @@ class ConsultaCadastroReadinessTests(TestCase):
         conteudo = saida.getvalue()
         self.assertIn("cadastro_lookup_readiness_v1", conteudo)
         self.assertIn('"pronto_homologacao": true', conteudo)
+        self.assertIn('"cnpj_alfanumerico_suportado": true', conteudo)
         self.assertNotIn("cadastro.example", conteudo)
         self.assertNotIn("cep.example", conteudo)

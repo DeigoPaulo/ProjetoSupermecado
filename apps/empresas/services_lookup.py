@@ -14,6 +14,9 @@ def _url_https_valida(valor: str) -> bool:
 
 def diagnostico_prontidao_consulta_cadastro() -> dict:
     provider_cnpj = getattr(settings, "CADASTRO_CNPJ_PROVIDER_URL", "")
+    provider_cnpj_suporta_alfanumerico = getattr(
+        settings, "CADASTRO_CNPJ_PROVIDER_SUPORTA_ALFANUMERICO", False
+    )
     provider_cep = getattr(settings, "CADASTRO_CEP_PROVIDER_URL", "")
     timeout = getattr(settings, "CADASTRO_LOOKUP_TIMEOUT_SEGUNDOS", 5)
     cnpj_configurado = bool(provider_cnpj)
@@ -75,6 +78,7 @@ def diagnostico_prontidao_consulta_cadastro() -> dict:
             "cnpj_configurado": cnpj_configurado,
             "cep_configurado": cep_configurado,
             "cnpj_https": cnpj_https,
+            "cnpj_alfanumerico_suportado": provider_cnpj_suporta_alfanumerico,
             "cep_https": cep_https,
             "timeout_segundos": timeout,
             "modo_operacao": "externo_com_fallback_local" if cnpj_configurado or cep_configurado else "local_offline",
@@ -82,9 +86,10 @@ def diagnostico_prontidao_consulta_cadastro() -> dict:
         "fallback_local": True,
         "consultas": {
             "cnpj": {
-                "validacao": "calculo_digitos_verificadores",
-                "mascara": "00.000.000/0000-00",
+                "validacao": "cnpj_alfanumerico_com_dv_oficial",
+                "mascara": "AA.AAA.AAA/AAAA-00",
                 "provedor_configurado": cnpj_configurado,
+                "provedor_suporta_alfanumerico": provider_cnpj_suporta_alfanumerico,
             },
             "cep": {
                 "validacao": "8_digitos",

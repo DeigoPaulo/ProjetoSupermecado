@@ -8,10 +8,12 @@ from .compatibilidade_matriz_xsd import construir_compatibilidade_matriz_xsd
 from .especificacao_emit_devolucao import construir_especificacao_emit_devolucao
 from .evidencia_cnpj_alfanumerico import construir_evidencia_cnpj_alfanumerico
 from .estrategia_normalizacao_cnpj import (
+    CONTRATO_ESTADO_ATUAL_INTEGRACAO_CNPJ,
     analisar_identidades_cnpj,
     calcular_dv_chave_acesso,
     calcular_dv_cnpj,
     canonicalizar_cnpj,
+    construir_estado_atual_integracao_cnpj,
     construir_estrategia_normalizacao_cnpj,
     validar_chave_acesso,
     validar_dv_cnpj,
@@ -93,6 +95,27 @@ class EstrategiaNormalizacaoCNPJTests(SimpleTestCase):
         self.assertTrue(all(not item["execucao_operacional_liberada"] for item in conteudo["fases"]))
         self.assertEqual(conteudo["fases"][3]["estado"], "CONCLUIDA_ISOLADA_SEM_CONSUMIDORES")
         self.assertTrue(all(valor is False for valor in conteudo["politica"].values()))
+
+    def test_preserva_snapshot_v1_e_expoe_estado_corrente_v2(self):
+        resultado_v1 = self.resultado()["conteudo"]
+        atual = construir_estado_atual_integracao_cnpj()
+
+        self.assertEqual(
+            resultado_v1["contrato"], "alphanumeric_cnpj_canonicalization_strategy_v1"
+        )
+        self.assertFalse(resultado_v1["conclusao"]["consumidor_operacional_alterado"])
+        self.assertEqual(atual["contrato"], CONTRATO_ESTADO_ATUAL_INTEGRACAO_CNPJ)
+        self.assertEqual(
+            atual["fase_4_cadastral"]["estado"],
+            "CONCLUIDA_NAS_FRONTEIRAS_CADASTRAIS_E_INTERFACE",
+        )
+        self.assertEqual(len(atual["fase_4_cadastral"]["consumidores"]), 4)
+        self.assertEqual(
+            atual["banco"]["unicidade_canonica_transacional"],
+            "PENDENTE_SANEAMENTO_LEGADO",
+        )
+        self.assertEqual(atual["fases_posteriores"]["estado"], "PENDENTES")
+        self.assertFalse(atual["fases_posteriores"]["producao_liberada"])
 
     def test_recusa_evidencia_e_contrato_adulterados(self):
         evidencia = self.evidencia()

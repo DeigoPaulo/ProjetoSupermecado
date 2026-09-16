@@ -1,4 +1,4 @@
-"""Estrategia pura de normalizacao do CNPJ alfa, ainda sem consumidores operacionais."""
+"""Snapshot v1 da estratégia e estado vivo v2 da integração do CNPJ alfanumérico."""
 
 import re
 
@@ -9,6 +9,7 @@ from .evidencia_cnpj_alfanumerico import (
 
 
 CONTRATO_ESTRATEGIA_NORMALIZACAO_CNPJ = "alphanumeric_cnpj_canonicalization_strategy_v1"
+CONTRATO_ESTADO_ATUAL_INTEGRACAO_CNPJ = "alphanumeric_cnpj_integration_state_v2"
 CONTRATO_VALIDACAO_ESTRATEGIA_NORMALIZACAO_CNPJ = (
     "alphanumeric_cnpj_canonicalization_strategy_validation_v1"
 )
@@ -118,6 +119,30 @@ def validar_chave_acesso(valor):
         return False
     chave = valor.strip().upper()
     return bool(PADRAO_CHAVE.fullmatch(chave)) and chave[-1] == calcular_dv_chave_acesso(chave[:-1])
+
+
+def construir_estado_atual_integracao_cnpj():
+    """Estado vivo; o contrato v1 permanece como snapshot histórico da estratégia."""
+    return {
+        "contrato": CONTRATO_ESTADO_ATUAL_INTEGRACAO_CNPJ,
+        "fase_4_cadastral": {
+            "estado": "CONCLUIDA_NAS_FRONTEIRAS_CADASTRAIS_E_INTERFACE",
+            "consumidores": ["EMPRESA", "FILIAL", "CLIENTE_PJ", "FORNECEDOR_PJ"],
+            "entrada_web_alfanumerica": True,
+            "lookup_local_canonico": True,
+            "backend_autoritativo_para_dv_e_colisao": True,
+        },
+        "banco": {
+            "unicidade_canonica_transacional": "PENDENTE_SANEAMENTO_LEGADO",
+            "bloqueios_legados_conhecidos": 18,
+            "migracao_destrutiva_liberada": False,
+        },
+        "fases_posteriores": {
+            "estado": "PENDENTES",
+            "consumidores": ["CHAVE_ACESSO", "XML", "QR_CODE", "DANFE", "FOCUS", "SEFAZ_DIRETA"],
+            "producao_liberada": False,
+        },
+    }
 
 
 def analisar_identidades_cnpj(registros):

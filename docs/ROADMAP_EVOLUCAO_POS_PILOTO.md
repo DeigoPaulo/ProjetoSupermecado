@@ -6,7 +6,7 @@ A frente atual pertence à transição do CNPJ alfanumérico planejada no ciclo 
 
 - [x] Normalizador, auditoria local, leitura comparativa e preparação pura de escrita implementados e testados.
 - [x] Desdobramentos técnicos acrescentados nos ciclos 109–113: catálogo de teste, adoção, controle de importações, regressão e exclusão do pacote. Estes trabalhos apoiam a frente original, mas não concluem a integração cadastral.
-- [x] Fase 4 original: escrita canônica por fronteira concluída nos ciclos 117 e 119 para Empresa, Filial, Cliente PJ e Fornecedor PJ. Os 18 bloqueios legados permanecem separados para correção manual antes de constraints ou migração de conteúdo.
+- [x] Fase 4 original: escrita canônica por fronteira concluída nos ciclos 117 e 119 para Empresa, Filial, Cliente PJ e Fornecedor PJ; a interface e o lookup foram fechados no ciclo 120. Os 18 bloqueios legados permanecem separados para correção manual antes de constraints ou migração de conteúdo.
 - [x] Próxima entrega delimitada da fase 4 concluída no ciclo 115: comparação isolada com os formulários de Empresa/Filial, divergências e colisões comprovadas e pontos de integração identificados, sem persistência.
 - [x] Após essa comparação, atualizar a pendência de integração da própria fase 4, identificando o que depende de correção de dados e o que pode ser validado localmente. A classificação foi concluída no ciclo 116, sem declarar a fase completa.
 - [ ] Fases 5 e 6 originais: chave/XML/QR Code/DANFE e homologação dos canais continuam pendentes.
@@ -37,6 +37,9 @@ P2:
 - [ ] constraints de contas originadas por compra/venda;
 - [ ] contrato temporal do snapshot contábil;
 - [ ] CI inicial com PostgreSQL.
+- [ ] defesa em profundidade da origem do DocumentoFiscal: garantir no banco exatamente
+  uma origem comercial permitida por fluxo, impedindo simultaneamente venda + pedido e a
+  ausência de ambas, após revisar os fluxos que possam criar documentos sem origem.
 
 O ciclo 115 permanece sendo o ponto exato de retomada da frente CNPJ. O ciclo 116 não será
 iniciado até esta frente P1 atingir estado seguro. Depois da frente de integridade, o trabalho
@@ -365,6 +368,45 @@ Arquivos principais: `apps/empresas/forms.py`, `apps/empresas/test_cnpj_canonico
 `apps/fiscal/test_adaptador_sombra_escrita_cnpj.py`. Migrações: nenhuma.
 
 Arquivos: `apps/fiscal/adaptador_sombra_escrita_cnpj.py` e `apps/fiscal/test_adaptador_sombra_escrita_cnpj.py`. Documentação: [ADAPTADOR_SOMBRA_ESCRITA_CNPJ.md](ADAPTADOR_SOMBRA_ESCRITA_CNPJ.md). Migrações: nenhuma.
+
+## Ponto de retomada — ciclo 120, 16/09/2026
+
+Fechado o restante da Fase 4 nas fronteiras de interface e consulta cadastral. A causa era a
+normalização exclusivamente numérica no JavaScript e no endpoint: a máscara compartilhada e o
+botão de consulta usavam remoção de todo caractere não numérico, enquanto a busca local repetia
+essa comparação. Isso podia apagar letras válidas antes de o backend canônico recebê-las.
+
+- [x] Separar visualmente campos exclusivos de CNPJ dos campos mistos CPF/CNPJ.
+- [x] Preservar letras durante a digitação, convertê-las para maiúsculas e aplicar a
+  apresentação AA.AAA.AAA/AAAA-DD, mantendo os dois últimos caracteres numéricos.
+- [x] Manter CPF numérico com a apresentação 000.000.000-00 e CNPJ numérico legado com a
+  apresentação já conhecida.
+- [x] Enviar ao lookup o CNPJ canônico sem descartar letras e manter o backend como autoridade
+  de formato e DV.
+- [x] Comparar Empresa e Filial localmente pela identidade canônica válida.
+- [x] Não chamar provider externo com CNPJ alfanumérico enquanto o contrato configurado não
+  declarar suporte; exibir mensagem clara e preservar o cadastro manual.
+- [x] Preservar o contrato histórico alphanumeric_cnpj_canonicalization_strategy_v1 e criar
+  alphanumeric_cnpj_integration_state_v2 para representar o estado corrente.
+- [x] Manter dados legados inalterados e nenhuma migration. A unicidade canônica transacional
+  no banco continua pendente até o saneamento consciente dos 18 bloqueios conhecidos.
+- [x] Auditar DocumentoFiscal: o modelo possui unicidade por venda e por pedido, mas não
+  possui constraint que exija exatamente uma origem. A defesa em profundidade foi registrada
+  como P2 e não foi aplicada sem revisar todos os fluxos.
+- [x] Inventariar sem alterar os consumidores posteriores que ainda assumem CNPJ/chave
+  exclusivamente numéricos em geração fiscal, validação/transporte, DF-e, devolução, QR Code,
+  Focus e SEFAZ direta.
+- [x] Validar 157 testes da regressão cadastral/CNPJ e 572 testes da suíte fiscal ampla
+  (três ignorados por requisitos específicos de ambiente), além do check geral sem erros e
+  da confirmação de nenhuma migration pendente.
+- [ ] Próximo passo: Fase 5 — auditoria delimitada da formação da chave de acesso, XML, QR Code
+  e DANFE diante do CNPJ alfanumérico, sem ativar Focus, SEFAZ direta ou produção.
+
+Arquivos principais: static/js/cnpj-documento.js, static/js/app.js,
+apps/empresas/views.py, formulários de Empresa/Filial/Fornecedor,
+apps/fiscal/estrategia_normalizacao_cnpj.py,
+apps/empresas/test_cnpj_interface_lookup.py, templates/base.html e
+docs/CONSULTA_CNPJ_CEP.md. Migrações: nenhuma.
 
 ## Ponto de retomada — ciclo 114, 14/09/2026
 

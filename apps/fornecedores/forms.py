@@ -54,7 +54,7 @@ class FornecedorForm(forms.ModelForm):
             "is_active": "Ativo",
         }
         widgets = {
-            "cnpj": forms.TextInput(attrs={"class": "mask-cpf-cnpj"}),
+            "cnpj": forms.TextInput(attrs={"class": "mask-cnpj"}),
             "telefone": forms.TextInput(attrs={"class": "mask-phone"}),
             "endereco": forms.Textarea(attrs={"rows": 3}),
             "cep": forms.TextInput(attrs={"class": "mask-cep"}),

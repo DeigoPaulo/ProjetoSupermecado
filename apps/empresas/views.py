@@ -22,6 +22,7 @@ from django.views.decorators.http import require_GET, require_POST
 
 from apps.accounts.permissions import ADMINISTRACAO, CLIENTES, COMPRAS, ESTOQUE, PDV, RELATORIOS, SISTEMA, role_required
 from apps.auditoria.models import LogAuditoria
+from apps.fiscal.estrategia_normalizacao_cnpj import canonicalizar_cnpj, validar_dv_cnpj
 
 from .credenciais_sincronizacao import (
     credencial_sincronizacao_valida,
@@ -38,18 +39,19 @@ def _apenas_digitos(valor):
 
 
 def _cnpj_valido(cnpj):
-    digitos = _apenas_digitos(cnpj)
-    if len(digitos) != 14 or digitos == digitos[0] * 14:
+    try:
+        canonico = canonicalizar_cnpj(cnpj)
+    except ValueError:
         return False
-    pesos_primeiro = [5, 4, 3, 2, 9, 8, 7, 6, 5, 4, 3, 2]
-    pesos_segundo = [6] + pesos_primeiro
+    return bool(canonico) and validar_dv_cnpj(canonico)
 
-    def calcular(posicoes, pesos):
-        soma = sum(int(digito) * peso for digito, peso in zip(digitos[:posicoes], pesos))
-        resto = soma % 11
-        return "0" if resto < 2 else str(11 - resto)
 
-    return digitos[-2:] == calcular(12, pesos_primeiro) + calcular(13, pesos_segundo)
+def _cnpj_canonico_valido(valor):
+    try:
+        canonico = canonicalizar_cnpj(valor)
+    except ValueError:
+        return ""
+    return canonico if canonico and validar_dv_cnpj(canonico) else ""
 
 
 def _dados_empresa(empresa):
@@ -97,16 +99,16 @@ def _dados_filial(filial):
     }
 
 
-def _buscar_empresa_por_cnpj(digitos):
+def _buscar_empresa_por_cnpj(canonico):
     for empresa in Empresa.objects.all():
-        if _apenas_digitos(empresa.cnpj) == digitos:
+        if _cnpj_canonico_valido(empresa.cnpj) == canonico:
             return empresa
     return None
 
 
-def _buscar_filial_por_cnpj(digitos):
+def _buscar_filial_por_cnpj(canonico):
     for filial in Filial.objects.select_related("empresa"):
-        if _apenas_digitos(filial.cnpj or filial.empresa.cnpj) == digitos:
+        if _cnpj_canonico_valido(filial.cnpj or filial.empresa.cnpj) == canonico:
             return filial
     return None
 
@@ -456,11 +458,15 @@ def consulta_cadastro_placeholder(request):
     cnpj = request.GET.get("cnpj", "").strip()
     cep = request.GET.get("cep", "").strip()
     provider_cnpj = getattr(settings, "CADASTRO_CNPJ_PROVIDER_URL", "")
+    provider_cnpj_suporta_alfanumerico = getattr(
+        settings, "CADASTRO_CNPJ_PROVIDER_SUPORTA_ALFANUMERICO", False
+    )
     provider_cep = getattr(settings, "CADASTRO_CEP_PROVIDER_URL", "")
     payload_base = {
         "contrato": "cadastro_lookup_v1",
         "provedores": {
             "cnpj_configurado": bool(provider_cnpj),
+            "cnpj_alfanumerico_suportado": provider_cnpj_suporta_alfanumerico,
             "cep_configurado": bool(provider_cep),
             "timeout_segundos": getattr(settings, "CADASTRO_LOOKUP_TIMEOUT_SEGUNDOS", 5),
         },
@@ -483,20 +489,30 @@ def consulta_cadastro_placeholder(request):
         ],
     }
     if cnpj:
-        digitos = _apenas_digitos(cnpj)
-        if not _cnpj_valido(digitos):
-            return JsonResponse({**payload_base, "status": "invalid", "mensagem": "CNPJ inválido.", "consulta": {"tipo": "cnpj", "valor": digitos}}, status=400)
-        filial = _buscar_filial_por_cnpj(digitos)
-        empresa = _buscar_empresa_por_cnpj(digitos)
+        try:
+            canonico = canonicalizar_cnpj(cnpj)
+        except ValueError:
+            canonico = ""
+        if not canonico or not _cnpj_valido(canonico):
+            return JsonResponse({**payload_base, "status": "invalid", "mensagem": "CNPJ inválido.", "consulta": {"tipo": "cnpj", "valor": cnpj.upper()}}, status=400)
+        filial = _buscar_filial_por_cnpj(canonico)
+        empresa = _buscar_empresa_por_cnpj(canonico)
         if filial:
             return JsonResponse({**payload_base, "status": "local_match", "mensagem": "Cadastro encontrado nas filiais locais.", "dados": _dados_filial(filial)})
         if empresa:
             return JsonResponse({**payload_base, "status": "local_match", "mensagem": "Cadastro encontrado nas empresas locais.", "dados": _dados_empresa(empresa)})
+        if provider_cnpj and not canonico.isdigit() and not provider_cnpj_suporta_alfanumerico:
+            return JsonResponse({
+                **payload_base,
+                "status": "external_provider_unsupported",
+                "mensagem": "O provedor externo configurado ainda não declara suporte a CNPJ alfanumérico. Continue o cadastro manualmente.",
+                "consulta": {"tipo": "cnpj", "valor": canonico},
+            })
         if provider_cnpj:
-            resultado = _consultar_provider_cadastro(provider_cnpj, "cnpj", digitos)
+            resultado = _consultar_provider_cadastro(provider_cnpj, "cnpj", canonico)
             status_http = 502 if resultado["status"] == "external_provider_error" else 200
-            return JsonResponse({**payload_base, "consulta": {"tipo": "cnpj", "valor": digitos}, **resultado}, status=status_http)
-        return JsonResponse({**payload_base, "status": "external_provider_required", "mensagem": "CNPJ valido, mas não encontrado localmente. Configure um provedor externo para preenchimento automático.", "consulta": {"tipo": "cnpj", "valor": digitos}})
+            return JsonResponse({**payload_base, "consulta": {"tipo": "cnpj", "valor": canonico}, **resultado}, status=status_http)
+        return JsonResponse({**payload_base, "status": "external_provider_required", "mensagem": "CNPJ valido, mas não encontrado localmente. Configure um provedor externo para preenchimento automático.", "consulta": {"tipo": "cnpj", "valor": canonico}})
     if cep:
         digitos = _apenas_digitos(cep)
         if len(digitos) != 8:
