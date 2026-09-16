@@ -24,8 +24,8 @@ SEFAZ direta, homologação, produção e emissão permanecem desligados por est
 
 ## Próximo passo
 
-Integrar o portão, ainda sob teste local, em `EmpresaForm.clean_cnpj` e
-`FilialForm.clean_cnpj`. A integração deve gravar somente proposta nova válida, rejeitar colisão
-no escopo correto e nunca corrigir legado inválido ou permitir troca de identidade de forma
-silenciosa. A fase 4 só poderá ser declarada completa após essa integração operacional ser
-revisada e comprovada.
+A integração foi concluída e comprovada no ciclo 117 em `EmpresaForm.clean_cnpj` e
+`FilialForm.clean_cnpj`, sem migration ou correção automática dos 18 bloqueios locais. O próximo
+passo da fase 4 é avaliar separadamente Cliente pessoa jurídica e Fornecedor pessoa jurídica,
+pois seus campos, escopos e compatibilidade com CPF não podem herdar a regra de Empresa/Filial
+sem uma comparação própria.

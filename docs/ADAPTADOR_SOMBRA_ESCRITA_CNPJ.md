@@ -26,6 +26,14 @@ O portão de importações analisou 642 arquivos Python, encontrou seis usos aut
 
 Focus, SEFAZ direta, homologação, produção e emissão continuam fora desta etapa.
 
+## Atualização — 16/09/2026
+
+As três lacunas observadas neste ciclo foram corrigidas na fronteira Empresa/Filial pelo ciclo
+117. O comparador permanece como regressão e agora confirma que formulário e portão recusam DV
+inválido, que ambos detectam colisões canônicas e que a atualização equivalente preserva a
+identidade. O texto acima registra o diagnóstico histórico anterior à integração.
+
 ## Próximo passo
 
-Revisar os dados existentes com o relatório protegido já disponível e definir quais condições bloqueiam a futura integração dos dois `clean_cnpj`. A fase 4 permanece parcial até a integração cadastral ser implementada e validada.
+A próxima fronteira da fase 4 é Cliente pessoa jurídica e Fornecedor pessoa jurídica. Os dados
+legados Empresa/Filial permanecem sem correção automática.

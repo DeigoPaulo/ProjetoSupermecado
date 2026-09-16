@@ -52,14 +52,12 @@ class AdaptadorSombraEscritaCNPJTests(TestCase):
         self.assertEqual(Empresa.objects.count(), antes)
         self.assertSomenteSelect(consultas.captured_queries)
 
-    def test_formulario_atual_aceita_dv_invalido_que_portao_recusa(self):
+    def test_formulario_integrado_e_portao_recusam_dv_invalido(self):
         cnpj = self.identidade("EMPRESA_MATRIZ")
         invalido = cnpj[:-1] + ("0" if cnpj[-1] != "0" else "1")
         resultado = observar_escrita_empresa(self.dados_empresa(invalido))
-        self.assertEqual(
-            resultado["classificacao"], "FORMULARIO_ATUAL_ACEITA_PORTAO_RECUSA"
-        )
-        self.assertTrue(resultado["formulario_atual"]["valido"])
+        self.assertEqual(resultado["classificacao"], "AMBOS_RECUSAM")
+        self.assertFalse(resultado["formulario_atual"]["valido"])
         self.assertEqual(resultado["proposta_canonica"]["status"], "PROPOSTA_INVALIDA")
 
     def test_empresa_detecta_colisao_ignorada_pela_unicidade_textual(self):
@@ -72,7 +70,7 @@ class AdaptadorSombraEscritaCNPJTests(TestCase):
             self.dados_empresa(self.identidade("EMPRESA_MATRIZ"))
         )
         self.assertEqual(resultado["classificacao"], "COLISAO_CANONICA_DETECTADA")
-        self.assertTrue(resultado["formulario_atual"]["valido"])
+        self.assertFalse(resultado["formulario_atual"]["valido"])
         self.assertEqual(resultado["proposta_canonica"]["quantidade_colisoes"], 1)
 
     def test_filial_detecta_colisao_no_escopo_da_empresa(self):
@@ -90,7 +88,7 @@ class AdaptadorSombraEscritaCNPJTests(TestCase):
             self.dados_filial(empresa, self.identidade("FILIAL"))
         )
         self.assertEqual(resultado["classificacao"], "COLISAO_CANONICA_DETECTADA")
-        self.assertTrue(resultado["formulario_atual"]["valido"])
+        self.assertFalse(resultado["formulario_atual"]["valido"])
         self.assertEqual(resultado["proposta_canonica"]["quantidade_colisoes"], 1)
 
     def test_atualizacao_equivalente_exclui_a_propria_identidade(self):
@@ -116,8 +114,8 @@ class AdaptadorSombraEscritaCNPJTests(TestCase):
         self.assertFalse(resultado["seguranca"]["cnpj_completo_exposto"])
         self.assertFalse(resultado["seguranca"]["chama_save"])
 
-    def test_contrato_registra_lacunas_e_pontos_reais_de_integracao(self):
+    def test_contrato_registra_integracao_e_pontos_reais(self):
         contrato = descrever_adaptador_sombra_escrita_cnpj()
         self.assertEqual(contrato["fronteiras"], ["EMPRESA", "FILIAL"])
-        self.assertTrue(all(not valor for valor in contrato["lacunas_confirmadas"].values()))
+        self.assertTrue(all(contrato["integracao_atual"].values()))
         self.assertEqual(len(contrato["pontos_integracao"]), 2)

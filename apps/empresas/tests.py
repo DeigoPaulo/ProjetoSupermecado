@@ -17,6 +17,7 @@ from apps.auditoria.models import LogAuditoria
 from apps.estoque.models import Estoque, MovimentacaoEstoque, TipoMovimentacaoEstoque, movimentar_estoque
 from apps.financeiro.models import ContaMovimentoFinanceiro, TipoContaMovimento, TipoLancamentoFinanceiro
 from apps.financeiro.services import registrar_lancamento
+from apps.fiscal.estrategia_normalizacao_cnpj import calcular_dv_cnpj
 from apps.produtos.models import Categoria, CodigoBarrasProduto, Produto
 
 from .forms import EmpresaForm
@@ -30,6 +31,10 @@ GIF_1X1 = (
     b"GIF87a\x01\x00\x01\x00\x80\x00\x00\xff\xff\xff\x00\x00\x00!\xf9\x04"
     b"\x01\x00\x00\x00\x00,\x00\x00\x00\x00\x01\x00\x01\x00\x00\x02\x02D\x01\x00;"
 )
+
+
+def cnpj_teste(base):
+    return base + calcular_dv_cnpj(base)
 
 
 def png_1x1():
@@ -61,7 +66,7 @@ class EmpresasViewsTests(TestCase):
         self.empresa = Empresa.objects.create(
             razao_social="Mercado Teste Ltda",
             nome_fantasia="Mercado Teste",
-            cnpj="44.444.444/0001-44",
+            cnpj=cnpj_teste("444444440001"),
             regime_tributario="Simples Nacional",
             modo_implantacao=ModoImplantacao.HIBRIDO,
             sincronizacao_automatica=True,
@@ -82,7 +87,7 @@ class EmpresasViewsTests(TestCase):
             {
                 "razao_social": "Nova Rede Ltda",
                 "nome_fantasia": "Nova Rede",
-                "cnpj": "55.555.555/0001-55",
+                "cnpj": cnpj_teste("555555550001"),
                 "telefone": "(62) 3333-4455",
                 "cep": "74000-000",
                 "logradouro": "Avenida Central",
@@ -98,7 +103,7 @@ class EmpresasViewsTests(TestCase):
         )
 
         self.assertRedirects(response, "/empresas/")
-        empresa = Empresa.objects.get(cnpj="55.555.555/0001-55")
+        empresa = Empresa.objects.get(cnpj=cnpj_teste("555555550001"))
         matriz = Filial.objects.get(empresa=empresa)
         self.assertEqual(matriz.nome, "Matriz")
         self.assertEqual(matriz.cnpj, empresa.cnpj)
@@ -312,7 +317,7 @@ class EmpresasViewsTests(TestCase):
             data={
                 "razao_social": "Mercado Local Ltda",
                 "nome_fantasia": "Mercado Local",
-                "cnpj": "11.111.111/0001-11",
+                "cnpj": cnpj_teste("111111110001"),
                 "modo_implantacao": ModoImplantacao.LOCAL,
                 "sincronizacao_automatica": "on",
                 "url_sincronizacao": "https://nuvem.exemplo.com/api/",
@@ -383,7 +388,7 @@ class EmpresasViewsTests(TestCase):
             data={
                 "razao_social": "Mercado Sync Ltda",
                 "nome_fantasia": "Mercado Sync",
-                "cnpj": "33.333.333/0001-33",
+                "cnpj": cnpj_teste("333333330001"),
                 "modo_implantacao": ModoImplantacao.HIBRIDO,
                 "sincronizacao_automatica": "on",
                 "url_sincronizacao": "https://nuvem.exemplo.com/api/",
@@ -400,7 +405,7 @@ class EmpresasViewsTests(TestCase):
         dados = {
             "razao_social": "Mercado Imagem Ltda",
             "nome_fantasia": "Mercado Imagem",
-            "cnpj": "12.345.678/0001-90",
+            "cnpj": cnpj_teste("123456780001"),
             "modo_implantacao": ModoImplantacao.LOCAL,
             "is_active": "on",
         }
@@ -410,7 +415,7 @@ class EmpresasViewsTests(TestCase):
         valido = EmpresaForm(data=dados, files={"logo": png})
         self.assertTrue(valido.is_valid(), valido.errors)
 
-        dados["cnpj"] = "12.345.678/0001-91"
+        dados["cnpj"] = cnpj_teste("123456780002")
         invalido = EmpresaForm(data=dados, files={"logo": gif})
         self.assertFalse(invalido.is_valid())
         self.assertIn("Envie uma imagem PNG, JPG ou JPEG.", invalido.errors["logo"])
@@ -419,7 +424,7 @@ class EmpresasViewsTests(TestCase):
         dados = {
             "razao_social": "Mercado Hibrido Ltda",
             "nome_fantasia": "Mercado Hibrido",
-            "cnpj": "22.222.222/0001-22",
+            "cnpj": cnpj_teste("222222220001"),
             "modo_implantacao": ModoImplantacao.HIBRIDO,
             "sincronizacao_automatica": "on",
             "url_sincronizacao": "http://nuvem.exemplo.com/api/",
@@ -909,8 +914,8 @@ class EmpresasViewsTests(TestCase):
     @override_settings(
         SINCRONIZACAO_API_TOKEN="",
         SINCRONIZACAO_TOKENS_EMPRESA={
-            "44.444.444/0001-44": "token-empresa-a",
-            "55.555.555/0001-55": "token-empresa-b",
+            cnpj_teste("444444440001"): "token-empresa-a",
+            cnpj_teste("555555550001"): "token-empresa-b",
         },
         SINCRONIZACAO_PERMITE_TOKEN_GLOBAL=False,
     )
@@ -946,7 +951,7 @@ class EmpresasViewsTests(TestCase):
     @override_settings(
         SINCRONIZACAO_API_TOKEN="",
         SINCRONIZACAO_TOKENS_EMPRESA={
-            "44.444.444/0001-44": {
+            cnpj_teste("444444440001"): {
                 "atual": "token-empresa-novo",
                 "anteriores": ["token-empresa-anterior"],
             },
@@ -990,7 +995,7 @@ class EmpresasViewsTests(TestCase):
 
     @override_settings(
         SINCRONIZACAO_API_TOKEN="",
-        SINCRONIZACAO_TOKENS_EMPRESA={"44.444.444/0001-44": "token-empresa-a"},
+        SINCRONIZACAO_TOKENS_EMPRESA={cnpj_teste("444444440001"): "token-empresa-a"},
         SINCRONIZACAO_PERMITE_TOKEN_GLOBAL=False,
         SINCRONIZACAO_MAX_EVENTO_BYTES=180,
     )
@@ -1014,7 +1019,7 @@ class EmpresasViewsTests(TestCase):
     @override_settings(
         SINCRONIZACAO_API_TOKEN="",
         SINCRONIZACAO_TOKENS_EMPRESA={
-            "44444444000144": {
+            cnpj_teste("444444440001"): {
                 "atual": "token-empresa-a",
                 "anteriores": ["token-empresa-antigo"],
             },
@@ -1685,7 +1690,7 @@ class EmpresasViewsTests(TestCase):
     @override_settings(
         SINCRONIZACAO_API_TOKEN="",
         SINCRONIZACAO_TOKENS_EMPRESA={
-            "44.444.444/0001-44": {
+            cnpj_teste("444444440001"): {
                 "atual": "token-empresa-novo",
                 "anteriores": ["token-empresa-anterior"],
             },
@@ -2025,7 +2030,7 @@ class EmpresasViewsTests(TestCase):
             {
                 "empresa": self.empresa.pk,
                 "nome": "Loja 2",
-                "cnpj": "55.555.555/0001-55",
+                "cnpj": cnpj_teste("555555550001"),
                 "telefone": "",
                 "endereco": "Rua Teste",
                 "municipio": "Sao Paulo",
@@ -2271,7 +2276,7 @@ class EmpresasLicenciamentoTests(TestCase):
             {
                 "empresa": self.empresa.pk,
                 "nome": "Loja 2",
-                "cnpj": "11.111.111/0002-00",
+                "cnpj": cnpj_teste("111111110002"),
                 "telefone": "",
                 "endereco": "",
                 "municipio": "",

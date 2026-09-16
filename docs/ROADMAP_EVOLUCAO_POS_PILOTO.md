@@ -6,7 +6,7 @@ A frente atual pertence à transição do CNPJ alfanumérico planejada no ciclo 
 
 - [x] Normalizador, auditoria local, leitura comparativa e preparação pura de escrita implementados e testados.
 - [x] Desdobramentos técnicos acrescentados nos ciclos 109–113: catálogo de teste, adoção, controle de importações, regressão e exclusão do pacote. Estes trabalhos apoiam a frente original, mas não concluem a integração cadastral.
-- [ ] Fase 4 original: escrita canônica por fronteira. Estado real: parcial; apenas o portão isolado está pronto. Nenhum cadastro operacional utiliza a nova escrita.
+- [ ] Fase 4 original: escrita canônica por fronteira. Estado real: parcial; Empresa e Filial foram integradas no ciclo 117, enquanto Cliente PJ e Fornecedor PJ permanecem pendentes.
 - [x] Próxima entrega delimitada da fase 4 concluída no ciclo 115: comparação isolada com os formulários de Empresa/Filial, divergências e colisões comprovadas e pontos de integração identificados, sem persistência.
 - [x] Após essa comparação, atualizar a pendência de integração da própria fase 4, identificando o que depende de correção de dados e o que pode ser validado localmente. A classificação foi concluída no ciclo 116, sem declarar a fase completa.
 - [ ] Fases 5 e 6 originais: chave/XML/QR Code/DANFE e homologação dos canais continuam pendentes.
@@ -273,13 +273,46 @@ ignorado corretamente e um campo opcional vazio. Nenhum identificador completo f
 - [x] Manter persistência canônica, constraints e migração de conteúdo bloqueadas.
 - [x] Manter credenciais, certificados, Focus, SEFAZ direta, homologação, produção e emissão
   fora desta decisão.
-- [ ] Fase 4 continua parcial: integrar e provar o portão nos `clean_cnpj` reais de Empresa e
-  Filial sem correção silenciosa do legado nem troca de identidade sem controle.
+- [x] Integração Empresa/Filial concluída e provada no ciclo 117, sem correção silenciosa do
+  legado nem troca de identidade sem controle.
 
 Arquivos: `apps/fiscal/plano_integracao_escrita_cnpj.py` e
 `apps/fiscal/test_plano_integracao_escrita_cnpj.py`. Documentação:
 [PLANO_INTEGRACAO_ESCRITA_CNPJ_EMPRESA_FILIAL.md](PLANO_INTEGRACAO_ESCRITA_CNPJ_EMPRESA_FILIAL.md).
 Migrações: nenhuma.
+
+## Ponto de retomada — ciclo 117, 16/09/2026
+
+O portão canônico passou a ser consumido por `EmpresaForm.clean_cnpj` e
+`FilialForm.clean_cnpj`. Novos cadastros válidos são gravados com 14 caracteres em maiúsculas e
+sem pontuação. DV inválido e colisão entre representações mascarada/canônica são recusados antes
+do `save`; a colisão de Filial respeita o escopo da Empresa. Filial sem CNPJ continua permitida.
+
+Em atualização, uma representação equivalente mantém a identidade e pode ser canonicalizada.
+Um valor legado inválido não é corrigido silenciosamente e uma troca para outra identidade
+válida permanece bloqueada para controles externos. A proteção está na fronteira dos
+formulários; nenhuma constraint ou migração de conteúdo foi criada enquanto os 18 bloqueios
+locais ainda aguardam decisão manual.
+
+- [x] Integrar o portão aos formulários reais de Empresa e Filial.
+- [x] Gravar criação válida na representação canônica oficial.
+- [x] Rejeitar DV inválido e colisão canônica antes da persistência.
+- [x] Preservar Filial sem CNPJ como campo opcional.
+- [x] Permitir atualização equivalente sem trocar a identidade.
+- [x] Bloquear legado inválido e troca de identidade sem correção silenciosa.
+- [x] Atualizar o observador sombra para comprovar convergência do formulário com o portão.
+- [x] Corrigir somente fixtures de formulário que usavam DVs inválidos, sem relaxar a regra.
+- [x] Validar 79 testes de Empresas e oito cenários específicos da integração.
+- [x] Validar 29 testes dos portões fiscais relacionados; o controle AST leu 656 arquivos,
+  permitiu sete importações em testes e encontrou zero importações do catálogo em runtime.
+- [x] Confirmar ausência de migration e manter dados locais, credenciais, certificados, Focus,
+  SEFAZ direta, homologação, produção e emissão inalterados.
+- [ ] Fase 4 continua parcial: avaliar e integrar separadamente Cliente pessoa jurídica e
+  Fornecedor pessoa jurídica, respeitando campos mistos CPF/CNPJ e o escopo da Empresa.
+
+Arquivos principais: `apps/empresas/forms.py`, `apps/empresas/test_cnpj_canonico_forms.py`,
+`apps/empresas/tests.py`, `apps/fiscal/adaptador_sombra_escrita_cnpj.py` e
+`apps/fiscal/test_adaptador_sombra_escrita_cnpj.py`. Migrações: nenhuma.
 
 Arquivos: `apps/fiscal/adaptador_sombra_escrita_cnpj.py` e `apps/fiscal/test_adaptador_sombra_escrita_cnpj.py`. Documentação: [ADAPTADOR_SOMBRA_ESCRITA_CNPJ.md](ADAPTADOR_SOMBRA_ESCRITA_CNPJ.md). Migrações: nenhuma.
 

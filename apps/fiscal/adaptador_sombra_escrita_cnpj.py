@@ -144,14 +144,14 @@ def descrever_adaptador_sombra_escrita_cnpj():
     return {
         "contrato": CONTRATO_ADAPTADOR_SOMBRA_ESCRITA_CNPJ,
         "fronteiras": ["EMPRESA", "FILIAL"],
-        "lacunas_confirmadas": {
-            "formulario_atual_valida_dv": False,
-            "empresa_detecta_equivalencia_canonica": False,
-            "filial_possui_unicidade_de_cnpj": False,
+        "integracao_atual": {
+            "formulario_atual_valida_dv": True,
+            "empresa_detecta_equivalencia_canonica": True,
+            "filial_detecta_equivalencia_canonica_no_escopo": True,
         },
         "pontos_integracao": [
             "EmpresaForm.clean_cnpj_antes_da_validacao_de_unicidade",
             "FilialForm.clean_cnpj_antes_da_validacao_do_modelo",
         ],
-        "proximo_passo": "DEFINIR_INTEGRACAO_DA_FASE_4_APOS_REVISAR_DADOS",
+        "proximo_passo": "VALIDAR_REGRESSAO_DA_INTEGRACAO_CADASTRAL",
     }
