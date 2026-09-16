@@ -28,8 +28,7 @@ from apps.configuracoes.models import TipoDocumentoImpressao
 from apps.configuracoes.services import configuracao_impressao_para, estilos_impressao
 from apps.empresas.models import AcaoPinSupervisor, Filial
 from apps.estoque.models import Estoque
-from apps.financeiro.models import LancamentoFinanceiro, TipoLancamentoFinanceiro
-from apps.financeiro.services import conta_caixa_pdv, registrar_lancamento
+from apps.financeiro.models import LancamentoFinanceiro
 from apps.marketplace.models import CanalPedido, FormaPagamentoPedido, ItemPedidoOnline, PedidoOnline, PoliticaEntrega, StatusPedido, TipoEntrega
 from apps.marketplace.services import alterar_status_pedido, calcular_entrega_pedido, registrar_pagamento, reservar_pedido
 from apps.fiscal.models import ConfiguracaoFiscal, DocumentoFiscal, StatusDocumentoFiscal, TipoDocumentoFiscal
@@ -41,7 +40,8 @@ from apps.vendas.models import EstornoParcialPagamento, FormaPagamento, Pagament
 from apps.vendas.services import calcular_item, cancelar_pre_venda, cancelar_venda, confirmar_estorno_pagamento_eletronico, confirmar_estorno_parcial_eletronico, converter_pre_venda, criar_pre_venda, finalizar_venda, forma_pagamento_disponivel, formas_pagamento_disponiveis, quantidade_devolvida_item, registrar_devolucao_venda
 
 from .forms import AbrirCaixaForm, AdicionarItemForm, ConferirCaixaForm, EntregaPdvForm, FecharCaixaForm, FinalizarVendaForm, PreVendaForm, SangriaForm, SuprimentoForm
-from .models import AcessoPdvNuvem, Caixa, CanalAtualizacaoPdv, EventoDispositivoTerminal, Sangria, StatusAcessoPdvNuvem, StatusCaixa, Suprimento, TerminalPdv
+from .models import AcessoPdvNuvem, Caixa, CanalAtualizacaoPdv, EventoDispositivoTerminal, StatusAcessoPdvNuvem, StatusCaixa, TerminalPdv
+from .services_caixa import fechar_caixa_operacional, registrar_sangria_caixa, registrar_suprimento_caixa
 from .services_acesso import acesso_pdv_nuvem_aprovado, decidir_acesso_pdv_nuvem, solicitar_acesso_pdv_nuvem
 
 
@@ -1675,23 +1675,18 @@ def registrar_sangria(request, caixa_id):
             except ValidationError as exc:
                 messages.error(request, " ".join(exc.messages))
             else:
-                sangria = form.save(commit=False)
-                sangria.caixa = caixa
-                sangria.usuario = request.user
-                sangria.save()
-                if not LancamentoFinanceiro.objects.filter(sangria=sangria).exists():
-                    registrar_lancamento(
-                        conta=conta_caixa_pdv(caixa.filial),
-                        tipo=TipoLancamentoFinanceiro.SAIDA,
-                        descricao=f"Sangria caixa #{caixa.id}: {sangria.motivo}",
-                        valor=sangria.valor,
-                        data=timezone.localdate(),
+                try:
+                    sangria = registrar_sangria_caixa(
+                        caixa=caixa,
                         usuario=request.user,
-                        origem="PDV_SANGRIA",
-                        sangria=sangria,
+                        valor=form.cleaned_data["valor"],
+                        motivo=form.cleaned_data["motivo"],
                     )
-                _agendar_abertura_gaveta(request, caixa, f"sangria_{sangria.id}", "sangria")
-                messages.success(request, "Sangria registrada com sucesso.")
+                except ValidationError as exc:
+                    messages.error(request, " ".join(exc.messages))
+                else:
+                    _agendar_abertura_gaveta(request, sangria.caixa, f"sangria_{sangria.id}", "sangria")
+                    messages.success(request, "Sangria registrada com sucesso.")
     return _redirect_after_caixa_action(request, caixa)
 
 
@@ -1709,23 +1704,18 @@ def registrar_suprimento(request, caixa_id):
             except ValidationError as exc:
                 messages.error(request, " ".join(exc.messages))
             else:
-                suprimento = form.save(commit=False)
-                suprimento.caixa = caixa
-                suprimento.usuario = request.user
-                suprimento.save()
-                if not LancamentoFinanceiro.objects.filter(suprimento=suprimento).exists():
-                    registrar_lancamento(
-                        conta=conta_caixa_pdv(caixa.filial),
-                        tipo=TipoLancamentoFinanceiro.ENTRADA,
-                        descricao=f"Suprimento caixa #{caixa.id}: {suprimento.motivo}",
-                        valor=suprimento.valor,
-                        data=timezone.localdate(),
+                try:
+                    suprimento = registrar_suprimento_caixa(
+                        caixa=caixa,
                         usuario=request.user,
-                        origem="PDV_SUPRIMENTO",
-                        suprimento=suprimento,
+                        valor=form.cleaned_data["valor"],
+                        motivo=form.cleaned_data["motivo"],
                     )
-                _agendar_abertura_gaveta(request, caixa, f"suprimento_{suprimento.id}", "suprimento")
-                messages.success(request, "Suprimento registrado com sucesso.")
+                except ValidationError as exc:
+                    messages.error(request, " ".join(exc.messages))
+                else:
+                    _agendar_abertura_gaveta(request, suprimento.caixa, f"suprimento_{suprimento.id}", "suprimento")
+                    messages.success(request, "Suprimento registrado com sucesso.")
     return _redirect_after_caixa_action(request, caixa)
 
 
@@ -1738,13 +1728,17 @@ def fechar_caixa(request, caixa_id):
     if request.method == "POST":
         form = FecharCaixaForm(request.POST, instance=caixa)
         if form.is_valid():
-            caixa = form.save(commit=False)
-            caixa.usuario_fechamento = request.user
-            caixa.data_fechamento = timezone.now()
-            caixa.status = StatusCaixa.FECHADO
-            caixa.save()
-            _agendar_abertura_gaveta(request, caixa, f"fechamento_caixa_{caixa.id}", "fechamento")
-            messages.success(request, "Caixa fechado com sucesso.")
+            try:
+                caixa = fechar_caixa_operacional(
+                    caixa=caixa,
+                    usuario=request.user,
+                    valor_final=form.cleaned_data["valor_final"],
+                )
+            except ValidationError as exc:
+                messages.error(request, " ".join(exc.messages))
+            else:
+                _agendar_abertura_gaveta(request, caixa, f"fechamento_caixa_{caixa.id}", "fechamento")
+                messages.success(request, "Caixa fechado com sucesso.")
     return _redirect_after_caixa_action(request, caixa)
 
 

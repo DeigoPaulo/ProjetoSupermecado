@@ -27,8 +27,8 @@ P1:
 - [x] segregação de série fiscal por ambiente;
 - [x] semântica segura da baixa financeira;
 - [x] reserva/idempotência da transmissão fiscal;
-- [ ] concorrência entre fechamento e operações do caixa;
-- [ ] testes concorrentes reais em PostgreSQL.
+- [x] concorrência entre fechamento e operações do caixa;
+- [x] testes concorrentes reais em PostgreSQL.
 
 P2:
 
@@ -207,6 +207,38 @@ continuam elegíveis a nova tentativa controlada.
 - Segurança operacional: nenhuma chamada externa foi realizada, nenhuma flag de rede ou
   produção foi ativada e nenhuma credencial foi gravada no projeto.
 - Próximo passo exato: P1.6, concorrência entre fechamento e operações do caixa.
+
+### P1.6 concluído — 16/09/2026
+
+O fechamento, a venda, a sangria e o suprimento consultavam o estado do caixa sem compartilhar
+uma exclusão mútua. Uma requisição podia validar o caixa como aberto, perder a corrida para o
+fechamento e ainda gravar estoque ou movimento financeiro depois dele. A correção estabelece a
+linha de `Caixa` como autoridade transacional: todas essas operações bloqueiam a mesma linha com
+`select_for_update` e revalidam o estado somente depois de obter o lock.
+
+Sangria, suprimento e fechamento foram concentrados em serviços atômicos. As telas continuam
+responsáveis por permissão, formulário, PIN do supervisor, mensagens e gaveta, mas não gravam
+mais movimento de caixa diretamente. A finalização da venda adquire o lock antes de criar a
+venda, movimentar estoque, registrar pagamentos, financeiro ou documento fiscal. Assim, se a
+operação obtém o lock primeiro ela termina e o fechamento a inclui; se o fechamento obtém o lock
+primeiro, a operação é recusada sem efeito parcial.
+
+- Estado: concluído com autoridade transacional única e prova concorrente PostgreSQL.
+- Arquivos principais: `apps/pdv/services_caixa.py`, `apps/pdv/views.py`,
+  `apps/vendas/services.py` e `apps/pdv/test_concorrencia_caixa.py`.
+- Migrações: nenhuma.
+- Regressão: 94 testes de PDV, caixa e vendas passaram em SQLite; os três cenários ignorados
+  nesse banco exigem a semântica real de `select_for_update` e foram executados separadamente.
+- PostgreSQL: cinco testes passaram em PostgreSQL 18 real, com três provas simultâneas. Quando
+  o fechamento venceu, venda, sangria e suprimento foram recusados sem venda, estoque ou
+  lançamento parcial. Quando o suprimento venceu, ele e seu lançamento terminaram antes de o
+  fechamento prosseguir. A conta usada não possuía privilégios administrativos.
+- Cobertura P1: as provas concorrentes reais agora cobrem finalização de compra, preparação
+  fiscal por venda/pedido, reserva de transmissão e fechamento/operações do caixa. O item
+  agregador de testes concorrentes PostgreSQL está concluído, encerrando a frente P1.
+- Próximo passo exato: retomar a fase 4 do CNPJ no ponto registrado após o ciclo 115, separando
+  as divergências que exigem correção de dados das que podem avançar para validação local antes
+  de integrar a escrita canônica aos formulários reais.
 
 ## Ponto de retomada — ciclo 115, 14/09/2026
 

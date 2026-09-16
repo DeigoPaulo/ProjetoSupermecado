@@ -92,6 +92,16 @@ def finalizar_venda(*, caixa, usuario, itens, forma_pagamento=None, desconto=Dec
     )
 
     with transaction.atomic():
+        from apps.pdv.models import Caixa, StatusCaixa
+
+        caixa = (
+            Caixa.objects.select_for_update()
+            .select_related("filial", "filial__empresa")
+            .get(pk=caixa.pk)
+        )
+        if caixa.status != StatusCaixa.ABERTO:
+            raise ValidationError("Este caixa não está aberto.")
+
         venda = Venda.objects.create(
             filial=caixa.filial,
             caixa=caixa,
