@@ -486,13 +486,37 @@ validação pré-transmissão que recusa qualquer divergência entre os dois val
   ignorados por requisitos específicos de ambiente.
 - [x] Manter banco, modelos, migrations, credenciais, certificados, Focus, SEFAZ direta,
   chamadas de rede e produção inalterados.
-- [ ] Próximo passo: substituir as exigências exclusivamente numéricas nos retornos dos
-  adaptadores e nos fluxos internos pós-geração, sempre pelo normalizador central de chave.
+- [x] Próximo passo concluído no ciclo 124: retornos dos adaptadores e fluxos internos
+  pós-geração passaram a usar o normalizador central de chave.
 
 Arquivos principais: apps/fiscal/chave_acesso.py, apps/fiscal/services.py,
 apps/fiscal/qrcode_nfce.py, apps/fiscal/validacoes.py,
 apps/fiscal/auditoria_fase5_cnpj.py, testes fiscais/marketplace e
 docs/AUDITORIA_FASE5_CNPJ_ALFANUMERICO.md. Migrações: nenhuma.
+
+## Ponto de retomada — ciclo 124, 16/09/2026
+
+Concluída a remoção das exigências exclusivamente numéricas nos retornos de autorização e
+consulta e nos fluxos internos de simulação, cancelamento e consulta fiscal. Todos esses
+pontos agora reutilizam a validação central de estrutura, posições e DV.
+
+- [x] Aceitar e canonicalizar para maiúsculas chaves alfanuméricas válidas retornadas por
+  autorização ou consulta.
+- [x] Continuar recusando chaves de tamanho, posição ou DV inválidos.
+- [x] Permitir simulação, cancelamento e consulta com chave alfanumérica válida.
+- [x] Corrigir fixtures antigos que possuíam 44 dígitos, mas não um DV fiscal válido.
+- [x] Evoluir a auditoria viva para alphanumeric_cnpj_phase5_static_audit_v4: nove pontos
+  compatíveis offline, nenhum incompatível interno, um condicional e o Code 128 ausente.
+- [x] Validar 20 testes focados, os dois cenários de provedor corrigidos e 630 testes das
+  suítes fiscal e marketplace, com três ignorados por requisitos de ambiente.
+- [x] Manter modelos, banco, migrations, credenciais, certificados, Focus, SEFAZ direta,
+  chamadas de rede e produção inalterados.
+- [ ] Próximo passo: implementar e testar o código de barras Code 128 híbrido no DANFE,
+  preservando a chave textual e sem liberar produção.
+
+Arquivos principais: apps/fiscal/adapters.py, apps/fiscal/services.py,
+apps/fiscal/test_chave_acesso.py, apps/fiscal/tests.py,
+apps/fiscal/auditoria_fase5_cnpj.py e testes da auditoria. Migrações: nenhuma.
 
 ## Ponto de retomada — ciclo 114, 14/09/2026
 

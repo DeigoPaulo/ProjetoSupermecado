@@ -5,6 +5,7 @@ from django.conf import settings
 from django.core.exceptions import ImproperlyConfigured, ObjectDoesNotExist
 from django.utils.module_loading import import_string
 
+from .chave_acesso import normalizar_chave_acesso
 
 PROVEDOR_ADAPTER_PATHS = {
     "FOCUS": "apps.fiscal.focus_sefaz_adapter.FocusNFeSefazAdapter",
@@ -248,16 +249,19 @@ def normalizar_retorno_transmissao(retorno):
     if status not in {"AUTORIZADO", "REJEITADO", "PENDENTE"}:
         raise SefazAdapterError("O adaptador SEFAZ retornou um status desconhecido.")
 
+    chave_recebida = str(retorno.get("chave_acesso") or "").strip()
+    chave_normalizada = normalizar_chave_acesso(chave_recebida)
+    if status == "AUTORIZADO" and not chave_normalizada:
+        raise SefazAdapterError("A autorização SEFAZ não retornou uma chave de acesso valida.")
+
     resultado = SefazTransmissionResult(
         status=status,
-        chave_acesso=str(retorno.get("chave_acesso") or "").strip(),
+        chave_acesso=chave_normalizada if status == "AUTORIZADO" else chave_recebida,
         protocolo=str(retorno.get("protocolo") or "").strip(),
         mensagem=str(retorno.get("mensagem") or "").strip()[:2000],
         xml_autorizado=str(retorno.get("xml_autorizado") or "").strip(),
     )
     if status == "AUTORIZADO":
-        if len(resultado.chave_acesso) != 44 or not resultado.chave_acesso.isdigit():
-            raise SefazAdapterError("A autorização SEFAZ não retornou uma chave de acesso valida.")
         if not resultado.protocolo:
             raise SefazAdapterError("A autorização SEFAZ não retornou protocolo.")
     if status == "REJEITADO" and not resultado.mensagem:
@@ -314,18 +318,19 @@ def normalizar_retorno_consulta(retorno):
     if status not in permitidos:
         raise SefazAdapterError("O adaptador SEFAZ retornou status de consulta desconhecido.")
 
+    chave_recebida = str(retorno.get("chave_acesso") or "").strip()
+    chave_normalizada = normalizar_chave_acesso(chave_recebida)
+    if chave_recebida and not chave_normalizada:
+        raise SefazAdapterError("A consulta SEFAZ retornou uma chave de acesso inválida.")
+
     resultado = SefazQueryResult(
         status=status,
-        chave_acesso=str(retorno.get("chave_acesso") or "").strip(),
+        chave_acesso=chave_normalizada,
         protocolo=str(retorno.get("protocolo") or "").strip(),
         protocolo_cancelamento=str(retorno.get("protocolo_cancelamento") or "").strip(),
         mensagem=str(retorno.get("mensagem") or "").strip()[:2000],
         xml_autorizado=str(retorno.get("xml_autorizado") or "").strip(),
     )
-    if resultado.chave_acesso and (
-        len(resultado.chave_acesso) != 44 or not resultado.chave_acesso.isdigit()
-    ):
-        raise SefazAdapterError("A consulta SEFAZ retornou uma chave de acesso inválida.")
     if status in {"AUTORIZADO", "DENEGADO"} and not resultado.protocolo:
         raise SefazAdapterError("A consulta SEFAZ não retornou o protocolo do documento.")
     if status == "CANCELADO" and not resultado.protocolo_cancelamento:

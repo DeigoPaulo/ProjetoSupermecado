@@ -28,7 +28,11 @@ from .cbenef import codigos_cbenef_go_validos
 from .cest import queryset_codigos_cest_vigentes, validar_cest
 from .cfop import validar_cfop
 from .cenarios_tributarios import pendencias_cenario_fiscal_go
-from .chave_acesso import construir_chave_acesso, normalizar_cnpj_emitente
+from .chave_acesso import (
+    construir_chave_acesso,
+    normalizar_chave_acesso,
+    normalizar_cnpj_emitente,
+)
 from .ncm import queryset_codigos_ncm_vigentes, validar_ncm
 from .validacoes import validar_xml_pre_transmissao
 from .qrcode_nfce import gerar_url_qrcode_nfce
@@ -1601,7 +1605,7 @@ def transmitir_documento_simulado(documento, usuario, ip=None, reserva_token=Non
     if not documento.xml_conteudo:
         salvar_xml_documento(documento)
 
-    if len(documento.chave_acesso) != 44 or not documento.chave_acesso.isdigit():
+    if not normalizar_chave_acesso(documento.chave_acesso):
         raise ValidationError("Documento sem chave de acesso fiscal valida.")
     documento.protocolo = f"HOM{timezone.now():%Y%m%d%H%M%S}{documento.pk:06d}"
     documento.status = StatusDocumentoFiscal.EMITIDO
@@ -1875,7 +1879,7 @@ def cancelar_documento(documento, usuario, motivo, ip=None):
 
         if documento.status != StatusDocumentoFiscal.EMITIDO:
             raise ValidationError("Somente documentos prontos, rejeitados ou emitidos podem ser cancelados.")
-        if len(documento.chave_acesso) != 44 or not documento.chave_acesso.isdigit():
+        if not normalizar_chave_acesso(documento.chave_acesso):
             raise ValidationError("Documento emitido sem chave de acesso válida para cancelamento.")
         if not documento.protocolo:
             raise ValidationError("Documento emitido sem protocolo de autorização para cancelamento.")
@@ -2024,8 +2028,8 @@ def consultar_situacao_documento(documento, usuario, ip=None, reserva_token=None
         documento = DocumentoFiscal.objects.select_for_update().get(pk=documento.pk)
         if documento.status in {StatusDocumentoFiscal.RASCUNHO, StatusDocumentoFiscal.INUTILIZADO}:
             raise ValidationError("Este documento não possui situação consultável na SEFAZ.")
-        if len(documento.chave_acesso) != 44 or not documento.chave_acesso.isdigit():
-            raise ValidationError("Informe uma chave de acesso fiscal válida com 44 dígitos.")
+        if not normalizar_chave_acesso(documento.chave_acesso):
+            raise ValidationError("Informe uma chave de acesso fiscal válida com 44 caracteres.")
         token, gerenciada_pela_fila = _reserva_transmissao(documento, reserva_token)
         aguardando_consulta_antes = documento.aguardando_consulta_sefaz
         chave_acesso = documento.chave_acesso

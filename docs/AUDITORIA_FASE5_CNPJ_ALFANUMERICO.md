@@ -23,10 +23,11 @@ O núcleo isolado já conhece a estrutura oficial da chave:
 - DV calculado por módulo 11 usando o valor ASCII menos 48;
 - código de barras Code 128 híbrido, alternando conjuntos C e A quando houver letras.
 
-Desde o ciclo 123, esse núcleo é usado pela formação da chave, pelos XMLs reais de NFC-e e
-NF-e, pelo QR Code acoplado da NFC-e e pela validação pré-transmissão. Foram confirmados 11
-pontos da Fase 5: sete compatíveis offline, dois incompatíveis, um compatível apenas de forma
-condicional e uma capacidade ausente. Três pontos dos canais da Fase 6 também permanecem
+Desde o ciclo 124, esse núcleo é usado pela formação da chave, pelos XMLs reais de NFC-e e
+NF-e, pelo QR Code, pela validação pré-transmissão, pelos retornos internos de autorização e
+consulta e pelos fluxos de simulação, cancelamento e consulta. Foram confirmados 11 pontos
+da Fase 5: nove compatíveis offline, nenhum incompatível interno, um compatível apenas de
+forma condicional e uma capacidade ausente. Três pontos dos canais da Fase 6 permanecem
 inventariados sem alteração.
 
 | Ordem | Componente | Estado | Diagnóstico |
@@ -37,8 +38,8 @@ inventariados sem alteração.
 | 2 | XML NF-e | Compatível offline | Usa o mesmo CNPJ canônico na chave e em emit/CNPJ. |
 | 2 | Id de infNFe | Compatível offline | Preserva integralmente a chave central validada. |
 | 3 | Validação do XML | Compatível offline | Valida estrutura, posições, DV e igualdade entre emitente e chave. |
-| 3 | Retorno dos adaptadores | Incompatível | Rejeita autorização ou consulta com letras. |
-| 3 | Simulação/cancelamento/consulta | Incompatível | Os serviços ainda exigem somente dígitos. |
+| 3 | Retorno dos adaptadores | Compatível offline | Canonicaliza chave válida e recusa estrutura ou DV inválidos. |
+| 3 | Simulação/cancelamento/consulta | Compatível offline | Reutiliza a validação central sem exigir somente dígitos. |
 | 4 | QR Code NFC-e | Compatível offline | Reutiliza a chave central válida sem descartar letras. |
 | 5 | Chave textual no DANFE | Condicional | O template imprime o valor integral recebido. |
 | 5 | Código de barras do DANFE | Ausente | Não existe implementação Code 128 híbrida. |
@@ -52,10 +53,8 @@ pontos pertencem à Fase 6 e não devem ser misturados à integração offline d
 
 ## Sequência segura
 
-1. Trocar as validações numéricas internas sem relaxar tamanho, posição ou DV.
-2. Implementar e testar o Code 128 híbrido no DANFE.
-3. Somente depois homologar Focus e SEFAZ direta separadamente.
+1. Implementar e testar o Code 128 híbrido no DANFE.
+2. Somente depois homologar Focus e SEFAZ direta separadamente.
 
-O próximo ciclo deve substituir as exigências exclusivamente numéricas nos retornos dos
-adaptadores e nos serviços internos pós-geração pelo normalizador central, mantendo rede e
-produção desligadas.
+O próximo ciclo deve implementar o código de barras Code 128 híbrido no DANFE, preservando
+a apresentação textual da chave e mantendo rede e produção desligadas.

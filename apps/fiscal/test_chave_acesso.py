@@ -10,6 +10,11 @@ from .chave_acesso import (
     normalizar_chave_acesso,
     normalizar_cnpj_emitente,
 )
+from .adapters import (
+    SefazAdapterError,
+    normalizar_retorno_consulta,
+    normalizar_retorno_transmissao,
+)
 from .estrategia_normalizacao_cnpj import calcular_dv_cnpj
 from .models import TipoDocumentoFiscal
 from .services import _chave_acesso_documento
@@ -160,3 +165,39 @@ class ChaveAcessoCentralTests(SimpleTestCase):
             ValidationError, "CNPJ do emitente no XML não corresponde a chave de acesso"
         ):
             validar_xml_pre_transmissao(documento, adapter)
+
+    def test_retornos_de_transmissao_e_consulta_aceitam_chave_alfanumerica(self):
+        base_cnpj = "12ABC34501DE"
+        cnpj = base_cnpj + calcular_dv_cnpj(base_cnpj)
+        chave = construir_chave_acesso(**self.argumentos(cnpj))
+
+        transmissao = normalizar_retorno_transmissao({
+            "status": "AUTORIZADO",
+            "chave_acesso": chave.lower(),
+            "protocolo": "135260000000001",
+        })
+        consulta = normalizar_retorno_consulta({
+            "status": "AUTORIZADO",
+            "chave_acesso": chave.lower(),
+            "protocolo": "135260000000001",
+        })
+
+        self.assertEqual(transmissao.chave_acesso, chave)
+        self.assertEqual(consulta.chave_acesso, chave)
+
+    def test_retornos_continuam_recusando_chave_com_dv_invalido(self):
+        chave = construir_chave_acesso(**self.argumentos("04252011000110"))
+        invalida = chave[:-1] + ("0" if chave[-1] != "0" else "1")
+
+        with self.assertRaises(SefazAdapterError):
+            normalizar_retorno_transmissao({
+                "status": "AUTORIZADO",
+                "chave_acesso": invalida,
+                "protocolo": "135260000000001",
+            })
+        with self.assertRaises(SefazAdapterError):
+            normalizar_retorno_consulta({
+                "status": "AUTORIZADO",
+                "chave_acesso": invalida,
+                "protocolo": "135260000000001",
+            })

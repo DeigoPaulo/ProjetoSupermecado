@@ -3,7 +3,7 @@
 from pathlib import Path
 
 
-CONTRATO_AUDITORIA_FASE5_CNPJ = "alphanumeric_cnpj_phase5_static_audit_v3"
+CONTRATO_AUDITORIA_FASE5_CNPJ = "alphanumeric_cnpj_phase5_static_audit_v4"
 
 
 PONTOS = (
@@ -85,12 +85,12 @@ PONTOS = (
         "componente": "VALIDACAO",
         "arquivo": "apps/fiscal/adapters.py",
         "evidencias": (
-            "not resultado.chave_acesso.isdigit()",
-            "len(resultado.chave_acesso) != 44",
+            "chave_normalizada = normalizar_chave_acesso(chave_recebida)",
+            'if status == "AUTORIZADO" and not chave_normalizada:',
         ),
-        "estado": "INCOMPATIVEL",
+        "estado": "COMPATIVEL_OFFLINE",
         "ordem_correcao": 3,
-        "motivo": "Autorizações e consultas recusam retorno com letras na chave.",
+        "motivo": "Autorizações e consultas usam a validação central e preservam letras.",
     },
     {
         "codigo": "FLUXOS_POS_GERACAO",
@@ -98,12 +98,12 @@ PONTOS = (
         "componente": "SERVICOS",
         "arquivo": "apps/fiscal/services.py",
         "evidencias": (
-            "not documento.chave_acesso.isdigit()",
-            "Informe uma chave de acesso fiscal válida com 44 dígitos.",
+            "if not normalizar_chave_acesso(documento.chave_acesso):",
+            "Informe uma chave de acesso fiscal válida com 44 caracteres.",
         ),
-        "estado": "INCOMPATIVEL",
+        "estado": "COMPATIVEL_OFFLINE",
         "ordem_correcao": 3,
-        "motivo": "Simulação, cancelamento e consulta ainda impõem chave numérica.",
+        "motivo": "Simulação, cancelamento e consulta usam a validação central da chave.",
     },
     {
         "codigo": "QR_CODE_NFCE",
@@ -214,9 +214,8 @@ def auditar_fase5_cnpj(raiz_projeto):
             "altera_codigo_operacional": False,
         },
         "sequencia_recomendada": [
-            "SUBSTITUIR_VALIDACOES_NUMERICAS_NOS_FLUXOS_INTERNOS",
             "IMPLEMENTAR_DANFE_CODE128_HIBRIDO",
             "HOMOLOGAR_FOCUS_E_SEFAZ_DIRETA_SEPARADAMENTE",
         ],
-        "proximo_passo": "SUBSTITUIR_VALIDACOES_NUMERICAS_NOS_FLUXOS_INTERNOS",
+        "proximo_passo": "IMPLEMENTAR_DANFE_CODE128_HIBRIDO",
     }

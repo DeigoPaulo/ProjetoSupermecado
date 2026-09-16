@@ -61,6 +61,7 @@ from .certificados import abrir_certificado_a1, salvar_certificado_a1
 from .assinaturas import assinar_xml_documento, verificar_assinatura_xml
 from .validacoes import diagnosticar_schemas_fiscais, validar_xml_schema
 from .test_support_identidades_fiscais import obter_identidade_fiscal_teste
+from .chave_acesso import construir_chave_acesso
 from .fila import (
     diagnostico_fila_fiscal,
     processar_fila_fiscal,
@@ -181,7 +182,19 @@ class FakeSefazAdapter:
 
 class FakeProviderGeneratedKeyAdapter(FakeSefazAdapter):
     preserva_chave_local = False
-    chave_provedor = "52" + ("1" * 42)
+    chave_provedor = construir_chave_acesso(
+        codigo_uf="52",
+        aamm="2609",
+        cnpj_emitente=obter_identidade_fiscal_teste(
+            "EMPRESA_MATRIZ",
+            finalidade="TESTE_UNITARIO",
+        ),
+        modelo="65",
+        serie="001",
+        numero="000000777",
+        tipo_emissao="1",
+        codigo_numerico="00000777",
+    )
 
     def transmitir(self, **kwargs):
         xml_autorizado = kwargs["xml"].replace(
@@ -245,7 +258,7 @@ class FakeWrongKeySefazAdapter:
     def transmitir(self, **kwargs):
         return {
             "status": "AUTORIZADO",
-            "chave_acesso": "35" * 22,
+            "chave_acesso": FakeProviderGeneratedKeyAdapter.chave_provedor,
             "protocolo": "135260000000002",
             "mensagem": "Autorizado o uso da NF-e.",
         }
@@ -808,6 +821,15 @@ class FiscalTests(TestCase):
             f"?p={documento.chave_acesso}|3|2",
             documento.xml_conteudo,
         )
+
+        emitido = transmitir_documento_simulado(documento, self.user)
+        self.assertEqual(emitido.status, StatusDocumentoFiscal.EMITIDO)
+        cancelado = cancelar_documento(
+            emitido,
+            self.user,
+            "Cancelamento offline do cenário alfanumérico de teste.",
+        )
+        self.assertEqual(cancelado.status, StatusDocumentoFiscal.CANCELADO)
 
     def test_xml_usa_crt_estruturado_para_regime_normal(self):
         documento = preparar_documento_venda(self.venda, self.user)
@@ -3103,13 +3125,29 @@ class ConsultaSituacaoFiscalTests(TestCase):
             uf="GO",
             codigo_municipio_ibge="5208707",
         )
+        cnpj_consulta = obter_identidade_fiscal_teste(
+            "FILIAL",
+            finalidade="TESTE_INTEGRACAO_LOCAL",
+        )
+        self.filial.cnpj = cnpj_consulta
+        self.filial.save(update_fields=["cnpj"])
+        chave_consulta = construir_chave_acesso(
+            codigo_uf="52",
+            aamm="2609",
+            cnpj_emitente=cnpj_consulta,
+            modelo="65",
+            serie="001",
+            numero="000000077",
+            tipo_emissao="1",
+            codigo_numerico="00000077",
+        )
         self.documento = DocumentoFiscal.objects.create(
             filial=self.filial,
             tipo_documento=TipoDocumentoFiscal.NFCE,
             ambiente=AmbienteFiscal.PRODUCAO,
             serie=1,
             numero=77,
-            chave_acesso="52" + "0" * 42,
+            chave_acesso=chave_consulta,
             status=StatusDocumentoFiscal.REJEITADO,
             usuario=self.user,
         )
