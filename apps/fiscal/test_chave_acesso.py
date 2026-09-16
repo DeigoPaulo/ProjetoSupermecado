@@ -8,6 +8,7 @@ from .chave_acesso import (
     CONTRATO_CHAVE_ACESSO,
     construir_chave_acesso,
     normalizar_chave_acesso,
+    normalizar_cnpj_emitente,
 )
 from .estrategia_normalizacao_cnpj import calcular_dv_cnpj
 from .models import TipoDocumentoFiscal
@@ -89,7 +90,7 @@ class ChaveAcessoCentralTests(SimpleTestCase):
             "",
         )
 
-    def test_servico_numerico_usa_nucleo_e_bloqueia_xml_alfa_incompleto(self):
+    def test_servico_usa_nucleo_para_cnpj_numerico_e_alfanumerico(self):
         documento = SimpleNamespace(
             pk=7,
             serie=1,
@@ -106,10 +107,17 @@ class ChaveAcessoCentralTests(SimpleTestCase):
 
         base_cnpj = "12ABC34501DE"
         filial.cnpj = base_cnpj + calcular_dv_cnpj(base_cnpj)
-        with self.assertRaisesMessage(
-            ValidationError, "serialização XML do emitente ainda não foi integrada"
-        ):
-            _chave_acesso_documento(documento, filial, "65", "1")
+        chave_alfa, _ = _chave_acesso_documento(documento, filial, "65", "1")
+
+        self.assertEqual(chave_alfa[6:20], filial.cnpj)
+        self.assertEqual(normalizar_chave_acesso(chave_alfa), chave_alfa)
+
+    def test_normaliza_cnpj_emitente_uma_vez_para_chave_e_xml(self):
+        base_cnpj = "12ABC34501DE"
+        cnpj = base_cnpj + calcular_dv_cnpj(base_cnpj)
+        mascarado = f"{cnpj[:2]}.{cnpj[2:5]}.{cnpj[5:8]}/{cnpj[8:12]}-{cnpj[12:]}"
+
+        self.assertEqual(normalizar_cnpj_emitente(mascarado.lower()), cnpj)
 
     def test_validacao_pre_transmissao_reconhece_chave_alfa_offline(self):
         base_cnpj = "12ABC34501DE"
@@ -118,7 +126,7 @@ class ChaveAcessoCentralTests(SimpleTestCase):
         xml = (
             '<NFe xmlns="http://www.portalfiscal.inf.br/nfe">'
             f'<infNFe Id="NFe{chave}"><ide><mod>55</mod><cDV>{chave[-1]}</cDV>'
-            "</ide></infNFe></NFe>"
+            f"</ide><emit><CNPJ>{cnpj}</CNPJ></emit></infNFe></NFe>"
         )
         documento = SimpleNamespace(
             chave_acesso=chave.lower(),
@@ -132,3 +140,23 @@ class ChaveAcessoCentralTests(SimpleTestCase):
         self.assertEqual(resultado["chave_acesso"], chave)
         self.assertEqual(resultado["modelo"], "55")
         self.assertTrue(resultado["assinatura_pelo_adaptador"])
+
+    def test_validacao_recusa_divergencia_entre_emitente_e_chave(self):
+        cnpj = "04252011000110"
+        chave = construir_chave_acesso(**self.argumentos(cnpj))
+        xml = (
+            '<NFe xmlns="http://www.portalfiscal.inf.br/nfe">'
+            f'<infNFe Id="NFe{chave}"><ide><mod>55</mod><cDV>{chave[-1]}</cDV>'
+            "</ide><emit><CNPJ>12345678000190</CNPJ></emit></infNFe></NFe>"
+        )
+        documento = SimpleNamespace(
+            chave_acesso=chave,
+            xml_conteudo=xml,
+            tipo_documento=TipoDocumentoFiscal.NFE,
+        )
+        adapter = SimpleNamespace(valida_schema=True, assina_xml=True)
+
+        with self.assertRaisesMessage(
+            ValidationError, "CNPJ do emitente no XML não corresponde a chave de acesso"
+        ):
+            validar_xml_pre_transmissao(documento, adapter)

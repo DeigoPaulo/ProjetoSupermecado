@@ -3,7 +3,7 @@
 from pathlib import Path
 
 
-CONTRATO_AUDITORIA_FASE5_CNPJ = "alphanumeric_cnpj_phase5_static_audit_v2"
+CONTRATO_AUDITORIA_FASE5_CNPJ = "alphanumeric_cnpj_phase5_static_audit_v3"
 
 
 PONTOS = (
@@ -36,12 +36,12 @@ PONTOS = (
         "componente": "XML",
         "arquivo": "apps/fiscal/services.py",
         "evidencias": (
-            "cnpj_emitente = _somente_digitos(venda.filial.cnpj or empresa.cnpj)",
+            "cnpj_emitente = normalizar_cnpj_emitente(venda.filial.cnpj or empresa.cnpj)",
             '_texto(emit, "CNPJ", cnpj_emitente)',
         ),
-        "estado": "INCOMPATIVEL",
+        "estado": "COMPATIVEL_OFFLINE",
         "ordem_correcao": 2,
-        "motivo": "O XML da NFC-e recebe um CNPJ previamente reduzido a dígitos.",
+        "motivo": "A NFC-e usa o mesmo CNPJ canônico na chave e na tag emit/CNPJ.",
     },
     {
         "codigo": "XML_NFE_CNPJ_EMITENTE",
@@ -49,12 +49,12 @@ PONTOS = (
         "componente": "XML",
         "arquivo": "apps/fiscal/services.py",
         "evidencias": (
-            "cnpj_emitente = _somente_digitos(pedido.filial.cnpj or empresa.cnpj)",
+            "cnpj_emitente = normalizar_cnpj_emitente(pedido.filial.cnpj or empresa.cnpj)",
             '_texto(emit, "CNPJ", cnpj_emitente)',
         ),
-        "estado": "INCOMPATIVEL",
+        "estado": "COMPATIVEL_OFFLINE",
         "ordem_correcao": 2,
-        "motivo": "O XML da NF-e de pedido recebe um CNPJ previamente reduzido a dígitos.",
+        "motivo": "A NF-e usa o mesmo CNPJ canônico na chave e na tag emit/CNPJ.",
     },
     {
         "codigo": "XML_IDENTIFICADOR_INF_NFE",
@@ -62,9 +62,9 @@ PONTOS = (
         "componente": "XML",
         "arquivo": "apps/fiscal/services.py",
         "evidencias": ('{"versao": "4.00", "Id": f"NFe{chave_acesso}"}',),
-        "estado": "COMPATIVEL_CONDICIONAL",
+        "estado": "COMPATIVEL_OFFLINE",
         "ordem_correcao": 2,
-        "motivo": "O identificador preserva a chave recebida, mas depende da formação correta.",
+        "motivo": "O identificador recebe a chave central já validada e preserva suas letras.",
     },
     {
         "codigo": "VALIDACAO_CHAVE_XML",
@@ -111,12 +111,12 @@ PONTOS = (
         "componente": "QR_CODE",
         "arquivo": "apps/fiscal/qrcode_nfce.py",
         "evidencias": (
-            'if ch.isdigit()',
-            "if len(chave) != 44",
+            "normalizar_chave_acesso(documento.chave_acesso or",
+            "if not chave:",
         ),
-        "estado": "INCOMPATIVEL",
+        "estado": "COMPATIVEL_OFFLINE",
         "ordem_correcao": 4,
-        "motivo": "A chave usada no QR Code perde todas as letras.",
+        "motivo": "O QR Code reutiliza a chave central válida sem descartar letras.",
     },
     {
         "codigo": "DANFE_CHAVE_TEXTO",
@@ -214,11 +214,9 @@ def auditar_fase5_cnpj(raiz_projeto):
             "altera_codigo_operacional": False,
         },
         "sequencia_recomendada": [
-            "INTEGRAR_CNPJ_CANONICO_AOS_XML_NFCE_E_NFE",
             "SUBSTITUIR_VALIDACOES_NUMERICAS_NOS_FLUXOS_INTERNOS",
-            "ADEQUAR_QR_CODE_NFCE",
             "IMPLEMENTAR_DANFE_CODE128_HIBRIDO",
             "HOMOLOGAR_FOCUS_E_SEFAZ_DIRETA_SEPARADAMENTE",
         ],
-        "proximo_passo": "INTEGRAR_CNPJ_CANONICO_AOS_XML_NFCE_E_NFE_OFFLINE",
+        "proximo_passo": "SUBSTITUIR_VALIDACOES_NUMERICAS_NOS_FLUXOS_INTERNOS",
     }

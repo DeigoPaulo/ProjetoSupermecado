@@ -8,6 +8,7 @@ from django.core.exceptions import ValidationError
 from django.utils import timezone
 
 from .assinaturas import assinar_parametros_qrcode_nfce
+from .chave_acesso import normalizar_chave_acesso
 from apps.vendas.models import TipoDocumentoConsumidor
 
 from .models import AmbienteFiscal, StatusDocumentoFiscal
@@ -39,8 +40,8 @@ def _destinatario(documento):
 
 def parametros_qrcode_nfce(documento, configuracao=None):
     configuracao = configuracao or documento.filial.configuracao_fiscal
-    chave = "".join(ch for ch in documento.chave_acesso if ch.isdigit())
-    if len(chave) != 44:
+    chave = normalizar_chave_acesso(documento.chave_acesso or "")
+    if not chave:
         raise ValidationError("A NFC-e precisa de uma chave de acesso valida para gerar o QR Code.")
     ambiente = "2" if documento.ambiente == AmbienteFiscal.HOMOLOGACAO else "1"
     parametros = [chave, VERSAO_QRCODE_NFCE, ambiente]

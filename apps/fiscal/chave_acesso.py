@@ -19,6 +19,14 @@ def _campo_numerico(nome, valor, tamanho):
     return texto
 
 
+def normalizar_cnpj_emitente(valor):
+    """Devolve o CNPJ canônico usado conjuntamente na chave e no XML fiscal."""
+    cnpj = canonicalizar_cnpj(str(valor or ""))
+    if not cnpj:
+        raise ValueError("CNPJ do emitente é obrigatório para formar o documento fiscal.")
+    return cnpj
+
+
 def construir_chave_acesso(
     *,
     codigo_uf,
@@ -30,9 +38,7 @@ def construir_chave_acesso(
     tipo_emissao,
     codigo_numerico,
 ):
-    cnpj = canonicalizar_cnpj(str(cnpj_emitente or ""))
-    if not cnpj:
-        raise ValueError("CNPJ do emitente é obrigatório para formar a chave fiscal.")
+    cnpj = normalizar_cnpj_emitente(cnpj_emitente)
     base = "".join((
         _campo_numerico("Código da UF", codigo_uf, 2),
         _campo_numerico("Ano e mês", aamm, 4),

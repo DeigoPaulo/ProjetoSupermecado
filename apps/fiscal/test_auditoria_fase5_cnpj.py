@@ -30,23 +30,20 @@ class AuditoriaFase5CNPJTests(SimpleTestCase):
         por_codigo = {item["codigo"]: item for item in resultado["resultados"]}
 
         for codigo in (
-            "XML_NFCE_CNPJ_EMITENTE",
-            "XML_NFE_CNPJ_EMITENTE",
             "VALIDACAO_RETORNO_ADAPTADORES",
             "FLUXOS_POS_GERACAO",
-            "QR_CODE_NFCE",
         ):
             self.assertEqual(por_codigo[codigo]["estado"], "INCOMPATIVEL")
         for codigo in (
             "CHAVE_FORMACAO_EMITENTE",
             "CHAVE_DIGITO_VERIFICADOR",
+            "XML_NFCE_CNPJ_EMITENTE",
+            "XML_NFE_CNPJ_EMITENTE",
+            "XML_IDENTIFICADOR_INF_NFE",
             "VALIDACAO_CHAVE_XML",
+            "QR_CODE_NFCE",
         ):
             self.assertEqual(por_codigo[codigo]["estado"], "COMPATIVEL_OFFLINE")
-        self.assertEqual(
-            por_codigo["XML_IDENTIFICADOR_INF_NFE"]["estado"],
-            "COMPATIVEL_CONDICIONAL",
-        )
         self.assertEqual(
             por_codigo["DANFE_CHAVE_TEXTO"]["estado"],
             "COMPATIVEL_CONDICIONAL",
@@ -74,5 +71,5 @@ class AuditoriaFase5CNPJTests(SimpleTestCase):
         self.assertTrue(any(caractere.isalpha() for caractere in chave))
         self.assertEqual(
             self.resultado()["proximo_passo"],
-            "INTEGRAR_CNPJ_CANONICO_AOS_XML_NFCE_E_NFE_OFFLINE",
+            "SUBSTITUIR_VALIDACOES_NUMERICAS_NOS_FLUXOS_INTERNOS",
         )

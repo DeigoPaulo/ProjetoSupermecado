@@ -28,7 +28,7 @@ from .cbenef import codigos_cbenef_go_validos
 from .cest import queryset_codigos_cest_vigentes, validar_cest
 from .cfop import validar_cfop
 from .cenarios_tributarios import pendencias_cenario_fiscal_go
-from .chave_acesso import construir_chave_acesso
+from .chave_acesso import construir_chave_acesso, normalizar_cnpj_emitente
 from .ncm import queryset_codigos_ncm_vigentes, validar_ncm
 from .validacoes import validar_xml_pre_transmissao
 from .qrcode_nfce import gerar_url_qrcode_nfce
@@ -159,11 +159,6 @@ def _somente_digitos(valor):
 
 def _chave_acesso_documento(documento, filial, modelo, tipo_emissao):
     cnpj = str(filial.cnpj or filial.empresa.cnpj or "").strip()
-    if any(caractere.isalpha() for caractere in cnpj):
-        raise ValidationError(
-            "A formação da chave já aceita CNPJ alfanumérico, mas a serialização XML "
-            "do emitente ainda não foi integrada. A emissão permanece bloqueada."
-        )
     codigo_uf = CODIGOS_UF_IBGE.get(filial.uf)
     if not codigo_uf:
         raise ValidationError("UF do emitente inválida para gerar a chave fiscal.")
@@ -713,7 +708,10 @@ def gerar_xml_nfce(documento):
     if erros_cenario:
         raise ValidationError(erros_cenario)
     empresa = venda.filial.empresa
-    cnpj_emitente = _somente_digitos(venda.filial.cnpj or empresa.cnpj)
+    try:
+        cnpj_emitente = normalizar_cnpj_emitente(venda.filial.cnpj or empresa.cnpj)
+    except ValueError as exc:
+        raise ValidationError(str(exc)) from exc
     data_emissao = timezone.localtime(documento.criado_em).replace(microsecond=0).isoformat()
     em_contingencia = documento_em_contingencia_offline(documento)
     tipo_emissao = "9" if em_contingencia else "1"
@@ -930,7 +928,10 @@ def gerar_xml_nfe_pedido_online(documento):
     configuracao = pedido.filial.configuracao_fiscal
     natureza = documento.natureza_operacao
     empresa = pedido.filial.empresa
-    cnpj_emitente = _somente_digitos(pedido.filial.cnpj or empresa.cnpj)
+    try:
+        cnpj_emitente = normalizar_cnpj_emitente(pedido.filial.cnpj or empresa.cnpj)
+    except ValueError as exc:
+        raise ValidationError(str(exc)) from exc
     data_emissao = timezone.localtime(documento.criado_em).replace(microsecond=0).isoformat()
     destinatario = _dados_destinatario_nfe_pedido(pedido)
     em_svc = bool(

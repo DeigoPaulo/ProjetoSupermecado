@@ -458,12 +458,40 @@ menos 48, validando separadamente todas as posições numéricas da chave.
   migration pendente.
 - [x] Manter QR Code, DANFE, retornos dos adaptadores, Focus, SEFAZ direta, DF-e, credenciais,
   certificados, flags, rede e produção inalterados.
-- [ ] Próximo passo: integrar de forma atômica o CNPJ canônico à formação da chave e às tags
-  emit/CNPJ dos XMLs offline de NFC-e e NF-e, removendo somente então o bloqueio preventivo.
+- [x] Próximo passo concluído no ciclo 123: CNPJ canônico integrado de forma atômica à chave,
+  aos XMLs offline de NFC-e/NF-e e ao QR Code acoplado da NFC-e.
 
 Arquivos principais: apps/fiscal/chave_acesso.py, apps/fiscal/services.py,
 apps/fiscal/validacoes.py, apps/fiscal/test_chave_acesso.py,
 apps/fiscal/auditoria_fase5_cnpj.py e
+docs/AUDITORIA_FASE5_CNPJ_ALFANUMERICO.md. Migrações: nenhuma.
+
+## Ponto de retomada — ciclo 123, 16/09/2026
+
+Concluída a integração offline do CNPJ canônico aos geradores reais de NFC-e e NF-e. A
+mesma representação agora alimenta a faixa do emitente na chave e a tag emit/CNPJ, com
+validação pré-transmissão que recusa qualquer divergência entre os dois valores.
+
+- [x] Centralizar a normalização do CNPJ do emitente sem alterar o resultado numérico legado.
+- [x] Remover o bloqueio preventivo somente após integrar os dois geradores fiscais reais.
+- [x] Preservar letras na chave, no Id de infNFe e em emit/CNPJ da NFC-e do PDV.
+- [x] Preservar letras na chave, no Id de infNFe e em emit/CNPJ da NF-e de pedido online.
+- [x] Tratar o acoplamento obrigatório do QR Code dentro do gerador NFC-e, reutilizando a
+  chave central válida sem filtragem somente numérica.
+- [x] Recusar antes da transmissão XML cujo emit/CNPJ não corresponda às posições 7 a 20
+  da chave.
+- [x] Evoluir a auditoria viva para alphanumeric_cnpj_phase5_static_audit_v3: sete pontos
+  compatíveis offline, dois incompatíveis, um condicional e o Code 128 híbrido ausente.
+- [x] Validar 14 testes focados e 628 testes das suítes fiscal e marketplace, com três
+  ignorados por requisitos específicos de ambiente.
+- [x] Manter banco, modelos, migrations, credenciais, certificados, Focus, SEFAZ direta,
+  chamadas de rede e produção inalterados.
+- [ ] Próximo passo: substituir as exigências exclusivamente numéricas nos retornos dos
+  adaptadores e nos fluxos internos pós-geração, sempre pelo normalizador central de chave.
+
+Arquivos principais: apps/fiscal/chave_acesso.py, apps/fiscal/services.py,
+apps/fiscal/qrcode_nfce.py, apps/fiscal/validacoes.py,
+apps/fiscal/auditoria_fase5_cnpj.py, testes fiscais/marketplace e
 docs/AUDITORIA_FASE5_CNPJ_ALFANUMERICO.md. Migrações: nenhuma.
 
 ## Ponto de retomada — ciclo 114, 14/09/2026

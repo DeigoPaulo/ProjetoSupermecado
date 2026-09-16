@@ -7,7 +7,7 @@ from django.core.exceptions import ValidationError
 from lxml import etree
 
 from .models import TipoDocumentoFiscal
-from .chave_acesso import normalizar_chave_acesso
+from .chave_acesso import normalizar_chave_acesso, normalizar_cnpj_emitente
 
 NFE_NS = "http://www.portalfiscal.inf.br/nfe"
 DSIG_NS = "http://www.w3.org/2000/09/xmldsig#"
@@ -95,6 +95,14 @@ def validar_xml_pre_transmissao(documento, adapter):
     inf_nfe = raiz.find(f"{{{NFE_NS}}}infNFe")
     if inf_nfe is None or inf_nfe.get("Id") != f"NFe{chave}":
         raise ValidationError("Identificador infNFe não corresponde a chave de acesso.")
+
+    cnpj_xml = inf_nfe.findtext(f"{{{NFE_NS}}}emit/{{{NFE_NS}}}CNPJ")
+    try:
+        cnpj_emitente = normalizar_cnpj_emitente(cnpj_xml)
+    except ValueError as exc:
+        raise ValidationError(f"CNPJ do emitente inválido no XML fiscal: {exc}") from exc
+    if cnpj_emitente != chave[6:20]:
+        raise ValidationError("CNPJ do emitente no XML não corresponde a chave de acesso.")
 
     modelo = inf_nfe.findtext(f"{{{NFE_NS}}}ide/{{{NFE_NS}}}mod")
     modelo_esperado = "65" if documento.tipo_documento == TipoDocumentoFiscal.NFCE else "55"

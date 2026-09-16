@@ -4,9 +4,9 @@ Data de corte: 16/09/2026.
 
 ## Objetivo
 
-Esta auditoria compara o caminho fiscal operacional com a regra oficial já preservada no
-repositório. Ela não altera geradores, adaptadores, XML, credenciais, certificados, ambientes
-ou flags de rede.
+Esta auditoria viva compara o caminho fiscal operacional com a regra oficial já preservada
+no repositório. No ciclo 123, geradores e validações offline foram integrados; credenciais,
+certificados, ambientes, adaptadores de canal e flags de rede continuam inalterados.
 
 As evidências normativas versionadas incluem o manual da Receita Federal, perguntas e
 respostas da Receita, a NT Conjunta DF-e 2025.001, a NT NF-e 2026.004 e o pacote XSD
@@ -23,22 +23,23 @@ O núcleo isolado já conhece a estrutura oficial da chave:
 - DV calculado por módulo 11 usando o valor ASCII menos 48;
 - código de barras Code 128 híbrido, alternando conjuntos C e A quando houver letras.
 
-Desde o ciclo 122, esse núcleo é usado pela formação numérica operacional e pela validação
-pré-transmissão. Foram confirmados 11 pontos da Fase 5: três compatíveis offline, cinco
-incompatíveis, dois compatíveis apenas de forma condicional e uma capacidade ausente.
-Três pontos dos canais da Fase 6 também foram inventariados sem alteração.
+Desde o ciclo 123, esse núcleo é usado pela formação da chave, pelos XMLs reais de NFC-e e
+NF-e, pelo QR Code acoplado da NFC-e e pela validação pré-transmissão. Foram confirmados 11
+pontos da Fase 5: sete compatíveis offline, dois incompatíveis, um compatível apenas de forma
+condicional e uma capacidade ausente. Três pontos dos canais da Fase 6 também permanecem
+inventariados sem alteração.
 
 | Ordem | Componente | Estado | Diagnóstico |
 |---|---|---|---|
 | 1 | Formação da chave | Compatível offline | Preserva o CNPJ canônico; o fluxo numérico usa o núcleo. |
 | 1 | DV da chave | Compatível offline | Usa módulo 11 com valor ASCII menos 48. |
-| 2 | XML NFC-e | Incompatível | Serializa o emitente após normalização somente numérica. |
-| 2 | XML NF-e | Incompatível | Repete a mesma normalização no pedido online. |
-| 2 | Id de infNFe | Condicional | Preserva a chave recebida, mas depende da formação correta. |
-| 3 | Validação do XML | Compatível offline | Valida estrutura, posições e DV alfanuméricos. |
+| 2 | XML NFC-e | Compatível offline | Usa o mesmo CNPJ canônico na chave e em emit/CNPJ. |
+| 2 | XML NF-e | Compatível offline | Usa o mesmo CNPJ canônico na chave e em emit/CNPJ. |
+| 2 | Id de infNFe | Compatível offline | Preserva integralmente a chave central validada. |
+| 3 | Validação do XML | Compatível offline | Valida estrutura, posições, DV e igualdade entre emitente e chave. |
 | 3 | Retorno dos adaptadores | Incompatível | Rejeita autorização ou consulta com letras. |
 | 3 | Simulação/cancelamento/consulta | Incompatível | Os serviços ainda exigem somente dígitos. |
-| 4 | QR Code NFC-e | Incompatível | Filtra a chave e descarta todas as letras. |
+| 4 | QR Code NFC-e | Compatível offline | Reutiliza a chave central válida sem descartar letras. |
 | 5 | Chave textual no DANFE | Condicional | O template imprime o valor integral recebido. |
 | 5 | Código de barras do DANFE | Ausente | Não existe implementação Code 128 híbrida. |
 
@@ -51,11 +52,10 @@ pontos pertencem à Fase 6 e não devem ser misturados à integração offline d
 
 ## Sequência segura
 
-1. Integrar o CNPJ canônico aos XMLs offline de NFC-e e NF-e.
-2. Trocar as validações numéricas internas sem relaxar tamanho, posição ou DV.
-3. Adequar o QR Code da NFC-e e validar os dois modos previstos pelo projeto.
-4. Implementar e testar o Code 128 híbrido no DANFE.
-5. Somente depois homologar Focus e SEFAZ direta separadamente.
+1. Trocar as validações numéricas internas sem relaxar tamanho, posição ou DV.
+2. Implementar e testar o Code 128 híbrido no DANFE.
+3. Somente depois homologar Focus e SEFAZ direta separadamente.
 
-O próximo ciclo deve integrar chave e tag CNPJ nos dois XMLs offline como uma mudança atômica,
-mantendo rede e produção desligadas.
+O próximo ciclo deve substituir as exigências exclusivamente numéricas nos retornos dos
+adaptadores e nos serviços internos pós-geração pelo normalizador central, mantendo rede e
+produção desligadas.

@@ -60,6 +60,7 @@ from .models import (
 from .certificados import abrir_certificado_a1, salvar_certificado_a1
 from .assinaturas import assinar_xml_documento, verificar_assinatura_xml
 from .validacoes import diagnosticar_schemas_fiscais, validar_xml_schema
+from .test_support_identidades_fiscais import obter_identidade_fiscal_teste
 from .fila import (
     diagnostico_fila_fiscal,
     processar_fila_fiscal,
@@ -788,6 +789,24 @@ class FiscalTests(TestCase):
                 ambiente=AmbienteFiscal.HOMOLOGACAO,
             ).proximo_numero,
             101,
+        )
+
+    def test_preparar_nfce_preserva_cnpj_alfanumerico_na_chave_xml_e_qrcode(self):
+        cnpj = obter_identidade_fiscal_teste(
+            "FILIAL",
+            finalidade="TESTE_INTEGRACAO_LOCAL",
+        )
+        self.filial.cnpj = cnpj.lower()
+        self.filial.save(update_fields=["cnpj"])
+
+        documento = preparar_documento_venda(self.venda, self.user)
+
+        self.assertEqual(documento.chave_acesso[6:20], cnpj)
+        self.assertIn(f'Id="NFe{documento.chave_acesso}"', documento.xml_conteudo)
+        self.assertIn(f"<CNPJ>{cnpj}</CNPJ>", documento.xml_conteudo)
+        self.assertIn(
+            f"?p={documento.chave_acesso}|3|2",
+            documento.xml_conteudo,
         )
 
     def test_xml_usa_crt_estruturado_para_regime_normal(self):

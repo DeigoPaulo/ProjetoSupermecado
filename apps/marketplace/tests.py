@@ -13,6 +13,7 @@ from apps.empresas.models import Empresa, Filial
 from apps.estoque.models import Estoque
 from apps.fiscal.models import AmbienteFiscal, ConfiguracaoFiscal, DocumentoFiscal, NaturezaOperacao, ProvedorEmissaoFiscal, SerieFiscal, StatusDocumentoFiscal, TipoDocumentoFiscal
 from apps.fiscal.services import ativar_contingencia_svc, preparar_documento_pedido_online, transmitir_documento_sefaz
+from apps.fiscal.test_support_identidades_fiscais import obter_identidade_fiscal_teste
 from apps.produtos.models import Categoria, Produto
 from apps.vendas.models import TipoDocumentoConsumidor
 
@@ -560,6 +561,12 @@ class FluxoPedidoOnlineTests(TestCase):
             200,
         )
         self._preencher_destinatario_fiscal()
+        cnpj_emitente = obter_identidade_fiscal_teste(
+            "FILIAL",
+            finalidade="TESTE_INTEGRACAO_LOCAL",
+        )
+        self.filial.cnpj = cnpj_emitente.lower()
+        self.filial.save(update_fields=["cnpj"])
         documento = preparar_documento_pedido_online(self.pedido, self.usuario)
 
         self.assertEqual(documento.tipo_documento, TipoDocumentoFiscal.NFE)
@@ -567,6 +574,8 @@ class FluxoPedidoOnlineTests(TestCase):
         self.assertEqual(documento.numero, 200)
         self.assertEqual(documento.pedido_online, self.pedido)
         self.assertIn("<mod>55</mod>", documento.xml_conteudo)
+        self.assertEqual(documento.chave_acesso[6:20], cnpj_emitente)
+        self.assertIn(f"<CNPJ>{cnpj_emitente}</CNPJ>", documento.xml_conteudo)
         self.assertIn("<CNPJ>12345678000190</CNPJ>", documento.xml_conteudo)
         self.assertIn("<enderDest>", documento.xml_conteudo)
         self.assertIn("<xLgr>Rua do Consumidor</xLgr>", documento.xml_conteudo)
