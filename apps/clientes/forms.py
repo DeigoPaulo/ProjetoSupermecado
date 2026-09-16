@@ -1,10 +1,25 @@
 from django import forms
 from django.core.exceptions import ValidationError
+import re
 
 from apps.empresas.models import Empresa
+from apps.fiscal.validacao_escrita_cnpj import (
+    ErroValidacaoEscritaCNPJ,
+    existe_colisao_cnpj,
+    validar_proposta_cnpj,
+)
 
 from .escopo import empresa_id_do_usuario
 from .models import Cliente
+
+
+PADRAO_CPF = re.compile(r"^(?:\d{11}|\d{3}\.\d{3}\.\d{3}-\d{2})$")
+MENSAGENS_CNPJ = {
+    "cnpj_invalido": "Informe um CNPJ no formato oficial e com dígitos verificadores válidos.",
+    "cnpj_legado_invalido": "O documento atual é legado inválido e exige revisão manual antes da atualização.",
+    "cnpj_troca_identidade": "A troca de CPF/CNPJ exige revisão de identidade e não pode ser feita por este formulário.",
+    "cnpj_nao_validado": "Não foi possível validar o CNPJ neste cadastro.",
+}
 
 
 class ClienteForm(forms.ModelForm):
@@ -51,3 +66,39 @@ class ClienteForm(forms.ModelForm):
         if empresa and empresa.pk != empresa_id:
             raise ValidationError("Empresa do cliente não corresponde ao usuário autenticado.")
         return Empresa.objects.filter(pk=empresa_id, is_active=True).first()
+
+    def clean_cpf_cnpj(self):
+        valor = str(self.cleaned_data.get("cpf_cnpj") or "").strip()
+        if not valor:
+            return ""
+        if PADRAO_CPF.fullmatch(valor):
+            atual = str(getattr(self.instance, "cpf_cnpj", "") or "").strip()
+            if self.instance.pk and atual != valor:
+                raise ValidationError(
+                    MENSAGENS_CNPJ["cnpj_troca_identidade"],
+                    code="cnpj_troca_identidade",
+                )
+            return valor
+        empresa = self.cleaned_data.get("empresa")
+        if empresa is None:
+            return valor
+        try:
+            canonico = validar_proposta_cnpj(
+                valor,
+                fronteira="CLIENTE_PJ",
+                instance=self.instance,
+                empresa_id=empresa.pk,
+            )
+        except ErroValidacaoEscritaCNPJ as exc:
+            raise ValidationError(MENSAGENS_CNPJ[exc.codigo], code=exc.codigo) from exc
+        if existe_colisao_cnpj(
+            Cliente.objects.filter(empresa=empresa),
+            canonico,
+            campo="cpf_cnpj",
+            excluir_pk=getattr(self.instance, "pk", None),
+        ):
+            raise ValidationError(
+                "Já existe um cliente desta empresa com este CNPJ.",
+                code="cnpj_colisao_canonica",
+            )
+        return canonico

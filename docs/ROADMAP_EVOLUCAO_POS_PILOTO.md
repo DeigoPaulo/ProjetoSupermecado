@@ -6,7 +6,7 @@ A frente atual pertence à transição do CNPJ alfanumérico planejada no ciclo 
 
 - [x] Normalizador, auditoria local, leitura comparativa e preparação pura de escrita implementados e testados.
 - [x] Desdobramentos técnicos acrescentados nos ciclos 109–113: catálogo de teste, adoção, controle de importações, regressão e exclusão do pacote. Estes trabalhos apoiam a frente original, mas não concluem a integração cadastral.
-- [ ] Fase 4 original: escrita canônica por fronteira. Estado real: parcial; Empresa e Filial foram integradas no ciclo 117, enquanto Cliente PJ e Fornecedor PJ permanecem pendentes.
+- [x] Fase 4 original: escrita canônica por fronteira concluída nos ciclos 117 e 119 para Empresa, Filial, Cliente PJ e Fornecedor PJ. Os 18 bloqueios legados permanecem separados para correção manual antes de constraints ou migração de conteúdo.
 - [x] Próxima entrega delimitada da fase 4 concluída no ciclo 115: comparação isolada com os formulários de Empresa/Filial, divergências e colisões comprovadas e pontos de integração identificados, sem persistência.
 - [x] Após essa comparação, atualizar a pendência de integração da própria fase 4, identificando o que depende de correção de dados e o que pode ser validado localmente. A classificação foi concluída no ciclo 116, sem declarar a fase completa.
 - [ ] Fases 5 e 6 originais: chave/XML/QR Code/DANFE e homologação dos canais continuam pendentes.
@@ -307,8 +307,8 @@ locais ainda aguardam decisão manual.
   permitiu sete importações em testes e encontrou zero importações do catálogo em runtime.
 - [x] Confirmar ausência de migration e manter dados locais, credenciais, certificados, Focus,
   SEFAZ direta, homologação, produção e emissão inalterados.
-- [ ] Fase 4 continua parcial: avaliar e integrar separadamente Cliente pessoa jurídica e
-  Fornecedor pessoa jurídica, respeitando campos mistos CPF/CNPJ e o escopo da Empresa.
+- [x] Avaliação de Cliente pessoa jurídica e Fornecedor pessoa jurídica concluída no ciclo 118,
+  respeitando campos mistos CPF/CNPJ e o escopo da Empresa.
 
 ## Ponto de retomada — ciclo 118, 16/09/2026
 
@@ -323,13 +323,42 @@ vazios opcionais e verifica colisões canônicas somente dentro da Empresa.
 - [x] Detectar colisões canônicas de Cliente PJ e Fornecedor PJ no escopo da Empresa.
 - [x] Executar somente `SELECT`, sem salvar ou alterar instâncias existentes.
 - [x] Proteger CPF, CNPJ e identificadores internos no diagnóstico.
-- [ ] Integrar o portão nos formulários reais, mantendo CPF fora da canonicalização de CNPJ e
-  aplicando as mesmas travas de legado inválido e troca de identidade do ciclo 117.
+- [x] Integração dos formulários reais concluída no ciclo 119, mantendo CPF fora da
+  canonicalização de CNPJ e aplicando as travas de legado inválido e troca de identidade.
 
 Arquivos: `apps/fiscal/adaptador_sombra_escrita_cnpj_partes.py` e
 `apps/fiscal/test_adaptador_sombra_escrita_cnpj_partes.py`. Documentação:
 [ADAPTADOR_SOMBRA_ESCRITA_CNPJ_CLIENTE_FORNECEDOR.md](ADAPTADOR_SOMBRA_ESCRITA_CNPJ_CLIENTE_FORNECEDOR.md).
 Migrações: nenhuma.
+
+## Ponto de retomada — ciclo 119, 16/09/2026
+
+`ClienteForm.clean_cpf_cnpj` e `FornecedorForm.clean_cnpj` agora consomem o portão canônico.
+Cliente separa primeiro CPF, que permanece fora do algoritmo de CNPJ; documento vazio também
+continua permitido. No caminho PJ, as duas fronteiras validam formato e DV, gravam os 14
+caracteres canônicos e recusam colisões dentro da Empresa.
+
+Atualizações com CNPJ equivalente preservam a identidade. Legado inválido, troca entre CPF e
+CNPJ e troca para outro CNPJ permanecem bloqueados para revisão externa. Nenhuma validação nova
+de DV de CPF foi introduzida nesta etapa, evitando ampliar silenciosamente o escopo.
+
+- [x] Canonicalizar CNPJ novo de Cliente PJ e Fornecedor PJ.
+- [x] Rejeitar DV inválido e colisão canônica no escopo da Empresa.
+- [x] Preservar CPF de Cliente e campos vazios opcionais.
+- [x] Bloquear troca CPF/CNPJ, troca entre identidades e correção silenciosa de legado.
+- [x] Atualizar o observador sombra para comprovar convergência com os formulários integrados.
+- [x] Validar 32 testes de Cliente, Fornecedor, comparação e integração.
+- [x] Confirmar 660 arquivos Python, nove importações autorizadas em testes e zero importações
+  do catálogo de identidades em runtime.
+- [x] Confirmar ausência de migration e manter os dados legados inalterados.
+- [x] Concluir a fase 4 nas quatro fronteiras previstas, sem criar constraints enquanto a base
+  local ainda contém 18 bloqueios que exigem decisão manual.
+- [ ] Próximo passo: iniciar a fase 5 com auditoria delimitada da formação de chave de acesso,
+  XML, QR Code e DANFE diante do CNPJ alfanumérico, sem ativar Focus, SEFAZ direta ou produção.
+
+Arquivos principais: `apps/fiscal/validacao_escrita_cnpj.py`, `apps/clientes/forms.py`,
+`apps/fornecedores/forms.py`, `apps/fiscal/test_integracao_escrita_cnpj_partes.py` e
+`apps/fiscal/test_adaptador_sombra_escrita_cnpj_partes.py`. Migrações: nenhuma.
 
 Arquivos principais: `apps/empresas/forms.py`, `apps/empresas/test_cnpj_canonico_forms.py`,
 `apps/empresas/tests.py`, `apps/fiscal/adaptador_sombra_escrita_cnpj.py` e

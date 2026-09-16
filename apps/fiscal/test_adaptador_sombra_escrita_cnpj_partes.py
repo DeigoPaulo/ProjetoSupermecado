@@ -72,15 +72,15 @@ class AdaptadorSombraEscritaCNPJPartesTests(TestCase):
             all(item["sql"].lstrip().upper().startswith("SELECT") for item in consultas.captured_queries)
         )
 
-    def test_formularios_atuais_aceitam_dv_invalido(self):
+    def test_formularios_integrados_e_portao_recusam_dv_invalido(self):
         cnpj = self.identidade("FORNECEDOR")
         invalido = cnpj[:-1] + ("0" if cnpj[-1] != "0" else "1")
 
         cliente = observar_escrita_cliente(self.dados_cliente(invalido))
         fornecedor = observar_escrita_fornecedor(self.dados_fornecedor(invalido))
 
-        self.assertEqual(cliente["classificacao"], "FORMULARIO_ATUAL_ACEITA_PORTAO_RECUSA")
-        self.assertEqual(fornecedor["classificacao"], "FORMULARIO_ATUAL_ACEITA_PORTAO_RECUSA")
+        self.assertEqual(cliente["classificacao"], "AMBOS_RECUSAM")
+        self.assertEqual(fornecedor["classificacao"], "AMBOS_RECUSAM")
 
     def test_detecta_colisoes_canonicas_no_escopo_da_empresa(self):
         Cliente.objects.create(
@@ -103,6 +103,8 @@ class AdaptadorSombraEscritaCNPJPartesTests(TestCase):
 
         self.assertEqual(cliente["classificacao"], "COLISAO_CANONICA_DETECTADA")
         self.assertEqual(fornecedor["classificacao"], "COLISAO_CANONICA_DETECTADA")
+        self.assertFalse(cliente["formulario_atual"]["valido"])
+        self.assertFalse(fornecedor["formulario_atual"]["valido"])
         self.assertEqual(cliente["proposta_canonica"]["quantidade_colisoes"], 1)
         self.assertEqual(fornecedor["proposta_canonica"]["quantidade_colisoes"], 1)
 

@@ -3,8 +3,21 @@ from django.core.exceptions import ValidationError
 
 from apps.clientes.escopo import empresa_id_do_usuario
 from apps.empresas.models import Empresa
+from apps.fiscal.validacao_escrita_cnpj import (
+    ErroValidacaoEscritaCNPJ,
+    existe_colisao_cnpj,
+    validar_proposta_cnpj,
+)
 
 from .models import Fornecedor
+
+
+MENSAGENS_CNPJ = {
+    "cnpj_invalido": "Informe um CNPJ no formato oficial e com dígitos verificadores válidos.",
+    "cnpj_legado_invalido": "O CNPJ atual é legado inválido e exige revisão manual antes da atualização.",
+    "cnpj_troca_identidade": "A troca do CNPJ exige revisão de identidade e não pode ser feita por este formulário.",
+    "cnpj_nao_validado": "Não foi possível validar o CNPJ neste cadastro.",
+}
 
 
 class FornecedorForm(forms.ModelForm):
@@ -66,3 +79,30 @@ class FornecedorForm(forms.ModelForm):
         if not empresa_id or not empresa or empresa.pk != empresa_id:
             raise ValidationError("Empresa do fornecedor não corresponde ao usuário autenticado.")
         return empresa
+
+    def clean_cnpj(self):
+        valor = str(self.cleaned_data.get("cnpj") or "").strip()
+        if not valor:
+            return ""
+        empresa = self.cleaned_data.get("empresa")
+        if empresa is None:
+            return valor
+        try:
+            canonico = validar_proposta_cnpj(
+                valor,
+                fronteira="FORNECEDOR_PJ",
+                instance=self.instance,
+                empresa_id=empresa.pk,
+            )
+        except ErroValidacaoEscritaCNPJ as exc:
+            raise ValidationError(MENSAGENS_CNPJ[exc.codigo], code=exc.codigo) from exc
+        if existe_colisao_cnpj(
+            Fornecedor.objects.filter(empresa=empresa),
+            canonico,
+            excluir_pk=getattr(self.instance, "pk", None),
+        ):
+            raise ValidationError(
+                "Já existe um fornecedor desta empresa com este CNPJ.",
+                code="cnpj_colisao_canonica",
+            )
+        return canonico

@@ -23,3 +23,11 @@ Nenhum formulário, modelo ou dado foi alterado. A integração futura deve trat
 as regras do CNPJ, canonicalizar somente Cliente PJ/Fornecedor PJ, detectar colisão no escopo da
 Empresa e bloquear legado inválido ou troca de identidade. Credenciais, certificados, Focus,
 SEFAZ direta, ambientes e emissão continuam fora desta etapa.
+
+## Atualização — ciclo 119
+
+As lacunas foram corrigidas nos formulários reais. O comparador permanece como regressão e
+agora confirma que formulário e portão recusam DV inválido e que a colisão canônica também
+invalida o formulário. CPF e vazios continuam preservados. A fase 4 foi concluída nas quatro
+fronteiras previstas; o próximo passo é a auditoria delimitada da fase 5 para chave, XML,
+QR Code e DANFE.
