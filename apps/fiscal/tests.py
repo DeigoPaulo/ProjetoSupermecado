@@ -2312,6 +2312,8 @@ class FiscalTests(TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertContains(response, "DOCUMENTO AUXILIAR DA NOTA FISCAL")
         self.assertContains(response, "data:image/png;base64,")
+        self.assertContains(response, "data:image/svg+xml;base64,")
+        self.assertContains(response, "Código de barras Code 128 da chave de acesso")
         self.assertContains(response, documento.chave_acesso)
         self.assertContains(response, "R$ 82,70")
         self.assertNotContains(response, "DOCUMENTO NAO AUTORIZADO")

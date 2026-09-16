@@ -26,9 +26,8 @@ O núcleo isolado já conhece a estrutura oficial da chave:
 Desde o ciclo 124, esse núcleo é usado pela formação da chave, pelos XMLs reais de NFC-e e
 NF-e, pelo QR Code, pela validação pré-transmissão, pelos retornos internos de autorização e
 consulta e pelos fluxos de simulação, cancelamento e consulta. Foram confirmados 11 pontos
-da Fase 5: nove compatíveis offline, nenhum incompatível interno, um compatível apenas de
-forma condicional e uma capacidade ausente. Três pontos dos canais da Fase 6 permanecem
-inventariados sem alteração.
+da Fase 5: todos os 11 pontos estão compatíveis offline. Três pontos dos canais da Fase 6
+permanecem inventariados sem alteração e ainda exigem tratamento e homologação separados.
 
 | Ordem | Componente | Estado | Diagnóstico |
 |---|---|---|---|
@@ -41,8 +40,8 @@ inventariados sem alteração.
 | 3 | Retorno dos adaptadores | Compatível offline | Canonicaliza chave válida e recusa estrutura ou DV inválidos. |
 | 3 | Simulação/cancelamento/consulta | Compatível offline | Reutiliza a validação central sem exigir somente dígitos. |
 | 4 | QR Code NFC-e | Compatível offline | Reutiliza a chave central válida sem descartar letras. |
-| 5 | Chave textual no DANFE | Condicional | O template imprime o valor integral recebido. |
-| 5 | Código de barras do DANFE | Ausente | Não existe implementação Code 128 híbrida. |
+| 5 | Chave textual no DANFE | Compatível offline | O template imprime a chave central integral. |
+| 5 | Código de barras do DANFE | Compatível offline | SVG local alterna apenas entre Code 128 C e A. |
 
 ## Canais posteriores
 
@@ -53,8 +52,8 @@ pontos pertencem à Fase 6 e não devem ser misturados à integração offline d
 
 ## Sequência segura
 
-1. Implementar e testar o Code 128 híbrido no DANFE.
-2. Somente depois homologar Focus e SEFAZ direta separadamente.
+1. Tratar os consumidores externos inventariados da Fase 6 em ciclos curtos e isolados.
+2. Homologar Focus e SEFAZ direta separadamente com credenciais reais quando disponíveis.
 
-O próximo ciclo deve implementar o código de barras Code 128 híbrido no DANFE, preservando
-a apresentação textual da chave e mantendo rede e produção desligadas.
+O próximo ciclo deve tratar consumidores externos ao núcleo em escopo curto, mantendo rede
+e produção desligadas e sem confundir compatibilidade offline com homologação real.

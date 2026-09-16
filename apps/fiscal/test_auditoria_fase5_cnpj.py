@@ -39,15 +39,10 @@ class AuditoriaFase5CNPJTests(SimpleTestCase):
             "VALIDACAO_RETORNO_ADAPTADORES",
             "FLUXOS_POS_GERACAO",
             "QR_CODE_NFCE",
+            "DANFE_CHAVE_TEXTO",
+            "DANFE_CODIGO_BARRAS_HIBRIDO",
         ):
             self.assertEqual(por_codigo[codigo]["estado"], "COMPATIVEL_OFFLINE")
-        self.assertEqual(
-            por_codigo["DANFE_CHAVE_TEXTO"]["estado"],
-            "COMPATIVEL_CONDICIONAL",
-        )
-        self.assertEqual(
-            por_codigo["DANFE_CODIGO_BARRAS_HIBRIDO"]["estado"], "AUSENTE"
-        )
 
     def test_separa_canais_da_fase6(self):
         resultado = self.resultado()
@@ -68,5 +63,5 @@ class AuditoriaFase5CNPJTests(SimpleTestCase):
         self.assertTrue(any(caractere.isalpha() for caractere in chave))
         self.assertEqual(
             self.resultado()["proximo_passo"],
-            "IMPLEMENTAR_DANFE_CODE128_HIBRIDO",
+            "HOMOLOGAR_FOCUS_E_SEFAZ_DIRETA_SEPARADAMENTE",
         )

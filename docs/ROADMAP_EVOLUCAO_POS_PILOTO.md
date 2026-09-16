@@ -511,12 +511,40 @@ pontos agora reutilizam a validação central de estrutura, posições e DV.
   suítes fiscal e marketplace, com três ignorados por requisitos de ambiente.
 - [x] Manter modelos, banco, migrations, credenciais, certificados, Focus, SEFAZ direta,
   chamadas de rede e produção inalterados.
-- [ ] Próximo passo: implementar e testar o código de barras Code 128 híbrido no DANFE,
-  preservando a chave textual e sem liberar produção.
+- [x] Próximo passo concluído no ciclo 125: Code 128 híbrido C/A implementado e integrado ao
+  DANFE, preservando a chave textual e sem liberar produção.
 
 Arquivos principais: apps/fiscal/adapters.py, apps/fiscal/services.py,
 apps/fiscal/test_chave_acesso.py, apps/fiscal/tests.py,
 apps/fiscal/auditoria_fase5_cnpj.py e testes da auditoria. Migrações: nenhuma.
+
+## Ponto de retomada — ciclo 125, 16/09/2026
+
+Concluída a compatibilidade offline interna da Fase 5 com o código de barras da chave no
+DANFE NFC-e. O gerador fiscal valida a chave central, inicia no conjunto C, alterna somente
+para A ao encontrar letras e retorna a C em sequências numéricas, sem usar o conjunto B.
+
+- [x] Reutilizar a biblioteca Code 128 já instalada, sem nova dependência.
+- [x] Criar o contrato fiscal_access_key_code128_ca_v1 separado do código de barras de produto.
+- [x] Preservar chaves exclusivamente numéricas compactas no conjunto C.
+- [x] Alternar chaves alfanuméricas somente entre os conjuntos C e A, inclusive no fechamento
+  de uma sequência numérica ímpar.
+- [x] Gerar SVG local incorporado como data URI, sem rede ou serviço externo.
+- [x] Integrar o código de barras aos dois caminhos de DANFE: Central Fiscal e fallback do PDV.
+- [x] Isolar falhas de QR Code e código de barras para que uma representação não elimine a outra.
+- [x] Preservar a apresentação textual integral da chave abaixo do código de barras.
+- [x] Evoluir a auditoria viva para alphanumeric_cnpj_phase5_static_audit_v5, com os 11 pontos
+  internos compatíveis offline.
+- [x] Validar 5 testes focados e 708 testes das suítes fiscal, PDV e marketplace, com seis
+  ignorados por requisitos específicos de ambiente.
+- [x] Manter banco, migrations, credenciais, certificados, Focus, SEFAZ direta, rede e produção
+  inalterados.
+- [ ] Próximo passo: revisar o ciclo curto proposto para consumidores externos ao núcleo e,
+  após concordância de escopo, tratar a Fase 6 sem antecipar homologação real.
+
+Arquivos principais: apps/fiscal/barcode_chave.py, apps/fiscal/views.py,
+apps/pdv/views.py, templates/fiscal/danfe_nfce.html, testes fiscais e da auditoria.
+Migrações: nenhuma.
 
 ## Ponto de retomada — ciclo 114, 14/09/2026
 

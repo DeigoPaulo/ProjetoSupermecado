@@ -101,6 +101,7 @@ from .services_cce import registrar_carta_correcao
 from .services_cadastro import consultar_cadastro_contribuinte
 from .validacoes import diagnosticar_schemas_fiscais
 from .qrcode_nfce import gerar_qrcode_data_uri, obter_url_qrcode_nfce
+from .barcode_chave import gerar_codigo_barras_chave_data_uri
 from .readiness import diagnostico_prontidao_homologacao_goias
 from .perfis_uf import pendencias_endpoints_nfce
 from .services import (
@@ -1380,10 +1381,21 @@ def baixar_xml_consulta_cadastro(request, pk, direcao):
     return resposta
 
 def _contexto_danfe_nfce(documento):
-    contexto = {"documento": documento, "qrcode_data_uri": "", "qrcode_erro": ""}
+    contexto = {
+        "documento": documento,
+        "qrcode_data_uri": "",
+        "qrcode_erro": "",
+        "codigo_barras_chave_data_uri": "",
+    }
     if documento.status not in {StatusDocumentoFiscal.EMITIDO, StatusDocumentoFiscal.CONTINGENCIA}:
         contexto["qrcode_erro"] = "QR Code disponível somente apos autorização ou emissao em contingência."
         return contexto
+    try:
+        contexto["codigo_barras_chave_data_uri"] = (
+            gerar_codigo_barras_chave_data_uri(documento.chave_acesso)
+        )
+    except ValidationError:
+        pass
     try:
         contexto["qrcode_url"] = obter_url_qrcode_nfce(documento)
         contexto["qrcode_data_uri"] = gerar_qrcode_data_uri(contexto["qrcode_url"])

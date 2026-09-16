@@ -3,7 +3,7 @@
 from pathlib import Path
 
 
-CONTRATO_AUDITORIA_FASE5_CNPJ = "alphanumeric_cnpj_phase5_static_audit_v4"
+CONTRATO_AUDITORIA_FASE5_CNPJ = "alphanumeric_cnpj_phase5_static_audit_v5"
 
 
 PONTOS = (
@@ -124,19 +124,22 @@ PONTOS = (
         "componente": "DANFE",
         "arquivo": "templates/fiscal/danfe_nfce.html",
         "evidencias": ("{{ documento.chave_acesso }}",),
-        "estado": "COMPATIVEL_CONDICIONAL",
+        "estado": "COMPATIVEL_OFFLINE",
         "ordem_correcao": 5,
-        "motivo": "A apresentação textual preserva a chave, se ela chegar correta.",
+        "motivo": "O DANFE preserva a chave central validada em sua apresentação textual.",
     },
     {
         "codigo": "DANFE_CODIGO_BARRAS_HIBRIDO",
         "escopo": "FASE_5",
         "componente": "DANFE",
-        "arquivo": "templates/fiscal/danfe_nfce.html",
-        "evidencias": ("{{ documento.chave_acesso }}",),
-        "estado": "AUSENTE",
+        "arquivo": "apps/fiscal/barcode_chave.py",
+        "evidencias": (
+            'CONTRATO_BARCODE_CHAVE_FISCAL = "fiscal_access_key_code128_ca_v1"',
+            'codigos.extend(self._new_charset("A"))',
+        ),
+        "estado": "COMPATIVEL_OFFLINE",
         "ordem_correcao": 5,
-        "motivo": "Não há gerador Code 128 híbrido C/A para a chave alfanumérica.",
+        "motivo": "O DANFE usa gerador Code 128 híbrido restrito aos conjuntos C e A.",
     },
     {
         "codigo": "FOCUS_RETORNO_CHAVE",
@@ -214,8 +217,7 @@ def auditar_fase5_cnpj(raiz_projeto):
             "altera_codigo_operacional": False,
         },
         "sequencia_recomendada": [
-            "IMPLEMENTAR_DANFE_CODE128_HIBRIDO",
             "HOMOLOGAR_FOCUS_E_SEFAZ_DIRETA_SEPARADAMENTE",
         ],
-        "proximo_passo": "IMPLEMENTAR_DANFE_CODE128_HIBRIDO",
+        "proximo_passo": "HOMOLOGAR_FOCUS_E_SEFAZ_DIRETA_SEPARADAMENTE",
     }

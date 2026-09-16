@@ -33,6 +33,7 @@ from apps.marketplace.models import CanalPedido, FormaPagamentoPedido, ItemPedid
 from apps.marketplace.services import alterar_status_pedido, calcular_entrega_pedido, registrar_pagamento, reservar_pedido
 from apps.fiscal.models import ConfiguracaoFiscal, DocumentoFiscal, StatusDocumentoFiscal, TipoDocumentoFiscal
 from apps.fiscal.qrcode_nfce import gerar_qrcode_data_uri, obter_url_qrcode_nfce
+from apps.fiscal.barcode_chave import gerar_codigo_barras_chave_data_uri
 from apps.produtos.models import CodigoBarrasProduto, ConfiguracaoBalancaProduto, Produto
 from apps.promocoes.models import PromocaoProduto
 from apps.promocoes.services import preco_atual_produto, promocao_ativa_para_produto
@@ -427,7 +428,18 @@ def _documento_fiscal_imprimivel(venda):
 
 
 def _contexto_danfe_pdv(documento):
-    contexto = {"documento": documento, "qrcode_data_uri": "", "qrcode_erro": ""}
+    contexto = {
+        "documento": documento,
+        "qrcode_data_uri": "",
+        "qrcode_erro": "",
+        "codigo_barras_chave_data_uri": "",
+    }
+    try:
+        contexto["codigo_barras_chave_data_uri"] = (
+            gerar_codigo_barras_chave_data_uri(documento.chave_acesso)
+        )
+    except ValidationError:
+        pass
     try:
         url = obter_url_qrcode_nfce(documento)
         contexto["qrcode_data_uri"] = gerar_qrcode_data_uri(url)
