@@ -408,6 +408,35 @@ apps/fiscal/estrategia_normalizacao_cnpj.py,
 apps/empresas/test_cnpj_interface_lookup.py, templates/base.html e
 docs/CONSULTA_CNPJ_CEP.md. Migrações: nenhuma.
 
+## Ponto de retomada — ciclo 121, 16/09/2026
+
+Concluída a auditoria estática delimitada da Fase 5 pelo contrato
+alphanumeric_cnpj_phase5_static_audit_v1. O núcleo isolado já calcula e valida a chave oficial
+alfanumérica, mas ainda não é consumido pelo caminho operacional.
+
+- [x] Confirmar que a formação operacional da chave remove letras do CNPJ.
+- [x] Confirmar que o cálculo operacional do DV pressupõe 43 posições numéricas.
+- [x] Confirmar a mesma perda de letras nos XMLs de NFC-e e NF-e.
+- [x] Classificar o Id de infNFe e a apresentação textual do DANFE como compatíveis somente
+  quando receberem uma chave formada corretamente.
+- [x] Localizar exigências exclusivamente numéricas na validação do XML, nos retornos dos
+  adaptadores e nos serviços de simulação, cancelamento e consulta.
+- [x] Confirmar que o QR Code da NFC-e descarta letras.
+- [x] Confirmar a ausência do código de barras Code 128 híbrido no DANFE atual.
+- [x] Separar três pontos posteriores dos canais: retorno Focus potencialmente compatível,
+  SEFAZ direta incompatível e ingestão DF-e incompatível.
+- [x] Registrar 11 pontos da Fase 5: oito incompatíveis, dois condicionais e um ausente.
+- [x] Validar 21 testes da auditoria, evidência normativa, estratégia canônica e dados
+  auditados; check geral sem erros e nenhuma migration pendente.
+- [x] Manter geradores, XML operacional, modelos, banco, migrations, credenciais, certificados,
+  ambientes, Focus, SEFAZ direta, rede e produção inalterados.
+- [ ] Próximo passo: integrar em testes offline somente a formação e validação central da chave
+  de acesso, reutilizando o algoritmo canônico existente e preservando o CNPJ numérico.
+
+Arquivos: apps/fiscal/auditoria_fase5_cnpj.py,
+apps/fiscal/test_auditoria_fase5_cnpj.py e
+docs/AUDITORIA_FASE5_CNPJ_ALFANUMERICO.md. Migrações: nenhuma.
+
 ## Ponto de retomada — ciclo 114, 14/09/2026
 
 Criado `alphanumeric_cnpj_canonical_write_gate_v1`, portão puro que prepara a escrita canônica de CNPJ nas fronteiras Empresa, Filial, Cliente pessoa jurídica e Fornecedor pessoa jurídica. O contrato não consulta banco, não altera objetos e mantém a persistência bloqueada em todos os resultados.
