@@ -8,6 +8,7 @@ from django.conf import settings
 from django.core.exceptions import ImproperlyConfigured
 
 from .dfe_adapters import CONTRATO_DISTRIBUICAO_DFE
+from .estrategia_normalizacao_cnpj import canonicalizar_cnpj
 
 
 class FocusNFeDFeAdapter:
@@ -49,9 +50,7 @@ class FocusNFeDFeAdapter:
 
     def consultar(self, *, cnpj, ultimo_nsu="", limite=100):
         self._validar_base_url()
-        cnpj = self._digitos(cnpj)
-        if len(cnpj) != 14:
-            raise ValueError("O CNPJ da consulta Focus NFe deve possuir 14 dígitos.")
+        cnpj = self._cnpj(cnpj)
         token = self._token_para_cnpj(cnpj)
         if not token:
             raise ImproperlyConfigured(
@@ -127,7 +126,11 @@ class FocusNFeDFeAdapter:
     def _token_para_cnpj(self, cnpj):
         tokens = getattr(settings, "FOCUS_NFE_DFE_TOKENS", {}) or {}
         for chave, token in tokens.items():
-            if self._digitos(str(chave)) == cnpj and str(token).strip():
+            try:
+                chave_canonica = canonicalizar_cnpj(str(chave))
+            except ValueError:
+                continue
+            if chave_canonica == cnpj and str(token).strip():
                 return str(token).strip()
         return (getattr(settings, "FOCUS_NFE_DFE_TOKEN", "") or "").strip()
 
@@ -212,7 +215,7 @@ class FocusNFeDFeAdapter:
             "nsu": versao,
             "chave_acesso": chave,
             "destinatario_cnpj": cnpj,
-            "emitente_cnpj": self._digitos(
+            "emitente_cnpj": self._cnpj_opcional(
                 self._primeiro(bruto, "cnpj_emitente", "emitente_cnpj", "cnpj_emissor")
             ),
             "emitente_nome": self._primeiro(
@@ -246,6 +249,20 @@ class FocusNFeDFeAdapter:
     @staticmethod
     def _digitos(valor):
         return "".join(caractere for caractere in str(valor or "") if caractere.isdigit())
+
+    @staticmethod
+    def _cnpj(valor):
+        try:
+            cnpj = canonicalizar_cnpj(str(valor or ""))
+        except ValueError as exc:
+            raise ValueError("O CNPJ da consulta Focus NFe deve usar o formato oficial.") from exc
+        if not cnpj:
+            raise ValueError("O CNPJ da consulta Focus NFe é obrigatório.")
+        return cnpj
+
+    @classmethod
+    def _cnpj_opcional(cls, valor):
+        return cls._cnpj(valor) if str(valor or "").strip() else ""
 
 
 class FocusNFeDFeHTTPError(RuntimeError):

@@ -38,6 +38,11 @@ SEFAZ_DIRETA_ALLOW_PRODUCTION=False
 
 Consulte `docs/SEFAZ_DIRETA_GO.md`. Ter a estrutura implementada não substitui credenciamento, schemas oficiais, testes no ambiente da SEFAZ nem aceite fiscal.
 
+O núcleo direto preserva o CNPJ alfanumérico canônico na emissão, inutilização, eventos,
+distribuição DF-e e consulta cadastral. A máscara oficial também é aceita nas fronteiras.
+Essa compatibilidade é validada offline e não significa que certificado, credenciamento,
+endpoint ou ambiente de homologação tenham sido aprovados pela SEFAZ-GO.
+
 Para outro provedor, implemente o mesmo contrato e configure sua classe no servidor.
 
 5. Execute sem transmitir nada:

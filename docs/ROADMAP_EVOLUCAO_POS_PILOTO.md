@@ -590,6 +590,37 @@ Arquivos principais: apps/fiscal/barcode_chave.py, apps/fiscal/views.py,
 apps/pdv/views.py, templates/fiscal/danfe_nfce.html, testes fiscais e da auditoria.
 Migrações: nenhuma.
 
+## Ponto de retomada — ciclo 128, 17/09/2026
+
+Iniciada a Fase 6 original com a compatibilização offline e separada da identidade CNPJ
+alfanumérica nos canais Focus e SEFAZ direta. Nenhum endpoint foi acessado e todas as
+travas de rede, produção e transmissão automática permaneceram inalteradas.
+
+- [x] Separar normalização de CNPJ da normalização exclusivamente numérica de chave de
+  acesso, cursor, telefone, CPF e inscrição estadual.
+- [x] Preservar CNPJ alfanumérico na escolha de token por filial e na inutilização Focus,
+  aceitando chave de configuração canônica, mascarada ou em letras minúsculas.
+- [x] Preservar destinatário e emitente na distribuição DF-e Focus sem descartar letras.
+- [x] Preservar CNPJ alfanumérico no núcleo da SEFAZ direta usado por emissão,
+  cancelamento, inutilização, manifestação e Carta de Correção.
+- [x] Preservar CNPJ alfanumérico na distribuição DF-e direta e na resolução da
+  Configuração Fiscal da filial.
+- [x] Compatibilizar a fronteira CNPJ da consulta cadastral direta sem alterar CPF ou IE.
+- [x] Documentar que compatibilidade interna não equivale a aceite externo da Focus ou da
+  SEFAZ-GO.
+- [x] Validar 4 testes novos, 77 testes focados dos adaptadores/DF-e/eventos/cadastro e a
+  suíte fiscal completa com 602 testes, três ignorados por requisitos específicos de ambiente.
+- [x] Manter credenciais, certificado A1, CSC, endpoints, banco, migrations, rede,
+  transmissão automática, homologação real e produção inalterados.
+- [ ] Próximo passo exato: compatibilizar e provar as chaves alfanuméricas retornadas pelos
+  dois canais em autorização, consulta, XML processado, cancelamento, CC-e e DF-e, mantendo
+  Focus e SEFAZ direta em baterias independentes e sem rede.
+
+Arquivos principais: apps/fiscal/focus_sefaz_adapter.py,
+apps/fiscal/focus_dfe_adapter.py, apps/fiscal/sefaz_direta/adapter.py,
+apps/fiscal/sefaz_direta/dfe.py, apps/fiscal/sefaz_direta/cadastro.py e testes associados.
+Migrações: nenhuma.
+
 ## Ponto de retomada — ciclo 127, 17/09/2026
 
 Concluída a compatibilidade da identidade CNPJ alfanumérica nos consumidores externos ao

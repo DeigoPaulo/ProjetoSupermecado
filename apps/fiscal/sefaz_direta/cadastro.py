@@ -5,6 +5,7 @@ from django.core.exceptions import ValidationError
 from lxml import etree
 
 from ..cadastro_adapters import CONTRATO_CONSULTA_CADASTRO
+from ..estrategia_normalizacao_cnpj import canonicalizar_cnpj
 from .adapter import NFE_NS, SefazDiretaAdapter, SefazDiretaError
 
 
@@ -84,8 +85,16 @@ class SefazDiretaConsultaCadastroAdapter:
         tipo = str(tipo_documento or "").strip().upper()
         if tipo not in TIPOS_DOCUMENTO_CADASTRO:
             raise ValidationError("Escolha CNPJ, CPF ou inscrição estadual.")
+        if tipo == "CNPJ":
+            try:
+                valor = canonicalizar_cnpj(str(documento or ""))
+            except ValueError as exc:
+                raise ValidationError("CNPJ inválido para consulta cadastral.") from exc
+            if not valor:
+                raise ValidationError("CNPJ inválido para consulta cadastral.")
+            return tipo, valor
         valor = re.sub(r"\D", "", str(documento or ""))
-        if tipo in {"CNPJ", "CPF"} and len(valor) != TIPOS_DOCUMENTO_CADASTRO[tipo]:
+        if tipo == "CPF" and len(valor) != TIPOS_DOCUMENTO_CADASTRO[tipo]:
             raise ValidationError(f"{tipo} inválido para consulta cadastral.")
         if tipo == "IE" and not 2 <= len(valor) <= 14:
             raise ValidationError("Inscrição estadual inválida para consulta cadastral.")

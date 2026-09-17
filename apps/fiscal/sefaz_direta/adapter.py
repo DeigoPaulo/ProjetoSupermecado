@@ -24,6 +24,7 @@ from lxml import etree
 from ..adapters import SefazAdapterError
 from ..assinaturas import assinar_xml_elemento_fiscal
 from ..certificados import abrir_certificado_a1
+from ..estrategia_normalizacao_cnpj import canonicalizar_cnpj
 from .capacidades import resumo_capacidades
 from .resiliencia import ResilienciaSefazDireta
 
@@ -565,14 +566,12 @@ class SefazDiretaAdapter:
     def _cnpj(objeto):
         filial = getattr(objeto, "filial", None)
         empresa = getattr(filial, "empresa", None)
-        cnpj = re.sub(
-            r"\D",
-            "",
-            getattr(filial, "cnpj", "")
-            or getattr(empresa, "cnpj", "")
-            or "",
-        )
-        if len(cnpj) != 14:
+        valor = getattr(filial, "cnpj", "") or getattr(empresa, "cnpj", "") or ""
+        try:
+            cnpj = canonicalizar_cnpj(str(valor))
+        except ValueError as exc:
+            raise SefazDiretaError("CNPJ do emitente inválido.") from exc
+        if not cnpj:
             raise SefazDiretaError("CNPJ do emitente inválido.")
         return cnpj
 

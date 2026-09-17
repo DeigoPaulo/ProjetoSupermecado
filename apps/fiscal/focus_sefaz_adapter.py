@@ -11,6 +11,7 @@ from xml.etree import ElementTree as ET
 from django.conf import settings
 
 from .adapters import SefazAdapterError
+from .estrategia_normalizacao_cnpj import canonicalizar_cnpj
 
 NS = {"nfe": "http://www.portalfiscal.inf.br/nfe"}
 HOSTS = {"homologacao.focusnfe.com.br", "api.focusnfe.com.br"}
@@ -133,7 +134,7 @@ class FocusNFeSefazAdapter:
             token=token,
             method="POST",
             payload={
-                "cnpj": self._digitos(cnpj),
+                "cnpj": self._cnpj(cnpj),
                 "ano": int(ano),
                 "serie": int(serie),
                 "numero_inicial": int(numero_inicial),
@@ -524,13 +525,18 @@ class FocusNFeSefazAdapter:
             filial = getattr(objeto, "filial", None)
             empresa = getattr(filial, "empresa", None)
             cnpj = getattr(filial, "cnpj", "") or getattr(empresa, "cnpj", "")
-        cnpj = self._digitos(cnpj)
+        cnpj = self._cnpj(cnpj)
         tokens = getattr(settings, "FOCUS_NFE_FISCAL_TOKENS", {}) or {}
-        token = str(
-            tokens.get(cnpj)
-            or getattr(settings, "FOCUS_NFE_FISCAL_TOKEN", "")
-            or ""
-        ).strip()
+        token = ""
+        for chave, candidato in tokens.items():
+            try:
+                chave_canonica = canonicalizar_cnpj(str(chave))
+            except ValueError:
+                continue
+            if chave_canonica == cnpj and str(candidato).strip():
+                token = str(candidato).strip()
+                break
+        token = token or str(getattr(settings, "FOCUS_NFE_FISCAL_TOKEN", "") or "").strip()
         if not token:
             raise FocusNFeFiscalError(
                 f"Token fiscal da Focus NFe não configurado para o CNPJ {cnpj or 'da filial'}."
@@ -637,6 +643,16 @@ class FocusNFeSefazAdapter:
     @staticmethod
     def _digitos(valor):
         return re.sub(r"\D", "", str(valor or ""))
+
+    @staticmethod
+    def _cnpj(valor):
+        try:
+            cnpj = canonicalizar_cnpj(str(valor or ""))
+        except ValueError as exc:
+            raise FocusNFeFiscalError("CNPJ inválido para a operação Focus NFe.") from exc
+        if not cnpj:
+            raise FocusNFeFiscalError("CNPJ obrigatório para a operação Focus NFe.")
+        return cnpj
 
 
 class FocusNFeFiscalError(SefazAdapterError):

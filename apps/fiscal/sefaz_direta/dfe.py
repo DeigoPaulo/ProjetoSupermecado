@@ -19,6 +19,7 @@ from django.core.exceptions import ImproperlyConfigured
 from lxml import etree
 
 from ..dfe_adapters import CONTRATO_DISTRIBUICAO_DFE
+from ..estrategia_normalizacao_cnpj import canonicalizar_cnpj
 from .adapter import NFE_NS, SOAP_NS, SefazDiretaAdapter, SefazDiretaError
 
 WSDL_DFE_NS = "http://www.portalfiscal.inf.br/nfe/wsdl/NFeDistribuicaoDFe"
@@ -274,7 +275,11 @@ class SefazDiretaDFeAdapter:
             ativo=True, filial__is_active=True, filial__empresa__is_active=True
         ).select_related("filial", "filial__empresa"):
             cadastrado = configuracao.filial.cnpj or configuracao.filial.empresa.cnpj
-            if SefazDiretaDFeAdapter._digitos(cadastrado) == cnpj:
+            try:
+                cadastrado_canonico = canonicalizar_cnpj(str(cadastrado or ""))
+            except ValueError:
+                continue
+            if cadastrado_canonico == cnpj:
                 candidatas.append(configuracao)
         if not candidatas:
             raise ImproperlyConfigured(
@@ -313,9 +318,14 @@ class SefazDiretaDFeAdapter:
 
     @classmethod
     def _cnpj(cls, valor):
-        cnpj = cls._digitos(valor)
-        if len(cnpj) != 14:
-            raise SefazDiretaDFeError("O CNPJ da consulta DF-e deve possuir 14 dígitos.")
+        try:
+            cnpj = canonicalizar_cnpj(str(valor or ""))
+        except ValueError as exc:
+            raise SefazDiretaDFeError(
+                "O CNPJ da consulta DF-e deve usar o formato oficial."
+            ) from exc
+        if not cnpj:
+            raise SefazDiretaDFeError("O CNPJ da consulta DF-e é obrigatório.")
         return cnpj
 
     @staticmethod

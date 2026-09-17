@@ -77,6 +77,12 @@ FISCAL_AUTO_TRANSMIT_ENABLED=False
 ```
 
 Quando cada CNPJ possuir um token próprio, deixe `FOCUS_NFE_FISCAL_TOKEN` vazio e use `FOCUS_NFE_FISCAL_TOKENS_JSON`. A fila automática deve permanecer desligada até a emissão manual de homologação ser aprovada. Não use token de produção no ambiente de desenvolvimento.
+
+As chaves do mapa por filial e os CNPJs enviados em emissão, inutilização e distribuição
+DF-e aceitam a representação canônica alfanumérica ou a máscara oficial. O adaptador
+preserva as letras; ele não converte o documento para “somente dígitos”. Isso comprova
+compatibilidade interna offline, mas a aceitação do CNPJ alfanumérico pela conta/API ainda
+deve ser validada separadamente no sandbox da Focus.
 Antes de qualquer chamada ao sandbox, execute o diagnóstico local estrito:
 
 ```powershell
