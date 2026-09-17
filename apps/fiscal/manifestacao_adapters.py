@@ -2,13 +2,23 @@ from django.conf import settings
 from django.core.exceptions import ImproperlyConfigured, ValidationError
 from django.utils.module_loading import import_string
 
+from .roteamento_operacoes_fiscais import resolver_adaptador_operacao
+
 
 CONTRATO_MANIFESTACAO_DESTINATARIO = "fiscal_dfe_manifestation_v1"
 STATUS_MANIFESTACAO = {"AUTORIZADA", "REJEITADA", "PENDENTE"}
 
 
-def carregar_adaptador_manifestacao():
-    referencia = (getattr(settings, "FISCAL_MANIFESTACAO_ADAPTER", "") or "").strip()
+def caminho_adaptador_manifestacao(*, filial=None):
+    return resolver_adaptador_operacao(
+        filial=filial,
+        operacao="MANIFESTACAO",
+        fallback=getattr(settings, "FISCAL_MANIFESTACAO_ADAPTER", ""),
+    )
+
+
+def carregar_adaptador_manifestacao(*, filial=None):
+    referencia = caminho_adaptador_manifestacao(filial=filial)["adaptador"]
     if not referencia:
         return None
     try:
@@ -25,8 +35,12 @@ def carregar_adaptador_manifestacao():
     return adaptador
 
 
-def diagnostico_adaptador_manifestacao():
-    referencia = (getattr(settings, "FISCAL_MANIFESTACAO_ADAPTER", "") or "").strip()
+def diagnostico_adaptador_manifestacao(*, filial=None):
+    try:
+        roteamento = caminho_adaptador_manifestacao(filial=filial)
+    except ImproperlyConfigured as exc:
+        return {"contrato": CONTRATO_MANIFESTACAO_DESTINATARIO, "configurado": True, "disponivel": False, "adaptador": "", "mensagem": str(exc)}
+    referencia = roteamento["adaptador"]
     if not referencia:
         return {
             "contrato": CONTRATO_MANIFESTACAO_DESTINATARIO,
@@ -36,7 +50,7 @@ def diagnostico_adaptador_manifestacao():
             "mensagem": "Configure FISCAL_MANIFESTACAO_ADAPTER para transmitir manifestações.",
         }
     try:
-        adaptador = carregar_adaptador_manifestacao()
+        adaptador = carregar_adaptador_manifestacao(filial=filial)
     except ImproperlyConfigured as exc:
         return {
             "contrato": CONTRATO_MANIFESTACAO_DESTINATARIO,
@@ -51,6 +65,7 @@ def diagnostico_adaptador_manifestacao():
         "disponivel": True,
         "adaptador": referencia,
         "provedor": getattr(adaptador, "nome", adaptador.__class__.__name__),
+        "canal": roteamento["provedor"],
         "mensagem": "Adaptador disponível para manifestação controlada.",
     }
     diagnosticar = getattr(adaptador, "diagnosticar", None)

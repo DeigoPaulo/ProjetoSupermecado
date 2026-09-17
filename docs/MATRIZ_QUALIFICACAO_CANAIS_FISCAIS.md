@@ -38,7 +38,12 @@ da filial/fornecedor nem antes da gravação do documento recebido.
 
 ## Próximo passo interno
 
-Definir formalmente se CC-e e manifestação devem integrar o produto Focus ou se essas
-operações serão capacidade exclusiva do canal direto. Depois disso, preparar os roteiros de
-execução e coleta de evidências por operação, ainda sem executar chamadas externas até que
-as credenciais e a filial piloto existam.
+O roteamento por filial foi formalizado no ciclo 132. Focus usa seu adaptador próprio de
+DF-e, mas CC-e e manifestação falham fechado enquanto não houver implementação oficial
+específica. SEFAZ direta GO resolve DF-e, CC-e e manifestação para seus adaptadores próprios.
+O canal desativado não carrega operações auxiliares e o modo de compatibilidade do servidor
+continua aceitando as configurações globais já existentes.
+
+O próximo passo é levar essa mesma visão por filial ao diagnóstico administrativo e preparar
+os roteiros de execução/coleta de evidências por operação, sem chamadas externas até que as
+credenciais e a filial piloto existam.

@@ -50,7 +50,7 @@ def registrar_manifestacao_destinatario(
         )
 
     try:
-        adaptador = carregar_adaptador_manifestacao()
+        adaptador = carregar_adaptador_manifestacao(filial=documento.filial_destino)
     except ImproperlyConfigured as exc:
         raise ValidationError(str(exc)) from exc
     if adaptador is None:

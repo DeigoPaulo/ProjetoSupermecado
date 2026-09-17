@@ -3,12 +3,21 @@ from django.core.exceptions import ImproperlyConfigured, ValidationError
 from django.utils.module_loading import import_string
 
 from .chave_acesso import canonicalizar_chave_acesso_estrutural
+from .roteamento_operacoes_fiscais import resolver_adaptador_operacao
 
 CONTRATO_DISTRIBUICAO_DFE = "fiscal_dfe_distribution_v1"
 
 
-def carregar_adaptador_dfe():
-    referencia = (getattr(settings, "FISCAL_DFE_ADAPTER", "") or "").strip()
+def caminho_adaptador_dfe(*, filial=None):
+    return resolver_adaptador_operacao(
+        filial=filial,
+        operacao="DFE",
+        fallback=getattr(settings, "FISCAL_DFE_ADAPTER", ""),
+    )
+
+
+def carregar_adaptador_dfe(*, filial=None):
+    referencia = caminho_adaptador_dfe(filial=filial)["adaptador"]
     if not referencia:
         return None
     try:
@@ -25,8 +34,12 @@ def carregar_adaptador_dfe():
     return adaptador
 
 
-def diagnostico_adaptador_dfe():
-    referencia = (getattr(settings, "FISCAL_DFE_ADAPTER", "") or "").strip()
+def diagnostico_adaptador_dfe(*, filial=None):
+    try:
+        roteamento = caminho_adaptador_dfe(filial=filial)
+    except ImproperlyConfigured as exc:
+        return {"contrato": CONTRATO_DISTRIBUICAO_DFE, "configurado": True, "disponivel": False, "adaptador": "", "mensagem": str(exc)}
+    referencia = roteamento["adaptador"]
     if not referencia:
         return {
             "contrato": CONTRATO_DISTRIBUICAO_DFE,
@@ -36,7 +49,7 @@ def diagnostico_adaptador_dfe():
             "mensagem": "Configure FISCAL_DFE_ADAPTER para consultar documentos recebidos.",
         }
     try:
-        adaptador = carregar_adaptador_dfe()
+        adaptador = carregar_adaptador_dfe(filial=filial)
     except ImproperlyConfigured as exc:
         return {
             "contrato": CONTRATO_DISTRIBUICAO_DFE,
@@ -52,6 +65,7 @@ def diagnostico_adaptador_dfe():
         "adaptador": referencia,
         "mensagem": "Adaptador disponível para consulta controlada.",
         "provedor": getattr(adaptador, "nome", adaptador.__class__.__name__),
+        "canal": roteamento["provedor"],
     }
     diagnosticar = getattr(adaptador, "diagnosticar", None)
     if callable(diagnosticar):

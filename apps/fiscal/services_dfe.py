@@ -276,7 +276,7 @@ def consultar_distribuicao_dfe(*, filial, usuario, ip=None, limite=50):
         )
     cursor_inicial = controle.ultimo_nsu
     try:
-        adaptador = carregar_adaptador_dfe()
+        adaptador = carregar_adaptador_dfe(filial=filial)
     except ImproperlyConfigured as exc:
         raise ValidationError(str(exc)) from exc
     if adaptador is None:

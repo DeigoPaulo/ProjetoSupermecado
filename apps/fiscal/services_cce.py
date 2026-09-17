@@ -45,7 +45,7 @@ def registrar_carta_correcao(
         )
 
     try:
-        adaptador = carregar_adaptador_cce()
+        adaptador = carregar_adaptador_cce(filial=documento.filial)
     except ImproperlyConfigured as exc:
         raise ValidationError(str(exc)) from exc
     if adaptador is None:

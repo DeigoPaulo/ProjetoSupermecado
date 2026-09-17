@@ -2,13 +2,23 @@ from django.conf import settings
 from django.core.exceptions import ImproperlyConfigured, ValidationError
 from django.utils.module_loading import import_string
 
+from .roteamento_operacoes_fiscais import resolver_adaptador_operacao
+
 
 CONTRATO_CARTA_CORRECAO = "fiscal_cce_v1"
 STATUS_CARTA_CORRECAO = {"AUTORIZADA", "REJEITADA", "PENDENTE"}
 
 
-def carregar_adaptador_cce():
-    referencia = (getattr(settings, "FISCAL_CCE_ADAPTER", "") or "").strip()
+def caminho_adaptador_cce(*, filial=None):
+    return resolver_adaptador_operacao(
+        filial=filial,
+        operacao="CCE",
+        fallback=getattr(settings, "FISCAL_CCE_ADAPTER", ""),
+    )
+
+
+def carregar_adaptador_cce(*, filial=None):
+    referencia = caminho_adaptador_cce(filial=filial)["adaptador"]
     if not referencia:
         return None
     try:
@@ -23,8 +33,12 @@ def carregar_adaptador_cce():
     return adaptador
 
 
-def diagnostico_adaptador_cce():
-    referencia = (getattr(settings, "FISCAL_CCE_ADAPTER", "") or "").strip()
+def diagnostico_adaptador_cce(*, filial=None):
+    try:
+        roteamento = caminho_adaptador_cce(filial=filial)
+    except ImproperlyConfigured as exc:
+        return {"contrato": CONTRATO_CARTA_CORRECAO, "configurado": True, "disponivel": False, "adaptador": "", "mensagem": str(exc)}
+    referencia = roteamento["adaptador"]
     if not referencia:
         return {
             "contrato": CONTRATO_CARTA_CORRECAO,
@@ -34,7 +48,7 @@ def diagnostico_adaptador_cce():
             "mensagem": "Configure FISCAL_CCE_ADAPTER para transmitir a CC-e.",
         }
     try:
-        adaptador = carregar_adaptador_cce()
+        adaptador = carregar_adaptador_cce(filial=filial)
     except ImproperlyConfigured as exc:
         return {
             "contrato": CONTRATO_CARTA_CORRECAO,
@@ -49,6 +63,7 @@ def diagnostico_adaptador_cce():
         "disponivel": True,
         "adaptador": referencia,
         "provedor": getattr(adaptador, "nome", adaptador.__class__.__name__),
+        "canal": roteamento["provedor"],
         "mensagem": "Adaptador disponível para CC-e controlada.",
     }
     diagnosticar = getattr(adaptador, "diagnosticar", None)

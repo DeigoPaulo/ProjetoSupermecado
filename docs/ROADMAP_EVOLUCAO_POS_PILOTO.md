@@ -590,6 +590,31 @@ Arquivos principais: apps/fiscal/barcode_chave.py, apps/fiscal/views.py,
 apps/pdv/views.py, templates/fiscal/danfe_nfce.html, testes fiscais e da auditoria.
 Migrações: nenhuma.
 
+## Ponto de retomada — ciclo 132, 17/09/2026
+
+Alinhado o roteamento das operações fiscais auxiliares ao canal técnico escolhido pelo
+Master em cada filial. A seleção deixou de valer somente para emissão e passou a orientar
+também DF-e, CC-e e manifestação, sem ativar rede ou produção.
+
+- [x] Criar um resolvedor único e explícito de operação/canal por filial.
+- [x] Direcionar a distribuição DF-e para Focus ou SEFAZ direta conforme a seleção da
+  filial, preservando a compatibilidade global apenas no modo `PADRAO_SERVIDOR`.
+- [x] Direcionar CC-e e manifestação para os módulos diretos quando a filial usa
+  `SEFAZ_DIRETA_GO`.
+- [x] Bloquear com mensagem controlada CC-e e manifestação quando o canal Focus estiver
+  selecionado, pois essas operações não possuem adaptador Focus implementado.
+- [x] Garantir que `DESATIVADO` não carregue adaptador auxiliar e que a conexão direta seja
+  recusada fora de Goiás.
+- [x] Validar 34 testes de roteamento, DF-e, CC-e e manifestação; manter banco, migrations,
+  credenciais, certificados, rede e produção inalterados.
+- [ ] Próximo passo exato: exibir no diagnóstico administrativo a capacidade efetiva por
+  filial e canal, incluindo os bloqueios de Eventos Focus; depois preparar os roteiros de
+  homologação e coleta de evidências por operação.
+
+Arquivos principais: apps/fiscal/roteamento_operacoes_fiscais.py,
+apps/fiscal/dfe_adapters.py, apps/fiscal/cce_adapters.py,
+apps/fiscal/manifestacao_adapters.py e serviços associados. Migrações: nenhuma.
+
 ## Ponto de retomada — ciclo 131, 17/09/2026
 
 Fechado um filtro exclusivamente numérico residual posterior aos adaptadores: o serviço de
