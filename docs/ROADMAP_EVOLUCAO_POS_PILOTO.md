@@ -16,6 +16,47 @@ A frente atual pertence à transição do CNPJ alfanumérico planejada no ciclo 
 
 Novas tarefas devem indicar o item original que atendem, a lacuna concreta e o critério de conclusão antes da implementação. Melhorias opcionais vão para pendências futuras e não substituem automaticamente a próxima entrega. Contagem de testes e quantidade de ciclos não medem conclusão funcional.
 
+## Frente prioritária — pré-homologação SEFAZ-GO
+
+Registro documental de preparação/prontidão em 17/09/2026, baseado no HEAD
+b7cf2b060d9b7f0aa6e6783cc635613d8245a5bb (ciclo 126). A auditoria externa usou o
+HEAD anterior 2aba217; os achados já corrigidos foram atualizados sem reabrir o ciclo.
+
+A estrutura segue NF-e/NFC-e 4.00, perfil GO/cUF 52 e ambientes separados.
+Compatibilidade offline, pendência tributária, dependência externa e homologação real
+são estados distintos. Esta frente não constitui certificação ou aceite da SEFAZ.
+
+Matriz, evidências locais e critérios:
+[AUDITORIA_PRE_HOMOLOGACAO_SEFAZ_GO.md](AUDITORIA_PRE_HOMOLOGACAO_SEFAZ_GO.md).
+
+- [x] Incorporar o histórico offline do ciclo 126: DV do emitente, destinatário CNPJ alfa,
+  snapshot Cliente/Pedido, contingência alfa e texto/QR do Desktop.
+- [ ] P1: revisar normativamente consumidor PJ/modelo documental, cobertura de obrigatoriedade
+  cBenef GO e readiness/CSC diante do QR Code v3; sem presumir regra legal a partir do código.
+- [ ] Homologar hardware e definir Code 128 RAW/ESC-POS; HTML já possui Code 128 C/A.
+- [ ] Fase 6: compatibilizar SEFAZ direta, inutilização, eventos e DF-e; homologar Focus separadamente.
+- [ ] Preparar XSD oficial aplicável: origem, versão, SHA-256, compilação offline, instalação
+  controlada, XMLs do ERP e versão congelada para o piloto.
+- [ ] Confirmar CRT e cronograma IBS/CBS aplicável; fechar grupos, cálculos, testes e homologação.
+- [ ] Confirmar CNPJ, IE, CNAE, A1, credenciamento, configuração e produtos reais do piloto.
+- [ ] Classificar cada SKU/operação como SUPORTADO ou BLOQUEADO; impedir cenário desconhecido.
+- [ ] Executar bateria real por canal/filial, incluindo autorização, consulta, rejeição/correção,
+  cancelamento, inutilização, contingência/SVC, cadastro, eventos/DF-e, QR/DANFE,
+  reimpressão e armazenamento XML/protocolo.
+
+Próximo ciclo técnico preservado: identidade CNPJ alfa fora do fiscal — sincronização,
+eventos, resolução Empresa/Filial, licenciamento, challenge/release offline e provedor externo.
+Depois: frente tributária GO → Fase 6 → preparação de homologação → homologação real.
+Este registro documental não consome a numeração do próximo ciclo técnico.
+
+Critério de pronto: XML gerado, schema compilado, testes aprovados, adaptador carregado ou
+endpoint cadastrado não bastam para declarar homologação GO. Exigir evidência real do
+ambiente de homologação para o escopo aceito. As regras vigentes serão verificadas em fontes
+oficiais no ciclo correspondente; nenhuma consulta externa foi realizada neste registro.
+
+Validação deste registro: conferência local de código/histórico e revisão do diff; apenas
+documentação alterada, sem testes funcionais novos, migration, transmissão ou push.
+
 ## Frente prioritária — integridade crítica pré-piloto
 
 Uma auditoria independente realizada após o ciclo 115 confirmou riscos de integridade
