@@ -59,8 +59,8 @@ class AuditoriaFase5CNPJTests(SimpleTestCase):
             item for item in resultado["resultados"] if item["escopo"] == "FASE_6"
         ]
 
-        self.assertEqual(len(fase6), 3)
-        self.assertEqual(resultado["resumo"]["pontos_fase6_inventariados"], 3)
+        self.assertEqual(len(fase6), 5)
+        self.assertEqual(resultado["resumo"]["pontos_fase6_inventariados"], 5)
         self.assertTrue(all(item["ordem_correcao"] == 6 for item in fase6))
         self.assertTrue(all(item["estado"] == "COMPATIVEL_OFFLINE" for item in fase6))
 

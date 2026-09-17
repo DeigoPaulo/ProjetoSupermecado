@@ -31,6 +31,11 @@ Cada operação deverá ser homologada separadamente. Os protocolos, XMLs enviad
 processados, códigos de rejeição e evidência de recuperação deverão ser arquivados por
 filial e canal. A conclusão manual da homologação permanece sujeita às travas existentes.
 
+No ciclo 131, a preservação alfanumérica também foi fechada depois dos adaptadores: o
+serviço de consulta/persistência de resumos e eventos DF-e e o parser de XML de entrada
+passaram a usar CNPJ e chave canônicos. Assim, letras não são mais removidas antes da busca
+da filial/fornecedor nem antes da gravação do documento recebido.
+
 ## Próximo passo interno
 
 Definir formalmente se CC-e e manifestação devem integrar o produto Focus ou se essas

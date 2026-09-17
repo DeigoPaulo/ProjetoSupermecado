@@ -12,6 +12,8 @@ from apps.empresas.models import Filial
 from apps.clientes.escopo import empresa_id_do_usuario
 from apps.fornecedores.models import Fornecedor
 from apps.produtos.models import Produto
+from apps.fiscal.chave_acesso import canonicalizar_chave_acesso_estrutural
+from apps.fiscal.estrategia_normalizacao_cnpj import canonicalizar_cnpj
 
 from .models import EntradaCompra, ItemEntradaCompra, PedidoCompra, StatusEntradaCompra, StatusPedidoCompra
 from .services import avaliar_conferencia_entrada
@@ -19,10 +21,6 @@ from .services import avaliar_conferencia_entrada
 
 LIMITE_XML_BYTES = 5 * 1024 * 1024
 CENTAVOS = Decimal("0.01")
-
-
-def _digitos(valor):
-    return "".join(caractere for caractere in (valor or "") if caractere.isdigit())
 
 
 def _texto(elemento, caminho, *, obrigatorio=False, rotulo=None):
@@ -92,10 +90,12 @@ def ler_xml_nfe(conteudo):
 
     identificador = (inf_nfe.attrib.get("Id") or "").strip()
     chave = identificador[3:] if identificador.startswith("NFe") else identificador
-    chave = _digitos(chave)
+    chave = canonicalizar_chave_acesso_estrutural(chave)
     if len(chave) != 44:
         raise ValidationError("Chave de acesso da NF-e ausente ou inválida.")
-    chave_protocolada = _digitos(_texto(protocolo, caminho("chNFe"), obrigatorio=True, rotulo="chave protocolada"))
+    chave_protocolada = canonicalizar_chave_acesso_estrutural(
+        _texto(protocolo, caminho("chNFe"), obrigatorio=True, rotulo="chave protocolada")
+    )
     if chave_protocolada != chave:
         raise ValidationError("A chave da NF-e difere da chave do protocolo de autorização.")
 
@@ -195,8 +195,12 @@ def ler_xml_nfe(conteudo):
     ).quantize(CENTAVOS, rounding=ROUND_HALF_UP)
     if total_documento < 0:
         raise ValidationError("O total da NF-e não pode ser negativo.")
-    emitente_cnpj = _digitos(_texto(emitente, caminho("CNPJ"), obrigatorio=True, rotulo="CNPJ do emitente"))
-    destinatario_cnpj = _digitos(_texto(destinatario, caminho("CNPJ"), obrigatorio=True, rotulo="CNPJ do destinatario"))
+    emitente_cnpj = canonicalizar_cnpj(
+        _texto(emitente, caminho("CNPJ"), obrigatorio=True, rotulo="CNPJ do emitente")
+    )
+    destinatario_cnpj = canonicalizar_cnpj(
+        _texto(destinatario, caminho("CNPJ"), obrigatorio=True, rotulo="CNPJ do destinatario")
+    )
     if len(emitente_cnpj) != 14 or len(destinatario_cnpj) != 14:
         raise ValidationError("CNPJ do emitente ou destinatario inválido no XML.")
 
@@ -214,7 +218,9 @@ def ler_xml_nfe(conteudo):
 
 
 def _registro_unico_por_cnpj(queryset, cnpj, rotulo):
-    encontrados = [objeto for objeto in queryset if _digitos(objeto.cnpj) == cnpj]
+    encontrados = [
+        objeto for objeto in queryset if canonicalizar_cnpj(objeto.cnpj) == cnpj
+    ]
     if not encontrados:
         raise ValidationError(f"Nenhum {rotulo} ativo encontrado para o CNPJ {cnpj}.")
     if len(encontrados) > 1:
@@ -253,7 +259,7 @@ def importar_xml_entrada(conteudo, *, usuario, gerar_conta_financeira=True, ip=N
     filiais_compativeis = [
         filial
         for filial in filiais
-        if _digitos(filial.cnpj or filial.empresa.cnpj) == dados["destinatario_cnpj"]
+        if canonicalizar_cnpj(filial.cnpj or filial.empresa.cnpj) == dados["destinatario_cnpj"]
     ]
     if not filiais_compativeis:
         raise ValidationError(f"Nenhuma filial ativa encontrada para o CNPJ {dados['destinatario_cnpj']}.")

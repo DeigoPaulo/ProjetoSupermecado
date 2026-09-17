@@ -590,6 +590,33 @@ Arquivos principais: apps/fiscal/barcode_chave.py, apps/fiscal/views.py,
 apps/pdv/views.py, templates/fiscal/danfe_nfce.html, testes fiscais e da auditoria.
 Migrações: nenhuma.
 
+## Ponto de retomada — ciclo 131, 17/09/2026
+
+Fechado um filtro exclusivamente numérico residual posterior aos adaptadores: o serviço de
+DF-e e o parser de NF-e recebida agora preservam CNPJ e chave alfanuméricos até a consulta,
+comparação cadastral e persistência.
+
+- [x] Substituir a remoção de letras por canonicalização de CNPJ na identificação da filial,
+  do destinatário, do emitente e do fornecedor do XML recebido.
+- [x] Preservar a chave estrutural de 44 caracteres em resumos, eventos, XML processado e
+  comparação com o protocolo de autorização.
+- [x] Entregar ao adaptador DF-e o CNPJ canônico da filial, sem reduzir a identidade a
+  dígitos antes da consulta.
+- [x] Evoluir a auditoria viva para `alphanumeric_cnpj_phase5_static_audit_v8`, incluindo os
+  consumidores de persistência DF-e e do parser de Compras na Fase 6.
+- [x] Validar 8 testes da Fase 6, 12 testes conjuntos com a auditoria e 16 testes do fluxo de
+  importação XML; nenhuma migration foi criada.
+- [x] Registrar que a suíte ampla de Compras executou 64 testes e encontrou duas falhas em
+  fixtures financeiras antigas que tentam violar a restrição
+  `financeiro_conta_baixa_integral_coerente`, fora dos arquivos e do fluxo alterados.
+- [ ] Próximo passo exato: alinhar o roteamento por filial de emissão, DF-e, CC-e e
+  manifestação, registrando o canal realmente executado e bloqueando operações que o canal
+  escolhido não implemente, sem ativar rede ou produção.
+
+Arquivos principais: apps/fiscal/services_dfe.py, apps/compras/services_xml.py,
+apps/fiscal/test_cnpj_phase6_channels.py e apps/fiscal/auditoria_fase5_cnpj.py.
+Migrações: nenhuma.
+
 ## Ponto de retomada — ciclo 130, 17/09/2026
 
 Criada a matriz formal de qualificação offline dos canais fiscais. O diagnóstico cobre as

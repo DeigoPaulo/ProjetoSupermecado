@@ -3,7 +3,7 @@
 from pathlib import Path
 
 
-CONTRATO_AUDITORIA_FASE5_CNPJ = "alphanumeric_cnpj_phase5_static_audit_v7"
+CONTRATO_AUDITORIA_FASE5_CNPJ = "alphanumeric_cnpj_phase5_static_audit_v8"
 
 
 PONTOS = (
@@ -254,6 +254,32 @@ PONTOS = (
         "estado": "COMPATIVEL_OFFLINE",
         "ordem_correcao": 6,
         "motivo": "A ingestão genérica de DF-e preserva a chave canônica de documentos e eventos.",
+    },
+    {
+        "codigo": "PERSISTENCIA_DFE_IDENTIDADES",
+        "escopo": "FASE_6",
+        "componente": "DFE",
+        "arquivo": "apps/fiscal/services_dfe.py",
+        "evidencias": (
+            "canonicalizar_chave_acesso_estrutural",
+            "canonicalizar_cnpj",
+        ),
+        "estado": "COMPATIVEL_OFFLINE",
+        "ordem_correcao": 6,
+        "motivo": "O serviço preserva CNPJ e chave canônicos na consulta e na persistência de resumos e eventos.",
+    },
+    {
+        "codigo": "PARSER_XML_ENTRADA_IDENTIDADES",
+        "escopo": "FASE_6",
+        "componente": "COMPRAS_DFE",
+        "arquivo": "apps/compras/services_xml.py",
+        "evidencias": (
+            "canonicalizar_chave_acesso_estrutural",
+            "canonicalizar_cnpj",
+        ),
+        "estado": "COMPATIVEL_OFFLINE",
+        "ordem_correcao": 6,
+        "motivo": "O parser de NF-e recebida preserva identidades alfanuméricas na chave, emitente, destinatário e busca cadastral.",
     },
 )
 

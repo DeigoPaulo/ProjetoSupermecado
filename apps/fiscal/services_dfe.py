@@ -1,4 +1,3 @@
-from datetime import date
 from datetime import date, timedelta
 from decimal import Decimal, InvalidOperation
 
@@ -12,6 +11,8 @@ from apps.empresas.models import Empresa, Filial
 from apps.clientes.escopo import empresa_id_do_usuario
 
 from .dfe_adapters import carregar_adaptador_dfe, normalizar_lote_dfe
+from .chave_acesso import canonicalizar_chave_acesso_estrutural
+from .estrategia_normalizacao_cnpj import canonicalizar_cnpj
 from .models import (
     ConfiguracaoDistribuicaoDFe,
     ControleDistribuicaoDFeFilial,
@@ -21,12 +22,8 @@ from .models import (
 )
 
 
-def _digitos(valor):
-    return "".join(caractere for caractere in (valor or "") if caractere.isdigit())
-
-
 def _filial_por_destinatario(destinatario_cnpj, *, usuario=None, empresa=None):
-    cnpj = _digitos(destinatario_cnpj)
+    cnpj = canonicalizar_cnpj(destinatario_cnpj)
     filiais = Filial.objects.filter(is_active=True).select_related("empresa")
     if empresa is not None:
         filiais = filiais.filter(empresa=empresa)
@@ -37,7 +34,7 @@ def _filial_por_destinatario(destinatario_cnpj, *, usuario=None, empresa=None):
     candidatas = [
         filial
         for filial in filiais
-        if _digitos(filial.cnpj or filial.empresa.cnpj) == cnpj
+        if canonicalizar_cnpj(filial.cnpj or filial.empresa.cnpj) == cnpj
     ]
     empresas = {filial.empresa_id: filial.empresa for filial in candidatas}
     if not empresas:
@@ -48,7 +45,7 @@ def _filial_por_destinatario(destinatario_cnpj, *, usuario=None, empresa=None):
         )
     empresa_encontrada = next(iter(empresas.values()))
     filial_direta = next(
-        (filial for filial in candidatas if _digitos(filial.cnpj) == cnpj),
+        (filial for filial in candidatas if canonicalizar_cnpj(filial.cnpj) == cnpj),
         candidatas[0],
     )
     return empresa_encontrada, filial_direta
@@ -149,13 +146,13 @@ def _data_segura(valor):
 
 def registrar_evento_dfe_recebido(item, *, filial, usuario, ip=None):
     """Preserva eventos distribuídos pela SEFAZ sem executar efeitos operacionais."""
-    chave = _digitos(item.get("chave_acesso"))
+    chave = canonicalizar_chave_acesso_estrutural(item.get("chave_acesso"))
     nsu = str(item.get("nsu") or "").strip()
     xml = item.get("xml")
     if len(chave) != 44 or not nsu.isdigit() or not xml:
         raise ValidationError("Evento DF-e inválido: informe chave, NSU e XML.")
-    destinatario = _digitos(item.get("destinatario_cnpj") or filial.cnpj or filial.empresa.cnpj)
-    if destinatario != _digitos(filial.cnpj or filial.empresa.cnpj):
+    destinatario = canonicalizar_cnpj(item.get("destinatario_cnpj") or filial.cnpj or filial.empresa.cnpj)
+    if destinatario != canonicalizar_cnpj(filial.cnpj or filial.empresa.cnpj):
         raise ValidationError("O evento retornado não pertence ao CNPJ da filial consultada.")
     data_evento = item.get("data_evento")
     if data_evento and not hasattr(data_evento, "tzinfo"):
@@ -197,11 +194,11 @@ def registrar_evento_dfe_recebido(item, *, filial, usuario, ip=None):
     return evento, criado
 
 def registrar_resumo_dfe_recebido(item, *, filial, usuario, ip=None):
-    chave = _digitos(item.get("chave_acesso"))
+    chave = canonicalizar_chave_acesso_estrutural(item.get("chave_acesso"))
     if len(chave) != 44:
-        raise ValidationError("A chave de acesso resumida deve possuir 44 dígitos.")
-    destinatario = _digitos(item.get("destinatario_cnpj") or filial.cnpj or filial.empresa.cnpj)
-    if destinatario != _digitos(filial.cnpj or filial.empresa.cnpj):
+        raise ValidationError("A chave de acesso resumida deve possuir 44 caracteres válidos.")
+    destinatario = canonicalizar_cnpj(item.get("destinatario_cnpj") or filial.cnpj or filial.empresa.cnpj)
+    if destinatario != canonicalizar_cnpj(filial.cnpj or filial.empresa.cnpj):
         raise ValidationError("O resumo retornado não pertence ao CNPJ da filial consultada.")
 
     documento, criado = DocumentoDFeRecebido.objects.get_or_create(
@@ -211,7 +208,7 @@ def registrar_resumo_dfe_recebido(item, *, filial, usuario, ip=None):
             "filial_destino": filial,
             "nsu": str(item.get("nsu") or ""),
             "schema": str(item.get("schema") or "resNFe")[:80],
-            "emitente_cnpj": _digitos(item.get("emitente_cnpj"))[:14],
+            "emitente_cnpj": canonicalizar_cnpj(item.get("emitente_cnpj"))[:14],
             "emitente_nome": str(item.get("emitente_nome") or "")[:255],
             "numero_documento": str(item.get("numero_documento") or "")[:30],
             "data_emissao": _data_segura(item.get("data_emissao")),
@@ -225,7 +222,7 @@ def registrar_resumo_dfe_recebido(item, *, filial, usuario, ip=None):
         novos_valores = {
             "filial_destino": filial,
             "nsu": str(item.get("nsu") or documento.nsu),
-            "emitente_cnpj": _digitos(item.get("emitente_cnpj"))[:14] or documento.emitente_cnpj,
+            "emitente_cnpj": canonicalizar_cnpj(item.get("emitente_cnpj"))[:14] or documento.emitente_cnpj,
             "emitente_nome": str(item.get("emitente_nome") or documento.emitente_nome)[:255],
             "numero_documento": str(item.get("numero_documento") or documento.numero_documento)[:30],
             "data_emissao": _data_segura(item.get("data_emissao")) or documento.data_emissao,
@@ -258,7 +255,7 @@ def consultar_distribuicao_dfe(*, filial, usuario, ip=None, limite=50):
     empresa_id = empresa_id_do_usuario(usuario)
     if empresa_id is not None and filial.empresa_id != empresa_id:
         raise ValidationError("A filial selecionada não pertence à empresa do usuário.")
-    cnpj = _digitos(filial.cnpj or filial.empresa.cnpj)
+    cnpj = canonicalizar_cnpj(filial.cnpj or filial.empresa.cnpj)
     if len(cnpj) != 14:
         raise ValidationError("Cadastre um CNPJ válido na filial antes de consultar DF-e.")
 
