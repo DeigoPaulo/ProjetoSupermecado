@@ -4,6 +4,8 @@ from django.db import transaction
 from django.utils.dateparse import parse_date, parse_datetime
 from django.utils import timezone
 
+from apps.fiscal.estrategia_normalizacao_cnpj import canonicalizar_cnpj
+
 from .models import EventoEntradaSincronizacao, ModoImplantacao, PoliticaConflitoSincronizacao, StatusEventoEntrada
 
 
@@ -46,6 +48,23 @@ def _valor_booleano(dados, chave, padrao=False):
     if isinstance(valor, bool):
         return valor
     return str(valor).strip().lower() in {"1", "true", "sim", "s", "on"}
+
+
+def _filial_por_cnpj(filiais, valor):
+    if not valor:
+        return None
+    try:
+        procurado = canonicalizar_cnpj(valor)
+    except ValueError as exc:
+        raise ValueError("filial_cnpj deve usar o formato oficial do CNPJ.") from exc
+    for filial in filiais:
+        try:
+            cadastrado = canonicalizar_cnpj(filial.cnpj or filial.empresa.cnpj)
+        except ValueError:
+            continue
+        if cadastrado == procurado:
+            return filial
+    return None
 
 
 def _nome_relacionado(valor):
@@ -331,7 +350,7 @@ def _estoque_saldo_atualizar(evento):
         raise ConflitoSincronizacao("Produto do saldo de estoque não encontrado na loja.")
 
     filiais = evento.empresa.filiais.all()
-    filial = filiais.filter(cnpj=filial_cnpj).first() if filial_cnpj else None
+    filial = _filial_por_cnpj(filiais, filial_cnpj)
     if not filial and filial_nome:
         filial = filiais.filter(nome=filial_nome).first()
     if not filial:
@@ -368,7 +387,7 @@ def _filial_do_evento(evento, dados):
     filial_cnpj = _valor_texto(dados, "filial_cnpj") or _valor_texto(evento.payload, "filial_cnpj")
     filial_nome = _valor_texto(dados, "filial_nome")
     filiais = evento.empresa.filiais.all()
-    filial = filiais.filter(cnpj=filial_cnpj).first() if filial_cnpj else None
+    filial = _filial_por_cnpj(filiais, filial_cnpj)
     if not filial and filial_nome:
         filial = filiais.filter(nome=filial_nome).first()
     return filial

@@ -18,6 +18,8 @@ from django.utils import timezone
 from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.http import require_POST
 
+from apps.fiscal.estrategia_normalizacao_cnpj import canonicalizar_cnpj
+
 from apps.accounts.models import TipoPerfil
 from apps.auditoria.models import LogAuditoria
 
@@ -332,8 +334,11 @@ def api_renovar_licenca(request):
         dados = json.loads(request.body.decode("utf-8"))
     except json.JSONDecodeError:
         return JsonResponse({"status": "JSON inválido"}, status=400)
-    cnpj = "".join(ch for ch in str(dados.get("empresa_cnpj", "")) if ch.isdigit())
-    cnpj_instalacao = "".join(ch for ch in instalacao.empresa.cnpj if ch.isdigit())
+    try:
+        cnpj = canonicalizar_cnpj(str(dados.get("empresa_cnpj", "")))
+        cnpj_instalacao = canonicalizar_cnpj(instalacao.empresa.cnpj)
+    except ValueError:
+        return JsonResponse({"status": "empresa divergente"}, status=403)
     if not hmac.compare_digest(cnpj, cnpj_instalacao):
         return JsonResponse({"status": "empresa divergente"}, status=403)
     agora = timezone.now()

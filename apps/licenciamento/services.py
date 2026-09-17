@@ -20,6 +20,8 @@ from cryptography.exceptions import InvalidSignature
 from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey, Ed25519PublicKey
 
+from apps.fiscal.estrategia_normalizacao_cnpj import canonicalizar_cnpj
+
 from .models import (
     AutorizacaoEmergencial,
     ConcessaoLicenca,
@@ -37,6 +39,16 @@ from .models import (
 
 logger = logging.getLogger(__name__)
 SALT_CONCESSAO = "deigo-tecnologia.licenca.v1"
+
+
+def _cnpj_canonico(valor, mensagem="CNPJ da empresa inválido."):
+    try:
+        canonico = canonicalizar_cnpj(valor)
+    except ValueError as exc:
+        raise RuntimeError(mensagem) from exc
+    if not canonico:
+        raise RuntimeError(mensagem)
+    return canonico
 
 
 def diagnostico_prontidao_licenciamento():
@@ -91,6 +103,7 @@ def diagnostico_prontidao_licenciamento():
         "asaas_configurado": bool(asaas_api_key),
         "asaas_url_https": asaas_https,
         "asaas_sandbox": asaas_sandbox,
+        "asaas_cnpj_alfanumerico_suportado": bool(settings.ASAAS_SUPORTA_CNPJ_ALFANUMERICO),
         "webhook_configurado": webhook_configurado,
         "webhook_token_valido": webhook_token_valido,
         "script_agendamento_disponivel": script.is_file(),
@@ -182,7 +195,7 @@ def emitir_concessao(instalacao, agora=None):
         "contrato": "license_lease_v2",
         "assinatura_algoritmo": "ed25519" if _chave_assimetrica_configurada(privada=True) else "django-signing-hmac",
         "empresa_id": contrato.empresa_id,
-        "empresa_cnpj": contrato.empresa.cnpj,
+        "empresa_cnpj": _cnpj_canonico(contrato.empresa.cnpj),
         "empresa": contrato.empresa.nome_fantasia,
         "instalacao_id": str(instalacao.identificador),
         "status": status,
@@ -236,7 +249,7 @@ def sincronizar_licenca_local(empresa):
     )
     corpo = json.dumps(
         {
-            "empresa_cnpj": empresa.cnpj,
+            "empresa_cnpj": _cnpj_canonico(empresa.cnpj),
             "instalacao_id": settings.LICENCIAMENTO_INSTALACAO_ID,
             "versao": settings.PDV_DESKTOP_VERSION,
             "liberacoes_emergenciais": [str(item) for item in liberacoes_pendentes],
@@ -256,8 +269,8 @@ def sincronizar_licenca_local(empresa):
         response = urlopen(request, timeout=settings.LICENCIAMENTO_TIMEOUT_SEGUNDOS)
         dados = json.loads(response.read().decode("utf-8"))
         payload = verificar_concessao(dados["assinatura"])
-        cnpj_payload = "".join(ch for ch in payload.get("empresa_cnpj", "") if ch.isdigit())
-        cnpj_local = "".join(ch for ch in empresa.cnpj if ch.isdigit())
+        cnpj_payload = _cnpj_canonico(payload.get("empresa_cnpj", ""), "CNPJ da concessão inválido.")
+        cnpj_local = _cnpj_canonico(empresa.cnpj)
         if payload != dados["licenca"] or cnpj_payload != cnpj_local:
             raise signing.BadSignature("Concessão não pertence à empresa local.")
         estado, _ = EstadoLicencaLocal.objects.update_or_create(empresa=empresa)
@@ -352,7 +365,7 @@ def gerar_desafio_liberacao(empresa, agora=None):
     payload = {
         "contrato": "license_offline_challenge_v1",
         "desafio_id": str(desafio.identificador),
-        "empresa_cnpj": empresa.cnpj,
+        "empresa_cnpj": _cnpj_canonico(empresa.cnpj),
         "instalacao_id": instalacao_uuid,
         "nonce": nonce,
         "criado_em": agora.isoformat(),
@@ -389,8 +402,8 @@ def emitir_autorizacao_emergencial(*, codigo_desafio, motivo, horas, usuario, ip
     ).first()
     if not instalacao:
         raise RuntimeError("A instalação não está credenciada ou está bloqueada na central.")
-    cnpj_desafio = "".join(ch for ch in desafio["empresa_cnpj"] if ch.isdigit())
-    cnpj_instalacao = "".join(ch for ch in instalacao.empresa.cnpj if ch.isdigit())
+    cnpj_desafio = _cnpj_canonico(desafio["empresa_cnpj"], "CNPJ do desafio inválido.")
+    cnpj_instalacao = _cnpj_canonico(instalacao.empresa.cnpj)
     if not hmac_compare(cnpj_desafio, cnpj_instalacao):
         raise RuntimeError("O desafio não pertence à empresa credenciada.")
     autorizacao_id = uuid.uuid4()
@@ -399,7 +412,7 @@ def emitir_autorizacao_emergencial(*, codigo_desafio, motivo, horas, usuario, ip
         "contrato": "license_offline_release_v1",
         "autorizacao_id": str(autorizacao_id),
         "desafio_id": desafio["desafio_id"],
-        "empresa_cnpj": instalacao.empresa.cnpj,
+        "empresa_cnpj": cnpj_instalacao,
         "instalacao_id": str(instalacao.identificador),
         "nonce": desafio["nonce"],
         "motivo": motivo.strip(),
@@ -437,8 +450,8 @@ def aplicar_autorizacao_emergencial(*, empresa, codigo, agora=None):
             raise ValueError
     except (InvalidSignature, ValueError, KeyError, TypeError, json.JSONDecodeError) as exc:
         raise RuntimeError("Código de liberação inválido ou assinatura não reconhecida.") from exc
-    cnpj_payload = "".join(ch for ch in payload["empresa_cnpj"] if ch.isdigit())
-    cnpj_local = "".join(ch for ch in empresa.cnpj if ch.isdigit())
+    cnpj_payload = _cnpj_canonico(payload["empresa_cnpj"], "CNPJ da liberação inválido.")
+    cnpj_local = _cnpj_canonico(empresa.cnpj)
     if not hmac_compare(cnpj_payload, cnpj_local):
         raise RuntimeError("A liberação pertence a outra empresa.")
     if str(payload["instalacao_id"]) != str(settings.LICENCIAMENTO_INSTALACAO_ID):
@@ -503,12 +516,18 @@ def garantir_cliente_asaas(contrato):
     if contrato.asaas_customer_id:
         return contrato.asaas_customer_id
     empresa = contrato.empresa
+    cnpj = _cnpj_canonico(empresa.cnpj)
+    if not cnpj.isdigit() and not settings.ASAAS_SUPORTA_CNPJ_ALFANUMERICO:
+        raise RuntimeError(
+            "O Asaas configurado ainda não declara suporte a CNPJ alfanumérico; "
+            "a cobrança foi mantida somente no sistema, sem alterar o documento."
+        )
     dados = _asaas_request(
         "POST",
         "/customers",
         {
             "name": empresa.razao_social or empresa.nome_fantasia,
-            "cpfCnpj": "".join(ch for ch in empresa.cnpj if ch.isdigit()),
+            "cpfCnpj": cnpj,
             "email": empresa.email,
             "mobilePhone": "".join(ch for ch in empresa.telefone if ch.isdigit()),
             "externalReference": f"empresa:{empresa.pk}",

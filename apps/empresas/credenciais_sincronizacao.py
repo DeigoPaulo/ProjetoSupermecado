@@ -2,9 +2,14 @@ import hmac
 
 from django.conf import settings
 
+from apps.fiscal.estrategia_normalizacao_cnpj import canonicalizar_cnpj
+
 
 def normalizar_cnpj(valor):
-    return "".join(filter(str.isdigit, str(valor or "")))
+    try:
+        return canonicalizar_cnpj(valor)
+    except ValueError:
+        return ""
 
 
 def _tokens_configurados(valor):

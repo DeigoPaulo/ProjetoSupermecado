@@ -16,6 +16,7 @@ from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 
 from apps.accounts.models import PerfilUsuario, TipoPerfil
 from apps.empresas.models import Empresa, Filial
+from apps.fiscal.estrategia_normalizacao_cnpj import canonicalizar_cnpj
 
 from .models import (
     AutorizacaoEmergencial,
@@ -211,7 +212,7 @@ class LicenciamentoTests(TestCase):
         self.assertEqual(response.status_code, 200)
         dados = response.json()
         self.assertEqual(verificar_concessao(dados["assinatura"]), dados["licenca"])
-        self.assertEqual(dados["licenca"]["empresa_cnpj"], self.empresa.cnpj)
+        self.assertEqual(dados["licenca"]["empresa_cnpj"], canonicalizar_cnpj(self.empresa.cnpj))
         self.assertEqual(dados["licenca"]["status"], StatusContrato.ATIVO)
         self.instalacao.refresh_from_db()
         self.assertEqual(self.instalacao.versao_sistema, "1.2.3")

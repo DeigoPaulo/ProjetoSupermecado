@@ -9,7 +9,7 @@ from django.db import transaction
 from django.db.models import Q
 from django.utils import timezone
 
-from .credenciais_sincronizacao import token_sincronizacao_para_cnpj
+from .credenciais_sincronizacao import normalizar_cnpj, token_sincronizacao_para_cnpj
 from .models import EventoSincronizacao, ModoImplantacao, StatusSincronizacao
 
 
@@ -36,7 +36,11 @@ def enfileirar_evento(*, empresa, tipo, objeto_tipo, objeto_id, payload, chave_i
 
 
 def enviar_evento_http(evento):
-    token, _origem_token = token_sincronizacao_para_cnpj(evento.empresa.cnpj)
+    empresa_cnpj = normalizar_cnpj(evento.empresa.cnpj)
+    filial_cnpj = normalizar_cnpj(evento.filial.cnpj) if evento.filial else None
+    if not empresa_cnpj or (evento.filial and not filial_cnpj):
+        raise ErroSincronizacao("CNPJ da empresa ou filial é inválido para sincronização.")
+    token, _origem_token = token_sincronizacao_para_cnpj(empresa_cnpj)
     if not token:
         raise ErroSincronizacao(
             "Credencial individual de sincronização não configurada para o CNPJ da empresa."
@@ -48,9 +52,9 @@ def enviar_evento_http(evento):
             "tipo": evento.tipo,
             "objeto": {"tipo": evento.objeto_tipo, "id": evento.objeto_id},
             "empresa_id": evento.empresa_id,
-            "empresa_cnpj": evento.empresa.cnpj,
+            "empresa_cnpj": empresa_cnpj,
             "filial_id": evento.filial_id,
-            "filial_cnpj": evento.filial.cnpj if evento.filial else None,
+            "filial_cnpj": filial_cnpj,
             "payload": evento.payload,
             "criado_em": evento.criado_em.isoformat(),
         }

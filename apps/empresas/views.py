@@ -301,18 +301,25 @@ def receber_evento_sincronizacao(request):
         dados = json.loads(corpo)
         identificador = uuid.UUID(str(dados["id"]))
         tipo = str(dados["tipo"]).strip()
-        empresa_cnpj = str(dados["empresa_cnpj"]).strip()
+        empresa_cnpj_recebido = str(dados["empresa_cnpj"]).strip()
         payload = dados["payload"]
     except (json.JSONDecodeError, KeyError, TypeError, ValueError):
         return _erro_api("Evento de sincronização malformado.", 400)
 
     token_recebido = request.headers.get("Authorization", "").removeprefix("Bearer ").strip()
     token_valido, _origem_token = credencial_sincronizacao_valida(
-        empresa_cnpj,
+        empresa_cnpj_recebido,
         token_recebido,
     )
     if not token_valido:
         return _erro_api("Credencial de sincronização inválida para a empresa.", 401)
+
+    try:
+        empresa_cnpj = canonicalizar_cnpj(empresa_cnpj_recebido)
+    except ValueError:
+        return _erro_api("CNPJ da empresa é inválido.", 400)
+    if not empresa_cnpj:
+        return _erro_api("CNPJ da empresa é inválido.", 400)
 
     chave = request.headers.get("Idempotency-Key", "").strip()
     if (
@@ -324,7 +331,9 @@ def receber_evento_sincronizacao(request):
         or not isinstance(payload, dict)
     ):
         return _erro_api("Tipo, payload e chave idempotente são obrigatórios.", 400)
-    empresa = Empresa.objects.filter(cnpj=empresa_cnpj, is_active=True).first()
+    empresa = _buscar_empresa_por_cnpj(empresa_cnpj)
+    if empresa and not empresa.is_active:
+        empresa = None
     if not empresa:
         return _erro_api("Empresa do evento não encontrada ou inativa.", 422)
 

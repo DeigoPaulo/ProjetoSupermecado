@@ -590,6 +590,43 @@ Arquivos principais: apps/fiscal/barcode_chave.py, apps/fiscal/views.py,
 apps/pdv/views.py, templates/fiscal/danfe_nfce.html, testes fiscais e da auditoria.
 Migrações: nenhuma.
 
+## Ponto de retomada — ciclo 127, 17/09/2026
+
+Concluída a compatibilidade da identidade CNPJ alfanumérica nos consumidores externos ao
+núcleo fiscal. Sincronização e licenciamento agora usam a mesma representação canônica de
+14 caracteres, preservam letras e aceitam a máscara oficial sem criar identidades paralelas.
+
+- [x] Preservar letras na seleção da credencial individual de sincronização, inclusive com
+  chave de configuração mascarada ou em letras minúsculas.
+- [x] Canonicalizar o CNPJ da Empresa na recepção de eventos sem alterar a precedência da
+  autenticação, evitando revelar validações cadastrais antes de validar o token.
+- [x] Resolver Empresa e Filial pela identidade canônica, aceitando representação pura ou
+  máscara oficial e recusando formato desconhecido sem correção silenciosa.
+- [x] Serializar Empresa e Filial em eventos de saída com os 14 caracteres completos, sem
+  descarte de letras.
+- [x] Canonicalizar o vínculo assinado do licenciamento em concessão, renovação, desafio e
+  liberação emergencial offline.
+- [x] Impedir que comparações do licenciamento considerem somente os dígitos e aceitem por
+  engano duas identidades alfanuméricas diferentes.
+- [x] Adicionar `ASAAS_SUPORTA_CNPJ_ALFANUMERICO`, desligada por padrão, e bloquear a
+  publicação externa quando o provedor não declarar capacidade, preservando a fatura interna.
+- [x] Quando a capacidade for explicitamente habilitada, enviar ao Asaas o CNPJ canônico
+  completo, sem remover letras.
+- [x] Documentar a configuração segura do Asaas e a exigência de homologação no sandbox
+  antes da ativação.
+- [x] Validar 5 testes novos focados e 96 testes das suítes completas de Empresas e
+  Licenciamento, sem falhas.
+- [x] Manter banco, modelos, migrations, credenciais reais, rede, Focus, SEFAZ direta e
+  ambientes operacionais inalterados.
+- [ ] Próximo passo exato: preparar a Fase 6 de homologação separada dos canais Focus e
+  SEFAZ direta, começando por contratos e testes offline, sem emissão real e sem ativar
+  credenciais ou certificados.
+
+Arquivos principais: apps/empresas/credenciais_sincronizacao.py,
+apps/empresas/services_sincronizacao.py, apps/empresas/services_eventos_entrada.py,
+apps/empresas/views.py, apps/licenciamento/services.py, apps/licenciamento/views.py,
+config/settings.py e testes associados. Migrações: nenhuma.
+
 ## Ponto de retomada — ciclo 126, 17/09/2026
 
 Os 11 pontos originais permanecem compatíveis e o inventário foi ampliado após auditoria

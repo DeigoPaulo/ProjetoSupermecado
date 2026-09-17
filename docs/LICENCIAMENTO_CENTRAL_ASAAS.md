@@ -34,7 +34,14 @@ ASAAS_API_URL=https://api-sandbox.asaas.com/v3
 ASAAS_API_KEY=chave-da-conta-asaas
 ASAAS_WEBHOOK_TOKEN=token-exclusivo-forte-com-32-ou-mais-caracteres
 ASAAS_TIMEOUT_SEGUNDOS=15
+ASAAS_SUPORTA_CNPJ_ALFANUMERICO=0
 ```
+
+O sistema nunca remove letras do CNPJ antes de enviá-lo ao Asaas. Enquanto o contrato da
+conta/provedor não tiver sido homologado para CNPJ alfanumérico, mantenha
+`ASAAS_SUPORTA_CNPJ_ALFANUMERICO=0`: uma empresa alfanumérica terá a publicação externa
+bloqueada, mas a fatura interna será preservada. Ative a opção somente após confirmação e
+teste no sandbox do provedor.
 
 Cadastre no Asaas o webhook `https://SEU-DOMINIO/licenciamento/webhooks/asaas/`. O endpoint persiste o identificador de cada evento e trata reenvios de forma idempotente.
 
