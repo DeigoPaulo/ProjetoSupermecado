@@ -590,6 +590,42 @@ Arquivos principais: apps/fiscal/barcode_chave.py, apps/fiscal/views.py,
 apps/pdv/views.py, templates/fiscal/danfe_nfce.html, testes fiscais e da auditoria.
 Migrações: nenhuma.
 
+## Ponto de retomada — ciclo 129, 17/09/2026
+
+Concluído o segundo subciclo offline da Fase 6: as chaves de acesso alfanuméricas deixaram
+de passar por filtros exclusivamente numéricos nos retornos Focus e SEFAZ direta. A
+canonicalização estrutural do canal foi separada da validação integral de DV já existente na
+fronteira central do ERP.
+
+- [x] Criar canonicalização estrutural explícita para a chave de 44 caracteres, preservando
+  letras somente nas 12 posições pertencentes ao CNPJ.
+- [x] Preservar a chave retornada pela Focus em autorização, consulta e XML processado,
+  comparando resposta e `infNFe/@Id` sem descartar letras.
+- [x] Preservar a chave e o número do documento na distribuição DF-e Focus.
+- [x] Preservar a chave no núcleo SEFAZ direto usado por autorização, consulta,
+  cancelamento, CC-e, manifestação e detecção de SVC.
+- [x] Preservar chaves de NF-e, resumos e eventos na distribuição DF-e direta.
+- [x] Corrigir a inutilização direta para usar o CNPJ canônico completo na identificação e
+  no XML, sem alterar série, faixa ou justificativa.
+- [x] Validar uma chave real de teste formada com CNPJ alfanumérico nos dois canais e manter
+  as regressões numéricas existentes.
+- [x] Fechar o consumidor genérico de lotes DF-e para documentos e eventos, preservando a
+  chave canônica antes da persistência.
+- [x] Evoluir a auditoria viva para `alphanumeric_cnpj_phase5_static_audit_v7`, com os três
+  pontos inventariados da Fase 6 compatíveis offline.
+- [x] Validar 59 testes focados e a suíte fiscal completa com 603 testes, três ignorados por
+  requisitos específicos de ambiente.
+- [x] Manter rede, certificados, credenciais, endpoints, ambientes, banco, migrations,
+  transmissão automática e produção inalterados.
+- [ ] Próximo passo exato: criar a matriz de qualificação offline separada por canal e
+  operação (autorização, consulta, rejeição, cancelamento, inutilização, eventos e DF-e),
+  explicitando evidências aprovadas e dependências externas antes da homologação real.
+
+Arquivos principais: apps/fiscal/chave_acesso.py,
+apps/fiscal/focus_sefaz_adapter.py, apps/fiscal/focus_dfe_adapter.py,
+apps/fiscal/sefaz_direta/adapter.py, apps/fiscal/sefaz_direta/dfe.py e testes associados.
+Migrações: nenhuma.
+
 ## Ponto de retomada — ciclo 128, 17/09/2026
 
 Iniciada a Fase 6 original com a compatibilização offline e separada da identidade CNPJ

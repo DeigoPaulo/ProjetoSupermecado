@@ -11,6 +11,7 @@ from xml.etree import ElementTree as ET
 from django.conf import settings
 
 from .adapters import SefazAdapterError
+from .chave_acesso import canonicalizar_chave_acesso_estrutural
 from .estrategia_normalizacao_cnpj import canonicalizar_cnpj
 
 NS = {"nfe": "http://www.portalfiscal.inf.br/nfe"}
@@ -195,11 +196,11 @@ class FocusNFeSefazAdapter:
 
     def _normalizar(self, resposta, *, token, consulta):
         status = self._status(resposta)
-        chave = self._digitos(
+        chave = canonicalizar_chave_acesso_estrutural(str(
             self._primeiro(
                 resposta, "chave_nfe", "chave_nfce", "chave_acesso", "chave"
             )
-        )
+        ))
         protocolo = str(
             self._primeiro(resposta, "protocolo", "numero_protocolo") or ""
         ).strip()
@@ -608,10 +609,11 @@ class FocusNFeSefazAdapter:
         except ET.ParseError as exc:
             raise FocusNFeFiscalError("O XML autorizado está inválido.") from exc
         inf = raiz.find(".//nfe:infNFe", NS)
-        chave = re.sub(
-            r"\D", "", inf.attrib.get("Id", "") if inf is not None else ""
-        )
-        if len(chave) != 44:
+        identificador = inf.attrib.get("Id", "") if inf is not None else ""
+        if identificador.startswith("NFe"):
+            identificador = identificador[3:]
+        chave = canonicalizar_chave_acesso_estrutural(identificador)
+        if not chave:
             raise FocusNFeFiscalError(
                 "O XML autorizado não contém uma chave válida."
             )

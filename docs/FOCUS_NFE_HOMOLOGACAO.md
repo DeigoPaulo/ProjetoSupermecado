@@ -83,6 +83,11 @@ DF-e aceitam a representação canônica alfanumérica ou a máscara oficial. O 
 preserva as letras; ele não converte o documento para “somente dígitos”. Isso comprova
 compatibilidade interna offline, mas a aceitação do CNPJ alfanumérico pela conta/API ainda
 deve ser validada separadamente no sandbox da Focus.
+
+As chaves de acesso devolvidas na autorização, consulta, XML processado e distribuição DF-e
+também preservam os 44 caracteres, inclusive as posições alfanuméricas do CNPJ. A estrutura
+é conferida no adaptador e o dígito verificador continua sendo validado na fronteira central
+do ERP antes da mudança de estado do documento.
 Antes de qualquer chamada ao sandbox, execute o diagnóstico local estrito:
 
 ```powershell

@@ -19,6 +19,7 @@ from django.core.exceptions import ImproperlyConfigured
 from lxml import etree
 
 from ..dfe_adapters import CONTRATO_DISTRIBUICAO_DFE
+from ..chave_acesso import canonicalizar_chave_acesso_estrutural
 from ..estrategia_normalizacao_cnpj import canonicalizar_cnpj
 from .adapter import NFE_NS, SOAP_NS, SefazDiretaAdapter, SefazDiretaError
 
@@ -168,7 +169,7 @@ class SefazDiretaDFeAdapter:
                 "nsu": nsu,
                 "chave_acesso": self._chave(self._xml._texto_local(raiz, "chNFe")),
                 "destinatario_cnpj": cnpj,
-                "emitente_cnpj": self._digitos(self._xml._texto_local(raiz, "CNPJ")),
+                "emitente_cnpj": self._cnpj(self._xml._texto_local(raiz, "CNPJ")),
                 "emitente_nome": self._xml._texto_local(raiz, "xNome"),
                 "numero_documento": self._numero_pela_chave(
                     self._xml._texto_local(raiz, "chNFe")
@@ -301,7 +302,7 @@ class SefazDiretaDFeAdapter:
 
     @staticmethod
     def _numero_pela_chave(chave):
-        chave = SefazDiretaDFeAdapter._digitos(chave)
+        chave = canonicalizar_chave_acesso_estrutural(str(chave or ""))
         return str(int(chave[25:34])) if len(chave) == 44 else ""
 
     @staticmethod
@@ -337,8 +338,8 @@ class SefazDiretaDFeAdapter:
 
     @classmethod
     def _chave(cls, valor):
-        chave = cls._digitos(valor)
-        if len(chave) != 44:
+        chave = canonicalizar_chave_acesso_estrutural(str(valor or ""))
+        if not chave:
             raise SefazDiretaDFeError("A chave de acesso recebida no DF-e é inválida.")
         return chave
 

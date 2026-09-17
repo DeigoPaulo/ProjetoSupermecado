@@ -13,6 +13,14 @@ from .estrategia_normalizacao_cnpj import (
 CONTRATO_CHAVE_ACESSO = "fiscal_access_key_alphanumeric_v1"
 
 
+def canonicalizar_chave_acesso_estrutural(valor):
+    """Preserva a chave recebida pelo canal; o DV continua validado na fronteira central."""
+    if not isinstance(valor, str):
+        return ""
+    chave = valor.strip().upper()
+    return chave if re.fullmatch(r"[0-9]{6}[A-Z0-9]{12}[0-9]{26}", chave) else ""
+
+
 def _campo_numerico(nome, valor, tamanho):
     texto = str(valor or "").strip()
     if not re.fullmatch(rf"[0-9]{{{tamanho}}}", texto):

@@ -5,6 +5,8 @@ from urllib.parse import parse_qs, urlparse
 from django.test import SimpleTestCase, override_settings
 
 from .estrategia_normalizacao_cnpj import calcular_dv_cnpj
+from .chave_acesso import construir_chave_acesso
+from .dfe_adapters import normalizar_lote_dfe
 from .focus_dfe_adapter import FocusNFeDFeAdapter
 from .focus_sefaz_adapter import FocusNFeSefazAdapter
 from .sefaz_direta.adapter import SefazDiretaAdapter
@@ -102,3 +104,44 @@ class CompatibilidadeCnpjFase6Tests(SimpleTestCase):
         self.assertEqual(SefazDiretaDFeAdapter._digitos(chave), chave)
         self.assertEqual(json.loads(json.dumps({"chave": chave}))["chave"], chave)
 
+    def test_chave_alfanumerica_e_preservada_nos_retornos_dos_dois_canais(self):
+        chave = construir_chave_acesso(
+            codigo_uf="52",
+            aamm="2609",
+            cnpj_emitente=self.cnpj,
+            modelo="65",
+            serie="001",
+            numero="000000123",
+            tipo_emissao="1",
+            codigo_numerico="12345678",
+        )
+        xml = (
+            '<nfeProc xmlns="http://www.portalfiscal.inf.br/nfe" versao="4.00">'
+            f'<NFe><infNFe Id="NFe{chave}" versao="4.00"/></NFe></nfeProc>'
+        )
+        focus = FocusNFeSefazAdapter()
+        retorno = focus._normalizar(
+            {"status": "autorizado", "chave_nfce": chave.lower(), "protocolo": "123", "xml": xml},
+            token="token-ficticio",
+            consulta=False,
+        )
+
+        self.assertEqual(retorno["chave_acesso"], chave)
+        self.assertEqual(FocusNFeDFeAdapter()._normalizar_documento(
+            {"chave_nfe": chave.lower(), "versao": 1}, cnpj=self.cnpj
+        )["chave_acesso"], chave)
+        self.assertEqual(SefazDiretaAdapter._chave(chave.lower()), chave)
+        self.assertEqual(SefazDiretaDFeAdapter._chave(chave.lower()), chave)
+        self.assertEqual(SefazDiretaDFeAdapter._numero_pela_chave(chave), "123")
+        lote = normalizar_lote_dfe({
+            "contrato": "fiscal_dfe_distribution_v1",
+            "documentos": [{
+                "tipo_documento": "EVENTO",
+                "nsu": "1",
+                "chave_acesso": chave.lower(),
+                "xml": "<procEventoNFe/>",
+            }],
+            "ultimo_nsu": "1",
+            "max_nsu": "1",
+        })
+        self.assertEqual(lote["documentos"][0]["chave_acesso"], chave)

@@ -3,7 +3,7 @@
 from pathlib import Path
 
 
-CONTRATO_AUDITORIA_FASE5_CNPJ = "alphanumeric_cnpj_phase5_static_audit_v6"
+CONTRATO_AUDITORIA_FASE5_CNPJ = "alphanumeric_cnpj_phase5_static_audit_v7"
 
 
 PONTOS = (
@@ -224,10 +224,10 @@ PONTOS = (
         "escopo": "FASE_6",
         "componente": "CANAL_FOCUS",
         "arquivo": "apps/fiscal/focus_sefaz_adapter.py",
-        "evidencias": ("if len(chave) != 44",),
-        "estado": "COMPATIVEL_CONDICIONAL",
+        "evidencias": ("canonicalizar_chave_acesso_estrutural",),
+        "estado": "COMPATIVEL_OFFLINE",
         "ordem_correcao": 6,
-        "motivo": "O canal não exige somente dígitos nesse ponto, mas depende de homologação própria.",
+        "motivo": "O canal preserva a chave estrutural alfanumérica; a homologação externa continua separada.",
     },
     {
         "codigo": "SEFAZ_DIRETA_CHAVE",
@@ -235,12 +235,12 @@ PONTOS = (
         "componente": "CANAL_SEFAZ_DIRETA",
         "arquivo": "apps/fiscal/sefaz_direta/adapter.py",
         "evidencias": (
-            r're.sub(r"\D", "", valor or "")',
-            "if len(chave) != 44",
+            "canonicalizar_chave_acesso_estrutural",
+            "canonicalizar_cnpj",
         ),
-        "estado": "INCOMPATIVEL",
+        "estado": "COMPATIVEL_OFFLINE",
         "ordem_correcao": 6,
-        "motivo": "O adaptador direto reduz a chave a dígitos antes de enviá-la.",
+        "motivo": "O adaptador direto preserva CNPJ e chave alfanuméricos em caminhos separados.",
     },
     {
         "codigo": "DISTRIBUICAO_DFE_CHAVE",
@@ -248,12 +248,12 @@ PONTOS = (
         "componente": "DFE",
         "arquivo": "apps/fiscal/dfe_adapters.py",
         "evidencias": (
-            'if c.isdigit()',
-            "if not xml and len(chave) != 44",
+            "canonicalizar_chave_acesso_estrutural",
+            'item["chave_acesso"] = chave',
         ),
-        "estado": "INCOMPATIVEL",
+        "estado": "COMPATIVEL_OFFLINE",
         "ordem_correcao": 6,
-        "motivo": "A ingestão genérica de DF-e também descarta letras da chave.",
+        "motivo": "A ingestão genérica de DF-e preserva a chave canônica de documentos e eventos.",
     },
 )
 
@@ -295,8 +295,7 @@ def auditar_fase5_cnpj(raiz_projeto):
             "altera_codigo_operacional": False,
         },
         "sequencia_recomendada": [
-            "COMPATIBILIZAR_IDENTIDADE_FORA_DO_FISCAL",
             "HOMOLOGAR_FOCUS_E_SEFAZ_DIRETA_SEPARADAMENTE",
         ],
-        "proximo_passo": "COMPATIBILIZAR_IDENTIDADE_FORA_DO_FISCAL",
+        "proximo_passo": "HOMOLOGAR_FOCUS_E_SEFAZ_DIRETA_SEPARADAMENTE",
     }

@@ -24,6 +24,7 @@ from lxml import etree
 from ..adapters import SefazAdapterError
 from ..assinaturas import assinar_xml_elemento_fiscal
 from ..certificados import abrir_certificado_a1
+from ..chave_acesso import canonicalizar_chave_acesso_estrutural
 from ..estrategia_normalizacao_cnpj import canonicalizar_cnpj
 from .capacidades import resumo_capacidades
 from .resiliencia import ResilienciaSefazDireta
@@ -300,7 +301,12 @@ class SefazDiretaAdapter:
         del idempotency_key
         configuracao = self._configuracao(inutilizacao)
         endpoint = self._endpoint(inutilizacao, ambiente, "inutilizacao")
-        cnpj = re.sub(r"\D", "", cnpj or "")
+        try:
+            cnpj = canonicalizar_cnpj(str(cnpj or ""))
+        except ValueError as exc:
+            raise SefazDiretaError("CNPJ inválido para inutilização.") from exc
+        if not cnpj:
+            raise SefazDiretaError("CNPJ obrigatório para inutilização.")
         modelo = "65" if str(tipo_documento).upper() == "NFCE" else "55"
         codigo_uf = self._codigo_uf(inutilizacao)
         identificador = (
@@ -535,7 +541,9 @@ class SefazDiretaAdapter:
         tipo = str(getattr(objeto, "tipo_documento", "") or "").upper()
         if tipo != "NFE":
             return False
-        chave = re.sub(r"\D", "", getattr(objeto, "chave_acesso", "") or "")
+        chave = canonicalizar_chave_acesso_estrutural(
+            str(getattr(objeto, "chave_acesso", "") or "")
+        )
         chave_svc = len(chave) == 44 and chave[34] == "7"
         contingencia_marcada = bool(
             getattr(objeto, "contingencia_iniciada_em", None)
@@ -585,8 +593,8 @@ class SefazDiretaAdapter:
 
     @staticmethod
     def _chave(valor):
-        chave = re.sub(r"\D", "", valor or "")
-        if len(chave) != 44:
+        chave = canonicalizar_chave_acesso_estrutural(str(valor or ""))
+        if not chave:
             raise SefazDiretaError("Chave de acesso inválida.")
         return chave
 

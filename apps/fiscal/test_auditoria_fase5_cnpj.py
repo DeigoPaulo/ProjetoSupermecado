@@ -62,6 +62,7 @@ class AuditoriaFase5CNPJTests(SimpleTestCase):
         self.assertEqual(len(fase6), 3)
         self.assertEqual(resultado["resumo"]["pontos_fase6_inventariados"], 3)
         self.assertTrue(all(item["ordem_correcao"] == 6 for item in fase6))
+        self.assertTrue(all(item["estado"] == "COMPATIVEL_OFFLINE" for item in fase6))
 
     def test_nucleo_isolado_ja_calcula_chave_alfanumerica_oficial(self):
         base = "52260912ABC34501DE3555001000000001112345678"
@@ -72,5 +73,5 @@ class AuditoriaFase5CNPJTests(SimpleTestCase):
         self.assertTrue(any(caractere.isalpha() for caractere in chave))
         self.assertEqual(
             self.resultado()["proximo_passo"],
-            "COMPATIBILIZAR_IDENTIDADE_FORA_DO_FISCAL",
+            "HOMOLOGAR_FOCUS_E_SEFAZ_DIRETA_SEPARADAMENTE",
         )

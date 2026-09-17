@@ -2,6 +2,8 @@ from django.conf import settings
 from django.core.exceptions import ImproperlyConfigured, ValidationError
 from django.utils.module_loading import import_string
 
+from .chave_acesso import canonicalizar_chave_acesso_estrutural
+
 CONTRATO_DISTRIBUICAO_DFE = "fiscal_dfe_distribution_v1"
 
 
@@ -93,16 +95,20 @@ def normalizar_lote_dfe(retorno):
         if nsu and not nsu.isdigit():
             raise ValidationError("Um documento do lote DF-e possui NSU inválido.")
         xml = item.get("xml")
-        chave = "".join(c for c in str(item.get("chave_acesso") or "") if c.isdigit())
-        if tipo_documento == "EVENTO" and (not xml or len(chave) != 44):
+        chave = canonicalizar_chave_acesso_estrutural(
+            str(item.get("chave_acesso") or "")
+        )
+        if tipo_documento == "EVENTO" and (not xml or not chave):
             raise ValidationError(
-                "Evento do lote DF-e deve informar XML e chave de acesso com 44 dígitos."
+                "Evento do lote DF-e deve informar XML e chave de acesso válida com 44 caracteres."
             )
-        if not xml and len(chave) != 44:
+        if not xml and not chave:
             raise ValidationError(
-                "Documento resumido do lote DF-e deve informar uma chave de acesso com 44 dígitos."
+                "Documento resumido do lote DF-e deve informar uma chave de acesso válida com 44 caracteres."
             )
         item["tipo_documento"] = tipo_documento
+        if chave:
+            item["chave_acesso"] = chave
     try:
         aguardar_segundos = int(retorno.get("aguardar_segundos") or 0)
     except (TypeError, ValueError) as exc:

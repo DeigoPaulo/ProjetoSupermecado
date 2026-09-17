@@ -43,6 +43,10 @@ distribuição DF-e e consulta cadastral. A máscara oficial também é aceita n
 Essa compatibilidade é validada offline e não significa que certificado, credenciamento,
 endpoint ou ambiente de homologação tenham sido aprovados pela SEFAZ-GO.
 
+Chaves de acesso retornadas pela autorização, consulta, cancelamento, eventos e DF-e são
+mantidas em maiúsculas com todos os 44 caracteres. O adaptador não remove letras; a camada
+central permanece responsável pela validação integral, inclusive do dígito verificador.
+
 Para outro provedor, implemente o mesmo contrato e configure sua classe no servidor.
 
 5. Execute sem transmitir nada:

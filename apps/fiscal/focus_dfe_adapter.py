@@ -8,6 +8,7 @@ from django.conf import settings
 from django.core.exceptions import ImproperlyConfigured
 
 from .dfe_adapters import CONTRATO_DISTRIBUICAO_DFE
+from .chave_acesso import canonicalizar_chave_acesso_estrutural
 from .estrategia_normalizacao_cnpj import canonicalizar_cnpj
 
 
@@ -194,16 +195,14 @@ class FocusNFeDFeAdapter:
     def _normalizar_documento(self, bruto, *, cnpj):
         if not isinstance(bruto, dict):
             raise ValueError("A Focus NFe retornou um documento inválido.")
-        chave = self._digitos(
-            self._primeiro(
+        chave = canonicalizar_chave_acesso_estrutural(str(self._primeiro(
                 bruto,
                 "chave_nfe",
                 "chave_acesso",
                 "chave",
                 "chave_nota_fiscal",
-            )
-        )
-        if len(chave) != 44:
+            )))
+        if not chave:
             raise ValueError("A Focus NFe retornou uma chave de acesso inválida.")
         versao = str(self._primeiro(bruto, "versao", "version") or "").strip()
         if not versao.isdigit():
