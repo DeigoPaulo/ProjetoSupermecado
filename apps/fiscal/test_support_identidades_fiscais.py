@@ -38,6 +38,7 @@ _DEFINICOES = MappingProxyType({
     item.codigo: item
     for item in (
         _DefinicaoIdentidadeTeste("EMPRESA_MATRIZ", "TSTEMPRESA01"),
+        _DefinicaoIdentidadeTeste("EMPRESA_NUMERICA", "987654320001"),
         _DefinicaoIdentidadeTeste("FILIAL", "TSTFILIAL001"),
         _DefinicaoIdentidadeTeste("FORNECEDOR", "TSTFORNEC001"),
         _DefinicaoIdentidadeTeste("CLIENTE_PJ", "TSTCLI000001"),

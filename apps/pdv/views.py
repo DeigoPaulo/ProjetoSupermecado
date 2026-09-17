@@ -34,6 +34,7 @@ from apps.marketplace.services import alterar_status_pedido, calcular_entrega_pe
 from apps.fiscal.models import ConfiguracaoFiscal, DocumentoFiscal, StatusDocumentoFiscal, TipoDocumentoFiscal
 from apps.fiscal.qrcode_nfce import gerar_qrcode_data_uri, obter_url_qrcode_nfce
 from apps.fiscal.barcode_chave import gerar_codigo_barras_chave_data_uri
+from apps.fiscal.chave_acesso import normalizar_chave_acesso
 from apps.produtos.models import CodigoBarrasProduto, ConfiguracaoBalancaProduto, Produto
 from apps.promocoes.models import PromocaoProduto
 from apps.promocoes.services import preco_atual_produto, promocao_ativa_para_produto
@@ -1283,6 +1284,7 @@ def venda_impressao_desktop(request, venda_id):
     fiscal_payload = {}
     documento_pronto = not documento_fiscal
     if documento_fiscal:
+        chave_fiscal = normalizar_chave_acesso(documento_fiscal.chave_acesso)
         qrcode_url = ""
         try:
             qrcode_url = obter_url_qrcode_nfce(documento_fiscal)
@@ -1294,7 +1296,7 @@ def venda_impressao_desktop(request, venda_id):
             url_consulta = ""
         documento_pronto = bool(
             qrcode_url
-            and len(documento_fiscal.chave_acesso) == 44
+            and chave_fiscal
             and (documento_fiscal.protocolo or documento_fiscal.status == StatusDocumentoFiscal.CONTINGENCIA)
         )
         if not documento_pronto and not mensagem_impressao:
@@ -1305,7 +1307,7 @@ def venda_impressao_desktop(request, venda_id):
             "ambiente": documento_fiscal.ambiente,
             "serie": documento_fiscal.serie,
             "numero": documento_fiscal.numero,
-            "chave_acesso": documento_fiscal.chave_acesso,
+            "chave_acesso": chave_fiscal,
             "protocolo": documento_fiscal.protocolo,
             "qrcode_url": qrcode_url,
             "url_consulta": url_consulta,

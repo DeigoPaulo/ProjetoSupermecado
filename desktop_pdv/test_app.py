@@ -12,7 +12,7 @@ from unittest.mock import MagicMock, patch
 import app
 from devices.printers import ErroDescobertaImpressoras, listar_impressoras_windows
 from devices.labels import montar_etiquetas_epl, montar_etiquetas_nativas, montar_etiquetas_ppla, montar_etiquetas_zpl
-from devices.printing import ErroImpressao, montar_cupom_escpos, montar_pulso_gaveta_escpos, montar_texto_comanda_entrega, montar_texto_cupom, montar_texto_danfe_nfce
+from devices.printing import ErroImpressao, _agrupar_chave_acesso, montar_cupom_escpos, montar_pulso_gaveta_escpos, montar_texto_comanda_entrega, montar_texto_cupom, montar_texto_danfe_nfce
 from devices.scales import ErroBalanca, extrair_peso_resposta, ler_peso_balanca, normalizar_configuracao_balanca
 
 
@@ -974,6 +974,49 @@ class AppDesktopTests(unittest.TestCase):
         self.assertTrue(dados.endswith(b"\x1dV\x42\x00"))
         payload["fiscal"]["qrcode_url"] = ""
         with self.assertRaisesRegex(ErroImpressao, "QR Code oficial"):
+            montar_cupom_escpos(payload)
+
+    def test_danfe_desktop_preserva_chave_alfanumerica_e_qrcode(self):
+        chave = "52260912ABC34501DE35650010000001239123456783"
+        qrcode_url = f"https://nfce.example.com/qrcode?p={chave}|3|2"
+        payload = {
+            "tipo": "danfe_nfce",
+            "venda": {
+                "empresa": "Supermercado Modelo",
+                "total_liquido": "1,00",
+            },
+            "itens": [],
+            "pagamentos": [{"forma": "DINHEIRO", "valor": "1,00"}],
+            "fiscal": {
+                "chave_acesso": chave.lower(),
+                "qrcode_url": qrcode_url,
+            },
+            "impressao": {"modelo_papel": "80MM"},
+        }
+
+        texto = montar_texto_danfe_nfce(payload)
+        dados = montar_cupom_escpos(payload)
+        agrupada = _agrupar_chave_acesso(chave)
+
+        self.assertIn("0912 ABC3 4501 DE35", agrupada)
+        self.assertEqual(agrupada.replace(" ", ""), chave)
+        self.assertIn("0912 ABC3 4501 DE35", texto)
+        self.assertIn(qrcode_url.encode("utf-8"), dados)
+        self.assertIn(b"\x1d(k", dados)
+
+    def test_danfe_desktop_recusa_chave_fora_do_envelope_fiscal(self):
+        payload = {
+            "tipo": "danfe_nfce",
+            "venda": {},
+            "itens": [],
+            "pagamentos": [],
+            "fiscal": {
+                "chave_acesso": "52260912ABC34501DE35@6500100000001239123456783",
+                "qrcode_url": "https://nfce.example.com/qrcode",
+            },
+        }
+
+        with self.assertRaisesRegex(ErroImpressao, "44 caracteres"):
             montar_cupom_escpos(payload)
 
     def test_ponte_aciona_gaveta_e_registra_diagnostico_local(self):

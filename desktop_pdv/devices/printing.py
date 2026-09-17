@@ -168,17 +168,27 @@ def montar_texto_comanda_entrega(payload: dict, largura: int | None = None) -> s
     linhas.extend([separador, "ENTREGADOR: __________________________", "ASSINATURA: __________________________", "", ""])
     return "\n".join(linhas)
 def _agrupar_chave_acesso(chave: str) -> str:
-    digitos = "".join(caractere for caractere in str(chave or "") if caractere.isdigit())
-    return " ".join(digitos[indice:indice + 4] for indice in range(0, len(digitos), 4))
+    chave = str(chave or "").strip().upper()
+    return " ".join(chave[indice:indice + 4] for indice in range(0, len(chave), 4))
+
+
+def _normalizar_chave_acesso_payload(chave: str) -> str:
+    """Valida o envelope recebido; o DV permanece responsabilidade do servidor fiscal."""
+    chave = str(chave or "").strip().upper()
+    if len(chave) != 44 or not chave.isascii() or not chave.isalnum():
+        return ""
+    if not chave[:6].isdigit() or not chave[18:].isdigit():
+        return ""
+    return chave
 
 
 def montar_texto_danfe_nfce(payload: dict, largura: int | None = None) -> str:
     largura = _largura_cupom(payload, largura)
     venda = payload.get("venda", {})
     fiscal = payload.get("fiscal", {})
-    chave = "".join(caractere for caractere in str(fiscal.get("chave_acesso", "")) if caractere.isdigit())
-    if len(chave) != 44:
-        raise ErroImpressao("NFC-e sem chave de acesso valida com 44 digitos.")
+    chave = _normalizar_chave_acesso_payload(fiscal.get("chave_acesso", ""))
+    if not chave:
+        raise ErroImpressao("NFC-e sem chave de acesso fiscal válida com 44 caracteres.")
     if not str(fiscal.get("qrcode_url", "")).strip():
         raise ErroImpressao("NFC-e sem QR Code oficial para impressao.")
     separador = "-" * largura

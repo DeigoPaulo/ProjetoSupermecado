@@ -3,7 +3,7 @@
 from pathlib import Path
 
 
-CONTRATO_AUDITORIA_FASE5_CNPJ = "alphanumeric_cnpj_phase5_static_audit_v5"
+CONTRATO_AUDITORIA_FASE5_CNPJ = "alphanumeric_cnpj_phase5_static_audit_v6"
 
 
 PONTOS = (
@@ -142,6 +142,84 @@ PONTOS = (
         "motivo": "O DANFE usa gerador Code 128 híbrido restrito aos conjuntos C e A.",
     },
     {
+        "codigo": "CNPJ_EMITENTE_DV",
+        "escopo": "FASE_5",
+        "componente": "CHAVE_ACESSO",
+        "arquivo": "apps/fiscal/chave_acesso.py",
+        "evidencias": (
+            "validar_dv_cnpj(cnpj)",
+            "CNPJ do emitente possui dígitos verificadores inválidos.",
+        ),
+        "estado": "COMPATIVEL_OFFLINE",
+        "ordem_correcao": 5,
+        "motivo": "A fronteira fiscal recusa emitente com DV de CNPJ inválido antes de formar chave ou XML.",
+    },
+    {
+        "codigo": "NFE_DESTINATARIO_CNPJ",
+        "escopo": "FASE_5",
+        "componente": "XML",
+        "arquivo": "apps/fiscal/services.py",
+        "evidencias": (
+            "normalizar_documento_cliente(",
+            'return "CNPJ", documento',
+        ),
+        "estado": "COMPATIVEL_OFFLINE",
+        "ordem_correcao": 5,
+        "motivo": "O destinatário da NF-e preserva CNPJ alfanumérico canônico e exige DV válido.",
+    },
+    {
+        "codigo": "MARKETPLACE_DOCUMENTO_DESTINATARIO",
+        "escopo": "FASE_5",
+        "componente": "MARKETPLACE",
+        "arquivo": "apps/marketplace/models.py",
+        "evidencias": (
+            "normalizar_documento_cliente(",
+            "self.documento_cliente_tipo = tipo",
+        ),
+        "estado": "COMPATIVEL_OFFLINE",
+        "ordem_correcao": 5,
+        "motivo": "O snapshot Cliente-Pedido respeita o tipo explícito e só infere uma identidade válida.",
+    },
+    {
+        "codigo": "CONTINGENCIA_NFCE_CHAVE",
+        "escopo": "FASE_5",
+        "componente": "CONTINGENCIA",
+        "arquivo": "apps/fiscal/services.py",
+        "evidencias": (
+            'chave = normalizar_chave_acesso(getattr(documento, "chave_acesso", ""))',
+            'chave[34] == "9"',
+        ),
+        "estado": "COMPATIVEL_OFFLINE",
+        "ordem_correcao": 5,
+        "motivo": "A detecção de tpEmis 9 usa a chave central válida sem remover letras.",
+    },
+    {
+        "codigo": "PDV_DESKTOP_CHAVE_TEXTO",
+        "escopo": "FASE_5",
+        "componente": "PDV_DESKTOP",
+        "arquivo": "desktop_pdv/devices/printing.py",
+        "evidencias": (
+            "def _normalizar_chave_acesso_payload",
+            "chave = str(chave or \"\").strip().upper()",
+        ),
+        "estado": "COMPATIVEL_OFFLINE",
+        "ordem_correcao": 5,
+        "motivo": "O Desktop preserva os 44 caracteres alfanuméricos recebidos do servidor fiscal validado.",
+    },
+    {
+        "codigo": "PDV_DESKTOP_CODE128",
+        "escopo": "FASE_5",
+        "componente": "PDV_DESKTOP",
+        "arquivo": "desktop_pdv/devices/printing.py",
+        "evidencias": (
+            "def montar_danfe_nfce_escpos",
+            "qrcode = montar_qrcode_escpos",
+        ),
+        "estado": "AUSENTE",
+        "ordem_correcao": 5,
+        "motivo": "O caminho RAW possui texto e QR Code, mas não há base genérica de Code 128 homologada para as impressoras suportadas.",
+    },
+    {
         "codigo": "FOCUS_RETORNO_CHAVE",
         "escopo": "FASE_6",
         "componente": "CANAL_FOCUS",
@@ -217,7 +295,8 @@ def auditar_fase5_cnpj(raiz_projeto):
             "altera_codigo_operacional": False,
         },
         "sequencia_recomendada": [
+            "COMPATIBILIZAR_IDENTIDADE_FORA_DO_FISCAL",
             "HOMOLOGAR_FOCUS_E_SEFAZ_DIRETA_SEPARADAMENTE",
         ],
-        "proximo_passo": "HOMOLOGAR_FOCUS_E_SEFAZ_DIRETA_SEPARADAMENTE",
+        "proximo_passo": "COMPATIBILIZAR_IDENTIDADE_FORA_DO_FISCAL",
     }

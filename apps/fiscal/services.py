@@ -11,6 +11,7 @@ from django.db.models import Q, Subquery
 from django.utils import timezone
 
 from apps.auditoria.models import LogAuditoria
+from apps.marketplace.documentos_destinatario import normalizar_documento_cliente
 from apps.vendas.models import TipoDocumentoConsumidor, Venda
 
 from .adapters import (
@@ -188,7 +189,7 @@ def _chave_acesso_documento(documento, filial, modelo, tipo_emissao):
 
 def documento_em_contingencia_offline(documento):
     """Identifica NFC-e tpEmis 9 mesmo durante correção de rejeição."""
-    chave = _somente_digitos(getattr(documento, "chave_acesso", ""))
+    chave = normalizar_chave_acesso(getattr(documento, "chave_acesso", ""))
     return bool(
         documento.tipo_documento == TipoDocumentoFiscal.NFCE
         and documento.contingencia_iniciada_em
@@ -855,16 +856,23 @@ def gerar_xml_nfce(documento):
 
 def _documento_destinatario_pedido(pedido):
     tipo = pedido.documento_cliente_tipo
-    documento = _somente_digitos(pedido.documento_cliente)
+    documento = str(pedido.documento_cliente or "").strip()
     if not documento and pedido.cliente and pedido.cliente.cpf_cnpj:
-        documento = _somente_digitos(pedido.cliente.cpf_cnpj)
-        tipo = TipoDocumentoConsumidor.CPF if len(documento) == 11 else TipoDocumentoConsumidor.CNPJ
-    if tipo == TipoDocumentoConsumidor.CPF and len(documento) == 11:
+        documento = pedido.cliente.cpf_cnpj
+    try:
+        tipo, documento = normalizar_documento_cliente(
+            tipo,
+            documento,
+            inferir=(tipo == TipoDocumentoConsumidor.NAO_IDENTIFICADO),
+        )
+    except ValidationError as exc:
+        raise ValidationError(exc.messages) from exc
+    if tipo == TipoDocumentoConsumidor.CPF:
         return "CPF", documento
-    if tipo == TipoDocumentoConsumidor.CNPJ and len(documento) == 14:
+    if tipo == TipoDocumentoConsumidor.CNPJ:
         return "CNPJ", documento
-    if tipo == TipoDocumentoConsumidor.ESTRANGEIRO and pedido.documento_cliente:
-        return "idEstrangeiro", pedido.documento_cliente.strip()[:20]
+    if tipo == TipoDocumentoConsumidor.ESTRANGEIRO and documento:
+        return "idEstrangeiro", documento
     raise ValidationError("Pedido online precisa ter CPF, CNPJ ou documento estrangeiro do destinatario para NF-e.")
 
 

@@ -5,6 +5,7 @@ import re
 from .estrategia_normalizacao_cnpj import (
     calcular_dv_chave_acesso,
     canonicalizar_cnpj,
+    validar_dv_cnpj,
     validar_chave_acesso,
 )
 
@@ -24,6 +25,8 @@ def normalizar_cnpj_emitente(valor):
     cnpj = canonicalizar_cnpj(str(valor or ""))
     if not cnpj:
         raise ValueError("CNPJ do emitente é obrigatório para formar o documento fiscal.")
+    if not validar_dv_cnpj(cnpj):
+        raise ValueError("CNPJ do emitente possui dígitos verificadores inválidos.")
     return cnpj
 
 

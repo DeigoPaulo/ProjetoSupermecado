@@ -124,6 +124,29 @@ class ChaveAcessoCentralTests(SimpleTestCase):
 
         self.assertEqual(normalizar_cnpj_emitente(mascarado.lower()), cnpj)
 
+    def test_emitente_exige_dv_valido_em_formatos_numerico_e_alfanumerico(self):
+        alfa = "12ABC34501DE" + calcular_dv_cnpj("12ABC34501DE")
+        casos_validos = (
+            ("04.252.011/0001-10", "04252011000110"),
+            ("04252011000110", "04252011000110"),
+            ("12.abc.345/01de-35", alfa),
+            (alfa.lower(), alfa),
+        )
+        for entrada, esperado in casos_validos:
+            with self.subTest(entrada=entrada):
+                self.assertEqual(normalizar_cnpj_emitente(entrada), esperado)
+
+        for invalido in (
+            "04252011000111",
+            "12ABC34501DE36",
+            "12ABC34501DE@5",
+            "12ABC34501DE3",
+        ):
+            with self.subTest(invalido=invalido), self.assertRaises(ValueError):
+                normalizar_cnpj_emitente(invalido)
+            with self.subTest(chave=invalido), self.assertRaises(ValueError):
+                construir_chave_acesso(**self.argumentos(invalido))
+
     def test_validacao_pre_transmissao_reconhece_chave_alfa_offline(self):
         base_cnpj = "12ABC34501DE"
         cnpj = base_cnpj + calcular_dv_cnpj(base_cnpj)
@@ -152,7 +175,7 @@ class ChaveAcessoCentralTests(SimpleTestCase):
         xml = (
             '<NFe xmlns="http://www.portalfiscal.inf.br/nfe">'
             f'<infNFe Id="NFe{chave}"><ide><mod>55</mod><cDV>{chave[-1]}</cDV>'
-            "</ide><emit><CNPJ>12345678000190</CNPJ></emit></infNFe></NFe>"
+            "</ide><emit><CNPJ>12345678000195</CNPJ></emit></infNFe></NFe>"
         )
         documento = SimpleNamespace(
             chave_acesso=chave,

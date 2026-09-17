@@ -16,7 +16,9 @@ from apps.empresas.models import Empresa, Filial
 from apps.estoque.models import Estoque
 from apps.financeiro.models import ContaMovimentoFinanceiro, LancamentoFinanceiro, TipoContaMovimento, TipoLancamentoFinanceiro
 from apps.marketplace.models import CanalPedido, FaixaTaxaEntrega, FormaPagamentoPedido, ItemPedidoOnline, PedidoOnline, PoliticaEntrega, StatusPagamentoPedido, StatusPedido, TipoEntrega
+from apps.fiscal.chave_acesso import construir_chave_acesso
 from apps.fiscal.models import AmbienteFiscal, ConfiguracaoFiscal, DocumentoFiscal, NaturezaOperacao, SerieFiscal, StatusDocumentoFiscal, TipoDocumentoFiscal
+from apps.fiscal.test_support_identidades_fiscais import obter_identidade_fiscal_teste
 from apps.produtos.models import Categoria, CodigoBarrasProduto, Produto
 from apps.vendas.models import EstornoParcialPagamento, FormaPagamento, PreVenda, StatusEstornoParcial, StatusPagamento, StatusVenda, Venda
 from apps.vendas.services import cancelar_venda, finalizar_venda, registrar_devolucao_venda
@@ -42,7 +44,14 @@ def criar_artefato_pdv_teste(caminho, conteudo, versao="0.1.0", assinado=False):
 class AcessoPdvNuvemTests(TestCase):
     def setUp(self):
         User = get_user_model()
-        empresa = Empresa.objects.create(razao_social="Mercado Nuvem", nome_fantasia="Mercado Nuvem", cnpj="12345678000190")
+        empresa = Empresa.objects.create(
+            razao_social="Mercado Nuvem",
+            nome_fantasia="Mercado Nuvem",
+            cnpj=obter_identidade_fiscal_teste(
+                "EMPRESA_MATRIZ",
+                finalidade="TESTE_INTEGRACAO_LOCAL",
+            ),
+        )
         self.filial = Filial.objects.create(empresa=empresa, nome="Matriz")
         self.operador = User.objects.create_user(username="operador", password="senha")
         PerfilUsuario.objects.create(usuario=self.operador, filial=self.filial, tipo=TipoPerfil.OPERADOR_CAIXA)
@@ -1344,7 +1353,16 @@ class AcessoPdvNuvemTests(TestCase):
             tipo_documento=TipoDocumentoImpressao.CUPOM_FISCAL,
             impressora_padrao="EPSON TM-T20",
         )
-        chave = "35260712345678000190650010000001001123456780"
+        chave = construir_chave_acesso(
+            codigo_uf="52",
+            aamm="2609",
+            cnpj_emitente="12ABC34501DE35",
+            modelo="65",
+            serie="001",
+            numero="000000100",
+            tipo_emissao="1",
+            codigo_numerico="12345678",
+        )
         qrcode_url = f"https://nfce.example.com/qrcode?p={chave}|3|2"
         xml = (
             '<NFe xmlns="http://www.portalfiscal.inf.br/nfe">'

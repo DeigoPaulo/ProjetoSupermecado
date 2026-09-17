@@ -25,6 +25,7 @@ from .models import (
     TipoDocumentoFiscal,
 )
 from .services import preparar_documento_pedido_online, preparar_documento_venda
+from .test_support_identidades_fiscais import obter_identidade_fiscal_teste
 
 
 class FiscalOriginFixtureMixin:
@@ -37,7 +38,10 @@ class FiscalOriginFixtureMixin:
         self.empresa = Empresa.objects.create(
             razao_social="Mercado Concorrencia Ltda",
             nome_fantasia="Mercado Concorrencia",
-            cnpj="12345678000190",
+            cnpj=obter_identidade_fiscal_teste(
+                "EMPRESA_MATRIZ",
+                finalidade="TESTE_INTEGRACAO_LOCAL",
+            ),
         )
         self.filial = Filial.objects.create(
             empresa=self.empresa,
@@ -101,7 +105,10 @@ class FiscalOriginFixtureMixin:
             filial=self.filial,
             nome_cliente="Cliente Online",
             documento_cliente_tipo="CNPJ",
-            documento_cliente="12345678000190",
+            documento_cliente=obter_identidade_fiscal_teste(
+                "CLIENTE_PJ",
+                finalidade="TESTE_INTEGRACAO_LOCAL",
+            ),
             destinatario_indicador_ie="9",
             destinatario_logradouro="Rua Fiscal",
             destinatario_numero="100",

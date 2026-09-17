@@ -356,7 +356,14 @@ class FiscalTests(TestCase):
         self.user = get_user_model().objects.create_superuser("admin", "admin@example.com", "123")
         self.client = Client(HTTP_HOST="localhost")
         self.client.force_login(self.user)
-        self.empresa = Empresa.objects.create(razao_social="Mercado Teste", nome_fantasia="Mercado", cnpj="44.444.444/0001-44")
+        self.empresa = Empresa.objects.create(
+            razao_social="Mercado Teste",
+            nome_fantasia="Mercado",
+            cnpj=obter_identidade_fiscal_teste(
+                "EMPRESA_NUMERICA",
+                finalidade="TESTE_INTEGRACAO_LOCAL",
+            ),
+        )
         self.filial = Filial.objects.create(
             empresa=self.empresa,
             nome="Matriz",

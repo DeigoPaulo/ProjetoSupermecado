@@ -54,7 +54,7 @@ class CatalogoIdentidadesFiscaisTesteTests(SimpleTestCase):
 
     def test_descricao_nao_expoe_documentos_e_nao_libera_canais(self):
         descricao = descrever_catalogo_identidades_teste()
-        self.assertEqual(descricao["quantidade"], 4)
+        self.assertEqual(descricao["quantidade"], 5)
         self.assertFalse(descricao["valores_expostos"])
         self.assertFalse(descricao["distribuicao_producao"])
         self.assertTrue(all(not valor for valor in descricao["garantias"].values()))

@@ -9,7 +9,10 @@ A frente atual pertence à transição do CNPJ alfanumérico planejada no ciclo 
 - [x] Fase 4 original: escrita canônica por fronteira concluída nos ciclos 117 e 119 para Empresa, Filial, Cliente PJ e Fornecedor PJ; a interface e o lookup foram fechados no ciclo 120. Os 18 bloqueios legados permanecem separados para correção manual antes de constraints ou migração de conteúdo.
 - [x] Próxima entrega delimitada da fase 4 concluída no ciclo 115: comparação isolada com os formulários de Empresa/Filial, divergências e colisões comprovadas e pontos de integração identificados, sem persistência.
 - [x] Após essa comparação, atualizar a pendência de integração da própria fase 4, identificando o que depende de correção de dados e o que pode ser validado localmente. A classificação foi concluída no ciclo 116, sem declarar a fase completa.
-- [ ] Fases 5 e 6 originais: chave/XML/QR Code/DANFE e homologação dos canais continuam pendentes.
+- [x] Fase 5 interna: chave/XML/QR Code/DANFE HTML e consumidores internos compatibilizados
+  nos ciclos 121–126, mantendo o Code 128 RAW/ESC-POS como risco de homologação de hardware.
+- [ ] Fase 6 original: Focus, SEFAZ direta e DF-e continuam separados e pendentes de
+  compatibilização/homologação própria.
 
 Novas tarefas devem indicar o item original que atendem, a lacuna concreta e o critério de conclusão antes da implementação. Melhorias opcionais vão para pendências futuras e não substituem automaticamente a próxima entrega. Contagem de testes e quantidade de ciclos não medem conclusão funcional.
 
@@ -545,6 +548,44 @@ para A ao encontrar letras e retorna a C em sequências numéricas, sem usar o c
 Arquivos principais: apps/fiscal/barcode_chave.py, apps/fiscal/views.py,
 apps/pdv/views.py, templates/fiscal/danfe_nfce.html, testes fiscais e da auditoria.
 Migrações: nenhuma.
+
+## Ponto de retomada — ciclo 126, 17/09/2026
+
+Os 11 pontos originais permanecem compatíveis e o inventário foi ampliado após auditoria
+independente, que identificou consumidores internos adicionais. A auditoria viva evoluiu para
+alphanumeric_cnpj_phase5_static_audit_v6, com 17 pontos internos: 16 compatíveis offline e
+um risco residual explícito de hardware.
+
+- [x] Exigir DV válido do CNPJ do emitente antes de formar chave, XML, QR Code ou DANFE,
+  sem corrigir silenciosamente cadastro legado inválido.
+- [x] Preservar e canonicalizar CNPJ alfanumérico do destinatário da NF-e de pedido online,
+  incluindo máscara e letras minúsculas, com recusa de estrutura ou DV inválido.
+- [x] Respeitar o tipo documental explícito no snapshot do pedido e só inferir CPF/CNPJ
+  quando a identidade correspondente for efetivamente válida.
+- [x] Comprovar em XML real de teste que dest/CNPJ recebe a identidade alfanumérica
+  completa, sem descarte de letras.
+- [x] Detectar tpEmis=9 na posição correta de chave numérica ou alfanumérica validada,
+  preservando o reconhecimento pelo status antes da existência da chave.
+- [x] Validar a chave no servidor antes de montar o payload do Desktop e preservar os 44
+  caracteres, em maiúsculas e blocos de quatro, no texto RAW/ESC-POS.
+- [x] Preservar o QR Code nativo do Desktop e comprovar em bytes que ele continua no cupom.
+- [ ] Code 128 RAW/ESC-POS: não implementado sem uma base genérica comprovada para as
+  impressoras suportadas. O DANFE HTML continua com Code 128 híbrido C/A; o caminho RAW
+  permanece com chave textual completa e QR Code até homologação de hardware.
+- [x] Sanear somente fixtures de teste alcançadas pela nova invariância de DV, usando o
+  catálogo protegido; nenhuma identidade, cadastro ou dado operacional foi alterado.
+- [x] Validar 60 testes focados Django, 3 testes focados do Desktop e 718 testes das suítes
+  Fiscal, PDV e Marketplace, com 6 ignorados por requisitos específicos de ambiente.
+- [x] Manter Focus, SEFAZ direta, DF-e, sincronização, licenciamento, credenciais,
+  certificados, rede, banco de produção e ambientes operacionais inalterados.
+- [ ] Próximo passo exato: compatibilizar a identidade CNPJ alfanumérica fora do fiscal —
+  credenciais e eventos de sincronização, resolução de Empresa/Filial, licenciamento,
+  challenge/release offline e provedor externo — antes de iniciar a Fase 6.
+
+Arquivos principais: apps/fiscal/chave_acesso.py, apps/fiscal/services.py,
+apps/marketplace/documentos_destinatario.py, apps/marketplace/models.py,
+apps/pdv/views.py, desktop_pdv/devices/printing.py,
+apps/fiscal/auditoria_fase5_cnpj.py e testes associados. Migrações: nenhuma.
 
 ## Ponto de retomada — ciclo 114, 14/09/2026
 

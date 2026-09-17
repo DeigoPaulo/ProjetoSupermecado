@@ -57,7 +57,7 @@ class FakeMarketplaceAdapter:
 class FluxoPedidoOnlineTests(TestCase):
     def setUp(self):
         self.usuario = get_user_model().objects.create_superuser("admin_market", "admin@example.com", "senha")
-        empresa = Empresa.objects.create(razao_social="Mercado Teste", nome_fantasia="Mercado Teste", cnpj="12345678000190")
+        empresa = Empresa.objects.create(razao_social="Mercado Teste", nome_fantasia="Mercado Teste", cnpj="12345678000195")
         self.filial = Filial.objects.create(empresa=empresa, nome="Matriz")
         categoria = Categoria.objects.create(nome="Mercearia")
         self.produto = Produto.objects.create(codigo_barras="789100000001", nome="Arroz", categoria=categoria, preco_custo=Decimal("10"), preco_venda=Decimal("15"), vendido_no_marketplace=True)
@@ -166,6 +166,59 @@ class FluxoPedidoOnlineTests(TestCase):
         cliente.save(update_fields=["logradouro"])
         pedido.refresh_from_db()
         self.assertEqual(pedido.destinatario_logradouro, "Rua Original")
+
+    def test_cliente_pj_alfanumerico_preenche_snapshot_canonico(self):
+        cnpj = obter_identidade_fiscal_teste(
+            "CLIENTE_PJ",
+            finalidade="TESTE_INTEGRACAO_LOCAL",
+            mascarado=True,
+        )
+        cliente = Cliente.objects.create(
+            empresa=self.filial.empresa,
+            nome="Cliente PJ Alfa",
+            cpf_cnpj=cnpj.lower(),
+        )
+        pedido = PedidoOnline(
+            filial=self.filial,
+            cliente=cliente,
+            nome_cliente="",
+            usuario=self.usuario,
+        )
+
+        pedido.preencher_destinatario_do_cliente()
+
+        self.assertEqual(
+            pedido.documento_cliente,
+            obter_identidade_fiscal_teste(
+                "CLIENTE_PJ",
+                finalidade="TESTE_INTEGRACAO_LOCAL",
+            ),
+        )
+        self.assertEqual(
+            pedido.documento_cliente_tipo,
+            TipoDocumentoConsumidor.CNPJ,
+        )
+
+    def test_documento_invalido_nao_e_reclassificado_silenciosamente(self):
+        cliente = Cliente.objects.create(
+            empresa=self.filial.empresa,
+            nome="Cliente inválido",
+            cpf_cnpj="12ABC34501DE36",
+        )
+        pedido = PedidoOnline(
+            filial=self.filial,
+            cliente=cliente,
+            nome_cliente="",
+            usuario=self.usuario,
+        )
+
+        pedido.preencher_destinatario_do_cliente()
+
+        self.assertEqual(
+            pedido.documento_cliente_tipo,
+            TipoDocumentoConsumidor.NAO_IDENTIFICADO,
+        )
+        self.assertEqual(pedido.documento_cliente, "12ABC34501DE36")
 
     def test_nao_fica_pronto_com_separacao_incompleta(self):
         reservar_pedido(pedido=self.pedido, usuario=self.usuario)
@@ -543,7 +596,15 @@ class FluxoPedidoOnlineTests(TestCase):
         SerieFiscal.objects.create(filial=self.filial, tipo_documento=TipoDocumentoFiscal.NFE, serie=55, proximo_numero=200)
         NaturezaOperacao.objects.create(empresa=self.filial.empresa, descricao="Venda online de mercadorias", cfop="5102", tipo_documento=TipoDocumentoFiscal.NFE)
         self.pedido.documento_cliente_tipo = TipoDocumentoConsumidor.CNPJ
-        self.pedido.documento_cliente = "12345678000190"
+        cnpj_destinatario = obter_identidade_fiscal_teste(
+            "CLIENTE_PJ",
+            finalidade="TESTE_INTEGRACAO_LOCAL",
+        )
+        self.pedido.documento_cliente = (
+            f"{cnpj_destinatario[:2]}.{cnpj_destinatario[2:5]}."
+            f"{cnpj_destinatario[5:8]}/{cnpj_destinatario[8:12]}-"
+            f"{cnpj_destinatario[12:]}"
+        ).lower()
         self.pedido.status_pagamento = StatusPagamentoPedido.PAGO
         self.pedido.forma_pagamento = FormaPagamentoPedido.GATEWAY
         self.pedido.valor_pago = self.pedido.total
@@ -576,7 +637,7 @@ class FluxoPedidoOnlineTests(TestCase):
         self.assertIn("<mod>55</mod>", documento.xml_conteudo)
         self.assertEqual(documento.chave_acesso[6:20], cnpj_emitente)
         self.assertIn(f"<CNPJ>{cnpj_emitente}</CNPJ>", documento.xml_conteudo)
-        self.assertIn("<CNPJ>12345678000190</CNPJ>", documento.xml_conteudo)
+        self.assertIn(f"<CNPJ>{cnpj_destinatario}</CNPJ>", documento.xml_conteudo)
         self.assertIn("<enderDest>", documento.xml_conteudo)
         self.assertIn("<xLgr>Rua do Consumidor</xLgr>", documento.xml_conteudo)
         self.assertIn("<nro>100</nro>", documento.xml_conteudo)
@@ -635,7 +696,7 @@ class FluxoPedidoOnlineTests(TestCase):
             tipo_documento=TipoDocumentoFiscal.NFE,
         )
         self.pedido.documento_cliente_tipo = TipoDocumentoConsumidor.CNPJ
-        self.pedido.documento_cliente = "12345678000190"
+        self.pedido.documento_cliente = "12345678000195"
         self.pedido.status_pagamento = StatusPagamentoPedido.PAGO
         self.pedido.forma_pagamento = FormaPagamentoPedido.GATEWAY
         self.pedido.valor_pago = self.pedido.total
@@ -729,7 +790,7 @@ class FluxoPedidoOnlineTests(TestCase):
             tipo_documento=TipoDocumentoFiscal.NFE,
         )
         self.pedido.documento_cliente_tipo = TipoDocumentoConsumidor.CNPJ
-        self.pedido.documento_cliente = "12345678000190"
+        self.pedido.documento_cliente = "12345678000195"
         self.pedido.status_pagamento = StatusPagamentoPedido.PAGO
         self.pedido.forma_pagamento = FormaPagamentoPedido.GATEWAY
         self.pedido.valor_pago = self.pedido.total

@@ -8,6 +8,8 @@ from django.contrib.auth.hashers import check_password, make_password
 from apps.vendas.models import TipoDocumentoConsumidor
 from apps.clientes.models import IndicadorInscricaoEstadual
 
+from .documentos_destinatario import normalizar_documento_cliente
+
 
 class CanalPedido(models.TextChoices):
     LOJA_ONLINE = "LOJA_ONLINE", "Loja online"
@@ -219,6 +221,15 @@ class PedidoOnline(models.Model):
             raise ValidationError({"destinatario_cep": "Informe o CEP com 8 dígitos."})
         if self.desconto < 0 or self.taxa_entrega < 0:
             raise ValidationError("Desconto e taxa de entrega não podem ser negativos.")
+        if self.documento_cliente:
+            normalizar_documento_cliente(
+                self.documento_cliente_tipo,
+                self.documento_cliente,
+                inferir=(
+                    self.documento_cliente_tipo
+                    == TipoDocumentoConsumidor.NAO_IDENTIFICADO
+                ),
+            )
 
     def preencher_destinatario_do_cliente(self):
         if not self.cliente_id:
@@ -241,12 +252,16 @@ class PedidoOnline(models.Model):
         for destino, origem in campos.items():
             if not str(getattr(self, destino, "") or "").strip():
                 setattr(self, destino, getattr(cliente, origem, "") or "")
-        documento = "".join(caractere for caractere in self.documento_cliente if caractere.isdigit())
-        if self.documento_cliente_tipo == TipoDocumentoConsumidor.NAO_IDENTIFICADO:
-            if len(documento) == 11:
-                self.documento_cliente_tipo = TipoDocumentoConsumidor.CPF
-            elif len(documento) == 14:
-                self.documento_cliente_tipo = TipoDocumentoConsumidor.CNPJ
+        tipo, documento = normalizar_documento_cliente(
+            self.documento_cliente_tipo,
+            self.documento_cliente,
+            inferir=(
+                self.documento_cliente_tipo
+                == TipoDocumentoConsumidor.NAO_IDENTIFICADO
+            ),
+        )
+        self.documento_cliente_tipo = tipo
+        self.documento_cliente = documento
 
     def recalcular(self):
         self.subtotal = sum((item.total for item in self.itens.all()), Decimal("0.00"))

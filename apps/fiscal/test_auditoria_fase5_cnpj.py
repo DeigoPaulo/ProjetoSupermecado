@@ -41,8 +41,17 @@ class AuditoriaFase5CNPJTests(SimpleTestCase):
             "QR_CODE_NFCE",
             "DANFE_CHAVE_TEXTO",
             "DANFE_CODIGO_BARRAS_HIBRIDO",
+            "CNPJ_EMITENTE_DV",
+            "NFE_DESTINATARIO_CNPJ",
+            "MARKETPLACE_DOCUMENTO_DESTINATARIO",
+            "CONTINGENCIA_NFCE_CHAVE",
+            "PDV_DESKTOP_CHAVE_TEXTO",
         ):
             self.assertEqual(por_codigo[codigo]["estado"], "COMPATIVEL_OFFLINE")
+        self.assertEqual(por_codigo["PDV_DESKTOP_CODE128"]["estado"], "AUSENTE")
+        self.assertEqual(resultado["resumo"]["pontos_fase5"], 17)
+        self.assertEqual(resultado["resumo"]["compativeis_offline_fase5"], 16)
+        self.assertEqual(resultado["resumo"]["ausentes_fase5"], 1)
 
     def test_separa_canais_da_fase6(self):
         resultado = self.resultado()
@@ -63,5 +72,5 @@ class AuditoriaFase5CNPJTests(SimpleTestCase):
         self.assertTrue(any(caractere.isalpha() for caractere in chave))
         self.assertEqual(
             self.resultado()["proximo_passo"],
-            "HOMOLOGAR_FOCUS_E_SEFAZ_DIRETA_SEPARADAMENTE",
+            "COMPATIBILIZAR_IDENTIDADE_FORA_DO_FISCAL",
         )
