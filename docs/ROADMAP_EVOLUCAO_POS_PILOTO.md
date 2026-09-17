@@ -590,6 +590,34 @@ Arquivos principais: apps/fiscal/barcode_chave.py, apps/fiscal/views.py,
 apps/pdv/views.py, templates/fiscal/danfe_nfce.html, testes fiscais e da auditoria.
 Migrações: nenhuma.
 
+## Ponto de retomada — ciclo 130, 17/09/2026
+
+Criada a matriz formal de qualificação offline dos canais fiscais. O diagnóstico cobre as
+mesmas sete operações nos dois canais e impede que evidência local seja confundida com
+homologação real ou liberação de produção.
+
+- [x] Versionar o contrato `fiscal_channel_offline_qualification_matrix_v1` sem acesso à
+  rede, leitura de credenciais ou alteração de configuração operacional.
+- [x] Cobrir autorização, consulta, rejeição, cancelamento, inutilização, eventos e DF-e
+  separadamente para Focus e SEFAZ direta GO.
+- [x] Vincular cada classificação a marcadores reais de implementação e testes existentes,
+  falhando fechado quando a evidência local desaparece.
+- [x] Confirmar seis operações Focus como compatíveis offline e registrar Eventos como
+  lacuna interna, pois o adaptador Focus atual não expõe CC-e nem manifestação.
+- [x] Confirmar as sete operações da SEFAZ direta como compatíveis offline, inclusive CC-e,
+  manifestação e distribuição DF-e.
+- [x] Manter todos os indicadores de homologação real, encerramento e produção como falsos,
+  com dependências externas explícitas por canal.
+- [x] Validar 4 testes próprios da matriz e 58 testes conjuntos dos adaptadores Focus,
+  SEFAZ direta, eventos e DF-e; confirmar também ausência de migrations.
+- [ ] Próximo passo exato: decidir e registrar se Eventos fará parte do escopo Focus ou será
+  capacidade exclusiva da SEFAZ direta; em seguida, criar os roteiros de execução e coleta
+  de evidências por operação, sem chamadas externas antes das credenciais reais.
+
+Arquivos principais: apps/fiscal/qualificacao_canais_fiscais.py,
+apps/fiscal/test_qualificacao_canais_fiscais.py e
+docs/MATRIZ_QUALIFICACAO_CANAIS_FISCAIS.md. Migrações: nenhuma.
+
 ## Ponto de retomada — ciclo 129, 17/09/2026
 
 Concluído o segundo subciclo offline da Fase 6: as chaves de acesso alfanuméricas deixaram
