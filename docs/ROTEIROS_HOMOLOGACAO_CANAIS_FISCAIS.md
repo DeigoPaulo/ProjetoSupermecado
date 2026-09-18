@@ -30,3 +30,7 @@ quando aplicável.
 5. Executar uma operação por vez, armazenar as evidências e confrontar o critério de aceite.
 6. Repetir o mesmo roteiro no segundo canal sem reutilizar conclusões do primeiro.
 7. Liberar produção somente após aceite técnico/fiscal explícito e verificação das travas.
+
+No ciclo 135, os sete roteiros do canal selecionado passaram a ser exibidos ao Master na
+tela de homologação da filial. A consulta é somente leitura, não oferece botão de execução e
+mostra cenários, bloqueios e critério de aprovação. Outros perfis não recebem essa visão.

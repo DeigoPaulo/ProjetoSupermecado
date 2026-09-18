@@ -590,6 +590,26 @@ Arquivos principais: apps/fiscal/barcode_chave.py, apps/fiscal/views.py,
 apps/pdv/views.py, templates/fiscal/danfe_nfce.html, testes fiscais e da auditoria.
 Migrações: nenhuma.
 
+## Ponto de retomada — ciclo 135, 18/09/2026
+
+Disponibilizada ao Master a consulta dos roteiros do canal selecionado diretamente na tela
+de homologação da filial, em modo estritamente somente leitura.
+
+- [x] Filtrar os 14 roteiros para as sete operações do canal efetivo da filial.
+- [x] Mostrar estado pré-homologação, critério de aprovação, cenários obrigatórios e bloqueios
+  atuais sem expor caminho técnico ou segredo.
+- [x] Exibir seis operações Focus como “Aguarda dados reais” e Eventos como “Bloqueado”.
+- [x] Manter a visão restrita ao Master, sem botão, endpoint ou ação de execução.
+- [x] Preservar como falsos todos os indicadores de rede, homologação, aprovação e produção.
+- [x] Validar 12 testes da tela, roteiros e roteamento; nenhuma migration ou configuração
+  operacional foi alterada.
+- [ ] Próximo passo exato: estruturar o registro auditável de evidências reais por
+  filial/canal/operação, com estados pendente, aprovado e rejeitado, sem permitir aprovação
+  automática a partir de teste offline.
+
+Arquivos principais: apps/fiscal/views.py, templates/fiscal/homologacao_goias.html,
+apps/fiscal/tests.py e docs/ROTEIROS_HOMOLOGACAO_CANAIS_FISCAIS.md. Migrações: nenhuma.
+
 ## Ponto de retomada — ciclo 134, 18/09/2026
 
 Criados os roteiros versionados de futura homologação para cada combinação de canal e

@@ -51,6 +51,43 @@
   </div>
 </section>{% endif %}
 
+{% if roteiros_canal %}<section class="panel">
+  <div class="panel-heading">
+    <div>
+      <h2>Roteiros de homologação do canal</h2>
+      <p>Planejamento somente leitura. Não há execução de rede nesta tela.</p>
+    </div>
+    <span class="status status-warning">Homologação pendente</span>
+  </div>
+  <div class="table-wrapper">
+    <table>
+      <thead><tr><th>Operação</th><th>Estado</th><th>Critério de aprovação</th><th>Detalhes</th></tr></thead>
+      <tbody>
+        {% for roteiro in roteiros_canal %}
+        <tr>
+          <td><strong>{{ roteiro.operacao }}</strong></td>
+          <td>
+            <span class="status {% if roteiro.estado_pre_homologacao == 'BLOQUEADO_LACUNA_INTERNA' %}status-danger{% else %}status-warning{% endif %}">
+              {% if roteiro.estado_pre_homologacao == 'BLOQUEADO_LACUNA_INTERNA' %}Bloqueado{% else %}Aguarda dados reais{% endif %}
+            </span>
+          </td>
+          <td>{{ roteiro.criterio_aprovacao }}</td>
+          <td>
+            <details>
+              <summary>Ver cenários e bloqueios</summary>
+              <strong>Cenários obrigatórios</strong>
+              <ul>{% for cenario in roteiro.cenarios_obrigatorios %}<li>{{ cenario }}</li>{% endfor %}</ul>
+              <strong>Bloqueios atuais</strong>
+              <ul>{% for bloqueio in roteiro.bloqueios %}<li>{{ bloqueio }}</li>{% endfor %}</ul>
+            </details>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</section>{% endif %}
+
 <section class="panel">
   <div class="panel-heading"><div><h2>Verificações automáticas</h2><p>O ERP confere estes itens sempre que a tela é aberta.</p></div></div>
   <div class="table-wrapper">

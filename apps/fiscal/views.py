@@ -104,6 +104,7 @@ from .qrcode_nfce import gerar_qrcode_data_uri, obter_url_qrcode_nfce
 from .barcode_chave import gerar_codigo_barras_chave_data_uri
 from .readiness import diagnostico_prontidao_homologacao_goias
 from .roteamento_operacoes_fiscais import diagnosticar_capacidades_filial
+from .roteiros_homologacao_canais import construir_roteiros_homologacao
 from .perfis_uf import pendencias_endpoints_nfce
 from .services import (
     CSOSN_ICMS_SUPORTADOS,
@@ -1448,6 +1449,13 @@ def homologacao_goias(request, pk):
         if request.user.is_superuser
         else None
     )
+    roteiros_canal = []
+    if capacidades_canal:
+        roteiros = construir_roteiros_homologacao(settings.BASE_DIR)["roteiros"]
+        roteiros_canal = [
+            roteiro for roteiro in roteiros
+            if roteiro["canal"] == capacidades_canal["provedor"]
+        ]
     itens_automaticos_prontos = all(item["pronto"] for item in checklist)
     if request.method == "POST":
         form = HomologacaoFiscalForm(request.POST, instance=homologacao)
@@ -1483,6 +1491,7 @@ def homologacao_goias(request, pk):
         "checklist": checklist,
         "itens_automaticos_prontos": itens_automaticos_prontos,
         "capacidades_canal": capacidades_canal,
+        "roteiros_canal": roteiros_canal,
     })
 
 @login_required
