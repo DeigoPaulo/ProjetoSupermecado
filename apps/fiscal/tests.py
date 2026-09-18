@@ -2642,6 +2642,22 @@ class FiscalTests(TestCase):
                 objeto_id=str(homologacao.pk),
             ).exists()
         )
+    def test_roteiro_homologacao_mostra_capacidades_reais_do_canal_focus(self):
+        self.filial.uf = "GO"
+        self.filial.codigo_municipio_ibge = "5208707"
+        self.filial.save(update_fields=["uf", "codigo_municipio_ibge"])
+        self.configuracao.provedor_emissao = ProvedorEmissaoFiscal.FOCUS
+        self.configuracao.save(update_fields=["provedor_emissao", "atualizado_em"])
+
+        response = self.client.get(
+            f"/fiscal/configuracoes/{self.configuracao.pk}/homologacao-goias/"
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "Capacidades do canal selecionado")
+        self.assertContains(response, "5/7 estruturais")
+        self.assertContains(response, "O canal FOCUS não implementa a operação fiscal CCE")
+        self.assertContains(response, "Homologação real")
     def test_form_configuracao_fiscal_exibe_secoes_operacionais(self):
         response = self.client.get(f"/fiscal/configuracoes/{self.configuracao.pk}/editar/")
 

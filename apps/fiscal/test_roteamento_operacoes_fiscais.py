@@ -9,7 +9,10 @@ from .manifestacao_adapters import (
     carregar_adaptador_manifestacao,
     caminho_adaptador_manifestacao,
 )
-from .roteamento_operacoes_fiscais import resolver_adaptador_operacao
+from .roteamento_operacoes_fiscais import (
+    diagnosticar_capacidades_filial,
+    resolver_adaptador_operacao,
+)
 
 
 class FakeDFeAdapter:
@@ -75,3 +78,22 @@ class RoteamentoOperacoesFiscaisTests(SimpleTestCase):
                 filial=_filial("SEFAZ_DIRETA_GO", uf="SP"),
                 operacao="DFE",
             )
+
+    def test_diagnostico_focus_expoe_cinco_capacidades_e_dois_bloqueios(self):
+        diagnostico = diagnosticar_capacidades_filial(_filial("FOCUS"))
+        por_codigo = {item["codigo"]: item for item in diagnostico["capacidades"]}
+
+        self.assertEqual(diagnostico["contrato"], "fiscal_branch_channel_capabilities_v1")
+        self.assertEqual(diagnostico["disponiveis_estruturais"], 5)
+        self.assertTrue(por_codigo["DFE"]["disponivel_estrutural"])
+        self.assertFalse(por_codigo["CCE"]["disponivel_estrutural"])
+        self.assertFalse(por_codigo["MANIFESTACAO"]["disponivel_estrutural"])
+        self.assertFalse(diagnostico["homologacao_real_executada"])
+        self.assertFalse(diagnostico["producao_liberada"])
+
+    def test_diagnostico_direto_expoe_sete_capacidades_sem_homologar(self):
+        diagnostico = diagnosticar_capacidades_filial(_filial("SEFAZ_DIRETA_GO"))
+
+        self.assertEqual(diagnostico["disponiveis_estruturais"], 7)
+        self.assertTrue(all(item["disponivel_estrutural"] for item in diagnostico["capacidades"]))
+        self.assertTrue(all(not item["homologada"] for item in diagnostico["capacidades"]))

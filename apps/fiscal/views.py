@@ -103,6 +103,7 @@ from .validacoes import diagnosticar_schemas_fiscais
 from .qrcode_nfce import gerar_qrcode_data_uri, obter_url_qrcode_nfce
 from .barcode_chave import gerar_codigo_barras_chave_data_uri
 from .readiness import diagnostico_prontidao_homologacao_goias
+from .roteamento_operacoes_fiscais import diagnosticar_capacidades_filial
 from .perfis_uf import pendencias_endpoints_nfce
 from .services import (
     CSOSN_ICMS_SUPORTADOS,
@@ -1234,7 +1235,7 @@ def detalhe(request, pk):
     )
     fila_configuracao = configuracao_fila_fiscal()
     cartas_correcao = documento.cartas_correcao.select_related("usuario").all()
-    diagnostico_cce = diagnostico_adaptador_cce()
+    diagnostico_cce = diagnostico_adaptador_cce(filial=documento.filial)
     integridade_evidencias = (
         verificar_integridade_evidencias(documento)
         if request.user.is_superuser
@@ -1442,6 +1443,11 @@ def homologacao_goias(request, pk):
 
     homologacao, _ = HomologacaoFiscal.objects.get_or_create(configuracao=configuracao)
     checklist = _checklist_homologacao_goias(configuracao)
+    capacidades_canal = (
+        diagnosticar_capacidades_filial(configuracao.filial)
+        if request.user.is_superuser
+        else None
+    )
     itens_automaticos_prontos = all(item["pronto"] for item in checklist)
     if request.method == "POST":
         form = HomologacaoFiscalForm(request.POST, instance=homologacao)
@@ -1476,6 +1482,7 @@ def homologacao_goias(request, pk):
         "form": form,
         "checklist": checklist,
         "itens_automaticos_prontos": itens_automaticos_prontos,
+        "capacidades_canal": capacidades_canal,
     })
 
 @login_required
@@ -1523,22 +1530,28 @@ def dfe_recebidos(request):
         ).select_related("filial")
     }
     agora = timezone.now()
-    linhas_distribuicao = [
-        {
+    linhas_distribuicao = []
+    for filial in filiais:
+        linhas_distribuicao.append({
             "filial": filial,
             "controle": controles.get(filial.pk),
+            "diagnostico": diagnostico_adaptador_dfe(filial=filial),
             "em_espera": bool(
                 controles.get(filial.pk)
                 and controles[filial.pk].proxima_consulta_em
                 and controles[filial.pk].proxima_consulta_em > agora
             ),
-        }
-        for filial in filiais
-    ]
+        })
     eventos = EventoDFeRecebido.objects.filter(
         filial_destino_id__in=[filial.pk for filial in filiais]
     ).select_related("filial_destino").order_by("-recebido_em")
-    diagnostico_dfe = diagnostico_adaptador_dfe()
+    diagnostico_dfe = {
+        "disponivel": bool(linhas_distribuicao) and all(
+            linha["diagnostico"]["disponivel"] for linha in linhas_distribuicao
+        ),
+        "provedor": "Diagnóstico por filial",
+        "mensagem": "Consulte a situação de cada filial na tabela.",
+    }
     return render(request, "fiscal/dfe_recebidos.html", {
         "form": form, "documentos": pagina, "page_obj": pagina, "status": status, "q": q,
         "status_choices": StatusDFeRecebido.choices, "total": documentos.count(),
@@ -1617,7 +1630,9 @@ def dfe_detalhe(request, pk):
         "manifestacoes": manifestacoes,
         "manifestacao_conclusiva": conclusiva,
         "tipos_manifestacao": TipoManifestacaoDestinatario.choices,
-        "diagnostico_manifestacao": diagnostico_adaptador_manifestacao(),
+        "diagnostico_manifestacao": diagnostico_adaptador_manifestacao(
+            filial=documento.filial_destino
+        ),
     })
 
 

@@ -45,6 +45,7 @@
           <tr>
             <th>Filial</th>
             <th>CNPJ consultado</th>
+            <th>Canal</th>
             <th>Cursor/versão</th>
             <th>Maior versão</th>
             <th>Última consulta</th>
@@ -58,6 +59,7 @@
             <tr>
               <td><strong>{{ linha.filial.nome }}</strong><br><small>{{ linha.filial.empresa.nome_fantasia }}</small></td>
               <td>{{ linha.filial.cnpj|default:linha.filial.empresa.cnpj|default:"Não cadastrado" }}</td>
+              <td><span class="status {% if linha.diagnostico.disponivel %}status-success{% else %}status-warning{% endif %}">{{ linha.diagnostico.provedor|default:linha.diagnostico.mensagem }}</span></td>
               <td>{{ linha.controle.ultimo_nsu|default:"Inicial" }}</td>
               <td>{{ linha.controle.max_nsu|default:"-" }}</td>
               <td>{{ linha.controle.ultima_consulta_em|date:"d/m/Y H:i"|default:"Nunca" }}</td>
@@ -67,7 +69,7 @@
                 <form method="post" action="{% url 'fiscal:dfe_consultar_distribuicao' %}" class="inline-form">
                   {% csrf_token %}
                   <input type="hidden" name="filial" value="{{ linha.filial.pk }}">
-                  <button class="secondary-button" type="submit" {% if not diagnostico_dfe.disponivel or linha.em_espera %}disabled title="{% if linha.em_espera %}Aguarde até o horário indicado pela SEFAZ.{% else %}{{ diagnostico_dfe.mensagem }}{% endif %}"{% endif %}>
+                  <button class="secondary-button" type="submit" {% if not linha.diagnostico.disponivel or linha.em_espera %}disabled title="{% if linha.em_espera %}Aguarde até o horário indicado pela SEFAZ.{% else %}{{ linha.diagnostico.mensagem }}{% endif %}"{% endif %}>
                     <i class="fa-solid fa-rotate"></i> Consultar
                   </button>
                 </form>

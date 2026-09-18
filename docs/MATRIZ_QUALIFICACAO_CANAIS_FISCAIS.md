@@ -47,3 +47,9 @@ continua aceitando as configurações globais já existentes.
 O próximo passo é levar essa mesma visão por filial ao diagnóstico administrativo e preparar
 os roteiros de execução/coleta de evidências por operação, sem chamadas externas até que as
 credenciais e a filial piloto existam.
+
+No ciclo 133, essa visão passou a existir na tela de homologação e ficou restrita ao Master.
+Focus apresenta cinco de sete capacidades estruturais, com CC-e e manifestação bloqueadas;
+SEFAZ direta GO apresenta sete de sete. Em ambos os casos, a coluna de homologação real
+permanece pendente. A caixa DF-e e os detalhes de CC-e/manifestação também passaram a
+diagnosticar o adaptador da filial concreta, em vez de uma configuração global genérica.

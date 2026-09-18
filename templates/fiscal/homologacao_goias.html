@@ -26,6 +26,31 @@
   <article class="metric"><span>Status registrado</span><strong>{{ homologacao.get_status_display }}</strong></article>
 </section>
 
+{% if capacidades_canal %}<section class="panel">
+  <div class="panel-heading">
+    <div>
+      <h2>Capacidades do canal selecionado</h2>
+      <p>Visão estrutural do canal {{ capacidades_canal.provedor }} nesta filial. Disponível não significa homologado.</p>
+    </div>
+    <span class="status status-warning">{{ capacidades_canal.disponiveis_estruturais }}/{{ capacidades_canal.total }} estruturais</span>
+  </div>
+  <div class="table-wrapper">
+    <table>
+      <thead><tr><th>Operação</th><th>Estrutura</th><th>Homologação real</th><th>Observação</th></tr></thead>
+      <tbody>
+        {% for capacidade in capacidades_canal.capacidades %}
+        <tr>
+          <td><strong>{{ capacidade.titulo }}</strong></td>
+          <td><span class="status {% if capacidade.disponivel_estrutural %}status-success{% else %}status-danger{% endif %}">{% if capacidade.disponivel_estrutural %}Disponível{% else %}Bloqueada{% endif %}</span></td>
+          <td><span class="status status-warning">Pendente</span></td>
+          <td>{{ capacidade.detalhe }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</section>{% endif %}
+
 <section class="panel">
   <div class="panel-heading"><div><h2>Verificações automáticas</h2><p>O ERP confere estes itens sempre que a tela é aberta.</p></div></div>
   <div class="table-wrapper">

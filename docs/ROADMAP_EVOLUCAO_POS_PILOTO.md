@@ -590,6 +590,33 @@ Arquivos principais: apps/fiscal/barcode_chave.py, apps/fiscal/views.py,
 apps/pdv/views.py, templates/fiscal/danfe_nfce.html, testes fiscais e da auditoria.
 Migrações: nenhuma.
 
+## Ponto de retomada — ciclo 133, 18/09/2026
+
+Levado o roteamento efetivo para o diagnóstico administrativo por filial, sem confundir
+estrutura local com homologação real. A matriz detalhada do canal permanece visível somente
+ao Master.
+
+- [x] Criar o contrato local `fiscal_branch_channel_capabilities_v1`, sem instanciar
+  adaptadores, ler credenciais ou acessar rede.
+- [x] Exibir autorização/rejeições, consulta, cancelamento, inutilização, DF-e, CC-e e
+  manifestação conforme o canal escolhido na filial.
+- [x] Mostrar Focus com cinco de sete capacidades estruturais e bloquear visualmente CC-e e
+  manifestação enquanto não houver implementação específica.
+- [x] Mostrar SEFAZ direta GO com sete de sete capacidades estruturais, mantendo todas como
+  pendentes de homologação real e sem produção liberada.
+- [x] Restringir a matriz detalhada ao Master; gerente e demais perfis não recebem a visão de
+  escolha/configuração do canal.
+- [x] Corrigir caixa DF-e, detalhe fiscal e manifestação para consultarem o diagnóstico da
+  filial concreta, eliminando o indicador global potencialmente divergente.
+- [x] Validar 38 testes de canais, eventos, DF-e e tela Master, mais 11 testes completos da
+  caixa DF-e; confirmar ausência de migrations.
+- [ ] Próximo passo exato: criar os roteiros versionados de homologação e coleta de evidências
+  por operação/canal, com critérios de aprovação e bloqueios explícitos, sem executar rede.
+
+Arquivos principais: apps/fiscal/roteamento_operacoes_fiscais.py, apps/fiscal/views.py,
+templates/fiscal/homologacao_goias.html e templates/fiscal/dfe_recebidos.html.
+Migrações: nenhuma.
+
 ## Ponto de retomada — ciclo 132, 17/09/2026
 
 Alinhado o roteamento das operações fiscais auxiliares ao canal técnico escolhido pelo
