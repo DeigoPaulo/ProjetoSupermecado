@@ -1,4 +1,5 @@
 from django import forms
+from django.conf import settings
 
 from apps.clientes.escopo import empresa_id_do_usuario
 
@@ -13,7 +14,9 @@ from .models import (
     NaturezaOperacao,
     SerieFiscal,
     StatusHomologacaoFiscal,
+    StatusEvidenciaHomologacaoCanal,
 )
+from .roteiros_homologacao_canais import construir_roteiros_homologacao
 from .perfis_uf import aplicar_endpoints_nfce_uf, pendencias_endpoints_nfce, perfil_fiscal_uf
 
 
@@ -273,6 +276,37 @@ class HomologacaoFiscalForm(forms.ModelForm):
             if not (cleaned.get("evidencia_referencia") or "").strip():
                 self.add_error("evidencia_referencia", "Informe a referência da evidência ou do chamado técnico.")
         return cleaned
+
+
+class EvidenciaHomologacaoCanalForm(forms.Form):
+    operacao = forms.ChoiceField(label="Operação")
+    referencia = forms.CharField(label="Referência protegida", max_length=500)
+    conteudo_sha256 = forms.CharField(label="SHA-256 do pacote", min_length=64, max_length=64)
+    versao_aplicacao = forms.CharField(label="Versão/commit", max_length=80)
+    codigo_status = forms.CharField(label="Código de status", max_length=20, required=False)
+    protocolo = forms.CharField(label="Protocolo", max_length=80, required=False)
+    resultado_esperado = forms.CharField(label="Resultado esperado", widget=forms.Textarea(attrs={"rows": 3}))
+    resultado_obtido = forms.CharField(label="Resultado obtido", widget=forms.Textarea(attrs={"rows": 3}))
+
+    def __init__(self, *args, configuracao, **kwargs):
+        super().__init__(*args, **kwargs)
+        roteiros = construir_roteiros_homologacao(settings.BASE_DIR)["roteiros"]
+        self.fields["operacao"].choices = [
+            (item["operacao"], item["operacao"].replace("_", " ").title())
+            for item in roteiros
+            if item["canal"] == configuracao.provedor_emissao
+            and item["estado_pre_homologacao"] != "BLOQUEADO_LACUNA_INTERNA"
+        ]
+
+
+class RevisaoEvidenciaHomologacaoForm(forms.Form):
+    decisao = forms.ChoiceField(
+        choices=(
+            (StatusEvidenciaHomologacaoCanal.APROVADA, "Aprovar"),
+            (StatusEvidenciaHomologacaoCanal.REJEITADA, "Rejeitar"),
+        )
+    )
+    observacoes = forms.CharField(widget=forms.Textarea(attrs={"rows": 2}))
 
 class ImportarDFeRecebidoForm(forms.Form):
     arquivo_xml = forms.FileField(

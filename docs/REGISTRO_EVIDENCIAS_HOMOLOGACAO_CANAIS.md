@@ -22,9 +22,17 @@ status, protocolo e o confronto entre resultado esperado e obtido.
 A migration `fiscal.0054_evidenciahomologacaocanal` cria a estrutura. Sua existência não
 significa homologação executada e não altera qualquer trava de rede ou produção.
 
+## Interface Master
+
+A tela de homologação da filial lista e cadastra somente metadados/referências, sem upload
+de arquivos ou segredos. O registro e a decisão são ações separadas: toda evidência nasce
+pendente e somente depois pode ser aprovada ou rejeitada, sempre com justificativa. Tanto a
+visualização quanto os endpoints recusam usuários que não sejam Master.
+
 ## Próxima integração
 
-A tela Master deverá listar e cadastrar somente metadados/referências, sem upload de
-segredos. A conclusão da homologação passará posteriormente a consultar evidências
-aprovadas por operação, mas esse bloqueio só será conectado após a interface de revisão e os
-testes de permissão estarem concluídos.
+Antes de alterar o portão de conclusão da homologação, o sistema deverá apresentar um
+diagnóstico somente leitura da cobertura exigida pelo canal. Esse diagnóstico distinguirá
+operações aprovadas, pendentes, rejeitadas e ausentes e manterá visível a lacuna interna de
+Eventos Focus. Apenas após esse contrato e seus testes deverá a conclusão consultar as
+evidências aprovadas, sem transformar teste offline em aceite de homologação real.

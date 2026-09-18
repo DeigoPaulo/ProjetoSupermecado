@@ -618,6 +618,33 @@ apps/fiscal/test_evidencias_homologacao_canais.py,
 apps/fiscal/migrations/0054_evidenciahomologacaocanal.py e
 docs/REGISTRO_EVIDENCIAS_HOMOLOGACAO_CANAIS.md.
 
+## Ponto de retomada — ciclo 137, 18/09/2026
+
+Disponibilizado ao Master o fluxo visual de registro e revisão manual das evidências de
+homologação fiscal, mantendo somente metadados protegidos e sem upload de arquivos ou
+segredos.
+
+- [x] Adicionar formulário de registro filtrado pelo canal efetivo e pelos roteiros sem
+  lacuna interna.
+- [x] Listar por filial as evidências com operação, canal, estado, referência protegida e
+  resultado esperado/obtido.
+- [x] Separar registro da decisão, garantindo que toda evidência nova continue pendente.
+- [x] Oferecer ações explícitas de aprovação e rejeição, ambas com justificativa obrigatória.
+- [x] Restringir visualização e endpoints ao Master; usuário comum recebe acesso negado.
+- [x] Manter certificado, CSC, token, senha, XML e arquivo bruto fora da interface e do
+  armazenamento.
+- [x] Validar 8 testes próprios e 20 testes conjuntos de interface, serviço, roteiros e
+  roteamento; `check` sem alertas e nenhuma migration adicional pendente.
+- [ ] Próximo passo exato: criar um diagnóstico somente leitura da cobertura de evidências
+  aprovadas exigidas pelo canal, distinguindo pendentes, rejeitadas, ausentes e a lacuna
+  interna de Eventos Focus; somente depois ligar esse diagnóstico ao bloqueio de conclusão
+  da homologação.
+
+Arquivos principais: apps/fiscal/forms.py, apps/fiscal/views.py, apps/fiscal/urls.py,
+templates/fiscal/homologacao_goias.html,
+apps/fiscal/test_evidencias_homologacao_canais.py e
+docs/REGISTRO_EVIDENCIAS_HOMOLOGACAO_CANAIS.md. Migrações: nenhuma neste ciclo.
+
 ## Ponto de retomada — ciclo 135, 18/09/2026
 
 Disponibilizada ao Master a consulta dos roteiros do canal selecionado diretamente na tela

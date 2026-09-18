@@ -3,7 +3,7 @@ import csv
 from django.conf import settings
 from django.contrib import messages
 from django.contrib.auth.decorators import login_required
-from django.core.exceptions import ValidationError
+from django.core.exceptions import PermissionDenied, ValidationError
 from django.core.paginator import Paginator
 from django.db.models import Q
 from django.http import HttpResponse, JsonResponse, StreamingHttpResponse
@@ -46,6 +46,8 @@ from .forms import (
     ConfiguracaoFiscalForm,
     ImportarDFeRecebidoForm,
     HomologacaoFiscalForm,
+    EvidenciaHomologacaoCanalForm,
+    RevisaoEvidenciaHomologacaoForm,
     InutilizacaoNumeracaoFiscalForm,
     NaturezaOperacaoForm,
     SerieFiscalForm,
@@ -65,6 +67,7 @@ from .models import (
     ControleDistribuicaoDFeFilial,
     DocumentoDFeRecebido,
     EventoDFeRecebido,
+    EvidenciaHomologacaoCanal,
     DocumentoFiscal,
     DecisaoRevisaoDevolucaoFornecedor,
     DecisaoRevisaoMemoriaCalculoFornecedor,
@@ -105,6 +108,10 @@ from .barcode_chave import gerar_codigo_barras_chave_data_uri
 from .readiness import diagnostico_prontidao_homologacao_goias
 from .roteamento_operacoes_fiscais import diagnosticar_capacidades_filial
 from .roteiros_homologacao_canais import construir_roteiros_homologacao
+from .services_evidencias_homologacao import (
+    registrar_evidencia_homologacao,
+    revisar_evidencia_homologacao,
+)
 from .perfis_uf import pendencias_endpoints_nfce
 from .services import (
     CSOSN_ICMS_SUPORTADOS,
@@ -1450,12 +1457,18 @@ def homologacao_goias(request, pk):
         else None
     )
     roteiros_canal = []
+    evidencias_canal = []
+    evidencia_form = None
     if capacidades_canal:
         roteiros = construir_roteiros_homologacao(settings.BASE_DIR)["roteiros"]
         roteiros_canal = [
             roteiro for roteiro in roteiros
             if roteiro["canal"] == capacidades_canal["provedor"]
         ]
+        evidencias_canal = configuracao.evidencias_homologacao_canal.select_related(
+            "registrada_por", "revisada_por"
+        ).all()
+        evidencia_form = EvidenciaHomologacaoCanalForm(configuracao=configuracao)
     itens_automaticos_prontos = all(item["pronto"] for item in checklist)
     if request.method == "POST":
         form = HomologacaoFiscalForm(request.POST, instance=homologacao)
@@ -1492,7 +1505,65 @@ def homologacao_goias(request, pk):
         "itens_automaticos_prontos": itens_automaticos_prontos,
         "capacidades_canal": capacidades_canal,
         "roteiros_canal": roteiros_canal,
+        "evidencias_canal": evidencias_canal,
+        "evidencia_form": evidencia_form,
     })
+
+
+@login_required
+@require_POST
+def registrar_evidencia_homologacao_canal(request, pk):
+    if not request.user.is_superuser:
+        raise PermissionDenied
+    configuracao = get_object_or_404(ConfiguracaoFiscal, pk=pk, filial__uf="GO")
+    form = EvidenciaHomologacaoCanalForm(request.POST, configuracao=configuracao)
+    if not form.is_valid():
+        messages.error(request, "; ".join(
+            mensagem for erros in form.errors.values() for mensagem in erros
+        ))
+    else:
+        try:
+            registrar_evidencia_homologacao(
+                configuracao,
+                **form.cleaned_data,
+                usuario=request.user,
+                ip=request.META.get("REMOTE_ADDR"),
+            )
+        except ValidationError as exc:
+            messages.error(request, "; ".join(exc.messages))
+        else:
+            messages.success(request, "Evidência registrada como pendente de revisão.")
+    return redirect("fiscal:homologacao_goias", pk=configuracao.pk)
+
+
+@login_required
+@require_POST
+def revisar_evidencia_homologacao_canal(request, pk, evidencia_pk):
+    if not request.user.is_superuser:
+        raise PermissionDenied
+    evidencia = get_object_or_404(
+        EvidenciaHomologacaoCanal.objects.select_related("configuracao"),
+        pk=evidencia_pk,
+        configuracao_id=pk,
+    )
+    form = RevisaoEvidenciaHomologacaoForm(request.POST)
+    if not form.is_valid():
+        messages.error(request, "; ".join(
+            mensagem for erros in form.errors.values() for mensagem in erros
+        ))
+    else:
+        try:
+            revisar_evidencia_homologacao(
+                evidencia,
+                **form.cleaned_data,
+                usuario=request.user,
+                ip=request.META.get("REMOTE_ADDR"),
+            )
+        except ValidationError as exc:
+            messages.error(request, "; ".join(exc.messages))
+        else:
+            messages.success(request, "Revisão da evidência registrada.")
+    return redirect("fiscal:homologacao_goias", pk=pk)
 
 @login_required
 @role_required(*SISTEMA)

@@ -129,3 +129,53 @@ class EvidenciasHomologacaoCanaisTests(TestCase):
 
         with self.assertRaisesMessage(ValueError, "não podem ser excluídas"):
             evidencia.delete()
+
+    def test_interface_master_registra_lista_e_revisa_sem_upload(self):
+        self.client.force_login(self.master)
+        url_registro = (
+            f"/fiscal/configuracoes/{self.configuracao.pk}/"
+            "homologacao-goias/evidencias/registrar/"
+        )
+        resposta = self.client.post(url_registro, {
+            "operacao": "AUTORIZACAO",
+            "referencia": "cofre://homologacao/focus/interface-1",
+            "conteudo_sha256": "b" * 64,
+            "versao_aplicacao": "commit-interface",
+            "codigo_status": "100",
+            "protocolo": "152260000000002",
+            "resultado_esperado": "Autorizar uma vez.",
+            "resultado_obtido": "Autorizado uma vez.",
+        })
+
+        self.assertRedirects(
+            resposta,
+            f"/fiscal/configuracoes/{self.configuracao.pk}/homologacao-goias/",
+            fetch_redirect_response=False,
+        )
+        evidencia = EvidenciaHomologacaoCanal.objects.get()
+        pagina = self.client.get(
+            f"/fiscal/configuracoes/{self.configuracao.pk}/homologacao-goias/"
+        )
+        self.assertContains(pagina, "Evidências reais do canal")
+        self.assertContains(pagina, evidencia.referencia)
+        self.assertNotContains(pagina, 'type="file"')
+
+        resposta = self.client.post(
+            f"/fiscal/configuracoes/{self.configuracao.pk}/homologacao-goias/"
+            f"evidencias/{evidencia.pk}/revisar/",
+            {"decisao": "APROVADA", "observacoes": "Conferência manual concluída."},
+        )
+        self.assertEqual(resposta.status_code, 302)
+        evidencia.refresh_from_db()
+        self.assertEqual(evidencia.status, StatusEvidenciaHomologacaoCanal.APROVADA)
+
+    def test_interface_recusa_usuario_nao_master(self):
+        self.client.force_login(self.usuario)
+
+        resposta = self.client.post(
+            f"/fiscal/configuracoes/{self.configuracao.pk}/"
+            "homologacao-goias/evidencias/registrar/",
+            {},
+        )
+
+        self.assertEqual(resposta.status_code, 403)

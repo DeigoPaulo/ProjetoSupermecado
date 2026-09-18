@@ -88,6 +88,26 @@
   </div>
 </section>{% endif %}
 
+{% if evidencia_form %}<section class="panel">
+  <div class="panel-heading"><div><h2>Evidências reais do canal</h2><p>Registre apenas referência protegida e hash. Não inclua token, certificado, CSC, senha ou arquivo bruto.</p></div></div>
+  <form method="post" action="{% url 'fiscal:registrar_evidencia_homologacao_canal' configuracao.pk %}" class="form-grid">
+    {% csrf_token %}
+    {% for field in evidencia_form %}<label class="form-field {% if field.name == 'resultado_esperado' or field.name == 'resultado_obtido' %}form-field-wide{% endif %}"><span>{{ field.label }}</span>{{ field }}{{ field.errors }}</label>{% endfor %}
+    <div class="form-actions form-field-wide"><button class="primary-button" type="submit">Registrar evidência pendente</button></div>
+  </form>
+  <div class="table-wrapper">
+    <table>
+      <thead><tr><th>Data</th><th>Operação</th><th>Status</th><th>Referência</th><th>Revisão</th></tr></thead>
+      <tbody>
+        {% for evidencia in evidencias_canal %}<tr>
+          <td>{{ evidencia.registrada_em|date:"d/m/Y H:i" }}</td><td>{{ evidencia.get_operacao_display }}</td><td>{{ evidencia.get_status_display }}</td><td>{{ evidencia.referencia }}<br><small>SHA-256: {{ evidencia.conteudo_sha256 }}</small></td>
+          <td>{% if evidencia.status == 'PENDENTE' %}<form method="post" action="{% url 'fiscal:revisar_evidencia_homologacao_canal' configuracao.pk evidencia.pk %}" class="stacked-form">{% csrf_token %}<textarea name="observacoes" rows="2" required placeholder="Justificativa da revisão"></textarea><button name="decisao" value="APROVADA" class="secondary-button" type="submit">Aprovar</button><button name="decisao" value="REJEITADA" class="danger-button" type="submit">Rejeitar</button></form>{% else %}{{ evidencia.observacoes_revisao }}{% endif %}</td>
+        </tr>{% empty %}<tr><td colspan="5" class="empty">Nenhuma evidência real registrada.</td></tr>{% endfor %}
+      </tbody>
+    </table>
+  </div>
+</section>{% endif %}
+
 <section class="panel">
   <div class="panel-heading"><div><h2>Verificações automáticas</h2><p>O ERP confere estes itens sempre que a tela é aberta.</p></div></div>
   <div class="table-wrapper">
