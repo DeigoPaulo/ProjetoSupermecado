@@ -24,6 +24,7 @@ class ConfiguracaoFiscalForm(forms.ModelForm):
     def __init__(self, *args, user=None, **kwargs):
         super().__init__(*args, **kwargs)
         self.user = user
+        self.provedor_inicial = getattr(self.instance, "provedor_emissao", "")
         self.perfil_fiscal = perfil_fiscal_uf(
             getattr(getattr(self.instance, "filial", None), "uf", "")
         )
@@ -36,6 +37,16 @@ class ConfiguracaoFiscalForm(forms.ModelForm):
             self.fields["provedor_emissao"].required = False
         if not user or not user.is_superuser:
             self.fields.pop("provedor_emissao", None)
+            self.fields.pop("confirmar_troca_canal", None)
+
+    confirmar_troca_canal = forms.BooleanField(
+        required=False,
+        label="Confirmo a troca de canal e a reinicialização da homologação",
+        help_text=(
+            "As evidências anteriores serão preservadas no canal original, mas não serão "
+            "reaproveitadas no novo canal."
+        ),
+    )
 
     certificado_arquivo = forms.FileField(
         required=False,
@@ -141,6 +152,31 @@ class ConfiguracaoFiscalForm(forms.ModelForm):
             self.add_error(
                 "provedor_emissao",
                 "A conexão direta está disponível somente para filiais de Goiás.",
+            )
+        troca_canal = (
+            self.instance.pk
+            and "provedor_emissao" in self.fields
+            and provedor != self.provedor_inicial
+        )
+        possui_historico = False
+        if troca_canal:
+            possui_historico = (
+                self.instance.evidencias_homologacao_canal.exists()
+                or HomologacaoFiscal.objects.filter(
+                    configuracao_id=self.instance.pk,
+                    status=StatusHomologacaoFiscal.CONCLUIDA,
+                ).exists()
+            )
+        if (
+            troca_canal
+            and possui_historico
+            and not cleaned.get("confirmar_troca_canal")
+        ):
+            self.add_error(
+                "provedor_emissao",
+                "Esta filial possui evidências ou homologação concluída no canal atual. "
+                "Confirme explicitamente a troca para reiniciar a homologação sem "
+                "reaproveitar o histórico anterior.",
             )
 
         if filial and self.perfil_fiscal:

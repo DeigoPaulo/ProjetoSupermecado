@@ -15,6 +15,7 @@ from .models import (
     StatusEvidenciaHomologacaoCanal,
     StatusHomologacaoFiscal,
 )
+from .forms import ConfiguracaoFiscalForm
 from .services_evidencias_homologacao import (
     avaliar_portao_conclusao_homologacao,
     diagnosticar_cobertura_evidencias_homologacao,
@@ -294,3 +295,89 @@ class EvidenciasHomologacaoCanaisTests(TestCase):
         self.assertEqual(homologacao.status, StatusHomologacaoFiscal.CONCLUIDA)
         self.configuracao.refresh_from_db()
         self.assertEqual(self.configuracao.ambiente, AmbienteFiscal.HOMOLOGACAO)
+
+    def test_troca_de_canal_exige_confirmacao_e_nao_reaproveita_evidencia(self):
+        evidencia = self.registrar()
+        revisar_evidencia_homologacao(
+            evidencia,
+            decisao="APROVADA",
+            observacoes="Aprovada no canal Focus.",
+            usuario=self.master,
+        )
+        dados = {
+            "filial": self.filial.pk,
+            "provedor_emissao": ProvedorEmissaoFiscal.SEFAZ_DIRETA_GO,
+            "ambiente": AmbienteFiscal.HOMOLOGACAO,
+            "regime_tributario": "Regime normal",
+            "crt": "3",
+            "inscricao_estadual": "123456789",
+            "csc_id": "1",
+            "csc_token": "token-homologacao",
+            "modo_transicao_ibs_cbs": "LEGADO",
+            "ativo": "on",
+        }
+        sem_confirmacao = ConfiguracaoFiscalForm(
+            data=dados, instance=self.configuracao, user=self.master
+        )
+        self.assertFalse(sem_confirmacao.is_valid())
+        self.assertIn("provedor_emissao", sem_confirmacao.errors)
+
+        self.configuracao.refresh_from_db()
+        dados["confirmar_troca_canal"] = "on"
+        com_confirmacao = ConfiguracaoFiscalForm(
+            data=dados, instance=self.configuracao, user=self.master
+        )
+        com_confirmacao.is_valid()
+        self.assertNotIn("provedor_emissao", com_confirmacao.errors)
+
+        self.configuracao.provedor_emissao = ProvedorEmissaoFiscal.SEFAZ_DIRETA_GO
+        self.configuracao.save(update_fields=["provedor_emissao", "atualizado_em"])
+        cobertura = diagnosticar_cobertura_evidencias_homologacao(self.configuracao)
+        self.assertEqual(cobertura["aprovadas"], 0)
+        self.assertEqual(cobertura["ausentes"], 7)
+        evidencia.refresh_from_db()
+        self.assertEqual(evidencia.canal, ProvedorEmissaoFiscal.FOCUS)
+
+    def test_troca_confirmada_reinicia_homologacao_e_audita_historico(self):
+        evidencia = self.registrar()
+        HomologacaoFiscal.objects.create(
+            configuracao=self.configuracao,
+            status=StatusHomologacaoFiscal.CONCLUIDA,
+            responsavel_tecnico="Equipe Focus",
+            evidencia_referencia="cofre://dossie-focus",
+        )
+        self.client.force_login(self.master)
+
+        resposta = self.client.post(
+            f"/fiscal/configuracoes/{self.configuracao.pk}/editar/",
+            {
+                "filial": self.filial.pk,
+                "provedor_emissao": ProvedorEmissaoFiscal.SEFAZ_DIRETA_GO,
+                "confirmar_troca_canal": "on",
+                "ambiente": AmbienteFiscal.HOMOLOGACAO,
+                "regime_tributario": "Regime normal",
+                "crt": "3",
+                "inscricao_estadual": "123456789",
+                "csc_id": "1",
+                "csc_token": "token-homologacao",
+                "modo_transicao_ibs_cbs": "LEGADO",
+                "ativo": "on",
+            },
+        )
+
+        self.assertEqual(resposta.status_code, 302)
+        self.configuracao.refresh_from_db()
+        self.assertEqual(
+            self.configuracao.provedor_emissao,
+            ProvedorEmissaoFiscal.SEFAZ_DIRETA_GO,
+        )
+        homologacao = HomologacaoFiscal.objects.get(configuracao=self.configuracao)
+        self.assertEqual(homologacao.status, StatusHomologacaoFiscal.PENDENTE)
+        evidencia.refresh_from_db()
+        self.assertEqual(evidencia.canal, ProvedorEmissaoFiscal.FOCUS)
+        auditoria = LogAuditoria.objects.filter(
+            acao="ALTERA_CANAL_EMISSAO_FISCAL",
+            objeto_id=str(self.configuracao.pk),
+        ).latest("criado_em")
+        self.assertIn("preservadas 1 evidência", auditoria.descricao)
+        self.assertIn("Concluída", auditoria.descricao)

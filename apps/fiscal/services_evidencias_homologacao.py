@@ -57,9 +57,9 @@ def diagnosticar_cobertura_evidencias_homologacao(configuracao):
         if item["canal"] == configuracao.provedor_emissao
     ]
     estados_por_operacao = {}
-    for operacao, status in configuracao.evidencias_homologacao_canal.values_list(
-        "operacao", "status"
-    ):
+    for operacao, status in configuracao.evidencias_homologacao_canal.filter(
+        canal=configuracao.provedor_emissao
+    ).values_list("operacao", "status"):
         estados_por_operacao.setdefault(operacao, set()).add(status)
 
     itens = []

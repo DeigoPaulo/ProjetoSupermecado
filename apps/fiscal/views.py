@@ -1835,6 +1835,14 @@ def configuracao_form(request, pk=None):
         else None
     )
     provedor_anterior = configuracao.provedor_emissao if configuracao else ""
+    evidencias_canal_anterior = (
+        configuracao.evidencias_homologacao_canal.filter(canal=provedor_anterior).count()
+        if configuracao else 0
+    )
+    homologacao_anterior = (
+        HomologacaoFiscal.objects.filter(configuracao=configuracao).first()
+        if configuracao else None
+    )
     if request.method == "POST":
         form = ConfiguracaoFiscalForm(
             request.POST,
@@ -1850,6 +1858,12 @@ def configuracao_form(request, pk=None):
                 request.user.is_superuser
                 and provedor_anterior != configuracao.provedor_emissao
             ):
+                if homologacao_anterior:
+                    HomologacaoFiscal.objects.filter(pk=homologacao_anterior.pk).update(
+                        status=StatusHomologacaoFiscal.PENDENTE,
+                        concluida_em=None,
+                        concluida_por=None,
+                    )
                 LogAuditoria.objects.create(
                     usuario=request.user,
                     modulo="fiscal",
@@ -1857,7 +1871,11 @@ def configuracao_form(request, pk=None):
                     descricao=(
                         f"Canal técnico de emissão da filial {configuracao.filial} "
                         f"alterado de {provedor_anterior or 'não definido'} para "
-                        f"{configuracao.get_provedor_emissao_display()}."
+                        f"{configuracao.get_provedor_emissao_display()}. "
+                        f"Foram preservadas {evidencias_canal_anterior} evidência(s) no "
+                        f"canal anterior; homologação anterior "
+                        f"{homologacao_anterior.get_status_display() if homologacao_anterior else 'não registrada'} "
+                        f"e reinicializada como pendente."
                     ),
                     objeto_tipo="ConfiguracaoFiscal",
                     objeto_id=str(configuracao.pk),

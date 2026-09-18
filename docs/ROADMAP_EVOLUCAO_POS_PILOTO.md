@@ -618,6 +618,32 @@ apps/fiscal/test_evidencias_homologacao_canais.py,
 apps/fiscal/migrations/0054_evidenciahomologacaocanal.py e
 docs/REGISTRO_EVIDENCIAS_HOMOLOGACAO_CANAIS.md.
 
+## Ponto de retomada — ciclo 141, 18/09/2026
+
+Endurecida a troca do canal fiscal para impedir reaproveitamento indevido de evidências e
+homologação entre Focus e SEFAZ direta.
+
+- [x] Filtrar a cobertura exclusivamente pelo snapshot do canal selecionado na filial.
+- [x] Preservar evidências antigas vinculadas ao canal em que foram produzidas.
+- [x] Exigir confirmação explícita do Master quando a filial possui evidências ou
+  homologação concluída no canal atual.
+- [x] Informar na confirmação que a homologação será reiniciada e as evidências antigas não
+  serão reaproveitadas.
+- [x] Reinicializar o registro técnico como pendente após a troca confirmada, sem ativar
+  produção.
+- [x] Registrar na auditoria os canais anterior e novo, a quantidade preservada e o estado
+  anterior da homologação, sem expor segredos.
+- [x] Validar em uma única bateria 29 testes do formulário, isolamento de evidências,
+  reinicialização, permissões, roteiros e regressões dos ciclos 136–140; `check` limpo e
+  nenhuma migration pendente.
+- [ ] Próximo passo exato: criar uma consulta Master do histórico de canais e transições por
+  filial, composta apenas de metadados sanitizados, para que a troca confirmada possa ser
+  revisada sem depender da leitura direta dos logs técnicos.
+
+Arquivos principais: apps/fiscal/forms.py, apps/fiscal/views.py,
+apps/fiscal/services_evidencias_homologacao.py, templates/fiscal/form.html e
+apps/fiscal/test_evidencias_homologacao_canais.py. Migrações: nenhuma.
+
 ## Ponto de retomada — ciclo 140, 18/09/2026
 
 Tornado explícito ao Master o estado do portão de conclusão e comprovado, em cenário

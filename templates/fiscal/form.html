@@ -54,6 +54,7 @@
             <span>Escolha como esta filial se comunica para emitir documentos. Credenciais e travas permanecem protegidas no servidor.</span>
           </div>
           <label class="form-field form-field-wide"><span>{{ form.provedor_emissao.label }}</span>{{ form.provedor_emissao }}{{ form.provedor_emissao.errors }}<small>{{ form.provedor_emissao.help_text }}</small></label>
+          {% if form.confirmar_troca_canal %}<label class="form-field form-field-wide"><span>{{ form.confirmar_troca_canal }} {{ form.confirmar_troca_canal.label }}</span>{{ form.confirmar_troca_canal.errors }}<small>{{ form.confirmar_troca_canal.help_text }}</small></label>{% endif %}
         </section>
       {% endif %}
 

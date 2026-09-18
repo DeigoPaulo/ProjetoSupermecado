@@ -46,3 +46,13 @@ A tela Master mostra o portão como bloqueado, com os motivos consolidados, ou l
 quando todas as sete operações do canal possuem evidência aprovada. Um cenário isolado da
 SEFAZ direta comprova que a conclusão técnica pode ocorrer com cobertura integral sem mudar
 o ambiente de homologação e sem qualquer chamada externa.
+
+## Troca de canal
+
+Evidências são sempre consultadas pelo snapshot do canal em que foram registradas. Quando
+já existe evidência ou homologação concluída, a troca entre Focus e SEFAZ direta exige
+confirmação explícita do Master. A alteração preserva o histórico anterior, reinicializa o
+registro técnico como pendente e não reaproveita aprovações no novo canal.
+
+Uma bateria conjunta de 29 testes confirmou formulário, confirmação, reinicialização,
+isolamento por canal, permissões, roteiros e regressões, sem nova migration.
