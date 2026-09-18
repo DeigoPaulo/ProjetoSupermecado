@@ -41,3 +41,8 @@ O contrato `fiscal_channel_homologation_completion_gate_v1` liga a conclusão da
 de qualquer lacuna interna. O checklist técnico automático também continua obrigatório.
 Esse portão permanece separado da ativação de produção e não transforma teste offline em
 aceite real.
+
+A tela Master mostra o portão como bloqueado, com os motivos consolidados, ou liberado
+quando todas as sete operações do canal possuem evidência aprovada. Um cenário isolado da
+SEFAZ direta comprova que a conclusão técnica pode ocorrer com cobertura integral sem mudar
+o ambiente de homologação e sem qualquer chamada externa.

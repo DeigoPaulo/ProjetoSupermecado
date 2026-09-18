@@ -93,6 +93,11 @@
     <div><h2>Cobertura das evidências</h2><p>Diagnóstico somente leitura. Não conclui a homologação nem libera produção.</p></div>
     <span class="status {% if cobertura_evidencias.cobertura_completa %}status-success{% else %}status-warning{% endif %}">{{ cobertura_evidencias.aprovadas }}/{{ cobertura_evidencias.total }} aprovadas</span>
   </div>
+  {% if portao_conclusao.permitido %}
+  <div class="form-note form-note-success"><strong>Portão de conclusão liberado.</strong> A cobertura permite concluir o registro técnico, mas não ativa produção.</div>
+  {% else %}
+  <div class="form-note form-note-danger"><strong>Portão de conclusão bloqueado.</strong> {% for motivo in portao_conclusao.motivos %}{{ motivo }}{% if not forloop.last %}; {% endif %}{% endfor %}.</div>
+  {% endif %}
   <div class="table-wrapper">
     <table>
       <thead><tr><th>Operação</th><th>Cobertura atual</th></tr></thead>

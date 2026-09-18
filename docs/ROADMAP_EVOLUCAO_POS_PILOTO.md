@@ -618,6 +618,28 @@ apps/fiscal/test_evidencias_homologacao_canais.py,
 apps/fiscal/migrations/0054_evidenciahomologacaocanal.py e
 docs/REGISTRO_EVIDENCIAS_HOMOLOGACAO_CANAIS.md.
 
+## Ponto de retomada — ciclo 140, 18/09/2026
+
+Tornado explícito ao Master o estado do portão de conclusão e comprovado, em cenário
+isolado sem rede, o caminho positivo completo da SEFAZ direta sem ativação de produção.
+
+- [x] Exibir “Portão de conclusão bloqueado” com os motivos consolidados da cobertura.
+- [x] Exibir “Portão de conclusão liberado” somente quando as sete operações estiverem
+  aprovadas.
+- [x] Deixar claro que a liberação permite apenas concluir o registro técnico e não ativa
+  produção.
+- [x] Simular no teste as sete operações da SEFAZ direta com evidências revisadas e
+  aprovadas, sem chamada externa.
+- [x] Provar que o registro técnico pode ser concluído com checklist e cobertura completos.
+- [x] Confirmar após a conclusão que a configuração permanece em homologação.
+- [ ] Próximo passo exato: endurecer a troca de canal depois que existirem evidências ou
+  homologação concluída, exigindo ação explícita do Master e preservando o histórico do
+  canal anterior sem reaproveitamento indevido.
+
+Arquivos principais: templates/fiscal/homologacao_goias.html,
+apps/fiscal/test_evidencias_homologacao_canais.py e
+docs/REGISTRO_EVIDENCIAS_HOMOLOGACAO_CANAIS.md. Migrações: nenhuma.
+
 ## Ponto de retomada — ciclo 139, 18/09/2026
 
 Conectado à homologação o portão formal de cobertura completa por canal, mantendo a

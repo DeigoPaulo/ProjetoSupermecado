@@ -10,6 +10,7 @@ from .models import (
     ConfiguracaoFiscal,
     EvidenciaHomologacaoCanal,
     HomologacaoFiscal,
+    OperacaoHomologacaoFiscal,
     ProvedorEmissaoFiscal,
     StatusEvidenciaHomologacaoCanal,
     StatusHomologacaoFiscal,
@@ -248,3 +249,48 @@ class EvidenciasHomologacaoCanaisTests(TestCase):
         self.assertContains(resposta, "A conclusão exige evidência aprovada")
         homologacao = HomologacaoFiscal.objects.get(configuracao=self.configuracao)
         self.assertNotEqual(homologacao.status, StatusHomologacaoFiscal.CONCLUIDA)
+
+    def test_sefaz_direta_com_cobertura_completa_libera_conclusao_sem_producao(self):
+        self.configuracao.provedor_emissao = ProvedorEmissaoFiscal.SEFAZ_DIRETA_GO
+        self.configuracao.save(update_fields=["provedor_emissao", "atualizado_em"])
+        for indice, operacao in enumerate(OperacaoHomologacaoFiscal.values, start=1):
+            evidencia = self.registrar(
+                operacao=operacao,
+                referencia=f"cofre://sefaz-direta/{operacao.lower()}",
+                conteudo_sha256=f"{indice:x}" * 64,
+            )
+            revisar_evidencia_homologacao(
+                evidencia,
+                decisao="APROVADA",
+                observacoes="Cenário isolado aprovado para validar o portão.",
+                usuario=self.master,
+            )
+
+        portao = avaliar_portao_conclusao_homologacao(self.configuracao)
+        self.assertTrue(portao["permitido"])
+        self.assertFalse(portao["libera_producao"])
+
+        self.client.force_login(self.master)
+        checklist_pronto = [{"titulo": "Teste", "pronto": True, "detalhe": "OK"}]
+        from unittest.mock import patch
+        with patch("apps.fiscal.views._checklist_homologacao_goias", return_value=checklist_pronto):
+            pagina = self.client.get(
+                f"/fiscal/configuracoes/{self.configuracao.pk}/homologacao-goias/"
+            )
+            resposta = self.client.post(
+                f"/fiscal/configuracoes/{self.configuracao.pk}/homologacao-goias/",
+                {
+                    "status": StatusHomologacaoFiscal.CONCLUIDA,
+                    "responsavel_tecnico": "Equipe fiscal",
+                    "evidencia_referencia": "cofre://dossie-sefaz-direta",
+                    "observacoes": "Conclusão técnica do cenário isolado.",
+                },
+            )
+
+        self.assertContains(pagina, "Portão de conclusão liberado")
+        self.assertContains(pagina, "7/7 aprovadas")
+        self.assertEqual(resposta.status_code, 302)
+        homologacao = HomologacaoFiscal.objects.get(configuracao=self.configuracao)
+        self.assertEqual(homologacao.status, StatusHomologacaoFiscal.CONCLUIDA)
+        self.configuracao.refresh_from_db()
+        self.assertEqual(self.configuracao.ambiente, AmbienteFiscal.HOMOLOGACAO)
