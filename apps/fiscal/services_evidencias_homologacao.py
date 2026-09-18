@@ -15,11 +15,16 @@ from .models import (
     StatusEvidenciaHomologacaoCanal,
 )
 from .roteiros_homologacao_canais import construir_roteiros_homologacao
+from .manifesto_qualificacao_fiscal import diagnosticar_qualificacao_instalada
+from .politica_canais_fiscais import (
+    OPERACOES_FISCAIS_CANONICAS,
+    diagnosticar_compatibilidade_canal_uf,
+)
 
 
 CONTRATO_REGISTRO_EVIDENCIA_HOMOLOGACAO = "fiscal_channel_homologation_evidence_v1"
 CONTRATO_COBERTURA_EVIDENCIA_HOMOLOGACAO = "fiscal_channel_homologation_coverage_v1"
-CONTRATO_PORTAO_CONCLUSAO_HOMOLOGACAO = "fiscal_channel_homologation_completion_gate_v1"
+CONTRATO_PORTAO_CONCLUSAO_HOMOLOGACAO = "fiscal_channel_homologation_completion_gate_v2"
 CONTRATO_HISTORICO_CANAIS_HOMOLOGACAO = "fiscal_channel_homologation_history_v1"
 SHA256_RE = re.compile(r"[0-9a-fA-F]{64}")
 
@@ -107,8 +112,15 @@ def diagnosticar_cobertura_evidencias_homologacao(configuracao):
     }
 
 
-def avaliar_portao_conclusao_homologacao(configuracao):
+def avaliar_portao_conclusao_homologacao(configuracao, *, qualificacao_instalada=None):
     cobertura = diagnosticar_cobertura_evidencias_homologacao(configuracao)
+    compatibilidade = diagnosticar_compatibilidade_canal_uf(
+        configuracao.provedor_emissao, configuracao.filial.uf
+    )
+    qualificacao = qualificacao_instalada or diagnosticar_qualificacao_instalada(
+        canal=configuracao.provedor_emissao,
+        operacoes=OPERACOES_FISCAIS_CANONICAS,
+    )
     motivos = []
     if cobertura["ausentes"]:
         motivos.append(f'{cobertura["ausentes"]} operação(ões) sem evidência')
@@ -118,11 +130,21 @@ def avaliar_portao_conclusao_homologacao(configuracao):
         motivos.append(f'{cobertura["rejeitadas"]} operação(ões) somente com evidência rejeitada')
     if cobertura["bloqueadas"]:
         motivos.append(f'{cobertura["bloqueadas"]} operação(ões) com lacuna interna')
+    if not compatibilidade["valido"]:
+        motivos.append(compatibilidade["motivo"])
+    if not qualificacao["valido"]:
+        motivos.extend(qualificacao["problemas"])
     return {
         "contrato": CONTRATO_PORTAO_CONCLUSAO_HOMOLOGACAO,
-        "permitido": cobertura["cobertura_completa"],
+        "permitido": bool(
+            cobertura["cobertura_completa"]
+            and compatibilidade["valido"]
+            and qualificacao["valido"]
+        ),
         "motivos": tuple(motivos),
         "cobertura": cobertura,
+        "compatibilidade_uf": compatibilidade,
+        "qualificacao_instalada": qualificacao,
         "libera_producao": False,
     }
 

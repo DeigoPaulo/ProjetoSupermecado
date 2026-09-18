@@ -2655,12 +2655,12 @@ class FiscalTests(TestCase):
 
         self.assertEqual(response.status_code, 200)
         self.assertContains(response, "Capacidades do canal selecionado")
-        self.assertContains(response, "5/7 estruturais")
+        self.assertContains(response, "6/7 estruturais")
         self.assertContains(response, "O canal FOCUS não implementa a operação fiscal CCE")
         self.assertContains(response, "Homologação real")
         self.assertContains(response, "Roteiros de homologação do canal")
         self.assertContains(response, "Aguarda dados reais", count=6)
-        self.assertContains(response, "Bloqueada", count=3)
+        self.assertContains(response, "Bloqueada", count=2)
         self.assertContains(response, "Bloqueado", count=1)
         self.assertNotContains(response, "Executar roteiro")
     def test_form_configuracao_fiscal_exibe_secoes_operacionais(self):

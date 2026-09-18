@@ -14,6 +14,28 @@ from django.test import SimpleTestCase, override_settings
 
 from .artifacts import artefato_admin_desktop
 from .offline_bundle import artefato_servidor_offline, validar_pacote_servidor_offline
+from apps.fiscal.manifesto_qualificacao_fiscal import (
+    NOME_IDENTIDADE,
+    NOME_MANIFESTO,
+    gerar_identidade_instalacao,
+    gerar_manifesto_qualificacao,
+)
+
+
+def _arquivos_qualificacao_servidor(versao="1.0.0"):
+    commit = "a" * 40
+    manifesto = gerar_manifesto_qualificacao(
+        raiz_projeto=settings.BASE_DIR,
+        versao=versao,
+        commit=commit,
+        hash_base_pacote="b" * 64,
+        gerado_em="2026-09-18T00:00:00+00:00",
+    )
+    identidade = gerar_identidade_instalacao(versao=versao, commit=commit)
+    return {
+        NOME_MANIFESTO: json.dumps(manifesto).encode(),
+        NOME_IDENTIDADE: json.dumps(identidade).encode(),
+    }
 
 
 class OfflineBundleTests(SimpleTestCase):
@@ -29,10 +51,12 @@ class OfflineBundleTests(SimpleTestCase):
         self, path, *, hash_override=None, missing_type=None, duplicate_type=None,
         unexpected=False, invalid_server=False, empty_wheelhouse=False, duplicate_member=False,
     ):
-        server = b"not-a-zip" if invalid_server else self._zip_bytes({
+        arquivos_servidor = {
             "manage.py": b"", "requirements.txt": b"Django==5.0",
             "config/settings.py": b"", "apps/core.py": b"",
-        })
+            **_arquivos_qualificacao_servidor(),
+        }
+        server = b"not-a-zip" if invalid_server else self._zip_bytes(arquivos_servidor)
         wheelhouse = self._zip_bytes({} if empty_wheelhouse else {"Django-5.0-py3-none-any.whl": b"wheel"})
         pdv, admin = b"pdv-desktop", b"admin-desktop"
         payloads = {
@@ -213,6 +237,8 @@ class OfflineBundlePackagerContractTests(SimpleTestCase):
             archive.writestr("requirements.txt", "Django==5.0")
             archive.writestr("config/settings.py", "")
             archive.writestr("apps/core.py", "")
+            for nome, conteudo in _arquivos_qualificacao_servidor().items():
+                archive.writestr(nome, conteudo)
         wheelhouse = root / "wheelhouse"
         wheelhouse.mkdir()
         (wheelhouse / "Django-5.0-py3-none-any.whl").write_bytes(b"wheel")

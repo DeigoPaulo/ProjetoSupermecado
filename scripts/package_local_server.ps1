@@ -57,6 +57,12 @@ if (-not (Test-Path -LiteralPath $Python -PathType Leaf)) {
     Remove-Item -LiteralPath $TempArchive -Force -ErrorAction SilentlyContinue
     throw "Python do projeto nao encontrado para validar o pacote: $Python"
 }
+$FiscalQualificationJson = & $Python scripts/fiscal_channel_qualification.py --archive $TempArchive --root $Root --version $Version --commit $CommitSha
+if ($LASTEXITCODE -ne 0) {
+    Remove-Item -LiteralPath $TempArchive -Force -ErrorAction SilentlyContinue
+    throw "Falha ao gerar a qualificação fiscal versionada do pacote."
+}
+$FiscalQualification = $FiscalQualificationJson | ConvertFrom-Json
 if ($RequireProtectedModules -and -not $ProtectedModulesDirectory) {
     Remove-Item -LiteralPath $TempArchive -Force -ErrorAction SilentlyContinue
     throw "Informe -ProtectedModulesDirectory para um pacote de producao protegido."
@@ -98,6 +104,7 @@ $Payload = [ordered]@{
     modulos_protegidos = [bool]$ProtectedModulesDirectory
     manifesto_modulos_protegidos = $ProtectedManifest
     validacao_conteudo = $ContentValidation
+    qualificacao_fiscal = $FiscalQualification
     inclui = $Paths
     instalacao = [ordered]@{
         preparar = ".\scripts\install_detech_server.ps1"

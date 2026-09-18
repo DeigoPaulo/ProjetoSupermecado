@@ -140,6 +140,8 @@ PACOTE_SERVIDOR_ARQUIVOS_OBRIGATORIOS = {
     "manage.py",
     "requirements.txt",
     "config/settings.py",
+    "fiscal_channel_qualification_manifest.json",
+    "server_installation_identity.json",
 }
 PACOTE_SERVIDOR_SEGMENTOS_PROIBIDOS = {
     ".git", ".venv", "venv", "__pycache__", "artifacts", "backups",
@@ -235,6 +237,18 @@ def validar_conteudo_pacote_servidor(caminho):
                 resultado["problemas"].append("Estrutura mínima ausente: " + ", ".join(ausentes))
             if not any(nome.startswith("apps/") and nome.endswith(".py") for nome in nomes):
                 resultado["problemas"].append("Aplicações Django não encontradas no pacote.")
+            if {"fiscal_channel_qualification_manifest.json", "server_installation_identity.json"}.issubset(nomes):
+                try:
+                    from apps.fiscal.manifesto_qualificacao_fiscal import validar_qualificacao_instalada_payload
+                    manifesto = json.loads(pacote.read("fiscal_channel_qualification_manifest.json"))
+                    identidade = json.loads(pacote.read("server_installation_identity.json"))
+                    qualificacao = validar_qualificacao_instalada_payload(
+                        manifesto, identidade, canal="SEFAZ_DIRETA_GO"
+                    )
+                    if not qualificacao["valido"]:
+                        resultado["problemas"].extend(qualificacao["problemas"])
+                except (KeyError, UnicodeError, json.JSONDecodeError):
+                    resultado["problemas"].append("Qualificação fiscal embutida inválida.")
     except (OSError, zipfile.BadZipFile, zipfile.LargeZipFile):
         resultado["problemas"].append("ZIP do servidor local inválido ou ilegível.")
 

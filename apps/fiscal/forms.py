@@ -17,6 +17,7 @@ from .models import (
     StatusEvidenciaHomologacaoCanal,
 )
 from .roteiros_homologacao_canais import construir_roteiros_homologacao
+from .politica_canais_fiscais import diagnosticar_compatibilidade_canal_uf
 from .perfis_uf import aplicar_endpoints_nfce_uf, pendencias_endpoints_nfce, perfil_fiscal_uf
 
 
@@ -143,15 +144,12 @@ class ConfiguracaoFiscalForm(forms.ModelForm):
             "provedor_emissao",
             ProvedorEmissaoFiscal.PADRAO_SERVIDOR,
         )
-        if (
-            "provedor_emissao" in self.fields
-            and filial
-            and provedor == ProvedorEmissaoFiscal.SEFAZ_DIRETA_GO
-            and filial.uf != "GO"
-        ):
+        compatibilidade = diagnosticar_compatibilidade_canal_uf(
+            provedor, getattr(filial, "uf", "")
+        )
+        if "provedor_emissao" in self.fields and filial and not compatibilidade["valido"]:
             self.add_error(
-                "provedor_emissao",
-                "A conexão direta está disponível somente para filiais de Goiás.",
+                "provedor_emissao", compatibilidade["motivo"],
             )
         troca_canal = (
             self.instance.pk

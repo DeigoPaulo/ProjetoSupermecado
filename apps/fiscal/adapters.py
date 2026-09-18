@@ -3,9 +3,11 @@ from inspect import signature
 
 from django.conf import settings
 from django.core.exceptions import ImproperlyConfigured, ObjectDoesNotExist
+from django.core.exceptions import ValidationError
 from django.utils.module_loading import import_string
 
 from .chave_acesso import normalizar_chave_acesso
+from .politica_canais_fiscais import validar_compatibilidade_canal_uf
 
 PROVEDOR_ADAPTER_PATHS = {
     "FOCUS": "apps.fiscal.focus_sefaz_adapter.FocusNFeSefazAdapter",
@@ -64,13 +66,12 @@ def caminho_adaptador_sefaz(*, filial=None):
             if selecao == "DESATIVADO":
                 return ""
             if selecao in PROVEDOR_ADAPTER_PATHS:
-                if (
-                    selecao == "SEFAZ_DIRETA_GO"
-                    and str(getattr(filial, "uf", "") or "").upper() != "GO"
-                ):
-                    raise ImproperlyConfigured(
-                        "A conexão direta SEFAZ está disponível somente para filiais de Goiás."
+                try:
+                    validar_compatibilidade_canal_uf(
+                        selecao, getattr(filial, "uf", "")
                     )
+                except ValidationError as exc:
+                    raise ImproperlyConfigured(exc.messages[0]) from exc
                 return PROVEDOR_ADAPTER_PATHS[selecao]
     return getattr(settings, "FISCAL_SEFAZ_ADAPTER", "").strip()
 

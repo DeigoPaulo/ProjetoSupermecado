@@ -49,12 +49,24 @@ def criar_pacote_servidor_teste(
     arquivos_extras=None,
 ):
     versao = versao or settings.LOCAL_SERVER_VERSION
+    from apps.fiscal.manifesto_qualificacao_fiscal import (
+        NOME_IDENTIDADE, NOME_MANIFESTO, gerar_identidade_instalacao,
+        gerar_manifesto_qualificacao,
+    )
+    commit = "a" * 40
+    qualificacao = gerar_manifesto_qualificacao(
+        raiz_projeto=settings.BASE_DIR, versao=versao, commit=commit,
+        hash_base_pacote="b" * 64, gerado_em="2026-09-18T00:00:00+00:00",
+    )
+    identidade = gerar_identidade_instalacao(versao=versao, commit=commit)
     buffer = io.BytesIO()
     with zipfile.ZipFile(buffer, "w", zipfile.ZIP_DEFLATED) as pacote:
         pacote.writestr("manage.py", "# pacote de teste")
         pacote.writestr("requirements.txt", "Django")
         pacote.writestr("config/settings.py", "SECRET_KEY = 'runtime'")
         pacote.writestr("apps/core.py", conteudo)
+        pacote.writestr(NOME_MANIFESTO, json.dumps(qualificacao))
+        pacote.writestr(NOME_IDENTIDADE, json.dumps(identidade))
         for nome, dados in (arquivos_extras or {}).items():
             pacote.writestr(nome, dados)
     conteudo_pacote = buffer.getvalue()
@@ -62,7 +74,7 @@ def criar_pacote_servidor_teste(
     metadados = {
         "contrato": "local_server_package_v1",
         "versao": versao,
-        "commit": "a" * 40,
+        "commit": commit,
         "commit_assinado_exigido": commit_assinado,
         "arquivo": caminho.name,
         "tamanho_bytes": len(conteudo_pacote),

@@ -36,7 +36,7 @@ leitura da cobertura exigida pelo canal. Ele distingue operações aprovadas, pe
 rejeitadas e ausentes e mantém visível a lacuna interna de Eventos Focus. O diagnóstico
 declara explicitamente que não altera a homologação e não libera produção.
 
-O contrato `fiscal_channel_homologation_completion_gate_v1` liga a conclusão da homologação
+O contrato `fiscal_channel_homologation_completion_gate_v2` liga a conclusão da homologação
 à cobertura completa. Ele falha fechado diante de evidência ausente, pendente, rejeitada ou
 de qualquer lacuna interna. O checklist técnico automático também continua obrigatório.
 Esse portão permanece separado da ativação de produção e não transforma teste offline em

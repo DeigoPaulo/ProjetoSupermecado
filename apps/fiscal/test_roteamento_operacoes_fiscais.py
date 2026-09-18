@@ -79,15 +79,14 @@ class RoteamentoOperacoesFiscaisTests(SimpleTestCase):
                 operacao="DFE",
             )
 
-    def test_diagnostico_focus_expoe_cinco_capacidades_e_dois_bloqueios(self):
+    def test_diagnostico_focus_expoe_seis_operacoes_e_bloqueia_eventos(self):
         diagnostico = diagnosticar_capacidades_filial(_filial("FOCUS"))
         por_codigo = {item["codigo"]: item for item in diagnostico["capacidades"]}
 
         self.assertEqual(diagnostico["contrato"], "fiscal_branch_channel_capabilities_v1")
-        self.assertEqual(diagnostico["disponiveis_estruturais"], 5)
+        self.assertEqual(diagnostico["disponiveis_estruturais"], 6)
         self.assertTrue(por_codigo["DFE"]["disponivel_estrutural"])
-        self.assertFalse(por_codigo["CCE"]["disponivel_estrutural"])
-        self.assertFalse(por_codigo["MANIFESTACAO"]["disponivel_estrutural"])
+        self.assertFalse(por_codigo["EVENTOS"]["disponivel_estrutural"])
         self.assertFalse(diagnostico["homologacao_real_executada"])
         self.assertFalse(diagnostico["producao_liberada"])
 

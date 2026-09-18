@@ -224,7 +224,15 @@ class EvidenciasHomologacaoCanaisTests(TestCase):
         self.assertContains(pagina, "Não conclui a homologação nem libera produção")
 
     def test_portao_falha_fechado_com_ausencia_e_lacuna_sem_liberar_producao(self):
-        portao = avaliar_portao_conclusao_homologacao(self.configuracao)
+        qualificacao = {
+            "valido": True,
+            "problemas": (),
+            "homologacao_real_executada": False,
+            "producao_liberada": False,
+        }
+        portao = avaliar_portao_conclusao_homologacao(
+            self.configuracao, qualificacao_instalada=qualificacao
+        )
 
         self.assertFalse(portao["permitido"])
         self.assertFalse(portao["libera_producao"])
@@ -268,14 +276,25 @@ class EvidenciasHomologacaoCanaisTests(TestCase):
                 usuario=self.master,
             )
 
-        portao = avaliar_portao_conclusao_homologacao(self.configuracao)
+        qualificacao = {
+            "valido": True,
+            "problemas": (),
+            "homologacao_real_executada": False,
+            "producao_liberada": False,
+        }
+        portao = avaliar_portao_conclusao_homologacao(
+            self.configuracao, qualificacao_instalada=qualificacao
+        )
         self.assertTrue(portao["permitido"])
         self.assertFalse(portao["libera_producao"])
 
         self.client.force_login(self.master)
         checklist_pronto = [{"titulo": "Teste", "pronto": True, "detalhe": "OK"}]
         from unittest.mock import patch
-        with patch("apps.fiscal.views._checklist_homologacao_goias", return_value=checklist_pronto):
+        with (
+            patch("apps.fiscal.views._checklist_homologacao_goias", return_value=checklist_pronto),
+            patch("apps.fiscal.services_evidencias_homologacao.diagnosticar_qualificacao_instalada", return_value=qualificacao),
+        ):
             pagina = self.client.get(
                 f"/fiscal/configuracoes/{self.configuracao.pk}/homologacao-goias/"
             )

@@ -2,6 +2,13 @@
 
 from django.conf import settings
 from django.core.exceptions import ImproperlyConfigured, ObjectDoesNotExist
+from django.core.exceptions import ValidationError
+
+from .politica_canais_fiscais import (
+    OPERACOES_FISCAIS_CANONICAS,
+    diagnosticar_compatibilidade_canal_uf,
+    validar_compatibilidade_canal_uf,
+)
 
 
 PROVEDOR_PADRAO = "PADRAO_SERVIDOR"
@@ -51,10 +58,10 @@ def resolver_adaptador_operacao(*, filial, operacao, fallback=""):
             "adaptador": str(fallback or "").strip(),
             "motivo": "COMPATIBILIDADE_SERVIDOR",
         }
-    if provedor == PROVEDOR_SEFAZ_DIRETA_GO and str(getattr(filial, "uf", "") or "").upper() != "GO":
-        raise ImproperlyConfigured(
-            "A conexão direta SEFAZ está disponível somente para filiais de Goiás."
-        )
+    try:
+        validar_compatibilidade_canal_uf(provedor, getattr(filial, "uf", ""))
+    except ValidationError as exc:
+        raise ImproperlyConfigured(exc.messages[0]) from exc
     adaptador = ADAPTADORES_POR_OPERACAO[operacao].get(provedor, "")
     if not adaptador:
         raise ImproperlyConfigured(
@@ -74,48 +81,60 @@ def diagnosticar_capacidades_filial(filial):
     else:
         adaptador_emissao = ADAPTADORES_EMISSAO.get(provedor, "")
 
+    compatibilidade = diagnosticar_compatibilidade_canal_uf(
+        provedor, getattr(filial, "uf", "")
+    )
     capacidades = []
     for codigo, titulo in (
         ("AUTORIZACAO", "Autorização e rejeições"),
         ("CONSULTA", "Consulta do documento"),
+        ("REJEICAO", "Rejeição controlada"),
         ("CANCELAMENTO", "Cancelamento"),
         ("INUTILIZACAO", "Inutilização"),
     ):
         capacidades.append({
             "codigo": codigo,
             "titulo": titulo,
-            "disponivel_estrutural": bool(adaptador_emissao),
+            "disponivel_estrutural": bool(adaptador_emissao and compatibilidade["valido"]),
             "adaptador": adaptador_emissao,
             "detalhe": (
                 "Capacidade estrutural do canal de emissão; exige homologação real."
-                if adaptador_emissao else "Canal de emissão desativado ou não configurado."
+                if adaptador_emissao and compatibilidade["valido"]
+                else compatibilidade["motivo"] or "Canal de emissão desativado ou não configurado."
             ),
             "homologada": False,
             "producao_liberada": False,
         })
 
     auxiliares = (
-        ("DFE", "Distribuição DF-e", getattr(settings, "FISCAL_DFE_ADAPTER", "")),
-        ("CCE", "Carta de Correção", getattr(settings, "FISCAL_CCE_ADAPTER", "")),
-        ("MANIFESTACAO", "Manifestação do destinatário", getattr(settings, "FISCAL_MANIFESTACAO_ADAPTER", "")),
+        ("EVENTOS", "Eventos (CC-e e manifestação)", (
+            ("CCE", getattr(settings, "FISCAL_CCE_ADAPTER", "")),
+            ("MANIFESTACAO", getattr(settings, "FISCAL_MANIFESTACAO_ADAPTER", "")),
+        )),
+        ("DFE", "Distribuição DF-e", (("DFE", getattr(settings, "FISCAL_DFE_ADAPTER", "")),)),
     )
-    for codigo, titulo, fallback in auxiliares:
+    for codigo, titulo, suboperacoes in auxiliares:
         try:
-            roteamento = resolver_adaptador_operacao(
-                filial=filial, operacao=codigo, fallback=fallback
+            roteamentos = [
+                resolver_adaptador_operacao(filial=filial, operacao=subcodigo, fallback=fallback)
+                for subcodigo, fallback in suboperacoes
+            ]
+            adaptador = ",".join(item["adaptador"] for item in roteamentos if item["adaptador"])
+            disponivel = len(roteamentos) == len(suboperacoes) and all(
+                item["adaptador"] for item in roteamentos
             )
-            adaptador = roteamento["adaptador"]
             detalhe = (
                 "Capacidade estrutural resolvida pelo canal da filial; exige homologação real."
-                if adaptador else "Canal desativado ou adaptador não configurado."
+                if disponivel else "Canal desativado ou adaptador não configurado."
             )
         except ImproperlyConfigured as exc:
             adaptador = ""
+            disponivel = False
             detalhe = str(exc)
         capacidades.append({
             "codigo": codigo,
             "titulo": titulo,
-            "disponivel_estrutural": bool(adaptador),
+            "disponivel_estrutural": bool(disponivel),
             "adaptador": adaptador,
             "detalhe": detalhe,
             "homologada": False,
@@ -125,8 +144,9 @@ def diagnosticar_capacidades_filial(filial):
     return {
         "contrato": "fiscal_branch_channel_capabilities_v1",
         "provedor": provedor,
+        "compatibilidade_uf": compatibilidade,
         "capacidades": capacidades,
-        "total": len(capacidades),
+        "total": len(OPERACOES_FISCAIS_CANONICAS),
         "disponiveis_estruturais": sum(item["disponivel_estrutural"] for item in capacidades),
         "homologacao_real_executada": False,
         "producao_liberada": False,

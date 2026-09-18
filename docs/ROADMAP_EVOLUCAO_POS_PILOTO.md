@@ -618,6 +618,49 @@ apps/fiscal/test_evidencias_homologacao_canais.py,
 apps/fiscal/migrations/0054_evidenciahomologacaocanal.py e
 docs/REGISTRO_EVIDENCIAS_HOMOLOGACAO_CANAIS.md.
 
+## Ponto de retomada — ciclo 144, 18/09/2026
+
+Definido formalmente o primeiro piloto fiscal de supermercado em Goiás pelo canal
+`SEFAZ_DIRETA_GO`, mantendo Focus NFe como opção secundária sem fallback ou
+dependência no caminho direto.
+
+- [x] Registrar a decisão de produto sem remover ou quebrar a integração Focus.
+- [x] Unificar a matriz em sete operações: Autorização, Consulta, Rejeição,
+  Cancelamento, Inutilização, Eventos (CC-e + manifestação) e DF-e.
+- [x] Confirmar SEFAZ direta GO em 7/7 offline e manter Eventos Focus como lacuna
+  6/7, sem bloquear o canal direto.
+- [x] Centralizar a política canal × UF e aplicá-la em formulário, seleção do
+  adaptador, roteamento, capacidade, prontidão e portão de homologação.
+- [x] Separar a qualificação de build da validação runtime, eliminando dependência
+  instalada em `test_*.py`.
+- [x] Criar `fiscal_channel_qualification_manifest_v1` e identidade instalada
+  independentes, com versão, commit, operações, lacunas, provas e hashes.
+- [x] Tornar manifesto e identidade obrigatórios no ZIP comercial, mantendo
+  testes e documentação interna fora do pacote.
+- [x] Evoluir o portão para
+  `fiscal_channel_homologation_completion_gate_v2`: qualificação instalada
+  válida e sete evidências reais aprovadas são requisitos simultâneos.
+- [x] Falhar fechado para manifesto ausente, inválido, adulterado ou divergente
+  em contrato, integridade, versão, commit, canal ou operação.
+- [x] Preservar isolamento por filial/canal e os históricos dos ciclos 141/142.
+- [x] Manter rede, produção, credenciais e homologação real desligadas; nenhum
+  CNPJ, IE, A1 ou CSC real foi usado.
+- [x] Validar 51 testes focados e a regressão conjunta Fiscal + Configurações
+  com 785 testes aprovados (3 pulados), incluindo o pacote offline; validar
+  também `check`, ausência de migrations e integridade do diff.
+- [x] Não iniciar criptografia/rotação de CSC; a pendência continua P2, com
+  prioridade posterior ao fechamento do piloto direto.
+- [ ] Próximo passo exato: quando existirem CNPJ/IE, A1, CSC e credenciamento
+  válidos, preparar a homologação real da filial piloto em SEFAZ direta GO,
+  executar as sete operações e arquivar o aceite fiscal/contábil. Até lá, não
+  habilitar rede nem produção.
+
+Arquivos principais: apps/fiscal/politica_canais_fiscais.py,
+apps/fiscal/manifesto_qualificacao_fiscal.py,
+apps/fiscal/services_evidencias_homologacao.py,
+scripts/fiscal_channel_qualification.py, scripts/package_local_server.ps1 e
+docs/MANIFESTO_QUALIFICACAO_FISCAL.md. Migrações: nenhuma.
+
 ## Ponto de retomada — ciclo 143, 18/09/2026
 
 Concluída a pendência P2 de parcelas/duplicatas da NF-e recebida, eliminando a perda da
@@ -640,9 +683,9 @@ estrutura financeira na importação de compras parceladas.
 - [x] Validar 51 testes focados de compras, importação XML e baixa integral; `check` limpo,
   `makemigrations --check --dry-run` sem mudanças e `git diff --check` aprovado.
 - [x] Gerar as migrations `compras.0012` e `financeiro.0024`, sem aplicar no banco operacional.
-- [ ] Próximo passo registrado: P2 — revisar e implementar a criptografia do CSC em repouso,
-  incluindo fluxo auditado de inclusão/rotação/revogação e testes de não exposição. Não
-  iniciar antes de uma nova autorização de continuidade.
+- [ ] Pendência P2 preservada: revisar e implementar a criptografia do CSC em repouso,
+  incluindo fluxo auditado de inclusão/rotação/revogação e testes de não exposição. O
+  ciclo 144 alterou apenas sua prioridade; ela não foi iniciada.
 
 Arquivos principais: apps/compras/models.py, apps/compras/services.py,
 apps/compras/services_xml.py, apps/compras/tests.py, apps/financeiro/models.py,
@@ -2168,7 +2211,7 @@ A frente deve ser iniciada após a conclusão da trilha fiscal interna atual e d
 - A revisão de codificação removeu textos quebrados das telas financeiras e manteve UTF-8 nas exportações e interfaces.
 ## Decisoes pendentes do cliente
 
-- Confirmar a Focus NFe como provedor comercial inicial ou registrar outra decisão; para a trilha técnica atual, disponibilizar credenciais sandbox por canal seguro.
+- Decisão registrada no ciclo 144: o primeiro piloto GO terá SEFAZ direta como alvo técnico; Focus NFe permanece opção comercial secundária.
 - Validar certificado A1, CSC, IE, series e regras tributarias com o contador.
 - Definir adquirentes/TEF, bancos e layouts de conciliacao utilizados pela loja.
 - Escolher a filial piloto e responsaveis por operacao, fiscal e contabilidade.

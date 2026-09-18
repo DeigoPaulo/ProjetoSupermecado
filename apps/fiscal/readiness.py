@@ -12,6 +12,7 @@ from .models import (
 )
 from .validacoes import diagnosticar_schemas_fiscais
 from .perfis_uf import pendencias_endpoints_nfce
+from .politica_canais_fiscais import diagnosticar_compatibilidade_canal_uf
 
 
 def diagnostico_prontidao_homologacao_goias(configuracao):
@@ -37,7 +38,15 @@ def diagnostico_prontidao_homologacao_goias(configuracao):
         ambiente=AmbienteFiscal.HOMOLOGACAO,
         status=StatusDocumentoFiscal.EMITIDO,
     ).exists()
+    compatibilidade_canal = diagnosticar_compatibilidade_canal_uf(
+        configuracao.provedor_emissao, filial.uf
+    )
     itens = [
+        (
+            "Canal fiscal compatível com a UF",
+            compatibilidade_canal["valido"],
+            compatibilidade_canal["motivo"] or "Canal fiscal permitido para a UF da filial.",
+        ),
         (
             "Dados da filial",
             bool(
