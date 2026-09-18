@@ -590,6 +590,34 @@ Arquivos principais: apps/fiscal/barcode_chave.py, apps/fiscal/views.py,
 apps/pdv/views.py, templates/fiscal/danfe_nfce.html, testes fiscais e da auditoria.
 Migrações: nenhuma.
 
+## Ponto de retomada — ciclo 136, 18/09/2026
+
+Estruturado o registro auditável das futuras evidências reais por filial, canal e operação,
+sem armazenamento de arquivos brutos ou segredos e sem aprovação automática.
+
+- [x] Criar `EvidenciaHomologacaoCanal` vinculada à configuração fiscal, com snapshot do
+  canal, operação e ambiente.
+- [x] Armazenar somente referência protegida, SHA-256, versão, status/protocolo e confronto
+  entre resultado esperado e obtido.
+- [x] Restringir registro e revisão ao Master; todo registro nasce `PENDENTE`.
+- [x] Bloquear produção, operação sem roteiro e lacuna interna como Eventos Focus.
+- [x] Exigir justificativa na aprovação/rejeição e tornar a decisão revisada imutável pelo
+  serviço, com auditoria nas duas etapas.
+- [x] Proibir exclusão pelo modelo e criar restrições de banco para ambiente de homologação e
+  coerência entre status, revisor e data de revisão.
+- [x] Gerar e validar a migration `fiscal.0054_evidenciahomologacaocanal`.
+- [x] Validar 6 testes próprios e 17 testes conjuntos de permissão, segurança, bloqueio,
+  auditoria, revisão, roteiros e roteamento.
+- [ ] Próximo passo exato: criar na tela Master o formulário de metadados, a lista e as ações
+  separadas de aprovação/rejeição; depois conectar a conclusão da homologação às evidências
+  aprovadas exigidas pelo canal.
+
+Arquivos principais: apps/fiscal/models.py,
+apps/fiscal/services_evidencias_homologacao.py,
+apps/fiscal/test_evidencias_homologacao_canais.py,
+apps/fiscal/migrations/0054_evidenciahomologacaocanal.py e
+docs/REGISTRO_EVIDENCIAS_HOMOLOGACAO_CANAIS.md.
+
 ## Ponto de retomada — ciclo 135, 18/09/2026
 
 Disponibilizada ao Master a consulta dos roteiros do canal selecionado diretamente na tela

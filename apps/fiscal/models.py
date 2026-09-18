@@ -41,6 +41,22 @@ class StatusHomologacaoFiscal(models.TextChoices):
     EM_ANDAMENTO = "EM_ANDAMENTO", "Em andamento"
     CONCLUIDA = "CONCLUIDA", "Concluída"
 
+
+class StatusEvidenciaHomologacaoCanal(models.TextChoices):
+    PENDENTE = "PENDENTE", "Pendente de revisão"
+    APROVADA = "APROVADA", "Aprovada"
+    REJEITADA = "REJEITADA", "Rejeitada"
+
+
+class OperacaoHomologacaoFiscal(models.TextChoices):
+    AUTORIZACAO = "AUTORIZACAO", "Autorização"
+    CONSULTA = "CONSULTA", "Consulta"
+    REJEICAO = "REJEICAO", "Rejeição controlada"
+    CANCELAMENTO = "CANCELAMENTO", "Cancelamento"
+    INUTILIZACAO = "INUTILIZACAO", "Inutilização"
+    EVENTOS = "EVENTOS", "Eventos"
+    DFE = "DFE", "Distribuição DF-e"
+
 class StatusDocumentoFiscal(models.TextChoices):
     RASCUNHO = "RASCUNHO", "Rascunho"
     PRONTO = "PRONTO", "Pronto para transmissao"
@@ -1319,6 +1335,93 @@ class HomologacaoFiscal(models.Model):
 
     def __str__(self):
         return f"{self.configuracao.filial} - {self.get_status_display()}"
+
+
+class EvidenciaHomologacaoCanal(models.Model):
+    configuracao = models.ForeignKey(
+        ConfiguracaoFiscal,
+        on_delete=models.PROTECT,
+        related_name="evidencias_homologacao_canal",
+    )
+    canal = models.CharField(max_length=24, choices=ProvedorEmissaoFiscal.choices)
+    operacao = models.CharField(max_length=24, choices=OperacaoHomologacaoFiscal.choices)
+    ambiente = models.CharField(max_length=20, choices=AmbienteFiscal.choices)
+    status = models.CharField(
+        max_length=16,
+        choices=StatusEvidenciaHomologacaoCanal.choices,
+        default=StatusEvidenciaHomologacaoCanal.PENDENTE,
+    )
+    referencia = models.CharField(
+        max_length=500,
+        help_text="Referência protegida do chamado, pacote, protocolo ou cofre de evidências.",
+    )
+    conteudo_sha256 = models.CharField(
+        max_length=64,
+        help_text="SHA-256 do pacote de evidências, sem armazenar segredo neste registro.",
+    )
+    codigo_status = models.CharField(max_length=20, blank=True)
+    protocolo = models.CharField(max_length=80, blank=True)
+    versao_aplicacao = models.CharField(max_length=80)
+    resultado_esperado = models.TextField()
+    resultado_obtido = models.TextField()
+    observacoes_revisao = models.TextField(blank=True)
+    registrada_por = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.PROTECT,
+        related_name="evidencias_homologacao_registradas",
+    )
+    registrada_em = models.DateTimeField(auto_now_add=True)
+    revisada_por = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        null=True,
+        blank=True,
+        on_delete=models.PROTECT,
+        related_name="evidencias_homologacao_revisadas",
+    )
+    revisada_em = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        ordering = ["-registrada_em", "-id"]
+        constraints = [
+            models.CheckConstraint(
+                condition=models.Q(ambiente=AmbienteFiscal.HOMOLOGACAO),
+                name="fiscal_ev_hom_apenas_homologacao",
+            ),
+            models.CheckConstraint(
+                condition=(
+                    models.Q(
+                        status=StatusEvidenciaHomologacaoCanal.PENDENTE,
+                        revisada_por__isnull=True,
+                        revisada_em__isnull=True,
+                    )
+                    | (
+                        models.Q(
+                            status__in=[
+                                StatusEvidenciaHomologacaoCanal.APROVADA,
+                                StatusEvidenciaHomologacaoCanal.REJEITADA,
+                            ]
+                        )
+                        & models.Q(revisada_por__isnull=False)
+                        & models.Q(revisada_em__isnull=False)
+                    )
+                ),
+                name="fiscal_ev_hom_revisao_coerente",
+            ),
+        ]
+        indexes = [
+            models.Index(
+                fields=["configuracao", "canal", "operacao", "status"],
+                name="fiscal_ev_hom_canal_idx",
+            ),
+        ]
+        verbose_name = "evidência de homologação por canal"
+        verbose_name_plural = "evidências de homologação por canal"
+
+    def delete(self, *args, **kwargs):
+        raise ValueError("Evidências de homologação não podem ser excluídas.")
+
+    def __str__(self):
+        return f"{self.configuracao.filial} - {self.canal}/{self.operacao} - {self.status}"
 
 class StatusDFeRecebido(models.TextChoices):
     NOVO = "NOVO", "Novo"

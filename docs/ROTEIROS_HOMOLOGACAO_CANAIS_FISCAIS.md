@@ -34,3 +34,7 @@ quando aplicável.
 No ciclo 135, os sete roteiros do canal selecionado passaram a ser exibidos ao Master na
 tela de homologação da filial. A consulta é somente leitura, não oferece botão de execução e
 mostra cenários, bloqueios e critério de aprovação. Outros perfis não recebem essa visão.
+
+No ciclo 136, foi criado o registro auditável que receberá futuramente as referências e
+hashes das evidências reais. As regras estão em
+[REGISTRO_EVIDENCIAS_HOMOLOGACAO_CANAIS.md](REGISTRO_EVIDENCIAS_HOMOLOGACAO_CANAIS.md).
