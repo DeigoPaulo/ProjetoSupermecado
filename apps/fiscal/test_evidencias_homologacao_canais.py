@@ -18,6 +18,7 @@ from .models import (
 from .forms import ConfiguracaoFiscalForm
 from .services_evidencias_homologacao import (
     avaliar_portao_conclusao_homologacao,
+    consultar_historico_canais_homologacao,
     diagnosticar_cobertura_evidencias_homologacao,
     registrar_evidencia_homologacao,
     revisar_evidencia_homologacao,
@@ -381,3 +382,41 @@ class EvidenciasHomologacaoCanaisTests(TestCase):
         ).latest("criado_em")
         self.assertIn("preservadas 1 evidência", auditoria.descricao)
         self.assertIn("Concluída", auditoria.descricao)
+
+    def test_historico_master_resume_canais_sem_referencia_ou_segredo(self):
+        evidencia = self.registrar()
+        revisar_evidencia_homologacao(
+            evidencia,
+            decisao="APROVADA",
+            observacoes="Aprovada.",
+            usuario=self.master,
+        )
+        LogAuditoria.objects.create(
+            usuario=self.master,
+            modulo="fiscal",
+            acao="ALTERA_CANAL_EMISSAO_FISCAL",
+            descricao="Canal técnico alterado de Focus para SEFAZ direta.",
+            objeto_tipo="ConfiguracaoFiscal",
+            objeto_id=str(self.configuracao.pk),
+        )
+
+        historico = consultar_historico_canais_homologacao(
+            self.configuracao, usuario=self.master
+        )
+
+        self.assertEqual(historico["canais"][0]["aprovadas"], 1)
+        self.assertEqual(len(historico["transicoes"]), 1)
+        self.assertFalse(historico["inclui_segredos"])
+        self.assertFalse(historico["inclui_referencias"])
+        self.assertNotIn(evidencia.referencia, str(historico))
+        with self.assertRaises(PermissionDenied):
+            consultar_historico_canais_homologacao(
+                self.configuracao, usuario=self.usuario
+            )
+
+        self.client.force_login(self.master)
+        pagina = self.client.get(
+            f"/fiscal/configuracoes/{self.configuracao.pk}/homologacao-goias/"
+        )
+        self.assertContains(pagina, "Histórico de canais")
+        self.assertContains(pagina, "Visão exclusiva do Master")

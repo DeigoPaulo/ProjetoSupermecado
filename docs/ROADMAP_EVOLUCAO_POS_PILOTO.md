@@ -618,6 +618,27 @@ apps/fiscal/test_evidencias_homologacao_canais.py,
 apps/fiscal/migrations/0054_evidenciahomologacaocanal.py e
 docs/REGISTRO_EVIDENCIAS_HOMOLOGACAO_CANAIS.md.
 
+## Ponto de retomada — ciclo 142, 18/09/2026
+
+Criada a consulta Master do histórico de canais e transições da homologação por filial,
+sem depender da leitura direta de logs e sem revelar conteúdo protegido.
+
+- [x] Resumir por canal somente quantidade total, aprovada, pendente e rejeitada.
+- [x] Listar data, Master responsável e descrição sanitizada das trocas de canal.
+- [x] Não incluir referência protegida, hash, protocolo, XML, certificado, CSC, token, senha
+  ou endereço técnico.
+- [x] Restringir o serviço e a interface ao Master.
+- [x] Manter a consulta somente leitura, sem alterar homologação ou produção.
+- [x] Validar em uma única bateria 30 testes dos ciclos 136–142, permissões, isolamento,
+  formulário, histórico e interface; `check` limpo e nenhuma migration pendente.
+- [ ] Próximo passo exato: encerrar esta frente interna no limite possível sem CNPJ,
+  credenciais e homologação reais e selecionar, pela ordem do roadmap, a primeira pendência
+  interna já registrada que não dependa desses insumos externos.
+
+Arquivos principais: apps/fiscal/services_evidencias_homologacao.py,
+apps/fiscal/views.py, templates/fiscal/homologacao_goias.html e
+apps/fiscal/test_evidencias_homologacao_canais.py. Migrações: nenhuma.
+
 ## Ponto de retomada — ciclo 141, 18/09/2026
 
 Endurecida a troca do canal fiscal para impedir reaproveitamento indevido de evidências e

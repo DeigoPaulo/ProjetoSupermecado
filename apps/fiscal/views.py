@@ -110,6 +110,7 @@ from .roteamento_operacoes_fiscais import diagnosticar_capacidades_filial
 from .roteiros_homologacao_canais import construir_roteiros_homologacao
 from .services_evidencias_homologacao import (
     avaliar_portao_conclusao_homologacao,
+    consultar_historico_canais_homologacao,
     diagnosticar_cobertura_evidencias_homologacao,
     registrar_evidencia_homologacao,
     revisar_evidencia_homologacao,
@@ -1463,6 +1464,7 @@ def homologacao_goias(request, pk):
     evidencias_canal = []
     cobertura_evidencias = None
     evidencia_form = None
+    historico_canais = None
     if capacidades_canal:
         roteiros = construir_roteiros_homologacao(settings.BASE_DIR)["roteiros"]
         roteiros_canal = [
@@ -1473,6 +1475,9 @@ def homologacao_goias(request, pk):
             "registrada_por", "revisada_por"
         ).all()
         cobertura_evidencias = diagnosticar_cobertura_evidencias_homologacao(configuracao)
+        historico_canais = consultar_historico_canais_homologacao(
+            configuracao, usuario=request.user
+        )
         evidencia_form = EvidenciaHomologacaoCanalForm(configuracao=configuracao)
     itens_automaticos_prontos = all(item["pronto"] for item in checklist)
     if request.method == "POST":
@@ -1523,6 +1528,7 @@ def homologacao_goias(request, pk):
         "evidencias_canal": evidencias_canal,
         "cobertura_evidencias": cobertura_evidencias,
         "portao_conclusao": portao_conclusao if request.user.is_superuser else None,
+        "historico_canais": historico_canais,
         "evidencia_form": evidencia_form,
     })
 

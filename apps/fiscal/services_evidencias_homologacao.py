@@ -11,6 +11,7 @@ from .models import (
     AmbienteFiscal,
     EvidenciaHomologacaoCanal,
     OperacaoHomologacaoFiscal,
+    ProvedorEmissaoFiscal,
     StatusEvidenciaHomologacaoCanal,
 )
 from .roteiros_homologacao_canais import construir_roteiros_homologacao
@@ -19,6 +20,7 @@ from .roteiros_homologacao_canais import construir_roteiros_homologacao
 CONTRATO_REGISTRO_EVIDENCIA_HOMOLOGACAO = "fiscal_channel_homologation_evidence_v1"
 CONTRATO_COBERTURA_EVIDENCIA_HOMOLOGACAO = "fiscal_channel_homologation_coverage_v1"
 CONTRATO_PORTAO_CONCLUSAO_HOMOLOGACAO = "fiscal_channel_homologation_completion_gate_v1"
+CONTRATO_HISTORICO_CANAIS_HOMOLOGACAO = "fiscal_channel_homologation_history_v1"
 SHA256_RE = re.compile(r"[0-9a-fA-F]{64}")
 
 ESTADOS_COBERTURA = {
@@ -122,6 +124,48 @@ def avaliar_portao_conclusao_homologacao(configuracao):
         "motivos": tuple(motivos),
         "cobertura": cobertura,
         "libera_producao": False,
+    }
+
+
+def consultar_historico_canais_homologacao(configuracao, *, usuario):
+    """Retorna somente metadados sanitizados para revisão exclusiva do Master."""
+    _exigir_master(usuario)
+    resumo = {}
+    for canal, status in configuracao.evidencias_homologacao_canal.values_list(
+        "canal", "status"
+    ):
+        item = resumo.setdefault(canal, {
+            "canal": canal,
+            "canal_display": ProvedorEmissaoFiscal(canal).label,
+            "total": 0,
+            "aprovadas": 0,
+            "pendentes": 0,
+            "rejeitadas": 0,
+        })
+        item["total"] += 1
+        if status == StatusEvidenciaHomologacaoCanal.APROVADA:
+            item["aprovadas"] += 1
+        elif status == StatusEvidenciaHomologacaoCanal.PENDENTE:
+            item["pendentes"] += 1
+        elif status == StatusEvidenciaHomologacaoCanal.REJEITADA:
+            item["rejeitadas"] += 1
+
+    transicoes = LogAuditoria.objects.filter(
+        modulo="fiscal",
+        acao="ALTERA_CANAL_EMISSAO_FISCAL",
+        objeto_tipo="ConfiguracaoFiscal",
+        objeto_id=str(configuracao.pk),
+    ).select_related("usuario").order_by("-criado_em")
+    return {
+        "contrato": CONTRATO_HISTORICO_CANAIS_HOMOLOGACAO,
+        "canais": tuple(sorted(resumo.values(), key=lambda item: item["canal"])),
+        "transicoes": tuple({
+            "criado_em": log.criado_em,
+            "usuario": log.usuario.get_username() if log.usuario else "Sistema",
+            "descricao": log.descricao,
+        } for log in transicoes),
+        "inclui_segredos": False,
+        "inclui_referencias": False,
     }
 
 

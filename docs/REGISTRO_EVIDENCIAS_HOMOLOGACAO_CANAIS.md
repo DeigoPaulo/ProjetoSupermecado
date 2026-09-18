@@ -56,3 +56,14 @@ registro técnico como pendente e não reaproveita aprovações no novo canal.
 
 Uma bateria conjunta de 29 testes confirmou formulário, confirmação, reinicialização,
 isolamento por canal, permissões, roteiros e regressões, sem nova migration.
+
+## Consulta do histórico
+
+O contrato `fiscal_channel_homologation_history_v1` permite ao Master revisar por filial as
+contagens de evidências de cada canal e as transições auditadas. A consulta é somente leitura
+e não retorna referência protegida, hash, protocolo, XML, certificado, CSC, token, senha ou
+endereço técnico.
+
+Uma bateria conjunta de 30 testes confirmou a consulta, as permissões e as regressões dos
+ciclos 136–142. A frente interna fica encerrada neste ponto; evidências reais continuam
+dependentes do CNPJ, das credenciais e da execução em homologação oficial.

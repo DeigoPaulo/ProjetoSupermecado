@@ -110,6 +110,22 @@
   {% if cobertura_evidencias.bloqueadas %}<div class="form-note form-note-danger">O canal possui {{ cobertura_evidencias.bloqueadas }} operação bloqueada por lacuna interna. Evidências das demais operações não ocultam esse bloqueio.</div>{% endif %}
 </section>{% endif %}
 
+{% if historico_canais %}<section class="panel">
+  <div class="panel-heading"><div><h2>Histórico de canais</h2><p>Visão exclusiva do Master, somente com metadados sanitizados.</p></div></div>
+  <div class="table-wrapper">
+    <table>
+      <thead><tr><th>Canal</th><th>Evidências</th><th>Aprovadas</th><th>Pendentes</th><th>Rejeitadas</th></tr></thead>
+      <tbody>{% for canal in historico_canais.canais %}<tr><td><strong>{{ canal.canal_display }}</strong></td><td>{{ canal.total }}</td><td>{{ canal.aprovadas }}</td><td>{{ canal.pendentes }}</td><td>{{ canal.rejeitadas }}</td></tr>{% empty %}<tr><td colspan="5" class="empty">Nenhum histórico de evidências por canal.</td></tr>{% endfor %}</tbody>
+    </table>
+  </div>
+  <div class="table-wrapper">
+    <table>
+      <thead><tr><th>Data</th><th>Master</th><th>Transição registrada</th></tr></thead>
+      <tbody>{% for transicao in historico_canais.transicoes %}<tr><td>{{ transicao.criado_em|date:"d/m/Y H:i" }}</td><td>{{ transicao.usuario }}</td><td>{{ transicao.descricao }}</td></tr>{% empty %}<tr><td colspan="3" class="empty">Nenhuma troca de canal registrada.</td></tr>{% endfor %}</tbody>
+    </table>
+  </div>
+</section>{% endif %}
+
 {% if evidencia_form %}<section class="panel">
   <div class="panel-heading"><div><h2>Evidências reais do canal</h2><p>Registre apenas referência protegida e hash. Não inclua token, certificado, CSC, senha ou arquivo bruto.</p></div></div>
   <form method="post" action="{% url 'fiscal:registrar_evidencia_homologacao_canal' configuracao.pk %}" class="form-grid">
