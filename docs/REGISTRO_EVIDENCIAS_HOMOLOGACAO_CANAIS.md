@@ -31,8 +31,11 @@ visualização quanto os endpoints recusam usuários que não sejam Master.
 
 ## Próxima integração
 
-Antes de alterar o portão de conclusão da homologação, o sistema deverá apresentar um
-diagnóstico somente leitura da cobertura exigida pelo canal. Esse diagnóstico distinguirá
-operações aprovadas, pendentes, rejeitadas e ausentes e manterá visível a lacuna interna de
-Eventos Focus. Apenas após esse contrato e seus testes deverá a conclusão consultar as
-evidências aprovadas, sem transformar teste offline em aceite de homologação real.
+O contrato `fiscal_channel_homologation_coverage_v1` apresenta um diagnóstico somente
+leitura da cobertura exigida pelo canal. Ele distingue operações aprovadas, pendentes,
+rejeitadas e ausentes e mantém visível a lacuna interna de Eventos Focus. O diagnóstico
+declara explicitamente que não altera a homologação e não libera produção.
+
+O próximo passo é ligar a conclusão da homologação a um portão formal que exija cobertura
+completa e falhe fechado diante de qualquer pendência ou lacuna. Esse portão continuará
+separado da ativação de produção e não poderá transformar teste offline em aceite real.

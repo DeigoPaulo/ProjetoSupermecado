@@ -2660,7 +2660,7 @@ class FiscalTests(TestCase):
         self.assertContains(response, "Homologação real")
         self.assertContains(response, "Roteiros de homologação do canal")
         self.assertContains(response, "Aguarda dados reais", count=6)
-        self.assertContains(response, "Bloqueada", count=2)
+        self.assertContains(response, "Bloqueada", count=3)
         self.assertContains(response, "Bloqueado", count=1)
         self.assertNotContains(response, "Executar roteiro")
     def test_form_configuracao_fiscal_exibe_secoes_operacionais(self):

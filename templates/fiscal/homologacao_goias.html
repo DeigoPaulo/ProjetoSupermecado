@@ -88,6 +88,23 @@
   </div>
 </section>{% endif %}
 
+{% if cobertura_evidencias %}<section class="panel">
+  <div class="panel-heading">
+    <div><h2>Cobertura das evidências</h2><p>Diagnóstico somente leitura. Não conclui a homologação nem libera produção.</p></div>
+    <span class="status {% if cobertura_evidencias.cobertura_completa %}status-success{% else %}status-warning{% endif %}">{{ cobertura_evidencias.aprovadas }}/{{ cobertura_evidencias.total }} aprovadas</span>
+  </div>
+  <div class="table-wrapper">
+    <table>
+      <thead><tr><th>Operação</th><th>Cobertura atual</th></tr></thead>
+      <tbody>{% for item in cobertura_evidencias.itens %}<tr>
+        <td><strong>{{ item.titulo }}</strong></td>
+        <td><span class="status {% if item.aprovada %}status-success{% elif item.estado == 'REJEITADA' or item.bloqueada %}status-danger{% else %}status-warning{% endif %}">{{ item.estado_display }}</span></td>
+      </tr>{% endfor %}</tbody>
+    </table>
+  </div>
+  {% if cobertura_evidencias.bloqueadas %}<div class="form-note form-note-danger">O canal possui {{ cobertura_evidencias.bloqueadas }} operação bloqueada por lacuna interna. Evidências das demais operações não ocultam esse bloqueio.</div>{% endif %}
+</section>{% endif %}
+
 {% if evidencia_form %}<section class="panel">
   <div class="panel-heading"><div><h2>Evidências reais do canal</h2><p>Registre apenas referência protegida e hash. Não inclua token, certificado, CSC, senha ou arquivo bruto.</p></div></div>
   <form method="post" action="{% url 'fiscal:registrar_evidencia_homologacao_canal' configuracao.pk %}" class="form-grid">

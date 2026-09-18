@@ -17,7 +17,16 @@ from .roteiros_homologacao_canais import construir_roteiros_homologacao
 
 
 CONTRATO_REGISTRO_EVIDENCIA_HOMOLOGACAO = "fiscal_channel_homologation_evidence_v1"
+CONTRATO_COBERTURA_EVIDENCIA_HOMOLOGACAO = "fiscal_channel_homologation_coverage_v1"
 SHA256_RE = re.compile(r"[0-9a-fA-F]{64}")
+
+ESTADOS_COBERTURA = {
+    "APROVADA": "Aprovada",
+    "PENDENTE": "Pendente de revisão",
+    "REJEITADA": "Rejeitada",
+    "AUSENTE": "Sem evidência",
+    "BLOQUEADA_LACUNA_INTERNA": "Bloqueada por lacuna interna",
+}
 
 
 def _exigir_master(usuario):
@@ -38,6 +47,61 @@ def _roteiro(configuracao, operacao):
         ),
         None,
     )
+
+
+def diagnosticar_cobertura_evidencias_homologacao(configuracao):
+    """Resume cobertura real sem alterar o status ou liberar a homologação."""
+    roteiros = [
+        item for item in construir_roteiros_homologacao(settings.BASE_DIR)["roteiros"]
+        if item["canal"] == configuracao.provedor_emissao
+    ]
+    estados_por_operacao = {}
+    for operacao, status in configuracao.evidencias_homologacao_canal.values_list(
+        "operacao", "status"
+    ):
+        estados_por_operacao.setdefault(operacao, set()).add(status)
+
+    itens = []
+    for roteiro in roteiros:
+        estados = estados_por_operacao.get(roteiro["operacao"], set())
+        if roteiro["estado_pre_homologacao"] == "BLOQUEADO_LACUNA_INTERNA":
+            estado = "BLOQUEADA_LACUNA_INTERNA"
+        elif StatusEvidenciaHomologacaoCanal.APROVADA in estados:
+            estado = "APROVADA"
+        elif StatusEvidenciaHomologacaoCanal.PENDENTE in estados:
+            estado = "PENDENTE"
+        elif StatusEvidenciaHomologacaoCanal.REJEITADA in estados:
+            estado = "REJEITADA"
+        else:
+            estado = "AUSENTE"
+        itens.append({
+            "operacao": roteiro["operacao"],
+            "titulo": OperacaoHomologacaoFiscal(roteiro["operacao"]).label,
+            "estado": estado,
+            "estado_display": ESTADOS_COBERTURA[estado],
+            "aprovada": estado == "APROVADA",
+            "bloqueada": estado == "BLOQUEADA_LACUNA_INTERNA",
+        })
+
+    contagens = {
+        estado: sum(item["estado"] == estado for item in itens)
+        for estado in ESTADOS_COBERTURA
+    }
+    total = len(itens)
+    return {
+        "contrato": CONTRATO_COBERTURA_EVIDENCIA_HOMOLOGACAO,
+        "canal": configuracao.provedor_emissao,
+        "itens": itens,
+        "total": total,
+        "aprovadas": contagens["APROVADA"],
+        "pendentes": contagens["PENDENTE"],
+        "rejeitadas": contagens["REJEITADA"],
+        "ausentes": contagens["AUSENTE"],
+        "bloqueadas": contagens["BLOQUEADA_LACUNA_INTERNA"],
+        "cobertura_completa": total > 0 and contagens["APROVADA"] == total,
+        "altera_homologacao": False,
+        "libera_producao": False,
+    }
 
 
 def registrar_evidencia_homologacao(

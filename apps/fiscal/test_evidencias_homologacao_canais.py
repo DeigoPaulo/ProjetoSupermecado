@@ -13,6 +13,7 @@ from .models import (
     StatusEvidenciaHomologacaoCanal,
 )
 from .services_evidencias_homologacao import (
+    diagnosticar_cobertura_evidencias_homologacao,
     registrar_evidencia_homologacao,
     revisar_evidencia_homologacao,
 )
@@ -179,3 +180,39 @@ class EvidenciasHomologacaoCanaisTests(TestCase):
         )
 
         self.assertEqual(resposta.status_code, 403)
+
+    def test_diagnostico_distingue_estados_e_preserva_lacuna_focus(self):
+        pendente = self.registrar(operacao="AUTORIZACAO")
+        aprovada = self.registrar(operacao="CONSULTA", referencia="cofre://consulta")
+        rejeitada = self.registrar(operacao="CANCELAMENTO", referencia="cofre://cancelamento")
+        revisar_evidencia_homologacao(
+            aprovada, decisao="APROVADA", observacoes="Conferida.", usuario=self.master
+        )
+        revisar_evidencia_homologacao(
+            rejeitada, decisao="REJEITADA", observacoes="Retorno divergiu.", usuario=self.master
+        )
+
+        diagnostico = diagnosticar_cobertura_evidencias_homologacao(self.configuracao)
+        estados = {item["operacao"]: item["estado"] for item in diagnostico["itens"]}
+
+        self.assertEqual(estados["AUTORIZACAO"], "PENDENTE")
+        self.assertEqual(estados["CONSULTA"], "APROVADA")
+        self.assertEqual(estados["CANCELAMENTO"], "REJEITADA")
+        self.assertEqual(estados["REJEICAO"], "AUSENTE")
+        self.assertEqual(estados["EVENTOS"], "BLOQUEADA_LACUNA_INTERNA")
+        self.assertFalse(diagnostico["cobertura_completa"])
+        self.assertFalse(diagnostico["altera_homologacao"])
+        self.assertFalse(diagnostico["libera_producao"])
+        self.assertEqual(pendente.status, StatusEvidenciaHomologacaoCanal.PENDENTE)
+
+    def test_interface_master_exibe_diagnostico_sem_mudar_homologacao(self):
+        self.client.force_login(self.master)
+
+        pagina = self.client.get(
+            f"/fiscal/configuracoes/{self.configuracao.pk}/homologacao-goias/"
+        )
+
+        self.assertContains(pagina, "Cobertura das evidências")
+        self.assertContains(pagina, "0/7 aprovadas")
+        self.assertContains(pagina, "Bloqueada por lacuna interna")
+        self.assertContains(pagina, "Não conclui a homologação nem libera produção")

@@ -618,6 +618,28 @@ apps/fiscal/test_evidencias_homologacao_canais.py,
 apps/fiscal/migrations/0054_evidenciahomologacaocanal.py e
 docs/REGISTRO_EVIDENCIAS_HOMOLOGACAO_CANAIS.md.
 
+## Ponto de retomada — ciclo 138, 18/09/2026
+
+Criado o diagnóstico somente leitura da cobertura de evidências reais por operação e canal,
+sem alterar o registro técnico da homologação e sem liberar produção.
+
+- [x] Consolidar por operação os estados aprovada, pendente, rejeitada e ausente.
+- [x] Dar precedência à evidência aprovada quando houver histórico de mais de uma tentativa.
+- [x] Preservar como bloqueada a lacuna interna do canal mesmo que existam evidências das
+  demais operações.
+- [x] Exibir ao Master a cobertura das sete operações e a quantidade efetivamente aprovada.
+- [x] Declarar no contrato que o diagnóstico não altera homologação nem libera produção.
+- [x] Validar 10 testes próprios e 22 testes conjuntos do registro, interface, roteiros,
+  roteamento e capacidade Focus.
+- [ ] Próximo passo exato: criar o portão formal de conclusão que exija cobertura completa e
+  falhe fechado diante de evidência pendente, rejeitada, ausente ou lacuna interna; manter a
+  ativação de produção como decisão posterior e independente.
+
+Arquivos principais: apps/fiscal/services_evidencias_homologacao.py,
+apps/fiscal/views.py, templates/fiscal/homologacao_goias.html,
+apps/fiscal/test_evidencias_homologacao_canais.py e apps/fiscal/tests.py.
+Migrações: nenhuma.
+
 ## Ponto de retomada — ciclo 137, 18/09/2026
 
 Disponibilizado ao Master o fluxo visual de registro e revisão manual das evidências de
