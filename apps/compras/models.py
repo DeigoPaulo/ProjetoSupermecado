@@ -264,4 +264,62 @@ class ItemEntradaCompra(models.Model):
     def __str__(self):
         return f"{self.quantidade} x {self.produto}"
 
+
+class FaturaNFeEntrada(models.Model):
+    entrada = models.OneToOneField(
+        EntradaCompra,
+        on_delete=models.CASCADE,
+        related_name="fatura_nfe",
+    )
+    numero = models.CharField(max_length=60, blank=True)
+    valor_original = models.DecimalField(max_digits=13, decimal_places=2, null=True, blank=True)
+    valor_desconto = models.DecimalField(max_digits=13, decimal_places=2, null=True, blank=True)
+    valor_liquido = models.DecimalField(max_digits=13, decimal_places=2, null=True, blank=True)
+
+    @property
+    def parcelas_financeiras_validas(self):
+        if self.valor_liquido is None:
+            return False
+        duplicatas = list(self.duplicatas.all())
+        return bool(
+            duplicatas
+            and sum((item.valor for item in duplicatas), Decimal("0.00"))
+            == self.valor_liquido
+        )
+
+    def __str__(self):
+        return f"Fatura NF-e da entrada {self.entrada_id}"
+
+
+class DuplicataNFeEntrada(models.Model):
+    fatura = models.ForeignKey(
+        FaturaNFeEntrada,
+        on_delete=models.CASCADE,
+        related_name="duplicatas",
+    )
+    sequencia = models.PositiveSmallIntegerField()
+    numero = models.CharField(max_length=60)
+    vencimento = models.DateField()
+    valor = models.DecimalField(max_digits=13, decimal_places=2)
+
+    class Meta:
+        ordering = ["sequencia"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["fatura", "sequencia"],
+                name="compras_dup_nfe_fatura_seq_uniq",
+            ),
+            models.UniqueConstraint(
+                fields=["fatura", "numero"],
+                name="compras_dup_nfe_fatura_num_uniq",
+            ),
+            models.CheckConstraint(
+                condition=models.Q(valor__gt=0),
+                name="compras_dup_nfe_valor_positivo",
+            ),
+        ]
+
+    def __str__(self):
+        return f"Duplicata {self.numero} da entrada {self.fatura.entrada_id}"
+
 # Create your models here.

@@ -171,6 +171,13 @@ class ContaFinanceira(models.Model):
     cliente = models.ForeignKey("clientes.Cliente", on_delete=models.PROTECT, null=True, blank=True, related_name="contas_receber")
     venda = models.ForeignKey("vendas.Venda", on_delete=models.PROTECT, null=True, blank=True, related_name="contas_financeiras")
     entrada_compra = models.ForeignKey("compras.EntradaCompra", on_delete=models.PROTECT, null=True, blank=True, related_name="contas_financeiras")
+    duplicata_nfe_entrada = models.OneToOneField(
+        "compras.DuplicataNFeEntrada",
+        on_delete=models.PROTECT,
+        null=True,
+        blank=True,
+        related_name="conta_financeira",
+    )
     valor = models.DecimalField(max_digits=12, decimal_places=2)
     vencimento = models.DateField()
     data_pagamento = models.DateField(null=True, blank=True)

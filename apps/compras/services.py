@@ -612,6 +612,29 @@ def _criar_conta_pagar_compra(entrada):
         nome="Compras de mercadorias",
         defaults={"tipo": TipoContaFinanceira.PAGAR},
     )
+    fatura = entrada.fatura_nfe if hasattr(entrada, "fatura_nfe") else None
+    duplicatas = list(fatura.duplicatas.all()) if fatura else []
+    if fatura and fatura.parcelas_financeiras_validas:
+        contas = []
+        for duplicata in duplicatas:
+            conta, _ = ContaFinanceira.objects.get_or_create(
+                duplicata_nfe_entrada=duplicata,
+                defaults={
+                    "entrada_compra": entrada,
+                    "tipo": TipoContaFinanceira.PAGAR,
+                    "descricao": (
+                        f"Compra {entrada.id} - parcela {duplicata.numero} - {entrada.fornecedor}"
+                    ),
+                    "categoria": categoria,
+                    "filial": entrada.filial,
+                    "fornecedor": entrada.fornecedor,
+                    "valor": duplicata.valor,
+                    "vencimento": duplicata.vencimento,
+                    "usuario": entrada.usuario,
+                },
+            )
+            contas.append(conta)
+        return contas
     vencimento = entrada.vencimento_financeiro or entrada.data_emissao or timezone.localdate()
     conta, criada = ContaFinanceira.objects.get_or_create(
         entrada_compra=entrada,

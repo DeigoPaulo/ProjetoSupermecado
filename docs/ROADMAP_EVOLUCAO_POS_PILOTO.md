@@ -76,7 +76,7 @@ P1:
 
 P2:
 
-- [ ] parcelas/duplicatas da NF-e;
+- [x] parcelas/duplicatas da NF-e recebida, preservadas na entrada e vinculadas às contas a pagar;
 - [ ] criptografia do CSC;
 - [ ] constraints de contas originadas por compra/venda;
 - [ ] contrato temporal do snapshot contábil;
@@ -617,6 +617,38 @@ apps/fiscal/services_evidencias_homologacao.py,
 apps/fiscal/test_evidencias_homologacao_canais.py,
 apps/fiscal/migrations/0054_evidenciahomologacaocanal.py e
 docs/REGISTRO_EVIDENCIAS_HOMOLOGACAO_CANAIS.md.
+
+## Ponto de retomada — ciclo 143, 18/09/2026
+
+Concluída a pendência P2 de parcelas/duplicatas da NF-e recebida, eliminando a perda da
+estrutura financeira na importação de compras parceladas.
+
+- [x] Confirmar no MOC 7.0 oficial o grupo `cobr/fat/dup`, limite de 120 parcelas, numeração
+  sequencial, vencimentos crescentes e valor obrigatório de cada parcela.
+- [x] Preservar número e valores da fatura e, por duplicata, sequência, número, vencimento e
+  valor, sempre vinculados à entrada de compra importada.
+- [x] Validar número `001...`, ordem dos vencimentos, valor positivo e igualdade entre a
+  soma das duplicatas e `vLiq` quando a fatura líquida estiver informada.
+- [x] Criar uma conta a pagar por duplicata íntegra, com vínculo unívoco entre conta,
+  duplicata e entrada de compra.
+- [x] Manter compatibilidade segura para XML sem fatura líquida íntegra: preservar o dado
+  recebido, mas gerar somente a conta tradicional pelo total fiscal, sem inventar parcelas.
+- [x] Exibir as parcelas íntegras na revisão e no detalhe da entrada antes e depois da
+  finalização.
+- [x] Corrigir dois testes legados que simulavam conta paga sem data de pagamento, estado já
+  proibido pela constraint de baixa integral vigente.
+- [x] Validar 51 testes focados de compras, importação XML e baixa integral; `check` limpo,
+  `makemigrations --check --dry-run` sem mudanças e `git diff --check` aprovado.
+- [x] Gerar as migrations `compras.0012` e `financeiro.0024`, sem aplicar no banco operacional.
+- [ ] Próximo passo registrado: P2 — revisar e implementar a criptografia do CSC em repouso,
+  incluindo fluxo auditado de inclusão/rotação/revogação e testes de não exposição. Não
+  iniciar antes de uma nova autorização de continuidade.
+
+Arquivos principais: apps/compras/models.py, apps/compras/services.py,
+apps/compras/services_xml.py, apps/compras/tests.py, apps/financeiro/models.py,
+templates/compras/entrada_form.html e templates/compras/entrada_detalhe.html.
+Migrações: apps/compras/migrations/0012_faturanfeentrada_duplicatanfeentrada.py e
+apps/financeiro/migrations/0024_contafinanceira_duplicata_nfe_entrada.py.
 
 ## Ponto de retomada — ciclo 142, 18/09/2026
 

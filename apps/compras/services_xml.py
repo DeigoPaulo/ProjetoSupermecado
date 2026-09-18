@@ -15,7 +15,15 @@ from apps.produtos.models import Produto
 from apps.fiscal.chave_acesso import canonicalizar_chave_acesso_estrutural
 from apps.fiscal.estrategia_normalizacao_cnpj import canonicalizar_cnpj
 
-from .models import EntradaCompra, ItemEntradaCompra, PedidoCompra, StatusEntradaCompra, StatusPedidoCompra
+from .models import (
+    DuplicataNFeEntrada,
+    EntradaCompra,
+    FaturaNFeEntrada,
+    ItemEntradaCompra,
+    PedidoCompra,
+    StatusEntradaCompra,
+    StatusPedidoCompra,
+)
 from .services import avaliar_conferencia_entrada
 
 
@@ -176,14 +184,56 @@ def ler_xml_nfe(conteudo):
     if not itens:
         raise ValidationError("A NF-e não possui itens de produto.")
 
-    vencimentos = []
-    for duplicata in inf_nfe.findall(f".//{namespace}dup"):
-        valor = _texto(duplicata, caminho("dVenc"))
-        if valor:
-            try:
-                vencimentos.append(date.fromisoformat(valor))
-            except ValueError:
-                raise ValidationError("Data de vencimento inválida no XML.") from None
+    cobranca = inf_nfe.find(caminho("cobr"))
+    fatura_xml = cobranca.find(caminho("fat")) if cobranca is not None else None
+    fatura = None
+    if fatura_xml is not None:
+        fatura = {
+            "numero": _texto(fatura_xml, caminho("nFat")),
+            "valor_original": _decimal(_texto(fatura_xml, caminho("vOrig")), "valor original da fatura").quantize(CENTAVOS) if _texto(fatura_xml, caminho("vOrig")) else None,
+            "valor_desconto": _decimal(_texto(fatura_xml, caminho("vDesc")), "desconto da fatura").quantize(CENTAVOS) if _texto(fatura_xml, caminho("vDesc")) else None,
+            "valor_liquido": _decimal(_texto(fatura_xml, caminho("vLiq")), "valor líquido da fatura").quantize(CENTAVOS) if _texto(fatura_xml, caminho("vLiq")) else None,
+        }
+
+    duplicatas = []
+    vencimento_anterior = None
+    elementos_duplicata = cobranca.findall(caminho("dup")) if cobranca is not None else []
+    if len(elementos_duplicata) > 120:
+        raise ValidationError("A NF-e excede o limite de 120 parcelas.")
+    for sequencia, duplicata in enumerate(elementos_duplicata, start=1):
+        numero = _texto(duplicata, caminho("nDup"), obrigatorio=True, rotulo="número da parcela")
+        numero_esperado = f"{sequencia:03d}"
+        if numero != numero_esperado:
+            raise ValidationError(
+                f"As parcelas da NF-e devem ser sequenciais; esperado {numero_esperado}."
+            )
+        vencimento_texto = _texto(
+            duplicata, caminho("dVenc"), obrigatorio=True, rotulo="vencimento da parcela"
+        )
+        try:
+            vencimento = date.fromisoformat(vencimento_texto)
+        except ValueError:
+            raise ValidationError("Data de vencimento inválida no XML.") from None
+        if vencimento_anterior and vencimento < vencimento_anterior:
+            raise ValidationError("Os vencimentos das parcelas devem estar em ordem crescente.")
+        valor = _decimal(
+            _texto(duplicata, caminho("vDup"), obrigatorio=True, rotulo="valor da parcela"),
+            "valor da parcela",
+        ).quantize(CENTAVOS, rounding=ROUND_HALF_UP)
+        if valor <= 0:
+            raise ValidationError("O valor de cada parcela da NF-e deve ser positivo.")
+        duplicatas.append({
+            "sequencia": sequencia,
+            "numero": numero,
+            "vencimento": vencimento,
+            "valor": valor,
+        })
+        vencimento_anterior = vencimento
+
+    if duplicatas and fatura and fatura["valor_liquido"] is not None:
+        total_duplicatas = sum((item["valor"] for item in duplicatas), Decimal("0.00"))
+        if total_duplicatas != fatura["valor_liquido"].quantize(CENTAVOS):
+            raise ValidationError("A soma das parcelas difere do valor líquido da fatura.")
 
     data_valor = _texto(ide, caminho("dhEmi")) or _texto(ide, caminho("dEmi"))
     total_nfe = next((elemento for elemento in inf_nfe.iter() if _sem_namespace(elemento.tag) == "ICMSTot"), None)
@@ -211,7 +261,9 @@ def ler_xml_nfe(conteudo):
         "emitente_cnpj": emitente_cnpj,
         "emitente_nome": _texto(emitente, caminho("xNome")),
         "destinatario_cnpj": destinatario_cnpj,
-        "vencimento": min(vencimentos) if vencimentos else None,
+        "vencimento": duplicatas[0]["vencimento"] if duplicatas else None,
+        "fatura": fatura,
+        "duplicatas": duplicatas,
         "total_documento": total_documento,
         "itens": itens,
     }
@@ -367,6 +419,15 @@ def importar_xml_entrada(conteudo, *, usuario, gerar_conta_financeira=True, ip=N
             )
             for item, produto in itens_resolvidos
         ])
+        if dados["fatura"] is not None or dados["duplicatas"]:
+            fatura = FaturaNFeEntrada.objects.create(
+                entrada=entrada,
+                **(dados["fatura"] or {}),
+            )
+            DuplicataNFeEntrada.objects.bulk_create([
+                DuplicataNFeEntrada(fatura=fatura, **duplicata)
+                for duplicata in dados["duplicatas"]
+            ])
         if pedido_origem:
             pedido_origem.status = StatusPedidoCompra.CONVERTIDO
             pedido_origem.save(update_fields=["status", "updated_at"])

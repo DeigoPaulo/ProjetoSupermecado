@@ -18,7 +18,17 @@
 {% if object.chave_acesso_xml %}
   <section class="operation-notice">
     Rascunho importado da NF-e {{ object.chave_acesso_xml }}. Confira fornecedor, filial, itens, quantidades,
-    custos e vencimento antes de finalizar.
+    custos e parcelas antes de finalizar.
+  </section>
+{% endif %}
+
+{% if object.fatura_nfe.parcelas_financeiras_validas %}
+  <section class="panel">
+    <div class="panel-heading"><div><h2>Parcelas importadas da NF-e</h2><p>Dados preservados do XML. Ao finalizar, cada parcela gera uma conta a pagar separada.</p></div></div>
+    <div class="table-wrapper"><table>
+      <thead><tr><th>Parcela</th><th>Vencimento</th><th>Valor</th></tr></thead>
+      <tbody>{% for duplicata in object.fatura_nfe.duplicatas.all %}<tr><td>{{ duplicata.numero }}</td><td>{{ duplicata.vencimento|date:"d/m/Y" }}</td><td>R$ {{ duplicata.valor|floatformat:2 }}</td></tr>{% endfor %}</tbody>
+    </table></div>
   </section>
 {% endif %}
 
@@ -60,7 +70,7 @@
         <div class="field">
           {{ form.total_documento.label_tag }}
           {{ form.total_documento }}
-          <small>Total fiscal da NF-e usado na conta a pagar.</small>
+          <small>Sem parcelas no XML, este total é usado na conta a pagar. Com parcelas, prevalecem os valores de cada duplicata.</small>
           {{ form.total_documento.errors }}
         </div>
       {% endif %}

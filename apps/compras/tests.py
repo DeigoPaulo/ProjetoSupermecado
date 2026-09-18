@@ -18,7 +18,9 @@ from apps.produtos.models import Categoria, Produto
 
 from .models import (
     CotacaoCompra,
+    DuplicataNFeEntrada,
     EntradaCompra,
+    FaturaNFeEntrada,
     ItemCotacaoCompra,
     ItemEntradaCompra,
     ItemPedidoCompra,
@@ -213,7 +215,8 @@ class ComprasFinanceiroTests(TestCase):
         conta = ContaFinanceira.objects.get(entrada_compra=entrada)
         conta.status = StatusContaFinanceira.PAGA
         conta.valor_pago = Decimal("8.00")
-        conta.save(update_fields=["status", "valor_pago", "atualizado_em"])
+        conta.data_pagamento = timezone.localdate()
+        conta.save(update_fields=["status", "valor_pago", "data_pagamento", "atualizado_em"])
 
         with self.assertRaisesMessage(ValidationError, "Conta paga não pode ser cancelada."):
             cancelar_entrada_compra(
@@ -280,7 +283,8 @@ class ComprasFinanceiroTests(TestCase):
         conta = ContaFinanceira.objects.get(entrada_compra=entrada)
         conta.status = StatusContaFinanceira.PAGA
         conta.valor_pago = Decimal("16.00")
-        conta.save(update_fields=["status", "valor_pago", "atualizado_em"])
+        conta.data_pagamento = timezone.localdate()
+        conta.save(update_fields=["status", "valor_pago", "data_pagamento", "atualizado_em"])
         estoque = Estoque.objects.get(produto=self.produto, filial=self.filial)
         estoque.quantidade_atual = Decimal("1.000")
         estoque.save(update_fields=["quantidade_atual"])
@@ -1481,6 +1485,60 @@ class ImportacaoXMLEntradaTests(TestCase):
         self.assertEqual(Estoque.objects.count(), 0)
         self.assertEqual(ContaFinanceira.objects.count(), 0)
         self.assertTrue(LogAuditoria.objects.filter(acao="IMPORTACAO_XML_ENTRADA").exists())
+
+    def _xml_com_duas_parcelas(self):
+        cobranca_original = (
+            b"<cobr><dup><nDup>001</nDup><dVenc>2026-08-15</dVenc>"
+            b"<vDup>16.50</vDup></dup></cobr>"
+        )
+        cobranca_parcelada = (
+            b"<cobr><fat><nFat>FAT-123</nFat><vOrig>18.00</vOrig><vDesc>0.00</vDesc>"
+            b"<vLiq>18.00</vLiq></fat>"
+            b"<dup><nDup>001</nDup><dVenc>2026-08-15</dVenc><vDup>9.00</vDup></dup>"
+            b"<dup><nDup>002</nDup><dVenc>2026-09-15</dVenc><vDup>9.00</vDup></dup></cobr>"
+        )
+        return self._xml().replace(cobranca_original, cobranca_parcelada)
+
+    def test_importacao_preserva_fatura_e_gera_uma_conta_por_duplicata(self):
+        entrada = importar_xml_entrada(self._xml_com_duas_parcelas(), usuario=self.usuario)
+
+        fatura = FaturaNFeEntrada.objects.get(entrada=entrada)
+        duplicatas = list(fatura.duplicatas.all())
+        self.assertEqual(fatura.numero, "FAT-123")
+        self.assertEqual(fatura.valor_liquido, Decimal("18.00"))
+        self.assertEqual([item.numero for item in duplicatas], ["001", "002"])
+        self.assertEqual([item.valor for item in duplicatas], [Decimal("9.00"), Decimal("9.00")])
+
+        finalizar_entrada_compra(entrada)
+
+        contas = list(ContaFinanceira.objects.filter(entrada_compra=entrada).order_by("vencimento"))
+        self.assertEqual(len(contas), 2)
+        self.assertEqual([conta.valor for conta in contas], [Decimal("9.00"), Decimal("9.00")])
+        self.assertEqual(
+            [conta.duplicata_nfe_entrada.numero for conta in contas],
+            ["001", "002"],
+        )
+
+    def test_importacao_recusa_parcelas_fora_de_sequencia(self):
+        xml = self._xml_com_duas_parcelas().replace(
+            b"<nDup>001</nDup>", b"<nDup>002</nDup>", 1
+        )
+
+        with self.assertRaisesMessage(ValidationError, "esperado 001"):
+            importar_xml_entrada(xml, usuario=self.usuario)
+
+        self.assertFalse(EntradaCompra.objects.exists())
+        self.assertFalse(DuplicataNFeEntrada.objects.exists())
+
+    def test_importacao_recusa_soma_de_parcelas_divergente_da_fatura(self):
+        xml = self._xml_com_duas_parcelas().replace(
+            b"<vDup>9.00</vDup>", b"<vDup>8.00</vDup>", 1
+        )
+
+        with self.assertRaisesMessage(ValidationError, "difere do valor líquido"):
+            importar_xml_entrada(xml, usuario=self.usuario)
+
+        self.assertFalse(EntradaCompra.objects.exists())
 
     def test_tela_importa_e_redireciona_para_revisao(self):
         response = self.client.post(

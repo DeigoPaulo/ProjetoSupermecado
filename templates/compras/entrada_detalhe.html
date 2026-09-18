@@ -39,7 +39,16 @@
 {% if entrada.chave_acesso_xml %}
   <section class="operation-notice">
     Entrada importada da NF-e {{ entrada.chave_acesso_xml }} em {{ entrada.importada_xml_em|date:"d/m/Y H:i" }}.
-    O total fiscal da nota é usado no financeiro; os itens abaixo determinam estoque e custo.
+    Quando houver parcelas no XML, cada duplicata é preservada no financeiro; os itens abaixo determinam estoque e custo.
+  </section>
+{% endif %}
+
+{% if entrada.fatura_nfe.parcelas_financeiras_validas %}
+  <section class="panel mt-panel">
+    <div class="panel-title">Fatura e parcelas da NF-e</div>
+    <table><thead><tr><th>Parcela</th><th>Vencimento</th><th>Valor</th></tr></thead><tbody>
+      {% for duplicata in entrada.fatura_nfe.duplicatas.all %}<tr><td>{{ duplicata.numero }}</td><td>{{ duplicata.vencimento|date:"d/m/Y" }}</td><td>R$ {{ duplicata.valor|floatformat:2 }}</td></tr>{% endfor %}
+    </tbody></table>
   </section>
 {% endif %}
 
