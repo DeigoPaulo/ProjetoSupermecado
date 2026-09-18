@@ -618,6 +618,29 @@ apps/fiscal/test_evidencias_homologacao_canais.py,
 apps/fiscal/migrations/0054_evidenciahomologacaocanal.py e
 docs/REGISTRO_EVIDENCIAS_HOMOLOGACAO_CANAIS.md.
 
+## Ponto de retomada — ciclo 139, 18/09/2026
+
+Conectado à homologação o portão formal de cobertura completa por canal, mantendo a
+liberação de produção como decisão independente e posterior.
+
+- [x] Criar o contrato `fiscal_channel_homologation_completion_gate_v1`.
+- [x] Bloquear a conclusão diante de operação sem evidência, pendente, rejeitada ou com
+  lacuna interna.
+- [x] Exigir simultaneamente checklist técnico automático pronto e cobertura integral de
+  evidências aprovadas.
+- [x] Exibir motivos objetivos do bloqueio sem revelar referência, XML, certificado ou
+  credencial.
+- [x] Confirmar que o portão não altera configuração do canal e não libera produção.
+- [x] Validar 12 testes próprios, incluindo tentativa de conclusão com checklist automático
+  totalmente pronto e cobertura incompleta.
+- [ ] Próximo passo exato: tornar explícita na tela Master a situação do portão de conclusão
+  e criar o cenário positivo completo para o canal SEFAZ direta em teste isolado, sem rede,
+  provando que a conclusão técnica pode ser liberada sem ativar produção.
+
+Arquivos principais: apps/fiscal/services_evidencias_homologacao.py,
+apps/fiscal/views.py, templates/fiscal/homologacao_goias.html e
+apps/fiscal/test_evidencias_homologacao_canais.py. Migrações: nenhuma.
+
 ## Ponto de retomada — ciclo 138, 18/09/2026
 
 Criado o diagnóstico somente leitura da cobertura de evidências reais por operação e canal,

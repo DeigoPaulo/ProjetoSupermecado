@@ -109,6 +109,7 @@ from .readiness import diagnostico_prontidao_homologacao_goias
 from .roteamento_operacoes_fiscais import diagnosticar_capacidades_filial
 from .roteiros_homologacao_canais import construir_roteiros_homologacao
 from .services_evidencias_homologacao import (
+    avaliar_portao_conclusao_homologacao,
     diagnosticar_cobertura_evidencias_homologacao,
     registrar_evidencia_homologacao,
     revisar_evidencia_homologacao,
@@ -1452,6 +1453,7 @@ def homologacao_goias(request, pk):
 
     homologacao, _ = HomologacaoFiscal.objects.get_or_create(configuracao=configuracao)
     checklist = _checklist_homologacao_goias(configuracao)
+    portao_conclusao = avaliar_portao_conclusao_homologacao(configuracao)
     capacidades_canal = (
         diagnosticar_capacidades_filial(configuracao.filial)
         if request.user.is_superuser
@@ -1478,6 +1480,16 @@ def homologacao_goias(request, pk):
         if form.is_valid():
             if form.cleaned_data["status"] == StatusHomologacaoFiscal.CONCLUIDA and not itens_automaticos_prontos:
                 form.add_error("status", "Conclua os itens técnicos automáticos antes de encerrar a homologação.")
+            elif (
+                form.cleaned_data["status"] == StatusHomologacaoFiscal.CONCLUIDA
+                and not portao_conclusao["permitido"]
+            ):
+                form.add_error(
+                    "status",
+                    "A conclusão exige evidência aprovada para todas as operações do canal: "
+                    + "; ".join(portao_conclusao["motivos"])
+                    + ".",
+                )
             else:
                 homologacao = form.save(commit=False)
                 if homologacao.status == StatusHomologacaoFiscal.CONCLUIDA:
@@ -1510,6 +1522,7 @@ def homologacao_goias(request, pk):
         "roteiros_canal": roteiros_canal,
         "evidencias_canal": evidencias_canal,
         "cobertura_evidencias": cobertura_evidencias,
+        "portao_conclusao": portao_conclusao if request.user.is_superuser else None,
         "evidencia_form": evidencia_form,
     })
 

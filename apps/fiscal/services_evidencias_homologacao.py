@@ -18,6 +18,7 @@ from .roteiros_homologacao_canais import construir_roteiros_homologacao
 
 CONTRATO_REGISTRO_EVIDENCIA_HOMOLOGACAO = "fiscal_channel_homologation_evidence_v1"
 CONTRATO_COBERTURA_EVIDENCIA_HOMOLOGACAO = "fiscal_channel_homologation_coverage_v1"
+CONTRATO_PORTAO_CONCLUSAO_HOMOLOGACAO = "fiscal_channel_homologation_completion_gate_v1"
 SHA256_RE = re.compile(r"[0-9a-fA-F]{64}")
 
 ESTADOS_COBERTURA = {
@@ -100,6 +101,26 @@ def diagnosticar_cobertura_evidencias_homologacao(configuracao):
         "bloqueadas": contagens["BLOQUEADA_LACUNA_INTERNA"],
         "cobertura_completa": total > 0 and contagens["APROVADA"] == total,
         "altera_homologacao": False,
+        "libera_producao": False,
+    }
+
+
+def avaliar_portao_conclusao_homologacao(configuracao):
+    cobertura = diagnosticar_cobertura_evidencias_homologacao(configuracao)
+    motivos = []
+    if cobertura["ausentes"]:
+        motivos.append(f'{cobertura["ausentes"]} operação(ões) sem evidência')
+    if cobertura["pendentes"]:
+        motivos.append(f'{cobertura["pendentes"]} evidência(s) pendente(s) de revisão')
+    if cobertura["rejeitadas"]:
+        motivos.append(f'{cobertura["rejeitadas"]} operação(ões) somente com evidência rejeitada')
+    if cobertura["bloqueadas"]:
+        motivos.append(f'{cobertura["bloqueadas"]} operação(ões) com lacuna interna')
+    return {
+        "contrato": CONTRATO_PORTAO_CONCLUSAO_HOMOLOGACAO,
+        "permitido": cobertura["cobertura_completa"],
+        "motivos": tuple(motivos),
+        "cobertura": cobertura,
         "libera_producao": False,
     }
 

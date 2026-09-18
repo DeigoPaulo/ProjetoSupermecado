@@ -9,10 +9,13 @@ from .models import (
     AmbienteFiscal,
     ConfiguracaoFiscal,
     EvidenciaHomologacaoCanal,
+    HomologacaoFiscal,
     ProvedorEmissaoFiscal,
     StatusEvidenciaHomologacaoCanal,
+    StatusHomologacaoFiscal,
 )
 from .services_evidencias_homologacao import (
+    avaliar_portao_conclusao_homologacao,
     diagnosticar_cobertura_evidencias_homologacao,
     registrar_evidencia_homologacao,
     revisar_evidencia_homologacao,
@@ -216,3 +219,32 @@ class EvidenciasHomologacaoCanaisTests(TestCase):
         self.assertContains(pagina, "0/7 aprovadas")
         self.assertContains(pagina, "Bloqueada por lacuna interna")
         self.assertContains(pagina, "Não conclui a homologação nem libera produção")
+
+    def test_portao_falha_fechado_com_ausencia_e_lacuna_sem_liberar_producao(self):
+        portao = avaliar_portao_conclusao_homologacao(self.configuracao)
+
+        self.assertFalse(portao["permitido"])
+        self.assertFalse(portao["libera_producao"])
+        self.assertTrue(any("sem evidência" in motivo for motivo in portao["motivos"]))
+        self.assertTrue(any("lacuna interna" in motivo for motivo in portao["motivos"]))
+
+    def test_interface_bloqueia_conclusao_mesmo_com_checklist_automatico_pronto(self):
+        self.client.force_login(self.master)
+        checklist_pronto = [{"titulo": "Teste", "pronto": True, "detalhe": "OK"}]
+
+        from unittest.mock import patch
+        with patch("apps.fiscal.views._checklist_homologacao_goias", return_value=checklist_pronto):
+            resposta = self.client.post(
+                f"/fiscal/configuracoes/{self.configuracao.pk}/homologacao-goias/",
+                {
+                    "status": StatusHomologacaoFiscal.CONCLUIDA,
+                    "responsavel_tecnico": "Equipe fiscal",
+                    "evidencia_referencia": "cofre://dossie",
+                    "observacoes": "Revisão solicitada.",
+                },
+            )
+
+        self.assertEqual(resposta.status_code, 200)
+        self.assertContains(resposta, "A conclusão exige evidência aprovada")
+        homologacao = HomologacaoFiscal.objects.get(configuracao=self.configuracao)
+        self.assertNotEqual(homologacao.status, StatusHomologacaoFiscal.CONCLUIDA)
