@@ -590,6 +590,32 @@ Arquivos principais: apps/fiscal/barcode_chave.py, apps/fiscal/views.py,
 apps/pdv/views.py, templates/fiscal/danfe_nfce.html, testes fiscais e da auditoria.
 Migrações: nenhuma.
 
+## Ponto de retomada — ciclo 134, 18/09/2026
+
+Criados os roteiros versionados de futura homologação para cada combinação de canal e
+operação. Os contratos organizam cenários, evidências, critérios e bloqueios, mas são
+deliberadamente não executáveis enquanto faltarem dados e credenciais reais.
+
+- [x] Versionar `fiscal_channel_homologation_runbook_v1` a partir da matriz de qualificação
+  offline já comprovada.
+- [x] Criar 14 roteiros separados: sete operações para Focus e sete para SEFAZ direta GO.
+- [x] Exigir em cada roteiro identificação da filial/canal/ambiente, responsável, versão,
+  hash sem segredos, retorno protegido, status, protocolo e confronto esperado–obtido.
+- [x] Definir cenários de idempotência, timeout/recuperação, rejeição controlada, consulta,
+  cancelamento, inutilização, eventos e cursor DF-e conforme a operação.
+- [x] Manter 13 roteiros em `AGUARDA_DEPENDENCIAS_EXTERNAS` e Eventos Focus em
+  `BLOQUEADO_LACUNA_INTERNA`.
+- [x] Fixar `executavel_agora`, `rede_permitida`, `producao_permitida` e `aprovado` como
+  falsos em todos os roteiros.
+- [x] Validar 8 testes conjuntos dos roteiros e da matriz de qualificação; nenhuma migration,
+  credencial, certificado, endpoint ou flag operacional foi alterado.
+- [ ] Próximo passo exato: disponibilizar ao Master a consulta desses roteiros por filial e
+  canal, sem botão de execução; depois estruturar o registro auditável das evidências reais.
+
+Arquivos principais: apps/fiscal/roteiros_homologacao_canais.py,
+apps/fiscal/test_roteiros_homologacao_canais.py e
+docs/ROTEIROS_HOMOLOGACAO_CANAIS_FISCAIS.md. Migrações: nenhuma.
+
 ## Ponto de retomada — ciclo 133, 18/09/2026
 
 Levado o roteamento efetivo para o diagnóstico administrativo por filial, sem confundir

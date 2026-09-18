@@ -53,3 +53,8 @@ Focus apresenta cinco de sete capacidades estruturais, com CC-e e manifestação
 SEFAZ direta GO apresenta sete de sete. Em ambos os casos, a coluna de homologação real
 permanece pendente. A caixa DF-e e os detalhes de CC-e/manifestação também passaram a
 diagnosticar o adaptador da filial concreta, em vez de uma configuração global genérica.
+
+No ciclo 134, a matriz passou a alimentar os roteiros não executáveis documentados em
+[ROTEIROS_HOMOLOGACAO_CANAIS_FISCAIS.md](ROTEIROS_HOMOLOGACAO_CANAIS_FISCAIS.md).
+Cada combinação canal/operação agora possui cenários, evidências e critério de aprovação
+explícitos sem qualquer liberação de rede.
