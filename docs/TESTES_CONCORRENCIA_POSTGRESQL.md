@@ -62,4 +62,5 @@ completa, homologação fiscal externa nem o ensaio no ambiente equivalente ao p
 No ciclo 148, o conjunto exato do workflow também foi ensaiado em PostgreSQL 18 local:
 as migrations foram aplicadas desde uma base vazia, os 14 testes críticos passaram e
 o banco descartável foi removido pelo executor. Essa evidência local valida a seleção
-dos testes; a execução hospedada começa quando o workflow chegar ao repositório remoto.
+dos testes. A primeira execução hospedada também foi aprovada no PostgreSQL 16 para o
+HEAD `f6518a8` (GitHub Actions, execução 35598784389).

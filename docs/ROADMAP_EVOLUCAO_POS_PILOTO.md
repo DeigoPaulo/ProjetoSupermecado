@@ -771,6 +771,8 @@ concorrência e constraints deixem de depender apenas de execuções locais manu
   homologação externa continuam separadas.
 - [x] Ensaiar localmente o mesmo conjunto em PostgreSQL 18 real: todas as migrations
   foram aplicadas, 14 testes passaram e a base descartável foi removida ao final.
+- [x] Confirmar a primeira execução hospedada no PostgreSQL 16: workflow
+  `PostgreSQL integrity` aprovado para o HEAD `f6518a8`, execução 35598784389.
 - [ ] Próximo passo exato: revisar a defesa em profundidade da origem do
   `DocumentoFiscal`, mapeando antes todos os fluxos que criam documento sem origem
   comercial para não impor constraint incompatível.
