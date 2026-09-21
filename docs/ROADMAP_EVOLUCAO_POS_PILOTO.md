@@ -800,9 +800,13 @@ online/NF-e; sincronização recebida e DF-e usam modelos separados.
   incluindo as provas concorrentes e as constraints de origem.
 - [x] Revalidar o módulo Fiscal completo: 653 testes aprovados e 3 ignorados por
   dependerem de ambiente específico.
+- [x] Confirmar a CI PostgreSQL 16 hospedada para o HEAD `169df11`, execução
+  35600481353, com a seleção ampliada aprovada.
 - [ ] A constraint final de presença permanece pendente: existe 1 NFC-e emitida
   legada sem origem, sem venda candidata de mesma filial/valor e sem chave que
-  permita vínculo inequívoco. Nenhuma associação foi inventada.
+  permita vínculo inequívoco. Seu XML contém apenas `NFeDemo9001`, sem modelo,
+  número, série, emissão ou total estruturados; nenhuma associação ou exclusão foi
+  realizada por suposição.
 - [ ] Próximo passo exato: o responsável fiscal deve classificar esse documento
   legado com evidência; depois, definir a origem da futura devolução ao fornecedor
   e criar a constraint que exija exatamente uma origem entre os fluxos suportados.

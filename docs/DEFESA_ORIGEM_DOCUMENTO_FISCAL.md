@@ -35,6 +35,10 @@ A auditoria somente leitura encontrou um documento local emitido sem venda e sem
 pedido online. Não existe venda da mesma filial com o mesmo valor, e o registro não
 possui chave fiscal que permita reconstruir o vínculo de forma inequívoca.
 
+O XML armazenado identifica somente `NFeDemo9001` e não contém os campos fiscais
+estruturais de modelo, número, série, data de emissão ou total. Isso reforça que o
+registro parece demonstrativo, mas não autoriza sua exclusão automática.
+
 Por isso a migration 0056 preserva registros sem origem e bloqueia apenas a dupla
 origem. O registro não foi apagado, alterado nem vinculado por aproximação.
 
@@ -55,4 +59,5 @@ aceitar exatamente uma origem entre todos os fluxos então suportados.
 A seleção crítica atualizada passou com 21 testes em PostgreSQL 18 real, inclusive as
 provas concorrentes. A regressão completa do módulo Fiscal passou com 653 testes e
 três cenários ignorados por dependência explícita de ambiente. A migration 0056 foi
-aplicada à base local sem alterar o documento legado.
+aplicada à base local sem alterar o documento legado. A execução hospedada da CI
+PostgreSQL 16 também foi aprovada para o HEAD `169df11` (execução 35600481353).
