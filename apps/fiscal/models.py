@@ -375,6 +375,78 @@ class NaturezaOperacao(models.Model):
         return self.descricao
 
 
+class SituacaoBeneficioFiscalICMS(models.TextChoices):
+    INDEFINIDO = "INDEFINIDO", "Ainda não definido"
+    SEM_BENEFICIO = "SEM_BENEFICIO", "Sem benefício fiscal"
+    COM_BENEFICIO = "COM_BENEFICIO", "Com benefício fiscal"
+
+
+class ParametrizacaoBeneficioFiscalProduto(models.Model):
+    produto = models.ForeignKey(
+        "produtos.Produto", on_delete=models.PROTECT, related_name="parametrizacoes_beneficio_fiscal"
+    )
+    natureza_operacao = models.ForeignKey(
+        NaturezaOperacao, on_delete=models.PROTECT, related_name="parametrizacoes_beneficio_fiscal"
+    )
+    situacao = models.CharField(
+        "Situação do benefício de ICMS", max_length=20,
+        choices=SituacaoBeneficioFiscalICMS.choices,
+        default=SituacaoBeneficioFiscalICMS.INDEFINIDO,
+        help_text="Definição contábil explícita para este produto nesta operação.",
+    )
+    codigo_beneficio_fiscal = models.CharField(
+        "Código de benefício fiscal (cBenef)", max_length=10, blank=True,
+        help_text="Use o código oficial aplicável ou SEM CBENEF quando previsto no catálogo estadual.",
+    )
+    fundamento_contabil = models.TextField(
+        "Fundamento/orientação contábil", blank=True,
+        help_text="Referência da orientação usada; não informe credenciais ou dados financeiros.",
+    )
+    atualizado_por = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.PROTECT,
+        related_name="parametrizacoes_beneficio_fiscal_atualizadas",
+    )
+    criado_em = models.DateTimeField(auto_now_add=True)
+    atualizado_em = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ["natureza_operacao__descricao", "produto__nome"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["produto", "natureza_operacao"],
+                name="fisc_benef_produto_natureza_uniq",
+            ),
+            models.CheckConstraint(
+                condition=(
+                    models.Q(situacao=SituacaoBeneficioFiscalICMS.INDEFINIDO, codigo_beneficio_fiscal="")
+                    | models.Q(
+                        situacao=SituacaoBeneficioFiscalICMS.SEM_BENEFICIO,
+                        codigo_beneficio_fiscal__in=["", "SEM CBENEF"],
+                    )
+                    | (
+                        models.Q(situacao=SituacaoBeneficioFiscalICMS.COM_BENEFICIO)
+                        & ~models.Q(codigo_beneficio_fiscal__in=["", "SEM CBENEF"])
+                    )
+                ),
+                name="fisc_benef_situacao_codigo_coerente",
+            ),
+        ]
+
+    def clean(self):
+        super().clean()
+        codigo = (self.codigo_beneficio_fiscal or "").strip().upper()
+        self.codigo_beneficio_fiscal = codigo
+        if self.situacao == SituacaoBeneficioFiscalICMS.INDEFINIDO and codigo:
+            raise ValidationError({"codigo_beneficio_fiscal": "Não informe cBenef enquanto a situação estiver indefinida."})
+        if self.situacao == SituacaoBeneficioFiscalICMS.COM_BENEFICIO and (not codigo or codigo == "SEM CBENEF"):
+            raise ValidationError({"codigo_beneficio_fiscal": "Informe o cBenef oficial do benefício aplicável."})
+        if self.situacao == SituacaoBeneficioFiscalICMS.SEM_BENEFICIO and codigo not in {"", "SEM CBENEF"}:
+            raise ValidationError({"codigo_beneficio_fiscal": "Sem benefício aceita campo vazio ou a literal oficial SEM CBENEF."})
+
+    def __str__(self):
+        return f"{self.produto} / {self.natureza_operacao}: {self.get_situacao_display()}"
+
+
 class DocumentoFiscal(models.Model):
     filial = models.ForeignKey("empresas.Filial", on_delete=models.PROTECT, related_name="documentos_fiscais")
     venda = models.ForeignKey("vendas.Venda", on_delete=models.PROTECT, related_name="documentos_fiscais", null=True, blank=True)

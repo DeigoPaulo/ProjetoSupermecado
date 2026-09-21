@@ -4,6 +4,7 @@ from django.conf import settings
 from apps.clientes.escopo import empresa_id_do_usuario
 
 from .cfop import validar_cfop
+from .cbenef import validar_cbenef_go
 
 from .models import (
     ConfiguracaoFiscal,
@@ -12,6 +13,7 @@ from .models import (
     InutilizacaoNumeracaoFiscal,
     ModoTransicaoIbsCbs,
     NaturezaOperacao,
+    ParametrizacaoBeneficioFiscalProduto,
     SerieFiscal,
     StatusHomologacaoFiscal,
     StatusEvidenciaHomologacaoCanal,
@@ -313,6 +315,33 @@ class NaturezaOperacaoForm(forms.ModelForm):
             natureza.save()
             self.save_m2m()
         return natureza
+
+
+class ParametrizacaoBeneficioFiscalProdutoForm(forms.ModelForm):
+    def __init__(self, *args, user=None, **kwargs):
+        super().__init__(*args, **kwargs)
+        empresa_id = empresa_id_do_usuario(user) if user else None
+        if empresa_id is not None:
+            self.fields["natureza_operacao"].queryset = NaturezaOperacao.objects.filter(empresa_id=empresa_id, ativo=True)
+        self.fields["produto"].queryset = self.fields["produto"].queryset.filter(is_active=True)
+
+    class Meta:
+        model = ParametrizacaoBeneficioFiscalProduto
+        fields = ["produto", "natureza_operacao", "situacao", "codigo_beneficio_fiscal", "fundamento_contabil"]
+        widgets = {"fundamento_contabil": forms.Textarea(attrs={"rows": 3})}
+
+    def clean(self):
+        cleaned = super().clean()
+        codigo = (cleaned.get("codigo_beneficio_fiscal") or "").strip().upper()
+        cleaned["codigo_beneficio_fiscal"] = codigo
+        self.instance.codigo_beneficio_fiscal = codigo
+        produto = cleaned.get("produto")
+        natureza = cleaned.get("natureza_operacao")
+        if codigo and natureza and natureza.empresa.filiais.filter(uf="GO").exists():
+            pendencia = validar_cbenef_go(codigo, getattr(produto, "cst_icms", None))
+            if pendencia:
+                self.add_error("codigo_beneficio_fiscal", pendencia)
+        return cleaned
 class HomologacaoFiscalForm(forms.ModelForm):
     class Meta:
         model = HomologacaoFiscal

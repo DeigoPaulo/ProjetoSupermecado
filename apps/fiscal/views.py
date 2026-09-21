@@ -16,6 +16,7 @@ from apps.accounts.permissions import (
     RELATORIOS,
     REVISAO_FISCAL,
     SISTEMA,
+    has_role,
     role_required,
 )
 from apps.auditoria.models import LogAuditoria
@@ -50,6 +51,7 @@ from .forms import (
     RevisaoEvidenciaHomologacaoForm,
     InutilizacaoNumeracaoFiscalForm,
     NaturezaOperacaoForm,
+    ParametrizacaoBeneficioFiscalProdutoForm,
     SerieFiscalForm,
 )
 from .fila import (
@@ -76,6 +78,7 @@ from .models import (
     InutilizacaoNumeracaoFiscal,
     ManifestacaoDestinatario,
     NaturezaOperacao,
+    ParametrizacaoBeneficioFiscalProduto,
     ProvedorEmissaoFiscal,
     RascunhoDevolucaoFornecedor,
     SerieFiscal,
@@ -733,7 +736,7 @@ def _diagnostico_prontidao_fiscal(user):
 
 
 @login_required
-@role_required(*RELATORIOS)
+@role_required(*(RELATORIOS | REVISAO_FISCAL))
 def documentos(request):
     status = request.GET.get("status", "")
     q = request.GET.get("q", "").strip()
@@ -813,6 +816,10 @@ def documentos(request):
             request.user,
             NaturezaOperacao.objects.select_related("empresa"),
         ),
+        "parametrizacoes_beneficio": ParametrizacaoBeneficioFiscalProduto.objects.filter(
+            natureza_operacao__in=naturezas_para_usuario(request.user)
+        ).select_related("produto", "natureza_operacao", "atualizado_por")[:100],
+        "pode_revisar_beneficio": has_role(request.user, REVISAO_FISCAL),
         "total_documentos": documentos_qs.count(),
         "pendentes": documentos_qs.filter(status="PRONTO").count(),
         "emitidos": documentos_qs.filter(status="EMITIDO").count(),
@@ -1987,6 +1994,33 @@ def natureza_form(request, pk=None):
     else:
         form = NaturezaOperacaoForm(instance=natureza, user=request.user)
     return render(request, "fiscal/form.html", {"form": form, "titulo": "Natureza de operação"})
+
+
+@login_required
+@role_required(*REVISAO_FISCAL)
+def parametrizacao_beneficio_form(request, pk=None):
+    queryset = ParametrizacaoBeneficioFiscalProduto.objects.filter(natureza_operacao__in=naturezas_para_usuario(request.user))
+    parametrizacao = get_object_or_404(queryset, pk=pk) if pk else None
+    if request.method == "POST":
+        form = ParametrizacaoBeneficioFiscalProdutoForm(request.POST, instance=parametrizacao, user=request.user)
+        if form.is_valid():
+            criando = parametrizacao is None
+            parametrizacao = form.save(commit=False)
+            parametrizacao.atualizado_por = request.user
+            parametrizacao.full_clean()
+            parametrizacao.save()
+            LogAuditoria.objects.create(
+                usuario=request.user, modulo="fiscal", acao="CRIA_PARAM_BENEFICIO" if criando else "ATUALIZA_PARAM_BENEFICIO",
+                descricao=(f"Benefício fiscal de {parametrizacao.produto} na natureza {parametrizacao.natureza_operacao}: "
+                           f"{parametrizacao.get_situacao_display()}."),
+                objeto_tipo="ParametrizacaoBeneficioFiscalProduto", objeto_id=str(parametrizacao.pk),
+                ip=request.META.get("REMOTE_ADDR"),
+            )
+            messages.success(request, "Decisão de benefício fiscal salva e auditada.")
+            return redirect("fiscal:documentos")
+    else:
+        form = ParametrizacaoBeneficioFiscalProdutoForm(instance=parametrizacao, user=request.user)
+    return render(request, "fiscal/form.html", {"form": form, "titulo": "Benefício fiscal por produto e operação"})
 
 
 @login_required

@@ -12,7 +12,7 @@ from django.core.exceptions import ImproperlyConfigured, ValidationError
 from django.core.files.uploadedfile import SimpleUploadedFile
 from django.core.management import call_command
 from django.core.management.base import CommandError
-from django.db import connection
+from django.db import IntegrityError, connection, transaction
 from io import StringIO
 from django.test import Client, TestCase, override_settings
 from django.utils import timezone as django_timezone
@@ -33,7 +33,7 @@ from apps.vendas.models import FormaPagamento, ItemVenda, PagamentoVenda, Status
 
 from .adapters import carregar_adaptador_sefaz
 from .evidencias import registrar_evidencia_fiscal, verificar_integridade_evidencias
-from .forms import ConfiguracaoFiscalForm, HomologacaoFiscalForm
+from .forms import ConfiguracaoFiscalForm, HomologacaoFiscalForm, ParametrizacaoBeneficioFiscalProdutoForm
 from .perfis_uf import endpoints_nfce_uf
 from .models import (
     AmbienteFiscal,
@@ -49,11 +49,13 @@ from .models import (
     ItemBeneficioFiscal,
     ModoTransicaoIbsCbs,
     NaturezaOperacao,
+    ParametrizacaoBeneficioFiscalProduto,
     ProvedorEmissaoFiscal,
     SerieFiscal,
     StatusDocumentoFiscal,
     StatusHomologacaoFiscal,
     StatusInutilizacaoFiscal,
+    SituacaoBeneficioFiscalICMS,
     TipoDocumentoFiscal,
     TipoEvidenciaFiscal,
 )
@@ -428,7 +430,81 @@ class FiscalTests(TestCase):
             serie=1,
             proximo_numero=100,
         )
-        NaturezaOperacao.objects.create(empresa=self.filial.empresa, descricao="Venda ao consumidor", cfop="5102", tipo_documento=TipoDocumentoFiscal.NFCE)
+        self.natureza = NaturezaOperacao.objects.create(
+            empresa=self.filial.empresa, descricao="Venda ao consumidor", cfop="5102",
+            tipo_documento=TipoDocumentoFiscal.NFCE,
+        )
+        self.parametrizacao_beneficio = ParametrizacaoBeneficioFiscalProduto.objects.create(
+            produto=self.produto, natureza_operacao=self.natureza,
+            situacao=SituacaoBeneficioFiscalICMS.SEM_BENEFICIO, atualizado_por=self.user,
+        )
+
+    def test_beneficio_indefinido_bloqueia_emissao_go_regime_normal(self):
+        self.filial.uf = "GO"
+        self.filial.save(update_fields=["uf"])
+        self.parametrizacao_beneficio.situacao = SituacaoBeneficioFiscalICMS.INDEFINIDO
+        self.parametrizacao_beneficio.save(update_fields=["situacao"])
+
+        with self.assertRaisesRegex(ValidationError, "defina se há benefício fiscal"):
+            preparar_documento_venda(self.venda, self.user)
+
+        self.assertFalse(self.venda.documentos_fiscais.exists())
+
+    def test_formulario_beneficio_impede_codigo_incoerente(self):
+        form = ParametrizacaoBeneficioFiscalProdutoForm(
+            data={
+                "produto": self.produto.pk, "natureza_operacao": self.natureza.pk,
+                "situacao": SituacaoBeneficioFiscalICMS.SEM_BENEFICIO,
+                "codigo_beneficio_fiscal": "GO821019", "fundamento_contabil": "Orientação de teste",
+            },
+            user=self.user,
+        )
+        self.assertFalse(form.is_valid())
+        self.assertIn("codigo_beneficio_fiscal", form.errors)
+
+    def test_constraint_beneficio_impede_estado_incoerente(self):
+        with self.assertRaises(IntegrityError), transaction.atomic():
+            ParametrizacaoBeneficioFiscalProduto.objects.create(
+                produto=self.produto,
+                natureza_operacao=NaturezaOperacao.objects.create(
+                    empresa=self.empresa,
+                    descricao="Operação incoerente de teste",
+                    cfop="5101",
+                    tipo_documento=TipoDocumentoFiscal.NFCE,
+                ),
+                situacao=SituacaoBeneficioFiscalICMS.INDEFINIDO,
+                codigo_beneficio_fiscal="GO821019",
+                atualizado_por=self.user,
+            )
+
+    def test_tela_salva_e_audita_decisao_beneficio(self):
+        self.parametrizacao_beneficio.delete()
+
+        response = self.client.post(
+            "/fiscal/beneficios-produtos/novo/",
+            {
+                "produto": self.produto.pk,
+                "natureza_operacao": self.natureza.pk,
+                "situacao": SituacaoBeneficioFiscalICMS.SEM_BENEFICIO,
+                "codigo_beneficio_fiscal": "",
+                "fundamento_contabil": "Parecer contábil sintético para teste.",
+            },
+            REMOTE_ADDR="127.0.0.44",
+        )
+
+        self.assertRedirects(response, "/fiscal/")
+        parametrizacao = ParametrizacaoBeneficioFiscalProduto.objects.get(
+            produto=self.produto,
+            natureza_operacao=self.natureza,
+        )
+        self.assertEqual(parametrizacao.atualizado_por, self.user)
+        self.assertTrue(
+            LogAuditoria.objects.filter(
+                acao="CRIA_PARAM_BENEFICIO",
+                objeto_id=str(parametrizacao.pk),
+                ip="127.0.0.44",
+            ).exists()
+        )
 
     def test_emissao_rejeita_natureza_de_operacao_de_outra_empresa(self):
         empresa_externa = Empresa.objects.create(
@@ -518,6 +594,7 @@ class FiscalTests(TestCase):
         self.assertContains(response, "Prontidão por filial")
         self.assertContains(response, "Diagnóstico JSON")
         self.assertContains(response, "fiscal_transmission_queue_v1")
+        self.assertContains(response, "Benefício fiscal por produto e operação")
 
     def test_diagnostico_json_fiscal_resume_prontidao_por_filial(self):
         response = self.client.get("/fiscal/diagnostico.json")
@@ -969,6 +1046,9 @@ class FiscalTests(TestCase):
         )
 
         _criar_catalogo_cbenef_go_teste()
+        self.parametrizacao_beneficio.situacao = SituacaoBeneficioFiscalICMS.COM_BENEFICIO
+        self.parametrizacao_beneficio.codigo_beneficio_fiscal = "GO821019"
+        self.parametrizacao_beneficio.save(update_fields=["situacao", "codigo_beneficio_fiscal"])
         documento = preparar_documento_venda(self.venda, self.user)
 
         self.assertIn("<idDest>1</idDest>", documento.xml_conteudo)

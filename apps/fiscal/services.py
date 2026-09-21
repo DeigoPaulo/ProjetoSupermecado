@@ -37,7 +37,7 @@ from .chave_acesso import (
 from .ncm import queryset_codigos_ncm_vigentes, validar_ncm
 from .validacoes import validar_xml_pre_transmissao
 from .qrcode_nfce import gerar_url_qrcode_nfce
-from .perfis_uf import pendencias_endpoints_nfce, pendencias_produto_por_uf
+from .perfis_uf import codigo_beneficio_produto_operacao, pendencias_endpoints_nfce, pendencias_produto_por_uf
 from .models import (
     AmbienteFiscal,
     CodigoRegimeTributario,
@@ -794,8 +794,9 @@ def gerar_xml_nfce(documento):
         _texto(prod, "NCM", produto.ncm)
         if produto.cest:
             _texto(prod, "CEST", produto.cest)
-        if produto.codigo_beneficio_fiscal:
-            _texto(prod, "cBenef", produto.codigo_beneficio_fiscal)
+        cbenef = codigo_beneficio_produto_operacao(produto, documento.natureza_operacao)
+        if cbenef:
+            _texto(prod, "cBenef", cbenef)
         _texto(prod, "CFOP", natureza.cfop)
         _texto(prod, "uCom", produto.unidade)
         _texto(prod, "qCom", _valor(item.quantidade, casas=3))
@@ -1044,8 +1045,9 @@ def gerar_xml_nfe_pedido_online(documento):
         _texto(prod, "NCM", produto.ncm)
         if produto.cest:
             _texto(prod, "CEST", produto.cest)
-        if produto.codigo_beneficio_fiscal:
-            _texto(prod, "cBenef", produto.codigo_beneficio_fiscal)
+        cbenef = codigo_beneficio_produto_operacao(produto, documento.natureza_operacao)
+        if cbenef:
+            _texto(prod, "cBenef", cbenef)
         _texto(prod, "CFOP", natureza.cfop)
         _texto(prod, "uCom", produto.unidade)
         _texto(prod, "qCom", _valor(item.quantidade, casas=3))
@@ -1188,7 +1190,7 @@ def pendencias_preparacao_fiscal(venda, configuracao, natureza):
         erros.extend(
             f"{prefixo} {pendencia}."
             for pendencia in pendencias_produto_por_uf(
-                produto, [venda.filial.uf], [_crt_configuracao(configuracao)]
+                produto, [venda.filial.uf], [_crt_configuracao(configuracao)], natureza_operacao=natureza
             )
         )
     return erros
@@ -1286,7 +1288,7 @@ def pendencias_preparacao_nfe_pedido(pedido, configuracao, natureza):
         erros.extend(
             f"{prefixo} {pendencia}."
             for pendencia in pendencias_produto_por_uf(
-                produto, [pedido.filial.uf], [_crt_configuracao(configuracao)]
+                produto, [pedido.filial.uf], [_crt_configuracao(configuracao)], natureza_operacao=natureza
             )
         )
     return erros

@@ -881,7 +881,7 @@ nenhuma credencial real, chamada à SEFAZ ou configuração de produção foi ut
 - [x] Validar 8 testes focados e a regressão conjunta Fiscal + Vendas + PDV:
   752 testes aprovados e 6 ignorados por dependências explícitas de ambiente.
 - [x] Validar `check`, ausência de migrations novas e integridade do diff.
-- [ ] Próximo passo interno seguro: modelar o indicador explícito de benefício fiscal
+- [x] Próximo passo interno seguro: modelar o indicador explícito de benefício fiscal
   por produto/operação, em estado indefinido/sem benefício/com benefício, sem classificar
   automaticamente produtos existentes e sem liberar emissão quando a decisão necessária
   estiver ausente. A parametrização tributária real continuará dependendo do contador.
@@ -889,6 +889,39 @@ nenhuma credencial real, chamada à SEFAZ ou configuração de produção foi ut
 Fontes oficiais: Ajuste SINIEF 19/16 consolidado e NT 2025.001 v1.03 do Portal Nacional
 da NF-e; catálogo cBenef e INs já preservados em docs/CBENEF_GO.md.
 Migrações: nenhuma.
+
+## Ponto de retomada — ciclo 152, 21/09/2026
+
+Concluída a decisão explícita de benefício fiscal de ICMS por produto e natureza de
+operação. O ciclo permaneceu inteiramente local, sem CNPJ/IE/certificado reais, sem
+chamada à SEFAZ e sem ativação de produção.
+
+- [x] Criar `ParametrizacaoBeneficioFiscalProduto` com os estados indefinido, sem
+  benefício e com benefício, responsável, fundamento contábil e data de atualização.
+- [x] Exigir unicidade de produto + natureza e coerência entre situação e `cBenef`
+  também no banco; a migration não cria, classifica nem altera decisões existentes.
+- [x] Bloquear a preparação de NF-e/NFC-e em Goiás, no regime normal, quando a decisão
+  estiver ausente ou indefinida para a natureza efetivamente usada.
+- [x] Fazer o XML consumir somente o `cBenef` da parametrização explícita da operação;
+  o campo legado do produto não é usado como inferência nesse fluxo.
+- [x] Validar códigos informados contra o catálogo cBenef GO já instalado e impedir
+  combinações contraditórias, inclusive “sem benefício” com código de benefício.
+- [x] Disponibilizar cadastro e consulta na área fiscal, com alteração restrita a
+  Administrador/Contabilidade e trilha em `LogAuditoria`.
+- [x] Manter todos os registros locais existentes sem classificação automática: após a
+  migration, a nova tabela permaneceu com zero registros até decisão humana.
+- [x] Atualizar fixtures sintéticas para declarar explicitamente “sem benefício”, sem
+  converter essa decisão de teste em regra ou dado de produção.
+- [x] Validar 13 testes focados e a regressão fiscal completa: 660 testes aprovados e
+  3 ignorados por dependências explícitas de ambiente; `check`, migrations e diff íntegros.
+- [x] Aplicar localmente a migration fiscal 0058; a base local usa SQLite. Na mesma
+  execução, migrations já existentes e ainda pendentes de Compras 0012, Fornecedores
+  0004 e Financeiro 0024/0025 também foram aplicadas, sem limpeza de dados.
+- [ ] Próximo passo interno seguro: integrar a decisão por operação ao diagnóstico e à
+  listagem/exportação de produtos fiscais, exibindo quais naturezas padrão ainda estão
+  indefinidas; depois retirar o campo legado de `Produto` sem migrar ou inferir valores.
+
+Migration: `apps/fiscal/migrations/0058_parametrizacaobeneficiofiscalproduto.py`.
 
 ## Ponto de retomada — ciclo 143, 18/09/2026
 

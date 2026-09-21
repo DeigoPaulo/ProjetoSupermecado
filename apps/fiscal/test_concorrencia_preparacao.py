@@ -22,8 +22,10 @@ from .models import (
     ConfiguracaoFiscal,
     DocumentoFiscal,
     NaturezaOperacao,
+    ParametrizacaoBeneficioFiscalProduto,
     SerieFiscal,
     StatusDocumentoFiscal,
+    SituacaoBeneficioFiscalICMS,
     TipoDocumentoFiscal,
 )
 from .certificados import criptografar
@@ -164,17 +166,29 @@ class FiscalOriginFixtureMixin:
             serie=55,
             proximo_numero=200,
         )
-        NaturezaOperacao.objects.create(
+        natureza_nfce = NaturezaOperacao.objects.create(
             empresa=self.empresa,
             descricao="Venda ao consumidor",
             cfop="5102",
             tipo_documento=TipoDocumentoFiscal.NFCE,
         )
-        NaturezaOperacao.objects.create(
+        natureza_nfe = NaturezaOperacao.objects.create(
             empresa=self.empresa,
             descricao="Venda online",
             cfop="5102",
             tipo_documento=TipoDocumentoFiscal.NFE,
+        )
+        ParametrizacaoBeneficioFiscalProduto.objects.bulk_create(
+            [
+                ParametrizacaoBeneficioFiscalProduto(
+                    produto=self.produto,
+                    natureza_operacao=natureza,
+                    situacao=SituacaoBeneficioFiscalICMS.SEM_BENEFICIO,
+                    atualizado_por=self.usuario,
+                    fundamento_contabil="Fixture sintética: operação sem benefício fiscal.",
+                )
+                for natureza in (natureza_nfce, natureza_nfe)
+            ]
         )
 
 

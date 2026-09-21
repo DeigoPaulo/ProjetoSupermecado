@@ -318,5 +318,19 @@
     </table>
   </div>
 </section>
+<section class="panel">
+  <div class="section-header">
+    <div><h2>Benefício fiscal por produto e operação</h2><p>A decisão é contábil, específica para cada natureza e fica auditada. Sem decisão explícita, a emissão em regime normal para Goiás é bloqueada.</p></div>
+    {% if pode_revisar_beneficio %}<a class="primary-button" href="{% url 'fiscal:beneficio_produto_novo' %}">Definir benefício</a>{% endif %}
+  </div>
+  <div class="table-wrapper"><table>
+    <thead><tr><th>Produto</th><th>Natureza</th><th>Situação</th><th>cBenef</th><th>Responsável</th><th></th></tr></thead>
+    <tbody>{% for item in parametrizacoes_beneficio %}<tr>
+      <td>{{ item.produto.nome }}</td><td>{{ item.natureza_operacao }}</td><td>{{ item.get_situacao_display }}</td>
+      <td>{{ item.codigo_beneficio_fiscal|default:"-" }}</td><td>{{ item.atualizado_por }}</td>
+      <td>{% if pode_revisar_beneficio %}<a class="secondary-button" href="{% url 'fiscal:beneficio_produto_editar' item.pk %}">Editar</a>{% else %}-{% endif %}</td>
+    </tr>{% empty %}<tr><td colspan="6" class="empty">Nenhuma decisão registrada. Produtos em regime normal de Goiás permanecem bloqueados.</td></tr>{% endfor %}</tbody>
+  </table></div>
+</section>
 {% include "includes/pagination.html" %}
 {% endblock %}
