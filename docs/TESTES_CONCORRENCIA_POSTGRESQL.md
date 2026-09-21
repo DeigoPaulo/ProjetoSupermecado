@@ -65,3 +65,10 @@ as migrations foram aplicadas desde uma base vazia, os 14 testes críticos passa
 o banco descartável foi removido pelo executor. Essa evidência local valida a seleção
 dos testes. A primeira execução hospedada também foi aprovada no PostgreSQL 16 para o
 HEAD `f6518a8` (GitHub Actions, execução 35598784389).
+
+No ciclo 150, após a migration `fiscal.0057_exige_origem_documento_fiscal`, a seleção
+integral atualizada foi novamente executada em PostgreSQL 18 local: 22 testes passaram
+e a base descartável foi removida. A bateria passou a provar também que
+`DocumentoFiscal` rejeita tanto origem ausente quanto origem dupla e aceita somente
+uma origem comercial válida. A migration faz preflight fail-closed para dados legados
+incompatíveis e não executa limpeza automática.

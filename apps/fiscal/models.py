@@ -479,10 +479,16 @@ class DocumentoFiscal(models.Model):
             ),
             models.CheckConstraint(
                 condition=(
-                    models.Q(venda__isnull=True)
-                    | models.Q(pedido_online__isnull=True)
+                    models.Q(
+                        venda__isnull=False,
+                        pedido_online__isnull=True,
+                    )
+                    | models.Q(
+                        venda__isnull=True,
+                        pedido_online__isnull=False,
+                    )
                 ),
-                name="fisc_doc_origens_nao_simultaneas",
+                name="fisc_doc_exatamente_uma_origem",
             ),
         ]
 

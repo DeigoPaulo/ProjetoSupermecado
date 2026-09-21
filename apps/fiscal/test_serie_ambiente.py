@@ -52,6 +52,7 @@ class SerieFiscalAmbienteTests(FiscalOriginFixtureMixin, TestCase):
     def test_mesmo_numero_fiscal_pode_existir_nos_dois_ambientes(self):
         campos = {
             "filial": self.filial,
+            "venda": self.venda,
             "tipo_documento": TipoDocumentoFiscal.NFCE,
             "serie": 7,
             "numero": 77,

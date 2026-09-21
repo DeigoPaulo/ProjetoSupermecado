@@ -61,6 +61,7 @@ from .certificados import abrir_certificado_a1, criptografar, salvar_certificado
 from .assinaturas import assinar_xml_documento, verificar_assinatura_xml
 from .validacoes import diagnosticar_schemas_fiscais, validar_xml_schema
 from .test_support_identidades_fiscais import obter_identidade_fiscal_teste
+from .test_support_documentos import origem_documento_fiscal_teste
 from .chave_acesso import construir_chave_acesso
 from .fila import (
     diagnostico_fila_fiscal,
@@ -2806,6 +2807,11 @@ class FiscalMultiempresaTests(TestCase):
             status=StatusDocumentoFiscal.PRONTO,
             numero=101,
             xml_conteudo="<NFe>EMPRESA-A</NFe>",
+            **origem_documento_fiscal_teste(
+                filial=self.filial_a,
+                usuario=self.usuario_a,
+                tipo_documento=TipoDocumentoFiscal.NFCE,
+            ),
         )
         self.documento_b = DocumentoFiscal.objects.create(
             filial=self.filial_b,
@@ -2813,6 +2819,11 @@ class FiscalMultiempresaTests(TestCase):
             status=StatusDocumentoFiscal.PRONTO,
             numero=202,
             xml_conteudo="<NFe>EMPRESA-B</NFe>",
+            **origem_documento_fiscal_teste(
+                filial=self.filial_b,
+                usuario=self.usuario_b,
+                tipo_documento=TipoDocumentoFiscal.NFCE,
+            ),
         )
         self.caixa_b = Caixa.objects.create(
             filial=self.filial_b,
@@ -3042,6 +3053,11 @@ class InutilizacaoFiscalTests(TestCase):
             numero=11,
             status=StatusDocumentoFiscal.CANCELADO,
             usuario=self.user,
+            **origem_documento_fiscal_teste(
+                filial=self.filial,
+                usuario=self.user,
+                tipo_documento=TipoDocumentoFiscal.NFCE,
+            ),
         )
 
         with self.assertRaisesMessage(ValidationError, "número 11 já foi usado"):
@@ -3180,6 +3196,11 @@ class ConsultaSituacaoFiscalTests(TestCase):
             chave_acesso=chave_consulta,
             status=StatusDocumentoFiscal.REJEITADO,
             usuario=self.user,
+            **origem_documento_fiscal_teste(
+                filial=self.filial,
+                usuario=self.user,
+                tipo_documento=TipoDocumentoFiscal.NFCE,
+            ),
         )
 
     @override_settings(FISCAL_SEFAZ_ADAPTER="apps.fiscal.tests.FakeSefazAdapter")

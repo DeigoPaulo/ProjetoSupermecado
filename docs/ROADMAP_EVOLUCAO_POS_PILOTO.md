@@ -81,7 +81,7 @@ P2:
 - [x] constraints de contas originadas por compra/venda;
 - [x] contrato temporal do snapshot contábil;
 - [x] CI inicial com PostgreSQL.
-- [ ] defesa em profundidade da origem do DocumentoFiscal: garantir no banco exatamente
+- [x] defesa em profundidade da origem do DocumentoFiscal: garantir no banco exatamente
   uma origem comercial permitida por fluxo, impedindo simultaneamente venda + pedido e a
   ausência de ambas, após revisar os fluxos que possam criar documentos sem origem.
 
@@ -815,6 +815,44 @@ Arquivos principais: apps/fiscal/models.py, apps/fiscal/admin.py,
 apps/fiscal/test_concorrencia_preparacao.py,
 apps/fiscal/migrations/0056_bloqueia_origens_simultaneas_documento.py e
 docs/DEFESA_ORIGEM_DOCUMENTO_FISCAL.md.
+
+## Ponto de retomada — ciclo 150, 21/09/2026
+
+Concluída a defesa em profundidade da origem do `DocumentoFiscal`. Com autorização
+expressa para tratar a base local como exclusivamente demonstrativa, o único registro
+sem origem (`id=1`, conteúdo `NFeDemo9001`) foi removido depois de confirmar que não
+possuía dependências. Nenhuma migration contém exclusão ou inferência de vínculo.
+
+- [x] Remover exclusivamente o registro demonstrativo local que impedia a invariância;
+  nenhum outro documento fiscal ou dado de domínio foi apagado ou recriado.
+- [x] Criar a migration `fiscal.0057_exige_origem_documento_fiscal` com preflight
+  fail-closed: instalações com origem ausente ou dupla param e exibem os IDs afetados,
+  sem excluir dados, aproximar vínculos ou inventar origem.
+- [x] Substituir a proteção parcial por `fisc_doc_exatamente_uma_origem`, exigindo no
+  banco exatamente uma origem entre `venda` e `pedido_online`, mantendo as
+  unicidades já existentes e a validação de mesma filial.
+- [x] Adequar as fixtures fiscais e financeiras para criarem documentos por uma origem
+  comercial explícita, sem enfraquecer a regra para acomodar testes antigos.
+- [x] Aplicar a migration 0057 na base local e confirmar zero documentos sem origem,
+  com dupla origem ou fora da nova invariância.
+- [x] Validar a regressão Fiscal completa: 654 testes aprovados e três ignorados por
+  dependências explícitas de ambiente.
+- [x] Validar no PostgreSQL 18 local a seleção integral da CI: 22 testes aprovados,
+  inclusive ausência de origem, dupla origem, mesma filial, unicidade e concorrência.
+- [x] Definir a evolução da devolução ao fornecedor: antes de esse fluxo emitir NF-e,
+  `DocumentoFiscal` receberá uma relação protegida e dedicada ao registro aprovado de
+  `RascunhoDevolucaoFornecedor`; na mesma migration, o XOR será ampliado atomicamente
+  para exatamente uma entre venda, pedido online ou devolução. Até lá, esse fluxo não
+  pode criar `DocumentoFiscal`; não haverá origem genérica ou manual.
+- [ ] Próximo passo exato: confirmar a execução hospedada da CI deste commit. Depois,
+  selecionar a primeira pendência interna ainda segura da ordem do roadmap. Se o item
+  seguinte exigir CNPJ/IE/A1/CSC reais, acesso à SEFAZ ou liberação de produção, parar
+  e preservar essas travas.
+
+Arquivos principais: apps/fiscal/models.py,
+apps/fiscal/migrations/0057_exige_origem_documento_fiscal.py,
+apps/fiscal/test_concorrencia_preparacao.py, apps/fiscal/test_support_documentos.py,
+fixtures fiscais/financeiras e docs/DEFESA_ORIGEM_DOCUMENTO_FISCAL.md.
 
 ## Ponto de retomada — ciclo 143, 18/09/2026
 

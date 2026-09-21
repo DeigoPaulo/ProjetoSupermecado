@@ -14,6 +14,7 @@ from apps.accounts.models import PerfilUsuario, TipoPerfil
 from apps.auditoria.models import LogAuditoria
 from apps.empresas.models import Empresa, Filial
 from apps.fiscal.models import AmbienteFiscal, DocumentoDFeRecebido, DocumentoFiscal, EventoDFeRecebido, ManifestacaoDestinatario, StatusDFeRecebido, StatusDocumentoFiscal, StatusManifestacaoDestinatario, TipoDocumentoFiscal, TipoManifestacaoDestinatario
+from apps.fiscal.test_support_documentos import origem_documento_fiscal_teste
 from apps.estoque.fechamento_contabil import capturar_fechamento_estoque_contabil
 from apps.estoque.models import Estoque
 from apps.produtos.models import Categoria as CategoriaProduto, Produto
@@ -1226,6 +1227,13 @@ class FinanceiroTests(TestCase):
             valor_total=Decimal("24.50"),
             xml_conteudo=f"<NFe xmlns='http://www.portalfiscal.inf.br/nfe'><infNFe Id='NFe12'><ide><mod>65</mod><dhEmi>{timezone.localdate().isoformat()}T10:00:00-03:00</dhEmi></ide><det nItem='1'><prod><cProd>1</cProd><xProd>Produto contábil</xProd><NCM>10063021</NCM><CFOP>5102</CFOP><uCom>UN</uCom><qCom>1.000</qCom><vUnCom>24.50</vUnCom><vProd>24.50</vProd></prod><imposto><ICMS><ICMSSN102><orig>0</orig><CSOSN>102</CSOSN></ICMSSN102></ICMS><PIS><PISNT><CST>08</CST></PISNT></PIS><COFINS><COFINSNT><CST>08</CST></COFINSNT></COFINS></imposto></det></infNFe></NFe>",
             usuario=self.user,
+            **origem_documento_fiscal_teste(
+                filial=self.filial,
+                usuario=self.user,
+                tipo_documento=TipoDocumentoFiscal.NFCE,
+                valor=Decimal("24.50"),
+                venda_data=timezone.now() - timedelta(days=40),
+            ),
         )
 
         chave_entrada = "52260812345678000199550010000001231000001234"
@@ -1301,6 +1309,12 @@ class FinanceiroTests(TestCase):
             valor_total=Decimal("99.99"),
             xml_conteudo="<NFe><infNFe Id='NFe99'/></NFe>",
             usuario=self.user,
+            **origem_documento_fiscal_teste(
+                filial=outra_filial,
+                usuario=self.user,
+                tipo_documento=TipoDocumentoFiscal.NFCE,
+                valor=Decimal("99.99"),
+            ),
         )
 
         registrar_contrato_contabil(
@@ -1390,6 +1404,12 @@ class FinanceiroTests(TestCase):
             valor_total=Decimal("88.00"),
             xml_conteudo=f"<NFe><infNFe><ide><dhEmi>{timezone.localdate().isoformat()}T11:00:00-03:00</dhEmi></ide></infNFe></NFe>",
             usuario=self.user,
+            **origem_documento_fiscal_teste(
+                filial=filial_secundaria,
+                usuario=self.user,
+                tipo_documento=TipoDocumentoFiscal.NFCE,
+                valor=Decimal("88.00"),
+            ),
         )
         pacote_filial = self.client.get(f"/financeiro/contabilidade/pacote-mensal.zip?filial={self.filial.pk}")
         with ZipFile(BytesIO(pacote_filial.content)) as arquivo:

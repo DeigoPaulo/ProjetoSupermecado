@@ -20,16 +20,17 @@ consulta, inutilização, CC-e e auditorias, mas não constituem uma rota operac
 
 ## Proteções aplicadas
 
-- O banco impede que um documento aponte simultaneamente para venda e pedido online.
+- O banco exige que um documento aponte para exatamente uma origem: venda ou pedido
+  online. Origem ausente e origem dupla são recusadas.
 - A validação de domínio exige exatamente uma dessas origens e confere que a origem
   pertence à mesma filial do documento.
 - O Admin permite consulta, mas não permite adicionar, excluir ou editar documentos.
-- A migration executa preflight não destrutivo e informa IDs antes de aplicar a
-  constraint caso encontre dupla origem legada.
+- A migration 0057 executa preflight não destrutivo e informa IDs antes de aplicar a
+  constraint caso encontre origem ausente ou dupla.
 - A unicidade de documento ativo por venda e por pedido continua protegida pelas
   constraints anteriores.
 
-## Legado sem origem
+## Tratamento do registro demonstrativo local
 
 A auditoria somente leitura encontrou um documento local emitido sem venda e sem
 pedido online. Não existe venda da mesma filial com o mesmo valor, e o registro não
@@ -39,25 +40,33 @@ O XML armazenado identifica somente `NFeDemo9001` e não contém os campos fisca
 estruturais de modelo, número, série, data de emissão ou total. Isso reforça que o
 registro parece demonstrativo, mas não autoriza sua exclusão automática.
 
-Por isso a migration 0056 preserva registros sem origem e bloqueia apenas a dupla
-origem. O registro não foi apagado, alterado nem vinculado por aproximação.
+Após confirmação expressa de que toda a base local contém apenas dados de
+desenvolvimento/demonstração, foi verificado que o registro `id=1` não possuía
+dependências. Somente esse registro demonstrativo foi removido da base local; nenhum
+outro documento ou dado de domínio foi apagado ou recriado.
 
-## Pendência para a constraint final
+Essa limpeza não faz parte da migration. Em uma instalação com dados legados, a
+migration 0057 para antes de alterar a constraint, lista os IDs incompatíveis e exige
+classificação com evidência. Ela não exclui registros, não infere vínculos e não
+inventa origem fiscal.
 
-Antes de exigir no banco exatamente uma origem, o responsável fiscal deve classificar
-o legado com evidência operacional. As alternativas legítimas são localizar a venda
-ou pedido real e registrar o vínculo correto, ou definir um fluxo explícito e auditado
-para documentos históricos externos. Não é permitido inferir origem por valor, data
-ou proximidade de numeração.
+## Evolução para devolução ao fornecedor
 
-Também será necessário decidir qual relação representará futuras NF-e de devolução ao
-fornecedor antes que esse fluxo passe a criar documentos. A constraint final deverá
-aceitar exatamente uma origem entre todos os fluxos então suportados.
+A regra atual cobre integralmente os dois criadores operacionais existentes. Antes que
+a devolução ao fornecedor passe a criar NF-e, o documento receberá uma relação
+protegida e dedicada ao registro aprovado de `RascunhoDevolucaoFornecedor`. A alteração
+de modelo e a troca da constraint ocorrerão na mesma migration, ampliando o XOR para
+exatamente uma entre venda, pedido online ou devolução.
+
+Até essa evolução ser implementada, o fluxo de devolução não pode criar
+`DocumentoFiscal`. Não será usado vínculo genérico, origem manual nem associação por
+valor, data, numeração ou proximidade.
 
 ## Validação do ciclo
 
-A seleção crítica atualizada passou com 21 testes em PostgreSQL 18 real, inclusive as
-provas concorrentes. A regressão completa do módulo Fiscal passou com 653 testes e
-três cenários ignorados por dependência explícita de ambiente. A migration 0056 foi
-aplicada à base local sem alterar o documento legado. A execução hospedada da CI
-PostgreSQL 16 também foi aprovada para o HEAD `169df11` (execução 35600481353).
+A regressão completa do módulo Fiscal passou com 654 testes e três cenários ignorados
+por dependência explícita de ambiente. A seleção integral da CI passou com 22 testes
+em PostgreSQL 18 real, incluindo as provas de ausência de origem, dupla origem, mesma
+filial, unicidade e concorrência. A migration 0057 foi aplicada à base local, que
+permaneceu sem documentos incompatíveis. A validação hospedada deste ciclo deve ser
+registrada no roadmap após o push.

@@ -231,8 +231,21 @@ class DocumentoFiscalOriginConstraintTests(FiscalOriginFixtureMixin, TestCase):
                 pedido=self.pedido,
             )
 
+    def test_banco_impede_documento_sem_origem(self):
+        with self.assertRaises(IntegrityError), transaction.atomic():
+            self._criar_documento(numero=5)
+
     def test_dominio_exige_exatamente_uma_origem(self):
-        sem_origem = self._criar_documento(numero=5)
+        sem_origem = DocumentoFiscal(
+            filial=self.filial,
+            tipo_documento=TipoDocumentoFiscal.NFCE,
+            ambiente=AmbienteFiscal.HOMOLOGACAO,
+            serie=1,
+            numero=6,
+            status=StatusDocumentoFiscal.PRONTO,
+            valor_total=Decimal("30.00"),
+            usuario=self.usuario,
+        )
         with self.assertRaisesMessage(ValidationError, "exatamente uma origem"):
             sem_origem.full_clean()
 
@@ -243,7 +256,7 @@ class DocumentoFiscalOriginConstraintTests(FiscalOriginFixtureMixin, TestCase):
             tipo_documento=TipoDocumentoFiscal.NFCE,
             ambiente=AmbienteFiscal.HOMOLOGACAO,
             serie=1,
-            numero=6,
+            numero=7,
             status=StatusDocumentoFiscal.PRONTO,
             valor_total=Decimal("30.00"),
             usuario=self.usuario,
@@ -268,7 +281,7 @@ class DocumentoFiscalOriginConstraintTests(FiscalOriginFixtureMixin, TestCase):
             tipo_documento=TipoDocumentoFiscal.NFCE,
             ambiente=AmbienteFiscal.HOMOLOGACAO,
             serie=1,
-            numero=7,
+            numero=8,
             status=StatusDocumentoFiscal.PRONTO,
             valor_total=Decimal("30.00"),
             usuario=self.usuario,

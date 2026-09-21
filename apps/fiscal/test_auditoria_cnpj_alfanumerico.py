@@ -13,7 +13,8 @@ from apps.fornecedores.models import Fornecedor
 
 from .auditoria_cnpj_alfanumerico import auditar_base_identificadores, auditar_identificadores
 from .estrategia_normalizacao_cnpj import calcular_dv_chave_acesso
-from .models import DocumentoFiscal
+from .models import DocumentoFiscal, TipoDocumentoFiscal
+from .test_support_documentos import origem_documento_fiscal_teste
 
 
 class AuditoriaCNPJAlfanumericoTests(TestCase):
@@ -73,7 +74,15 @@ class AuditoriaCNPJAlfanumericoTests(TestCase):
             empresa=self.empresa, razao_social="Fornecedor", cnpj="12.ABC.345/01DE-35"
         )
         Cliente.objects.create(empresa=self.empresa, nome="Pessoa", cpf_cnpj="123.456.789-00")
-        DocumentoFiscal.objects.create(filial=self.filial, usuario=self.usuario)
+        DocumentoFiscal.objects.create(
+            filial=self.filial,
+            usuario=self.usuario,
+            **origem_documento_fiscal_teste(
+                filial=self.filial,
+                usuario=self.usuario,
+                tipo_documento=TipoDocumentoFiscal.NFCE,
+            ),
+        )
         with CaptureQueriesContext(connection) as consultas:
             resultado = auditar_base_identificadores()
         self.assertTrue(consultas)

@@ -27,6 +27,7 @@ from .models import (
 from .sefaz_direta.adapter import NFE_NS
 from .sefaz_direta.cce import CONDICAO_USO_CCE, SefazDiretaCartaCorrecaoAdapter
 from .services_cce import registrar_carta_correcao
+from .test_support_documentos import origem_documento_fiscal_teste
 
 
 CNPJ = "12345678000195"
@@ -147,6 +148,11 @@ class CartaCorrecaoServiceTests(TestCase):
             protocolo="135260000000001",
             status=StatusDocumentoFiscal.EMITIDO,
             usuario=self.usuario,
+            **origem_documento_fiscal_teste(
+                filial=self.filial,
+                usuario=self.usuario,
+                tipo_documento=TipoDocumentoFiscal.NFE,
+            ),
         )
 
     def registrar(self, texto="Corrigir a descrição complementar para embalagem com doze unidades."):
