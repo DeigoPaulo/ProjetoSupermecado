@@ -180,4 +180,12 @@ class DocumentoFiscalAdmin(admin.ModelAdmin):
     list_display = ["id", "filial", "tipo_documento", "serie", "numero", "status", "valor_total", "criado_em"]
     list_filter = ["tipo_documento", "ambiente", "status"]
     search_fields = ["numero", "chave_acesso", "protocolo", "venda__id"]
-    readonly_fields = ["criado_em", "atualizado_em"]
+
+    def get_readonly_fields(self, request, obj=None):
+        return [campo.name for campo in self.model._meta.fields]
+
+    def has_add_permission(self, request):
+        return False
+
+    def has_delete_permission(self, request, obj=None):
+        return False

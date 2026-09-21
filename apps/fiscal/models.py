@@ -424,6 +424,24 @@ class DocumentoFiscal(models.Model):
             and self.transmissao_limite_em < timezone.now()
         )
 
+    def clean(self):
+        super().clean()
+        erros = {}
+        possui_venda = bool(self.venda_id)
+        possui_pedido = bool(self.pedido_online_id)
+        if possui_venda == possui_pedido:
+            erros["__all__"] = (
+                "O documento fiscal deve possuir exatamente uma origem: venda ou pedido online."
+            )
+        if possui_venda and self.filial_id and self.venda.filial_id != self.filial_id:
+            erros["venda"] = "A venda deve pertencer à mesma filial do documento fiscal."
+        if possui_pedido and self.filial_id and self.pedido_online.filial_id != self.filial_id:
+            erros["pedido_online"] = (
+                "O pedido online deve pertencer à mesma filial do documento fiscal."
+            )
+        if erros:
+            raise ValidationError(erros)
+
     class Meta:
         ordering = ["-criado_em"]
         unique_together = [
@@ -458,6 +476,13 @@ class DocumentoFiscal(models.Model):
                     )
                 ),
                 name="fisc_doc_reserva_transmissao_coerente",
+            ),
+            models.CheckConstraint(
+                condition=(
+                    models.Q(venda__isnull=True)
+                    | models.Q(pedido_online__isnull=True)
+                ),
+                name="fisc_doc_origens_nao_simultaneas",
             ),
         ]
 

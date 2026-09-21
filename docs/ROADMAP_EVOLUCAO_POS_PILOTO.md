@@ -781,6 +781,37 @@ Arquivos principais: .github/workflows/postgresql-integrity.yml,
 docs/TESTES_CONCORRENCIA_POSTGRESQL.md e
 docs/ROADMAP_EVOLUCAO_POS_PILOTO.md. Migrações: nenhuma.
 
+## Ponto de retomada — ciclo 149, 21/09/2026
+
+Iniciada a defesa em profundidade da origem do `DocumentoFiscal`. A auditoria
+confirmou que os dois criadores operacionais atuais são venda/NFC-e e pedido
+online/NF-e; sincronização recebida e DF-e usam modelos separados.
+
+- [x] Inventariar criações operacionais, Admin, fixtures, migrations e base local.
+- [x] Confirmar que rascunhos de devolução ao fornecedor ainda não criam
+  `DocumentoFiscal` e precisarão de origem própria antes da futura emissão.
+- [x] Bloquear no banco venda e pedido online simultâneos, com preflight que não
+  corrige nem exclui dados legados.
+- [x] Exigir na validação de domínio exatamente uma origem e filial coerente.
+- [x] Tornar o Admin de documentos fiscais somente leitura, sem inclusão ou exclusão.
+- [x] Aplicar `fiscal.0056` na base local: 1 documento sem origem foi preservado e
+  nenhuma dupla origem foi encontrada.
+- [x] Validar a seleção atualizada da CI em PostgreSQL 18 real: 21 testes aprovados,
+  incluindo as provas concorrentes e as constraints de origem.
+- [x] Revalidar o módulo Fiscal completo: 653 testes aprovados e 3 ignorados por
+  dependerem de ambiente específico.
+- [ ] A constraint final de presença permanece pendente: existe 1 NFC-e emitida
+  legada sem origem, sem venda candidata de mesma filial/valor e sem chave que
+  permita vínculo inequívoco. Nenhuma associação foi inventada.
+- [ ] Próximo passo exato: o responsável fiscal deve classificar esse documento
+  legado com evidência; depois, definir a origem da futura devolução ao fornecedor
+  e criar a constraint que exija exatamente uma origem entre os fluxos suportados.
+
+Arquivos principais: apps/fiscal/models.py, apps/fiscal/admin.py,
+apps/fiscal/test_concorrencia_preparacao.py,
+apps/fiscal/migrations/0056_bloqueia_origens_simultaneas_documento.py e
+docs/DEFESA_ORIGEM_DOCUMENTO_FISCAL.md.
+
 ## Ponto de retomada — ciclo 143, 18/09/2026
 
 Concluída a pendência P2 de parcelas/duplicatas da NF-e recebida, eliminando a perda da

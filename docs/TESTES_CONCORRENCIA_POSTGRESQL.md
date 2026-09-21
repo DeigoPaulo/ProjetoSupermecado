@@ -48,6 +48,7 @@ PostgreSQL 16 descartável, instala apenas as dependências declaradas no projet
 - o check do Django e a detecção de migrations esquecidas;
 - a finalização concorrente de uma entrada de compra;
 - a preparação concorrente de documentos fiscais por venda e pedido;
+- as constraints e validações de origem dos documentos fiscais;
 - a reserva concorrente de transmissão fiscal;
 - as corridas entre fechamento, venda, sangria e suprimento do caixa;
 - as constraints de origem das contas financeiras.

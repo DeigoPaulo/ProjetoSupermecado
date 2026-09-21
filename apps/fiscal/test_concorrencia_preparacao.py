@@ -3,6 +3,7 @@ from decimal import Decimal
 from threading import Barrier
 from unittest import skipUnless
 
+from django.contrib.admin.sites import AdminSite
 from django.contrib.auth import get_user_model
 from django.core.exceptions import ValidationError
 from django.db import IntegrityError, close_old_connections, connection, transaction
@@ -14,6 +15,7 @@ from apps.pdv.models import Caixa
 from apps.produtos.models import Categoria, Produto
 from apps.vendas.models import FormaPagamento, ItemVenda, PagamentoVenda, Venda
 
+from .admin import DocumentoFiscalAdmin
 from .models import (
     AmbienteFiscal,
     CodigoRegimeTributario,
@@ -220,6 +222,70 @@ class DocumentoFiscalOriginConstraintTests(FiscalOriginFixtureMixin, TestCase):
         primeiro.save(update_fields=["status"])
         novo = self._criar_documento(numero=3, pedido=self.pedido)
         self.assertEqual(novo.status, StatusDocumentoFiscal.PRONTO)
+
+    def test_banco_impede_venda_e_pedido_simultaneos(self):
+        with self.assertRaises(IntegrityError), transaction.atomic():
+            self._criar_documento(
+                numero=4,
+                venda=self.venda,
+                pedido=self.pedido,
+            )
+
+    def test_dominio_exige_exatamente_uma_origem(self):
+        sem_origem = self._criar_documento(numero=5)
+        with self.assertRaisesMessage(ValidationError, "exatamente uma origem"):
+            sem_origem.full_clean()
+
+        duas_origens = DocumentoFiscal(
+            filial=self.filial,
+            venda=self.venda,
+            pedido_online=self.pedido,
+            tipo_documento=TipoDocumentoFiscal.NFCE,
+            ambiente=AmbienteFiscal.HOMOLOGACAO,
+            serie=1,
+            numero=6,
+            status=StatusDocumentoFiscal.PRONTO,
+            valor_total=Decimal("30.00"),
+            usuario=self.usuario,
+        )
+        with self.assertRaisesMessage(ValidationError, "exatamente uma origem"):
+            duas_origens.full_clean()
+
+    def test_dominio_rejeita_origem_de_outra_filial(self):
+        outra_empresa = Empresa.objects.create(
+            razao_social="Outra empresa fiscal LTDA",
+            nome_fantasia="Outra empresa fiscal",
+            cnpj="45.678.901/0001-23",
+        )
+        outra_filial = Filial.objects.create(
+            empresa=outra_empresa,
+            nome="Outra filial fiscal",
+            cnpj=outra_empresa.cnpj,
+        )
+        documento = DocumentoFiscal(
+            filial=outra_filial,
+            venda=self.venda,
+            tipo_documento=TipoDocumentoFiscal.NFCE,
+            ambiente=AmbienteFiscal.HOMOLOGACAO,
+            serie=1,
+            numero=7,
+            status=StatusDocumentoFiscal.PRONTO,
+            valor_total=Decimal("30.00"),
+            usuario=self.usuario,
+        )
+
+        with self.assertRaisesMessage(ValidationError, "mesma filial"):
+            documento.full_clean()
+
+    def test_admin_documento_fiscal_e_somente_leitura(self):
+        admin_documento = DocumentoFiscalAdmin(DocumentoFiscal, AdminSite())
+
+        self.assertFalse(admin_documento.has_add_permission(None))
+        self.assertFalse(admin_documento.has_delete_permission(None))
+        self.assertEqual(
+            set(admin_documento.get_readonly_fields(None)),
+            {campo.name for campo in DocumentoFiscal._meta.fields},
+        )
 
     def test_fixture_prepara_documentos_pelos_dois_servicos(self):
         documento_venda = preparar_documento_venda(self.venda, self.usuario)

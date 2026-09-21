@@ -72,7 +72,7 @@ jobs:
         run: >-
           python manage.py test
           apps.compras.test_concorrencia_finalizacao
-          apps.fiscal.test_concorrencia_preparacao.DocumentoFiscalOriginConcurrencyTests
+          apps.fiscal.test_concorrencia_preparacao
           apps.fiscal.test_reserva_transmissao.ReservaTransmissaoConcurrencyTests
           apps.pdv.test_concorrencia_caixa.CaixaConcorrenciaPostgreSQLTests
           apps.financeiro.test_constraints_origem_conta
