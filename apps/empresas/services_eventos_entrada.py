@@ -189,7 +189,6 @@ def _produto_salvar(evento):
         "aliquota_icms": _valor_decimal(dados, "aliquota_icms", "0"),
         "reducao_base_icms": _valor_decimal_opcional(dados, "reducao_base_icms"),
         "aliquota_fcp": _valor_decimal_opcional(dados, "aliquota_fcp"),
-        "codigo_beneficio_fiscal": _valor_texto(dados, "codigo_beneficio_fiscal"),
         "cst_pis": _valor_texto(dados, "cst_pis"),
         "aliquota_pis": _valor_decimal_opcional(dados, "aliquota_pis"),
         "cst_cofins": _valor_texto(dados, "cst_cofins"),

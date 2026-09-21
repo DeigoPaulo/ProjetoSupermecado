@@ -1,10 +1,12 @@
+import json
 from datetime import timedelta
 from decimal import Decimal
-from io import BytesIO
+from io import BytesIO, StringIO
 
 from django.contrib.auth import get_user_model
 from django.core.exceptions import ValidationError
 from django.core.files.uploadedfile import SimpleUploadedFile
+from django.core.management import call_command
 from django.test import Client, TestCase
 from django.utils import timezone
 from PIL import Image
@@ -17,6 +19,7 @@ from apps.empresas.services_snapshots import produto_snapshot_payload
 from apps.fornecedores.models import Fornecedor
 
 from .forms import CategoriaForm, ProdutoForm, ProdutoFornecedorForm, ReajustePrecoForm, VersaoPrecoProdutoForm
+from .diagnosticos import diagnostico_cbenef_legado
 from .models import (
     Categoria, CodigoBarrasProduto, ConfiguracaoBalancaProduto, InformacaoNutricional, NivelCategoriaProduto, Produto,
     ProdutoFornecedor, ProdutoImagem, SetorBalanca, StatusVersaoPreco, TipoProduto, VersaoPrecoProduto,
@@ -134,6 +137,30 @@ class ProdutoViewsTests(TestCase):
         self.assertContains(response, "planilha fiscal atualiza apenas produtos existentes")
         self.assertFalse(Produto.all_objects.filter(codigo_barras="7890000000999").exists())
         self.assertFalse(Categoria.all_objects.filter(nome="Categoria indevida").exists())
+
+    def test_importacao_csv_rejeita_coluna_cbenef_legado_sem_alterar_produto(self):
+        self.produto.codigo_beneficio_fiscal = "GO821019"
+        self.produto.save(update_fields=["codigo_beneficio_fiscal"])
+        conteudo = """codigo_barras;nome;categoria;preco_venda;codigo_beneficio_fiscal
+7891234567890;Arroz alterado;Mercearia;99,00;GO123456
+"""
+        arquivo = SimpleUploadedFile(
+            "produto-com-cbenef-legado.csv",
+            conteudo.encode("utf-8"),
+            content_type="text/csv",
+        )
+
+        response = self.client.post(
+            "/produtos/importar-csv/",
+            {"arquivo": arquivo, "atualizar_existentes": "on"},
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "nao e mais aceita na importacao de produtos")
+        self.produto.refresh_from_db()
+        self.assertEqual(self.produto.nome, "Arroz")
+        self.assertEqual(self.produto.preco_venda, Decimal("15.00"))
+        self.assertEqual(self.produto.codigo_beneficio_fiscal, "GO821019")
 
     def test_importacao_csv_rejeita_percentual_fiscal_invalido_sem_alterar_produto(self):
         conteudo = """codigo_barras;nome;categoria;preco_venda;aliquota_icms
@@ -975,7 +1002,7 @@ class ProdutoViewsTests(TestCase):
         self.assertIn(setor_a.pk, ids)
         self.assertNotIn(setor_b.pk, ids)
 
-    def test_perfil_fiscal_avancado_e_opcional_validado_e_sincronizado(self):
+    def test_formulario_e_snapshot_nao_escrevem_nem_publicam_cbenef_legado(self):
         form = ProdutoForm(
             data={
                 "codigo_barras": "7891234567005",
@@ -1005,15 +1032,51 @@ class ProdutoViewsTests(TestCase):
             }
         )
 
+        self.assertNotIn("codigo_beneficio_fiscal", form.fields)
         self.assertTrue(form.is_valid(), form.errors.as_text())
         produto = form.save()
-        self.assertEqual(produto.codigo_beneficio_fiscal, "GO123")
+        self.assertEqual(produto.codigo_beneficio_fiscal, "")
         self.assertEqual(produto.aliquota_pis, Decimal("1.6500"))
         payload = produto_snapshot_payload(produto)
+        self.assertEqual(payload["contrato"], "produto_snapshot_v2")
+        self.assertNotIn("codigo_beneficio_fiscal", payload)
         self.assertEqual(payload["cst_cofins"], "01")
         self.assertEqual(payload["aliquota_cofins"], "7.6000")
         self.assertEqual(payload["codigo_enquadramento_ipi"], "999")
         self.assertEqual(payload["classificacao_tributaria_ibs_cbs"], "000001")
+
+    def test_tela_produto_orienta_beneficio_por_operacao_sem_expor_campo_legado(self):
+        response = self.client.get(f"/produtos/{self.produto.pk}/editar/")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertNotContains(response, 'name="codigo_beneficio_fiscal"')
+        self.assertContains(response, "Benefício fiscal por operação")
+        self.assertContains(response, "produto + natureza de operação")
+        self.assertContains(response, "/fiscal/beneficios-produtos/novo/")
+
+    def test_diagnostico_cbenef_legado_e_somente_leitura_e_expoe_decisao(self):
+        self.produto.codigo_beneficio_fiscal = "GO821019"
+        self.produto.save(update_fields=["codigo_beneficio_fiscal"])
+
+        diagnostico = diagnostico_cbenef_legado()
+
+        self.assertEqual(diagnostico["quantidade_produtos"], 1)
+        self.assertEqual(diagnostico["produtos"][0]["id"], self.produto.pk)
+        self.assertTrue(diagnostico["somente_leitura"])
+        self.assertEqual(
+            diagnostico["estado_fallback_emissivo"],
+            "AINDA_EXISTE_CONSUMIDOR_EMISSIVO",
+        )
+        self.assertEqual(
+            diagnostico["decisao_remocao_coluna"],
+            "NAO_PODE_REMOVER_COLUNA",
+        )
+        self.produto.refresh_from_db()
+        self.assertEqual(self.produto.codigo_beneficio_fiscal, "GO821019")
+
+        saida = StringIO()
+        call_command("inventariar_cbenef_legado", "--json", stdout=saida)
+        self.assertEqual(json.loads(saida.getvalue())["quantidade_produtos"], 1)
 
     def test_perfil_fiscal_avancado_rejeita_codigos_e_percentuais_invalidos(self):
         form = ProdutoForm(

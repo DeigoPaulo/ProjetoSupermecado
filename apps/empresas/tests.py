@@ -18,6 +18,7 @@ from apps.estoque.models import Estoque, MovimentacaoEstoque, TipoMovimentacaoEs
 from apps.financeiro.models import ContaMovimentoFinanceiro, TipoContaMovimento, TipoLancamentoFinanceiro
 from apps.financeiro.services import registrar_lancamento
 from apps.fiscal.estrategia_normalizacao_cnpj import calcular_dv_cnpj
+from apps.fiscal.models import ParametrizacaoBeneficioFiscalProduto
 from apps.produtos.models import Categoria, CodigoBarrasProduto, Produto
 
 from .forms import EmpresaForm
@@ -515,7 +516,8 @@ class EmpresasViewsTests(TestCase):
         evento_produto = EventoSincronizacao.objects.get(tipo="produto.atualizado")
         evento = EventoSincronizacao.objects.get(tipo="estoque.saldo_atualizado")
         self.assertEqual(EventoSincronizacao.objects.count(), 2)
-        self.assertEqual(evento_produto.payload["contrato"], "produto_snapshot_v1")
+        self.assertEqual(evento_produto.payload["contrato"], "produto_snapshot_v2")
+        self.assertNotIn("codigo_beneficio_fiscal", evento_produto.payload)
         self.assertEqual(evento_produto.payload["codigo_barras"], produto.codigo_barras)
         self.assertEqual(evento_produto.payload["preco_venda"], "6.00")
         self.assertEqual(evento_produto.payload["categoria"], {"nome": "Mercearia hibrida"})
@@ -1176,6 +1178,7 @@ class EmpresasViewsTests(TestCase):
             payload={
                 "id": "747fd38b-0e68-4315-92d4-1827ba53c84d",
                 "payload": {
+                    "contrato": "produto_snapshot_v1",
                     "codigo_barras": "789900000001",
                     "nome": "Macarrao Parafuso",
                     "categoria": "Mercearia",
@@ -1257,7 +1260,10 @@ class EmpresasViewsTests(TestCase):
         self.assertEqual(produto.informacao_nutricional.gluten, "CONTEM")
         self.assertEqual(produto.reducao_base_icms, Decimal("12.50"))
         self.assertEqual(produto.aliquota_fcp, Decimal("2.00"))
-        self.assertEqual(produto.codigo_beneficio_fiscal, "GO123456")
+        self.assertEqual(produto.codigo_beneficio_fiscal, "")
+        self.assertFalse(
+            ParametrizacaoBeneficioFiscalProduto.objects.filter(produto=produto).exists()
+        )
         self.assertEqual(produto.cst_pis, "01")
         self.assertEqual(produto.aliquota_pis, Decimal("1.6500"))
         self.assertEqual(produto.cst_cofins, "01")
@@ -1277,6 +1283,7 @@ class EmpresasViewsTests(TestCase):
             categoria=categoria,
             preco_custo=Decimal("4.00"),
             preco_venda=Decimal("7.00"),
+            codigo_beneficio_fiscal="GO821019",
         )
         evento = EventoEntradaSincronizacao.objects.create(
             identificador="4560a3f2-e846-4d8d-a3dc-bc766ca6643f",
@@ -1287,11 +1294,13 @@ class EmpresasViewsTests(TestCase):
                 "id": "4560a3f2-e846-4d8d-a3dc-bc766ca6643f",
                 "criado_em": "2099-01-01T10:00:00Z",
                 "payload": {
+                    "contrato": "produto_snapshot_v1",
                     "codigo_barras": "789900000002",
                     "nome": "Refrigerante Cola 2L",
                     "categoria": "Bebidas",
                     "preco_custo": "4.50",
                     "preco_venda": "8.99",
+                    "codigo_beneficio_fiscal": "GO999999",
                     "vendido_no_pdv": True,
                     "is_active": True,
                 },
@@ -1305,6 +1314,10 @@ class EmpresasViewsTests(TestCase):
         self.assertEqual(evento.status, StatusEventoEntrada.PROCESSADO)
         self.assertEqual(produto.nome, "Refrigerante Cola 2L")
         self.assertEqual(produto.preco_venda, Decimal("8.99"))
+        self.assertEqual(produto.codigo_beneficio_fiscal, "GO821019")
+        self.assertFalse(
+            ParametrizacaoBeneficioFiscalProduto.objects.filter(produto=produto).exists()
+        )
 
     def test_processador_de_entrada_marca_conflito_quando_produto_local_e_mais_novo(self):
         categoria = Categoria.objects.create(nome="Higiene")

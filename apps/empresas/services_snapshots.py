@@ -64,7 +64,7 @@ def _produtos_similares_payload(produto):
 
 def produto_snapshot_payload(produto, *, empresa=None):
     return {
-        "contrato": "produto_snapshot_v1",
+        "contrato": "produto_snapshot_v2",
         "codigo_barras": produto.codigo_barras,
         "codigo_interno": produto.codigo_interno,
         "nome": produto.nome,
@@ -123,7 +123,6 @@ def produto_snapshot_payload(produto, *, empresa=None):
         "aliquota_icms": str(produto.aliquota_icms or 0),
         "reducao_base_icms": str(produto.reducao_base_icms) if produto.reducao_base_icms is not None else None,
         "aliquota_fcp": str(produto.aliquota_fcp) if produto.aliquota_fcp is not None else None,
-        "codigo_beneficio_fiscal": produto.codigo_beneficio_fiscal,
         "cst_pis": produto.cst_pis,
         "aliquota_pis": str(produto.aliquota_pis) if produto.aliquota_pis is not None else None,
         "cst_cofins": produto.cst_cofins,

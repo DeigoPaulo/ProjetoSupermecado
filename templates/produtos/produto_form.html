@@ -257,7 +257,11 @@
     <div class="form-grid form-grid-inner">
       <label class="form-field"><span>{{ form.reducao_base_icms.label }}</span>{{ form.reducao_base_icms }}{{ form.reducao_base_icms.errors }}</label>
       <label class="form-field"><span>{{ form.aliquota_fcp.label }}</span>{{ form.aliquota_fcp }}{{ form.aliquota_fcp.errors }}</label>
-      <label class="form-field"><span>{{ form.codigo_beneficio_fiscal.label }}</span>{{ form.codigo_beneficio_fiscal }}{{ form.codigo_beneficio_fiscal.errors }}<small>Código definido pela UF quando aplicável.</small></label>
+      <div class="form-note">
+        <strong>Benefício fiscal por operação</strong>
+        <span>A decisão de cBenef não é feita no cadastro genérico. Use a área Fiscal para definir produto + natureza de operação.</span>
+        <a href="{% url 'fiscal:beneficio_produto_novo' %}">Abrir parametrização fiscal</a>
+      </div>
       <label class="form-field"><span>{{ form.cst_pis.label }}</span>{{ form.cst_pis }}{{ form.cst_pis.errors }}</label>
       <label class="form-field"><span>{{ form.aliquota_pis.label }}</span>{{ form.aliquota_pis }}{{ form.aliquota_pis.errors }}</label>
       <label class="form-field"><span>{{ form.cst_cofins.label }}</span>{{ form.cst_cofins }}{{ form.cst_cofins.errors }}</label>

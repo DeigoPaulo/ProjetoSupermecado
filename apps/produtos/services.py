@@ -83,6 +83,11 @@ def importar_produtos_csv(
     faltando = CABECALHOS_OBRIGATORIOS - fieldnames
     if faltando:
         raise ValueError(f"Cabecalhos obrigatorios ausentes: {', '.join(sorted(faltando))}")
+    if "codigo_beneficio_fiscal" in fieldnames:
+        raise ValueError(
+            "A coluna codigo_beneficio_fiscal nao e mais aceita na importacao de produtos. "
+            "Defina o beneficio na area Fiscal por produto e natureza de operacao."
+        )
 
     criados = 0
     atualizados = 0
@@ -153,7 +158,6 @@ def importar_produtos_csv(
                 "aliquota_icms": lambda valor: _decimal_opcional(valor, "Aliquota ICMS"),
                 "reducao_base_icms": lambda valor: _decimal_opcional(valor, "Reducao da base ICMS"),
                 "aliquota_fcp": lambda valor: _decimal_opcional(valor, "Aliquota FCP"),
-                "codigo_beneficio_fiscal": lambda valor: str(valor or "").strip().upper(),
                 "cst_pis": lambda valor: _codigo_numerico(valor, 2, "CST PIS"),
                 "aliquota_pis": lambda valor: _decimal_opcional(valor, "Aliquota PIS"),
                 "cst_cofins": lambda valor: _codigo_numerico(valor, 2, "CST COFINS"),

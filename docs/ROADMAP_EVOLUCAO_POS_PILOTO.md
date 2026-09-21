@@ -942,10 +942,9 @@ deixou de ser apresentado no CSV como fonte emissiva.
   manter a preparação emissiva fail-closed em Goiás.
 - [x] Validar 3 testes focados e a regressão fiscal completa: 661 testes aprovados e
   3 ignorados por dependências explícitas de ambiente.
-- [ ] Próximo passo interno seguro: remover o campo legado `codigo_beneficio_fiscal` do
-  formulário/importação e, após confirmar que nenhum consumidor interno ainda depende
-  dele, criar migration somente de esquema para removê-lo do `Produto`; nenhum valor
-  legado será copiado para a nova parametrização por inferência.
+- [x] Passo retomado nos ciclos 154/155: os escritores cadastrais e de integração foram
+  retirados sem inferência. A remoção física foi bloqueada porque ainda existe fallback
+  emissivo de compatibilidade fora de GO + CRT 2/3.
 
 Migrações: nenhuma nova neste ciclo.
 
@@ -991,6 +990,39 @@ acessada e as travas de produção permaneceram inalteradas.
 
 Migrações: nenhuma nova neste ciclo. Produto.codigo_beneficio_fiscal foi
 deliberadamente preservado.
+
+## Ponto de retomada — ciclo 155, 21/09/2026
+
+Concluída a aposentadoria dos escritores e exposições cadastrais do cBenef legado. A
+auditoria completa está em `docs/INVENTARIO_CBENEF_LEGADO.md`; nenhuma classificação foi
+inferida, nenhuma migration foi criada e nenhuma rede fiscal foi acessada.
+
+- [x] Inventariar modelos, formulários, serviços, importação/exportação, snapshots,
+  eventos recebidos, telas, serialização XML, fallback emissivo, testes e migrations.
+- [x] Retirar o campo legado do formulário de Produto e orientar a decisão explícita na
+  área Fiscal por produto e natureza de operação.
+- [x] Retirar o escritor da importação CSV e rejeitar o cabeçalho antigo com mensagem
+  clara, sem aceitar silenciosamente um valor que não será aplicado.
+- [x] Publicar `produto_snapshot_v2` sem cBenef legado; manter eventos v1 legíveis, mas
+  ignorar o campo antigo na entrada, preservando o valor local existente.
+- [x] Retirar a coluna legada da exportação fiscal e manter somente as decisões por
+  operação como informação cadastral atual.
+- [x] Criar diagnóstico e comando somente leitura para contar produtos remanescentes e
+  listar referências técnicas; a base local retornou zero produtos preenchidos.
+- [x] Caracterizar a borda emissiva: GO + CRT 2/3 usa exclusivamente a decisão explícita;
+  fora desse recorte, o fallback legado permanece para evitar mudança fiscal silenciosa.
+- [x] Classificar o estado como `AINDA_EXISTE_CONSUMIDOR_EMISSIVO` e a decisão como
+  `NAO_PODE_REMOVER_COLUNA`; a ausência de dados locais não muda essa conclusão.
+- [x] Validar 11 testes focados, 54 testes de Produtos, 90 de Empresas/sincronização,
+  669 fiscais (3 ignorados) e 142 de Configurações. A classe crítica teve 10 testes
+  aprovados e 2 exclusivos de PostgreSQL ignorados na base SQLite local; `check`,
+  migrations e diff ficaram íntegros.
+- [ ] Próximo passo interno seguro: desenhar e testar a substituição explícita do fallback
+  nos demais escopos de UF/CRT. Só então repetir o inventário e avaliar uma migration de
+  remoção, exigindo zero consumidor emissivo e zero diferença de comportamento.
+
+Migrações: nenhuma nova neste ciclo. `Produto.codigo_beneficio_fiscal` permanece apenas
+para a compatibilidade emissiva documentada.
 
 ## Ponto de retomada — ciclo 143, 18/09/2026
 

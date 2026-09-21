@@ -862,6 +862,7 @@ class FiscalTests(TestCase):
             categoria=self.categoria,
             preco_custo=Decimal("1.00"),
             preco_venda=Decimal("2.50"),
+            codigo_beneficio_fiscal="LEGACYONLY",
         )
 
         response = self.client.get(
@@ -876,6 +877,8 @@ class FiscalTests(TestCase):
         self.assertIn("codigo_barras;codigo_interno;nome;categoria;preco_venda", conteudo)
         self.assertIn("classificacao_tributaria_ibs_cbs;_modo_importacao", conteudo)
         self.assertIn("beneficio_icms_por_operacao", conteudo)
+        self.assertNotIn("codigo_beneficio_fiscal_legado", conteudo)
+        self.assertNotIn("LEGACYONLY", conteudo)
         self.assertIn(";fiscal\r\n", conteudo)
         self.assertIn(produto_pendente.codigo_barras, conteudo)
         self.assertIn("2,50", conteudo)

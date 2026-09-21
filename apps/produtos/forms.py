@@ -75,7 +75,6 @@ class ProdutoForm(forms.ModelForm):
             "aliquota_icms",
             "reducao_base_icms",
             "aliquota_fcp",
-            "codigo_beneficio_fiscal",
             "cst_pis",
             "aliquota_pis",
             "cst_cofins",
@@ -186,10 +185,6 @@ class ProdutoForm(forms.ModelForm):
         return self._codigo_numerico(
             "classificacao_tributaria_ibs_cbs", 6, "Classificação tributária IBS/CBS"
         )
-
-    def clean_codigo_beneficio_fiscal(self):
-        return (self.cleaned_data.get("codigo_beneficio_fiscal") or "").strip().upper()
-
 
 CAMPOS_NUTRICIONAIS_DECIMAIS = [
     "porcao_quantidade",
