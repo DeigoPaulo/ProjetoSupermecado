@@ -306,6 +306,11 @@ class VendaServiceTests(TestCase):
                     "transacao_externa_id": "pix-e2e-real",
                     "nsu": "123456",
                     "codigo_autorizacao": "ABC123",
+                    "tipo_integracao": "1",
+                    "cnpj_instituicao_pagamento": "12.345.678/0001-95",
+                    "bandeira_cartao": "01",
+                    "cnpj_beneficiario_pagamento": "04.252.011/0001-10",
+                    "identificador_terminal_pagamento": "PINPAD-01",
                     "mensagem_processadora": "Aprovado pela operadora.",
                 }
             ],
@@ -315,7 +320,35 @@ class VendaServiceTests(TestCase):
         self.assertEqual(pagamento.transacao_externa_id, "pix-e2e-real")
         self.assertEqual(pagamento.nsu, "123456")
         self.assertEqual(pagamento.codigo_autorizacao, "ABC123")
+        self.assertEqual(pagamento.tipo_integracao, "1")
+        self.assertEqual(pagamento.cnpj_instituicao_pagamento, "12345678000195")
+        self.assertEqual(pagamento.bandeira_cartao, "01")
+        self.assertEqual(pagamento.cnpj_beneficiario_pagamento, "04252011000110")
+        self.assertEqual(pagamento.identificador_terminal_pagamento, "PINPAD-01")
         self.assertEqual(pagamento.mensagem_processadora, "Aprovado pela operadora.")
+
+    def test_pagamento_eletronico_rejeita_metadado_fiscal_malformado(self):
+        base = {
+            "forma_pagamento": self.pix,
+            "valor": Decimal("25.00"),
+            "transacao_externa_id": "pix-e2e-real",
+            "nsu": "123456",
+            "codigo_autorizacao": "ABC123",
+        }
+        invalidos = (
+            ({"tipo_integracao": "3"}, "Tipo de integração"),
+            ({"cnpj_instituicao_pagamento": "123"}, "14 dígitos"),
+            ({"bandeira_cartao": "VISA"}, "2 dígitos"),
+            ({"identificador_terminal_pagamento": "X" * 41}, "40 caracteres"),
+        )
+        for dados, mensagem in invalidos:
+            with self.subTest(dados=dados), self.assertRaisesMessage(ValidationError, mensagem):
+                finalizar_venda(
+                    caixa=self.caixa,
+                    usuario=self.usuario,
+                    itens=[{"produto": self.produto, "quantidade": Decimal("1.000")}],
+                    pagamentos=[{**base, **dados}],
+                )
 
     def test_finalizar_venda_prepara_nfce_automaticamente_quando_fiscal_esta_pronto(self):
         self.filial.uf = "SP"

@@ -1024,6 +1024,39 @@ inferida, nenhuma migration foi criada e nenhuma rede fiscal foi acessada.
 Migrações: nenhuma nova neste ciclo. `Produto.codigo_beneficio_fiscal` permanece apenas
 para a compatibilidade emissiva documentada.
 
+## Ponto de retomada — ciclo 156, 21/09/2026
+
+Concluído o primeiro bloco interno seguro da vinculação fiscal dos pagamentos eletrônicos
+na NFC-e GO. A auditoria detalhada está em
+`docs/AUDITORIA_VINCULACAO_PAGAMENTOS_NFCE_GO.md`. Nenhuma credencial real foi usada,
+nenhuma rede Focus/SEFAZ foi acionada e nenhuma liberação de produção foi realizada.
+
+- [x] Confirmar que o PDV já suporta pagamentos divididos e exige confirmação, ID externo,
+  NSU e autorização para cada parcela eletrônica antes de concluir a venda.
+- [x] Confirmar que o núcleo fiscal já mapeia crédito, débito e PIX para `tPag` 03, 04 e
+  17, preservando o `vPag` individual, mas ainda não serializa o grupo condicional `card`.
+- [x] Criar no `PagamentoVenda` os campos estruturados de tipo de integração, CNPJ da
+  instituição, bandeira, CNPJ do beneficiário e identificador do terminal; ampliar a
+  autorização para o limite do leiaute e preservar todos os campos vazios quando o
+  adaptador não os fornecer.
+- [x] Evoluir o contrato do app desktop para `pdv_tef_v2`, transportar os metadados por
+  parcela até a venda e rejeitar formatos inválidos no adaptador e no serviço.
+- [x] Manter o simulador restrito ao desenvolvimento sem fabricar tipo de integração,
+  CNPJ, bandeira, beneficiário ou terminal; esses dados deverão vir do provedor real.
+- [x] Criar a migration `vendas.0013_pagamentovenda_dados_fiscais_eletronicos` e validar
+  persistência, contrato do PDV, adaptadores, pagamentos divididos e regressões fiscal e
+  de configuração.
+- [ ] Próximo passo interno seguro: serializar condicionalmente o grupo `card` no XML da
+  NFC-e, com validação fail-closed por forma de pagamento; alimentar `cAut` somente pela
+  autorização persistida e preservar a mesma estrutura no payload Focus e na SEFAZ
+  direta. Não presumir bandeira para PIX nem tratar `tpIntegra=1` como padrão.
+
+Pendências externas preservadas: escolher/conectar o driver real de TEF/PIX, obter os
+metadados oficiais da adquirente/instituição, validar em equipamento físico e homologar
+o XML com a SEFAZ-GO. Esses itens não podem ser aprovados por simulador.
+
+Migração: `apps/vendas/migrations/0013_pagamentovenda_dados_fiscais_eletronicos.py`.
+
 ## Ponto de retomada — ciclo 143, 18/09/2026
 
 Concluída a pendência P2 de parcelas/duplicatas da NF-e recebida, eliminando a perda da
@@ -2498,7 +2531,7 @@ Esta é uma frente complementar obrigatória antes da homologação real da NFC-
 
 - [x] Capturar no PDV o estado confirmado, identificador externo, NSU e código de autorização do TEF/PIX e impedir a finalização de transação eletrônica incompleta.
 - [x] Mapear as formas operacionais para `tPag` 03 (crédito), 04 (débito) e 17 (PIX), preservando o valor de cada parcela em `vPag`.
-- [ ] Estruturar no cadastro/retorno do adaptador os dados fiscais ainda ausentes, incluindo CNPJ da credenciadora ou instituição e bandeira quando aplicável, sem valores padrão.
+- [x] Estruturar no cadastro/retorno do adaptador os dados fiscais ainda ausentes, incluindo tipo de integração, CNPJ da credenciadora ou instituição, bandeira quando aplicável, CNPJ do beneficiário e identificador do terminal, sem valores padrão.
 - [ ] Serializar no XML da NFC-e o grupo condicional de integração de pagamento, incluindo `tpIntegra`, `CNPJ`, `tBand` e `cAut` somente conforme a forma e o leiaute aplicáveis.
 - [ ] Alimentar `cAut` exclusivamente com a autorização confirmada pelo adaptador; não usar NSU, identificador externo ou texto digitado como substituto automático.
 - [ ] Tratar PIX dinâmico integrado conforme a estrutura vigente, sem inventar bandeira e sem assumir o grupo de cartão quando o XSD/regra aplicável determinar outra estrutura.

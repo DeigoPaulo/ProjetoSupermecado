@@ -3,7 +3,12 @@ import types
 import unittest
 
 import app
-from devices.tef import RespostaTefInvalida, capacidades_adaptador_tef, validar_resposta_documento_pinpad
+from devices.tef import (
+    RespostaTefInvalida,
+    capacidades_adaptador_tef,
+    validar_resposta_documento_pinpad,
+    validar_resposta_tef,
+)
 
 
 class AdaptadorFake:
@@ -19,6 +24,11 @@ class AdaptadorFake:
             "transacao_externa_id": "STONE-123",
             "nsu": "987654",
             "codigo_autorizacao": "ABC123",
+            "tipo_integracao": "1",
+            "cnpj_instituicao_pagamento": "12.345.678/0001-95",
+            "bandeira_cartao": "01",
+            "cnpj_beneficiario_pagamento": "04.252.011/0001-10",
+            "identificador_terminal_pagamento": "PINPAD-01",
             "mensagem_processadora": "Aprovado pelo adaptador fake.",
         }
 
@@ -121,6 +131,11 @@ class AdaptadoresTefTests(unittest.TestCase):
         self.assertTrue(pagamento["aprovado"])
         self.assertEqual(pagamento["provedor"], "STONE")
         self.assertEqual(pagamento["valor"], "20.50")
+        self.assertEqual(pagamento["tipo_integracao"], "1")
+        self.assertEqual(pagamento["cnpj_instituicao_pagamento"], "12345678000195")
+        self.assertEqual(pagamento["bandeira_cartao"], "01")
+        self.assertEqual(pagamento["cnpj_beneficiario_pagamento"], "04252011000110")
+        self.assertEqual(pagamento["identificador_terminal_pagamento"], "PINPAD-01")
         self.assertTrue(estorno["estornado"])
         self.assertEqual(estorno["estorno_transacao_id"], "STONE-REF-123")
 
@@ -135,6 +150,20 @@ class AdaptadoresTefTests(unittest.TestCase):
         self.assertEqual(resultado["status"], "erro")
         self.assertFalse(resultado["aprovado"])
         self.assertIn("autorizacao completa", resultado["mensagem"])
+
+    def test_metadados_fiscais_invalidos_do_driver_sao_rejeitados(self):
+        base = AdaptadorFake(
+            provedor="STONE", modo="DESKTOP_BRIDGE", configuracao={}
+        ).processar({})
+        casos = (
+            {"tipo_integracao": "3"},
+            {"cnpj_instituicao_pagamento": "123"},
+            {"bandeira_cartao": "VISA"},
+            {"identificador_terminal_pagamento": "X" * 41},
+        )
+        for alteracao in casos:
+            with self.subTest(alteracao=alteracao), self.assertRaises(RespostaTefInvalida):
+                validar_resposta_tef({**base, **alteracao}, "pagamento")
 
 
     def test_excecao_do_sdk_vira_falha_controlada(self):

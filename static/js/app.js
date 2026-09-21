@@ -1511,7 +1511,7 @@ document.addEventListener("DOMContentLoaded", function () {
 
     function limparAutorizacaoPagamento(row, preservarRequisicao) {
       if (!row) return;
-      ["pagamento_status", "pagamento_transacao_externa_id", "pagamento_nsu", "pagamento_codigo_autorizacao", "pagamento_mensagem_processadora"].forEach(function (nome) {
+      ["pagamento_status", "pagamento_transacao_externa_id", "pagamento_nsu", "pagamento_codigo_autorizacao", "pagamento_tipo_integracao", "pagamento_cnpj_instituicao", "pagamento_bandeira_cartao", "pagamento_cnpj_beneficiario", "pagamento_identificador_terminal", "pagamento_mensagem_processadora"].forEach(function (nome) {
         var campo = row.querySelector("input[name='" + nome + "']");
         if (campo) campo.value = "";
       });
@@ -1528,6 +1528,11 @@ document.addEventListener("DOMContentLoaded", function () {
         pagamento_transacao_externa_id: resultado.transacao_externa_id || "",
         pagamento_nsu: resultado.nsu || "",
         pagamento_codigo_autorizacao: resultado.codigo_autorizacao || "",
+        pagamento_tipo_integracao: resultado.tipo_integracao || "",
+        pagamento_cnpj_instituicao: resultado.cnpj_instituicao_pagamento || "",
+        pagamento_bandeira_cartao: resultado.bandeira_cartao || "",
+        pagamento_cnpj_beneficiario: resultado.cnpj_beneficiario_pagamento || "",
+        pagamento_identificador_terminal: resultado.identificador_terminal_pagamento || "",
         pagamento_mensagem_processadora: resultado.mensagem_processadora || "",
       };
       Object.keys(mapa).forEach(function (nome) {

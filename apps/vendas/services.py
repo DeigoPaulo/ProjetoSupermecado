@@ -187,6 +187,11 @@ def finalizar_venda(*, caixa, usuario, itens, forma_pagamento=None, desconto=Dec
                 transacao_externa_id=pagamento.get("transacao_externa_id", ""),
                 nsu=pagamento.get("nsu", ""),
                 codigo_autorizacao=pagamento.get("codigo_autorizacao", ""),
+                tipo_integracao=pagamento.get("tipo_integracao", ""),
+                cnpj_instituicao_pagamento=pagamento.get("cnpj_instituicao_pagamento", ""),
+                bandeira_cartao=pagamento.get("bandeira_cartao", ""),
+                cnpj_beneficiario_pagamento=pagamento.get("cnpj_beneficiario_pagamento", ""),
+                identificador_terminal_pagamento=pagamento.get("identificador_terminal_pagamento", ""),
                 mensagem_processadora=pagamento.get("mensagem_processadora", ""),
             )
             pagamentos_criados.append(pagamento_venda)
@@ -199,6 +204,7 @@ def finalizar_venda(*, caixa, usuario, itens, forma_pagamento=None, desconto=Dec
 
 
 def _normalizar_pagamento_eletronico(pagamento):
+    pagamento = _normalizar_dados_fiscais_pagamento(pagamento)
     forma = pagamento["forma_pagamento"]
     tipo_forma = (forma.tipo or "").upper()
     if tipo_forma not in FORMAS_ELETRONICAS:
@@ -209,11 +215,49 @@ def _normalizar_pagamento_eletronico(pagamento):
         return pagamento
 
     referencia = uuid4().hex.upper()
+    if not pagamento.get("transacao_externa_id"):
+        pagamento["transacao_externa_id"] = f"TEF-SIM-{referencia[:16]}"
+    if not pagamento.get("nsu"):
+        pagamento["nsu"] = referencia[16:28]
+    if not pagamento.get("codigo_autorizacao"):
+        pagamento["codigo_autorizacao"] = referencia[28:34]
+    if not pagamento.get("mensagem_processadora"):
+        pagamento["mensagem_processadora"] = (
+            "Autorização eletrônica simulada. Substituir pelo adaptador TEF/API no app desktop."
+        )
+    return pagamento
+
+
+def _normalizar_dados_fiscais_pagamento(pagamento):
     pagamento = pagamento.copy()
-    pagamento.setdefault("transacao_externa_id", f"TEF-SIM-{referencia[:16]}")
-    pagamento.setdefault("nsu", referencia[16:28])
-    pagamento.setdefault("codigo_autorizacao", referencia[28:34])
-    pagamento.setdefault("mensagem_processadora", "Autorização eletrônica simulada. Substituir pelo adaptador TEF/API no app desktop.")
+    tipo_integracao = str(pagamento.get("tipo_integracao") or "").strip()
+    if tipo_integracao not in {"", "1", "2"}:
+        raise ValidationError("Tipo de integração do pagamento inválido.")
+
+    for campo, rotulo in (
+        ("cnpj_instituicao_pagamento", "CNPJ da instituição de pagamento"),
+        ("cnpj_beneficiario_pagamento", "CNPJ do beneficiário do pagamento"),
+    ):
+        valor = _somente_digitos(pagamento.get(campo))
+        if valor and len(valor) != 14:
+            raise ValidationError(f"{rotulo} deve conter 14 dígitos.")
+        pagamento[campo] = valor
+
+    bandeira = str(pagamento.get("bandeira_cartao") or "").strip()
+    if bandeira and (len(bandeira) != 2 or not bandeira.isdigit()):
+        raise ValidationError("Bandeira do cartão deve usar o código fiscal de 2 dígitos.")
+
+    autorizacao = str(pagamento.get("codigo_autorizacao") or "").strip()
+    if len(autorizacao) > 128:
+        raise ValidationError("Código de autorização do pagamento excede 128 caracteres.")
+    terminal = str(pagamento.get("identificador_terminal_pagamento") or "").strip()
+    if len(terminal) > 40:
+        raise ValidationError("Identificador do terminal de pagamento excede 40 caracteres.")
+
+    pagamento["tipo_integracao"] = tipo_integracao
+    pagamento["bandeira_cartao"] = bandeira
+    pagamento["codigo_autorizacao"] = autorizacao
+    pagamento["identificador_terminal_pagamento"] = terminal
     return pagamento
 
 

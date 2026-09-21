@@ -165,7 +165,9 @@ class AcessoPdvNuvemTests(TestCase):
         self.assertTrue(resposta.json()["dispositivos"]["gaveta"]["habilitada"])
         self.assertEqual(resposta.json()["dispositivos"]["gaveta"]["impressora_padrao"], "EPSON TM-T20")
         self.assertTrue(resposta.json()["dispositivos"]["gaveta"]["abrir_em_movimento_caixa"])
-        self.assertEqual(resposta.json()["tef"]["contrato"], "pdv_tef_v1")
+        self.assertEqual(resposta.json()["tef"]["contrato"], "pdv_tef_v2")
+        self.assertIn("tipo_integracao", resposta.json()["tef"]["retorno_esperado"])
+        self.assertIn("cnpj_instituicao_pagamento", resposta.json()["tef"]["retorno_esperado"])
         self.assertTrue(resposta.json()["tef"]["simulador_permitido"])
         self.assertIn("PIX", resposta.json()["tef"]["tipos_pagamento"])
         self.assertIn("captura_documento_consumidor", resposta.json()["tef"]["recursos_opcionais"])
@@ -979,6 +981,11 @@ class AcessoPdvNuvemTests(TestCase):
                 "pagamento_transacao_externa_id": ["TEF-SIM-123"],
                 "pagamento_nsu": ["123456"],
                 "pagamento_codigo_autorizacao": ["ABC123"],
+                "pagamento_tipo_integracao": ["1"],
+                "pagamento_cnpj_instituicao": ["12.345.678/0001-95"],
+                "pagamento_bandeira_cartao": ["01"],
+                "pagamento_cnpj_beneficiario": ["04.252.011/0001-10"],
+                "pagamento_identificador_terminal": ["PINPAD-CAIXA-01"],
                 "pagamento_mensagem_processadora": ["Aprovado"],
             },
             follow=True,
@@ -989,6 +996,11 @@ class AcessoPdvNuvemTests(TestCase):
         pagamento = venda.pagamentos.get()
         self.assertEqual(pagamento.transacao_externa_id, "TEF-SIM-123")
         self.assertEqual(pagamento.codigo_autorizacao, "ABC123")
+        self.assertEqual(pagamento.tipo_integracao, "1")
+        self.assertEqual(pagamento.cnpj_instituicao_pagamento, "12345678000195")
+        self.assertEqual(pagamento.bandeira_cartao, "01")
+        self.assertEqual(pagamento.cnpj_beneficiario_pagamento, "04252011000110")
+        self.assertEqual(pagamento.identificador_terminal_pagamento, "PINPAD-CAIXA-01")
 
     def test_supervisor_confirma_estorno_eletronico_pendente(self):
         categoria = Categoria.objects.create(nome="Mercearia")

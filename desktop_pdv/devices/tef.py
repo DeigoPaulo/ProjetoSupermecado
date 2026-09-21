@@ -200,6 +200,31 @@ def validar_resposta_tef(resultado: dict, operacao: str) -> dict:
     elif status == "pending" and not resultado.get("transacao_externa_id"):
         raise RespostaTefInvalida("O driver TEF nao identificou a transacao pendente.")
     normalizado = dict(resultado)
+    if status == "ok" and operacao != "estorno":
+        tipo_integracao = str(resultado.get("tipo_integracao") or "").strip()
+        if tipo_integracao not in {"", "1", "2"}:
+            raise RespostaTefInvalida("O driver TEF devolveu tipo de integracao fiscal invalido.")
+        normalizado["tipo_integracao"] = tipo_integracao
+
+        for campo in ("cnpj_instituicao_pagamento", "cnpj_beneficiario_pagamento"):
+            valor = "".join(
+                caractere
+                for caractere in str(resultado.get(campo) or "")
+                if caractere.isdigit()
+            )
+            if valor and len(valor) != 14:
+                raise RespostaTefInvalida("O driver TEF devolveu CNPJ fiscal invalido.")
+            normalizado[campo] = valor
+
+        bandeira = str(resultado.get("bandeira_cartao") or "").strip()
+        if bandeira and (len(bandeira) != 2 or not bandeira.isdigit()):
+            raise RespostaTefInvalida("O driver TEF devolveu bandeira fiscal invalida.")
+        normalizado["bandeira_cartao"] = bandeira
+
+        terminal = str(resultado.get("identificador_terminal_pagamento") or "").strip()
+        if len(terminal) > 40:
+            raise RespostaTefInvalida("O driver TEF devolveu identificador de terminal fiscal invalido.")
+        normalizado["identificador_terminal_pagamento"] = terminal
     if status not in {"ok", "pending"}:
         normalizado.setdefault("aprovado", False)
         normalizado.setdefault("estornado", False)

@@ -37,6 +37,11 @@ class StatusEstornoParcial(models.TextChoices):
     RECUSADO = "RECUSADO", "Recusado"
 
 
+class TipoIntegracaoPagamento(models.TextChoices):
+    INTEGRADO = "1", "Integrado ao sistema de automação"
+    NAO_INTEGRADO = "2", "Não integrado ao sistema de automação"
+
+
 class FormaPagamento(models.Model):
     nome = models.CharField(max_length=100)
     tipo = models.CharField(max_length=50)
@@ -170,7 +175,16 @@ class PagamentoVenda(models.Model):
     status = models.CharField(max_length=30, choices=StatusPagamento.choices, default=StatusPagamento.CONFIRMADO)
     transacao_externa_id = models.CharField(max_length=120, blank=True)
     nsu = models.CharField(max_length=60, blank=True)
-    codigo_autorizacao = models.CharField(max_length=60, blank=True)
+    codigo_autorizacao = models.CharField(max_length=128, blank=True)
+    tipo_integracao = models.CharField(
+        max_length=1,
+        choices=TipoIntegracaoPagamento.choices,
+        blank=True,
+    )
+    cnpj_instituicao_pagamento = models.CharField(max_length=14, blank=True)
+    bandeira_cartao = models.CharField(max_length=2, blank=True)
+    cnpj_beneficiario_pagamento = models.CharField(max_length=14, blank=True)
+    identificador_terminal_pagamento = models.CharField(max_length=40, blank=True)
     mensagem_processadora = models.CharField(max_length=255, blank=True)
     motivo_estorno = models.CharField(max_length=255, blank=True)
     estorno_solicitado_em = models.DateTimeField(null=True, blank=True)

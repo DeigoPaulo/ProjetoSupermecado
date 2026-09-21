@@ -260,11 +260,16 @@ def terminal_bootstrap(request):
                 "provedor": terminal.provedor_tef,
                 "modo_integracao": terminal.modo_integracao_tef,
                 "simulador_permitido": settings.PDV_TEF_SIMULATOR_ENABLED,
-                "contrato": "pdv_tef_v1",
+                "contrato": "pdv_tef_v2",
                 "tipos_pagamento": ["CREDITO", "DEBITO", "PIX", "VALE_ALIMENTACAO", "VALE_REFEICAO"],
                 "recursos_opcionais": ["captura_documento_consumidor"],
                 "captura_documento_consumidor": "NEGOCIADA_NO_DESKTOP",
-                "retorno_esperado": ["status", "transacao_externa_id", "nsu", "codigo_autorizacao", "mensagem_processadora"],
+                "retorno_esperado": [
+                    "status", "transacao_externa_id", "nsu", "codigo_autorizacao",
+                    "tipo_integracao", "cnpj_instituicao_pagamento", "bandeira_cartao",
+                    "cnpj_beneficiario_pagamento", "identificador_terminal_pagamento",
+                    "mensagem_processadora",
+                ],
             },
             "servidor_em": timezone.localtime().isoformat(),
         }
@@ -567,6 +572,11 @@ def _pagamentos_from_request(request, total_liquido, filial):
     transacoes = request.POST.getlist("pagamento_transacao_externa_id")
     nsus = request.POST.getlist("pagamento_nsu")
     autorizacoes = request.POST.getlist("pagamento_codigo_autorizacao")
+    tipos_integracao = request.POST.getlist("pagamento_tipo_integracao")
+    cnpjs_instituicao = request.POST.getlist("pagamento_cnpj_instituicao")
+    bandeiras = request.POST.getlist("pagamento_bandeira_cartao")
+    cnpjs_beneficiario = request.POST.getlist("pagamento_cnpj_beneficiario")
+    terminais_pagamento = request.POST.getlist("pagamento_identificador_terminal")
     mensagens = request.POST.getlist("pagamento_mensagem_processadora")
     pagamentos_lancados = []
     formas_eletronicas = {"PIX", "CARTAO", "DEBITO", "CREDITO", "VALE_ALIMENTACAO", "VALE_REFEICAO"}
@@ -586,6 +596,11 @@ def _pagamentos_from_request(request, total_liquido, filial):
         transacao = (transacoes[indice] if indice < len(transacoes) else "").strip()
         nsu = (nsus[indice] if indice < len(nsus) else "").strip()
         autorizacao = (autorizacoes[indice] if indice < len(autorizacoes) else "").strip()
+        tipo_integracao = (tipos_integracao[indice] if indice < len(tipos_integracao) else "").strip()
+        cnpj_instituicao = (cnpjs_instituicao[indice] if indice < len(cnpjs_instituicao) else "").strip()
+        bandeira = (bandeiras[indice] if indice < len(bandeiras) else "").strip()
+        cnpj_beneficiario = (cnpjs_beneficiario[indice] if indice < len(cnpjs_beneficiario) else "").strip()
+        terminal_pagamento = (terminais_pagamento[indice] if indice < len(terminais_pagamento) else "").strip()
         mensagem = (mensagens[indice] if indice < len(mensagens) else "").strip()
         if tipo in formas_eletronicas:
             if status != StatusPagamento.CONFIRMADO or not (transacao and nsu and autorizacao):
@@ -598,6 +613,11 @@ def _pagamentos_from_request(request, total_liquido, filial):
                 "transacao_externa_id": transacao,
                 "nsu": nsu,
                 "codigo_autorizacao": autorizacao,
+                "tipo_integracao": tipo_integracao,
+                "cnpj_instituicao_pagamento": cnpj_instituicao,
+                "bandeira_cartao": bandeira,
+                "cnpj_beneficiario_pagamento": cnpj_beneficiario,
+                "identificador_terminal_pagamento": terminal_pagamento,
                 "mensagem_processadora": mensagem,
             }
         )
