@@ -39,6 +39,9 @@ class ConfiguracaoFiscalForm(forms.ModelForm):
         if not user or not user.is_superuser:
             self.fields.pop("provedor_emissao", None)
             self.fields.pop("confirmar_troca_canal", None)
+            self.fields.pop("csc_id", None)
+            self.fields.pop("csc_token", None)
+            self.fields.pop("revogar_csc", None)
 
     confirmar_troca_canal = forms.BooleanField(
         required=False,
@@ -59,6 +62,17 @@ class ConfiguracaoFiscalForm(forms.ModelForm):
         label="Senha do certificado",
         widget=forms.PasswordInput(render_value=False),
         help_text="Informe a senha apenas quando enviar um novo certificado.",
+    )
+    csc_token = forms.CharField(
+        required=False,
+        label="Novo token CSC",
+        widget=forms.PasswordInput(render_value=False),
+        help_text="Deixe em branco para preservar o token protegido já cadastrado.",
+    )
+    revogar_csc = forms.BooleanField(
+        required=False,
+        label="Revogar o token CSC atualmente cadastrado",
+        help_text="A revogação é auditada e exige um novo token antes da próxima homologação.",
     )
 
     class Meta:
@@ -115,6 +129,11 @@ class ConfiguracaoFiscalForm(forms.ModelForm):
             self.add_error(
                 "certificado_arquivo",
                 "Envie o arquivo do certificado para trocar a senha.",
+            )
+        if cleaned.get("csc_token") and cleaned.get("revogar_csc"):
+            self.add_error(
+                "revogar_csc",
+                "Escolha entre cadastrar um novo token CSC ou revogar o token atual.",
             )
         modo_ibs_cbs = (
             cleaned.get("modo_transicao_ibs_cbs") or ModoTransicaoIbsCbs.LEGADO

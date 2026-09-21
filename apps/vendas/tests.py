@@ -8,6 +8,7 @@ from django.test import TestCase
 from apps.empresas.models import Empresa, Filial
 from apps.estoque.models import Estoque, MovimentacaoEstoque, TipoMovimentacaoEstoque
 from apps.financeiro.models import ContaFinanceira, ContaMovimentoFinanceiro, LancamentoFinanceiro, StatusContaFinanceira, TipoContaFinanceira, TipoContaMovimento, TipoLancamentoFinanceiro
+from apps.fiscal.certificados import criptografar
 from apps.fiscal.models import AmbienteFiscal, ConfiguracaoFiscal, DocumentoFiscal, NaturezaOperacao, SerieFiscal, StatusDocumentoFiscal, TipoDocumentoFiscal
 from apps.clientes.models import Cliente
 from apps.pdv.models import Caixa
@@ -23,7 +24,7 @@ class VendaServiceTests(TestCase):
         self.empresa = Empresa.objects.create(
             razao_social="Mercado Teste Ltda",
             nome_fantasia="Mercado Teste",
-            cnpj="11.111.111/0001-11",
+            cnpj="12.345.678/0001-95",
         )
         self.filial = Filial.objects.create(empresa=self.empresa, nome="Loja 1", cnpj=self.empresa.cnpj)
         self.categoria = Categoria.all_objects.create(nome="Mercearia")
@@ -340,7 +341,7 @@ class VendaServiceTests(TestCase):
             regime_tributario="Regime normal",
             inscricao_estadual="123456789",
             csc_id="1",
-            csc_token="token",
+            csc_token_criptografado=criptografar("token"),
             url_qrcode_nfce="https://homologacao.exemplo.gov.br/qrcode",
             url_consulta_nfce="https://homologacao.exemplo.gov.br/consulta",
             certificado_a1_criptografado=b"certificado",
@@ -387,7 +388,7 @@ class VendaServiceTests(TestCase):
             regime_tributario="Regime normal",
             inscricao_estadual="123456789",
             csc_id="1",
-            csc_token="token",
+            csc_token_criptografado=criptografar("token"),
             url_qrcode_nfce="https://homologacao.exemplo.gov.br/qrcode",
             url_consulta_nfce="https://homologacao.exemplo.gov.br/consulta",
             certificado_a1_criptografado=b"certificado",

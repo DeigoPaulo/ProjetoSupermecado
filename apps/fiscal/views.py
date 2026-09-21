@@ -29,7 +29,7 @@ from .manifestacao_adapters import diagnostico_adaptador_manifestacao
 from .cce_adapters import diagnostico_adaptador_cce
 from .cadastro_adapters import diagnostico_adaptador_consulta_cadastro
 from .assinaturas import assinatura_local_disponivel
-from .certificados import salvar_certificado_a1
+from .certificados import revogar_csc, salvar_certificado_a1, salvar_csc
 from .evidencias import verificar_integridade_evidencias
 from .escopo import (
     configuracoes_para_usuario,
@@ -542,7 +542,7 @@ def _diagnostico_prontidao_fiscal(user):
                 pendencias.append("Configuração fiscal inativa.")
             if config.certificado_status != "valido":
                 pendencias.append(f"Certificado {config.certificado_status.replace('_', ' ')}.")
-            if not config.csc_id or not config.csc_token:
+            if not config.csc_configurado:
                 pendencias.append("CSC/Token NFC-e incompleto.")
             if not config.inscricao_estadual:
                 pendencias.append("Inscrição estadual ausente.")
@@ -1857,6 +1857,9 @@ def configuracao_form(request, pk=None):
             user=request.user,
         )
         if form.is_valid():
+            csc_ja_configurado = bool(configuracao and configuracao.csc_configurado)
+            novo_csc = form.cleaned_data.get("csc_token")
+            deve_revogar_csc = form.cleaned_data.get("revogar_csc")
             configuracao = form.save()
             arquivo = form.cleaned_data.get("certificado_arquivo")
             senha = form.cleaned_data.get("certificado_senha")
@@ -1897,6 +1900,28 @@ def configuracao_form(request, pk=None):
                         "fiscal/form.html",
                         {"form": form, "titulo": "Configuração fiscal"},
                     )
+            if request.user.is_superuser and novo_csc:
+                salvar_csc(configuracao, novo_csc)
+                LogAuditoria.objects.create(
+                    usuario=request.user,
+                    modulo="fiscal",
+                    acao="ROTACIONA_CSC_FISCAL" if csc_ja_configurado else "INCLUI_CSC_FISCAL",
+                    descricao=f"Token CSC da filial {configuracao.filial} protegido e atualizado.",
+                    objeto_tipo="ConfiguracaoFiscal",
+                    objeto_id=str(configuracao.pk),
+                    ip=request.META.get("REMOTE_ADDR"),
+                )
+            elif request.user.is_superuser and deve_revogar_csc and csc_ja_configurado:
+                revogar_csc(configuracao)
+                LogAuditoria.objects.create(
+                    usuario=request.user,
+                    modulo="fiscal",
+                    acao="REVOGA_CSC_FISCAL",
+                    descricao=f"Token CSC da filial {configuracao.filial} revogado.",
+                    objeto_tipo="ConfiguracaoFiscal",
+                    objeto_id=str(configuracao.pk),
+                    ip=request.META.get("REMOTE_ADDR"),
+                )
             messages.success(request, "Configuração fiscal salva.")
             return redirect("fiscal:documentos")
     else:

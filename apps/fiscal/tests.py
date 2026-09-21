@@ -57,7 +57,7 @@ from .models import (
     TipoDocumentoFiscal,
     TipoEvidenciaFiscal,
 )
-from .certificados import abrir_certificado_a1, salvar_certificado_a1
+from .certificados import abrir_certificado_a1, criptografar, salvar_certificado_a1
 from .assinaturas import assinar_xml_documento, verificar_assinatura_xml
 from .validacoes import diagnosticar_schemas_fiscais, validar_xml_schema
 from .test_support_identidades_fiscais import obter_identidade_fiscal_teste
@@ -412,7 +412,7 @@ class FiscalTests(TestCase):
             ambiente=AmbienteFiscal.HOMOLOGACAO,
             inscricao_estadual="123456789",
             csc_id="1",
-            csc_token="token-homologacao",
+            csc_token_criptografado=criptografar("token-homologacao"),
             url_qrcode_nfce="https://nfce-homologacao.example.com/qrcode",
             url_consulta_nfce="https://nfce-homologacao.example.com/consulta",
             regime_tributario="Regime normal",

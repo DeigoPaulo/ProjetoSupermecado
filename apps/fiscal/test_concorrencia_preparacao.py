@@ -24,6 +24,7 @@ from .models import (
     StatusDocumentoFiscal,
     TipoDocumentoFiscal,
 )
+from .certificados import criptografar
 from .services import preparar_documento_pedido_online, preparar_documento_venda
 from .test_support_identidades_fiscais import obter_identidade_fiscal_teste
 
@@ -139,7 +140,7 @@ class FiscalOriginFixtureMixin:
             regime_tributario="Regime normal",
             crt=CodigoRegimeTributario.REGIME_NORMAL,
             csc_id="1",
-            csc_token="token-homologacao",
+            csc_token_criptografado=criptografar("token-homologacao"),
             url_qrcode_nfce=(
                 "https://nfewebhomolog.sefaz.go.gov.br/nfeweb/sites/nfce/danfeNFCe"
             ),

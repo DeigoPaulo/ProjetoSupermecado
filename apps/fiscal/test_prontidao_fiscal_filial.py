@@ -10,6 +10,7 @@ from django.utils import timezone
 
 from apps.empresas.models import Empresa, Filial
 
+from .certificados import criptografar
 from .models import (
     CatalogoCEST,
     CatalogoCFOP,
@@ -51,7 +52,7 @@ class ProntidaoFiscalFilialTests(TestCase):
             filial=self.filial,
             inscricao_estadual="109876543",
             csc_id="1",
-            csc_token="csc-protegido",
+            csc_token_criptografado=criptografar("csc-protegido"),
             certificado_nome="piloto.pfx",
             certificado_validade=timezone.localdate() + timedelta(days=365),
             certificado_a1_criptografado=b"certificado",

@@ -63,7 +63,7 @@ def diagnostico_prontidao_homologacao_goias(configuracao):
         ),
         (
             "Configuração NFC-e",
-            bool(configuracao.ativo and configuracao.csc_id and configuracao.csc_token),
+            bool(configuracao.ativo and configuracao.csc_configurado),
             "Configuração fiscal ativa com ID CSC e token CSC.",
         ),
         (

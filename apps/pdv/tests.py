@@ -17,6 +17,7 @@ from apps.estoque.models import Estoque
 from apps.financeiro.models import ContaMovimentoFinanceiro, LancamentoFinanceiro, TipoContaMovimento, TipoLancamentoFinanceiro
 from apps.marketplace.models import CanalPedido, FaixaTaxaEntrega, FormaPagamentoPedido, ItemPedidoOnline, PedidoOnline, PoliticaEntrega, StatusPagamentoPedido, StatusPedido, TipoEntrega
 from apps.fiscal.chave_acesso import construir_chave_acesso
+from apps.fiscal.certificados import criptografar
 from apps.fiscal.models import AmbienteFiscal, ConfiguracaoFiscal, DocumentoFiscal, NaturezaOperacao, SerieFiscal, StatusDocumentoFiscal, TipoDocumentoFiscal
 from apps.fiscal.test_support_identidades_fiscais import obter_identidade_fiscal_teste
 from apps.produtos.models import Categoria, CodigoBarrasProduto, Produto
@@ -1067,7 +1068,7 @@ class AcessoPdvNuvemTests(TestCase):
             regime_tributario="Regime normal",
             inscricao_estadual="123456789",
             csc_id="1",
-            csc_token="token",
+            csc_token_criptografado=criptografar("token"),
             certificado_a1_criptografado=b"certificado",
             certificado_senha_criptografada=b"senha",
         )

@@ -23,7 +23,43 @@ def descriptografar(valor):
     try:
         return _fernet().decrypt(bytes(valor))
     except InvalidToken as exc:
-        raise ValidationError("Não foi possível abrir o certificado protegido. Verifique a chave fiscal do ambiente.") from exc
+        raise ValidationError("Não foi possível abrir o segredo fiscal protegido. Verifique a chave fiscal do ambiente.") from exc
+
+
+def salvar_csc(configuracao, token):
+    token = (token or "").strip()
+    if not token:
+        raise ValidationError("Informe o token CSC para inclusão ou rotação.")
+    configuracao.csc_token_criptografado = criptografar(token)
+    configuracao.csc_token_atualizado_em = timezone.now()
+    configuracao.save(
+        update_fields=[
+            "csc_token_criptografado",
+            "csc_token_atualizado_em",
+            "atualizado_em",
+        ]
+    )
+
+
+def revogar_csc(configuracao):
+    configuracao.csc_token_criptografado = None
+    configuracao.csc_token_atualizado_em = timezone.now()
+    configuracao.save(
+        update_fields=[
+            "csc_token_criptografado",
+            "csc_token_atualizado_em",
+            "atualizado_em",
+        ]
+    )
+
+
+def abrir_csc(configuracao):
+    if not configuracao.csc_configurado:
+        raise ValidationError("CSC não configurado.")
+    try:
+        return descriptografar(configuracao.csc_token_criptografado).decode("utf-8")
+    except UnicodeDecodeError as exc:
+        raise ValidationError("Não foi possível abrir o CSC protegido.") from exc
 
 
 def _validade_certificado(conteudo, senha):

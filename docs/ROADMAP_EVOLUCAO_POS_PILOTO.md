@@ -77,7 +77,7 @@ P1:
 P2:
 
 - [x] parcelas/duplicatas da NF-e recebida, preservadas na entrada e vinculadas às contas a pagar;
-- [ ] criptografia do CSC;
+- [x] criptografia do CSC;
 - [ ] constraints de contas originadas por compra/venda;
 - [ ] contrato temporal do snapshot contábil;
 - [ ] CI inicial com PostgreSQL.
@@ -660,6 +660,40 @@ apps/fiscal/manifesto_qualificacao_fiscal.py,
 apps/fiscal/services_evidencias_homologacao.py,
 scripts/fiscal_channel_qualification.py, scripts/package_local_server.ps1 e
 docs/MANIFESTO_QUALIFICACAO_FISCAL.md. Migrações: nenhuma.
+
+## Ponto de retomada — ciclo 145, 21/09/2026
+
+Concluída a pendência P2 de proteção do CSC. O segredo deixou de ser persistido em
+texto aberto e passou a usar a mesma chave criptográfica de ambiente do certificado
+A1, sem ser reexibido nas interfaces comuns.
+
+- [x] Substituir a coluna de token em texto aberto por conteúdo criptografado e data
+  da última atualização.
+- [x] Criar migration preservadora que criptografa os CSCs existentes antes de remover
+  a coluna legada; a reversão restaura o dado somente durante rollback técnico.
+- [x] Manter leitura do segredo explícita e controlada, com falha fechada quando a chave
+  fiscal do ambiente não corresponde à usada na gravação.
+- [x] Restringir ID, inclusão, rotação e revogação do CSC ao Master; administradores
+  comuns não visualizam nem conseguem alterar esses campos por POST forjado.
+- [x] Nunca preencher o token no formulário; envio em branco preserva a cifra atual.
+- [x] Excluir material criptografado do formulário do admin e usar apenas estado booleano
+  nos diagnósticos de prontidão.
+- [x] Auditar inclusão, rotação e revogação com descrição sanitizada, sem token.
+- [x] Adicionar regressão específica para criptografia em repouso, não reexibição,
+  preservação, rotação, revogação, autorização Master, admin e chave divergente.
+- [x] Validar a regressão conjunta Fiscal + Vendas + PDV com 743 testes aprovados
+  e 6 ignorados; após remover o atalho implícito de escrita, revalidar os 144
+  testes diretamente afetados. `check`, `makemigrations --check --dry-run` e
+  `git diff --check` permaneceram sem pendências.
+- [ ] Próximo passo exato: revisar as constraints de contas financeiras originadas por
+  compra/venda e impedir no banco origens ausentes, simultâneas ou incompatíveis sem
+  quebrar os fluxos legados válidos.
+
+Arquivos principais: apps/fiscal/models.py, apps/fiscal/certificados.py,
+apps/fiscal/forms.py, apps/fiscal/views.py, apps/fiscal/admin.py,
+apps/fiscal/readiness.py, apps/fiscal/test_protecao_csc.py,
+templates/fiscal/form.html e docs/PROTECAO_CSC.md. Migration:
+apps/fiscal/migrations/0055_protege_csc_criptografado.py.
 
 ## Ponto de retomada — ciclo 143, 18/09/2026
 
@@ -2120,10 +2154,10 @@ Nenhum cenário de concorrência, retry ou falha de rede pode gerar dois documen
 
 ### Proteção de CSC e segredos fiscais
 
-- [ ] Revisar o armazenamento de CSC e confirmar proteção criptografada em repouso no mesmo nível de criticidade do certificado A1 e sua senha.
-- [ ] Impedir exposição de CSC em logs, admin, formulários, serializações, traces, exportações e pacotes de diagnóstico.
-- [ ] Definir fluxo auditado de inclusão, rotação e revogação do CSC.
-- [ ] Criar testes específicos de não exposição de segredo.
+- [x] Revisar o armazenamento de CSC e confirmar proteção criptografada em repouso no mesmo nível de criticidade do certificado A1 e sua senha.
+- [x] Impedir exposição de CSC em logs, admin, formulários, serializações, traces, exportações e pacotes de diagnóstico.
+- [x] Definir fluxo auditado de inclusão, rotação e revogação do CSC.
+- [x] Criar testes específicos de não exposição de segredo.
 
 Critério de aceite:
 

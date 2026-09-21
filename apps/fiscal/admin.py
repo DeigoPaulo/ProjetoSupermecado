@@ -145,6 +145,14 @@ class ConfiguracaoFiscalAdmin(admin.ModelAdmin):
     list_display = ["filial", "ambiente", "inscricao_estadual", "certificado_validade", "ativo"]
     list_filter = ["ambiente", "ativo"]
     search_fields = ["filial__nome", "inscricao_estadual"]
+    exclude = ["csc_token_criptografado", "certificado_a1_criptografado", "certificado_senha_criptografada"]
+    readonly_fields = ["csc_token_atualizado_em", "certificado_atualizado_em"]
+
+    def get_exclude(self, request, obj=None):
+        campos = list(super().get_exclude(request, obj) or [])
+        if not request.user.is_superuser:
+            campos.append("csc_id")
+        return campos
 
 
 @admin.register(SerieFiscal)

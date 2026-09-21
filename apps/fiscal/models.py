@@ -119,7 +119,8 @@ class ConfiguracaoFiscal(models.Model):
     )
     inscricao_estadual = models.CharField(max_length=30, blank=True)
     csc_id = models.CharField("ID CSC", max_length=20, blank=True)
-    csc_token = models.CharField("Token CSC", max_length=255, blank=True)
+    csc_token_criptografado = models.BinaryField(blank=True, null=True, editable=False)
+    csc_token_atualizado_em = models.DateTimeField(null=True, blank=True, editable=False)
     url_qrcode_nfce = models.URLField(
         "URL do QR Code NFC-e",
         max_length=500,
@@ -176,6 +177,10 @@ class ConfiguracaoFiscal(models.Model):
     @property
     def certificado_configurado(self):
         return bool(self.certificado_a1_criptografado and self.certificado_senha_criptografada)
+
+    @property
+    def csc_configurado(self):
+        return bool(self.csc_id and self.csc_token_criptografado)
 
     @property
     def certificado_dias_para_vencer(self):
