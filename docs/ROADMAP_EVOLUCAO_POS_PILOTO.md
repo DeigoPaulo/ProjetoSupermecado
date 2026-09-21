@@ -80,7 +80,7 @@ P2:
 - [x] criptografia do CSC;
 - [x] constraints de contas originadas por compra/venda;
 - [x] contrato temporal do snapshot contábil;
-- [ ] CI inicial com PostgreSQL.
+- [x] CI inicial com PostgreSQL.
 - [ ] defesa em profundidade da origem do DocumentoFiscal: garantir no banco exatamente
   uma origem comercial permitida por fluxo, impedindo simultaneamente venda + pedido e a
   ausência de ambas, após revisar os fluxos que possam criar documentos sem origem.
@@ -752,6 +752,32 @@ classificação incorreta de uma captura feita durante o mês como fechamento me
 Arquivos principais: apps/financeiro/views.py,
 apps/financeiro/test_contrato_temporal_inventario.py, apps/financeiro/tests.py e
 docs/CONTRATO_TEMPORAL_SNAPSHOT_CONTABIL.md. Migrações: nenhuma.
+
+## Ponto de retomada — ciclo 148, 21/09/2026
+
+Criada a CI inicial com PostgreSQL para que as proteções que dependem de lock,
+concorrência e constraints deixem de depender apenas de execuções locais manuais.
+
+- [x] Criar workflow acionado por pull request, push na `main` e disparo manual.
+- [x] Usar PostgreSQL 16 descartável com healthcheck, base de teste separada e
+  conexões persistentes desativadas.
+- [x] Não usar segredo, certificado ou credencial fiscal real; todas as credenciais
+  do banco pertencem exclusivamente ao job efêmero.
+- [x] Executar `check` e detectar migrations não geradas antes dos testes.
+- [x] Executar, numa única base PostgreSQL, as provas concorrentes de compra,
+  origem fiscal, transmissão e caixa.
+- [x] Reexecutar também as constraints de origem das contas financeiras.
+- [x] Limitar o primeiro workflow à suíte crítica PostgreSQL; a suíte completa e a
+  homologação externa continuam separadas.
+- [x] Ensaiar localmente o mesmo conjunto em PostgreSQL 18 real: todas as migrations
+  foram aplicadas, 14 testes passaram e a base descartável foi removida ao final.
+- [ ] Próximo passo exato: revisar a defesa em profundidade da origem do
+  `DocumentoFiscal`, mapeando antes todos os fluxos que criam documento sem origem
+  comercial para não impor constraint incompatível.
+
+Arquivos principais: .github/workflows/postgresql-integrity.yml,
+docs/TESTES_CONCORRENCIA_POSTGRESQL.md e
+docs/ROADMAP_EVOLUCAO_POS_PILOTO.md. Migrações: nenhuma.
 
 ## Ponto de retomada — ciclo 143, 18/09/2026
 

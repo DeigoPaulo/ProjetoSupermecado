@@ -1,0 +1,80 @@
+name: PostgreSQL integrity
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: postgresql-integrity-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  integrity:
+    name: Migrations, constraints and concurrency
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_DB: postgres
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres-ci
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
+    env:
+      DJANGO_ENV: test
+      SECRET_KEY: django-ci-only-not-a-production-secret
+      FISCAL_CERTIFICATE_KEY: django-ci-only-not-a-production-secret
+      POSTGRES_DB: postgres
+      POSTGRES_TEST_DB: test_projeto_supermercado_ci
+      POSTGRES_HOST: 127.0.0.1
+      POSTGRES_PORT: "5432"
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres-ci
+      POSTGRES_CONN_MAX_AGE: "0"
+      PYTHONDONTWRITEBYTECODE: "1"
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -r requirements.txt
+
+      - name: Validate Django and migration state
+        run: |
+          python manage.py check
+          python manage.py makemigrations --check --dry-run
+
+      - name: Run PostgreSQL integrity suite
+        run: >-
+          python manage.py test
+          apps.compras.test_concorrencia_finalizacao
+          apps.fiscal.test_concorrencia_preparacao.DocumentoFiscalOriginConcurrencyTests
+          apps.fiscal.test_reserva_transmissao.ReservaTransmissaoConcurrencyTests
+          apps.pdv.test_concorrencia_caixa.CaixaConcorrenciaPostgreSQLTests
+          apps.financeiro.test_constraints_origem_conta
+          --verbosity 2
+          --noinput
