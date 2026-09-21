@@ -206,18 +206,68 @@ class ContaFinanceira(models.Model):
                     )
                 ),
                 name="financeiro_conta_baixa_integral_coerente",
-            )
+            ),
+            models.CheckConstraint(
+                condition=models.Q(venda__isnull=True) | models.Q(entrada_compra__isnull=True),
+                name="fin_conta_origem_exclusiva",
+            ),
+            models.CheckConstraint(
+                condition=models.Q(duplicata_nfe_entrada__isnull=True) | models.Q(entrada_compra__isnull=False),
+                name="fin_conta_duplicata_exige_compra",
+            ),
+            models.CheckConstraint(
+                condition=models.Q(venda__isnull=True) | models.Q(tipo=TipoContaFinanceira.RECEBER),
+                name="fin_conta_venda_receber",
+            ),
+            models.CheckConstraint(
+                condition=models.Q(entrada_compra__isnull=True) | models.Q(tipo=TipoContaFinanceira.PAGAR),
+                name="fin_conta_compra_pagar",
+            ),
+            models.UniqueConstraint(
+                fields=["venda"],
+                condition=models.Q(venda__isnull=False),
+                name="fin_conta_venda_unica",
+            ),
+            models.UniqueConstraint(
+                fields=["entrada_compra"],
+                condition=(
+                    models.Q(entrada_compra__isnull=False)
+                    & models.Q(duplicata_nfe_entrada__isnull=True)
+                ),
+                name="fin_conta_compra_unica_sem_dup",
+            ),
         ]
 
     def clean(self):
+        erros = {}
+        if self.venda_id and self.entrada_compra_id:
+            erros["venda"] = "A conta não pode ter origem simultânea em venda e compra."
+        if self.duplicata_nfe_entrada_id and not self.entrada_compra_id:
+            erros["duplicata_nfe_entrada"] = "A duplicata exige a entrada de compra de origem."
+        if self.venda_id and self.tipo != TipoContaFinanceira.RECEBER:
+            erros["tipo"] = "Conta originada por venda deve ser a receber."
+        if self.entrada_compra_id and self.tipo != TipoContaFinanceira.PAGAR:
+            erros["tipo"] = "Conta originada por compra deve ser a pagar."
+        if self.venda_id and self.filial_id and self.venda.filial_id != self.filial_id:
+            erros["filial"] = "A filial da conta diverge da venda de origem."
+        if self.entrada_compra_id and self.filial_id and self.entrada_compra.filial_id != self.filial_id:
+            erros["filial"] = "A filial da conta diverge da compra de origem."
+        if (
+            self.duplicata_nfe_entrada_id
+            and self.entrada_compra_id
+            and self.duplicata_nfe_entrada.fatura.entrada_id != self.entrada_compra_id
+        ):
+            erros["duplicata_nfe_entrada"] = "A duplicata pertence a outra entrada de compra."
         if self.cliente_id and self.filial_id and self.cliente.empresa_id != self.filial.empresa_id:
-            raise ValidationError({"cliente": "Cliente informado pertence a outra empresa."})
+            erros["cliente"] = "Cliente informado pertence a outra empresa."
         if self.fornecedor_id and self.fornecedor.empresa_id and self.filial_id and self.fornecedor.empresa_id != self.filial.empresa_id:
-            raise ValidationError({"fornecedor": "Fornecedor informado pertence a outra empresa."})
+            erros["fornecedor"] = "Fornecedor informado pertence a outra empresa."
         if self.categoria_id and self.filial_id and self.categoria.empresa_id != self.filial.empresa_id:
-            raise ValidationError({"categoria": "Categoria informada pertence a outra empresa."})
+            erros["categoria"] = "Categoria informada pertence a outra empresa."
         if self.centro_custo_id and self.filial_id and self.centro_custo.empresa_id != self.filial.empresa_id:
-            raise ValidationError({"centro_custo": "Centro de custo informado pertence a outra empresa."})
+            erros["centro_custo"] = "Centro de custo informado pertence a outra empresa."
+        if erros:
+            raise ValidationError(erros)
     @property
     def esta_vencida(self):
         return self.status == StatusContaFinanceira.ABERTA and self.vencimento < timezone.localdate()

@@ -78,7 +78,7 @@ P2:
 
 - [x] parcelas/duplicatas da NF-e recebida, preservadas na entrada e vinculadas às contas a pagar;
 - [x] criptografia do CSC;
-- [ ] constraints de contas originadas por compra/venda;
+- [x] constraints de contas originadas por compra/venda;
 - [ ] contrato temporal do snapshot contábil;
 - [ ] CI inicial com PostgreSQL.
 - [ ] defesa em profundidade da origem do DocumentoFiscal: garantir no banco exatamente
@@ -694,6 +694,37 @@ apps/fiscal/forms.py, apps/fiscal/views.py, apps/fiscal/admin.py,
 apps/fiscal/readiness.py, apps/fiscal/test_protecao_csc.py,
 templates/fiscal/form.html e docs/PROTECAO_CSC.md. Migration:
 apps/fiscal/migrations/0055_protege_csc_criptografado.py.
+
+## Ponto de retomada — ciclo 146, 21/09/2026
+
+Concluída a pendência P2 de integridade das contas financeiras originadas por
+compra e venda, preservando contas manuais e compras parceladas legítimas.
+
+- [x] Mapear três classes válidas: conta manual sem origem comercial, crediário
+  com uma venda e conta de compra única ou parcelada por duplicatas da mesma NF-e.
+- [x] Impedir no banco venda e compra simultâneas na mesma conta.
+- [x] Exigir entrada de compra quando a conta referencia uma duplicata de NF-e.
+- [x] Exigir `RECEBER` para conta de venda e `PAGAR` para conta de compra.
+- [x] Garantir uma conta por venda e uma conta não parcelada por entrada, sem
+  bloquear múltiplas duplicatas válidas da mesma compra.
+- [x] Acrescentar validação de domínio para filial divergente e duplicata
+  pertencente a outra entrada de compra.
+- [x] Criar preflight de migration não destrutivo: legado incompatível interrompe
+  a aplicação e informa IDs/grupos; nenhum dado é apagado ou corrigido por heurística.
+- [x] Validar 75 testes da matriz nova, crediário e Compras, além de `check`,
+  `makemigrations --check --dry-run` e `git diff --check` sem pendências.
+- [x] Executar a regressão Financeiro + Vendas: 92 de 93 testes passaram. A única
+  falha, reproduzida isoladamente, é preexistente e pertence ao próximo item P2:
+  o pacote da competência atual procura snapshot no último dia do mês, enquanto
+  a captura imutável só admite a data corrente.
+- [ ] Próximo passo exato: formalizar o contrato temporal do snapshot contábil,
+  distinguindo competência em andamento de mês encerrado, sem fabricar fechamento
+  retroativo e sem declarar snapshot completo para uma data que não foi capturada.
+
+Arquivos principais: apps/financeiro/models.py,
+apps/financeiro/migrations/0025_protege_origens_conta_financeira.py,
+apps/financeiro/test_constraints_origem_conta.py e
+docs/CONSTRAINTS_ORIGEM_CONTA_FINANCEIRA.md.
 
 ## Ponto de retomada — ciclo 143, 18/09/2026
 
