@@ -398,7 +398,13 @@ CST_IPI_NAO_TRIBUTADO = {"01", "02", "03", "04", "05", "51", "52", "53", "54", "
 CST_IPI_TRIBUTADO = {"00", "49", "50", "99"}
 
 
-def filtro_pendencias_produto_fiscal(regimes_tributarios=None, ufs=None, crts=None, exigir_ibs_cbs=False):
+def filtro_pendencias_produto_fiscal(
+    regimes_tributarios=None,
+    ufs=None,
+    crts=None,
+    exigir_ibs_cbs=False,
+    naturezas_operacao=None,
+):
     regimes = [regime.upper() for regime in (regimes_tributarios or []) if regime]
     crts_validos = {str(crt) for crt in (crts or []) if crt}
     if crts_validos:
@@ -467,21 +473,37 @@ def filtro_pendencias_produto_fiscal(regimes_tributarios=None, ufs=None, crts=No
 
     ufs_validas = {(uf or "").strip().upper() for uf in (ufs or []) if uf}
     if "GO" in ufs_validas:
-        if exige_normal:
-            pendente |= Q(reducao_base_icms__gt=0, codigo_beneficio_fiscal="")
-        codigos_catalogados = codigos_cbenef_go_validos()
-        if not codigos_catalogados:
-            pendente |= ~Q(codigo_beneficio_fiscal="")
-        else:
-            pendente |= ~Q(codigo_beneficio_fiscal="") & ~Q(
-                codigo_beneficio_fiscal__in=sorted(codigos_catalogados)
-            )
-            if exige_normal:
-                for cst in sorted(CST_ICMS_SUPORTADOS):
-                    codigos_cst = codigos_cbenef_go_validos(cst)
-                    pendente |= Q(cst_icms=cst) & ~Q(codigo_beneficio_fiscal="") & ~Q(
-                        codigo_beneficio_fiscal__in=sorted(codigos_cst)
+        naturezas = [natureza for natureza in (naturezas_operacao or []) if natureza]
+        if exige_normal and naturezas:
+            codigos_catalogados = codigos_cbenef_go_validos()
+            for natureza in naturezas:
+                base_parametro = Q(
+                    parametrizacoes_beneficio_fiscal__natureza_operacao=natureza,
+                    parametrizacoes_beneficio_fiscal__situacao__in=["SEM_BENEFICIO", "COM_BENEFICIO"],
+                )
+                pendente |= ~base_parametro
+                pendente |= Q(reducao_base_icms__gt=0) & ~Q(
+                    parametrizacoes_beneficio_fiscal__natureza_operacao=natureza,
+                    parametrizacoes_beneficio_fiscal__codigo_beneficio_fiscal__regex=r"^(GO\d{6}|SEM CBENEF)$",
+                )
+                if codigos_catalogados:
+                    pendente |= Q(
+                        parametrizacoes_beneficio_fiscal__natureza_operacao=natureza,
+                        parametrizacoes_beneficio_fiscal__situacao="COM_BENEFICIO",
+                    ) & ~Q(
+                        parametrizacoes_beneficio_fiscal__natureza_operacao=natureza,
+                        parametrizacoes_beneficio_fiscal__codigo_beneficio_fiscal__in=sorted(codigos_catalogados),
                     )
+        else:
+            if exige_normal:
+                pendente |= Q(reducao_base_icms__gt=0, codigo_beneficio_fiscal="")
+            codigos_catalogados = codigos_cbenef_go_validos()
+            if not codigos_catalogados:
+                pendente |= ~Q(codigo_beneficio_fiscal="")
+            else:
+                pendente |= ~Q(codigo_beneficio_fiscal="") & ~Q(
+                    codigo_beneficio_fiscal__in=sorted(codigos_catalogados)
+                )
     return pendente
 
 
@@ -655,7 +677,14 @@ def _adicionar_totais_icms(inf_nfe, *, base_icms, valor_icms, valor_fcp, valor_i
     _texto(icmstot, "vOutro", _valor(outros))
     _texto(icmstot, "vNF", _valor(total_nota))
 
-def pendencias_produto_fiscal(produto, regimes_tributarios=None, ufs=None, crts=None, exigir_ibs_cbs=False):
+def pendencias_produto_fiscal(
+    produto,
+    regimes_tributarios=None,
+    ufs=None,
+    crts=None,
+    exigir_ibs_cbs=False,
+    naturezas_operacao=None,
+):
     pendencias = []
     regimes = [regime.upper() for regime in (regimes_tributarios or []) if regime]
     crts = {str(crt) for crt in (crts or []) if crt}
@@ -693,7 +722,17 @@ def pendencias_produto_fiscal(produto, regimes_tributarios=None, ufs=None, crts=
         pendencias.append("Aliquota ICMS")
     pendencias.extend(_pendencias_contribuicoes_produto(produto))
     pendencias.extend(_pendencias_ibs_cbs_produto(produto, exigir_ibs_cbs))
-    pendencias.extend(pendencias_produto_por_uf(produto, ufs, crts))
+    naturezas = [natureza for natureza in (naturezas_operacao or []) if natureza]
+    if naturezas:
+        for natureza in naturezas:
+            pendencias.extend(
+                f"{natureza.descricao}: {pendencia}"
+                for pendencia in pendencias_produto_por_uf(
+                    produto, ufs, crts, natureza_operacao=natureza
+                )
+            )
+    else:
+        pendencias.extend(pendencias_produto_por_uf(produto, ufs, crts))
     return pendencias
 
 

@@ -803,6 +803,25 @@ class FiscalTests(TestCase):
         self.assertContains(response_todos, "Arroz Branco 5kg")
         self.assertContains(response_todos, "Pronto")
 
+    def test_catalogo_fiscal_exibe_decisao_pendente_por_natureza_em_goias(self):
+        self.filial.uf = "GO"
+        self.filial.save(update_fields=["uf"])
+        self.parametrizacao_beneficio.delete()
+
+        response_pendente = self.client.get("/fiscal/produtos/?filtro=pendentes")
+
+        self.assertContains(response_pendente, self.produto.nome)
+        self.assertContains(response_pendente, "Venda ao consumidor: defina se há benefício fiscal")
+
+        ParametrizacaoBeneficioFiscalProduto.objects.create(
+            produto=self.produto,
+            natureza_operacao=self.natureza,
+            situacao=SituacaoBeneficioFiscalICMS.SEM_BENEFICIO,
+            atualizado_por=self.user,
+        )
+        response_pronto = self.client.get("/fiscal/produtos/?filtro=prontos")
+        self.assertContains(response_pronto, self.produto.nome)
+
     def test_exportacao_csv_fiscal_respeita_filtro_e_gera_modelo_reimportavel(self):
         produto_pendente = Produto.objects.create(
             codigo_barras="7890000000991",
@@ -823,6 +842,7 @@ class FiscalTests(TestCase):
         self.assertIn("produtos-fiscais-pendentes-", response["Content-Disposition"])
         self.assertIn("codigo_barras;codigo_interno;nome;categoria;preco_venda", conteudo)
         self.assertIn("classificacao_tributaria_ibs_cbs;_modo_importacao", conteudo)
+        self.assertIn("beneficio_icms_por_operacao", conteudo)
         self.assertIn(";fiscal\r\n", conteudo)
         self.assertIn(produto_pendente.codigo_barras, conteudo)
         self.assertIn("2,50", conteudo)

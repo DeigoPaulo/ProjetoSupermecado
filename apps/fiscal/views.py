@@ -64,6 +64,7 @@ from .models import (
     AlertaAtualizacaoFiscal,
     AmbienteFiscal,
     CartaCorrecaoFiscal,
+    CodigoRegimeTributario,
     ConsultaCadastroContribuinte,
     ConfiguracaoFiscal,
     ControleDistribuicaoDFeFilial,
@@ -522,7 +523,9 @@ def _diagnostico_prontidao_fiscal(user):
     ufs = list(configuracoes_qs.exclude(filial__uf="").values_list("filial__uf", flat=True))
     crts = list(configuracoes_qs.values_list("crt", flat=True))
     exigir_ibs_cbs = any(config.ibs_cbs_exigido_em() for config in configuracoes.values())
-    filtro_produtos_pendentes = filtro_pendencias_produto_fiscal(regimes, ufs, crts, exigir_ibs_cbs)
+    filtro_produtos_pendentes = filtro_pendencias_produto_fiscal(
+        regimes, ufs, crts, exigir_ibs_cbs, list(naturezas_nfce.values())
+    )
     produtos_pendentes = Produto.all_objects.filter(filtro_produtos_pendentes).count()
     vendas_pendentes_qs = vendas_para_usuario(
         user, Venda.objects.filter(status=StatusVenda.FINALIZADA, documentos_fiscais__isnull=True)
@@ -1065,8 +1068,24 @@ def _parametros_validacao_produtos_fiscais(user):
         configuracoes_qs.exclude(filial__uf="").values_list("filial__uf", flat=True)
     )
     exigir_ibs_cbs = any(config.ibs_cbs_exigido_em() for config in configuracoes_qs)
-    pendente_q = filtro_pendencias_produto_fiscal(regimes, ufs, crts, exigir_ibs_cbs)
-    return regimes, ufs, crts, exigir_ibs_cbs, pendente_q
+    empresas_go_normal = configuracoes_qs.filter(
+        filial__uf="GO",
+        crt__in=[CodigoRegimeTributario.SIMPLES_EXCESSO_SUBLIMITE, CodigoRegimeTributario.REGIME_NORMAL],
+    ).values_list("filial__empresa_id", flat=True)
+    naturezas = list(
+        naturezas_para_usuario(
+            user,
+            NaturezaOperacao.objects.filter(
+                empresa_id__in=empresas_go_normal,
+                ativo=True,
+                padrao=True,
+            ),
+        )
+    )
+    pendente_q = filtro_pendencias_produto_fiscal(
+        regimes, ufs, crts, exigir_ibs_cbs, naturezas
+    )
+    return regimes, ufs, crts, exigir_ibs_cbs, naturezas, pendente_q
 
 
 def _filtrar_catalogo_fiscal(queryset, pendente_q, filtro):
@@ -1096,7 +1115,7 @@ def produtos_fiscais_exportar_csv(request):
         produtos_qs = produtos_qs.filter(
             Q(nome__icontains=q) | Q(codigo_barras__icontains=q)
         )
-    _regimes, _ufs, _crts, _exigir_ibs_cbs, pendente_q = _parametros_validacao_produtos_fiscais(
+    _regimes, _ufs, _crts, _exigir_ibs_cbs, naturezas, pendente_q = _parametros_validacao_produtos_fiscais(
         request.user
     )
     produtos_qs, filtro = _filtrar_catalogo_fiscal(produtos_qs, pendente_q, filtro)
@@ -1115,7 +1134,8 @@ def produtos_fiscais_exportar_csv(request):
         "aliquota_icms",
         "reducao_base_icms",
         "aliquota_fcp",
-        "codigo_beneficio_fiscal",
+        "codigo_beneficio_fiscal_legado_nao_emissivo",
+        "beneficio_icms_por_operacao",
         "cst_pis",
         "aliquota_pis",
         "cst_cofins",
@@ -1132,7 +1152,13 @@ def produtos_fiscais_exportar_csv(request):
     def linhas():
         yield "﻿"
         yield escritor.writerow(cabecalhos)
-        for produto in produtos_qs.iterator(chunk_size=1000):
+        natureza_ids = [natureza.pk for natureza in naturezas]
+        for produto in produtos_qs.prefetch_related("parametrizacoes_beneficio_fiscal__natureza_operacao").iterator(chunk_size=1000):
+            decisoes = [
+                f"{item.natureza_operacao.descricao}={item.get_situacao_display()}:{item.codigo_beneficio_fiscal or '-'}"
+                for item in produto.parametrizacoes_beneficio_fiscal.all()
+                if item.natureza_operacao_id in natureza_ids
+            ]
             yield escritor.writerow(
                 [
                     produto.codigo_barras,
@@ -1149,6 +1175,7 @@ def produtos_fiscais_exportar_csv(request):
                     _decimal_csv(produto.reducao_base_icms),
                     _decimal_csv(produto.aliquota_fcp),
                     produto.codigo_beneficio_fiscal,
+                    " | ".join(decisoes),
                     produto.cst_pis,
                     _decimal_csv(produto.aliquota_pis),
                     produto.cst_cofins,
@@ -1193,7 +1220,7 @@ def produtos_fiscais(request):
     produtos_qs = Produto.all_objects.select_related("categoria", "marca").order_by("nome")
     if q:
         produtos_qs = produtos_qs.filter(Q(nome__icontains=q) | Q(codigo_barras__icontains=q))
-    regimes, ufs, crts, exigir_ibs_cbs, pendente_q = _parametros_validacao_produtos_fiscais(
+    regimes, ufs, crts, exigir_ibs_cbs, naturezas, pendente_q = _parametros_validacao_produtos_fiscais(
         request.user
     )
     total_analisados = produtos_qs.count()
@@ -1204,7 +1231,9 @@ def produtos_fiscais(request):
     pagina = Paginator(produtos_qs, 50).get_page(request.GET.get("page"))
     produtos = list(pagina.object_list)
     for produto in produtos:
-        produto.pendencias_fiscais = pendencias_produto_fiscal(produto, regimes, ufs, crts, exigir_ibs_cbs)
+        produto.pendencias_fiscais = pendencias_produto_fiscal(
+            produto, regimes, ufs, crts, exigir_ibs_cbs, naturezas
+        )
         produto.pronto_fiscal = not produto.pendencias_fiscais
     context = {
         "produtos": produtos,

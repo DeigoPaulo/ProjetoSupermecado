@@ -917,11 +917,36 @@ chamada à SEFAZ e sem ativação de produção.
 - [x] Aplicar localmente a migration fiscal 0058; a base local usa SQLite. Na mesma
   execução, migrations já existentes e ainda pendentes de Compras 0012, Fornecedores
   0004 e Financeiro 0024/0025 também foram aplicadas, sem limpeza de dados.
-- [ ] Próximo passo interno seguro: integrar a decisão por operação ao diagnóstico e à
+- [x] Próximo passo interno seguro: integrar a decisão por operação ao diagnóstico e à
   listagem/exportação de produtos fiscais, exibindo quais naturezas padrão ainda estão
   indefinidas; depois retirar o campo legado de `Produto` sem migrar ou inferir valores.
 
 Migration: `apps/fiscal/migrations/0058_parametrizacaobeneficiofiscalproduto.py`.
+
+## Ponto de retomada — ciclo 153, 21/09/2026
+
+Concluída a integração da decisão de benefício fiscal por operação aos instrumentos de
+prontidão cadastral. O campo legado continua armazenado apenas para compatibilidade e
+deixou de ser apresentado no CSV como fonte emissiva.
+
+- [x] Fazer o diagnóstico de prontidão considerar as naturezas NFC-e padrão das empresas
+  atendidas e marcar produto sem decisão explícita como pendente.
+- [x] Fazer a listagem fiscal distinguir pendente/pronto por natureza padrão de operação
+  em empresas de Goiás no regime normal.
+- [x] Exibir a natureza no texto da pendência, evitando uma mensagem genérica que não
+  indique qual parametrização contábil falta.
+- [x] Exportar no CSV as decisões por operação e renomear o cabeçalho antigo para
+  `codigo_beneficio_fiscal_legado_nao_emissivo`, sem reclassificar qualquer produto.
+- [x] Preservar o comportamento anterior para UFs/CRTs sem exigência desta decisão e
+  manter a preparação emissiva fail-closed em Goiás.
+- [x] Validar 3 testes focados e a regressão fiscal completa: 661 testes aprovados e
+  3 ignorados por dependências explícitas de ambiente.
+- [ ] Próximo passo interno seguro: remover o campo legado `codigo_beneficio_fiscal` do
+  formulário/importação e, após confirmar que nenhum consumidor interno ainda depende
+  dele, criar migration somente de esquema para removê-lo do `Produto`; nenhum valor
+  legado será copiado para a nova parametrização por inferência.
+
+Migrações: nenhuma nova neste ciclo.
 
 ## Ponto de retomada — ciclo 143, 18/09/2026
 
