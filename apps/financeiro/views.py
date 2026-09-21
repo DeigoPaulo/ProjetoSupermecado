@@ -1023,7 +1023,32 @@ def _periodo_competencia(request):
         data_fim = date(ano + 1, 1, 1) - timedelta(days=1)
     else:
         data_fim = date(ano, mes + 1, 1) - timedelta(days=1)
+    if data_inicio > timezone.localdate():
+        raise ValidationError("A competência futura ainda não pode gerar pacote contábil.")
     return competencia, data_inicio, data_fim
+
+
+def _contrato_temporal_inventario(*, data_inicio, data_fim, hoje, cobertura_completa):
+    competencia_encerrada = data_fim < hoje
+    if competencia_encerrada:
+        return {
+            "estado_competencia": "ENCERRADA",
+            "snapshot_completo": cobertura_completa,
+            "qualidade_temporal": (
+                "SNAPSHOT_IMUTAVEL_FECHAMENTO"
+                if cobertura_completa
+                else "POSICAO_ATUAL_NAO_RETROATIVA"
+            ),
+        }
+    return {
+        "estado_competencia": "EM_ANDAMENTO",
+        "snapshot_completo": False,
+        "qualidade_temporal": (
+            "SNAPSHOT_IMUTAVEL_PARCIAL_COMPETENCIA"
+            if cobertura_completa
+            else "POSICAO_ATUAL_COMPETENCIA_EM_ANDAMENTO"
+        ),
+    }
 
 
 def _documentos_fiscais_periodo(filiais, data_inicio, data_fim):
@@ -1101,22 +1126,28 @@ def _pacote_contabil_zip(competencia, data_inicio, data_fim, filiais, filial_id,
     estoques = Estoque.objects.select_related("filial", "produto").filter(
         filial__in=filiais_pacote
     ).order_by("filial__nome", "produto__nome", "produto_id")
+    hoje = timezone.localdate()
+    data_referencia_fechamento = data_fim if data_fim < hoje else hoje
     fechamentos_inventario = list(
         FechamentoEstoqueContabil.objects.prefetch_related("itens").select_related("filial").filter(
-            filial__in=filiais_pacote, data_referencia=data_fim
+            filial__in=filiais_pacote, data_referencia=data_referencia_fechamento
         ).order_by("filial__nome")
     )
-    snapshot_completo = len(fechamentos_inventario) == filiais_pacote.count()
+    cobertura_completa = bool(filiais_pacote.exists()) and len(fechamentos_inventario) == filiais_pacote.count()
+    contrato_inventario = _contrato_temporal_inventario(
+        data_inicio=data_inicio,
+        data_fim=data_fim,
+        hoje=hoje,
+        cobertura_completa=cobertura_completa,
+    )
+    snapshot_completo = contrato_inventario["snapshot_completo"]
+    usar_snapshot = cobertura_completa
     referencia_inventario = (
         max(fechamento.capturado_em for fechamento in fechamentos_inventario)
-        if snapshot_completo and fechamentos_inventario
+        if usar_snapshot and fechamentos_inventario
         else timezone.now()
     )
-    qualidade_inventario = (
-        "SNAPSHOT_IMUTAVEL_FECHAMENTO"
-        if snapshot_completo
-        else ("POSICAO_NO_FECHAMENTO" if data_fim == referencia_inventario.date() else "POSICAO_ATUAL_NAO_RETROATIVA")
-    )
+    qualidade_inventario = contrato_inventario["qualidade_temporal"]
     arquivos = OrderedDict()
 
     def adicionar_texto(nome, conteudo):
@@ -1153,7 +1184,7 @@ def _pacote_contabil_zip(competencia, data_inicio, data_fim, filiais, filial_id,
 
     linhas_inventario = []
     valor_total_inventario = Decimal("0.00")
-    if snapshot_completo:
+    if usar_snapshot:
         for fechamento in fechamentos_inventario:
             for item in fechamento.itens.all():
                 valor_total_inventario += item.valor_custo
@@ -1443,11 +1474,25 @@ def _pacote_contabil_zip(competencia, data_inicio, data_fim, filiais, filial_id,
         "inventario": {
             "criterio_custo": "CUSTO_MEDIO_PONDERADO_MOVEL",
             "referencia": referencia_inventario.isoformat(),
+            "data_referencia": data_referencia_fechamento.isoformat(),
+            "estado_competencia": contrato_inventario["estado_competencia"],
             "qualidade_temporal": qualidade_inventario,
             "valor_total_custo": f"{valor_total_inventario:.2f}",
             "snapshot_completo": snapshot_completo,
-            "fechamentos": [fechamento.conteudo_sha256 for fechamento in fechamentos_inventario] if snapshot_completo else [],
-            "alerta": "Snapshot imutável do fechamento." if snapshot_completo else "Sem snapshot completo; para competência passada, esta é a posição atual e exige conferência.",
+            "fechamentos": [fechamento.conteudo_sha256 for fechamento in fechamentos_inventario] if usar_snapshot else [],
+            "alerta": (
+                "Snapshot imutável completo do encerramento."
+                if snapshot_completo
+                else (
+                    "Competência em andamento: posição imutável do dia, ainda não é fechamento mensal."
+                    if usar_snapshot
+                    else (
+                        "Competência em andamento sem posição imutável do dia."
+                        if contrato_inventario["estado_competencia"] == "EM_ANDAMENTO"
+                        else "Competência encerrada sem snapshot completo; posição atual não retroativa."
+                    )
+                )
+            ),
         },
         "arquivos": integridade,
         "observacao": "Arquivo gerencial. Valide regras fiscais e obrigações com o contador responsável.",

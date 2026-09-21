@@ -79,7 +79,7 @@ P2:
 - [x] parcelas/duplicatas da NF-e recebida, preservadas na entrada e vinculadas às contas a pagar;
 - [x] criptografia do CSC;
 - [x] constraints de contas originadas por compra/venda;
-- [ ] contrato temporal do snapshot contábil;
+- [x] contrato temporal do snapshot contábil;
 - [ ] CI inicial com PostgreSQL.
 - [ ] defesa em profundidade da origem do DocumentoFiscal: garantir no banco exatamente
   uma origem comercial permitida por fluxo, impedindo simultaneamente venda + pedido e a
@@ -725,6 +725,33 @@ Arquivos principais: apps/financeiro/models.py,
 apps/financeiro/migrations/0025_protege_origens_conta_financeira.py,
 apps/financeiro/test_constraints_origem_conta.py e
 docs/CONSTRAINTS_ORIGEM_CONTA_FINANCEIRA.md.
+
+## Ponto de retomada — ciclo 147, 21/09/2026
+
+Concluído o contrato temporal do inventário no pacote contábil, eliminando a
+classificação incorreta de uma captura feita durante o mês como fechamento mensal.
+
+- [x] Distinguir explicitamente competência em andamento e competência encerrada.
+- [x] Usar, no mês corrente, a captura imutável do dia quando todas as filiais do
+  pacote estiverem cobertas, sem declarar o mês fechado ou o snapshot completo.
+- [x] Exigir, para mês encerrado, cobertura de todas as filiais exatamente no último
+  dia da competência antes de declarar `SNAPSHOT_IMUTAVEL_FECHAMENTO`.
+- [x] Não fabricar inventário retroativo: sem fechamento histórico completo, a
+  posição atual é identificada como não retroativa e exige conferência.
+- [x] Rejeitar competência futura antes da geração do pacote.
+- [x] Expor no manifesto o estado da competência, a data de referência, a qualidade
+  temporal, o indicador estrito de fechamento e os hashes das capturas usadas.
+- [x] Cobrir os estados corrente, encerrado completo/incompleto e futuro, além do
+  pacote mensal real; 8 testes focados aprovados.
+- [x] Revalidar conjuntamente Financeiro + Estoque: 211 testes aprovados, sem
+  regressões; `check`, `makemigrations --check --dry-run` e `git diff --check`
+  permaneceram sem pendências.
+- [ ] Próximo passo exato: criar a CI inicial com PostgreSQL para executar as
+  proteções concorrentes e constraints no mesmo mecanismo de banco do piloto.
+
+Arquivos principais: apps/financeiro/views.py,
+apps/financeiro/test_contrato_temporal_inventario.py, apps/financeiro/tests.py e
+docs/CONTRATO_TEMPORAL_SNAPSHOT_CONTABIL.md. Migrações: nenhuma.
 
 ## Ponto de retomada — ciclo 143, 18/09/2026
 
