@@ -83,7 +83,7 @@ SEFAZ_DIRETA_ALLOW_PRODUCTION=False
 Antes do primeiro envio:
 
 1. confirmar credenciamento NF-e/NFC-e da filial em Goiás;
-2. instalar A1 válido, IE, CSC, série e numeração de homologação;
+2. instalar A1 válido, IE, série e numeração de homologação; CSC somente se houver compatibilidade explícita com QR Code v2;
 3. baixar e conferir os schemas oficiais vigentes;
 4. revalidar URLs, ações SOAP, cadeias TLS e regras da nota técnica vigente;
 5. executar `python manage.py validar_adaptador_sefaz --exigir-eventos --estrito`;

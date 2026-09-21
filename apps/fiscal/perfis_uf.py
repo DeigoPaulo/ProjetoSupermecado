@@ -81,11 +81,20 @@ def parametrizacao_beneficio_produto(produto, natureza_operacao):
     return produto.parametrizacoes_beneficio_fiscal.filter(natureza_operacao=natureza_operacao).first()
 
 
-def codigo_beneficio_produto_operacao(produto, natureza_operacao):
-    parametrizacao = parametrizacao_beneficio_produto(produto, natureza_operacao)
-    if not parametrizacao or parametrizacao.situacao == "INDEFINIDO":
-        return ""
-    return (parametrizacao.codigo_beneficio_fiscal or "").strip().upper()
+def codigo_beneficio_produto_operacao(produto, natureza_operacao, *, uf="", crt=""):
+    """Resolve o cBenef pela mesma regra usada na validacao e na geracao do XML.
+
+    Em GO, nos regimes normal e excesso de sublimite, a decisao por natureza e
+    obrigatoria. Fora desse recorte, o campo legado continua sendo respeitado
+    ate que a transicao cadastral seja concluida.
+    """
+    exige_decisao_por_operacao = (uf or "").strip().upper() == "GO" and str(crt) in {"2", "3"}
+    if exige_decisao_por_operacao:
+        parametrizacao = parametrizacao_beneficio_produto(produto, natureza_operacao)
+        if not parametrizacao or parametrizacao.situacao == "INDEFINIDO":
+            return ""
+        return (parametrizacao.codigo_beneficio_fiscal or "").strip().upper()
+    return (produto.codigo_beneficio_fiscal or "").strip().upper()
 
 
 def pendencias_produto_por_uf(produto, ufs=None, crts=None, data_referencia=None, natureza_operacao=None):
@@ -101,13 +110,18 @@ def pendencias_produto_por_uf(produto, ufs=None, crts=None, data_referencia=None
         if not parametrizacao or parametrizacao.situacao == "INDEFINIDO":
             pendencias.append("defina se há benefício fiscal de ICMS para o produto nesta natureza de operação")
             return pendencias
-        cbenef = (parametrizacao.codigo_beneficio_fiscal or "").strip().upper()
+        cbenef = codigo_beneficio_produto_operacao(
+            produto,
+            natureza_operacao,
+            uf="GO",
+            crt="3",
+        )
         if parametrizacao.situacao == "COM_BENEFICIO" and not cbenef:
             pendencias.append("cBenef obrigatório para a decisão com benefício fiscal")
         if parametrizacao.situacao == "SEM_BENEFICIO" and cbenef not in {"", "SEM CBENEF"}:
             pendencias.append("decisão sem benefício não pode utilizar um cBenef de benefício")
     else:
-        cbenef = (produto.codigo_beneficio_fiscal or "").strip().upper()
+        cbenef = codigo_beneficio_produto_operacao(produto, natureza_operacao)
     reducao = produto.reducao_base_icms or Decimal("0")
     if reducao > 0 and not cbenef and exige_regime_normal:
         pendencias.append("cBenef obrigatório em Goiás para redução de base do ICMS")

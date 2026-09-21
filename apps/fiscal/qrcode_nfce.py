@@ -38,7 +38,9 @@ def _destinatario(documento):
     if tipo == TipoDocumentoConsumidor.CNPJ:
         return "1", valor
     if tipo == TipoDocumentoConsumidor.ESTRANGEIRO:
-        return "3", valor
+        # No QR Code v3 o tipo identifica o estrangeiro, mas o parametro de
+        # documento deve permanecer vazio (Manual DANFE NFC-e/QR Code v6.0).
+        return "3", ""
     return "", ""
 
 

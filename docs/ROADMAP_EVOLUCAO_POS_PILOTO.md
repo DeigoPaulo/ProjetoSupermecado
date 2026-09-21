@@ -650,8 +650,9 @@ dependência no caminho direto.
   também `check`, ausência de migrations e integridade do diff.
 - [x] Não iniciar criptografia/rotação de CSC; a pendência continua P2, com
   prioridade posterior ao fechamento do piloto direto.
-- [ ] Próximo passo exato: quando existirem CNPJ/IE, A1, CSC e credenciamento
-  válidos, preparar a homologação real da filial piloto em SEFAZ direta GO,
+- [ ] Próximo passo exato: quando existirem CNPJ/IE, A1 e credenciamento válidos
+  (e CSC somente se houver compatibilidade explícita com QR Code v2), preparar a
+  homologação real da filial piloto em SEFAZ direta GO,
   executar as sete operações e arquivar o aceite fiscal/contábil. Até lá, não
   habilitar rede nem produção.
 
@@ -947,6 +948,49 @@ deixou de ser apresentado no CSV como fonte emissiva.
   legado será copiado para a nova parametrização por inferência.
 
 Migrações: nenhuma nova neste ciclo.
+
+## Ponto de retomada — ciclo 154, 21/09/2026
+
+Concluído o fechamento das bordas de NFC-e e cBenef antes de qualquer remoção do
+campo legado. Nenhuma classificação fiscal foi inferida, nenhuma rede fiscal foi
+acessada e as travas de produção permaneceram inalteradas.
+
+- [x] Unificar a resolução emissiva do cBenef com a validação: GO + CRT 2/3 exige
+  decisão explícita por produto/natureza e não aceita o legado como atalho; fora
+  desse recorte, o comportamento legado permanece enquanto a migração cadastral
+  não estiver concluída.
+- [x] Provar em NFC-e e NF-e que o cBenef legado não é descartado silenciosamente
+  nos escopos ainda não migrados e que GO/regime normal continua fail-closed.
+- [x] Corrigir o QR Code NFC-e v3 em contingência para destinatário estrangeiro:
+  tipo 3 com o parâmetro seguinte vazio, sem alterar o dest/idEstrangeiro do
+  XML. Referência: Manual de Padrões Técnicos DANFE NFC-e/QR Code v6.0 do Portal
+  Nacional da NF-e.
+- [x] Tornar obrigatória no backend a decisão NAO/CPF/CNPJ; rejeitar ausência,
+  valor desconhecido e documento inválido, e limpar documento residual quando a
+  decisão for NAO.
+- [x] Alinhar cenários e documentação operacional: CSC não é requisito do QR Code
+  v3 e permanece protegido apenas para compatibilidade legada explicitamente
+  configurada com QR Code v2.
+- [x] Auditar a cardinalidade 1:N do catálogo fiscal. Os joins reversos podiam
+  multiplicar linhas quando o produto tinha várias naturezas; a consulta passou a
+  usar subconsultas por produto, sem distinct() indiscriminado. Tela, métricas e
+  CSV foram provados com duas parametrizações e uma única ocorrência.
+- [x] Revisar a coerência já protegida de ParametrizacaoBeneficioFiscalProduto:
+  unicidade produto+natureza, estados/códigos coerentes, escopo de empresa, papel
+  de revisão fiscal e auditoria permanecem cobertos.
+- [x] Validar 24 testes focados, 669 testes fiscais (3 ignorados), 79 testes de PDV
+  (3 ignorados) e 20 testes de Vendas. A suíte crítica de concorrência PostgreSQL
+  foi chamada explicitamente, mas seus 2 testes foram ignorados porque a base local
+  deste ciclo é SQLite. check, migrations e diff ficaram íntegros.
+- [ ] Próximo passo interno seguro: auditar e retirar os consumidores cadastrais e
+  de integração ainda existentes do legado — formulário/importação de Produto,
+  snapshots e eventos de entrada, CSV e fallback de prontidão/emissão — com testes
+  de caracterização. Só autorizar a remoção da coluna quando houver zero consumidor
+  emissivo e zero diferença de comportamento coberta; até lá, não criar migration
+  de remoção.
+
+Migrações: nenhuma nova neste ciclo. Produto.codigo_beneficio_fiscal foi
+deliberadamente preservado.
 
 ## Ponto de retomada — ciclo 143, 18/09/2026
 
@@ -2437,7 +2481,7 @@ Cada parcela eletrônica da NFC-e deve manter vínculo auditável entre a confir
 ### Homologação real SEFAZ GO
 
 - [ ] Revalidar endpoints, schemas e Notas Técnicas vigentes antes do primeiro teste externo.
-- [ ] Configurar filial piloto com CNPJ/IE, certificado A1, CSC, séries e credenciamento válidos por canal seguro.
+- [ ] Configurar filial piloto com CNPJ/IE, certificado A1, séries e credenciamento válidos por canal seguro; CSC somente se houver compatibilidade explícita com QR Code v2.
 - [ ] Executar em homologação: autorização, consulta, rejeições controladas, cancelamento, inutilização, status do serviço e contingência NFC-e.
 - [ ] Testar recuperação após timeout ou queda de rede sem duplicidade.
 - [ ] Validar DF-e, manifestação e eventos com credenciais reais de homologação quando aplicável.
@@ -2461,7 +2505,7 @@ A ativação de IBS/CBS deve depender de configuração explícita, schema homol
 
 ### Dependências externas desta frente
 
-- Credenciais reais/sandbox, A1, CSC, IE e credenciamento da filial piloto.
+- Credenciais reais/sandbox, A1, IE e credenciamento da filial piloto; CSC somente para compatibilidade explícita com QR Code v2.
 - Arquivos reais anonimizados de adquirentes/bancos para homologação de conciliação.
 - Aceite do contador sobre plano de contas, CMV, DRE, classificações, IBS/CBS e pacote contábil.
 - Ambiente de homologação com banco e infraestrutura equivalentes ao piloto.
@@ -2499,7 +2543,7 @@ A frente deve ser iniciada após a conclusão da trilha fiscal interna atual e d
 ## Decisoes pendentes do cliente
 
 - Decisão registrada no ciclo 144: o primeiro piloto GO terá SEFAZ direta como alvo técnico; Focus NFe permanece opção comercial secundária.
-- Validar certificado A1, CSC, IE, series e regras tributarias com o contador.
+- Validar certificado A1, IE, series e regras tributarias com o contador; CSC somente para compatibilidade explícita com QR Code v2.
 - Definir adquirentes/TEF, bancos e layouts de conciliacao utilizados pela loja.
 - Escolher a filial piloto e responsaveis por operacao, fiscal e contabilidade.
 

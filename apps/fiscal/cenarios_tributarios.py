@@ -145,7 +145,10 @@ CENARIOS_TRIBUTARIOS_GO = (
         "modelos": ("55", "65"),
         "status": DEPENDENCIA_EXTERNA,
         "escopo_atual": "Rede e producao permanecem desligadas.",
-        "proxima_evidencia": "CNPJ, IE, A1, CSC, credenciamento e aceite por filial.",
+        "proxima_evidencia": (
+            "CNPJ, IE, A1, credenciamento e aceite por filial; CSC somente para "
+            "compatibilidade explicitamente ativada com QR Code v2."
+        ),
     },
 )
 

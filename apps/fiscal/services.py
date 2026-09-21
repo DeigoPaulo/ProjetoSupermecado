@@ -47,6 +47,7 @@ from .models import (
     InutilizacaoNumeracaoFiscal,
     ModoTransicaoIbsCbs,
     NaturezaOperacao,
+    ParametrizacaoBeneficioFiscalProduto,
     SerieFiscal,
     StatusDocumentoFiscal,
     StatusInutilizacaoFiscal,
@@ -477,22 +478,31 @@ def filtro_pendencias_produto_fiscal(
         if exige_normal and naturezas:
             codigos_catalogados = codigos_cbenef_go_validos()
             for natureza in naturezas:
-                base_parametro = Q(
-                    parametrizacoes_beneficio_fiscal__natureza_operacao=natureza,
-                    parametrizacoes_beneficio_fiscal__situacao__in=["SEM_BENEFICIO", "COM_BENEFICIO"],
+                parametros_natureza = ParametrizacaoBeneficioFiscalProduto.objects.filter(
+                    natureza_operacao=natureza,
                 )
-                pendente |= ~base_parametro
+                parametros_definidos = parametros_natureza.filter(
+                    situacao__in=["SEM_BENEFICIO", "COM_BENEFICIO"],
+                )
+                pendente |= ~Q(pk__in=Subquery(parametros_definidos.values("produto_id")))
+
+                parametros_com_codigo = parametros_natureza.filter(
+                    codigo_beneficio_fiscal__regex=r"^(GO\d{6}|SEM CBENEF)$",
+                )
                 pendente |= Q(reducao_base_icms__gt=0) & ~Q(
-                    parametrizacoes_beneficio_fiscal__natureza_operacao=natureza,
-                    parametrizacoes_beneficio_fiscal__codigo_beneficio_fiscal__regex=r"^(GO\d{6}|SEM CBENEF)$",
+                    pk__in=Subquery(parametros_com_codigo.values("produto_id"))
                 )
                 if codigos_catalogados:
+                    parametros_com_beneficio = parametros_natureza.filter(
+                        situacao="COM_BENEFICIO",
+                    )
+                    parametros_com_beneficio_valido = parametros_com_beneficio.filter(
+                        codigo_beneficio_fiscal__in=sorted(codigos_catalogados),
+                    )
                     pendente |= Q(
-                        parametrizacoes_beneficio_fiscal__natureza_operacao=natureza,
-                        parametrizacoes_beneficio_fiscal__situacao="COM_BENEFICIO",
+                        pk__in=Subquery(parametros_com_beneficio.values("produto_id"))
                     ) & ~Q(
-                        parametrizacoes_beneficio_fiscal__natureza_operacao=natureza,
-                        parametrizacoes_beneficio_fiscal__codigo_beneficio_fiscal__in=sorted(codigos_catalogados),
+                        pk__in=Subquery(parametros_com_beneficio_valido.values("produto_id"))
                     )
         else:
             if exige_normal:
@@ -833,7 +843,12 @@ def gerar_xml_nfce(documento):
         _texto(prod, "NCM", produto.ncm)
         if produto.cest:
             _texto(prod, "CEST", produto.cest)
-        cbenef = codigo_beneficio_produto_operacao(produto, documento.natureza_operacao)
+        cbenef = codigo_beneficio_produto_operacao(
+            produto,
+            documento.natureza_operacao,
+            uf=documento.filial.uf,
+            crt=_crt_configuracao(configuracao),
+        )
         if cbenef:
             _texto(prod, "cBenef", cbenef)
         _texto(prod, "CFOP", natureza.cfop)
@@ -1084,7 +1099,12 @@ def gerar_xml_nfe_pedido_online(documento):
         _texto(prod, "NCM", produto.ncm)
         if produto.cest:
             _texto(prod, "CEST", produto.cest)
-        cbenef = codigo_beneficio_produto_operacao(produto, documento.natureza_operacao)
+        cbenef = codigo_beneficio_produto_operacao(
+            produto,
+            documento.natureza_operacao,
+            uf=documento.filial.uf,
+            crt=_crt_configuracao(configuracao),
+        )
         if cbenef:
             _texto(prod, "cBenef", cbenef)
         _texto(prod, "CFOP", natureza.cfop)

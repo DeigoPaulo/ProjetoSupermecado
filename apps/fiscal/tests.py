@@ -822,6 +822,39 @@ class FiscalTests(TestCase):
         response_pronto = self.client.get("/fiscal/produtos/?filtro=prontos")
         self.assertContains(response_pronto, self.produto.nome)
 
+    def test_catalogo_e_csv_nao_duplicam_produto_com_duas_naturezas(self):
+        self.filial.uf = "GO"
+        self.filial.save(update_fields=["uf"])
+        natureza_nfe = NaturezaOperacao.objects.create(
+            empresa=self.empresa,
+            descricao="Venda NF-e para teste de cardinalidade",
+            cfop="5102",
+            tipo_documento=TipoDocumentoFiscal.NFE,
+        )
+        ParametrizacaoBeneficioFiscalProduto.objects.create(
+            produto=self.produto,
+            natureza_operacao=natureza_nfe,
+            situacao=SituacaoBeneficioFiscalICMS.INDEFINIDO,
+            atualizado_por=self.user,
+        )
+
+        response = self.client.get(
+            "/fiscal/produtos/",
+            {"filtro": "pendentes", "q": self.produto.codigo_barras},
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.context["total_analisados"], 1)
+        self.assertEqual(response.context["total_pendentes"], 1)
+        self.assertEqual(len(response.context["produtos"]), 1)
+
+        csv_response = self.client.get(
+            "/fiscal/produtos/exportar.csv",
+            {"filtro": "pendentes", "q": self.produto.codigo_barras},
+        )
+        conteudo = b"".join(csv_response.streaming_content).decode("utf-8-sig")
+        self.assertEqual(conteudo.count(self.produto.codigo_barras), 1)
+
     def test_exportacao_csv_fiscal_respeita_filtro_e_gera_modelo_reimportavel(self):
         produto_pendente = Produto.objects.create(
             codigo_barras="7890000000991",

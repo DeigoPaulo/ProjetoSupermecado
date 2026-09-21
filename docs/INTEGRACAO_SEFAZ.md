@@ -11,7 +11,7 @@ A seleção apenas define o roteamento técnico. Ela não grava credenciais no b
 ## Antes de apontar para produção
 
 1. Escolha o provedor fiscal ou o integrador responsável e obtenha credenciais de homologação.
-2. Cadastre na filial o certificado A1, inscrição estadual, CSC, série NFC-e e natureza de operação.
+2. Cadastre na filial o certificado A1, inscrição estadual, série NFC-e e natureza de operação; cadastre CSC somente se houver compatibilidade explícita com QR Code v2.
 3. Instale o schema XSD aprovado pelo contador e pelo provedor.
 4. Configure a classe do adaptador no servidor:
 
@@ -113,4 +113,4 @@ Cada registro possui referência idempotente, hash SHA-256 do conteúdo, hash do
 Se o adaptador já tiver respondido e a gravação da evidência falhar, a transmissão passa a aguardar consulta de protocolo antes de qualquer reenvio. O comando `verificar_integridade_evidencias_fiscais --estrito` gera o contrato sanitizado `fiscal_evidence_anchor_v1` por promoção atômica. O backup diário mantém `fiscal-evidence-anchor-latest.json` fora do banco, compara quantidade e prefixo histórico antes de substituí-lo e inclui uma cópia com SHA-256 no ZIP. A restauração valida o arquivo e compara a cadeia restaurada antes de iniciar o serviço. Com `--registrar-alerta --origem backup|restauracao|manual`, o comando grava somente um resumo sanitizado na auditoria, não duplica o mesmo estado e alimenta o alerta exclusivo do Master no Super Admin e no Backup. Armazenamento fora da máquina e a política legal de retenção ainda pertencem à implantação definitiva.
 ## Limites de responsabilidade
 
-O programador entrega o contrato, validações, logs de auditoria e tela de evidências. O contador define tributação e cronograma; a empresa providencia certificado/CSC e credenciamento; o provedor confirma endpoints, schemas, respostas e homologação de produção. Não coloque senha de certificado, token CSC, token de provedor ou XML de cliente neste documento ou no Git.
+O programador entrega o contrato, validações, logs de auditoria e tela de evidências. O contador define tributação e cronograma; a empresa providencia certificado, credenciamento e, somente para compatibilidade explícita com QR Code v2, CSC; o provedor confirma endpoints, schemas, respostas e homologação de produção. Não coloque senha de certificado, token CSC, token de provedor ou XML de cliente neste documento ou no Git.

@@ -100,7 +100,7 @@ Depois de cadastrar a configuração fiscal da filial piloto, execute o prefligh
 
     python manage.py verificar_prontidao_fiscal --cnpj CNPJ_DA_FILIAL --estrito
 
-O preflight confere dados da filial, CSC, endpoints, certificado, série, natureza, schema, adaptador, credencial específica do CNPJ e evidência de homologação. Ele é exclusivamente local e não retorna token, CSC, certificado ou senha. Um token configurado para outra filial não libera a filial piloto.
+O preflight confere dados da filial, endpoints, certificado, série, natureza, schema, adaptador, credencial específica do CNPJ e evidência de homologação. CSC só integra a verificação quando houver compatibilidade legada explicitamente ativada com QR Code v2; o QR Code v3 atual não o exige. O processo é exclusivamente local e não retorna token, CSC, certificado ou senha. Um token configurado para outra filial não libera a filial piloto.
 
 Antes da primeira emissão devem estar homologados:
 
@@ -129,7 +129,7 @@ Antes da primeira emissão devem estar homologados:
 | Responsável | Entrega |
 | --- | --- |
 | Deigo Tecnologia | Adaptadores, fila, idempotência, telas, auditoria e evidências. |
-| Empresa | Conta do provedor, certificado A1, CSC, credenciamento e autorização de produção. |
+| Empresa | Conta do provedor, certificado A1, credenciamento e autorização de produção; CSC somente para compatibilidade explícita com QR Code v2. |
 | Contador | Tributação, classificação, cenários e aceite fiscal. |
 | Focus NFe | API, credenciais, comunicação com SEFAZ, distribuição e suporte. |
 

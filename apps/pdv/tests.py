@@ -653,7 +653,7 @@ class AcessoPdvNuvemTests(TestCase):
                 "cliente": "",
                 "cpf_na_nota": "CNPJ",
                 "documento_consumidor_tipo": "NAO_IDENTIFICADO",
-                "documento_consumidor": "12.345.678/0001-90",
+                "documento_consumidor": "12.345.678/0001-95",
                 "desconto": "0",
                 "vencimento_financeiro": "",
                 "valor_recebido": "",
@@ -663,6 +663,78 @@ class AcessoPdvNuvemTests(TestCase):
 
         self.assertTrue(formulario.is_valid(), formulario.errors)
         self.assertEqual(formulario.cleaned_data["documento_consumidor_tipo"], "CNPJ")
+
+    def test_formulario_rejeita_decisao_omitida_ou_desconhecida(self):
+        caixa = Caixa.objects.create(
+            filial=self.filial,
+            usuario_abertura=self.operador,
+            valor_inicial=Decimal("100.00"),
+        )
+        base = {
+            "caixa": caixa.pk,
+            "cliente": "",
+            "documento_consumidor_tipo": "NAO_IDENTIFICADO",
+            "documento_consumidor": "",
+            "desconto": "0",
+            "vencimento_financeiro": "",
+            "valor_recebido": "",
+        }
+        for decisao in (None, "SIM", "OUTRA"):
+            with self.subTest(decisao=decisao):
+                dados = dict(base)
+                if decisao is not None:
+                    dados["cpf_na_nota"] = decisao
+                formulario = FinalizarVendaForm(dados, user=self.operador)
+                self.assertFalse(formulario.is_valid())
+                self.assertIn("cpf_na_nota", formulario.errors)
+
+    def test_formulario_nao_identificado_limpa_documento_residual(self):
+        caixa = Caixa.objects.create(
+            filial=self.filial,
+            usuario_abertura=self.operador,
+            valor_inicial=Decimal("100.00"),
+        )
+        formulario = FinalizarVendaForm(
+            {
+                "caixa": caixa.pk,
+                "cliente": "",
+                "cpf_na_nota": "NAO",
+                "documento_consumidor_tipo": "CPF",
+                "documento_consumidor": "123.456.789-09",
+                "desconto": "0",
+                "vencimento_financeiro": "",
+                "valor_recebido": "",
+            },
+            user=self.operador,
+        )
+
+        self.assertTrue(formulario.is_valid(), formulario.errors)
+        self.assertEqual(formulario.cleaned_data["documento_consumidor_tipo"], "NAO_IDENTIFICADO")
+        self.assertEqual(formulario.cleaned_data["documento_consumidor"], "")
+
+    def test_formulario_rejeita_cpf_e_cnpj_invalidos(self):
+        caixa = Caixa.objects.create(
+            filial=self.filial,
+            usuario_abertura=self.operador,
+            valor_inicial=Decimal("100.00"),
+        )
+        for decisao, documento in (("CPF", "111.111.111-11"), ("CNPJ", "11.111.111/1111-11")):
+            with self.subTest(decisao=decisao):
+                formulario = FinalizarVendaForm(
+                    {
+                        "caixa": caixa.pk,
+                        "cliente": "",
+                        "cpf_na_nota": decisao,
+                        "documento_consumidor_tipo": "NAO_IDENTIFICADO",
+                        "documento_consumidor": documento,
+                        "desconto": "0",
+                        "vencimento_financeiro": "",
+                        "valor_recebido": "",
+                    },
+                    user=self.operador,
+                )
+                self.assertFalse(formulario.is_valid())
+                self.assertIn("documento_consumidor", formulario.errors)
 
     def test_finalizar_venda_volta_ao_pdv_limpa_carrinho_e_mostra_popup(self):
         categoria = Categoria.objects.create(nome="Mercearia")
@@ -728,6 +800,7 @@ class AcessoPdvNuvemTests(TestCase):
         self.client.force_login(self.operador)
         dados = {
             "action": "finish",
+            "cpf_na_nota": "NAO",
             "caixa": caixa.id,
             "cliente": "",
             "desconto": "5.00",
@@ -786,6 +859,7 @@ class AcessoPdvNuvemTests(TestCase):
             "/pdv/",
             {
                 "action": "finish",
+                "cpf_na_nota": "NAO",
                 "caixa": caixa.id,
                 "cliente": "",
                 "desconto": "0",
@@ -840,6 +914,7 @@ class AcessoPdvNuvemTests(TestCase):
             "/pdv/",
             {
                 "action": "finish",
+                "cpf_na_nota": "NAO",
                 "caixa": caixa.id,
                 "cliente": "",
                 "desconto": "0",
@@ -867,7 +942,7 @@ class AcessoPdvNuvemTests(TestCase):
         resposta = self.client.post(
             "/pdv/",
             {
-                "action": "finish", "caixa": caixa.id, "cliente": "", "desconto": "0", "vencimento_financeiro": "",
+                "action": "finish", "cpf_na_nota": "NAO", "caixa": caixa.id, "cliente": "", "desconto": "0", "vencimento_financeiro": "",
                 "pagamento_forma": [forma.id], "pagamento_valor": ["9.00"],
                 "pagamento_status": ["CONFIRMADO"], "pagamento_transacao_externa_id": ["TEF-123"],
                 "pagamento_nsu": [""], "pagamento_codigo_autorizacao": ["AUT123"],
@@ -893,6 +968,7 @@ class AcessoPdvNuvemTests(TestCase):
             "/pdv/",
             {
                 "action": "finish",
+                "cpf_na_nota": "NAO",
                 "caixa": caixa.id,
                 "cliente": "",
                 "desconto": "0",
@@ -1108,6 +1184,7 @@ class AcessoPdvNuvemTests(TestCase):
             "/pdv/",
             {
                 "action": "finish",
+                "cpf_na_nota": "NAO",
                 "caixa": caixa.id,
                 "cliente": "",
                 "desconto": "0",
@@ -1263,6 +1340,7 @@ class AcessoPdvNuvemTests(TestCase):
             "/pdv/",
             {
                 "action": "finish",
+                "cpf_na_nota": "NAO",
                 "caixa": caixa.id,
                 "cliente": "",
                 "desconto": "0",
@@ -1325,6 +1403,7 @@ class AcessoPdvNuvemTests(TestCase):
             "/pdv/",
             {
                 "action": "finish",
+                "cpf_na_nota": "NAO",
                 "caixa": caixa.id,
                 "cliente": "",
                 "desconto": "0",
@@ -1443,6 +1522,7 @@ class AcessoPdvNuvemTests(TestCase):
             "/pdv/",
             {
                 "action": "finish",
+                "cpf_na_nota": "NAO",
                 "caixa": caixa.id,
                 "cliente": "",
                 "desconto": "0",

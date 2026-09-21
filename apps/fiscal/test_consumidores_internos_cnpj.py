@@ -1,17 +1,20 @@
+from decimal import Decimal
 from types import SimpleNamespace
+from unittest.mock import patch
 
 from django.core.exceptions import ValidationError
 from django.test import SimpleTestCase
+from django.utils import timezone
 
 from apps.vendas.models import TipoDocumentoConsumidor
 
 from .chave_acesso import construir_chave_acesso
-from .models import StatusDocumentoFiscal, TipoDocumentoFiscal
+from .models import AmbienteFiscal, StatusDocumentoFiscal, TipoDocumentoFiscal
 from .services import (
     _documento_destinatario_pedido,
     documento_em_contingencia_offline,
 )
-from .qrcode_nfce import _destinatario
+from .qrcode_nfce import _destinatario, parametros_qrcode_nfce
 
 
 def _chave(cnpj, tipo_emissao):
@@ -90,15 +93,57 @@ class DestinatarioNFeTests(SimpleTestCase):
 
 
 class DestinatarioQRCodeNFCeTests(SimpleTestCase):
-    def test_preserva_cnpj_alfanumerico_na_contingencia(self):
-        documento = SimpleNamespace(
+    def documento(self, tipo, valor):
+        return SimpleNamespace(
             venda=SimpleNamespace(
-                documento_consumidor_tipo=TipoDocumentoConsumidor.CNPJ,
-                documento_consumidor="12.abc.345/01de-35",
+                documento_consumidor_tipo=tipo,
+                documento_consumidor=valor,
             )
         )
 
+    def test_preserva_cnpj_alfanumerico_na_contingencia(self):
+        documento = self.documento(
+            TipoDocumentoConsumidor.CNPJ,
+            "12.abc.345/01de-35",
+        )
+
         self.assertEqual(_destinatario(documento), ("1", "12ABC34501DE35"))
+
+    def test_classifica_cpf_e_cnpj_numerico(self):
+        self.assertEqual(
+            _destinatario(self.documento(TipoDocumentoConsumidor.CPF, "123.456.789-09")),
+            ("2", "12345678909"),
+        )
+        self.assertEqual(
+            _destinatario(self.documento(TipoDocumentoConsumidor.CNPJ, "12.345.678/0001-95")),
+            ("1", "12345678000195"),
+        )
+
+    def test_estrangeiro_informa_tipo_mas_deixa_parametro_documento_vazio(self):
+        self.assertEqual(
+            _destinatario(self.documento(TipoDocumentoConsumidor.ESTRANGEIRO, "PASSAPORTE-123")),
+            ("3", ""),
+        )
+
+    @patch("apps.fiscal.qrcode_nfce.assinar_parametros_qrcode_nfce", return_value="ASSINATURA")
+    def test_contingencia_estrangeiro_preserva_separador_vazio_no_qrcode_v3(self, _assinar):
+        documento = self.documento(TipoDocumentoConsumidor.ESTRANGEIRO, "PASSAPORTE-123")
+        documento.chave_acesso = _chave("04252011000110", "9")
+        documento.ambiente = AmbienteFiscal.HOMOLOGACAO
+        documento.status = StatusDocumentoFiscal.CONTINGENCIA
+        documento.criado_em = timezone.now()
+        documento.valor_total = Decimal("10.00")
+
+        parametros = parametros_qrcode_nfce(documento, configuracao=object()).split("|")
+
+        self.assertEqual(parametros[5:7], ["3", ""])
+        self.assertEqual(parametros[-1], "ASSINATURA")
+
+    def test_nao_identificado_deixa_tipo_e_documento_vazios(self):
+        self.assertEqual(
+            _destinatario(self.documento(TipoDocumentoConsumidor.NAO_IDENTIFICADO, "")),
+            ("", ""),
+        )
 
 
 class ContingenciaChaveAlfanumericaTests(SimpleTestCase):

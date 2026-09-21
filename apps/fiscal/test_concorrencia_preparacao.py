@@ -321,6 +321,30 @@ class DocumentoFiscalOriginConstraintTests(FiscalOriginFixtureMixin, TestCase):
         self.assertEqual(documento_venda.venda, self.venda)
         self.assertEqual(documento_pedido.pedido_online, self.pedido)
 
+    def test_go_regime_normal_nao_usa_cbenef_legado_como_atalho(self):
+        ParametrizacaoBeneficioFiscalProduto.objects.filter(produto=self.produto).delete()
+        self.produto.codigo_beneficio_fiscal = "GO821019"
+        self.produto.save(update_fields=["codigo_beneficio_fiscal"])
+
+        with self.assertRaisesRegex(ValidationError, "defina se há benefício fiscal"):
+            preparar_documento_venda(self.venda, self.usuario)
+        with self.assertRaisesRegex(ValidationError, "defina se há benefício fiscal"):
+            preparar_documento_pedido_online(self.pedido, self.usuario)
+
+    def test_fora_do_recorte_go_normal_preserva_cbenef_legado_nos_dois_xmls(self):
+        self.filial.uf = "SP"
+        self.filial.codigo_municipio_ibge = "3550308"
+        self.filial.save(update_fields=["uf", "codigo_municipio_ibge"])
+        ParametrizacaoBeneficioFiscalProduto.objects.filter(produto=self.produto).delete()
+        self.produto.codigo_beneficio_fiscal = "GO821019"
+        self.produto.save(update_fields=["codigo_beneficio_fiscal"])
+
+        documento_venda = preparar_documento_venda(self.venda, self.usuario)
+        documento_pedido = preparar_documento_pedido_online(self.pedido, self.usuario)
+
+        self.assertIn("<cBenef>GO821019</cBenef>", documento_venda.xml_conteudo)
+        self.assertIn("<cBenef>GO821019</cBenef>", documento_pedido.xml_conteudo)
+
 
 @skipUnless(connection.vendor == "postgresql", "Concorrencia real exige PostgreSQL.")
 class DocumentoFiscalOriginConcurrencyTests(FiscalOriginFixtureMixin, TransactionTestCase):

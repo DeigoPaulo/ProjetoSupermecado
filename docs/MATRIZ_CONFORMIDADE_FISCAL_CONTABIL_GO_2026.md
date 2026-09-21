@@ -88,7 +88,7 @@ Comunicação com Focus ou SEFAZ não será tratada como conformidade enquanto c
 |---|---|---|
 | Operação de supermercado | Avançada | Homologação na filial piloto |
 | Focus NFe | Estruturalmente integrada | Sandbox, cenários reais e aceite |
-| SEFAZ direta GO | Estruturalmente avançada e desligada | A1/IE/CSC, homologação e aceite |
+| SEFAZ direta GO | Estruturalmente avançada e desligada | A1/IE, homologação e aceite; CSC somente no legado QR Code v2 |
 | Motor NF-e/NFC-e | Parcial | Cobrir operações e tributos |
 | IBS/CBS 2026 | Bloqueado com segurança | Schema, cálculo, XML e vigência |
 | Pacote do contador | v2 e validador prontos, pendente aceite real | Contrato externo, amostra real e aceite |
@@ -99,7 +99,7 @@ Comunicação com Focus ou SEFAZ não será tratada como conformidade enquanto c
 - [ ] Registrar regime tributário, CNAE, CRT e vigência.
 - [ ] Confirmar CNPJ, IE, endereço fiscal e credenciamento.
 - [ ] Confirmar NF-e 55 e/ou NFC-e 65.
-- [ ] Confirmar certificado A1, CSC/ID CSC, séries e numeração.
+- [ ] Confirmar certificado A1, séries e numeração; CSC/ID CSC somente para compatibilidade explícita com QR Code v2.
 - [ ] Inventariar venda, devolução, transferência, bonificação, remessa, entrega e entrada.
 - [ ] Inventariar consumidor final, contribuinte, não contribuinte e operação interestadual.
 - [ ] Validar ST, monofásico, benefício fiscal, desoneração e demais exceções.
@@ -147,7 +147,7 @@ Comunicação com Focus ou SEFAZ não será tratada como conformidade enquanto c
 - [ ] Cadastro fiscal aprovado pelo contador.
 - [ ] Matriz de operações e produtos coberta por testes.
 - [ ] IBS/CBS adequado à vigência e ao regime.
-- [ ] Schemas, tabelas, certificado, CSC, séries e numeração validados.
+- [ ] Schemas, tabelas, certificado, séries e numeração validados; CSC somente se o canal usar explicitamente QR Code v2.
 - [ ] Contingência e recuperação homologadas.
 - [ ] XMLs e eventos íntegros e restauráveis.
 - [ ] Pacote do contador v2 aceito.

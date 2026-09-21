@@ -1,6 +1,7 @@
 from datetime import timedelta
 
 from django import forms
+from django.core.exceptions import ValidationError
 from django.utils import timezone
 
 from apps.vendas.models import TipoDocumentoConsumidor
@@ -60,7 +61,7 @@ class FinalizarVendaForm(forms.Form):
     cpf_na_nota = forms.ChoiceField(
         label="CPF na nota?",
         choices=(("NAO", "Não"), ("CPF", "CPF"), ("CNPJ", "CNPJ")),
-        required=False,
+        required=True,
         widget=forms.RadioSelect(attrs={"class": "pdv-cpf-choice"}),
     )
     documento_consumidor_tipo = forms.ChoiceField(
@@ -116,7 +117,7 @@ class FinalizarVendaForm(forms.Form):
     def clean(self):
         dados = super().clean()
         decisao = dados.get("cpf_na_nota")
-        if decisao in {"SIM", "CPF", "CNPJ"}:
+        if decisao in {"CPF", "CNPJ"}:
             tipo = (
                 TipoDocumentoConsumidor.CNPJ
                 if decisao == "CNPJ"
@@ -128,7 +129,18 @@ class FinalizarVendaForm(forms.Form):
                     "documento_consumidor",
                     f"Informe o {tipo} solicitado pelo consumidor.",
                 )
-        else:
+            else:
+                from apps.vendas.services import _normalizar_documento_consumidor
+
+                try:
+                    _normalizar_documento_consumidor(
+                        tipo,
+                        dados["documento_consumidor"],
+                        preparar_fiscal=True,
+                    )
+                except ValidationError as exc:
+                    self.add_error("documento_consumidor", exc)
+        elif decisao == "NAO":
             dados["documento_consumidor_tipo"] = TipoDocumentoConsumidor.NAO_IDENTIFICADO
             dados["documento_consumidor"] = ""
         return dados

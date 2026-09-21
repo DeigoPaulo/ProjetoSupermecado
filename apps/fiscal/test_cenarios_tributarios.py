@@ -37,6 +37,13 @@ class CenariosTributariosGoTests(SimpleTestCase):
         self.assertTrue(all(item["status"] in STATUS_VALIDOS for item in itens))
         self.assertTrue(all(item["proxima_evidencia"] for item in itens))
 
+    def test_csc_nao_e_apresentado_como_requisito_geral_do_qrcode_v3(self):
+        por_codigo = {item["codigo"]: item for item in catalogo_cenarios_tributarios_go()}
+        evidencia = por_codigo["homologacao_go"]["proxima_evidencia"]
+
+        self.assertIn("CSC somente", evidencia)
+        self.assertIn("QR Code v2", evidencia)
+
     def test_nenhum_cenario_e_declarado_totalmente_suportado_antes_da_homologacao(self):
         itens = catalogo_cenarios_tributarios_go()
 
