@@ -610,13 +610,14 @@ class AcessoPdvNuvemTests(TestCase):
         resposta = self.client.get("/pdv/")
 
         self.assertContains(resposta, "CPF na nota?")
-        self.assertContains(resposta, "Confirme a escolha do consumidor antes de receber o pagamento.")
-        self.assertContains(resposta, 'name="cpf_na_nota"', count=2)
+        self.assertContains(resposta, "Escolha Não, CPF ou CNPJ antes de receber o pagamento.")
+        self.assertContains(resposta, 'name="cpf_na_nota"', count=3)
         self.assertContains(resposta, 'value="NAO"')
-        self.assertContains(resposta, 'value="SIM"')
+        self.assertContains(resposta, 'value="CPF"')
+        self.assertContains(resposta, 'value="CNPJ"')
         self.assertContains(resposta, 'id="pdv-cpf-document"')
 
-    def test_formulario_converte_resposta_sim_em_cpf_e_nao_limpa_documento(self):
+    def test_formulario_converte_escolha_cpf_e_nao_limpa_documento(self):
         caixa = Caixa.objects.create(
             filial=self.filial,
             usuario_abertura=self.operador,
@@ -626,7 +627,7 @@ class AcessoPdvNuvemTests(TestCase):
             {
                 "caixa": caixa.pk,
                 "cliente": "",
-                "cpf_na_nota": "SIM",
+                "cpf_na_nota": "CPF",
                 "documento_consumidor_tipo": "NAO_IDENTIFICADO",
                 "documento_consumidor": "123.456.789-09",
                 "desconto": "0",
@@ -639,6 +640,29 @@ class AcessoPdvNuvemTests(TestCase):
         self.assertTrue(formulario.is_valid(), formulario.errors)
         self.assertEqual(formulario.cleaned_data["documento_consumidor_tipo"], "CPF")
         self.assertEqual(formulario.cleaned_data["documento_consumidor"], "123.456.789-09")
+
+    def test_formulario_converte_escolha_cnpj_no_documento(self):
+        caixa = Caixa.objects.create(
+            filial=self.filial,
+            usuario_abertura=self.operador,
+            valor_inicial=Decimal("100.00"),
+        )
+        formulario = FinalizarVendaForm(
+            {
+                "caixa": caixa.pk,
+                "cliente": "",
+                "cpf_na_nota": "CNPJ",
+                "documento_consumidor_tipo": "NAO_IDENTIFICADO",
+                "documento_consumidor": "12.345.678/0001-90",
+                "desconto": "0",
+                "vencimento_financeiro": "",
+                "valor_recebido": "",
+            },
+            user=self.operador,
+        )
+
+        self.assertTrue(formulario.is_valid(), formulario.errors)
+        self.assertEqual(formulario.cleaned_data["documento_consumidor_tipo"], "CNPJ")
 
     def test_finalizar_venda_volta_ao_pdv_limpa_carrinho_e_mostra_popup(self):
         categoria = Categoria.objects.create(nome="Mercearia")

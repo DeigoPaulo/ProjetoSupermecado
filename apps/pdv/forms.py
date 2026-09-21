@@ -59,7 +59,7 @@ class FinalizarVendaForm(forms.Form):
     cliente = forms.ModelChoiceField(label="Cliente", queryset=None, required=False, empty_label="Cliente avulso")
     cpf_na_nota = forms.ChoiceField(
         label="CPF na nota?",
-        choices=(("NAO", "Não"), ("SIM", "Sim")),
+        choices=(("NAO", "Não"), ("CPF", "CPF"), ("CNPJ", "CNPJ")),
         required=False,
         widget=forms.RadioSelect(attrs={"class": "pdv-cpf-choice"}),
     )
@@ -71,10 +71,10 @@ class FinalizarVendaForm(forms.Form):
         widget=forms.HiddenInput(),
     )
     documento_consumidor = forms.CharField(
-        label="CPF na nota",
+        label="CPF ou CNPJ na nota",
         required=False,
         max_length=32,
-        widget=forms.TextInput(attrs={"autocomplete": "off", "inputmode": "numeric", "placeholder": "Digite os 11 números"}),
+        widget=forms.TextInput(attrs={"autocomplete": "off", "inputmode": "text", "placeholder": "Digite CPF ou CNPJ"}),
     )
     desconto = forms.DecimalField(label="Desconto", max_digits=12, decimal_places=2, min_value=0, initial=0)
     vencimento_financeiro = forms.DateField(
@@ -116,10 +116,18 @@ class FinalizarVendaForm(forms.Form):
     def clean(self):
         dados = super().clean()
         decisao = dados.get("cpf_na_nota")
-        if decisao == "SIM":
-            dados["documento_consumidor_tipo"] = TipoDocumentoConsumidor.CPF
+        if decisao in {"SIM", "CPF", "CNPJ"}:
+            tipo = (
+                TipoDocumentoConsumidor.CNPJ
+                if decisao == "CNPJ"
+                else TipoDocumentoConsumidor.CPF
+            )
+            dados["documento_consumidor_tipo"] = tipo
             if not str(dados.get("documento_consumidor") or "").strip():
-                self.add_error("documento_consumidor", "Informe o CPF solicitado pelo consumidor.")
+                self.add_error(
+                    "documento_consumidor",
+                    f"Informe o {tipo} solicitado pelo consumidor.",
+                )
         else:
             dados["documento_consumidor_tipo"] = TipoDocumentoConsumidor.NAO_IDENTIFICADO
             dados["documento_consumidor"] = ""

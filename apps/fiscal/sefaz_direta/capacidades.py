@@ -23,7 +23,15 @@ CAPACIDADES = (
     {"codigo": "contingencia_nfe_svc", "nome": "Contingência NF-e SVC", "status": IMPLEMENTADO, "escopo": "SVC-RS para NF-e de Goiás: tpEmis 7, nova chave/XML, ativação Master, endpoint separado e feature flag desligada; homologação real pendente."},
     {"codigo": "multi_uf", "nome": "Catálogo multi-UF", "status": PLANEJADO, "escopo": "Goiás é o único perfil estrutural atual."},
     {"codigo": "ibs_cbs", "nome": "IBS/CBS no XML", "status": PARCIAL, "escopo": "Cadastro preparado e XML bloqueado; depende de schemas vigentes, implementação do cálculo/grupos XML e aceite fiscal."},
-    {"codigo": "homologacao_go", "nome": "Homologação real em Goiás", "status": DEPENDENCIA_EXTERNA, "escopo": "Exige credenciamento, A1/CSC válidos e testes com a SEFAZ."},
+    {
+        "codigo": "homologacao_go",
+        "nome": "Homologação real em Goiás",
+        "status": DEPENDENCIA_EXTERNA,
+        "escopo": (
+            "Exige credenciamento, A1 válido e testes com a SEFAZ; CSC é necessário "
+            "somente para eventual compatibilidade com QR Code v2."
+        ),
+    },
 )
 
 

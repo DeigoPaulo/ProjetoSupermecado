@@ -7,6 +7,7 @@ import qrcode
 from django.core.exceptions import ValidationError
 from django.utils import timezone
 
+from apps.marketplace.documentos_destinatario import normalizar_documento_cliente
 from .assinaturas import assinar_parametros_qrcode_nfce
 from .chave_acesso import normalizar_chave_acesso
 from apps.vendas.models import TipoDocumentoConsumidor
@@ -28,13 +29,16 @@ def _url_com_parametro(base, parametros):
 def _destinatario(documento):
     venda = documento.venda
     tipo = venda.documento_consumidor_tipo
-    valor = "".join(ch for ch in (venda.documento_consumidor or "") if ch.isdigit())
-    if tipo == TipoDocumentoConsumidor.CPF and len(valor) == 11:
+    original = str(venda.documento_consumidor or "").strip()
+    if tipo == TipoDocumentoConsumidor.NAO_IDENTIFICADO or not original:
+        return "", ""
+    tipo, valor = normalizar_documento_cliente(tipo, original)
+    if tipo == TipoDocumentoConsumidor.CPF:
         return "2", valor
-    if tipo == TipoDocumentoConsumidor.CNPJ and len(valor) == 14:
+    if tipo == TipoDocumentoConsumidor.CNPJ:
         return "1", valor
-    if tipo == TipoDocumentoConsumidor.ESTRANGEIRO and venda.documento_consumidor:
-        return "3", venda.documento_consumidor.strip()
+    if tipo == TipoDocumentoConsumidor.ESTRANGEIRO:
+        return "3", valor
     return "", ""
 
 

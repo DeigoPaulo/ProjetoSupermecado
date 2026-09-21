@@ -12,8 +12,8 @@ atualização.
 - o formulário nunca devolve o token já armazenado ao navegador;
 - campo de novo token vazio preserva o segredo atual;
 - inclusão, rotação e revogação geram auditoria sanitizada;
-- admin, prontidão e diagnósticos trabalham somente com a indicação de que o CSC
-  está ou não configurado;
+- admin e diagnósticos de compatibilidade legada trabalham somente com a indicação
+  de que o CSC está ou não configurado;
 - a abertura do valor exige chamada explícita a `abrir_csc` no ponto técnico que
   realmente necessitar do segredo.
 
@@ -32,6 +32,9 @@ chave usada na conversão.
 
 ## Limite desta entrega
 
-A proteção local não equivale a credenciamento ou homologação. O CSC real somente
-deve ser cadastrado por canal seguro na filial piloto, e rede/produção continuam
-bloqueadas até as evidências externas exigidas no roadmap.
+A proteção local não equivale a credenciamento ou homologação. O gerador atual usa
+QR Code v3, que não exige CSC conforme a NT 2025.001 v1.03; por isso a prontidão
+desse leiaute depende do A1 válido, não de CSC. O segredo continua disponível apenas
+para uma eventual compatibilidade explícita com QR Code v2 e, se necessário, somente
+deve ser cadastrado por canal seguro. Rede e produção continuam bloqueadas até as
+evidências externas exigidas no roadmap.

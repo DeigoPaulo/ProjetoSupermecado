@@ -11,6 +11,7 @@ from .services import (
     _documento_destinatario_pedido,
     documento_em_contingencia_offline,
 )
+from .qrcode_nfce import _destinatario
 
 
 def _chave(cnpj, tipo_emissao):
@@ -86,6 +87,18 @@ class DestinatarioNFeTests(SimpleTestCase):
             _documento_destinatario_pedido(
                 self.pedido(TipoDocumentoConsumidor.CNPJ, "12ABC34501DE36")
             )
+
+
+class DestinatarioQRCodeNFCeTests(SimpleTestCase):
+    def test_preserva_cnpj_alfanumerico_na_contingencia(self):
+        documento = SimpleNamespace(
+            venda=SimpleNamespace(
+                documento_consumidor_tipo=TipoDocumentoConsumidor.CNPJ,
+                documento_consumidor="12.abc.345/01de-35",
+            )
+        )
+
+        self.assertEqual(_destinatario(documento), ("1", "12ABC34501DE35"))
 
 
 class ContingenciaChaveAlfanumericaTests(SimpleTestCase):

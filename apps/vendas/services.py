@@ -243,20 +243,25 @@ def _normalizar_documento_consumidor(tipo, documento, *, preparar_fiscal):
         return TipoDocumentoConsumidor.NAO_IDENTIFICADO, "", ""
     if tipo not in {TipoDocumentoConsumidor.CPF, TipoDocumentoConsumidor.CNPJ, TipoDocumentoConsumidor.ESTRANGEIRO}:
         tipo = TipoDocumentoConsumidor.CPF if len(_somente_digitos(documento)) <= 11 else TipoDocumentoConsumidor.CNPJ
-    if tipo in {TipoDocumentoConsumidor.CPF, TipoDocumentoConsumidor.CNPJ}:
+    if tipo == TipoDocumentoConsumidor.CPF:
         documento = _somente_digitos(documento)
     if tipo == TipoDocumentoConsumidor.CPF and not _cpf_valido(documento):
         raise ValidationError("Informe um CPF válido para a nota.")
-    if tipo == TipoDocumentoConsumidor.CNPJ and len(documento) != 14:
-        raise ValidationError("CNPJ na nota deve conter 14 digitos.")
-    if tipo == TipoDocumentoConsumidor.CNPJ and preparar_fiscal:
-        raise ValidationError("Para consumidor identificado por CNPJ, use o fluxo de NF-e modelo 55 em vez de NFC-e automática.")
+    if tipo == TipoDocumentoConsumidor.CNPJ:
+        from apps.fiscal.estrategia_normalizacao_cnpj import (
+            canonicalizar_cnpj,
+            validar_dv_cnpj,
+        )
+
+        try:
+            documento = canonicalizar_cnpj(documento)
+        except ValueError as exc:
+            raise ValidationError(str(exc)) from exc
+        if not validar_dv_cnpj(documento):
+            raise ValidationError("Informe um CNPJ válido para a nota.")
     if tipo == TipoDocumentoConsumidor.ESTRANGEIRO and len(documento) > 20:
         raise ValidationError("Documento estrangeiro deve ter no máximo 20 caracteres.")
-    observacao = ""
-    if tipo == TipoDocumentoConsumidor.CNPJ:
-        observacao = "Consumidor solicitou CNPJ na nota; emissao fiscal deve seguir NF-e modelo 55."
-    return tipo, documento, observacao
+    return tipo, documento, ""
 
 
 def _conta_movimento_para_pagamento(filial, forma_pagamento):

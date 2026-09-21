@@ -244,15 +244,16 @@ def _usa_csosn(configuracao):
 
 def _documento_consumidor_nfce(venda):
     tipo = venda.documento_consumidor_tipo
-    documento = _somente_digitos(venda.documento_consumidor)
-    if tipo == TipoDocumentoConsumidor.NAO_IDENTIFICADO or not documento:
+    original = str(venda.documento_consumidor or "").strip()
+    if tipo == TipoDocumentoConsumidor.NAO_IDENTIFICADO or not original:
         return None
-    if tipo == TipoDocumentoConsumidor.CPF and len(documento) == 11:
-        return {"tipo": TipoDocumentoConsumidor.CPF, "documento": documento}
-    if tipo == TipoDocumentoConsumidor.ESTRANGEIRO and venda.documento_consumidor:
-        return {"tipo": TipoDocumentoConsumidor.ESTRANGEIRO, "documento": venda.documento_consumidor.strip()[:20]}
-    if tipo == TipoDocumentoConsumidor.CNPJ or len(documento) == 14:
-        raise ValidationError("NFC-e modelo 65 não deve ser preparada para consumidor identificado por CNPJ; emita NF-e modelo 55.")
+    tipo, documento = normalizar_documento_cliente(tipo, original)
+    if tipo in {
+        TipoDocumentoConsumidor.CPF,
+        TipoDocumentoConsumidor.CNPJ,
+        TipoDocumentoConsumidor.ESTRANGEIRO,
+    }:
+        return {"tipo": tipo, "documento": documento}
     raise ValidationError("Documento do consumidor inválido para NFC-e.")
 
 
@@ -762,6 +763,8 @@ def gerar_xml_nfce(documento):
         dest = ET.SubElement(inf_nfe, f"{{{NFE_NS}}}dest")
         if consumidor["tipo"] == TipoDocumentoConsumidor.CPF:
             _texto(dest, "CPF", consumidor["documento"])
+        elif consumidor["tipo"] == TipoDocumentoConsumidor.CNPJ:
+            _texto(dest, "CNPJ", consumidor["documento"])
         else:
             _texto(dest, "idEstrangeiro", consumidor["documento"])
         _texto(dest, "indIEDest", "9")

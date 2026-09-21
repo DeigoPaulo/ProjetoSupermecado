@@ -45,28 +45,36 @@ não implica compatibilidade do canal externo.
 
 ## 3. Estrutura NF-e/NFC-e e consumidor PJ
 
-CONFIRMADO NO CÓDIGO: services.py bloqueia NFC-e identificada por CNPJ e orienta modelo 55.
-Essa é uma política atual do sistema; a inspeção não estabelece sua abrangência legal.
+REVISADO NO CICLO 151: o Ajuste SINIEF 19/16 consolidado mantém a identificação do
+destinatário da NFC-e por CNPJ, CPF ou documento estrangeiro. O § 4º que obrigaria NF-e
+modelo 55 quando o destinatário precisasse ser identificado por CNPJ foi acrescentado pelo
+Ajuste 11/25 sem produzir efeitos e revogado pelo Ajuste 12/26, com efeitos em 09/04/2026.
+Fonte oficial consolidada:
+https://www.confaz.fazenda.gov.br/legislacao/ajustes/2016/AJ_019_16
 
-- [ ] P1.1: revisar com fontes oficiais vigentes a escolha entre modelos 55 e 65 para
-  consumidor PJ; verificar consumidor final, operação interna, condição do destinatário,
-  indicador de IE, cenário tributário e eventual crédito.
-- [ ] Registrar a decisão com vigência, fonte e testes de aceitação antes de alterar a regra.
-
-A alegação externa de que determinados cenários PJ poderiam usar NFC-e permanece sujeita
-à confirmação normativa. Não foi acrescentada retrospectivamente ao escopo do ciclo 126.
+- [x] Permitir CNPJ válido, inclusive alfanumérico, na NFC-e de venda interna a consumidor
+  final não contribuinte, serializando `dest/CNPJ` e `indIEDest=9`.
+- [x] Preservar NF-e modelo 55 para contribuinte/B2B, operações interestaduais e demais
+  cenários que exijam endereço, IE, crédito ou tributação não representada pelo PDV.
+- [x] Manter a escolha explícita no pagamento: Não, CPF ou CNPJ; nenhum documento de
+  cliente cadastrado é incluído sem confirmação do operador.
 
 ## 4. Regras específicas GO
 
 CONFIRMADO NO CÓDIGO: cbenef.py possui catálogo com vigência e compatibilidade por CST.
 perfis_uf.py exige benefício principalmente quando há redução de base no regime normal.
 
-- [ ] P1.2: tratar COBERTURA DE OBRIGATORIEDADE INCOMPLETA; confrontar a tabela oficial
-  aplicável para redução, isenção, não incidência e demais situações, sem presumir que
+- [x] P1.2: confirmar COBERTURA DE OBRIGATORIEDADE INCOMPLETA; a tabela oficial e a
+  implementação cobrem catálogo, vigência, formato, CST e redução de base no regime normal,
+  mas o produto ainda não declara explicitamente a existência de benefício fiscal.
+- [ ] Modelar a indicação explícita de benefício fiscal por produto/operação e então cobrir,
+  quando aplicável, redução, isenção, não incidência e demais situações, sem presumir que
   toda ocorrência dessas situações exige o mesmo tratamento.
-- [ ] P1/P2: AUDITORIA REGULATÓRIA NECESSÁRIA sobre readiness/CSC: readiness.py ainda
-  exige csc_id e csc_token, enquanto qrcode_nfce.py usa versão 3. Confirmar a regra
-  vigente e o modo de emissão antes de alterar diagnóstico ou remover CSC.
+- [x] P1/P2: revisar readiness/CSC. A NT 2025.001 v1.03 implantou o QR Code v3 em
+  produção e registra que ele não exige CSC; a assinatura A1 é usada somente na
+  contingência. O diagnóstico não exige mais CSC para o gerador v3. O armazenamento
+  protegido permanece opcional para compatibilidade legada com QR Code v2.
+  Fonte oficial: https://www.nfe.fazenda.gov.br/Portal/exibirArquivo.aspx?conteudo=NvuzQGYd6E8%3D
 
 ## 5. Transporte SEFAZ e Fase 6
 

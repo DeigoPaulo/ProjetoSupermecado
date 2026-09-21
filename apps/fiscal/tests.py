@@ -1087,21 +1087,21 @@ class FiscalTests(TestCase):
         self.assertNotIn("<CPF>", documento.xml_conteudo)
         self.assertNotIn("12345678909", documento.xml_conteudo)
 
-    def test_preparar_nfce_recusa_cnpj_e_preserva_numero_da_serie(self):
+    def test_preparar_nfce_identifica_cnpj_nao_contribuinte(self):
         self.venda.documento_consumidor_tipo = TipoDocumentoConsumidor.CNPJ
-        self.venda.documento_consumidor = "12345678000190"
+        self.venda.documento_consumidor = "04252011000110"
         self.venda.save(update_fields=["documento_consumidor_tipo", "documento_consumidor"])
 
-        with self.assertRaisesMessage(ValidationError, "NF-e modelo 55"):
-            preparar_documento_venda(self.venda, self.user)
+        documento = preparar_documento_venda(self.venda, self.user)
 
-        self.assertFalse(DocumentoFiscal.objects.exists())
+        self.assertIn("<CNPJ>04252011000110</CNPJ>", documento.xml_conteudo)
+        self.assertIn("<indIEDest>9</indIEDest>", documento.xml_conteudo)
         self.assertEqual(
             SerieFiscal.objects.get(
                 filial=self.filial,
                 ambiente=AmbienteFiscal.HOMOLOGACAO,
             ).proximo_numero,
-            100,
+            101,
         )
 
     def test_nao_prepara_documento_duplicado_para_mesma_venda(self):

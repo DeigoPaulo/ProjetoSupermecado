@@ -63,8 +63,11 @@ def diagnostico_prontidao_homologacao_goias(configuracao):
         ),
         (
             "Configuração NFC-e",
-            bool(configuracao.ativo and configuracao.csc_configurado),
-            "Configuração fiscal ativa com ID CSC e token CSC.",
+            bool(configuracao.ativo),
+            (
+                "Configuração fiscal ativa com QR Code v3. CSC não é requisito do "
+                "leiaute v3; permanece opcional apenas para compatibilidade legada."
+            ),
         ),
         (
             "URLs oficiais de Goiás",

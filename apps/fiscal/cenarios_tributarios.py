@@ -114,8 +114,14 @@ CENARIOS_TRIBUTARIOS_GO = (
         "nome": "Beneficio fiscal de Goiás",
         "modelos": ("55", "65"),
         "status": PARCIAL,
-        "escopo_atual": "Formato GO + 6 digitos e obrigatoriedade na reducao de base.",
-        "proxima_evidencia": "Tabela oficial versionada, vigencia e compatibilidade por CST.",
+        "escopo_atual": (
+            "Catálogo oficial versionado, vigência e compatibilidade por CST; redução "
+            "de base no regime normal é bloqueada sem cBenef."
+        ),
+        "proxima_evidencia": (
+            "Modelar indicação explícita de benefício fiscal por produto/operação para "
+            "cobrir benefícios que não sejam inferíveis apenas pela redução de base."
+        ),
     },
     {
         "codigo": "pis_cofins_ipi",

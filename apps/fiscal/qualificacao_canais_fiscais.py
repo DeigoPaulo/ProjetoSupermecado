@@ -16,7 +16,10 @@ DEPENDENCIAS_FOCUS = (
 )
 DEPENDENCIAS_SEFAZ_DIRETA = (
     "CNPJ/IE reais e credenciamento fiscal da filial piloto",
-    "certificado A1 válido e, para NFC-e, CSC/ID CSC obtidos por canal seguro",
+    (
+        "certificado A1 válido e, somente se houver compatibilidade legada com QR Code "
+        "v2, CSC/ID CSC obtidos por canal seguro"
+    ),
     "endpoints, schemas e Notas Técnicas oficiais vigentes revalidados para Goiás",
     "cenários tributários e resultados esperados aprovados pelo responsável fiscal/contador",
     "execução externa e arquivamento dos protocolos, XMLs e retornos da homologação",

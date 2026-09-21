@@ -184,7 +184,7 @@
             <div class="pdv-cpf-question" role="group" aria-labelledby="pdv-cpf-question-title">
               <div>
                 <strong id="pdv-cpf-question-title">CPF na nota?</strong>
-                <span>Confirme a escolha do consumidor antes de receber o pagamento.</span>
+                <span>Escolha Não, CPF ou CNPJ antes de receber o pagamento.</span>
               </div>
               <div class="pdv-cpf-options">{{ finish_form.cpf_na_nota }}</div>
               {{ finish_form.documento_consumidor_tipo }}
@@ -192,10 +192,10 @@
             </div>
             <div class="pdv-cpf-document" id="pdv-cpf-document" hidden>
               <label class="form-field">
-                <span>CPF do consumidor</span>
+                <span id="pdv-document-label">CPF ou CNPJ do consumidor</span>
                 <span class="pdv-document-capture">
                   {{ finish_form.documento_consumidor }}
-                  <button type="button" id="pdv-capture-document" title="Ler CPF no pinpad" aria-label="Ler CPF no pinpad" hidden>
+                  <button type="button" id="pdv-capture-document" title="Ler documento no pinpad" aria-label="Ler documento no pinpad" hidden>
                     <i class="fa-solid fa-credit-card"></i><kbd>Shift+F4</kbd>
                   </button>
                 </span>

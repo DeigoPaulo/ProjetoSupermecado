@@ -425,15 +425,71 @@ class VendaServiceTests(TestCase):
         self.estoque.refresh_from_db()
         self.assertEqual(self.estoque.quantidade_atual, Decimal("10.000"))
 
-    def test_finalizar_venda_com_cnpj_na_nota_bloqueia_nfce_automatica(self):
-        with self.assertRaisesMessage(ValidationError, "NF-e modelo 55"):
+    def test_finalizar_venda_com_cnpj_na_nota_grava_documento_e_xml_nfce(self):
+        self.filial.uf = "SP"
+        self.filial.codigo_municipio_ibge = "3550308"
+        self.filial.save(update_fields=["uf", "codigo_municipio_ibge"])
+        self.produto.ncm = "10063021"
+        self.produto.origem_mercadoria = "0"
+        self.produto.cst_icms = "00"
+        self.produto.aliquota_icms = Decimal("18.00")
+        self.produto.cst_pis = "01"
+        self.produto.aliquota_pis = Decimal("1.6500")
+        self.produto.cst_cofins = "01"
+        self.produto.aliquota_cofins = Decimal("7.6000")
+        self.produto.save(
+            update_fields=[
+                "ncm", "origem_mercadoria", "cst_icms", "aliquota_icms",
+                "cst_pis", "aliquota_pis", "cst_cofins", "aliquota_cofins",
+            ]
+        )
+        ConfiguracaoFiscal.objects.create(
+            filial=self.filial,
+            ambiente=AmbienteFiscal.HOMOLOGACAO,
+            regime_tributario="Regime normal",
+            inscricao_estadual="123456789",
+            csc_id="",
+            url_qrcode_nfce="https://homologacao.exemplo.gov.br/qrcode",
+            url_consulta_nfce="https://homologacao.exemplo.gov.br/consulta",
+            certificado_a1_criptografado=b"certificado",
+            certificado_senha_criptografada=b"senha",
+        )
+        SerieFiscal.objects.create(
+            filial=self.filial,
+            tipo_documento=TipoDocumentoFiscal.NFCE,
+            serie=1,
+            proximo_numero=10,
+        )
+        NaturezaOperacao.objects.create(
+            empresa=self.filial.empresa,
+            descricao="Venda ao consumidor",
+            cfop="5102",
+            tipo_documento=TipoDocumentoFiscal.NFCE,
+        )
+
+        venda = finalizar_venda(
+            caixa=self.caixa,
+            usuario=self.usuario,
+            itens=[{"produto": self.produto, "quantidade": Decimal("1.000")}],
+            pagamentos=[{"forma_pagamento": self.dinheiro, "valor": Decimal("25.00")}],
+            documento_consumidor_tipo=TipoDocumentoConsumidor.CNPJ,
+            documento_consumidor="04.252.011/0001-10",
+        )
+
+        documento = DocumentoFiscal.objects.get(venda=venda)
+        self.assertEqual(venda.documento_consumidor, "04252011000110")
+        self.assertIn("<CNPJ>04252011000110</CNPJ>", documento.xml_conteudo)
+        self.assertIn("<indIEDest>9</indIEDest>", documento.xml_conteudo)
+
+    def test_finalizar_venda_rejeita_cnpj_invalido(self):
+        with self.assertRaisesMessage(ValidationError, "CNPJ válido"):
             finalizar_venda(
                 caixa=self.caixa,
                 usuario=self.usuario,
                 itens=[{"produto": self.produto, "quantidade": Decimal("1.000")}],
                 pagamentos=[{"forma_pagamento": self.dinheiro, "valor": Decimal("25.00")}],
                 documento_consumidor_tipo=TipoDocumentoConsumidor.CNPJ,
-                documento_consumidor="12.345.678/0001-90",
+                documento_consumidor="12.345.678/0001-91",
             )
 
         self.assertFalse(Venda.objects.exists())

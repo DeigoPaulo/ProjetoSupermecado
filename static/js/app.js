@@ -866,6 +866,7 @@ document.addEventListener("DOMContentLoaded", function () {
     var paymentFeedback = document.getElementById("pdv-payment-feedback");
     var documentTypeInput = document.getElementById("id_documento_consumidor_tipo");
     var documentInput = document.getElementById("id_documento_consumidor");
+    var documentLabel = document.getElementById("pdv-document-label");
     var cpfDecisionInputs = document.querySelectorAll('input[name="cpf_na_nota"]');
     var cpfDocumentPanel = document.getElementById("pdv-cpf-document");
     var captureDocumentButton = document.getElementById("pdv-capture-document");
@@ -1129,12 +1130,35 @@ document.addEventListener("DOMContentLoaded", function () {
       return true;
     }
 
+    function cnpjValidoNoPdv(valor) {
+      var cnpj = String(valor || "").trim().toUpperCase().replace(/[.\/-]/g, "");
+      if (!/^[A-Z0-9]{12}[0-9]{2}$/.test(cnpj)) return false;
+      function digito(base) {
+        var peso = 2;
+        var soma = 0;
+        for (var indice = base.length - 1; indice >= 0; indice -= 1) {
+          soma += (base.charCodeAt(indice) - 48) * peso;
+          peso = peso === 9 ? 2 : peso + 1;
+        }
+        var resto = soma % 11;
+        return resto === 0 || resto === 1 ? "0" : String(11 - resto);
+      }
+      var primeiro = digito(cnpj.slice(0, 12));
+      return cnpj.slice(-2) === primeiro + digito(cnpj.slice(0, 12) + primeiro);
+    }
+
     function atualizarCpfNaNota() {
       var decisao = decisaoCpfNaNota();
-      var informar = decisao === "SIM";
+      var informar = decisao === "SIM" || decisao === "CPF" || decisao === "CNPJ";
+      var tipo = decisao === "CNPJ" ? "CNPJ" : "CPF";
       if (cpfDocumentPanel) cpfDocumentPanel.hidden = !informar;
       if (documentInput) documentInput.required = informar;
-      if (documentTypeInput) documentTypeInput.value = informar ? "CPF" : "NAO_IDENTIFICADO";
+      if (documentTypeInput) documentTypeInput.value = informar ? tipo : "NAO_IDENTIFICADO";
+      if (documentLabel) documentLabel.textContent = tipo + " do consumidor";
+      if (documentInput) {
+        documentInput.inputMode = tipo === "CPF" ? "numeric" : "text";
+        documentInput.placeholder = tipo === "CPF" ? "Digite os 11 números" : "Digite o CNPJ";
+      }
       if (decisao === "NAO" && documentInput) documentInput.value = "";
     }
 
@@ -1151,7 +1175,7 @@ document.addEventListener("DOMContentLoaded", function () {
         firstCpfDecision.focus();
         return;
       }
-      if (cpfEscolhido === "SIM" && documentInput && !documentInput.value.trim()) {
+      if (cpfEscolhido !== "NAO" && documentInput && !documentInput.value.trim()) {
         documentInput.focus();
         return;
       }
@@ -1181,15 +1205,16 @@ document.addEventListener("DOMContentLoaded", function () {
         return;
       }
       captureDocumentButton.disabled = true;
-      informarPagamentoFeedback("Aguardando CPF no pinpad...");
-      Promise.resolve(bridge({ tipo: "CPF" })).then(function (resultado) {
+      var tipoSolicitado = decisaoCpfNaNota() === "CNPJ" ? "CNPJ" : "CPF";
+      informarPagamentoFeedback("Aguardando " + tipoSolicitado + " no pinpad...");
+      Promise.resolve(bridge({ tipo: tipoSolicitado })).then(function (resultado) {
         if (resultado && resultado.status === "ok") {
-          if (resultado.tipo && resultado.tipo !== "CPF") {
-            informarPagamentoFeedback("CNPJ deve seguir o fluxo de NF-e modelo 55. Informe um CPF ou escolha Não.");
+          if (resultado.tipo && resultado.tipo !== tipoSolicitado) {
+            informarPagamentoFeedback("O documento retornado não corresponde à opção escolhida.");
             if (documentInput) { documentInput.value = ""; documentInput.focus(); }
             return;
           }
-          if (documentTypeInput) documentTypeInput.value = "CPF";
+          if (documentTypeInput) documentTypeInput.value = tipoSolicitado;
           if (documentInput) { documentInput.value = resultado.documento; documentInput.focus(); documentInput.select(); }
           informarPagamentoFeedback("Documento recebido do pinpad.");
           return;
@@ -1292,12 +1317,17 @@ document.addEventListener("DOMContentLoaded", function () {
       if (!finishForm) return false;
       var decisaoCpf = decisaoCpfNaNota();
       if (!decisaoCpf) {
-        informarPagamentoFeedback("Responda se o consumidor deseja CPF na nota.");
+        informarPagamentoFeedback("Responda se o consumidor deseja CPF ou CNPJ na nota.");
         if (cpfDecisionInputs && cpfDecisionInputs[0]) cpfDecisionInputs[0].focus();
         return false;
       }
-      if (decisaoCpf === "SIM" && !cpfValidoNoPdv(documentInput && documentInput.value)) {
+      if ((decisaoCpf === "SIM" || decisaoCpf === "CPF") && !cpfValidoNoPdv(documentInput && documentInput.value)) {
         informarPagamentoFeedback("Informe um CPF válido com 11 números.");
+        if (documentInput) { documentInput.focus(); documentInput.select(); }
+        return false;
+      }
+      if (decisaoCpf === "CNPJ" && !cnpjValidoNoPdv(documentInput && documentInput.value)) {
+        informarPagamentoFeedback("Informe um CNPJ válido.");
         if (documentInput) { documentInput.focus(); documentInput.select(); }
         return false;
       }
@@ -1877,7 +1907,7 @@ document.addEventListener("DOMContentLoaded", function () {
       input.addEventListener("change", function () {
         atualizarCpfNaNota();
         informarPagamentoFeedback("");
-        if (input.value === "SIM" && input.checked && documentInput) documentInput.focus();
+        if (input.value !== "NAO" && input.checked && documentInput) documentInput.focus();
         if (input.value === "NAO" && input.checked) {
           var firstSelect = paymentModal && paymentModal.querySelector("select");
           if (firstSelect) firstSelect.focus();

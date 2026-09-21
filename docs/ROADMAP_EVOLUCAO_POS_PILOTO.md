@@ -31,7 +31,7 @@ Matriz, evidências locais e critérios:
 
 - [x] Incorporar o histórico offline do ciclo 126: DV do emitente, destinatário CNPJ alfa,
   snapshot Cliente/Pedido, contingência alfa e texto/QR do Desktop.
-- [ ] P1: revisar normativamente consumidor PJ/modelo documental, cobertura de obrigatoriedade
+- [x] P1: revisar normativamente consumidor PJ/modelo documental, cobertura de obrigatoriedade
   cBenef GO e readiness/CSC diante do QR Code v3; sem presumir regra legal a partir do código.
 - [ ] Homologar hardware e definir Code 128 RAW/ESC-POS; HTML já possui Code 128 C/A.
 - [ ] Fase 6: compatibilizar SEFAZ direta, inutilização, eventos e DF-e; homologar Focus separadamente.
@@ -853,6 +853,42 @@ Arquivos principais: apps/fiscal/models.py,
 apps/fiscal/migrations/0057_exige_origem_documento_fiscal.py,
 apps/fiscal/test_concorrencia_preparacao.py, apps/fiscal/test_support_documentos.py,
 fixtures fiscais/financeiras e docs/DEFESA_ORIGEM_DOCUMENTO_FISCAL.md.
+
+## Ponto de retomada — ciclo 151, 21/09/2026
+
+Concluída a revisão normativa P1 de consumidor PJ, cBenef GO e readiness/CSC. As
+fontes oficiais foram confrontadas com o comportamento atual antes da alteração;
+nenhuma credencial real, chamada à SEFAZ ou configuração de produção foi utilizada.
+
+- [x] Confirmar no Ajuste SINIEF 19/16 consolidado que a identificação do destinatário
+  da NFC-e admite CNPJ e que o § 4º, que obrigaria modelo 55 para todo destinatário
+  identificado por CNPJ, foi revogado pelo Ajuste 12/26 com efeitos em 09/04/2026.
+- [x] Permitir no PDV a escolha explícita Não/CPF/CNPJ, sem preencher documento a partir
+  do cadastro do cliente por suposição.
+- [x] Validar e canonicalizar CNPJ numérico ou alfanumérico antes de finalizar a venda;
+  serializar `dest/CNPJ` e `indIEDest=9` na NFC-e do consumidor final não contribuinte.
+- [x] Preservar NF-e modelo 55 e os bloqueios tributários para contribuinte/B2B,
+  interestadual e cenários que o PDV não representa.
+- [x] Preservar o CNPJ alfanumérico do destinatário nos parâmetros assinados do QR Code
+  v3 em contingência.
+- [x] Confirmar na NT 2025.001 v1.03 que QR Code v3 não exige CSC e usa assinatura A1
+  apenas na contingência; remover CSC como requisito de prontidão do leiaute v3.
+- [x] Manter inclusão, rotação, revogação e criptografia do CSC para compatibilidade
+  legada explícita com QR Code v2, sem expor ou apagar o segredo já cadastrado.
+- [x] Confirmar que a cobertura cBenef continua parcial: catálogo oficial, vigência,
+  formato, CST e redução de base estão protegidos; outras hipóteses dependem de um
+  indicador explícito de benefício por produto/operação e não podem ser inferidas.
+- [x] Validar 8 testes focados e a regressão conjunta Fiscal + Vendas + PDV:
+  752 testes aprovados e 6 ignorados por dependências explícitas de ambiente.
+- [x] Validar `check`, ausência de migrations novas e integridade do diff.
+- [ ] Próximo passo interno seguro: modelar o indicador explícito de benefício fiscal
+  por produto/operação, em estado indefinido/sem benefício/com benefício, sem classificar
+  automaticamente produtos existentes e sem liberar emissão quando a decisão necessária
+  estiver ausente. A parametrização tributária real continuará dependendo do contador.
+
+Fontes oficiais: Ajuste SINIEF 19/16 consolidado e NT 2025.001 v1.03 do Portal Nacional
+da NF-e; catálogo cBenef e INs já preservados em docs/CBENEF_GO.md.
+Migrações: nenhuma.
 
 ## Ponto de retomada — ciclo 143, 18/09/2026
 

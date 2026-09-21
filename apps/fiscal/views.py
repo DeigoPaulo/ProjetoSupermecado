@@ -542,8 +542,6 @@ def _diagnostico_prontidao_fiscal(user):
                 pendencias.append("Configuração fiscal inativa.")
             if config.certificado_status != "valido":
                 pendencias.append(f"Certificado {config.certificado_status.replace('_', ' ')}.")
-            if not config.csc_configurado:
-                pendencias.append("CSC/Token NFC-e incompleto.")
             if not config.inscricao_estadual:
                 pendencias.append("Inscrição estadual ausente.")
             pendencias.extend(pendencias_endpoints_nfce(filial, config))

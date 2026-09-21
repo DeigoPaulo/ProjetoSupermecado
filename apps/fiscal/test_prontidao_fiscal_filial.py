@@ -136,6 +136,19 @@ class ProntidaoFiscalFilialTests(TestCase):
             item for item in diagnostico["checklist"] if item["titulo"] == titulo
         )
 
+    def test_qrcode_v3_nao_exige_csc_na_prontidao(self):
+        self.configuracao.csc_id = ""
+        self.configuracao.csc_token_criptografado = b""
+        self.configuracao.save(
+            update_fields=["csc_id", "csc_token_criptografado", "atualizado_em"]
+        )
+
+        diagnostico = diagnostico_prontidao_homologacao_goias(self.configuracao)
+
+        item = self.item(diagnostico, "Configuração NFC-e")
+        self.assertTrue(item["pronto"])
+        self.assertIn("QR Code v3", item["detalhe"])
+
     @patch("apps.fiscal.readiness.pendencias_endpoints_nfce", return_value=[])
     @override_settings(
         FOCUS_NFE_FISCAL_TOKENS={"12345678000195": TOKEN_FILIAL}
