@@ -48,3 +48,31 @@ O próximo bloco deve montar o grupo `card` por `detPag`, validar de forma fail-
 combinações aplicáveis a cartão e PIX, usar em `cAut` exclusivamente a autorização
 confirmada e demonstrar paridade entre o payload Focus e o XML da SEFAZ direta. A etapa
 externa posterior continua dependente do provedor físico e da homologação SEFAZ-GO.
+
+## Evolução interna — ciclo 157, 22/09/2026
+
+O gerador NFC-e GO passou a serializar `detPag/card` por parcela. O grupo segue a ordem
+`tpIntegra`, `CNPJ`, `tBand`, `cAut`, `CNPJReceb`, `idTermPag` do pacote XSD 010f
+arquivado. PIX dinâmico usa `tPag=17` sem bandeira; `cAut` vem somente do campo de
+autorização persistido, nunca do NSU ou do ID externo. Fora de GO, pagamentos antigos
+sem metadados novos preservam o XML anterior.
+
+O payload Focus transporta os campos como `tipo_integracao`, `cnpj_credenciadora`,
+`bandeira_operadora`, `numero_autorizacao`, `cnpj_beneficiario` e
+`id_terminal_pagamento`, conforme a referência da Focus para `formas_pagamento`. O
+adaptador direto mantém o XML no envelope SOAP. Ambos os caminhos foram testados sem
+rede. A regra de Goiás exige metadados explícitos; para integração declarada, o gerador
+exige CNPJ, autorização, pagamento confirmado, ID externo e NSU.
+
+A captura atual passa por campos ocultos no navegador. Os testes internos demonstram
+consistência e preservação dos dados, mas esses campos ainda não são prova confiável de
+que o provedor real autorizou a transação. Essa vinculação precisa ser fechada no
+servidor antes da homologação. O pacote XSD 010f permanece arquivado, sem aprovação ou
+instalação operacional, e a aceitação efetiva dos dois canais depende de homologação.
+
+O aceite de CNPJ alfanumérico no campo da credenciadora pela API Focus também requer
+verificação externa: sua referência ainda descreve esses campos como `Integer[14]`.
+
+Fontes: [Goiás — integração dos meios de pagamento](https://goias.gov.br/economia/goias-amplia-prazo-para-empresas-se-adequarem-a-integracao-dos-meios-de-pagamento/),
+[Focus — FormaPagamentoXML](https://campos.focusnfe.com.br/nfe/FormaPagamentoXML.html),
+[Portal NF-e — Nota Técnica 2023.004 v1.11](https://www.nfe.fazenda.gov.br/Portal/exibirArquivo.aspx?AspxAutoDetectCookieSupport=1&conteudo=gHveCSDQhSM%3D).

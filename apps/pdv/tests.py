@@ -982,9 +982,9 @@ class AcessoPdvNuvemTests(TestCase):
                 "pagamento_nsu": ["123456"],
                 "pagamento_codigo_autorizacao": ["ABC123"],
                 "pagamento_tipo_integracao": ["1"],
-                "pagamento_cnpj_instituicao": ["12.345.678/0001-95"],
+                "pagamento_cnpj_instituicao": ["12.ABC.345/01DE-35"],
                 "pagamento_bandeira_cartao": ["01"],
-                "pagamento_cnpj_beneficiario": ["04.252.011/0001-10"],
+                "pagamento_cnpj_beneficiario": ["00.ABC.000/0000-01"],
                 "pagamento_identificador_terminal": ["PINPAD-CAIXA-01"],
                 "pagamento_mensagem_processadora": ["Aprovado"],
             },
@@ -997,9 +997,9 @@ class AcessoPdvNuvemTests(TestCase):
         self.assertEqual(pagamento.transacao_externa_id, "TEF-SIM-123")
         self.assertEqual(pagamento.codigo_autorizacao, "ABC123")
         self.assertEqual(pagamento.tipo_integracao, "1")
-        self.assertEqual(pagamento.cnpj_instituicao_pagamento, "12345678000195")
+        self.assertEqual(pagamento.cnpj_instituicao_pagamento, "12ABC34501DE35")
         self.assertEqual(pagamento.bandeira_cartao, "01")
-        self.assertEqual(pagamento.cnpj_beneficiario_pagamento, "04252011000110")
+        self.assertEqual(pagamento.cnpj_beneficiario_pagamento, "00ABC000000001")
         self.assertEqual(pagamento.identificador_terminal_pagamento, "PINPAD-CAIXA-01")
 
     def test_supervisor_confirma_estorno_eletronico_pendente(self):

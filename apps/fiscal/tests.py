@@ -914,6 +914,155 @@ class FiscalTests(TestCase):
         self.assertContains(response, self.produto.nome)
         self.assertContains(response, "Pronto")
 
+    def test_nfce_serializa_vinculo_fiscal_por_parcela_de_cartao_e_pix(self):
+        self.filial.uf = "GO"
+        self.filial.codigo_municipio_ibge = "5208707"
+        self.filial.save(update_fields=["uf", "codigo_municipio_ibge"])
+        endpoints = endpoints_nfce_uf("GO", AmbienteFiscal.HOMOLOGACAO)
+        self.configuracao.url_qrcode_nfce = endpoints["qrcode"]
+        self.configuracao.url_consulta_nfce = endpoints["consulta"]
+        self.configuracao.save(update_fields=["url_qrcode_nfce", "url_consulta_nfce"])
+        self.venda.pagamentos.all().delete()
+        credito = FormaPagamento.objects.create(nome="Crédito", tipo="CREDITO")
+        pix = FormaPagamento.objects.create(nome="PIX", tipo="PIX")
+        PagamentoVenda.objects.create(
+            venda=self.venda,
+            forma_pagamento=credito,
+            valor=Decimal("50.00"),
+            status="CONFIRMADO",
+            transacao_externa_id="TX-CREDITO-1",
+            nsu="NSU-CREDITO-1",
+            codigo_autorizacao="AUT-CREDITO-1",
+            tipo_integracao="1",
+            cnpj_instituicao_pagamento="12ABC34501DE35",
+            bandeira_cartao="01",
+            cnpj_beneficiario_pagamento="00ABC000000001",
+            identificador_terminal_pagamento="PINPAD-01",
+        )
+        PagamentoVenda.objects.create(
+            venda=self.venda,
+            forma_pagamento=pix,
+            valor=Decimal("32.70"),
+            status="CONFIRMADO",
+            transacao_externa_id="E2E-PIX-1",
+            nsu="NSU-PIX-1",
+            codigo_autorizacao="AUT-PIX-1",
+            tipo_integracao="1",
+            cnpj_instituicao_pagamento="12ABC34501DE35",
+            cnpj_beneficiario_pagamento="00ABC000000001",
+            identificador_terminal_pagamento="PIX-CAIXA-01",
+        )
+
+        documento = preparar_documento_venda(self.venda, self.user)
+
+        self.assertIn(
+            "<tPag>03</tPag><vPag>50.00</vPag><card><tpIntegra>1</tpIntegra>"
+            "<CNPJ>12ABC34501DE35</CNPJ><tBand>01</tBand>"
+            "<cAut>AUT-CREDITO-1</cAut><CNPJReceb>00ABC000000001</CNPJReceb>"
+            "<idTermPag>PINPAD-01</idTermPag></card>",
+            documento.xml_conteudo,
+        )
+        self.assertIn(
+            "<tPag>17</tPag><vPag>32.70</vPag><card><tpIntegra>1</tpIntegra>"
+            "<CNPJ>12ABC34501DE35</CNPJ><cAut>AUT-PIX-1</cAut>"
+            "<CNPJReceb>00ABC000000001</CNPJReceb>"
+            "<idTermPag>PIX-CAIXA-01</idTermPag></card>",
+            documento.xml_conteudo,
+        )
+        self.assertNotIn("TX-CREDITO-1", documento.xml_conteudo)
+        self.assertNotIn("NSU-CREDITO-1", documento.xml_conteudo)
+        self.assertNotIn("E2E-PIX-1", documento.xml_conteudo)
+
+    def test_nfce_bloqueia_pagamento_eletronico_sem_tipo_integracao(self):
+        self.filial.uf = "GO"
+        self.filial.codigo_municipio_ibge = "5208707"
+        self.filial.save(update_fields=["uf", "codigo_municipio_ibge"])
+        endpoints = endpoints_nfce_uf("GO", AmbienteFiscal.HOMOLOGACAO)
+        self.configuracao.url_qrcode_nfce = endpoints["qrcode"]
+        self.configuracao.url_consulta_nfce = endpoints["consulta"]
+        self.configuracao.save(update_fields=["url_qrcode_nfce", "url_consulta_nfce"])
+        pagamento = self.venda.pagamentos.get()
+        pagamento.forma_pagamento.tipo = "DEBITO"
+        pagamento.forma_pagamento.save(update_fields=["tipo"])
+        pagamento.codigo_autorizacao = "AUT-DEBITO-1"
+        pagamento.cnpj_instituicao_pagamento = "12345678000195"
+        pagamento.save(
+            update_fields=["codigo_autorizacao", "cnpj_instituicao_pagamento"]
+        )
+
+        with self.assertRaisesMessage(ValidationError, "tipo de integração fiscal"):
+            preparar_documento_venda(self.venda, self.user)
+
+    def test_nfce_bloqueia_pix_com_bandeira_de_cartao(self):
+        pagamento = self.venda.pagamentos.get()
+        pagamento.forma_pagamento.tipo = "PIX"
+        pagamento.forma_pagamento.save(update_fields=["tipo"])
+        pagamento.tipo_integracao = "1"
+        pagamento.transacao_externa_id = "E2E-PIX-1"
+        pagamento.nsu = "NSU-PIX-1"
+        pagamento.codigo_autorizacao = "AUT-PIX-1"
+        pagamento.cnpj_instituicao_pagamento = "12345678000195"
+        pagamento.bandeira_cartao = "01"
+        pagamento.save(
+            update_fields=[
+                "tipo_integracao",
+                "transacao_externa_id",
+                "nsu",
+                "codigo_autorizacao",
+                "cnpj_instituicao_pagamento",
+                "bandeira_cartao",
+            ]
+        )
+
+        with self.assertRaisesMessage(ValidationError, "PIX não aceita bandeira"):
+            preparar_documento_venda(self.venda, self.user)
+
+    def test_nfce_go_bloqueia_integracao_sem_cnpj_autorizacao_ou_confirmacao(self):
+        self.filial.uf = "GO"
+        self.filial.codigo_municipio_ibge = "5208707"
+        self.filial.save(update_fields=["uf", "codigo_municipio_ibge"])
+        endpoints = endpoints_nfce_uf("GO", AmbienteFiscal.HOMOLOGACAO)
+        self.configuracao.url_qrcode_nfce = endpoints["qrcode"]
+        self.configuracao.url_consulta_nfce = endpoints["consulta"]
+        self.configuracao.save(update_fields=["url_qrcode_nfce", "url_consulta_nfce"])
+        pagamento = self.venda.pagamentos.get()
+        pagamento.forma_pagamento.tipo = "CREDITO"
+        pagamento.forma_pagamento.save(update_fields=["tipo"])
+        base = {
+            "tipo_integracao": "1",
+            "cnpj_instituicao_pagamento": "12ABC34501DE35",
+            "codigo_autorizacao": "AUT-CREDITO-1",
+            "transacao_externa_id": "TX-CREDITO-1",
+            "nsu": "NSU-CREDITO-1",
+            "status": "CONFIRMADO",
+        }
+        casos = (
+            ({"cnpj_instituicao_pagamento": ""}, "CNPJ da instituição"),
+            ({"codigo_autorizacao": ""}, "autorização confirmada"),
+            ({"transacao_externa_id": ""}, "transação externa e NSU"),
+            ({"nsu": ""}, "transação externa e NSU"),
+            ({"status": "PENDENTE"}, "confirmação"),
+        )
+        for alteracao, mensagem in casos:
+            with self.subTest(alteracao=alteracao):
+                for campo, valor in {**base, **alteracao}.items():
+                    setattr(pagamento, campo, valor)
+                pagamento.save(update_fields=list(base))
+                with self.assertRaisesMessage(ValidationError, mensagem):
+                    preparar_documento_venda(self.venda, self.user)
+                self.assertFalse(self.venda.documentos_fiscais.exists())
+
+    def test_nfce_fora_de_go_preserva_pagamento_eletronico_legado_sem_metadados(self):
+        pagamento = self.venda.pagamentos.get()
+        pagamento.forma_pagamento.tipo = "CREDITO"
+        pagamento.forma_pagamento.save(update_fields=["tipo"])
+        pagamento.codigo_autorizacao = "AUT-LEGADO-1"
+        pagamento.save(update_fields=["codigo_autorizacao"])
+
+        documento = preparar_documento_venda(self.venda, self.user)
+
+        self.assertIn("<tPag>03</tPag><vPag>82.70</vPag>", documento.xml_conteudo)
+        self.assertNotIn("<card>", documento.xml_conteudo)
     def test_preparar_documento_venda_numera_e_audita(self):
         documento = preparar_documento_venda(self.venda, self.user)
 

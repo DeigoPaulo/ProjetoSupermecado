@@ -12,7 +12,7 @@ from django.utils import timezone
 
 from apps.auditoria.models import LogAuditoria
 from apps.marketplace.documentos_destinatario import normalizar_documento_cliente
-from apps.vendas.models import TipoDocumentoConsumidor, Venda
+from apps.vendas.models import StatusPagamento, TipoDocumentoConsumidor, Venda
 
 from .adapters import (
     SefazAdapterError,
@@ -29,6 +29,7 @@ from .cbenef import codigos_cbenef_go_validos
 from .cest import queryset_codigos_cest_vigentes, validar_cest
 from .cfop import validar_cfop
 from .cenarios_tributarios import pendencias_cenario_fiscal_go
+from .estrategia_normalizacao_cnpj import canonicalizar_cnpj
 from .chave_acesso import (
     construir_chave_acesso,
     normalizar_chave_acesso,
@@ -230,6 +231,93 @@ def _codigo_pagamento(tipo):
     if "PIX" in tipo:
         return "17"
     return "99"
+
+
+PAGAMENTOS_ELETRONICOS_COM_VINCULO = {"03", "04", "10", "11", "17"}
+PAGAMENTOS_COM_BANDEIRA = {"03", "04", "10", "11"}
+
+
+def _adicionar_integracao_pagamento_nfce(
+    det_pag, pagamento, codigo_pagamento, *, uf_emitente
+):
+    tipo_integracao = str(pagamento.tipo_integracao or "").strip()
+    try:
+        cnpj_instituicao = canonicalizar_cnpj(
+            pagamento.cnpj_instituicao_pagamento or ""
+        )
+        cnpj_beneficiario = canonicalizar_cnpj(
+            pagamento.cnpj_beneficiario_pagamento or ""
+        )
+    except ValueError as exc:
+        raise ValidationError(f"CNPJ do pagamento eletrônico inválido: {exc}") from exc
+    bandeira = str(pagamento.bandeira_cartao or "").strip()
+    autorizacao = str(pagamento.codigo_autorizacao or "").strip()
+    terminal = str(pagamento.identificador_terminal_pagamento or "").strip()
+    possui_dados = any(
+        (
+            tipo_integracao, cnpj_instituicao, bandeira, autorizacao,
+            cnpj_beneficiario, terminal,
+        )
+    )
+
+    if codigo_pagamento not in PAGAMENTOS_ELETRONICOS_COM_VINCULO:
+        if possui_dados:
+            raise ValidationError(
+                "Dados de integração eletrônica informados em forma de pagamento incompatível."
+            )
+        return
+
+    if uf_emitente != "GO" and not any(
+        (tipo_integracao, cnpj_instituicao, bandeira, cnpj_beneficiario, terminal)
+    ):
+        return
+    if tipo_integracao not in {"1", "2"}:
+        raise ValidationError(
+            "Informe o tipo de integração fiscal da parcela eletrônica antes de emitir a NFC-e."
+        )
+    if tipo_integracao == "1" and not cnpj_instituicao:
+        raise ValidationError(
+            "Pagamento eletrônico integrado exige o CNPJ da instituição de pagamento."
+        )
+    if tipo_integracao == "1" and not autorizacao:
+        raise ValidationError(
+            "Pagamento eletrônico integrado exige a autorização confirmada pelo adaptador."
+        )
+    if tipo_integracao == "1" and (
+        pagamento.status != StatusPagamento.CONFIRMADO
+        or not pagamento.transacao_externa_id
+        or not pagamento.nsu
+    ):
+        raise ValidationError(
+            "Pagamento integrado exige confirmação, transação externa e NSU do adaptador."
+        )
+    for cnpj, rotulo in (
+        (cnpj_instituicao, "CNPJ da instituição de pagamento"),
+        (cnpj_beneficiario, "CNPJ do beneficiário do pagamento"),
+    ):
+        if cnpj and len(cnpj) != 14:
+            raise ValidationError(f"{rotulo} deve conter 14 caracteres canônicos.")
+    if bandeira and (len(bandeira) != 2 or not bandeira.isdigit()):
+        raise ValidationError("Bandeira do cartão deve usar o código fiscal de 2 dígitos.")
+    if codigo_pagamento not in PAGAMENTOS_COM_BANDEIRA and bandeira:
+        raise ValidationError("Pagamento PIX não aceita bandeira de cartão no XML da NFC-e.")
+    if len(autorizacao) > 128:
+        raise ValidationError("Código de autorização do pagamento excede 128 caracteres.")
+    if len(terminal) > 40:
+        raise ValidationError("Identificador do terminal de pagamento excede 40 caracteres.")
+
+    card = ET.SubElement(det_pag, f"{{{NFE_NS}}}card")
+    _texto(card, "tpIntegra", tipo_integracao)
+    if cnpj_instituicao:
+        _texto(card, "CNPJ", cnpj_instituicao)
+    if bandeira:
+        _texto(card, "tBand", bandeira)
+    if autorizacao:
+        _texto(card, "cAut", autorizacao)
+    if cnpj_beneficiario:
+        _texto(card, "CNPJReceb", cnpj_beneficiario)
+    if terminal:
+        _texto(card, "idTermPag", terminal)
 
 
 def _crt_configuracao(configuracao):
@@ -899,8 +987,12 @@ def gerar_xml_nfce(documento):
     for pagamento in venda.pagamentos.select_related("forma_pagamento"):
         det_pag = ET.SubElement(pag, f"{{{NFE_NS}}}detPag")
         _texto(det_pag, "indPag", "0")
-        _texto(det_pag, "tPag", _codigo_pagamento(pagamento.forma_pagamento.tipo))
+        codigo_pagamento = _codigo_pagamento(pagamento.forma_pagamento.tipo)
+        _texto(det_pag, "tPag", codigo_pagamento)
         _texto(det_pag, "vPag", _valor(pagamento.valor))
+        _adicionar_integracao_pagamento_nfce(
+            det_pag, pagamento, codigo_pagamento, uf_emitente=venda.filial.uf
+        )
 
     inf_adic = ET.SubElement(inf_nfe, f"{{{NFE_NS}}}infAdic")
     _texto(inf_adic, "infCpl", "XML local de preparacao. Assinatura e transmissao SEFAZ pendentes.")

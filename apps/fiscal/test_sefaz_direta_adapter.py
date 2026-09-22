@@ -21,6 +21,7 @@ from .sefaz_direta import (
 
 CHAVE = "52260812345678000199650010000000011000000010"
 XML_NFE = f'''<NFe xmlns="{NFE_NS}"><infNFe Id="NFe{CHAVE}" versao="4.00"/></NFe>'''
+XML_NFE_COM_PAGAMENTO = f'''<NFe xmlns="{NFE_NS}"><infNFe Id="NFe{CHAVE}" versao="4.00"><pag><detPag><indPag>0</indPag><tPag>17</tPag><vPag>10.00</vPag><card><tpIntegra>1</tpIntegra><CNPJ>12ABC34501DE35</CNPJ><cAut>AUT-DIRETA-1</cAut><CNPJReceb>00ABC000000001</CNPJReceb><idTermPag>PIX-01</idTermPag></card></detPag></pag></infNFe></NFe>'''
 
 
 def objeto_fiscal(pk=7):
@@ -119,6 +120,46 @@ class SefazDiretaAdapterTests(SimpleTestCase):
         )
         self.assertEqual(
             envelope.xpath("count(.//*[local-name()='NFe'])"), 1.0
+        )
+
+    def test_transmissao_direta_preserva_grupo_fiscal_do_pagamento(self):
+        chamadas = []
+
+        def transporte(**kwargs):
+            chamadas.append(kwargs)
+            return resposta_autorizada()
+
+        SefazDiretaAdapter(transport=transporte).transmitir(
+            documento=objeto_fiscal(),
+            xml=XML_NFE_COM_PAGAMENTO,
+            idempotency_key="teste-pagamento",
+            ambiente="HOMOLOGACAO",
+        )
+
+        envelope = etree.fromstring(chamadas[0]["envelope"])
+        self.assertEqual(
+            envelope.xpath("string(.//*[local-name()='detPag']/*[local-name()='tPag'])"),
+            "17",
+        )
+        self.assertEqual(
+            envelope.xpath("string(.//*[local-name()='card']/*[local-name()='tpIntegra'])"),
+            "1",
+        )
+        self.assertEqual(
+            envelope.xpath("string(.//*[local-name()='card']/*[local-name()='CNPJ'])"),
+            "12ABC34501DE35",
+        )
+        self.assertEqual(
+            envelope.xpath("string(.//*[local-name()='card']/*[local-name()='cAut'])"),
+            "AUT-DIRETA-1",
+        )
+        self.assertEqual(
+            envelope.xpath("string(.//*[local-name()='card']/*[local-name()='CNPJReceb'])"),
+            "00ABC000000001",
+        )
+        self.assertEqual(
+            envelope.xpath("string(.//*[local-name()='card']/*[local-name()='idTermPag'])"),
+            "PIX-01",
         )
 
     def test_consultar_status_servico_operacional(self):

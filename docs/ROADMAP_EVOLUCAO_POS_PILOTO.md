@@ -1046,16 +1046,44 @@ nenhuma rede Focus/SEFAZ foi acionada e nenhuma liberação de produção foi re
 - [x] Criar a migration `vendas.0013_pagamentovenda_dados_fiscais_eletronicos` e validar
   persistência, contrato do PDV, adaptadores, pagamentos divididos e regressões fiscal e
   de configuração.
-- [ ] Próximo passo interno seguro: serializar condicionalmente o grupo `card` no XML da
-  NFC-e, com validação fail-closed por forma de pagamento; alimentar `cAut` somente pela
-  autorização persistida e preservar a mesma estrutura no payload Focus e na SEFAZ
-  direta. Não presumir bandeira para PIX nem tratar `tpIntegra=1` como padrão.
+- [x] Próximo passo interno seguro executado no ciclo 157: serialização condicional do
+  grupo `card`, bloqueios de dados incompletos e paridade estrutural offline nos dois
+  canais. Prova de origem confiável do adaptador e homologação permanecem pendentes.
 
 Pendências externas preservadas: escolher/conectar o driver real de TEF/PIX, obter os
 metadados oficiais da adquirente/instituição, validar em equipamento físico e homologar
 o XML com a SEFAZ-GO. Esses itens não podem ser aprovados por simulador.
 
 Migração: `apps/vendas/migrations/0013_pagamentovenda_dados_fiscais_eletronicos.py`.
+
+## Ponto de retomada — ciclo 157, 22/09/2026
+
+Concluída a serialização interna do vínculo fiscal por parcela na NFC-e GO. O gerador
+preserva `tPag` e `vPag` de cada pagamento e adiciona o grupo `card` na ordem do XSD
+010f auditado. O conversor Focus usa os nomes publicados em sua documentação e o
+adaptador SEFAZ direto preserva o mesmo XML no envelope SOAP. Nenhuma rede fiscal,
+credencial real ou liberação de produção foi usada.
+
+- [x] Emitir `tpIntegra`, CNPJ da instituição, bandeira de cartão quando aplicável,
+  `cAut`, CNPJ do beneficiário e identificador do terminal sem valores inventados.
+- [x] Em Goiás, bloquear preparação da NFC-e eletrônica sem tipo de integração; para
+  `tpIntegra=1`, exigir CNPJ, autorização, estado confirmado, ID externo e NSU.
+- [x] Rejeitar bandeira em PIX, formatos fiscais inválidos e metadados eletrônicos em
+  forma de pagamento incompatível. O simulador segue sem fornecer integração fiscal.
+- [x] Preservar CNPJ alfanumérico canônico no driver desktop, serviço de vendas e XML;
+  vendas legadas fora de GO sem os novos metadados mantêm o XML anterior.
+- [x] Cobrir cartão, PIX, pagamento dividido, rejeições, Focus e SEFAZ direta com
+  testes offline. O pacote XSD 010f foi confrontado estruturalmente; ele continua
+  arquivado, sem promoção operacional.
+- [ ] Próximo passo interno seguro: vincular os metadados fiscais a uma resposta TEF/PIX
+  confiável no servidor, impedindo que campos ocultos do navegador sejam aceitos como
+  prova de integração real. Depois, validar o XML contra um pacote XSD aprovado e
+  preservar evidências separadas para Focus e SEFAZ direta.
+
+Pendências externas: driver/adquirente real, equipamento físico, dados oficiais do
+provedor, aprovação do schema para o piloto, aceite de CNPJ alfanumérico pela Focus
+e homologação em SEFAZ-GO/Focus. A paridade acima é apenas offline; `tpIntegra=1` ainda não comprova integração real de ponta a
+ponta. Nenhuma migration nova foi criada neste ciclo.
 
 ## Ponto de retomada — ciclo 143, 18/09/2026
 
@@ -2532,7 +2560,7 @@ Esta é uma frente complementar obrigatória antes da homologação real da NFC-
 - [x] Capturar no PDV o estado confirmado, identificador externo, NSU e código de autorização do TEF/PIX e impedir a finalização de transação eletrônica incompleta.
 - [x] Mapear as formas operacionais para `tPag` 03 (crédito), 04 (débito) e 17 (PIX), preservando o valor de cada parcela em `vPag`.
 - [x] Estruturar no cadastro/retorno do adaptador os dados fiscais ainda ausentes, incluindo tipo de integração, CNPJ da credenciadora ou instituição, bandeira quando aplicável, CNPJ do beneficiário e identificador do terminal, sem valores padrão.
-- [ ] Serializar no XML da NFC-e o grupo condicional de integração de pagamento, incluindo `tpIntegra`, `CNPJ`, `tBand` e `cAut` somente conforme a forma e o leiaute aplicáveis.
+- [x] Serializar no XML da NFC-e GO o grupo condicional `card`, incluindo `tpIntegra`, `CNPJ`, `tBand`, `cAut`, `CNPJReceb` e `idTermPag` quando aplicáveis à parcela; a validação XSD operacional permanece pendente da promoção controlada do pacote oficial.
 - [ ] Alimentar `cAut` exclusivamente com a autorização confirmada pelo adaptador; não usar NSU, identificador externo ou texto digitado como substituto automático.
 - [ ] Tratar PIX dinâmico integrado conforme a estrutura vigente, sem inventar bandeira e sem assumir o grupo de cartão quando o XSD/regra aplicável determinar outra estrutura.
 - [ ] Impedir `tpIntegra=1` quando não houver integração real e bloquear emissão diante de dados obrigatórios ausentes ou contraditórios.

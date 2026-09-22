@@ -294,11 +294,7 @@ class FocusNFeSefazAdapter:
         }
         self._destinatario(payload, dest, modelo)
         pagamentos = [
-            {
-                "indicador_pagamento": self._texto(det, "indPag") or "0",
-                "forma_pagamento": self._texto(det, "tPag"),
-                "valor_pagamento": self._texto(det, "vPag"),
-            }
+            self._pagamento(det)
             for det in inf.findall("nfe:pag/nfe:detPag", NS)
         ]
         if pagamentos:
@@ -307,6 +303,29 @@ class FocusNFeSefazAdapter:
         if complemento:
             payload["informacoes_adicionais_contribuinte"] = complemento
         return payload, modelo
+
+    def _pagamento(self, det):
+        pagamento = {
+            "indicador_pagamento": self._texto(det, "indPag") or "0",
+            "forma_pagamento": self._texto(det, "tPag"),
+            "valor_pagamento": self._texto(det, "vPag"),
+        }
+        card = det.find("nfe:card", NS)
+        if card is None:
+            return pagamento
+        self._copiar(
+            pagamento,
+            card,
+            {
+                "tipo_integracao": "tpIntegra",
+                "cnpj_credenciadora": "CNPJ",
+                "bandeira_operadora": "tBand",
+                "numero_autorizacao": "cAut",
+                "cnpj_beneficiario": "CNPJReceb",
+                "id_terminal_pagamento": "idTermPag",
+            },
+        )
+        return pagamento
 
     def _item(self, det):
         prod = det.find("nfe:prod", NS)

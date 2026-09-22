@@ -307,9 +307,9 @@ class VendaServiceTests(TestCase):
                     "nsu": "123456",
                     "codigo_autorizacao": "ABC123",
                     "tipo_integracao": "1",
-                    "cnpj_instituicao_pagamento": "12.345.678/0001-95",
+                    "cnpj_instituicao_pagamento": "12.ABC.345/01DE-35",
                     "bandeira_cartao": "01",
-                    "cnpj_beneficiario_pagamento": "04.252.011/0001-10",
+                    "cnpj_beneficiario_pagamento": "00.ABC.000/0000-01",
                     "identificador_terminal_pagamento": "PINPAD-01",
                     "mensagem_processadora": "Aprovado pela operadora.",
                 }
@@ -321,9 +321,9 @@ class VendaServiceTests(TestCase):
         self.assertEqual(pagamento.nsu, "123456")
         self.assertEqual(pagamento.codigo_autorizacao, "ABC123")
         self.assertEqual(pagamento.tipo_integracao, "1")
-        self.assertEqual(pagamento.cnpj_instituicao_pagamento, "12345678000195")
+        self.assertEqual(pagamento.cnpj_instituicao_pagamento, "12ABC34501DE35")
         self.assertEqual(pagamento.bandeira_cartao, "01")
-        self.assertEqual(pagamento.cnpj_beneficiario_pagamento, "04252011000110")
+        self.assertEqual(pagamento.cnpj_beneficiario_pagamento, "00ABC000000001")
         self.assertEqual(pagamento.identificador_terminal_pagamento, "PINPAD-01")
         self.assertEqual(pagamento.mensagem_processadora, "Aprovado pela operadora.")
 
@@ -337,7 +337,7 @@ class VendaServiceTests(TestCase):
         }
         invalidos = (
             ({"tipo_integracao": "3"}, "Tipo de integração"),
-            ({"cnpj_instituicao_pagamento": "123"}, "14 dígitos"),
+            ({"cnpj_instituicao_pagamento": "123"}, "14 caracteres"),
             ({"bandeira_cartao": "VISA"}, "2 dígitos"),
             ({"identificador_terminal_pagamento": "X" * 41}, "40 caracteres"),
         )

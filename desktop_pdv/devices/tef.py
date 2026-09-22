@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import importlib
+import re
 from abc import ABC, abstractmethod
 from copy import deepcopy
 from uuid import uuid4
@@ -16,6 +17,22 @@ class AdaptadorTefIndisponivel(ErroTef):
 
 class RespostaTefInvalida(ErroTef):
     pass
+
+
+def _canonicalizar_cnpj_pagamento(valor):
+    texto = str(valor or "").strip()
+    if not texto:
+        return ""
+    if re.fullmatch(r"[A-Za-z0-9]{12}[0-9]{2}", texto):
+        return texto.upper()
+    if re.fullmatch(
+        r"[A-Za-z0-9]{2}\.[A-Za-z0-9]{3}\.[A-Za-z0-9]{3}/[A-Za-z0-9]{4}-[0-9]{2}",
+        texto,
+    ):
+        return texto.translate(str.maketrans("", "", "./-")).upper()
+    raise RespostaTefInvalida(
+        "O driver TEF devolveu CNPJ fiscal fora do formato canônico."
+    )
 
 
 class AdaptadorTef(ABC):
@@ -207,14 +224,7 @@ def validar_resposta_tef(resultado: dict, operacao: str) -> dict:
         normalizado["tipo_integracao"] = tipo_integracao
 
         for campo in ("cnpj_instituicao_pagamento", "cnpj_beneficiario_pagamento"):
-            valor = "".join(
-                caractere
-                for caractere in str(resultado.get(campo) or "")
-                if caractere.isdigit()
-            )
-            if valor and len(valor) != 14:
-                raise RespostaTefInvalida("O driver TEF devolveu CNPJ fiscal invalido.")
-            normalizado[campo] = valor
+            normalizado[campo] = _canonicalizar_cnpj_pagamento(resultado.get(campo))
 
         bandeira = str(resultado.get("bandeira_cartao") or "").strip()
         if bandeira and (len(bandeira) != 2 or not bandeira.isdigit()):

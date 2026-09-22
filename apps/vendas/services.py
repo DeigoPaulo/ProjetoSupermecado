@@ -234,14 +234,18 @@ def _normalizar_dados_fiscais_pagamento(pagamento):
     if tipo_integracao not in {"", "1", "2"}:
         raise ValidationError("Tipo de integração do pagamento inválido.")
 
+    from apps.fiscal.estrategia_normalizacao_cnpj import canonicalizar_cnpj
+
     for campo, rotulo in (
         ("cnpj_instituicao_pagamento", "CNPJ da instituição de pagamento"),
         ("cnpj_beneficiario_pagamento", "CNPJ do beneficiário do pagamento"),
     ):
-        valor = _somente_digitos(pagamento.get(campo))
-        if valor and len(valor) != 14:
-            raise ValidationError(f"{rotulo} deve conter 14 dígitos.")
-        pagamento[campo] = valor
+        try:
+            pagamento[campo] = canonicalizar_cnpj(
+                str(pagamento.get(campo) or "")
+            )
+        except ValueError as exc:
+            raise ValidationError(f"{rotulo}: {exc}") from exc
 
     bandeira = str(pagamento.get("bandeira_cartao") or "").strip()
     if bandeira and (len(bandeira) != 2 or not bandeira.isdigit()):

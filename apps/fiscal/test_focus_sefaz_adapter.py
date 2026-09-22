@@ -131,6 +131,28 @@ class FocusNFeSefazAdapterTests(SimpleTestCase):
         self.assertNotIn("codigo_barras_comercial", payload["items"][0])
         self.assertEqual(payload["formas_pagamento"][0]["forma_pagamento"], "01")
 
+    def test_payload_preserva_grupo_fiscal_do_pagamento_eletronico(self):
+        xml = XML_NFCE.replace(
+            "<tPag>01</tPag><vPag>10.00</vPag>",
+            "<tPag>03</tPag><vPag>10.00</vPag><card>"
+            "<tpIntegra>1</tpIntegra><CNPJ>12ABC34501DE35</CNPJ>"
+            "<tBand>01</tBand><cAut>AUT-FOCUS-1</cAut>"
+            "<CNPJReceb>00ABC000000001</CNPJReceb>"
+            "<idTermPag>PINPAD-01</idTermPag></card>",
+        )
+
+        payload, modelo = FocusNFeSefazAdapter()._payload_xml(xml)
+
+        self.assertEqual(modelo, "65")
+        pagamento = payload["formas_pagamento"][0]
+        self.assertEqual(pagamento["forma_pagamento"], "03")
+        self.assertEqual(pagamento["tipo_integracao"], "1")
+        self.assertEqual(pagamento["cnpj_credenciadora"], "12ABC34501DE35")
+        self.assertEqual(pagamento["bandeira_operadora"], "01")
+        self.assertEqual(pagamento["numero_autorizacao"], "AUT-FOCUS-1")
+        self.assertEqual(pagamento["cnpj_beneficiario"], "00ABC000000001")
+        self.assertEqual(pagamento["id_terminal_pagamento"], "PINPAD-01")
+
     def test_retorno_em_processamento_fica_pendente(self):
         adapter = FocusNFeSefazAdapter(
             opener=FakeOpener(
