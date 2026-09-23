@@ -1249,6 +1249,42 @@ controlada de schema, validação Focus, homologação SEFAZ-GO e aceite de prod
   fixtures; depois reavaliar a fila do roadmap. Operadora real e homologação
   SEFAZ/Focus continuam pendências externas, sem liberar produção.
 
+## Ponto de retomada — ciclo 164, 23/09/2026
+
+Frente interna dos vales encerrada **somente offline**. A [NT 2023.004 v1.11
+oficial](https://hom.nfe.fazenda.gov.br/Portal/exibirArquivo.aspx?conteudo=A6qvFRVbPSA%3D)
+descreve `card` para cartões e outros pagamentos eletrônicos, `tpIntegra`
+obrigatório nesse grupo e `tBand` opcional como bandeira da operadora de
+cartão de crédito/débito; não estabelece bandeira presumida para `tPag` 10/11.
+O XSD 010f arquivado confirma a estrutura, não a aceitação pela SEFAZ-GO.
+
+- [x] Corrigir a fixture: vale-alimentação/refeição não herda `tBand=01` do
+  cartão. O serializador não fabrica bandeira; continua aceitando o código
+  fiscal quando vier da confirmação do verificador, sem afirmar antecipadamente
+  que uma operadora real o fornecerá ou que a SEFAZ o aceitará nesse cenário.
+- [x] Comprovar `tPag` 10/11, `vPag` por parcela, `tpIntegra`, `CNPJ`, `cAut`,
+  `CNPJReceb` e `idTermPag` em NFC-e sintética com vale sozinho, vale + PIX,
+  vale + dinheiro e vale + crédito; assinatura, XSD e projeções Focus/SEFAZ
+  direta passaram offline, sem rede, promoção de schema ou credenciais reais.
+- [x] Exercitar no serviço de venda ambos os vales sozinhos e divididos;
+  confirmação por parcela, duplicata, reuso, divergência de valor/forma/caixa,
+  outra filial, autorização/metadados adulterados, POST forjado e simulador
+  permanecem fail-closed. `VERIFICADORES` continua vazio na produção.
+- [x] Validar 24 testes focados e 813 testes fiscal/vendas/PDV no SQLite
+  (7 ignorados por exigirem PostgreSQL), além de `check`,
+  `makemigrations --check --dry-run`, `migrate --check` e `git diff --check`.
+  Integridade concorrente em PostgreSQL fica a cargo da CI deste commit.
+
+Pendências **externas**: operadora/driver e retorno autenticado reais, equipamento,
+homologação SEFAZ-GO, eventual validação Focus e liberação formal de produção.
+Nenhuma dessas etapas está concluída pelos testes sintéticos. Migrações: nenhuma.
+
+- [ ] Próximo passo **interno** realmente pendente: retomar o inventário do
+  fallback emissivo de `Produto.codigo_beneficio_fiscal` fora de GO + CRT 2/3
+  (ciclo 155), caracterizar os cenários UF/CRT e desenhar substituição explícita
+  sem inferir enquadramento. Não remover a coluna nem criar migration antes de
+  comprovar zero consumidor e compatibilidade fiscal.
+
 ## Ponto de retomada — ciclo 143, 18/09/2026
 
 Concluída a pendência P2 de parcelas/duplicatas da NF-e recebida, eliminando a perda da

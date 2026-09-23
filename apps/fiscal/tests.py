@@ -928,7 +928,9 @@ class FiscalTests(TestCase):
         self.assertContains(response, self.produto.nome)
         self.assertContains(response, "Pronto")
 
-    def _preparar_nfce_com_credito_e_pix(self, *, tipo_cartao="CREDITO", incluir_dinheiro=False):
+    def _preparar_nfce_com_credito_e_pix(
+        self, *, tipo_cartao="CREDITO", incluir_dinheiro=False, segunda_forma="PIX",
+    ):
         self.filial.uf = "GO"
         self.filial.codigo_municipio_ibge = "5208707"
         self.filial.logradouro = "Rua Teste"
@@ -945,34 +947,44 @@ class FiscalTests(TestCase):
         self.configuracao.save(update_fields=["url_qrcode_nfce", "url_consulta_nfce"])
         self.venda.pagamentos.all().delete()
         credito = FormaPagamento.objects.create(nome="Cartão de teste", tipo=tipo_cartao)
-        pix = FormaPagamento.objects.create(nome="PIX", tipo="PIX")
         PagamentoVenda.objects.create(
             venda=self.venda,
             forma_pagamento=credito,
-            valor=Decimal("30.00" if incluir_dinheiro else "50.00"),
+            valor=Decimal("30.00" if incluir_dinheiro else "82.70" if segunda_forma is None else "50.00"),
             status="CONFIRMADO",
-            transacao_externa_id=f"TX-{tipo_cartao}-1",
+            transacao_externa_id=(
+                f"TX-{tipo_cartao}-1" if tipo_cartao in {"CREDITO", "DEBITO"}
+                else f"TX-{tipo_cartao}-{segunda_forma or 'SOLO'}-1"
+            ),
             nsu=f"NSU-{tipo_cartao}-1",
             codigo_autorizacao=f"AUT-{tipo_cartao}-1",
             tipo_integracao="1",
             cnpj_instituicao_pagamento="12ABC34501DE35",
-            bandeira_cartao="01",
+            bandeira_cartao="01" if tipo_cartao in {"CREDITO", "DEBITO", "CARTAO"} else "",
             cnpj_beneficiario_pagamento="00ABC000000001",
             identificador_terminal_pagamento="PINPAD-01",
         )
-        PagamentoVenda.objects.create(
-            venda=self.venda,
-            forma_pagamento=pix,
-            valor=Decimal("32.70"),
-            status="CONFIRMADO",
-            transacao_externa_id=f"E2E-PIX-{tipo_cartao}-1",
-            nsu="NSU-PIX-1",
-            codigo_autorizacao="AUT-PIX-1",
-            tipo_integracao="1",
-            cnpj_instituicao_pagamento="12ABC34501DE35",
-            cnpj_beneficiario_pagamento="00ABC000000001",
-            identificador_terminal_pagamento="PIX-CAIXA-01",
-        )
+        if segunda_forma == "DINHEIRO":
+            dinheiro = FormaPagamento.objects.get(tipo="DINHEIRO")
+            PagamentoVenda.objects.create(
+                venda=self.venda, forma_pagamento=dinheiro, valor=Decimal("32.70"),
+            )
+        elif segunda_forma in {"PIX", "CREDITO"}:
+            outro = FormaPagamento.objects.create(nome=segunda_forma, tipo=segunda_forma)
+            PagamentoVenda.objects.create(
+                venda=self.venda,
+                forma_pagamento=outro,
+                valor=Decimal("32.70"),
+                status="CONFIRMADO",
+                transacao_externa_id=f"E2E-{segunda_forma}-{tipo_cartao}-1",
+                nsu=f"NSU-{segunda_forma}-2",
+                codigo_autorizacao=f"AUT-{segunda_forma}-2" if segunda_forma == "CREDITO" else "AUT-PIX-1",
+                tipo_integracao="1",
+                cnpj_instituicao_pagamento="12ABC34501DE35",
+                bandeira_cartao="01" if segunda_forma == "CREDITO" else "",
+                cnpj_beneficiario_pagamento="00ABC000000001",
+                identificador_terminal_pagamento="PINPAD-02" if segunda_forma == "CREDITO" else "PIX-CAIXA-01",
+            )
         if incluir_dinheiro:
             dinheiro = FormaPagamento.objects.get(tipo="DINHEIRO")
             PagamentoVenda.objects.create(
@@ -1248,10 +1260,17 @@ class FiscalTests(TestCase):
             with self.subTest(forma=forma):
                 documento = self._preparar_nfce_com_credito_e_pix(tipo_cartao=forma)
                 self.assertIn(f"<tPag>{codigo}</tPag><vPag>50.00</vPag>", documento.xml_conteudo)
+                self.assertNotIn("<tBand>", documento.xml_conteudo)
+                self.assertIn(f"<cAut>AUT-{forma}-1</cAut>", documento.xml_conteudo)
+                self.assertIn("<CNPJReceb>00ABC000000001</CNPJReceb>", documento.xml_conteudo)
+                self.assertIn("<idTermPag>PINPAD-01</idTermPag>", documento.xml_conteudo)
                 assinar_xml_documento(documento)
                 diagnostico = diagnosticar_nfce_pagamentos_xsd_offline(documento.xml_conteudo)
                 self.assertTrue(diagnostico["conforme_offline"], diagnostico)
                 self.assertEqual(diagnostico["parcelas"], 2)
+                self.assertEqual(diagnostico["focus"]["parcelas"], 2)
+                self.assertEqual(diagnostico["sefaz_direta"]["parcelas"], 2)
+                self.assertTrue(diagnostico["sefaz_direta"]["xml_integral_preservado"])
                 self.assertFalse(diagnostico["homologacao_real"])
                 documento.xml_conteudo = documento.xml_conteudo.replace(
                     f"AUT-{forma}-1", "AUT-ADULTERADA", 1,
@@ -1259,6 +1278,49 @@ class FiscalTests(TestCase):
                 with self.assertRaisesMessage(ValidationError, "Vínculo fiscal do XML diverge"):
                     validar_xml_pre_transmissao(documento, FakeSefazAdapter())
                 documento.delete()
+
+    def test_vales_sozinhos_com_dinheiro_ou_cartao_confrontam_xsd_e_canais_offline(self):
+        from .diagnostico_pagamentos_xsd import diagnosticar_nfce_pagamentos_xsd_offline
+        from .validacoes import validar_xml_pre_transmissao
+
+        for forma, codigo in (("VALE_ALIMENTACAO", "10"), ("VALE_REFEICAO", "11")):
+            for segunda, codigos, valores in (
+                (None, [codigo], ["82.70"]),
+                ("DINHEIRO", [codigo, "01"], ["50.00", "32.70"]),
+                ("CREDITO", [codigo, "03"], ["50.00", "32.70"]),
+            ):
+                with self.subTest(forma=forma, segunda=segunda):
+                    documento = self._preparar_nfce_com_credito_e_pix(
+                        tipo_cartao=forma, segunda_forma=segunda,
+                    )
+                    raiz = ET.fromstring(documento.xml_conteudo)
+                    parcelas = raiz.findall(f"{{{NFE_NS}}}infNFe/{{{NFE_NS}}}pag/{{{NFE_NS}}}detPag")
+                    self.assertEqual(
+                        [item.findtext(f"{{{NFE_NS}}}tPag") for item in parcelas], codigos,
+                    )
+                    self.assertEqual(
+                        [item.findtext(f"{{{NFE_NS}}}vPag") for item in parcelas], valores,
+                    )
+                    card_vale = parcelas[0].find(f"{{{NFE_NS}}}card")
+                    self.assertIsNotNone(card_vale)
+                    self.assertIsNone(card_vale.find(f"{{{NFE_NS}}}tBand"))
+                    self.assertEqual(card_vale.findtext(f"{{{NFE_NS}}}tpIntegra"), "1")
+                    self.assertEqual(card_vale.findtext(f"{{{NFE_NS}}}CNPJ"), "12ABC34501DE35")
+                    self.assertEqual(card_vale.findtext(f"{{{NFE_NS}}}cAut"), f"AUT-{forma}-1")
+                    self.assertEqual(card_vale.findtext(f"{{{NFE_NS}}}CNPJReceb"), "00ABC000000001")
+                    self.assertEqual(card_vale.findtext(f"{{{NFE_NS}}}idTermPag"), "PINPAD-01")
+                    if segunda == "DINHEIRO":
+                        self.assertIsNone(parcelas[1].find(f"{{{NFE_NS}}}card"))
+                    validar_xml_pre_transmissao(documento, FakeSefazAdapter())
+                    assinar_xml_documento(documento)
+                    diagnostico = diagnosticar_nfce_pagamentos_xsd_offline(documento.xml_conteudo)
+                    self.assertTrue(diagnostico["conforme_offline"], diagnostico)
+                    self.assertEqual(diagnostico["parcelas"], len(codigos))
+                    self.assertEqual(diagnostico["focus"]["parcelas"], len(codigos))
+                    self.assertEqual(diagnostico["sefaz_direta"]["parcelas"], len(codigos))
+                    self.assertTrue(diagnostico["sefaz_direta"]["xml_integral_preservado"])
+                    self.assertFalse(diagnostico["homologacao_real"])
+                    documento.delete()
 
     def test_nfce_pis_cofins_nao_tributados_confronta_xsd_e_canais_offline(self):
         from .diagnostico_pagamentos_xsd import diagnosticar_nfce_pagamentos_xsd_offline

@@ -14,7 +14,7 @@ from apps.fiscal.services import NFE_NS, _adicionar_integracao_pagamento_nfce, v
 from apps.pdv.models import Caixa
 from . import tests as vendas_tests
 from .integracao_pagamentos import confirmar_pagamento_no_servidor
-from .models import ConfirmacaoPagamentoIntegrado, PagamentoVenda, Venda
+from .models import ConfirmacaoPagamentoIntegrado, FormaPagamento, PagamentoVenda, Venda
 from .services import finalizar_venda, formas_pagamento_disponiveis
 from .test_support_integracao import confirmar_parcela_teste
 
@@ -41,6 +41,149 @@ class ConfirmacaoIntegracaoTests(TestCase):
             "confirmacao_integracao_id": str(confirmacao.pk) if confirmacao else "",
             **dados,
         }
+
+    def vales(self):
+        return [
+            FormaPagamento.objects.create(nome=tipo, tipo=tipo)
+            for tipo in ("VALE_ALIMENTACAO", "VALE_REFEICAO")
+        ]
+
+    def test_jornada_vales_sozinhos_e_divididos_preserva_confirmacao_por_parcela(self):
+        credito = FormaPagamento.objects.create(nome="Crédito", tipo="CREDITO")
+        for vale in self.vales():
+            for outra in (None, self.pix, self.dinheiro, credito):
+                with self.subTest(vale=vale.tipo, outra=getattr(outra, "tipo", None)):
+                    parcelas = [(vale, Decimal("25.00"))] if outra is None else [
+                        (vale, Decimal("10.00")), (outra, Decimal("15.00")),
+                    ]
+                    pagamentos = []
+                    confirmacoes = []
+                    for forma, valor in parcelas:
+                        confirmacao = None
+                        if forma != self.dinheiro:
+                            confirmacao = confirmar_parcela_teste(
+                                caixa=self.caixa, forma_pagamento=forma, valor=valor,
+                            )
+                            confirmacoes.append(confirmacao.pk)
+                        pagamentos.append({
+                            "forma_pagamento": forma, "valor": valor,
+                            "confirmacao_integracao_id": str(confirmacao.pk) if confirmacao else "",
+                        })
+                    venda = self.vender(pagamentos)
+                    gravados = list(venda.pagamentos.order_by("pk"))
+                    self.assertEqual([item.valor for item in gravados], [valor for _, valor in parcelas])
+                    self.assertEqual(
+                        [item.confirmacao_integracao_id for item in gravados if item.confirmacao_integracao_id],
+                        confirmacoes,
+                    )
+                    self.assertEqual(gravados[0].bandeira_cartao, "")
+                    self.assertEqual(gravados[0].codigo_autorizacao, "AUT-TESTE")
+
+    def test_vales_rejeitam_confirmacao_duplicada_consumida_ou_divergente(self):
+        for vale in self.vales():
+            with self.subTest(vale=vale.tipo):
+                confirmacao = confirmar_parcela_teste(
+                    caixa=self.caixa, forma_pagamento=vale, valor=Decimal("12.50"),
+                )
+                parcela = {
+                    "forma_pagamento": vale, "valor": Decimal("12.50"),
+                    "confirmacao_integracao_id": str(confirmacao.pk),
+                }
+                with self.assertRaisesMessage(ValidationError, "já utilizada"):
+                    self.vender([parcela, parcela.copy()])
+                with self.assertRaisesMessage(ValidationError, "não corresponde"):
+                    self.vender([{"forma_pagamento": vale, "valor": Decimal("25.00"),
+                                  "confirmacao_integracao_id": str(confirmacao.pk)}])
+                with self.assertRaisesMessage(ValidationError, "não corresponde"):
+                    self.vender([{"forma_pagamento": self.pix, "valor": Decimal("25.00"),
+                                  "confirmacao_integracao_id": str(confirmacao.pk)}])
+                confirmacao_total = confirmar_parcela_teste(
+                    caixa=self.caixa, forma_pagamento=vale, valor=Decimal("25.00"),
+                )
+                self.vender([{"forma_pagamento": vale, "valor": Decimal("25.00"),
+                             "confirmacao_integracao_id": str(confirmacao_total.pk)}])
+                with self.assertRaisesMessage(ValidationError, "já utilizada"):
+                    self.vender([{"forma_pagamento": vale, "valor": Decimal("25.00"),
+                                  "confirmacao_integracao_id": str(confirmacao_total.pk)}])
+                with self.assertRaises(ValidationError):
+                    confirmar_parcela_teste(
+                        caixa=self.caixa, forma_pagamento=vale, valor=Decimal("25.00"),
+                        transacao_externa_id=confirmacao_total.transacao_externa_id,
+                    )
+
+    def test_vales_rejeitam_outro_caixa_filial_e_metadados_adulterados(self):
+        from apps.empresas.models import Empresa, Filial
+
+        outra_empresa = Empresa.objects.create(razao_social="Outra", nome_fantasia="Outra", cnpj="22222222000122")
+        outra_filial = Filial.objects.create(empresa=outra_empresa, nome="Outra", cnpj=outra_empresa.cnpj)
+        outro_caixa = Caixa.objects.create(filial=self.filial, usuario_abertura=self.usuario, valor_inicial=0)
+        caixa_outra_filial = Caixa.objects.create(filial=outra_filial, usuario_abertura=self.usuario, valor_inicial=0)
+        for vale in self.vales():
+            with self.subTest(vale=vale.tipo):
+                for caixa in (outro_caixa, caixa_outra_filial):
+                    confirmacao = confirmar_parcela_teste(
+                        caixa=caixa, forma_pagamento=vale, valor=Decimal("25.00"),
+                    )
+                    with self.assertRaisesMessage(ValidationError, "não corresponde"):
+                        self.vender([{"forma_pagamento": vale, "valor": Decimal("25.00"),
+                                      "confirmacao_integracao_id": str(confirmacao.pk)}])
+                confirmacao = confirmar_parcela_teste(
+                    caixa=self.caixa, forma_pagamento=vale, valor=Decimal("25.00"),
+                )
+                pagamento = self.vender([{
+                    "forma_pagamento": vale, "valor": Decimal("25.00"),
+                    "confirmacao_integracao_id": str(confirmacao.pk),
+                    "codigo_autorizacao": "AUT-DIGITADA", "bandeira_cartao": "01",
+                }]).pagamentos.get()
+                self.assertEqual(pagamento.codigo_autorizacao, "AUT-TESTE")
+                self.assertEqual(pagamento.bandeira_cartao, "")
+                for campo, valor in (
+                    ("codigo_autorizacao", "AUT-ALTERADA"), ("nsu", "NSU-ALTERADO"),
+                    ("cnpj_instituicao_pagamento", "00000000000000"),
+                    ("bandeira_cartao", "01"),
+                    ("cnpj_beneficiario_pagamento", "00000000000000"),
+                    ("identificador_terminal_pagamento", "OUTRO"),
+                ):
+                    setattr(pagamento, campo, valor)
+                    with self.subTest(campo=campo), self.assertRaisesMessage(ValidationError, "divergem"):
+                        _adicionar_integracao_pagamento_nfce(
+                            ET.Element("detPag"), pagamento, "10" if vale.tipo == "VALE_ALIMENTACAO" else "11",
+                            uf_emitente="GO",
+                        )
+                    pagamento.refresh_from_db()
+
+    def test_vale_sem_confirmacao_nao_aceita_dados_digitados_ou_simulador(self):
+        for vale in self.vales():
+            with self.subTest(vale=vale.tipo), self.assertRaisesMessage(
+                ValidationError, "confirmação confiável",
+            ):
+                self.vender([{
+                    "forma_pagamento": vale, "valor": Decimal("25.00"),
+                    "tipo_integracao": "1", "codigo_autorizacao": "AUT-DIGITADA",
+                    "nsu": "NSU-DIGITADO", "transacao_externa_id": "E2E-DIGITADO",
+                }])
+            pagamento = self.vender([{"forma_pagamento": vale, "valor": Decimal("25.00")}]).pagamentos.get()
+            pagamento.tipo_integracao = "2"
+            with self.assertRaisesMessage(ValidationError, "confirmação confiável"):
+                _adicionar_integracao_pagamento_nfce(
+                    ET.Element("detPag"), pagamento,
+                    "10" if vale.tipo == "VALE_ALIMENTACAO" else "11", uf_emitente="GO",
+                )
+
+    def test_vale_preserva_bandeira_somente_quando_confirmada_pelo_verificador(self):
+        vale = self.vales()[0]
+        confirmacao = confirmar_parcela_teste(
+            caixa=self.caixa, forma_pagamento=vale, valor=Decimal("25.00"),
+            bandeira_cartao="01",
+        )
+        pagamento = self.vender([{
+            "forma_pagamento": vale, "valor": Decimal("25.00"),
+            "confirmacao_integracao_id": str(confirmacao.pk),
+        }]).pagamentos.get()
+        self.assertEqual(pagamento.bandeira_cartao, "01")
+        det = ET.Element("detPag")
+        _adicionar_integracao_pagamento_nfce(det, pagamento, "10", uf_emitente="GO")
+        self.assertEqual(det.findtext(f"{{{NFE_NS}}}card/{{{NFE_NS}}}tBand"), "01")
 
     def test_nao_existe_verificador_habilitado_por_padrao(self):
         with self.assertRaisesMessage(ValidationError, "sem verificador"):
