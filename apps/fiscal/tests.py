@@ -1201,6 +1201,36 @@ class FiscalTests(TestCase):
         self.assertEqual(diagnostico["parcelas"], 2)
         self.assertFalse(diagnostico["homologacao_real"])
 
+    def test_nfce_ipi_nao_tributado_confronta_xsd_e_canais_offline(self):
+        from .diagnostico_pagamentos_xsd import diagnosticar_nfce_pagamentos_xsd_offline
+
+        self.produto.cst_ipi = "53"
+        self.produto.codigo_enquadramento_ipi = "999"
+        self.produto.save(update_fields=["cst_ipi", "codigo_enquadramento_ipi"])
+        documento = self._preparar_nfce_com_credito_e_pix()
+        self.assertIn("<IPI><cEnq>999</cEnq><IPINT><CST>53</CST></IPINT></IPI>", documento.xml_conteudo)
+        assinar_xml_documento(documento)
+        diagnostico = diagnosticar_nfce_pagamentos_xsd_offline(documento.xml_conteudo)
+        self.assertTrue(diagnostico["conforme_offline"], diagnostico)
+        self.assertFalse(diagnostico["homologacao_real"])
+
+    def test_nfce_ipi_tributado_incluso_no_preco_confronta_xsd_offline(self):
+        from .diagnostico_pagamentos_xsd import diagnosticar_nfce_pagamentos_xsd_offline
+
+        self.natureza.ipi_incluso_preco = True
+        self.natureza.save(update_fields=["ipi_incluso_preco"])
+        self.produto.cst_ipi = "50"
+        self.produto.codigo_enquadramento_ipi = "999"
+        self.produto.aliquota_ipi = Decimal("10.0000")
+        self.produto.save(update_fields=["cst_ipi", "codigo_enquadramento_ipi", "aliquota_ipi"])
+        documento = self._preparar_nfce_com_credito_e_pix()
+        self.assertIn("<IPITrib><CST>50</CST>", documento.xml_conteudo)
+        self.assertIn("<vNF>82.70</vNF>", documento.xml_conteudo)
+        assinar_xml_documento(documento)
+        diagnostico = diagnosticar_nfce_pagamentos_xsd_offline(documento.xml_conteudo)
+        self.assertTrue(diagnostico["conforme_offline"], diagnostico)
+        self.assertFalse(diagnostico["homologacao_real"])
+
     def test_nfce_bloqueia_pagamento_eletronico_sem_tipo_integracao(self):
         self._endereco_go_teste()
         endpoints = endpoints_nfce_uf("GO", AmbienteFiscal.HOMOLOGACAO)

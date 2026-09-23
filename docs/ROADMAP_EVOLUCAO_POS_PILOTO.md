@@ -1197,6 +1197,12 @@ controlada de schema, validação Focus, homologação SEFAZ-GO e aceite de prod
 - [x] Confrontar PIS/COFINS de outras operações (CST 49,
   `PISOutr`/`COFINSOutr`) no mesmo fluxo. Quatro testes XSD focados passaram,
   incluindo a regressão de crédito + PIX; nenhuma rede fiscal foi usada.
+- [x] Acrescentar IPI não tributado (CST 53, `IPINT`) ao confronto XSD offline
+  com crédito + PIX divididos; teste focado aprovado. A CI PostgreSQL do
+  commit `d29c0c2` passou.
+- [x] Confrontar também IPI tributado (CST 50, `IPITrib`) com política explícita
+  de imposto incluso no preço, sem alterar o total pago. Os dois testes IPI
+  focados passaram com assinatura e paridade offline dos canais.
 - [ ] Prosseguir em blocos pequenos com outras variantes tributárias e formas
   já suportadas, sem promover o schema nem declarar homologação real.
 
