@@ -1103,9 +1103,9 @@ históricos nem ativou Focus, SEFAZ, credenciais reais ou produção.
 - [x] Criar migration aditiva `vendas.0014_confirmacao_integracao_pagamento`, sem
   exclusões ou backfill de evidências; incluir os testes de integridade e concorrência
   de confirmação no workflow PostgreSQL.
-- [ ] Próximo bloco interno seguro: validar offline o XML completo com parcelas de
-  cartão/PIX/divididas contra o pacote XSD oficial arquivado, registrar incompatibilidades
-  e evidências por canal, sem promover schema operacional nem declarar homologação.
+- [x] Bloco interno executado no ciclo 159: confronto offline do XML completo com
+  cartão/PIX divididos contra o XSD 010f arquivado, com assinatura sintética e
+  evidências independentes de Focus e SEFAZ direta. Ver diagnóstico específico.
 
 Pendências externas: implementar o verificador real com autenticação e escopo do
 estabelecimento/terminal, ligar o bridge ao registro do servidor, obter respostas oficiais
@@ -1122,6 +1122,34 @@ das fixtures e diff check aprovados. Migration 0014 aplicada ao SQLite local, se
 de `migrate --check` sem pendências; nenhum dado demonstrativo foi removido.
 O workflow PostgreSQL executará também as novas constraints e a corrida de consumo
 único no push deste ciclo; o resultado hospedado será informado no encerramento.
+
+## Ponto de retomada — ciclo 159, 23/09/2026
+
+Confronto offline documentado em
+`docs/DIAGNOSTICO_NFCE_PAGAMENTOS_XSD_010F.md`. O cenário sintético com crédito e
+PIX em parcelas separadas passou no XSD completo **após assinatura de teste**;
+Focus e SEFAZ direta preservaram os campos fiscais de cada parcela em seus artefatos
+locais. Adulteração da autorização invalidou a assinatura, e bandeira inválida
+falhou no XSD. Cada canal apresentou falha independente nos ensaios negativos.
+
+- [x] Auditar hash/estrutura do pacote arquivado antes de compilar o XSD somente em
+  diretório temporário; não instalar nem promover o schema candidato.
+- [x] Corrigir `PIS/PISAliq|PISNT|PISOutr` e `COFINS/COFINSAliq|COFINSNT|COFINSOutr`
+  no XML. O erro impedia a conformidade XSD e a leitura desses grupos pela Focus.
+- [x] Gerar `enderEmit` na NFC-e a partir do endereço **estruturado e completo** da
+  filial; nenhum endereço é fabricado quando os dados estão ausentes.
+- [x] Registrar diagnóstico sanitizado com estado e hash do XML/XSD e projeções
+  separadas de Focus e SEFAZ direta; nenhuma rede fiscal foi usada.
+- [ ] Próximo passo interno seguro: impedir preparação/transmissão da NFC-e GO com
+  cadastro do emitente incompleto e conferir a exigência em ambos os canais;
+  depois ampliar o confronto XSD a variantes tributárias e pagamentos suportados.
+
+Pendências externas preservadas: endereço real da filial, driver/retorno autenticado
+da adquirente, equipamento físico, aprovação do schema, validação da Focus e
+homologação SEFAZ-GO. O ensaio sintético não libera produção. Migrações: nenhuma.
+Verificações: 4 testes focados aprovados; regressão fiscal, vendas e PDV com 793 testes
+(7 ignorados por dependerem de PostgreSQL); teste final do envelope integral aprovado.
+Django check, migrations check, auditoria de fixtures e diff check aprovados.
 
 ## Ponto de retomada — ciclo 143, 18/09/2026
 

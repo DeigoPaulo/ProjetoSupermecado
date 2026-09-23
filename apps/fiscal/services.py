@@ -387,6 +387,31 @@ def _documento_consumidor_nfce(venda):
     raise ValidationError("Documento do consumidor inválido para NFC-e.")
 
 
+def _endereco_emitente_nfce(emit, filial):
+    """Usa somente endereço estruturado da filial; ausência fica visível no XSD."""
+    obrigatorios = (
+        filial.logradouro, filial.numero, filial.bairro, filial.codigo_municipio_ibge,
+        filial.municipio, filial.uf,
+    )
+    if not all(str(valor or "").strip() for valor in obrigatorios):
+        return
+    endereco = ET.SubElement(emit, f"{{{NFE_NS}}}enderEmit")
+    _texto(endereco, "xLgr", filial.logradouro.strip()[:60])
+    _texto(endereco, "nro", filial.numero.strip()[:60])
+    if filial.complemento.strip():
+        _texto(endereco, "xCpl", filial.complemento.strip()[:60])
+    _texto(endereco, "xBairro", filial.bairro.strip()[:60])
+    _texto(endereco, "cMun", filial.codigo_municipio_ibge.strip())
+    _texto(endereco, "xMun", filial.municipio.strip()[:60])
+    _texto(endereco, "UF", filial.uf.strip())
+    if filial.cep.strip():
+        _texto(endereco, "CEP", _somente_digitos(filial.cep))
+    _texto(endereco, "cPais", "1058")
+    _texto(endereco, "xPais", "BRASIL")
+    if filial.telefone.strip():
+        _texto(endereco, "fone", _somente_digitos(filial.telefone)[:14])
+
+
 CENTAVO = Decimal("0.01")
 
 
@@ -695,8 +720,9 @@ def _pendencias_contribuicoes_produto(produto):
     return pendencias
 
 def _contribuicao_produto(imposto, *, nome, cst, aliquota, valor_operacao):
+    container = ET.SubElement(imposto, f"{{{NFE_NS}}}{nome}")
     if cst in CST_CONTRIBUICAO_ALIQUOTA:
-        grupo = ET.SubElement(imposto, f"{{{NFE_NS}}}{nome}Aliq")
+        grupo = ET.SubElement(container, f"{{{NFE_NS}}}{nome}Aliq")
         base = _moeda(valor_operacao)
         percentual = Decimal(aliquota or 0)
         valor = _moeda(base * percentual / Decimal("100"))
@@ -706,11 +732,11 @@ def _contribuicao_produto(imposto, *, nome, cst, aliquota, valor_operacao):
         _texto(grupo, f"v{nome}", _valor(valor))
         return valor
     if cst in CST_CONTRIBUICAO_NAO_TRIBUTADA:
-        grupo = ET.SubElement(imposto, f"{{{NFE_NS}}}{nome}NT")
+        grupo = ET.SubElement(container, f"{{{NFE_NS}}}{nome}NT")
         _texto(grupo, "CST", cst)
         return Decimal("0.00")
     if cst in CST_CONTRIBUICAO_OUTRAS:
-        grupo = ET.SubElement(imposto, f"{{{NFE_NS}}}{nome}Outr")
+        grupo = ET.SubElement(container, f"{{{NFE_NS}}}{nome}Outr")
         base = _moeda(valor_operacao)
         percentual = Decimal(aliquota or 0)
         valor = _moeda(base * percentual / Decimal("100"))
@@ -933,6 +959,7 @@ def gerar_xml_nfce(documento):
     _texto(emit, "CNPJ", cnpj_emitente)
     _texto(emit, "xNome", empresa.razao_social[:60])
     _texto(emit, "xFant", empresa.nome_fantasia[:60])
+    _endereco_emitente_nfce(emit, venda.filial)
     _texto(emit, "IE", configuracao.inscricao_estadual)
     _texto(emit, "CRT", _crt_configuracao(configuracao))
 

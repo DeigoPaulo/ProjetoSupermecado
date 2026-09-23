@@ -914,10 +914,17 @@ class FiscalTests(TestCase):
         self.assertContains(response, self.produto.nome)
         self.assertContains(response, "Pronto")
 
-    def test_nfce_serializa_vinculo_fiscal_por_parcela_de_cartao_e_pix(self):
+    def _preparar_nfce_com_credito_e_pix(self):
         self.filial.uf = "GO"
         self.filial.codigo_municipio_ibge = "5208707"
-        self.filial.save(update_fields=["uf", "codigo_municipio_ibge"])
+        self.filial.logradouro = "Rua Teste"
+        self.filial.numero = "100"
+        self.filial.bairro = "Centro"
+        self.filial.municipio = "Goiania"
+        self.filial.cep = "74000000"
+        self.filial.save(update_fields=[
+            "uf", "codigo_municipio_ibge", "logradouro", "numero", "bairro", "municipio", "cep",
+        ])
         endpoints = endpoints_nfce_uf("GO", AmbienteFiscal.HOMOLOGACAO)
         self.configuracao.url_qrcode_nfce = endpoints["qrcode"]
         self.configuracao.url_consulta_nfce = endpoints["consulta"]
@@ -966,6 +973,11 @@ class FiscalTests(TestCase):
 
         documento = preparar_documento_venda(self.venda, self.user)
 
+        return documento
+
+    def test_nfce_serializa_vinculo_fiscal_por_parcela_de_cartao_e_pix(self):
+        documento = self._preparar_nfce_com_credito_e_pix()
+
         self.assertIn(
             "<tPag>03</tPag><vPag>50.00</vPag><card><tpIntegra>1</tpIntegra>"
             "<CNPJ>12ABC34501DE35</CNPJ><tBand>01</tBand>"
@@ -991,6 +1003,62 @@ class FiscalTests(TestCase):
         documento.xml_conteudo = original.replace("AUT-CREDITO-1", "AUT-FORJADA")
         with self.assertRaisesMessage(ValidationError, "Vínculo fiscal do XML diverge"):
             validar_xml_pre_transmissao(documento, FakeSefazAdapter())
+
+    def test_nfce_com_credito_pix_e_divisao_confronta_xsd_arquivado_e_canais(self):
+        from .diagnostico_pagamentos_xsd import diagnosticar_nfce_pagamentos_xsd_offline
+
+        documento = self._preparar_nfce_com_credito_e_pix()
+        sem_assinatura = diagnosticar_nfce_pagamentos_xsd_offline(documento.xml_conteudo)
+        self.assertFalse(sem_assinatura["xsd"]["conforme"])
+        self.assertFalse(sem_assinatura["assinatura"]["conforme"])
+        self.assertTrue(sem_assinatura["focus"]["conforme"])
+        self.assertTrue(sem_assinatura["sefaz_direta"]["conforme"])
+
+        assinar_xml_documento(documento)
+        diagnostico = diagnosticar_nfce_pagamentos_xsd_offline(documento.xml_conteudo)
+
+        self.assertEqual(diagnostico["parcelas"], 2)
+        self.assertEqual(diagnostico["focus"]["parcelas"], 2)
+        self.assertEqual(diagnostico["sefaz_direta"]["parcelas"], 2)
+        self.assertTrue(diagnostico["conforme_offline"], diagnostico)
+        self.assertTrue(diagnostico["assinatura"]["conforme"])
+        self.assertFalse(diagnostico["homologacao_real"])
+        self.assertFalse(diagnostico["promocao_schema"])
+        self.assertEqual(diagnostico["projecao_xml_sha256"], diagnostico["focus"]["projecao_sha256"])
+        self.assertEqual(diagnostico["projecao_xml_sha256"], diagnostico["sefaz_direta"]["projecao_sha256"])
+        self.assertTrue(diagnostico["sefaz_direta"]["xml_integral_preservado"])
+        from .focus_sefaz_adapter import FocusNFeSefazAdapter
+
+        payload_focus, _ = FocusNFeSefazAdapter()._payload_xml(documento.xml_conteudo)
+        self.assertEqual(payload_focus["items"][0]["pis_situacao_tributaria"], "01")
+        self.assertEqual(payload_focus["items"][0]["cofins_situacao_tributaria"], "01")
+
+        xml_alterado = documento.xml_conteudo.replace(
+            "<cAut>AUT-CREDITO-1</cAut>", "<cAut>AUT-ALTERADA</cAut>", 1,
+        )
+        alterado = diagnosticar_nfce_pagamentos_xsd_offline(xml_alterado)
+        self.assertTrue(alterado["xsd"]["conforme"])
+        self.assertFalse(alterado["assinatura"]["conforme"])
+        self.assertFalse(alterado["conforme_offline"])
+
+        xml_bandeira_invalida = documento.xml_conteudo.replace(
+            "<tBand>01</tBand>", "<tBand>XX</tBand>", 1,
+        )
+        bandeira_invalida = diagnosticar_nfce_pagamentos_xsd_offline(xml_bandeira_invalida)
+        self.assertFalse(bandeira_invalida["xsd"]["conforme"])
+        self.assertFalse(bandeira_invalida["conforme_offline"])
+
+        with patch("apps.fiscal.diagnostico_pagamentos_xsd.FocusNFeSefazAdapter._payload_xml", return_value=({"formas_pagamento": []}, "65")):
+            focus_divergente = diagnosticar_nfce_pagamentos_xsd_offline(documento.xml_conteudo)
+        self.assertTrue(focus_divergente["xsd"]["conforme"])
+        self.assertFalse(focus_divergente["focus"]["conforme"])
+        self.assertTrue(focus_divergente["sefaz_direta"]["conforme"])
+
+        with patch("apps.fiscal.diagnostico_pagamentos_xsd.SefazDiretaAdapter._envelope", return_value=b"<Envelope />"):
+            direta_divergente = diagnosticar_nfce_pagamentos_xsd_offline(documento.xml_conteudo)
+        self.assertTrue(direta_divergente["xsd"]["conforme"])
+        self.assertTrue(direta_divergente["focus"]["conforme"])
+        self.assertFalse(direta_divergente["sefaz_direta"]["conforme"])
 
     def test_nfce_bloqueia_pagamento_eletronico_sem_tipo_integracao(self):
         self.filial.uf = "GO"
@@ -1177,10 +1245,10 @@ class FiscalTests(TestCase):
     def test_pis_cofins_calculam_item_e_totais(self):
         documento = preparar_documento_venda(self.venda, self.user)
 
-        self.assertIn("<PISAliq>", documento.xml_conteudo)
+        self.assertIn("<PIS><PISAliq>", documento.xml_conteudo)
         self.assertIn("<pPIS>1.6500</pPIS>", documento.xml_conteudo)
         self.assertIn("<vPIS>1.36</vPIS>", documento.xml_conteudo)
-        self.assertIn("<COFINSAliq>", documento.xml_conteudo)
+        self.assertIn("<COFINS><COFINSAliq>", documento.xml_conteudo)
         self.assertIn("<pCOFINS>7.6000</pCOFINS>", documento.xml_conteudo)
         self.assertIn("<vCOFINS>6.29</vCOFINS>", documento.xml_conteudo)
 
@@ -1204,8 +1272,8 @@ class FiscalTests(TestCase):
 
         documento = preparar_documento_venda(self.venda, self.user)
 
-        self.assertIn("<PISNT><CST>06</CST></PISNT>", documento.xml_conteudo)
-        self.assertIn("<COFINSNT><CST>06</CST></COFINSNT>", documento.xml_conteudo)
+        self.assertIn("<PIS><PISNT><CST>06</CST></PISNT></PIS>", documento.xml_conteudo)
+        self.assertIn("<COFINS><COFINSNT><CST>06</CST></COFINSNT></COFINS>", documento.xml_conteudo)
         self.assertIn("<IPI><cEnq>999</cEnq><IPINT><CST>53</CST></IPINT></IPI>", documento.xml_conteudo)
     def test_ipi_tributado_exige_politica_explicita_na_natureza(self):
         self.produto.cst_ipi = "50"
