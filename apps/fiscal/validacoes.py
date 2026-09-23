@@ -111,7 +111,39 @@ def validar_xml_pre_transmissao(documento, adapter):
     if inf_nfe.findtext(f"{{{NFE_NS}}}ide/{{{NFE_NS}}}cDV") != chave[-1]:
         raise ValidationError("Digito verificador do XML não corresponde a chave de acesso.")
 
-    from .services import validar_vinculos_pagamentos_xml
+    from .services import pendencias_endereco_emitente_nfce, validar_vinculos_pagamentos_xml
+
+    if documento.tipo_documento == TipoDocumentoFiscal.NFCE and (
+        documento.filial.uf == "GO"
+        or chave.startswith("52")
+        or inf_nfe.findtext(f"{{{NFE_NS}}}ide/{{{NFE_NS}}}cUF") == "52"
+    ):
+        if documento.filial.uf != "GO":
+            raise ValidationError("UF da filial diverge da NFC-e GO salva; corrija o cadastro e regenere/assine.")
+        if chave[:2] != "52" or inf_nfe.findtext(f"{{{NFE_NS}}}ide/{{{NFE_NS}}}cUF") != "52":
+            raise ValidationError("Código da UF na chave/XML diverge do emitente GO.")
+        pendencias = pendencias_endereco_emitente_nfce(documento.filial)
+        if pendencias:
+            raise ValidationError(pendencias)
+        endereco = inf_nfe.find(f"{{{NFE_NS}}}emit/{{{NFE_NS}}}enderEmit")
+        if endereco is None:
+            raise ValidationError(
+                "XML antigo sem endereço fiscal do emitente GO: corrija o cadastro e regenere/assine a NFC-e."
+            )
+        campos = (
+            ("xLgr", documento.filial.logradouro.strip()[:60]),
+            ("nro", documento.filial.numero.strip()[:60]),
+            ("xBairro", documento.filial.bairro.strip()[:60]),
+            ("cMun", documento.filial.codigo_municipio_ibge.strip()),
+            ("xMun", documento.filial.municipio.strip()[:60]),
+            ("UF", documento.filial.uf.strip()),
+        )
+        if any(endereco.findtext(f"{{{NFE_NS}}}{tag}") != valor for tag, valor in campos):
+            raise ValidationError(
+                "Endereço fiscal do emitente diverge do XML salvo: regenere e assine a NFC-e."
+            )
+        if inf_nfe.findtext(f"{{{NFE_NS}}}ide/{{{NFE_NS}}}cMunFG") != documento.filial.codigo_municipio_ibge.strip():
+            raise ValidationError("Município do fato gerador diverge do cadastro da filial.")
 
     validar_vinculos_pagamentos_xml(documento, inf_nfe)
 

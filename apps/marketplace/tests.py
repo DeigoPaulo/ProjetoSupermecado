@@ -11,7 +11,7 @@ from apps.auditoria.models import LogAuditoria
 from apps.clientes.models import Cliente
 from apps.empresas.models import Empresa, Filial
 from apps.estoque.models import Estoque
-from apps.fiscal.models import AmbienteFiscal, ConfiguracaoFiscal, DocumentoFiscal, NaturezaOperacao, ProvedorEmissaoFiscal, SerieFiscal, StatusDocumentoFiscal, TipoDocumentoFiscal
+from apps.fiscal.models import AmbienteFiscal, ConfiguracaoFiscal, DocumentoFiscal, NaturezaOperacao, ParametrizacaoBeneficioFiscalProduto, ProvedorEmissaoFiscal, SerieFiscal, SituacaoBeneficioFiscalICMS, StatusDocumentoFiscal, TipoDocumentoFiscal
 from apps.fiscal.services import ativar_contingencia_svc, preparar_documento_pedido_online, transmitir_documento_sefaz
 from apps.fiscal.test_support_identidades_fiscais import obter_identidade_fiscal_teste
 from apps.produtos.models import Categoria, Produto
@@ -689,11 +689,17 @@ class FluxoPedidoOnlineTests(TestCase):
             serie=55,
             proximo_numero=200,
         )
-        NaturezaOperacao.objects.create(
+        natureza = NaturezaOperacao.objects.create(
             empresa=self.filial.empresa,
             descricao="Venda online de mercadorias",
             cfop="5102",
             tipo_documento=TipoDocumentoFiscal.NFE,
+        )
+        ParametrizacaoBeneficioFiscalProduto.objects.create(
+            produto=self.produto,
+            natureza_operacao=natureza,
+            situacao=SituacaoBeneficioFiscalICMS.SEM_BENEFICIO,
+            atualizado_por=self.usuario,
         )
         self.pedido.documento_cliente_tipo = TipoDocumentoConsumidor.CNPJ
         self.pedido.documento_cliente = "12345678000195"

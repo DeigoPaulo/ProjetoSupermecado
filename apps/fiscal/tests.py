@@ -6,6 +6,7 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from unittest.mock import patch
 from decimal import Decimal
+from xml.etree import ElementTree as ET
 
 from django.contrib.auth import get_user_model
 from django.core.exceptions import ImproperlyConfigured, ValidationError
@@ -79,6 +80,7 @@ from .services_dfe import (
     registrar_xml_dfe_recebido,
 )
 from .services import (
+    NFE_NS,
     _codigo_pagamento,
     ativar_contingencia_offline,
     cancelar_documento,
@@ -438,6 +440,17 @@ class FiscalTests(TestCase):
             produto=self.produto, natureza_operacao=self.natureza,
             situacao=SituacaoBeneficioFiscalICMS.SEM_BENEFICIO, atualizado_por=self.user,
         )
+
+    def _endereco_go_teste(self):
+        self.filial.uf = "GO"
+        self.filial.codigo_municipio_ibge = "5208707"
+        self.filial.municipio = "Goiania"
+        self.filial.logradouro = "Rua Teste"
+        self.filial.numero = "100"
+        self.filial.bairro = "Centro"
+        self.filial.save(update_fields=[
+            "uf", "codigo_municipio_ibge", "municipio", "logradouro", "numero", "bairro",
+        ])
 
     def test_beneficio_indefinido_bloqueia_emissao_go_regime_normal(self):
         self.filial.uf = "GO"
@@ -975,6 +988,87 @@ class FiscalTests(TestCase):
 
         return documento
 
+    def test_nfce_go_exige_endereco_estruturado_antes_de_preparar(self):
+        self._endereco_go_teste()
+        endpoints = endpoints_nfce_uf("GO", AmbienteFiscal.HOMOLOGACAO)
+        self.configuracao.url_qrcode_nfce = endpoints["qrcode"]
+        self.configuracao.url_consulta_nfce = endpoints["consulta"]
+        self.configuracao.save(update_fields=["url_qrcode_nfce", "url_consulta_nfce"])
+        campos = (
+            ("logradouro", "", "logradouro"),
+            ("numero", "", "número"),
+            ("bairro", "", "bairro"),
+            ("codigo_municipio_ibge", "123", "7 dígitos"),
+            ("codigo_municipio_ibge", "3550308", "Goiás"),
+            ("municipio", "", "município"),
+            ("cep", "CEP-INVALIDO", "CEP do emitente"),
+            ("telefone", "12", "telefone do emitente"),
+        )
+        for campo, valor, mensagem in campos:
+            original = getattr(self.filial, campo)
+            setattr(self.filial, campo, valor)
+            self.filial.save(update_fields=[campo])
+            with self.subTest(campo=campo, valor=valor), self.assertRaisesMessage(
+                ValidationError, mensagem
+            ):
+                preparar_documento_venda(self.venda, self.user)
+            self.assertFalse(self.venda.documentos_fiscais.exists())
+            setattr(self.filial, campo, original)
+            self.filial.save(update_fields=[campo])
+        documento = preparar_documento_venda(self.venda, self.user)
+        self.assertIn("<enderEmit>", documento.xml_conteudo)
+        self.assertIn("<cMun>5208707</cMun>", documento.xml_conteudo)
+
+    def test_nfce_go_xml_legado_sem_endereco_ou_cadastro_alterado_nao_passa_pre_envio(self):
+        from .validacoes import validar_xml_pre_transmissao
+
+        documento = self._preparar_nfce_com_credito_e_pix()
+        xml_original = documento.xml_conteudo
+        raiz = ET.fromstring(xml_original)
+        emit = raiz.find(f"{{{NFE_NS}}}infNFe/{{{NFE_NS}}}emit")
+        emit.remove(emit.find(f"{{{NFE_NS}}}enderEmit"))
+        documento.xml_conteudo = ET.tostring(raiz, encoding="unicode")
+        with self.assertRaisesMessage(ValidationError, "XML antigo sem endereço fiscal"):
+            validar_xml_pre_transmissao(documento, FakeSefazAdapter())
+        documento.save(update_fields=["xml_conteudo"])
+        FakeSefazAdapter.last_request = None
+        with self.assertRaisesMessage(ValidationError, "XML antigo sem endereço fiscal"):
+            transmitir_documento_simulado(documento, self.user)
+        with patch("apps.fiscal.services.carregar_adaptador_sefaz", return_value=FakeSefazAdapter()):
+            with self.assertRaisesMessage(ValidationError, "XML antigo sem endereço fiscal"):
+                transmitir_documento_sefaz(documento, self.user)
+        self.assertIsNone(FakeSefazAdapter.last_request)
+        documento.xml_conteudo = xml_original
+        documento.save(update_fields=["xml_conteudo"])
+        documento.xml_conteudo = xml_original.replace("<cUF>52</cUF>", "<cUF>35</cUF>", 1)
+        with self.assertRaisesMessage(ValidationError, "Código da UF"):
+            validar_xml_pre_transmissao(documento, FakeSefazAdapter())
+        documento.xml_conteudo = xml_original
+        self.filial.logradouro = ""
+        self.filial.save(update_fields=["logradouro"])
+        documento.refresh_from_db()
+        with self.assertRaisesMessage(ValidationError, "logradouro"):
+            validar_xml_pre_transmissao(documento, FakeSefazAdapter())
+        self.filial.logradouro = "Rua Alterada"
+        self.filial.save(update_fields=["logradouro"])
+        documento.refresh_from_db()
+        with self.assertRaisesMessage(ValidationError, "diverge do XML salvo"):
+            validar_xml_pre_transmissao(documento, FakeSefazAdapter())
+
+    def test_nfce_go_xml_preparado_bloqueia_autorizacao_sintetica_no_banco(self):
+        from .validacoes import validar_xml_pre_transmissao
+
+        documento = self._preparar_nfce_com_credito_e_pix()
+        pagamento = documento.venda.pagamentos.order_by("pk").first()
+        pagamento.confirmacao_integracao = None
+        pagamento.transacao_externa_id = "TEF-SIM-LEGADO"
+        pagamento.codigo_autorizacao = "AUT-SIMULADA"
+        pagamento.save(update_fields=[
+            "confirmacao_integracao", "transacao_externa_id", "codigo_autorizacao",
+        ])
+        with self.assertRaisesMessage(ValidationError, "confirmação confiável"):
+            validar_xml_pre_transmissao(documento, FakeSefazAdapter())
+
     def test_nfce_serializa_vinculo_fiscal_por_parcela_de_cartao_e_pix(self):
         documento = self._preparar_nfce_com_credito_e_pix()
 
@@ -1061,9 +1155,7 @@ class FiscalTests(TestCase):
         self.assertFalse(direta_divergente["sefaz_direta"]["conforme"])
 
     def test_nfce_bloqueia_pagamento_eletronico_sem_tipo_integracao(self):
-        self.filial.uf = "GO"
-        self.filial.codigo_municipio_ibge = "5208707"
-        self.filial.save(update_fields=["uf", "codigo_municipio_ibge"])
+        self._endereco_go_teste()
         endpoints = endpoints_nfce_uf("GO", AmbienteFiscal.HOMOLOGACAO)
         self.configuracao.url_qrcode_nfce = endpoints["qrcode"]
         self.configuracao.url_consulta_nfce = endpoints["consulta"]
@@ -1105,9 +1197,7 @@ class FiscalTests(TestCase):
             preparar_documento_venda(self.venda, self.user)
 
     def test_nfce_go_bloqueia_integracao_sem_cnpj_autorizacao_ou_confirmacao(self):
-        self.filial.uf = "GO"
-        self.filial.codigo_municipio_ibge = "5208707"
-        self.filial.save(update_fields=["uf", "codigo_municipio_ibge"])
+        self._endereco_go_teste()
         endpoints = endpoints_nfce_uf("GO", AmbienteFiscal.HOMOLOGACAO)
         self.configuracao.url_qrcode_nfce = endpoints["qrcode"]
         self.configuracao.url_consulta_nfce = endpoints["consulta"]
@@ -1317,7 +1407,7 @@ class FiscalTests(TestCase):
         self.assertIn("<vBC>75.18</vBC>", documento.xml_conteudo)
 
     def test_cst20_aplica_reducao_fcp_cbenef_e_totais_em_goias(self):
-        self.filial.uf = "GO"
+        self._endereco_go_teste()
         self.filial.municipio = "Goiânia"
         self.filial.codigo_municipio_ibge = "5208707"
         self.filial.save(update_fields=["uf", "municipio", "codigo_municipio_ibge"])

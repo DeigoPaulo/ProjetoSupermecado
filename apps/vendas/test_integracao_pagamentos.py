@@ -143,7 +143,7 @@ class ConfirmacaoIntegracaoTests(TestCase):
     def test_resposta_incompleta_simulada_ou_divergente_nao_gera_confirmacao(self):
         for dados in (
             {"status": "PENDENTE"}, {"codigo_autorizacao": ""}, {"nsu": ""},
-            {"cnpj_instituicao_pagamento": ""}, {"tipo_integracao": "2"},
+            {"cnpj_instituicao_pagamento": ""}, {"tipo_integracao": "3"},
             {"transacao_externa_id": "TEF-SIM-123"}, {"bandeira_cartao": "01"},
             {"tipo_forma": "DEBITO"},
         ):
@@ -160,6 +160,51 @@ class ConfirmacaoIntegracaoTests(TestCase):
         pagamento.cnpj_instituicao_pagamento = "12ABC34501DE35"
         with self.assertRaisesMessage(ValidationError, "confirmação confiável"):
             _adicionar_integracao_pagamento_nfce(ET.Element("detPag"), pagamento, "17", uf_emitente="GO")
+
+    def test_autorizacao_sem_origem_confiavel_nao_vira_caut_com_tipo_2(self):
+        pagamento = self.vender([self.parcela(tipo_integracao="2")]).pagamentos.get()
+        self.assertIn("Autorização eletrônica simulada", pagamento.mensagem_processadora)
+        pagamento.tipo_integracao = "2"
+        for autorizacao in (
+            pagamento.codigo_autorizacao, pagamento.nsu,
+            pagamento.transacao_externa_id, "E2E-DIGITADO",
+        ):
+            pagamento.codigo_autorizacao = autorizacao
+            with self.subTest(autorizacao=autorizacao), self.assertRaisesMessage(
+                ValidationError, "confirmação confiável"
+            ):
+                _adicionar_integracao_pagamento_nfce(
+                    ET.Element("detPag"), pagamento, "17", uf_emitente="GO",
+                )
+
+    def test_tipo_2_com_autorizacao_confirmada_preserva_caut_e_revalida_paridade(self):
+        confirmacao = self.confirmar(tipo_integracao="2")
+        pagamento = self.vender([self.parcela(confirmacao)]).pagamentos.get()
+        self.assertEqual(pagamento.tipo_integracao, "2")
+        documento = SimpleNamespace(
+            tipo_documento=TipoDocumentoFiscal.NFCE, venda_id=pagamento.venda_id,
+            venda=pagamento.venda, filial=self.filial,
+        )
+        inf = ET.Element(f"{{{NFE_NS}}}infNFe")
+        pag = ET.SubElement(inf, f"{{{NFE_NS}}}pag")
+        det = ET.SubElement(pag, f"{{{NFE_NS}}}detPag")
+        ET.SubElement(det, f"{{{NFE_NS}}}tPag").text = "17"
+        ET.SubElement(det, f"{{{NFE_NS}}}vPag").text = "25.00"
+        _adicionar_integracao_pagamento_nfce(det, pagamento, "17", uf_emitente="GO")
+        self.assertEqual(det.findtext(f"{{{NFE_NS}}}card/{{{NFE_NS}}}tpIntegra"), "2")
+        self.assertEqual(det.findtext(f"{{{NFE_NS}}}card/{{{NFE_NS}}}cAut"), "AUT-TESTE")
+        validar_vinculos_pagamentos_xml(documento, inf)
+        for tag, valor in (("cAut", "ALTERADA"), ("tpIntegra", "1")):
+            elemento = det.find(f"{{{NFE_NS}}}card/{{{NFE_NS}}}{tag}")
+            original = elemento.text
+            elemento.text = valor
+            with self.subTest(tag=tag), self.assertRaisesMessage(ValidationError, "diverge"):
+                validar_vinculos_pagamentos_xml(documento, inf)
+            elemento.text = original
+        pagamento.codigo_autorizacao = "OUTRA"
+        pagamento.save(update_fields=["codigo_autorizacao"])
+        with self.assertRaisesMessage(ValidationError, "divergem"):
+            validar_vinculos_pagamentos_xml(documento, inf)
 
     def test_xml_bloqueia_adulteracao_posterior_inclusive_tentativa_de_downgrade(self):
         pagamento = self.vender([self.parcela(self.confirmar())]).pagamentos.get()

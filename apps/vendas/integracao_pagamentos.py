@@ -52,7 +52,7 @@ def confirmar_pagamento_no_servidor(*, provedor, referencia, caixa, forma_pagame
     if (
         forma_pagamento.tipo not in {"CARTAO", "CREDITO", "DEBITO", "PIX"}
         or dados.get("status") != StatusPagamento.CONFIRMADO
-        or dados.get("tipo_integracao") != "1"
+        or dados.get("tipo_integracao") not in {"1", "2"}
         or any(not str(dados.get(campo) or "").strip() for campo in (
             "transacao_externa_id", "nsu", "codigo_autorizacao", "cnpj_instituicao_pagamento",
         ))
@@ -110,6 +110,7 @@ def validar_origem_integracao_fiscal(pagamento):
         or confirmacao.forma_pagamento_id != pagamento.forma_pagamento_id
         or confirmacao.tipo_forma != pagamento.forma_pagamento.tipo
         or confirmacao.valor != pagamento.valor
+        or str(confirmacao.transacao_externa_id or "").startswith("TEF-SIM-")
         or any(getattr(pagamento, campo) != confirmacao.dados.get(campo) for campo in CAMPOS_CONFIRMADOS)
     ):
         raise ValidationError("Dados da parcela divergem da confirmação integrada do servidor.")

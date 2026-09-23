@@ -1151,6 +1151,42 @@ Verificações: 4 testes focados aprovados; regressão fiscal, vendas e PDV com 
 (7 ignorados por dependerem de PostgreSQL); teste final do envelope integral aprovado.
 Django check, migrations check, auditoria de fixtures e diff check aprovados.
 
+## Ponto de retomada — ciclo 160, 23/09/2026
+
+Fechado o preflight interno da NFC-e GO e a origem do código de autorização,
+sem migration, rede fiscal, credenciais reais ou liberação de produção.
+
+- [x] Preparação e geração do XML recusam endereço estruturado incompleto do
+  emitente GO (logradouro, número, bairro, município, UF e código IBGE de 7 dígitos
+  iniciado por 52); CEP e telefone opcionais também têm formato conferido
+  quando informados. Não há preenchimento presumido.
+- [x] Pré-envio compartilhado por Focus e SEFAZ direta recusa XML GO legado sem
+  `enderEmit`, cadastro alterado/divergente e UF incompatível na chave/XML. O
+  emissor simulado local aplica o mesmo preflight. A falha ocorre antes da
+  chamada ao adaptador; corrigir dados exige regenerar e assinar novamente.
+- [x] `cAut` exige confirmação vinculada ao pagamento e autenticada no servidor,
+  inclusive para `tpIntegra=2`. Valor do simulador, POST, legado, NSU, ID externo
+  ou E2E sem essa origem não é aceito como autorização fiscal. O verificador
+  operacional continua desligado; o verificador sintético existe só em testes.
+- [x] A paridade XML ↔ banco confere todas as parcelas sempre que houver `card`
+  ou metadados fiscais eletrônicos, não apenas `tpIntegra=1`. Testes cobrem
+  adulteração posterior de `cAut`, `tpIntegra`, endereço e dados persistidos.
+- [x] Mantido o diagnóstico XSD 010f offline para crédito + PIX dividido e a
+  projeção independente nos dois canais, sem promover o schema arquivado.
+- [ ] Próximo passo interno seguro: ampliar o confronto XSD offline às variantes
+  tributárias e demais formas de pagamento já suportadas, mantendo testes de
+  assinatura, paridade e falha independente por canal.
+
+Verificações locais: 798 testes fiscal/vendas/PDV, 7 ignorados por exigirem
+PostgreSQL; Django check, `makemigrations --check --dry-run`, `migrate --check`
+e `git diff --check` aprovados. A suíte local adicional revelou uma fixture
+antiga de NF-e GO sem classificação de benefício fiscal; ela foi completada
+somente no teste, e os 45 testes marketplace passaram. A CI PostgreSQL será
+conferida após o push.
+Pendências externas preservadas: endereço cadastral real, driver TEF/PIX e
+retorno autenticado de provedor/adquirente, equipamento físico, promoção
+controlada de schema, validação Focus, homologação SEFAZ-GO e aceite de produção.
+
 ## Ponto de retomada — ciclo 143, 18/09/2026
 
 Concluída a pendência P2 de parcelas/duplicatas da NF-e recebida, eliminando a perda da
@@ -2627,11 +2663,12 @@ Esta é uma frente complementar obrigatória antes da homologação real da NFC-
 - [x] Mapear as formas operacionais para `tPag` 03 (crédito), 04 (débito) e 17 (PIX), preservando o valor de cada parcela em `vPag`.
 - [x] Estruturar no cadastro/retorno do adaptador os dados fiscais ainda ausentes, incluindo tipo de integração, CNPJ da credenciadora ou instituição, bandeira quando aplicável, CNPJ do beneficiário e identificador do terminal, sem valores padrão.
 - [x] Serializar no XML da NFC-e GO o grupo condicional `card`, incluindo `tpIntegra`, `CNPJ`, `tBand`, `cAut`, `CNPJReceb` e `idTermPag` quando aplicáveis à parcela; a validação XSD operacional permanece pendente da promoção controlada do pacote oficial.
-- [ ] Alimentar `cAut` exclusivamente com a autorização confirmada pelo adaptador; não usar NSU, identificador externo ou texto digitado como substituto automático.
-- [ ] Tratar PIX dinâmico integrado conforme a estrutura vigente, sem inventar bandeira e sem assumir o grupo de cartão quando o XSD/regra aplicável determinar outra estrutura.
-- [ ] Impedir `tpIntegra=1` quando não houver integração real e bloquear emissão diante de dados obrigatórios ausentes ou contraditórios.
-- [ ] Fechar a paridade separadamente no conversor Focus e no XML transportado pela SEFAZ direta, garantindo que nenhum campo seja perdido ou reconstruído de forma divergente.
-- [ ] Criar testes de cartão, PIX, pagamento dividido e rejeições controladas, seguidos de homologação com TEF/adquirente e SEFAZ-GO reais.
+- [x] Internamente, alimentar `cAut` só com autorização da confirmação autenticada no servidor; NSU, identificador externo, E2E, simulador e texto digitado não a substituem. Driver real ainda pendente.
+- [x] Internamente, serializar PIX sem bandeira inventada e confrontar com o XSD 010f arquivado. Revisão de regra/schema vigente e homologação reais continuam externas.
+- [x] Impedir `tpIntegra=1` sem confirmação confiável no servidor e bloquear preparo/envio com dados obrigatórios ausentes ou contraditórios. `tpIntegra=2` não é proibido por presunção e também tem paridade verificada.
+- [x] Fechar a paridade estrutural offline separadamente no conversor Focus e no XML transportado pela SEFAZ direta, sem perder ou reconstruir campos.
+- [x] Testar offline cartão, PIX, pagamento dividido, XSD arquivado e rejeições controladas.
+- [ ] Homologar com driver/provedor TEF/PIX, equipamento e retorno reais; validar Focus se mantido como canal e SEFAZ-GO, antes de qualquer produção.
 
 Critério de aceite:
 

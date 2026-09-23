@@ -2,6 +2,7 @@ import re
 import uuid
 from datetime import timedelta
 from decimal import Decimal, ROUND_HALF_UP
+from types import SimpleNamespace
 from xml.etree import ElementTree as ET
 
 from django.conf import settings
@@ -246,9 +247,12 @@ def validar_vinculos_pagamentos_xml(documento, inf_nfe):
         "forma_pagamento", "confirmacao_integracao", "venda",
     ).order_by("pk"))
     possui_integracao = any(
-        item.findtext(f"{{{NFE_NS}}}card/{{{NFE_NS}}}tpIntegra") == "1"
-        for item in parcelas_xml
-    ) or any(p.tipo_integracao == "1" or p.confirmacao_integracao_id for p in pagamentos)
+        item.find(f"{{{NFE_NS}}}card") is not None for item in parcelas_xml
+    ) or any(
+        p.tipo_integracao or p.confirmacao_integracao_id
+        or (documento.filial.uf == "GO" and _codigo_pagamento(p.forma_pagamento.tipo) in PAGAMENTOS_ELETRONICOS_COM_VINCULO)
+        for p in pagamentos
+    )
     if not possui_integracao:
         return
     if len(parcelas_xml) != len(pagamentos):
@@ -344,9 +348,13 @@ def _adicionar_integracao_pagamento_nfce(
     if len(terminal) > 40:
         raise ValidationError("Identificador do terminal de pagamento excede 40 caracteres.")
 
-    if tipo_integracao == "1" and not pagamento.confirmacao_integracao_id:
-        validar_origem_integracao_fiscal(pagamento)
-
+    # cAut sem confirmação autenticada pode vir do POST, do legado ou do
+    # simulador, inclusive quando tpIntegra=2. O XSD não prova sua origem.
+    if autorizacao and not pagamento.confirmacao_integracao_id:
+        raise ValidationError(
+            "Código de autorização fiscal exige confirmação confiável no servidor; "
+            "não use autorização simulada, NSU, ID externo ou texto digitado."
+        )
     card = ET.SubElement(det_pag, f"{{{NFE_NS}}}card")
     _texto(card, "tpIntegra", tipo_integracao)
     if cnpj_instituicao:
@@ -410,6 +418,33 @@ def _endereco_emitente_nfce(emit, filial):
     _texto(endereco, "xPais", "BRASIL")
     if filial.telefone.strip():
         _texto(endereco, "fone", _somente_digitos(filial.telefone)[:14])
+
+
+def pendencias_endereco_emitente_nfce(filial):
+    """Preflight local GO: o cadastro deve fornecer o enderEmit, sem inferências."""
+    if filial.uf != "GO":
+        return []
+    campos = (
+        ("logradouro", filial.logradouro), ("número", filial.numero),
+        ("bairro", filial.bairro), ("código IBGE do município", filial.codigo_municipio_ibge),
+        ("município", filial.municipio), ("UF", filial.uf),
+    )
+    erros = [
+        f"Informe {nome} do endereço fiscal da filial para NFC-e GO."
+        for nome, valor in campos if not str(valor or "").strip()
+    ]
+    codigo = str(filial.codigo_municipio_ibge or "").strip()
+    if codigo and (not re.fullmatch(r"\d{7}", codigo) or not codigo.startswith("52")):
+        erros.append("O código IBGE do município da filial deve ter 7 dígitos e pertencer a Goiás (52).")
+    if not re.fullmatch(r"[A-Z]{2}", str(filial.uf or "")) or filial.uf != "GO":
+        erros.append("A UF do emitente da NFC-e GO deve ser GO.")
+    cep = str(filial.cep or "").strip()
+    if cep and not re.fullmatch(r"\d{5}-?\d{3}", cep):
+        erros.append("O CEP do emitente, quando informado, deve possuir 8 dígitos.")
+    telefone = str(filial.telefone or "").strip()
+    if telefone and not 6 <= len(_somente_digitos(telefone)) <= 14:
+        erros.append("O telefone do emitente, quando informado, deve possuir 6 a 14 dígitos.")
+    return erros
 
 
 CENTAVO = Decimal("0.01")
@@ -905,6 +940,9 @@ def gerar_xml_nfce(documento):
     if not documento.venda:
         raise ValidationError("Documento fiscal sem venda vinculada.")
     venda = documento.venda
+    pendencias_emitente = pendencias_endereco_emitente_nfce(venda.filial)
+    if pendencias_emitente:
+        raise ValidationError(pendencias_emitente)
     configuracao = venda.filial.configuracao_fiscal
     natureza = documento.natureza_operacao
     erros_cenario = pendencias_cenario_fiscal_go(
@@ -1331,6 +1369,7 @@ def salvar_xml_documento(documento):
 
 def pendencias_preparacao_fiscal(venda, configuracao, natureza):
     erros = _pendencias_emissao_ibs_cbs(configuracao)
+    erros.extend(pendencias_endereco_emitente_nfce(venda.filial))
     if not configuracao.inscricao_estadual.strip():
         erros.append("Informe a inscricao estadual da filial.")
     if not configuracao.regime_tributario.strip():
@@ -1836,6 +1875,11 @@ def transmitir_documento_simulado(documento, usuario, ip=None, reserva_token=Non
     token, gerenciada_pela_fila = _reserva_transmissao(documento, reserva_token)
     if not documento.xml_conteudo:
         salvar_xml_documento(documento)
+    # O emissor simulado não valida schema nem assina, mas não pode marcar como
+    # emitido um XML legado que os canais reais recusariam no preflight.
+    validar_xml_pre_transmissao(
+        documento, SimpleNamespace(assina_xml=True, valida_schema=True),
+    )
 
     if not normalizar_chave_acesso(documento.chave_acesso):
         raise ValidationError("Documento sem chave de acesso fiscal valida.")
