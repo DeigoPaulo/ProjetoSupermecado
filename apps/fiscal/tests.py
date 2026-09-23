@@ -953,6 +953,17 @@ class FiscalTests(TestCase):
             identificador_terminal_pagamento="PIX-CAIXA-01",
         )
 
+        from apps.vendas.integracao_pagamentos import CAMPOS_CONFIRMADOS
+        from apps.vendas.test_support_integracao import confirmar_parcela_teste
+
+        for pagamento in self.venda.pagamentos.all():
+            pagamento.confirmacao_integracao = confirmar_parcela_teste(
+                caixa=self.venda.caixa, forma_pagamento=pagamento.forma_pagamento,
+                valor=pagamento.valor,
+                **{campo: getattr(pagamento, campo) for campo in CAMPOS_CONFIRMADOS},
+            )
+            pagamento.save(update_fields=["confirmacao_integracao"])
+
         documento = preparar_documento_venda(self.venda, self.user)
 
         self.assertIn(
@@ -972,6 +983,14 @@ class FiscalTests(TestCase):
         self.assertNotIn("TX-CREDITO-1", documento.xml_conteudo)
         self.assertNotIn("NSU-CREDITO-1", documento.xml_conteudo)
         self.assertNotIn("E2E-PIX-1", documento.xml_conteudo)
+
+        from .validacoes import validar_xml_pre_transmissao
+
+        validar_xml_pre_transmissao(documento, FakeSefazAdapter())
+        original = documento.xml_conteudo
+        documento.xml_conteudo = original.replace("AUT-CREDITO-1", "AUT-FORJADA")
+        with self.assertRaisesMessage(ValidationError, "Vínculo fiscal do XML diverge"):
+            validar_xml_pre_transmissao(documento, FakeSefazAdapter())
 
     def test_nfce_bloqueia_pagamento_eletronico_sem_tipo_integracao(self):
         self.filial.uf = "GO"

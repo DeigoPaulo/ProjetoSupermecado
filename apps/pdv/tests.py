@@ -955,7 +955,7 @@ class AcessoPdvNuvemTests(TestCase):
         self.assertContains(resposta, "NSU")
         self.assertEqual(Venda.objects.count(), 0)
 
-    def test_pdv_finaliza_pagamento_eletronico_com_retorno_da_maquininha(self):
+    def test_pdv_bloqueia_declaracao_integrada_forjada_no_navegador(self):
         categoria = Categoria.objects.create(nome="Mercearia")
         produto = Produto.objects.create(codigo_barras="789100000022", nome="Leite", categoria=categoria, preco_custo=Decimal("4"), preco_venda=Decimal("7.50"))
         Estoque.objects.create(produto=produto, filial=self.filial, quantidade_atual=Decimal("10"))
@@ -991,16 +991,9 @@ class AcessoPdvNuvemTests(TestCase):
             follow=True,
         )
 
-        self.assertRedirects(resposta, "/pdv/")
-        venda = Venda.objects.get()
-        pagamento = venda.pagamentos.get()
-        self.assertEqual(pagamento.transacao_externa_id, "TEF-SIM-123")
-        self.assertEqual(pagamento.codigo_autorizacao, "ABC123")
-        self.assertEqual(pagamento.tipo_integracao, "1")
-        self.assertEqual(pagamento.cnpj_instituicao_pagamento, "12ABC34501DE35")
-        self.assertEqual(pagamento.bandeira_cartao, "01")
-        self.assertEqual(pagamento.cnpj_beneficiario_pagamento, "00ABC000000001")
-        self.assertEqual(pagamento.identificador_terminal_pagamento, "PINPAD-CAIXA-01")
+        self.assertContains(resposta, "confirmação confiável no servidor")
+        self.assertFalse(Venda.objects.exists())
+        self.assertEqual(Estoque.objects.get(produto=produto, filial=self.filial).quantidade_atual, Decimal("10"))
 
     def test_supervisor_confirma_estorno_eletronico_pendente(self):
         categoria = Categoria.objects.create(nome="Mercearia")

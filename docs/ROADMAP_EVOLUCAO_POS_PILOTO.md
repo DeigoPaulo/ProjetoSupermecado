@@ -1075,15 +1075,53 @@ credencial real ou liberação de produção foi usada.
 - [x] Cobrir cartão, PIX, pagamento dividido, rejeições, Focus e SEFAZ direta com
   testes offline. O pacote XSD 010f foi confrontado estruturalmente; ele continua
   arquivado, sem promoção operacional.
-- [ ] Próximo passo interno seguro: vincular os metadados fiscais a uma resposta TEF/PIX
-  confiável no servidor, impedindo que campos ocultos do navegador sejam aceitos como
-  prova de integração real. Depois, validar o XML contra um pacote XSD aprovado e
-  preservar evidências separadas para Focus e SEFAZ direta.
+- [x] Bloco interno de origem confiável executado no ciclo 158: registro confirmado no
+  servidor, consumo único por parcela e bloqueio de campos ocultos como prova de
+  integração. Verificador real e ligação autenticada ao provedor seguem pendentes.
 
 Pendências externas: driver/adquirente real, equipamento físico, dados oficiais do
 provedor, aprovação do schema para o piloto, aceite de CNPJ alfanumérico pela Focus
 e homologação em SEFAZ-GO/Focus. A paridade acima é apenas offline; `tpIntegra=1` ainda não comprova integração real de ponta a
 ponta. Nenhuma migration nova foi criada neste ciclo.
+
+## Ponto de retomada — ciclo 158, 23/09/2026
+
+Concluído o bloco interno de proveniência dos pagamentos integrados. A `main` iniciou
+limpa em `d73931ad9506e7335b7528eaa47af6e66d303616`. O ciclo não retomou checkboxes
+históricos nem ativou Focus, SEFAZ, credenciais reais ou produção.
+
+- [x] Exigir confirmação persistida no servidor para declarar `tipo_integracao=1`;
+  autorização, NSU e metadados do navegador não são prova de integração.
+- [x] Vincular a confirmação ao caixa, forma, valor e transação do provedor; proteger
+  consumo único com bloqueio transacional e unicidade no banco, inclusive parcelas
+  divididas. Falhas revertem efeitos parciais.
+- [x] Usar exclusivamente os metadados confirmados do servidor na parcela integrada.
+  A allowlist de verificadores permanece vazia e não há endpoint público de registro.
+- [x] Revalidar origem na geração fiscal e conferir pagamentos/`card` do XML já salvo
+  antes da transmissão comum a Focus e SEFAZ direta. Legado sem confirmação não é
+  promovido automaticamente a integração confiável.
+- [x] Criar migration aditiva `vendas.0014_confirmacao_integracao_pagamento`, sem
+  exclusões ou backfill de evidências; incluir os testes de integridade e concorrência
+  de confirmação no workflow PostgreSQL.
+- [ ] Próximo bloco interno seguro: validar offline o XML completo com parcelas de
+  cartão/PIX/divididas contra o pacote XSD oficial arquivado, registrar incompatibilidades
+  e evidências por canal, sem promover schema operacional nem declarar homologação.
+
+Pendências externas: implementar o verificador real com autenticação e escopo do
+estabelecimento/terminal, ligar o bridge ao registro do servidor, obter respostas oficiais
+do provedor, testar equipamento físico, aprovar o schema para o piloto e homologar
+SEFAZ-GO/Focus. A integração real continua bloqueada até essa comprovação; os testes
+sintéticos não a liberam.
+
+Verificações do fechamento: 110 testes focados aprovados; regressão de vendas, PDV,
+fiscal e configurações com 934 testes, 7 ignorados por exigirem PostgreSQL; 17 testes
+finais do vínculo/XML, 16 aprovados e 1 concorrente reservado ao PostgreSQL; 8 testes
+TEF desktop aprovados. A regressão ampliada e o fechamento usaram hash de senha rápido
+somente no processo de testes. Django check, migrations check, auditoria de importação
+das fixtures e diff check aprovados. Migration 0014 aplicada ao SQLite local, seguida
+de `migrate --check` sem pendências; nenhum dado demonstrativo foi removido.
+O workflow PostgreSQL executará também as novas constraints e a corrida de consumo
+único no push deste ciclo; o resultado hospedado será informado no encerramento.
 
 ## Ponto de retomada — ciclo 143, 18/09/2026
 

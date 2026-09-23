@@ -178,8 +178,12 @@ def finalizar_venda(*, caixa, usuario, itens, forma_pagamento=None, desconto=Dec
         for pagamento in pagamentos:
             if pagamento["valor"] <= 0:
                 continue
+            from .integracao_pagamentos import resolver_confirmacao_pagamento
+
+            pagamento = resolver_confirmacao_pagamento(pagamento, caixa=caixa)
             pagamento = _normalizar_pagamento_eletronico(pagamento)
             pagamento_venda = PagamentoVenda.objects.create(
+                confirmacao_integracao=pagamento.get("confirmacao_integracao"),
                 venda=venda,
                 forma_pagamento=pagamento["forma_pagamento"],
                 valor=pagamento["valor"],

@@ -237,9 +237,47 @@ PAGAMENTOS_ELETRONICOS_COM_VINCULO = {"03", "04", "10", "11", "17"}
 PAGAMENTOS_COM_BANDEIRA = {"03", "04", "10", "11"}
 
 
+def validar_vinculos_pagamentos_xml(documento, inf_nfe):
+    """Revalida XML já preparado, antes de qualquer envio por Focus/SEFAZ."""
+    if documento.tipo_documento != TipoDocumentoFiscal.NFCE or not documento.venda_id:
+        return
+    parcelas_xml = inf_nfe.findall(f"{{{NFE_NS}}}pag/{{{NFE_NS}}}detPag")
+    pagamentos = list(documento.venda.pagamentos.select_related(
+        "forma_pagamento", "confirmacao_integracao", "venda",
+    ).order_by("pk"))
+    possui_integracao = any(
+        item.findtext(f"{{{NFE_NS}}}card/{{{NFE_NS}}}tpIntegra") == "1"
+        for item in parcelas_xml
+    ) or any(p.tipo_integracao == "1" or p.confirmacao_integracao_id for p in pagamentos)
+    if not possui_integracao:
+        return
+    if len(parcelas_xml) != len(pagamentos):
+        raise ValidationError("Parcelas do XML divergem dos pagamentos confirmados no servidor.")
+    for parcela_xml, pagamento in zip(parcelas_xml, pagamentos):
+        esperado = ET.Element(f"{{{NFE_NS}}}detPag")
+        codigo = _codigo_pagamento(pagamento.forma_pagamento.tipo)
+        _adicionar_integracao_pagamento_nfce(
+            esperado, pagamento, codigo, uf_emitente=documento.filial.uf,
+        )
+        card_esperado = esperado.find(f"{{{NFE_NS}}}card")
+        card_xml = parcela_xml.find(f"{{{NFE_NS}}}card")
+        campos = lambda card: None if card is None else [(item.tag, item.text) for item in card]
+        if (
+            parcela_xml.findtext(f"{{{NFE_NS}}}tPag") != codigo
+            or parcela_xml.findtext(f"{{{NFE_NS}}}vPag") != _valor(pagamento.valor)
+            or len(parcela_xml.findall(f"{{{NFE_NS}}}card")) != (0 if card_esperado is None else 1)
+            or campos(card_xml) != campos(card_esperado)
+        ):
+            raise ValidationError("Vínculo fiscal do XML diverge da confirmação integrada do servidor.")
+
+
 def _adicionar_integracao_pagamento_nfce(
     det_pag, pagamento, codigo_pagamento, *, uf_emitente
 ):
+    from apps.vendas.integracao_pagamentos import validar_origem_integracao_fiscal
+
+    if pagamento.confirmacao_integracao_id:
+        validar_origem_integracao_fiscal(pagamento)
     tipo_integracao = str(pagamento.tipo_integracao or "").strip()
     try:
         cnpj_instituicao = canonicalizar_cnpj(
@@ -305,6 +343,9 @@ def _adicionar_integracao_pagamento_nfce(
         raise ValidationError("Código de autorização do pagamento excede 128 caracteres.")
     if len(terminal) > 40:
         raise ValidationError("Identificador do terminal de pagamento excede 40 caracteres.")
+
+    if tipo_integracao == "1" and not pagamento.confirmacao_integracao_id:
+        validar_origem_integracao_fiscal(pagamento)
 
     card = ET.SubElement(det_pag, f"{{{NFE_NS}}}card")
     _texto(card, "tpIntegra", tipo_integracao)
@@ -984,7 +1025,7 @@ def gerar_xml_nfce(documento):
     _texto(transp, "modFrete", "9")
 
     pag = ET.SubElement(inf_nfe, f"{{{NFE_NS}}}pag")
-    for pagamento in venda.pagamentos.select_related("forma_pagamento"):
+    for pagamento in venda.pagamentos.select_related("forma_pagamento", "confirmacao_integracao").order_by("pk"):
         det_pag = ET.SubElement(pag, f"{{{NFE_NS}}}detPag")
         _texto(det_pag, "indPag", "0")
         codigo_pagamento = _codigo_pagamento(pagamento.forma_pagamento.tipo)

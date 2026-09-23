@@ -76,5 +76,6 @@ jobs:
           apps.fiscal.test_reserva_transmissao.ReservaTransmissaoConcurrencyTests
           apps.pdv.test_concorrencia_caixa.CaixaConcorrenciaPostgreSQLTests
           apps.financeiro.test_constraints_origem_conta
+          apps.vendas.test_integracao_pagamentos
           --verbosity 2
           --noinput

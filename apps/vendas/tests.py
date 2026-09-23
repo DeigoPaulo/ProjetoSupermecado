@@ -294,7 +294,7 @@ class VendaServiceTests(TestCase):
         self.assertTrue(pagamento.codigo_autorizacao)
         self.assertIn("Autorização eletrônica simulada", pagamento.mensagem_processadora)
 
-    def test_pagamento_eletronico_preserva_autorizacao_real(self):
+    def test_pagamento_eletronico_preserva_metadados_nao_integrados(self):
         venda = finalizar_venda(
             caixa=self.caixa,
             usuario=self.usuario,
@@ -306,7 +306,7 @@ class VendaServiceTests(TestCase):
                     "transacao_externa_id": "pix-e2e-real",
                     "nsu": "123456",
                     "codigo_autorizacao": "ABC123",
-                    "tipo_integracao": "1",
+                    "tipo_integracao": "2",
                     "cnpj_instituicao_pagamento": "12.ABC.345/01DE-35",
                     "bandeira_cartao": "01",
                     "cnpj_beneficiario_pagamento": "00.ABC.000/0000-01",
@@ -320,7 +320,7 @@ class VendaServiceTests(TestCase):
         self.assertEqual(pagamento.transacao_externa_id, "pix-e2e-real")
         self.assertEqual(pagamento.nsu, "123456")
         self.assertEqual(pagamento.codigo_autorizacao, "ABC123")
-        self.assertEqual(pagamento.tipo_integracao, "1")
+        self.assertEqual(pagamento.tipo_integracao, "2")
         self.assertEqual(pagamento.cnpj_instituicao_pagamento, "12ABC34501DE35")
         self.assertEqual(pagamento.bandeira_cartao, "01")
         self.assertEqual(pagamento.cnpj_beneficiario_pagamento, "00ABC000000001")

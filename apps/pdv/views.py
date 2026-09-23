@@ -573,6 +573,7 @@ def _pagamentos_from_request(request, total_liquido, filial):
     nsus = request.POST.getlist("pagamento_nsu")
     autorizacoes = request.POST.getlist("pagamento_codigo_autorizacao")
     tipos_integracao = request.POST.getlist("pagamento_tipo_integracao")
+    confirmacoes_integracao = request.POST.getlist("pagamento_confirmacao_integracao_id")
     cnpjs_instituicao = request.POST.getlist("pagamento_cnpj_instituicao")
     bandeiras = request.POST.getlist("pagamento_bandeira_cartao")
     cnpjs_beneficiario = request.POST.getlist("pagamento_cnpj_beneficiario")
@@ -614,6 +615,9 @@ def _pagamentos_from_request(request, total_liquido, filial):
                 "nsu": nsu,
                 "codigo_autorizacao": autorizacao,
                 "tipo_integracao": tipo_integracao,
+                "confirmacao_integracao_id": (
+                    confirmacoes_integracao[indice] if indice < len(confirmacoes_integracao) else ""
+                ),
                 "cnpj_instituicao_pagamento": cnpj_instituicao,
                 "bandeira_cartao": bandeira,
                 "cnpj_beneficiario_pagamento": cnpj_beneficiario,

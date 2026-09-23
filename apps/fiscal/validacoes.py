@@ -111,6 +111,10 @@ def validar_xml_pre_transmissao(documento, adapter):
     if inf_nfe.findtext(f"{{{NFE_NS}}}ide/{{{NFE_NS}}}cDV") != chave[-1]:
         raise ValidationError("Digito verificador do XML não corresponde a chave de acesso.")
 
+    from .services import validar_vinculos_pagamentos_xml
+
+    validar_vinculos_pagamentos_xml(documento, inf_nfe)
+
     if not bool(getattr(adapter, "valida_schema", False)):
         validar_xml_schema(documento)
 

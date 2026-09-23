@@ -1,3 +1,5 @@
+import uuid
+
 from django.conf import settings
 from django.core.exceptions import ValidationError
 from django.db import models
@@ -168,7 +170,36 @@ class ItemDevolucaoVenda(models.Model):
         return f"{self.quantidade} x {self.produto}"
 
 
+class ConfirmacaoPagamentoIntegrado(models.Model):
+    """Resposta obtida pelo servidor, nunca criada pelo formulário do PDV."""
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    caixa = models.ForeignKey("pdv.Caixa", on_delete=models.PROTECT)
+    forma_pagamento = models.ForeignKey(FormaPagamento, on_delete=models.PROTECT)
+    tipo_forma = models.CharField(max_length=30)
+    valor = models.DecimalField(max_digits=12, decimal_places=2)
+    provedor = models.CharField(max_length=60)
+    transacao_externa_id = models.CharField(max_length=120)
+    dados = models.JSONField()
+    criada_em = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(
+                fields=["provedor", "transacao_externa_id"],
+                name="uniq_confirmacao_provedor_transacao",
+            ),
+            models.CheckConstraint(
+                condition=models.Q(valor__gt=0), name="confirmacao_integrada_valor_positivo",
+            ),
+        ]
+
+
 class PagamentoVenda(models.Model):
+    confirmacao_integracao = models.OneToOneField(
+        ConfirmacaoPagamentoIntegrado, on_delete=models.PROTECT,
+        null=True, blank=True, editable=False, related_name="pagamento",
+    )
     venda = models.ForeignKey(Venda, on_delete=models.PROTECT, related_name="pagamentos")
     forma_pagamento = models.ForeignKey(FormaPagamento, on_delete=models.PROTECT)
     valor = models.DecimalField(max_digits=12, decimal_places=2)

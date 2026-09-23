@@ -52,6 +52,8 @@ PostgreSQL 16 descartável, instala apenas as dependências declaradas no projet
 - a reserva concorrente de transmissão fiscal;
 - as corridas entre fechamento, venda, sangria e suprimento do caixa;
 - as constraints de origem das contas financeiras.
+- a unicidade e o consumo concorrente da confirmação TEF/PIX por parcela, com
+  bloqueio de reuso, adulteração e associação a outro caixa/forma/valor.
 
 As credenciais do serviço pertencem somente ao job efêmero e não são credenciais de
 homologação ou produção. O teste usa uma base cujo nome começa com `test_`, desativa

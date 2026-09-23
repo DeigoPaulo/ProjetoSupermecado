@@ -76,3 +76,40 @@ verificação externa: sua referência ainda descreve esses campos como `Integer
 Fontes: [Goiás — integração dos meios de pagamento](https://goias.gov.br/economia/goias-amplia-prazo-para-empresas-se-adequarem-a-integracao-dos-meios-de-pagamento/),
 [Focus — FormaPagamentoXML](https://campos.focusnfe.com.br/nfe/FormaPagamentoXML.html),
 [Portal NF-e — Nota Técnica 2023.004 v1.11](https://www.nfe.fazenda.gov.br/Portal/exibirArquivo.aspx?AspxAutoDetectCookieSupport=1&conteudo=gHveCSDQhSM%3D).
+
+## Evolução interna — ciclo 158, 23/09/2026
+
+A auditoria confirmou que o POST aceitava `tpIntegra=1` e todos os metadados sem
+comprovar sua origem. O serviço também podia completar autorização/NSU com valores
+simulados. Esse caminho não pode mais produzir uma parcela declarada integrada:
+ela exige uma `ConfirmacaoPagamentoIntegrado` criada pelo servidor.
+
+O novo registro guarda provedor, transação externa, caixa, forma, valor e os campos
+confirmados. A transação é única por provedor, o valor deve ser positivo e uma relação
+um-para-um permite consumir a confirmação em apenas uma parcela. O serviço bloqueia
+o registro durante a venda, confere caixa/forma/valor e usa exclusivamente os dados
+persistidos; campos divergentes enviados pelo navegador não substituem a confirmação.
+Falhas revertem venda, estoque e consumo no mesmo bloco transacional.
+
+A entrada `confirmar_pagamento_no_servidor` consulta apenas verificadores de uma
+allowlist interna, que permanece **vazia**. Não existe endpoint de registro nem driver
+operacional neste ciclo. O verificador futuro deverá autenticar a resposta do provedor,
+conferir o estabelecimento/terminal e a transação efetiva; receber dados do bridge ou
+ter uma chave de terminal, isoladamente, não comprova autorização da adquirente.
+Nenhum verificador pode apenas devolver os campos do cliente. O verificador sintético
+existe somente nos testes e não é cadastrado pela aplicação.
+
+O gerador fiscal revalida o vínculo e recusa pagamentos integrados legados sem origem
+comprovada. Antes do envio, a validação comum dos dois canais compara também as
+parcelas do XML já salvo com os registros confirmados, inclusive autorização e valor,
+impedindo alteração ou remoção da declaração de integração após a preparação.
+
+A migration `vendas.0014_confirmacao_integracao_pagamento` é aditiva: não exclui dados,
+não inventa confirmações para o legado e não converte pagamentos antigos em integrados.
+Pagamentos não integrados preservam seu comportamento anterior; isso não constitui
+declaração de conformidade de sua utilização em produção em Goiás.
+
+Permanecem pendentes a ligação autenticada bridge/provedor/servidor, o driver real,
+validação XSD do XML completo, equipamento físico e homologação de cada canal.
+Este ciclo trata a confiança interna e não altera decisões normativas, schemas ativos,
+feature flags fiscais, credenciais ou liberação de produção.
