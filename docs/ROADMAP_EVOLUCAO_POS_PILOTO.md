@@ -1211,6 +1211,21 @@ controlada de schema, validação Focus, homologação SEFAZ-GO e aceite de prod
   já suportadas; próximo candidato: vale-alimentação/refeição, se o contrato
   fiscal e as fixtures permitirem, sem promover schema nem declarar homologação.
 
+## Ponto de retomada — ciclo 162 (bloco curto), 23/09/2026
+
+- [x] NFC-e GO sintética somente com dinheiro passou no XSD 010f arquivado e
+  preservou a parcela nos artefatos offline Focus/SEFAZ direta.
+- [x] Corrigir borda encontrada pelo XSD: `enderEmit/CEP` é obrigatório.
+  Preparação e pré-envio recusam CEP ausente ou divergente do XML salvo, antes
+  do adaptador. A obrigatoriedade consta também na [NT 2011/004 oficial,
+  item 2.2](https://www.nfe.fazenda.gov.br/portal/exibirArquivo.aspx?conteudo=Z1ivX0aahCM%3D).
+- [x] Provar que vale-alimentação e vale-refeição não obtêm confirmação fiscal
+  integrada do verificador atual; nenhuma autorização sintética vira `cAut`.
+  Regressão fiscal/vendas/PDV: 806 testes, 7 ignorados no SQLite.
+- [ ] Próximo passo seguro: revisar contrato e fluxo interno dos vales sem
+  relaxar a origem autenticada; driver/provedor real e homologação continuam
+  dependências externas. Schema arquivado segue sem promoção.
+
 ## Ponto de retomada — ciclo 143, 18/09/2026
 
 Concluída a pendência P2 de parcelas/duplicatas da NF-e recebida, eliminando a perda da

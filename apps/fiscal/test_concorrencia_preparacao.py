@@ -55,6 +55,7 @@ class FiscalOriginFixtureMixin:
             logradouro="Rua Fiscal de Teste",
             numero="100",
             bairro="Centro",
+            cep="74000000",
             municipio="Goiania",
             uf="GO",
             codigo_municipio_ibge="5208707",

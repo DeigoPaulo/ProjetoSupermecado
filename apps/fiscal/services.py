@@ -439,7 +439,9 @@ def pendencias_endereco_emitente_nfce(filial):
     if not re.fullmatch(r"[A-Z]{2}", str(filial.uf or "")) or filial.uf != "GO":
         erros.append("A UF do emitente da NFC-e GO deve ser GO.")
     cep = str(filial.cep or "").strip()
-    if cep and not re.fullmatch(r"\d{5}-?\d{3}", cep):
+    if not cep:
+        erros.append("Informe o CEP do endereço fiscal da filial para NFC-e GO.")
+    elif not re.fullmatch(r"\d{5}-?\d{3}", cep):
         erros.append("O CEP do emitente, quando informado, deve possuir 8 dígitos.")
     telefone = str(filial.telefone or "").strip()
     if telefone and not 6 <= len(_somente_digitos(telefone)) <= 14:

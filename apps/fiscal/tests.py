@@ -448,8 +448,9 @@ class FiscalTests(TestCase):
         self.filial.logradouro = "Rua Teste"
         self.filial.numero = "100"
         self.filial.bairro = "Centro"
+        self.filial.cep = "74000000"
         self.filial.save(update_fields=[
-            "uf", "codigo_municipio_ibge", "municipio", "logradouro", "numero", "bairro",
+            "uf", "codigo_municipio_ibge", "municipio", "logradouro", "numero", "bairro", "cep",
         ])
 
     def test_beneficio_indefinido_bloqueia_emissao_go_regime_normal(self):
@@ -1008,6 +1009,7 @@ class FiscalTests(TestCase):
             ("codigo_municipio_ibge", "123", "7 dígitos"),
             ("codigo_municipio_ibge", "3550308", "Goiás"),
             ("municipio", "", "município"),
+            ("cep", "", "CEP"),
             ("cep", "CEP-INVALIDO", "CEP do emitente"),
             ("telefone", "12", "telefone do emitente"),
         )
@@ -1049,6 +1051,9 @@ class FiscalTests(TestCase):
         documento.save(update_fields=["xml_conteudo"])
         documento.xml_conteudo = xml_original.replace("<cUF>52</cUF>", "<cUF>35</cUF>", 1)
         with self.assertRaisesMessage(ValidationError, "Código da UF"):
+            validar_xml_pre_transmissao(documento, FakeSefazAdapter())
+        documento.xml_conteudo = xml_original.replace("<CEP>74000000</CEP>", "", 1)
+        with self.assertRaisesMessage(ValidationError, "Endereço fiscal do emitente diverge"):
             validar_xml_pre_transmissao(documento, FakeSefazAdapter())
         documento.xml_conteudo = xml_original
         self.filial.logradouro = ""
@@ -1203,6 +1208,33 @@ class FiscalTests(TestCase):
         alterado = diagnosticar_nfce_pagamentos_xsd_offline(documento.xml_conteudo)
         self.assertFalse(alterado["assinatura"]["conforme"])
         self.assertFalse(alterado["conforme_offline"])
+
+    def test_nfce_somente_dinheiro_confronta_xsd_e_canais_offline(self):
+        from .diagnostico_pagamentos_xsd import diagnosticar_nfce_pagamentos_xsd_offline
+
+        self._endereco_go_teste()
+        self.filial.cep = "74000000"
+        self.filial.save(update_fields=["cep"])
+        endpoints = endpoints_nfce_uf("GO", AmbienteFiscal.HOMOLOGACAO)
+        self.configuracao.url_qrcode_nfce = endpoints["qrcode"]
+        self.configuracao.url_consulta_nfce = endpoints["consulta"]
+        self.configuracao.save(update_fields=["url_qrcode_nfce", "url_consulta_nfce"])
+        documento = preparar_documento_venda(self.venda, self.user)
+        self.assertIn("<tPag>01</tPag><vPag>82.70</vPag>", documento.xml_conteudo)
+        self.assertNotIn("<card>", documento.xml_conteudo)
+        assinar_xml_documento(documento)
+        diagnostico = diagnosticar_nfce_pagamentos_xsd_offline(documento.xml_conteudo)
+        self.assertTrue(diagnostico["conforme_offline"], diagnostico)
+        self.assertEqual(diagnostico["parcelas"], 1)
+        self.assertFalse(diagnostico["homologacao_real"])
+
+    def test_vales_sem_verificador_confiavel_nao_preparam_nfce_go(self):
+        for forma in ("VALE_ALIMENTACAO", "VALE_REFEICAO"):
+            with self.subTest(forma=forma), self.assertRaisesMessage(
+                ValidationError, "Verificador não retornou confirmação fiscal integrada válida"
+            ):
+                self._preparar_nfce_com_credito_e_pix(tipo_cartao=forma)
+            self.assertFalse(self.venda.documentos_fiscais.exists())
 
     def test_nfce_pis_cofins_nao_tributados_confronta_xsd_e_canais_offline(self):
         from .diagnostico_pagamentos_xsd import diagnosticar_nfce_pagamentos_xsd_offline

@@ -137,6 +137,7 @@ def validar_xml_pre_transmissao(documento, adapter):
             ("cMun", documento.filial.codigo_municipio_ibge.strip()),
             ("xMun", documento.filial.municipio.strip()[:60]),
             ("UF", documento.filial.uf.strip()),
+            ("CEP", "".join(c for c in documento.filial.cep if c.isdigit())),
         )
         if any(endereco.findtext(f"{{{NFE_NS}}}{tag}") != valor for tag, valor in campos):
             raise ValidationError(
