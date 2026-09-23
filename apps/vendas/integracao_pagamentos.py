@@ -24,7 +24,7 @@ CAMPOS_CONFIRMADOS = (
 def confirmar_pagamento_no_servidor(*, provedor, referencia, caixa, forma_pagamento, valor):
     """Entrada exclusiva para integração backend; não há endpoint neste ciclo."""
     from apps.pdv.models import StatusCaixa
-    from .services import _normalizar_dados_fiscais_pagamento
+    from .services import FORMAS_ELETRONICAS, _normalizar_dados_fiscais_pagamento
 
     verificador = VERIFICADORES.get(provedor)
     if verificador is None:
@@ -50,7 +50,7 @@ def confirmar_pagamento_no_servidor(*, provedor, referencia, caixa, forma_pagame
         raise ValidationError("Forma ou valor diverge da confirmação do provedor.")
     dados = _normalizar_dados_fiscais_pagamento(resposta)
     if (
-        forma_pagamento.tipo not in {"CARTAO", "CREDITO", "DEBITO", "PIX"}
+        forma_pagamento.tipo not in FORMAS_ELETRONICAS
         or dados.get("status") != StatusPagamento.CONFIRMADO
         or dados.get("tipo_integracao") not in {"1", "2"}
         or any(not str(dados.get(campo) or "").strip() for campo in (

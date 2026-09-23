@@ -951,9 +951,9 @@ class FiscalTests(TestCase):
             forma_pagamento=credito,
             valor=Decimal("30.00" if incluir_dinheiro else "50.00"),
             status="CONFIRMADO",
-            transacao_externa_id="TX-CREDITO-1",
-            nsu="NSU-CREDITO-1",
-            codigo_autorizacao="AUT-CREDITO-1",
+            transacao_externa_id=f"TX-{tipo_cartao}-1",
+            nsu=f"NSU-{tipo_cartao}-1",
+            codigo_autorizacao=f"AUT-{tipo_cartao}-1",
             tipo_integracao="1",
             cnpj_instituicao_pagamento="12ABC34501DE35",
             bandeira_cartao="01",
@@ -965,7 +965,7 @@ class FiscalTests(TestCase):
             forma_pagamento=pix,
             valor=Decimal("32.70"),
             status="CONFIRMADO",
-            transacao_externa_id="E2E-PIX-1",
+            transacao_externa_id=f"E2E-PIX-{tipo_cartao}-1",
             nsu="NSU-PIX-1",
             codigo_autorizacao="AUT-PIX-1",
             tipo_integracao="1",
@@ -1229,12 +1229,36 @@ class FiscalTests(TestCase):
         self.assertFalse(diagnostico["homologacao_real"])
 
     def test_vales_sem_verificador_confiavel_nao_preparam_nfce_go(self):
+        from apps.vendas.integracao_pagamentos import confirmar_pagamento_no_servidor
+
         for forma in ("VALE_ALIMENTACAO", "VALE_REFEICAO"):
-            with self.subTest(forma=forma), self.assertRaisesMessage(
-                ValidationError, "Verificador não retornou confirmação fiscal integrada válida"
-            ):
-                self._preparar_nfce_com_credito_e_pix(tipo_cartao=forma)
+            meio = FormaPagamento.objects.create(nome=forma, tipo=forma)
+            with self.subTest(forma=forma), self.assertRaisesMessage(ValidationError, "sem verificador"):
+                confirmar_pagamento_no_servidor(
+                    provedor="NAO_CONFIGURADO", referencia="TESTE", caixa=self.caixa,
+                    forma_pagamento=meio, valor=Decimal("82.70"),
+                )
             self.assertFalse(self.venda.documentos_fiscais.exists())
+
+    def test_vales_confirmados_em_teste_confrontam_xsd_e_canais_offline(self):
+        from .diagnostico_pagamentos_xsd import diagnosticar_nfce_pagamentos_xsd_offline
+        from .validacoes import validar_xml_pre_transmissao
+
+        for forma, codigo in (("VALE_ALIMENTACAO", "10"), ("VALE_REFEICAO", "11")):
+            with self.subTest(forma=forma):
+                documento = self._preparar_nfce_com_credito_e_pix(tipo_cartao=forma)
+                self.assertIn(f"<tPag>{codigo}</tPag><vPag>50.00</vPag>", documento.xml_conteudo)
+                assinar_xml_documento(documento)
+                diagnostico = diagnosticar_nfce_pagamentos_xsd_offline(documento.xml_conteudo)
+                self.assertTrue(diagnostico["conforme_offline"], diagnostico)
+                self.assertEqual(diagnostico["parcelas"], 2)
+                self.assertFalse(diagnostico["homologacao_real"])
+                documento.xml_conteudo = documento.xml_conteudo.replace(
+                    f"AUT-{forma}-1", "AUT-ADULTERADA", 1,
+                )
+                with self.assertRaisesMessage(ValidationError, "Vínculo fiscal do XML diverge"):
+                    validar_xml_pre_transmissao(documento, FakeSefazAdapter())
+                documento.delete()
 
     def test_nfce_pis_cofins_nao_tributados_confronta_xsd_e_canais_offline(self):
         from .diagnostico_pagamentos_xsd import diagnosticar_nfce_pagamentos_xsd_offline

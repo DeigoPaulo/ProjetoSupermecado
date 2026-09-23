@@ -1226,6 +1226,29 @@ controlada de schema, validação Focus, homologação SEFAZ-GO e aceite de prod
   relaxar a origem autenticada; driver/provedor real e homologação continuam
   dependências externas. Schema arquivado segue sem promoção.
 
+## Ponto de retomada — ciclo 163 (bloco curto), 23/09/2026
+
+- [x] Revisar o contrato de vale-alimentação/refeição: o [MOC 7.0 oficial,
+  Anexo I](https://www.nfe.fazenda.gov.br/PORTAl/exibirArquivo.aspx?AspxAutoDetectCookieSupport=1&conteudo=J+I+v4eN00E%3D)
+  prevê `tPag` 10/11. A geração fiscal já mapeava esses códigos; faltava ao
+  ponto de entrada backend admitir vales na mesma lista central de formas
+  eletrônicas, sem dispensar confirmação do verificador.
+- [x] Permitir no contrato interno confirmação de vales por verificador
+  confiável, preservando caixa, forma, valor e campos fiscais confirmados.
+  `VERIFICADORES` permanece vazio: não existe operadora conectada, endpoint
+  público novo, credencial real ou autorização para transmitir.
+- [x] Exercitar ambos os vales com confirmação exclusivamente sintética:
+  NFC-e dividida com PIX, `tPag` 10/11, assinatura, XSD arquivado e paridade
+  offline de ambos os canais. Adulteração de `cAut` é recusada antes do envio;
+  sem verificador, a confirmação continua bloqueada.
+- [x] Validar 807 testes de fiscal/vendas/PDV (7 ignorados no SQLite),
+  `check`, `makemigrations --check --dry-run`, `migrate --check` e
+  `git diff --check`; nenhuma migration criada.
+- [ ] Próximo passo interno seguro: revisar a jornada de venda/PDV com vale
+  dividido e as recusas de confirmação duplicada ou divergente, usando só
+  fixtures; depois reavaliar a fila do roadmap. Operadora real e homologação
+  SEFAZ/Focus continuam pendências externas, sem liberar produção.
+
 ## Ponto de retomada — ciclo 143, 18/09/2026
 
 Concluída a pendência P2 de parcelas/duplicatas da NF-e recebida, eliminando a perda da
