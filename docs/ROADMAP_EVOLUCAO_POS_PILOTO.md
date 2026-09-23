@@ -1203,8 +1203,13 @@ controlada de schema, validação Focus, homologação SEFAZ-GO e aceite de prod
 - [x] Confrontar também IPI tributado (CST 50, `IPITrib`) com política explícita
   de imposto incluso no preço, sem alterar o total pago. Os dois testes IPI
   focados passaram com assinatura e paridade offline dos canais.
+- [x] Confrontar pagamento misto em três parcelas (cartão de crédito, PIX e
+  dinheiro) no XSD arquivado e nos dois canais offline. Alterar depois o valor
+  do dinheiro no XML assinado é recusado pela paridade XML ↔ banco e invalida a
+  assinatura. Regressão `FiscalTests`: 130 testes aprovados.
 - [ ] Prosseguir em blocos pequenos com outras variantes tributárias e formas
-  já suportadas, sem promover o schema nem declarar homologação real.
+  já suportadas; próximo candidato: vale-alimentação/refeição, se o contrato
+  fiscal e as fixtures permitirem, sem promover schema nem declarar homologação.
 
 ## Ponto de retomada — ciclo 143, 18/09/2026
 
