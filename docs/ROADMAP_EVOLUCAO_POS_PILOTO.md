@@ -1324,6 +1324,22 @@ Nenhuma dessas etapas está concluída pelos testes sintéticos. Migrações: ne
   confronto somente leitura legado × decisão por produto/natureza. Não trocar
   a fonte emissiva nem remover a coluna nesta fase.
 
+## Ponto de retomada — ciclo 167, 23/09/2026
+
+- [x] Fechar a falsa prontidão do catálogo/CSV quando uma empresa GO/CRT 2–3
+  não possui natureza padrão NFC-e ativa: todos os produtos do catálogo global
+  visível ficam pendentes, com causa legível, sem inferir decisão pelo legado.
+- [x] Preservar o recorte fora de GO/CRT 2–3, o filtro habitual com natureza
+  determinada e o CSV reimportável com uma coluna informativa adicional.
+  Emissão, preflight, XML, banco, coluna legada e parametrizações não mudaram.
+- [x] Validar 4 testes focados e 839 testes fiscal/produtos/empresas no SQLite
+  (3 ignorados), além de `check`, `makemigrations --check --dry-run`,
+  `migrate --check` e `git diff --check`; nenhuma migration criada.
+- [ ] Próximo passo interno: produzir relatório somente leitura de confronto
+  legado × decisão explícita por produto/natureza/UF/CRT, com divergências
+  visíveis e sem conversão automática. Qualquer troca emissiva permanece
+  dependente de regra oficial e aceite do responsável fiscal.
+
 ## Ponto de retomada — ciclo 143, 18/09/2026
 
 Concluída a pendência P2 de parcelas/duplicatas da NF-e recebida, eliminando a perda da

@@ -912,6 +912,37 @@ class FiscalTests(TestCase):
         self.assertContains(response_todos, "Arroz Branco 5kg")
         self.assertContains(response_todos, "Pronto")
 
+    def test_catalogo_e_csv_go_normal_sem_natureza_nao_declaram_pronto(self):
+        self.filial.uf = "GO"
+        self.filial.save(update_fields=["uf"])
+        NaturezaOperacao.objects.filter(pk=self.natureza.pk).update(ativo=False, padrao=False)
+        NaturezaOperacao.objects.create(
+            empresa=self.empresa, descricao="Venda NF-e apenas", cfop="5102",
+            tipo_documento=TipoDocumentoFiscal.NFE,
+        )
+
+        response_pendentes = self.client.get("/fiscal/produtos/?filtro=pendentes")
+        response_prontos = self.client.get("/fiscal/produtos/?filtro=prontos")
+        response_csv = self.client.get("/fiscal/produtos/exportar.csv?filtro=pendentes")
+        conteudo_csv = b"".join(response_csv.streaming_content).decode("utf-8-sig")
+
+        self.assertTrue(response_pendentes.context["natureza_fiscal_pendente"])
+        self.assertEqual(response_pendentes.context["total_prontos"], 0)
+        self.assertContains(response_pendentes, self.produto.nome)
+        self.assertContains(response_pendentes, "Natureza de operação padrão não determinada")
+        self.assertNotContains(response_prontos, self.produto.nome)
+        self.assertIn("situacao_prontidao_fiscal", conteudo_csv)
+        self.assertIn("PENDENTE: natureza de operação padrão não determinada", conteudo_csv)
+        self.assertIn(self.produto.codigo_barras, conteudo_csv)
+
+    def test_catalogo_sem_natureza_go_normal_nao_bloqueia_uf_fora_do_recorte(self):
+        NaturezaOperacao.objects.filter(pk=self.natureza.pk).update(ativo=False, padrao=False)
+
+        response = self.client.get("/fiscal/produtos/?filtro=prontos")
+
+        self.assertFalse(response.context["natureza_fiscal_pendente"])
+        self.assertContains(response, self.produto.nome)
+
     def test_catalogo_fiscal_exibe_decisao_pendente_por_natureza_em_goias(self):
         self.filial.uf = "GO"
         self.filial.save(update_fields=["uf"])

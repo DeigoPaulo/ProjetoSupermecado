@@ -1082,10 +1082,19 @@ def _parametros_validacao_produtos_fiscais(user):
             ),
         )
     )
+    sem_natureza_go_normal = bool(
+        set(empresas_go_normal) - {
+            natureza.empresa_id for natureza in naturezas
+            if natureza.tipo_documento == TipoDocumentoFiscal.NFCE
+        }
+    )
     pendente_q = filtro_pendencias_produto_fiscal(
         regimes, ufs, crts, exigir_ibs_cbs, naturezas
     )
-    return regimes, ufs, crts, exigir_ibs_cbs, naturezas, pendente_q
+    if sem_natureza_go_normal:
+        # Sem operação definida, o catálogo não pode declarar prontidão pelo cBenef legado.
+        pendente_q |= Q(pk__isnull=False)
+    return regimes, ufs, crts, exigir_ibs_cbs, naturezas, pendente_q, sem_natureza_go_normal
 
 
 def _filtrar_catalogo_fiscal(queryset, pendente_q, filtro):
@@ -1115,7 +1124,7 @@ def produtos_fiscais_exportar_csv(request):
         produtos_qs = produtos_qs.filter(
             Q(nome__icontains=q) | Q(codigo_barras__icontains=q)
         )
-    _regimes, _ufs, _crts, _exigir_ibs_cbs, naturezas, pendente_q = _parametros_validacao_produtos_fiscais(
+    _regimes, _ufs, _crts, _exigir_ibs_cbs, naturezas, pendente_q, sem_natureza_go_normal = _parametros_validacao_produtos_fiscais(
         request.user
     )
     produtos_qs, filtro = _filtrar_catalogo_fiscal(produtos_qs, pendente_q, filtro)
@@ -1135,6 +1144,7 @@ def produtos_fiscais_exportar_csv(request):
         "reducao_base_icms",
         "aliquota_fcp",
         "beneficio_icms_por_operacao",
+        "situacao_prontidao_fiscal",
         "cst_pis",
         "aliquota_pis",
         "cst_cofins",
@@ -1174,6 +1184,7 @@ def produtos_fiscais_exportar_csv(request):
                     _decimal_csv(produto.reducao_base_icms),
                     _decimal_csv(produto.aliquota_fcp),
                     " | ".join(decisoes),
+                    "PENDENTE: natureza de operação padrão não determinada para GO/CRT 2-3" if sem_natureza_go_normal else "",
                     produto.cst_pis,
                     _decimal_csv(produto.aliquota_pis),
                     produto.cst_cofins,
@@ -1218,7 +1229,7 @@ def produtos_fiscais(request):
     produtos_qs = Produto.all_objects.select_related("categoria", "marca").order_by("nome")
     if q:
         produtos_qs = produtos_qs.filter(Q(nome__icontains=q) | Q(codigo_barras__icontains=q))
-    regimes, ufs, crts, exigir_ibs_cbs, naturezas, pendente_q = _parametros_validacao_produtos_fiscais(
+    regimes, ufs, crts, exigir_ibs_cbs, naturezas, pendente_q, sem_natureza_go_normal = _parametros_validacao_produtos_fiscais(
         request.user
     )
     total_analisados = produtos_qs.count()
@@ -1232,6 +1243,10 @@ def produtos_fiscais(request):
         produto.pendencias_fiscais = pendencias_produto_fiscal(
             produto, regimes, ufs, crts, exigir_ibs_cbs, naturezas
         )
+        if sem_natureza_go_normal:
+            produto.pendencias_fiscais.append(
+                "Natureza de operação padrão não determinada para GO/CRT 2-3; não validar pelo cBenef legado."
+            )
         produto.pronto_fiscal = not produto.pendencias_fiscais
     context = {
         "produtos": produtos,
@@ -1241,6 +1256,7 @@ def produtos_fiscais(request):
         "total_analisados": total_analisados,
         "total_pendentes": total_pendentes,
         "total_prontos": total_analisados - total_pendentes,
+        "natureza_fiscal_pendente": sem_natureza_go_normal,
         "capacidade_tributaria": capacidade_tributaria_fiscal(
             configuracoes_para_usuario(request.user, ConfiguracaoFiscal.objects.all())
         ),

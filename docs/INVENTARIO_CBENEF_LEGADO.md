@@ -116,3 +116,23 @@ Próxima decisão interna delimitada: definir uma sinalização fail-closed de
 substitui o valor legado nem declara benefício fiscal. O relatório comparativo
 somente leitura deve seguir por produto/natureza; a substituição emissiva e a
 remoção da coluna continuam bloqueadas por validação normativa e contábil.
+
+## Catálogo fail-closed sem natureza — ciclo 167, 23/09/2026
+
+Quando uma empresa com filial GO/CRT 2–3 visível ao usuário não tem natureza
+padrão NFC-e ativa, o catálogo fiscal global não classifica mais produtos como
+“Prontos” pelo fallback legado. A listagem mostra aviso e pendência; o CSV
+mantém o formato reimportável e acrescenta a coluna informativa
+`situacao_prontidao_fiscal` com a causa. O filtro `prontos` fica vazio nesse
+estado. Como o catálogo de produtos não é separado por filial, a restrição
+conservadora alcança toda a listagem visível até a natureza ser definida.
+
+Com natureza determinada, a seleção de cBenef e os filtros anteriores (inclusive
+as pendências de naturezas NF-e) são preservados. Fora de GO/CRT 2–3, a ausência
+de natureza padrão NFC-e não ativa essa
+trava. Esta mudança é apenas da apresentação/prontidão; não muda o preflight,
+o XML, a parametrização por operação nem a coluna legada.
+
+Próxima etapa: relatório **somente leitura** que confronte, por produto,
+natureza e recorte UF/CRT, o legado e a decisão explícita, distinguindo
+concordância, divergência e ausência. Não migrar valores automaticamente.

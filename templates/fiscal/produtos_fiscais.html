@@ -21,6 +21,16 @@
   <article class="metric"><span>Prontos</span><strong>{{ total_prontos }}</strong></article>
 </section>
 
+{% if natureza_fiscal_pendente %}
+<section class="operation-notice operation-notice-warning">
+  <i class="fa-solid fa-triangle-exclamation"></i>
+  <div>
+    <strong>Prontidão fiscal não determinada para GO/CRT 2–3</strong>
+    <span>Há filial sem natureza de operação padrão ativa. Os produtos ficam pendentes nesta lista e no CSV; o cBenef legado não comprova a decisão fiscal por operação.</span>
+  </div>
+</section>
+{% endif %}
+
 <section class="operation-notice">
   <i class="fa-solid fa-shield-halved"></i>
   <div>
