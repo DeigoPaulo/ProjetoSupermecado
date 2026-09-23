@@ -464,6 +464,50 @@ class FiscalTests(TestCase):
 
         self.assertFalse(self.venda.documentos_fiscais.exists())
 
+    def test_matriz_cbenef_legado_preserva_recortes_uf_crt_ate_transicao_explicita(self):
+        from .perfis_uf import codigo_beneficio_produto_operacao
+
+        self.produto.codigo_beneficio_fiscal = "GO821020"
+        self.produto.save(update_fields=["codigo_beneficio_fiscal"])
+        self.parametrizacao_beneficio.situacao = SituacaoBeneficioFiscalICMS.COM_BENEFICIO
+        self.parametrizacao_beneficio.codigo_beneficio_fiscal = "GO821019"
+        self.parametrizacao_beneficio.save(update_fields=["situacao", "codigo_beneficio_fiscal"])
+
+        for uf, crt, esperado in (
+            ("GO", "2", "GO821019"), ("GO", "3", "GO821019"),
+            ("GO", "1", "GO821020"), ("GO", "4", "GO821020"),
+            ("SP", "1", "GO821020"), ("SP", "3", "GO821020"),
+        ):
+            with self.subTest(uf=uf, crt=crt):
+                self.assertEqual(codigo_beneficio_produto_operacao(
+                    self.produto, self.natureza, uf=uf, crt=crt,
+                ), esperado)
+
+        self.assertEqual(codigo_beneficio_produto_operacao(
+            self.produto, None, uf="GO", crt="3",
+        ), "")
+        self.parametrizacao_beneficio.situacao = SituacaoBeneficioFiscalICMS.SEM_BENEFICIO
+        self.parametrizacao_beneficio.codigo_beneficio_fiscal = ""
+        self.parametrizacao_beneficio.save(update_fields=["situacao", "codigo_beneficio_fiscal"])
+        self.assertEqual(codigo_beneficio_produto_operacao(
+            self.produto, self.natureza, uf="GO", crt="3",
+        ), "")
+        self.assertEqual(codigo_beneficio_produto_operacao(
+            self.produto, self.natureza, uf="SP", crt="3",
+        ), "GO821020")
+
+    def test_emissao_sp_ainda_usa_cbenef_legado_mesmo_com_decisao_por_operacao(self):
+        self.produto.codigo_beneficio_fiscal = "GO821020"
+        self.produto.save(update_fields=["codigo_beneficio_fiscal"])
+        self.parametrizacao_beneficio.situacao = SituacaoBeneficioFiscalICMS.COM_BENEFICIO
+        self.parametrizacao_beneficio.codigo_beneficio_fiscal = "GO821019"
+        self.parametrizacao_beneficio.save(update_fields=["situacao", "codigo_beneficio_fiscal"])
+
+        documento = preparar_documento_venda(self.venda, self.user)
+
+        self.assertIn("<cBenef>GO821020</cBenef>", documento.xml_conteudo)
+        self.assertNotIn("<cBenef>GO821019</cBenef>", documento.xml_conteudo)
+
     def test_formulario_beneficio_impede_codigo_incoerente(self):
         form = ParametrizacaoBeneficioFiscalProdutoForm(
             data={

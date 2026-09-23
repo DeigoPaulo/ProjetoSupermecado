@@ -1285,6 +1285,26 @@ Nenhuma dessas etapas está concluída pelos testes sintéticos. Migrações: ne
   sem inferir enquadramento. Não remover a coluna nem criar migration antes de
   comprovar zero consumidor e compatibilidade fiscal.
 
+## Ponto de retomada — ciclo 165, 23/09/2026
+
+- [x] Reabrir somente a pendência real do ciclo 155: caracterizar por testes a
+  seleção atual de `cBenef` em GO/CRT 2–3, GO/CRT 1–4 e outras UFs/CRTs,
+  inclusive quando a decisão por produto/natureza diverge do legado.
+- [x] Provar em NFC-e sintética SP que a emissão ainda usa o legado mesmo com
+  parametrização explícita distinta. O inventário somente leitura local aponta
+  zero produtos preenchidos, mas ainda classifica o fallback como consumidor
+  emissivo e proíbe remover a coluna.
+- [x] Registrar em `docs/INVENTARIO_CBENEF_LEGADO.md` a matriz e o desenho
+  gradual da substituição, sem copiar valores, inferir benefício, mudar XML,
+  criar migration ou tocar dados fiscais reais.
+- [x] Validar 2 testes focados e 836 testes de fiscal/produtos/empresas
+  (3 ignorados no SQLite), `check`, `makemigrations --check --dry-run`,
+  `migrate --check` e `git diff --check`; nenhuma migration criada.
+- [ ] Próximo bloco interno seguro: mapear UFs/CRTs realmente atendidos e
+  caracterizar a prontidão com e sem natureza informada. Depois confrontar
+  legado versus decisão explícita em relatório somente leitura. A troca
+  emissiva depende de regra oficial por UF e validação do responsável fiscal.
+
 ## Ponto de retomada — ciclo 143, 18/09/2026
 
 Concluída a pendência P2 de parcelas/duplicatas da NF-e recebida, eliminando a perda da

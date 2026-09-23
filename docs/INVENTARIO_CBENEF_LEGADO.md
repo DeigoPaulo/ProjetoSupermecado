@@ -51,3 +51,39 @@ A remoção física só poderá ser reavaliada depois que o fallback de
 por uma regra explícita para todos os escopos atendidos. Nesse momento, o inventário deve
 retornar zero registros em cada instalação e os testes devem provar zero diferença emissiva.
 Até lá, não deve ser criada migration de remoção.
+
+## Reavaliação do fallback — ciclo 165, 23/09/2026
+
+O comando somente leitura retornou **zero** produtos preenchidos na base local de
+desenvolvimento. Isto não altera a decisão `NAO_PODE_REMOVER_COLUNA`: a lógica
+emissiva ainda lê o campo. Testes de caracterização fixam a matriz atual:
+
+| Recorte | Fonte atual de `cBenef` no XML | Decisão por operação já criada |
+| --- | --- | --- |
+| GO, CRT 2 ou 3 | Parametrização produto + natureza; ausente/indefinida não usa legado | Aplicada |
+| GO, CRT 1 ou 4 | Campo legado do Produto | Ignorada na emissão atual |
+| Outras UFs, qualquer CRT | Campo legado do Produto | Ignorada na emissão atual |
+
+Uma NFC-e sintética de SP confirma que uma parametrização explícita divergente
+**não** substitui o legado no XML hoje. A regra de prontidão também conserva
+leituras legadas, inclusive no caminho GO sem natureza informada. Portanto,
+alterar a preferência do resolvedor, esvaziar o legado ou remover a coluna já
+mudaria o comportamento fiscal; a contagem zero local não prova equivalência em
+outra instalação. O código não foi alterado neste ciclo.
+
+Desenho da substituição, ainda **não autorizado para execução emissiva**:
+
+1. Delimitar as UFs/CRTs e naturezas realmente atendidas e confirmar com fonte
+   oficial e responsável fiscal o significado e o formato de `cBenef` em cada
+   recorte; não extrapolar a regra GO nem copiar códigos entre UFs.
+2. Confrontar por produto/natureza os valores legado e explícito, inclusive
+   ausência, conflito e decisão `SEM_BENEFICIO`, em relatório somente leitura.
+   Divergências exigem decisão humana documentada, não migração automática.
+3. Só depois alinhar prontidão e emissão à mesma decisão explícita, por recorte
+   habilitado e com testes dos modelos 55/65. Recortes não avaliados ficam
+   bloqueados ou mantêm compatibilidade declarada, nunca troca silenciosa.
+4. Repetir o inventário em cada instalação, comprovar zero consumidor emissivo e
+   zero diferença de comportamento aceita antes de propor remoção de coluna.
+
+Pendência concreta para o próximo bloco: mapear UFs/CRTs efetivamente suportados
+e os dois caminhos de prontidão por natureza, sem alterar XML ou schema ainda.
