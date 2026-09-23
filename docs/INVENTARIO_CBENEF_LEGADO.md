@@ -87,3 +87,32 @@ Desenho da substituição, ainda **não autorizado para execução emissiva**:
 
 Pendência concreta para o próximo bloco: mapear UFs/CRTs efetivamente suportados
 e os dois caminhos de prontidão por natureza, sem alterar XML ou schema ainda.
+
+## Prontidão por recorte — ciclo 166, 23/09/2026
+
+O cadastro aceita UFs brasileiras e CRT 1–4, mas o único perfil estadual técnico
+em `PERFIS_FISCAIS_UF` é GO. Demais UFs seguem parametrização manual/genérica;
+isso **não** equivale a homologação nem a suporte tributário completo. A matriz
+local de ICMS admite apenas CST/CSOSN expressamente listados no serviço fiscal.
+
+Os dois caminhos de prontidão (filtro SQL da listagem e mensagens detalhadas)
+concordam entre si nos cenários sintéticos testados. Ambos, porém, mudam a
+origem da avaliação do cBenef quando a natureza de operação não é fornecida:
+
+| GO/CRT 3, redução de base | Com natureza | Sem natureza |
+| --- | --- | --- |
+| Legado válido; decisão explícita `SEM_BENEFICIO` sem código | Pendente | Pronto pelo legado |
+| Legado vazio; decisão explícita `COM_BENEFICIO` com código válido | Pronto | Pendente pelo legado |
+
+Para GO/CRT 1 e SP/CRT 3, os ensaios com legado válido não detectaram essa
+alternância: a prontidão permanece no caminho de compatibilidade. Os resultados
+acima **caracterizam o comportamento atual**, não aprovam um documento fiscal.
+Em GO/CRT 2–3, uma listagem sem natureza pode portanto divergir do preflight
+emissivo, que usa a natureza concreta. Nenhuma alteração operacional foi feita
+neste ciclo para não trocar silenciosamente o significado de “pronto”.
+
+Próxima decisão interna delimitada: definir uma sinalização fail-closed de
+“natureza não determinada” na listagem/CSV GO/CRT 2–3 e provar que ela não
+substitui o valor legado nem declara benefício fiscal. O relatório comparativo
+somente leitura deve seguir por produto/natureza; a substituição emissiva e a
+remoção da coluna continuam bloqueadas por validação normativa e contábil.

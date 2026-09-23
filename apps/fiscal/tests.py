@@ -508,6 +508,57 @@ class FiscalTests(TestCase):
         self.assertIn("<cBenef>GO821020</cBenef>", documento.xml_conteudo)
         self.assertNotIn("<cBenef>GO821019</cBenef>", documento.xml_conteudo)
 
+    def test_prontidao_go_com_e_sem_natureza_confronta_filtro_e_detalhe(self):
+        from .perfis_uf import pendencias_produto_por_uf
+        from .services import filtro_pendencias_produto_fiscal
+
+        _criar_catalogo_cbenef_go_teste()
+        self.produto.cst_icms = "20"
+        self.produto.csosn = "102"
+        self.produto.reducao_base_icms = Decimal("10.00")
+        self.produto.codigo_beneficio_fiscal = "GO821019"
+        self.produto.save(update_fields=[
+            "cst_icms", "csosn", "reducao_base_icms", "codigo_beneficio_fiscal",
+        ])
+        cenarios = (
+            ("GO", "3", [self.natureza], True),
+            ("GO", "3", [], False),
+            ("GO", "1", [self.natureza], False),
+            ("SP", "3", [self.natureza], False),
+        )
+        for uf, crt, naturezas, pendente_esperado in cenarios:
+            with self.subTest(uf=uf, crt=crt, natureza=bool(naturezas)):
+                q = filtro_pendencias_produto_fiscal(
+                    ufs=[uf], crts=[crt], naturezas_operacao=naturezas,
+                )
+                pendente_sql = Produto.objects.filter(pk=self.produto.pk).filter(q).exists()
+                pendencias_detalhe = pendencias_produto_por_uf(
+                    self.produto, [uf], [crt],
+                    natureza_operacao=naturezas[0] if naturezas else None,
+                )
+                self.assertEqual(pendente_sql, pendente_esperado)
+                self.assertEqual(bool(pendencias_detalhe), pendente_esperado)
+
+        self.produto.codigo_beneficio_fiscal = ""
+        self.produto.save(update_fields=["codigo_beneficio_fiscal"])
+        self.parametrizacao_beneficio.situacao = SituacaoBeneficioFiscalICMS.COM_BENEFICIO
+        self.parametrizacao_beneficio.codigo_beneficio_fiscal = "GO821019"
+        self.parametrizacao_beneficio.save(update_fields=["situacao", "codigo_beneficio_fiscal"])
+        for naturezas, pendente_esperado in (([self.natureza], False), ([], True)):
+            with self.subTest(legado_vazio=True, natureza=bool(naturezas)):
+                q = filtro_pendencias_produto_fiscal(
+                    ufs=["GO"], crts=["3"], naturezas_operacao=naturezas,
+                )
+                self.assertEqual(
+                    Produto.objects.filter(pk=self.produto.pk).filter(q).exists(),
+                    pendente_esperado,
+                )
+                pendencias = pendencias_produto_por_uf(
+                    self.produto, ["GO"], ["3"],
+                    natureza_operacao=naturezas[0] if naturezas else None,
+                )
+                self.assertEqual(bool(pendencias), pendente_esperado)
+
     def test_formulario_beneficio_impede_codigo_incoerente(self):
         form = ParametrizacaoBeneficioFiscalProdutoForm(
             data={

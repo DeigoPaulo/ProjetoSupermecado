@@ -1305,6 +1305,25 @@ Nenhuma dessas etapas está concluída pelos testes sintéticos. Migrações: ne
   legado versus decisão explícita em relatório somente leitura. A troca
   emissiva depende de regra oficial por UF e validação do responsável fiscal.
 
+## Ponto de retomada — ciclo 166, 23/09/2026
+
+- [x] Mapear o suporte técnico: CRT 1–4 configuráveis, perfil estadual
+  explícito somente para GO; as demais UFs usam configuração genérica/manual,
+  sem que isso represente homologação tributária ou de emissão.
+- [x] Caracterizar com testes a prontidão SQL e detalhada por GO/CRT 3 com e
+  sem natureza, GO/CRT 1 e SP/CRT 3. Em GO/CRT 3, sem natureza, ambos os
+  caminhos usam o legado e podem discordar do preflight de uma operação
+  concreta; `docs/INVENTARIO_CBENEF_LEGADO.md` registra os dois sentidos.
+- [x] Manter o resultado como diagnóstico: nenhuma regra fiscal, XML,
+  parametrização, migration ou dado real foi alterado.
+- [x] Validar o teste focado e 837 testes fiscal/produtos/empresas no SQLite
+  (3 ignorados), além de `check`, `makemigrations --check --dry-run`,
+  `migrate --check` e `git diff --check`; nenhuma migration criada.
+- [ ] Próximo bloco seguro: tornar explícito e fail-closed na listagem/CSV
+  GO/CRT 2–3 quando não houver natureza determinada; em seguida criar
+  confronto somente leitura legado × decisão por produto/natureza. Não trocar
+  a fonte emissiva nem remover a coluna nesta fase.
+
 ## Ponto de retomada — ciclo 143, 18/09/2026
 
 Concluída a pendência P2 de parcelas/duplicatas da NF-e recebida, eliminando a perda da
