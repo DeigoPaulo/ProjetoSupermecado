@@ -927,7 +927,7 @@ class FiscalTests(TestCase):
         self.assertContains(response, self.produto.nome)
         self.assertContains(response, "Pronto")
 
-    def _preparar_nfce_com_credito_e_pix(self):
+    def _preparar_nfce_com_credito_e_pix(self, *, tipo_cartao="CREDITO"):
         self.filial.uf = "GO"
         self.filial.codigo_municipio_ibge = "5208707"
         self.filial.logradouro = "Rua Teste"
@@ -943,7 +943,7 @@ class FiscalTests(TestCase):
         self.configuracao.url_consulta_nfce = endpoints["consulta"]
         self.configuracao.save(update_fields=["url_qrcode_nfce", "url_consulta_nfce"])
         self.venda.pagamentos.all().delete()
-        credito = FormaPagamento.objects.create(nome="Crédito", tipo="CREDITO")
+        credito = FormaPagamento.objects.create(nome="Cartão de teste", tipo=tipo_cartao)
         pix = FormaPagamento.objects.create(nome="PIX", tipo="PIX")
         PagamentoVenda.objects.create(
             venda=self.venda,
@@ -1153,6 +1153,53 @@ class FiscalTests(TestCase):
         self.assertTrue(direta_divergente["xsd"]["conforme"])
         self.assertTrue(direta_divergente["focus"]["conforme"])
         self.assertFalse(direta_divergente["sefaz_direta"]["conforme"])
+
+    def test_nfce_com_debito_e_pix_divididos_confronta_xsd_e_canais_offline(self):
+        from .diagnostico_pagamentos_xsd import diagnosticar_nfce_pagamentos_xsd_offline
+
+        documento = self._preparar_nfce_com_credito_e_pix(tipo_cartao="DEBITO")
+        self.assertIn("<tPag>04</tPag><vPag>50.00</vPag>", documento.xml_conteudo)
+        self.assertIn("<tPag>17</tPag><vPag>32.70</vPag>", documento.xml_conteudo)
+        assinar_xml_documento(documento)
+        diagnostico = diagnosticar_nfce_pagamentos_xsd_offline(documento.xml_conteudo)
+        self.assertTrue(diagnostico["conforme_offline"], diagnostico)
+        self.assertEqual(diagnostico["parcelas"], 2)
+        self.assertTrue(diagnostico["sefaz_direta"]["xml_integral_preservado"])
+        self.assertFalse(diagnostico["homologacao_real"])
+
+    def test_nfce_pis_cofins_nao_tributados_confronta_xsd_e_canais_offline(self):
+        from .diagnostico_pagamentos_xsd import diagnosticar_nfce_pagamentos_xsd_offline
+
+        self.produto.cst_pis = "06"
+        self.produto.aliquota_pis = None
+        self.produto.cst_cofins = "06"
+        self.produto.aliquota_cofins = None
+        self.produto.save(update_fields=[
+            "cst_pis", "aliquota_pis", "cst_cofins", "aliquota_cofins",
+        ])
+        documento = self._preparar_nfce_com_credito_e_pix()
+        self.assertIn("<PIS><PISNT><CST>06</CST></PISNT></PIS>", documento.xml_conteudo)
+        self.assertIn("<COFINS><COFINSNT><CST>06</CST></COFINSNT></COFINS>", documento.xml_conteudo)
+        assinar_xml_documento(documento)
+        diagnostico = diagnosticar_nfce_pagamentos_xsd_offline(documento.xml_conteudo)
+        self.assertTrue(diagnostico["conforme_offline"], diagnostico)
+        self.assertEqual(diagnostico["parcelas"], 2)
+        self.assertFalse(diagnostico["homologacao_real"])
+
+    def test_nfce_pis_cofins_outras_operacoes_confronta_xsd_e_canais_offline(self):
+        from .diagnostico_pagamentos_xsd import diagnosticar_nfce_pagamentos_xsd_offline
+
+        self.produto.cst_pis = "49"
+        self.produto.cst_cofins = "49"
+        self.produto.save(update_fields=["cst_pis", "cst_cofins"])
+        documento = self._preparar_nfce_com_credito_e_pix()
+        self.assertIn("<PIS><PISOutr><CST>49</CST>", documento.xml_conteudo)
+        self.assertIn("<COFINS><COFINSOutr><CST>49</CST>", documento.xml_conteudo)
+        assinar_xml_documento(documento)
+        diagnostico = diagnosticar_nfce_pagamentos_xsd_offline(documento.xml_conteudo)
+        self.assertTrue(diagnostico["conforme_offline"], diagnostico)
+        self.assertEqual(diagnostico["parcelas"], 2)
+        self.assertFalse(diagnostico["homologacao_real"])
 
     def test_nfce_bloqueia_pagamento_eletronico_sem_tipo_integracao(self):
         self._endereco_go_teste()

@@ -1181,11 +1181,24 @@ Verificações locais: 798 testes fiscal/vendas/PDV, 7 ignorados por exigirem
 PostgreSQL; Django check, `makemigrations --check --dry-run`, `migrate --check`
 e `git diff --check` aprovados. A suíte local adicional revelou uma fixture
 antiga de NF-e GO sem classificação de benefício fiscal; ela foi completada
-somente no teste, e os 45 testes marketplace passaram. A CI PostgreSQL será
-conferida após o push.
+somente no teste, e os 45 testes marketplace passaram. A CI PostgreSQL do
+commit `0704da4` concluiu com sucesso.
 Pendências externas preservadas: endereço cadastral real, driver TEF/PIX e
 retorno autenticado de provedor/adquirente, equipamento físico, promoção
 controlada de schema, validação Focus, homologação SEFAZ-GO e aceite de produção.
+
+## Ponto de retomada — ciclo 161 (bloco curto), 23/09/2026
+
+- [x] Ampliar o confronto XSD 010f arquivado ao pagamento dividido de débito
+  (`tPag=04`) + PIX (`tPag=17`), com XML sintético assinado e preservação offline
+  no conversor Focus e no envelope SEFAZ direta.
+- [x] Confrontar também PIS/COFINS não tributados (`PISNT`/`COFINSNT`) na NFC-e
+  sintética assinada com pagamentos divididos.
+- [x] Confrontar PIS/COFINS de outras operações (CST 49,
+  `PISOutr`/`COFINSOutr`) no mesmo fluxo. Quatro testes XSD focados passaram,
+  incluindo a regressão de crédito + PIX; nenhuma rede fiscal foi usada.
+- [ ] Prosseguir em blocos pequenos com outras variantes tributárias e formas
+  já suportadas, sem promover o schema nem declarar homologação real.
 
 ## Ponto de retomada — ciclo 143, 18/09/2026
 
