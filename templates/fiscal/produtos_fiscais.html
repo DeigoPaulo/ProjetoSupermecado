@@ -9,6 +9,7 @@
     <p>Conferência dos campos tributarios exigidos antes de preparar NFC-e.</p>
   </div>
   <div class="actions">
+    <a class="secondary-button" href="{% url 'fiscal:diagnostico_cbenef' %}"><i class="fa-solid fa-code-compare"></i> Diagnóstico cBenef</a>
     <a class="secondary-button" href="{% url 'fiscal:produtos_fiscais_exportar_csv' %}?q={{ q|urlencode }}&filtro={{ filtro }}"><i class="fa-solid fa-file-export"></i> Exportar filtro</a>
     <a class="secondary-button" href="{% url 'produtos:importar_csv' %}"><i class="fa-solid fa-file-csv"></i> Corrigir por CSV</a>
     <a class="secondary-button" href="{% url 'fiscal:documentos' %}">Voltar</a>

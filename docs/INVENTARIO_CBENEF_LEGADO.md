@@ -136,3 +136,62 @@ o XML, a parametrização por operação nem a coluna legada.
 Próxima etapa: relatório **somente leitura** que confronte, por produto,
 natureza e recorte UF/CRT, o legado e a decisão explícita, distinguindo
 concordância, divergência e ausência. Não migrar valores automaticamente.
+
+## Diagnóstico legado × decisão explícita — ciclo 168, 24/09/2026
+
+Foi criado o contrato somente leitura `cbenef_legacy_explicit_diagnostic_v1` na
+área Fiscal. Cada linha representa exatamente a combinação produto × natureza
+da empresa × filial/configuração fiscal. UF e CRT vêm da configuração da filial;
+a parametrização explícita continua sendo a relação única produto + natureza.
+O relatório não usa `.distinct()` para esconder cardinalidade e não combina
+naturezas de empresas diferentes.
+
+Classificações implementadas:
+
+| Classificação | Significado diagnóstico |
+| --- | --- |
+| `CONCORDANTE` | legado e código explícito possuem o mesmo valor cadastrado |
+| `DIVERGENTE` | as duas fontes possuem valores cadastrados diferentes |
+| `SOMENTE_LEGADO` | existe legado e não existe parametrização para a natureza |
+| `SOMENTE_EXPLICITO` | existe decisão com código e o legado está vazio |
+| `SEM_BENEFICIO_EXPLICITO_COM_LEGADO` | a decisão humana é sem benefício, mas o legado possui valor |
+| `SEM_BENEFICIO_EXPLICITO` | a decisão humana é sem benefício e o legado está vazio |
+| `INDEFINIDO` | existe parametrização, mas a decisão ainda não foi concluída |
+| `AUSENTE` | não existe legado nem parametrização aplicável à natureza |
+
+`SEM_BENEFICIO_EXPLICITO` é um estado adicional necessário para não tratar uma
+decisão humana concluída como ausência de decisão. Nenhuma classificação afirma
+validade fiscal. Um legado com prefixo `GO` em recorte de outra UF é exibido como
+valor existente, acompanhado de aviso de que sua validade não é afirmada naquele
+recorte. Somente GO possui perfil estadual técnico; demais UFs são marcadas como
+recortes sem perfil fiscal estadual homologado no Deigo Fiscal.
+
+A tela permite filtrar produto/códigos, empresa, filial, natureza, UF, CRT e
+classificação. O acesso usa os perfis já autorizados para Relatórios ou Revisão
+Fiscal e preserva o escopo da empresa do usuário. A paginação mantém no máximo
+50 linhas em memória; produtos e parametrizações são carregados em lotes com
+`select_related`/`prefetch_related`. O CSV é streaming, possui nome
+`diagnostico-cbenef-legado-explicito-AAAAMMDD.csv`, declara o contrato diagnóstico
+e não contém `_modo_importacao` nem endpoint correspondente de importação.
+
+A contagem por classificação é apresentada dinamicamente para o filtro atual.
+Nenhuma contagem desta base local nova foi usada como evidência global. Não houve
+migration, escrita, cópia entre fontes, limpeza, inferência, mudança de XML,
+preflight, resolvedor emissivo ou integração. O campo
+`Produto.codigo_beneficio_fiscal` permanece preservado e a decisão continua
+`NAO_PODE_REMOVER_COLUNA`, pois o fallback emissivo ainda existe em GO CRT 1/4 e
+nas demais UFs.
+
+Limitações: o relatório só produz linhas para filiais com `ConfiguracaoFiscal` e
+naturezas já cadastradas; ele caracteriza a fonte emissiva atual, mas não valida
+catálogo, enquadramento, vigência, homologação ou aplicabilidade do código. O
+próximo passo real é executar o diagnóstico em instalações representativas,
+submeter divergências e recortes sem perfil ao responsável fiscal e confirmar as
+regras oficiais por UF/CRT. Até esse aceite externo, não há mudança emissiva
+interna autorizada nem proposta de remoção da coluna.
+
+A validação focada passou com 26 testes, incluindo prova de quatro consultas
+constantes para vários produtos no mesmo recorte, sem N+1.
+A regressão ampliada de Fiscal, Produtos e Empresas passou com 865 testes; três
+cenários foram ignorados porque exigem semântica concorrente de PostgreSQL e
+permanecem sob responsabilidade da CI. Nenhuma rede fiscal foi utilizada.

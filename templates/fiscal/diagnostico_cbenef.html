@@ -1,0 +1,74 @@
+{% extends "base.html" %}
+
+{% block title %}Diagnóstico cBenef{% endblock %}
+
+{% block content %}
+<header class="page-header">
+  <div>
+    <h1>cBenef legado × decisão explícita</h1>
+    <p>Confronto somente leitura por produto, natureza, filial, UF e CRT.</p>
+  </div>
+  <div class="actions">
+    <a class="secondary-button" href="{% url 'fiscal:diagnostico_cbenef_exportar_csv' %}{% if request.GET.urlencode %}?{{ request.GET.urlencode }}{% endif %}"><i class="fa-solid fa-file-export"></i> Exportar diagnóstico</a>
+    <a class="secondary-button" href="{% url 'fiscal:produtos_fiscais' %}">Voltar</a>
+  </div>
+</header>
+
+<section class="operation-notice operation-notice-warning">
+  <i class="fa-solid fa-shield-halved"></i>
+  <div>
+    <strong>Relatório diagnóstico — não altera cadastro nem emissão</strong>
+    <span>Valor existente não significa valor fiscalmente válido. Divergências exigem revisão humana; nenhuma linha migra, corrige ou valida cBenef.</span>
+  </div>
+</section>
+
+<section class="metrics-grid">
+  <article class="metric"><span>Linhas no filtro</span><strong>{{ total }}</strong></article>
+  <article class="metric"><span>Concordantes</span><strong>{{ contagens.CONCORDANTE|default:0 }}</strong></article>
+  <article class="metric"><span>Divergentes</span><strong>{{ contagens.DIVERGENTE|default:0 }}</strong></article>
+  <article class="metric"><span>Indefinidas</span><strong>{{ contagens.INDEFINIDO|default:0 }}</strong></article>
+</section>
+
+<form method="get" class="toolbar report-filter">
+  <label><span>Produto</span><input type="search" name="q" value="{{ filtros.q }}" placeholder="Nome, código interno ou barras"></label>
+  <label><span>Empresa</span><select name="empresa"><option value="">Todas</option>{% for empresa in opcoes.empresas %}<option value="{{ empresa.pk }}" {% if filtros.empresa == empresa.pk|stringformat:'s' %}selected{% endif %}>{{ empresa.nome_fantasia }}</option>{% endfor %}</select></label>
+  <label><span>Filial</span><select name="filial"><option value="">Todas</option>{% for filial in opcoes.filiais %}<option value="{{ filial.pk }}" {% if filtros.filial == filial.pk|stringformat:'s' %}selected{% endif %}>{{ filial.empresa.nome_fantasia }} — {{ filial.nome }}</option>{% endfor %}</select></label>
+  <label><span>Natureza</span><select name="natureza"><option value="">Todas</option>{% for natureza in opcoes.naturezas %}<option value="{{ natureza.pk }}" {% if filtros.natureza == natureza.pk|stringformat:'s' %}selected{% endif %}>{{ natureza.empresa.nome_fantasia }} — {{ natureza.descricao }}</option>{% endfor %}</select></label>
+  <label><span>UF</span><select name="uf"><option value="">Todas</option>{% for uf in opcoes.ufs %}<option value="{{ uf }}" {% if filtros.uf == uf %}selected{% endif %}>{{ uf }}</option>{% endfor %}</select></label>
+  <label><span>CRT</span><select name="crt"><option value="">Todos</option>{% for valor, rotulo in opcoes.crts %}<option value="{{ valor }}" {% if filtros.crt == valor %}selected{% endif %}>{{ rotulo }}</option>{% endfor %}</select></label>
+  <label><span>Situação</span><select name="situacao"><option value="">Todas</option>{% for valor, rotulo in opcoes.classificacoes.items %}<option value="{{ valor }}" {% if filtros.situacao == valor %}selected{% endif %}>{{ rotulo }}</option>{% endfor %}</select></label>
+  <button type="submit">Filtrar</button>
+</form>
+
+<section class="panel">
+  <h2>Confronto cadastral</h2>
+  <div class="table-wrapper">
+    <table>
+      <thead><tr><th>Produto</th><th>Empresa / filial</th><th>Natureza</th><th>UF / CRT</th><th>Legado existente</th><th>Decisão explícita</th><th>Código explícito</th><th>Situação</th><th>Observação</th></tr></thead>
+      <tbody>
+        {% for linha in linhas %}
+          <tr>
+            <td><strong>{{ linha.produto.nome }}</strong><br><small>{{ linha.produto.codigo_interno }} · {{ linha.produto.codigo_barras }}</small></td>
+            <td>{{ linha.empresa.nome_fantasia }}<br><small>{{ linha.filial.nome }}</small></td>
+            <td>{{ linha.natureza.descricao }}<br><small>{{ linha.natureza.get_tipo_documento_display }}{% if not linha.natureza.ativo %} · inativa{% endif %}</small></td>
+            <td>{{ linha.uf|default:"-" }} / CRT {{ linha.crt|default:"-" }}{% if not linha.perfil_estadual %}<br><span class="status status-warning">Sem perfil estadual</span>{% endif %}</td>
+            <td><code>{{ linha.legado|default:"-" }}</code></td>
+            <td>{{ linha.decisao_explicita }}</td>
+            <td><code>{{ linha.codigo_explicito|default:"-" }}</code></td>
+            <td>{% if linha.situacao == "CONCORDANTE" %}<span class="status status-success">{{ linha.situacao_label }}</span>{% elif linha.situacao == "DIVERGENTE" or linha.situacao == "SEM_BENEFICIO_EXPLICITO_COM_LEGADO" %}<span class="status status-danger">{{ linha.situacao_label }}</span>{% else %}<span class="status status-warning">{{ linha.situacao_label }}</span>{% endif %}</td>
+            <td><small>{{ linha.observacao }}</small></td>
+          </tr>
+        {% empty %}<tr><td colspan="9" class="empty">Nenhuma combinação encontrada para os filtros informados.</td></tr>{% endfor %}
+      </tbody>
+    </table>
+  </div>
+</section>
+
+{% if page_obj.paginator.num_pages > 1 %}
+<nav class="pagination" aria-label="Paginação">
+  {% if page_obj.has_previous %}<a class="secondary-button" href="?{% if query_sem_pagina %}{{ query_sem_pagina }}&amp;{% endif %}page={{ page_obj.previous_page_number }}"><i class="fa-solid fa-chevron-left"></i> Anterior</a>{% else %}<span class="secondary-button disabled"><i class="fa-solid fa-chevron-left"></i> Anterior</span>{% endif %}
+  <strong>Página {{ page_obj.number }} de {{ page_obj.paginator.num_pages }}</strong>
+  {% if page_obj.has_next %}<a class="secondary-button" href="?{% if query_sem_pagina %}{{ query_sem_pagina }}&amp;{% endif %}page={{ page_obj.next_page_number }}">Próxima <i class="fa-solid fa-chevron-right"></i></a>{% else %}<span class="secondary-button disabled">Próxima <i class="fa-solid fa-chevron-right"></i></span>{% endif %}
+</nav>
+{% endif %}
+{% endblock %}

@@ -1340,6 +1340,34 @@ Nenhuma dessas etapas está concluída pelos testes sintéticos. Migrações: ne
   visíveis e sem conversão automática. Qualquer troca emissiva permanece
   dependente de regra oficial e aceite do responsável fiscal.
 
+## Ponto de retomada — ciclo 168, 24/09/2026
+
+- [x] Criar o relatório Fiscal somente leitura
+  `cbenef_legacy_explicit_diagnostic_v1`, com uma linha por produto × natureza ×
+  filial/configuração fiscal e isolamento pela empresa do usuário.
+- [x] Classificar concordância, divergência, somente legado, somente explícito,
+  decisão sem benefício com/sem legado, indefinição e ausência, sem atribuir
+  validade fiscal ao valor existente.
+- [x] Identificar GO como único perfil estadual técnico e marcar outras UFs como
+  recortes sem perfil homologado; um código com prefixo GO fora de GO é exibido
+  sem ser declarado válido.
+- [x] Disponibilizar filtros, paginação e CSV streaming explicitamente
+  diagnóstico, sem `_modo_importacao`, importador, escrita ou auditoria que
+  altere o banco durante a consulta.
+- [x] Preservar emissão, XML, preflight, resolvedor, modelos, dados, snapshots,
+  integrações e migrations. O fallback continua emissivo em GO CRT 1/4 e nas
+  demais UFs; `Produto.codigo_beneficio_fiscal` continua bloqueado para remoção.
+- [x] Validar 26 testes focados de classificação, cardinalidade, GO CRT 1–4,
+  outra UF, permissões, escopo, filtros, paginação, ausência de N+1 e
+  imutabilidade da tela/CSV.
+- [x] Validar 865 testes de Fiscal, Produtos e Empresas no SQLite; três testes
+  concorrentes permaneceram ignorados por exigirem PostgreSQL e serão cobertos
+  pela CI. Nenhuma rede fiscal ou credencial real foi utilizada.
+- [ ] Próximo passo real: executar o diagnóstico em instalações representativas
+  e obter decisão documentada do responsável fiscal sobre divergências e regras
+  oficiais por UF/CRT. Sem esse aceite, não substituir o fallback, não corrigir
+  dados encontrados e não remover a coluna legado.
+
 ## Ponto de retomada — ciclo 143, 18/09/2026
 
 Concluída a pendência P2 de parcelas/duplicatas da NF-e recebida, eliminando a perda da

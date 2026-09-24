@@ -56,6 +56,12 @@ urlpatterns = [
     path("diagnostico.json", views.diagnostico_json, name="diagnostico_json"),
     path("contingencia.json", views.contingencia_json, name="contingencia_json"),
     path("produtos/", views.produtos_fiscais, name="produtos_fiscais"),
+    path("diagnostico-cbenef/", views.diagnostico_cbenef, name="diagnostico_cbenef"),
+    path(
+        "diagnostico-cbenef/exportar.csv",
+        views.diagnostico_cbenef_exportar_csv,
+        name="diagnostico_cbenef_exportar_csv",
+    ),
     path("dfe-recebidos/", views.dfe_recebidos, name="dfe_recebidos"),
     path("dfe-recebidos/consultar/", views.dfe_consultar_distribuicao, name="dfe_consultar_distribuicao"),
     path("dfe-recebidos/<int:pk>/", views.dfe_detalhe, name="dfe_detalhe"),

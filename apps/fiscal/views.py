@@ -31,6 +31,11 @@ from .cce_adapters import diagnostico_adaptador_cce
 from .cadastro_adapters import diagnostico_adaptador_consulta_cadastro
 from .assinaturas import assinatura_local_disponivel
 from .certificados import revogar_csc, salvar_certificado_a1, salvar_csc
+from .diagnostico_cbenef import (
+    iterar_diagnostico_cbenef,
+    opcoes_diagnostico_cbenef,
+    paginar_diagnostico_cbenef,
+)
 from .evidencias import verificar_integridade_evidencias
 from .escopo import (
     configuracoes_para_usuario,
@@ -1262,6 +1267,109 @@ def produtos_fiscais(request):
         ),
     }
     return render(request, "fiscal/produtos_fiscais.html", context)
+
+
+def _filtros_diagnostico_cbenef(request):
+    return {
+        "q": request.GET.get("q", "").strip(),
+        "empresa": request.GET.get("empresa", "").strip(),
+        "filial": request.GET.get("filial", "").strip(),
+        "natureza": request.GET.get("natureza", "").strip(),
+        "uf": request.GET.get("uf", "").strip().upper(),
+        "crt": request.GET.get("crt", "").strip(),
+        "situacao": request.GET.get("situacao", "").strip().upper(),
+    }
+
+
+@login_required
+@role_required(*(RELATORIOS | REVISAO_FISCAL))
+def diagnostico_cbenef(request):
+    filtros = _filtros_diagnostico_cbenef(request)
+    pagina, contagens = paginar_diagnostico_cbenef(
+        request.user,
+        filtros,
+        request.GET.get("page", 1),
+    )
+    query = request.GET.copy()
+    query.pop("page", None)
+    return render(
+        request,
+        "fiscal/diagnostico_cbenef.html",
+        {
+            "page_obj": pagina,
+            "linhas": pagina.object_list,
+            "filtros": filtros,
+            "opcoes": opcoes_diagnostico_cbenef(request.user),
+            "contagens": dict(contagens),
+            "total": pagina.paginator.count,
+            "query_sem_pagina": query.urlencode(),
+            "contrato": "cbenef_legacy_explicit_diagnostic_v1",
+        },
+    )
+
+
+@login_required
+@role_required(*(RELATORIOS | REVISAO_FISCAL))
+def diagnostico_cbenef_exportar_csv(request):
+    filtros = _filtros_diagnostico_cbenef(request)
+    escritor = csv.writer(_CSVBuffer(), delimiter=";", lineterminator="\r\n")
+
+    def linhas_csv():
+        yield "﻿"
+        yield escritor.writerow(
+            [
+                "contrato",
+                "empresa",
+                "filial",
+                "produto_codigo",
+                "produto",
+                "codigo_barras",
+                "natureza",
+                "tipo_documento",
+                "uf",
+                "crt",
+                "legado_existente",
+                "decisao_explicita",
+                "codigo_explicito",
+                "situacao_confronto",
+                "perfil_estadual_tecnico",
+                "fonte_emissiva_atual",
+                "observacao_diagnostica",
+            ]
+        )
+        for linha in iterar_diagnostico_cbenef(request.user, filtros):
+            yield escritor.writerow(
+                [
+                    "cbenef_legacy_explicit_diagnostic_v1",
+                    linha.empresa.nome_fantasia,
+                    linha.filial.nome,
+                    linha.produto.codigo_interno,
+                    linha.produto.nome,
+                    linha.produto.codigo_barras,
+                    linha.natureza.descricao,
+                    linha.natureza.get_tipo_documento_display(),
+                    linha.uf,
+                    linha.crt,
+                    linha.legado,
+                    linha.decisao_explicita,
+                    linha.codigo_explicito,
+                    linha.situacao,
+                    "SIM" if linha.perfil_estadual else "NAO",
+                    linha.fonte_emissiva_atual,
+                    linha.observacao,
+                ]
+            )
+
+    response = StreamingHttpResponse(
+        linhas_csv(),
+        content_type="text/csv; charset=utf-8",
+    )
+    data = timezone.localdate().strftime("%Y%m%d")
+    response["Content-Disposition"] = (
+        f'attachment; filename="diagnostico-cbenef-legado-explicito-{data}.csv"'
+    )
+    response["X-Diagnostic-Contract"] = "cbenef_legacy_explicit_diagnostic_v1"
+    return response
 
 
 def _documento_com_dados(user, pk):
