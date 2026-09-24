@@ -11,8 +11,10 @@ A frente atual pertence à transição do CNPJ alfanumérico planejada no ciclo 
 - [x] Após essa comparação, atualizar a pendência de integração da própria fase 4, identificando o que depende de correção de dados e o que pode ser validado localmente. A classificação foi concluída no ciclo 116, sem declarar a fase completa.
 - [x] Fase 5 interna: chave/XML/QR Code/DANFE HTML e consumidores internos compatibilizados
   nos ciclos 121–126, mantendo o Code 128 RAW/ESC-POS como risco de homologação de hardware.
-- [ ] Fase 6 original: Focus, SEFAZ direta e DF-e continuam separados e pendentes de
-  compatibilização/homologação própria.
+- [x] Fase 6 interna: Focus, SEFAZ direta e DF-e foram separados, roteados e qualificados
+  offline nos ciclos 127–134; lacunas Focus continuam fail-closed.
+- [ ] Fase 6 externa: homologar separadamente Focus e SEFAZ direta com filial, credenciais
+  e evidências reais antes de qualquer produção.
 
 Novas tarefas devem indicar o item original que atendem, a lacuna concreta e o critério de conclusão antes da implementação. Melhorias opcionais vão para pendências futuras e não substituem automaticamente a próxima entrega. Contagem de testes e quantidade de ciclos não medem conclusão funcional.
 
@@ -34,12 +36,18 @@ Matriz, evidências locais e critérios:
 - [x] P1: revisar normativamente consumidor PJ/modelo documental, cobertura de obrigatoriedade
   cBenef GO e readiness/CSC diante do QR Code v3; sem presumir regra legal a partir do código.
 - [ ] Homologar hardware e definir Code 128 RAW/ESC-POS; HTML já possui Code 128 C/A.
-- [ ] Fase 6: compatibilizar SEFAZ direta, inutilização, eventos e DF-e; homologar Focus separadamente.
-- [ ] Preparar XSD oficial aplicável: origem, versão, SHA-256, compilação offline, instalação
-  controlada, XMLs do ERP e versão congelada para o piloto.
+- [x] Fase 6 interna: SEFAZ direta, inutilização, eventos e DF-e possuem contratos offline;
+  Focus mantém CC-e e manifestação explicitamente bloqueadas.
+- [ ] Fase 6 externa: homologar SEFAZ direta e Focus separadamente.
+- [x] Identificar e congelar o XSD candidato: `PL_010f_v1.04`, origem oficial, SHA-256,
+  compilação offline e igualdade do ZIP oficial/arquivado revalidadas no ciclo 169.
+- [ ] Aprovar e instalar o XSD de forma controlada somente após decisão fiscal e antes da
+  homologação real; nenhum pacote está operacionalmente promovido.
 - [ ] Confirmar CRT e cronograma IBS/CBS aplicável; fechar grupos, cálculos, testes e homologação.
 - [ ] Confirmar CNPJ, IE, CNAE, A1, credenciamento, configuração e produtos reais do piloto.
 - [ ] Classificar cada SKU/operação como SUPORTADO ou BLOQUEADO; impedir cenário desconhecido.
+  A matriz técnica do emissor foi consolidada no ciclo 169 e falha fechado; a execução por
+  SKU/operação real continua externa e depende das instalações representativas.
 - [ ] Executar bateria real por canal/filial, incluindo autorização, consulta, rejeição/correção,
   cancelamento, inutilização, contingência/SVC, cadastro, eventos/DF-e, QR/DANFE,
   reimpressão e armazenamento XML/protocolo.
@@ -1367,6 +1375,39 @@ Nenhuma dessas etapas está concluída pelos testes sintéticos. Migrações: ne
   e obter decisão documentada do responsável fiscal sobre divergências e regras
   oficiais por UF/CRT. Sem esse aceite, não substituir o fallback, não corrigir
   dados encontrados e não remover a coluna legado.
+
+## Ponto de retomada — ciclo 169, 24/09/2026
+
+Reconciliação técnica do roadmap e congelamento diagnóstico do XSD do piloto GO,
+sem retomar cBenef, promover schema ou alterar emissão.
+
+- [x] Confirmar no Portal Nacional NF-e que o `PL_010f_v1.04`, publicado em
+  31/08/2026, permanece listado como versão oficial em uso. O ZIP oficial baixado
+  novamente tem 41.682 bytes e o mesmo SHA-256 do arquivado:
+  `b8589490a58a09a993a80e6ac4d7ed10f20892061ecfc56719337098d4b95998`.
+- [x] Registrar `PACOTE_ATUAL`, `PACOTE_OFICIAL_IDENTIFICADO`, comparação
+  `IGUAIS_POR_SHA256`, impacto e arquivos afetados. O pacote continua somente
+  arquivado; `fiscal_schemas` não contém XSD operacional.
+- [x] Consolidar `fiscal_go_pre_homologation_matrix_v1` com 35 cenários e os
+  estados `SUPORTADO`, `BLOQUEADO`, `DEPENDE_DE_HOMOLOGACAO`,
+  `DEPENDE_DE_PARAMETRIZACAO` e `NAO_IMPLEMENTADO`.
+- [x] Caracterizar modelos 55/65, CRT 1–4, CST/CSOSN, PIS, COFINS, IPI, cBenef,
+  pagamentos, destinatário, emitente, QR Code, contingência e canais sem inventar
+  suporte. Combinação ausente da matriz retorna bloqueio explícito.
+- [x] Corrigir checkboxes macro obsoletos: a estrutura interna da Fase 6 e a
+  auditoria/congelamento do XSD estão concluídas; homologação, aprovação e instalação
+  permanecem externas e separadas.
+- [x] Preservar emissor, XML, preflight, modelos, banco, migrations, configurações,
+  credenciais, rede e produção. O diagnóstico recompõe o manifesto somente offline.
+- [x] Validar 26 testes focados de auditoria, determinismo, matriz e fail-closed;
+  a regressão de Fiscal, Vendas, PDV e Produtos aprovou 906 testes. Sete cenários de
+  concorrência real foram ignorados no SQLite e permanecem no workflow PostgreSQL.
+- [ ] Próximo bloqueio interno: nenhum schema deve ser promovido neste estado.
+  Manter a matriz sincronizada e aguardar decisão normativa/fiscal antes de ampliar
+  IBS/CBS, B2B, frete ou interestadual.
+- [ ] Próximo bloqueio externo: executar a matriz em instalações representativas,
+  obter aceite do contador, aprovar formalmente o pacote e homologar cada canal com
+  identidade, A1, credenciamento, adquirente/equipamento e evidências reais.
 
 ## Ponto de retomada — ciclo 143, 18/09/2026
 

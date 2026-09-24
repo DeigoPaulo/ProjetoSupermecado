@@ -57,6 +57,15 @@ A saída JSON é determinística para o mesmo pacote e não inclui caminho absol
 
 Nenhuma dessas etapas posteriores foi executada no ciclo 96.
 
+## Revalidação para o piloto GO — 24/09/2026
+
+O Portal Nacional NF-e continuava listando o pacote 010f entre as versões oficiais em uso.
+Uma nova cópia obtida da mesma fonte oficial apresentou 41.682 bytes e SHA-256
+`b8589490a58a09a993a80e6ac4d7ed10f20892061ecfc56719337098d4b95998`, exatamente igual
+ao ZIP arquivado. O arquivo temporário foi descartado após a comparação. Não houve
+divergência, substituição, instalação ou promoção. A situação operacional permanece
+`NAO_INSTALADO`, documentada na matriz do piloto GO.
+
 ## Próximo passo
 
 O confronto foi concluído no ciclo 97 em [COMPATIBILIDADE_MATRIZ_XSD_DEVOLUCAO.md](COMPATIBILIDADE_MATRIZ_XSD_DEVOLUCAO.md): 105 destinos confirmados, oito pendentes e duas ausências totais documentadas, sem divergência. O próximo passo é criar um plano de construção por bloco, ainda sem valores ou XML.
