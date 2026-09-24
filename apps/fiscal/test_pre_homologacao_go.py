@@ -12,7 +12,9 @@ from django.test import SimpleTestCase
 from .cenarios_tributarios import avaliar_cenario_fiscal_go
 from .pre_homologacao_go import (
     BLOQUEADO,
+    CONTROLES_VALIDOS,
     CONTRATO,
+    DIAGNOSTICO,
     DEPENDE_DE_HOMOLOGACAO,
     DEPENDE_DE_PARAMETRIZACAO,
     NAO_IMPLEMENTADO,
@@ -73,6 +75,11 @@ class PreHomologacaoGoTests(SimpleTestCase):
         self.assertEqual(len(itens), len(por_codigo))
         self.assertTrue(all(item["status"] in STATUS_VALIDOS for item in itens))
         self.assertTrue(all(not item["autoriza_producao"] for item in itens))
+        self.assertTrue(all(item["efeito_da_consulta"] == "SOMENTE_DIAGNOSTICO" for item in itens))
+        self.assertTrue(all(DIAGNOSTICO in item["controle"] for item in itens))
+        self.assertTrue(
+            all(set(item["controle"]).issubset(CONTROLES_VALIDOS) for item in itens)
+        )
         for codigo in {
             "modelo_65_nfce", "modelo_55_nfe", "crt_1_simples", "crt_2_excesso",
             "crt_3_normal", "crt_4_mei", "pis", "cofins", "ipi", "cbenef",
@@ -81,6 +88,7 @@ class PreHomologacaoGoTests(SimpleTestCase):
             "pagamento_dividido", "destinatario_nao_identificado", "destinatario_cpf",
             "destinatario_cnpj", "endereco_emitente", "qrcode_nfce",
             "contingencia_nfce", "sefaz_direta_go", "focus", "ibs_cbs",
+            "finalidade_nao_suportada",
         }:
             self.assertIn(codigo, por_codigo)
 
@@ -93,12 +101,25 @@ class PreHomologacaoGoTests(SimpleTestCase):
         self.assertEqual(itens["xsd_operacional"]["status"], BLOQUEADO)
         self.assertEqual(itens["ibs_cbs"]["status"], NAO_IMPLEMENTADO)
 
-    def test_combinacao_desconhecida_falha_fechado(self):
+    def test_combinacao_desconhecida_bloqueia_so_o_diagnostico(self):
         resultado = consultar_capacidade_piloto_go("tributo-futuro-nao-catalogado")
 
         self.assertEqual(resultado["status"], BLOQUEADO)
         self.assertEqual(resultado["motivo"], "CENARIO_NAO_CATALOGADO")
+        self.assertEqual(resultado["controle"], [DIAGNOSTICO])
+        self.assertEqual(resultado["efeito_da_consulta"], "SOMENTE_DIAGNOSTICO")
+        self.assertEqual(resultado["bloqueio_operacional"], "NAO_COMPROVADO")
         self.assertFalse(resultado["autoriza_producao"])
+
+    def test_matriz_distingue_travas_operacionais_comprovadas(self):
+        itens = {item["codigo"]: item for item in matriz_capacidades_piloto_go()}
+
+        self.assertEqual(itens["icms_cst_desconhecido"]["bloqueio_operacional"], "COMPROVADO")
+        self.assertEqual(itens["frete"]["bloqueio_operacional"], "COMPROVADO")
+        self.assertEqual(
+            itens["producao"]["bloqueio_operacional"], "COMPROVADO_NOS_ADAPTADORES"
+        )
+        self.assertEqual(itens["pagamento_dinheiro"]["bloqueio_operacional"], "NAO_COMPROVADO")
 
     def test_avaliador_emissivo_existente_bloqueia_modelo_desconhecido(self):
         resultado = avaliar_cenario_fiscal_go(

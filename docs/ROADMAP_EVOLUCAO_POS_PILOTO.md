@@ -43,11 +43,14 @@ Matriz, evidências locais e critérios:
   compilação offline e igualdade do ZIP oficial/arquivado revalidadas no ciclo 169.
 - [ ] Aprovar e instalar o XSD de forma controlada somente após decisão fiscal e antes da
   homologação real; nenhum pacote está operacionalmente promovido.
-- [ ] Confirmar CRT e cronograma IBS/CBS aplicável; fechar grupos, cálculos, testes e homologação.
+- [x] Confirmar o cronograma IBS/CBS por CRT em 24/09/2026: CRT 3 possui UB12-10
+  em produção desde 03/08/2026; CRT 1, 2 e 4 têm implementação indicada para 2027.
+- [ ] Fechar catálogo, grupos, cálculos, totalizadores, testes e homologação IBS/CBS
+  em ciclo próprio, começando pelo bloqueio prioritário do CRT 3.
 - [ ] Confirmar CNPJ, IE, CNAE, A1, credenciamento, configuração e produtos reais do piloto.
-- [ ] Classificar cada SKU/operação como SUPORTADO ou BLOQUEADO; impedir cenário desconhecido.
-  A matriz técnica do emissor foi consolidada no ciclo 169 e falha fechado; a execução por
-  SKU/operação real continua externa e depende das instalações representativas.
+- [ ] Classificar cada SKU/operação real como SUPORTADO ou BLOQUEADO. A matriz do
+  ciclo 169 é diagnóstica e não bloqueia o emissor; somente os controles operacionais
+  identificados no ciclo 170 possuem efeito no preflight, gerador ou pré-transmissão.
 - [ ] Executar bateria real por canal/filial, incluindo autorização, consulta, rejeição/correção,
   cancelamento, inutilização, contingência/SVC, cadastro, eventos/DF-e, QR/DANFE,
   reimpressão e armazenamento XML/protocolo.
@@ -1375,6 +1378,45 @@ Nenhuma dessas etapas está concluída pelos testes sintéticos. Migrações: ne
   e obter decisão documentada do responsável fiscal sobre divergências e regras
   oficiais por UF/CRT. Sem esse aceite, não substituir o fallback, não corrigir
   dados encontrados e não remover a coluna legado.
+
+## Ponto de retomada — ciclo 170, 24/09/2026
+
+Auditoria normativa IBS/CBS e correção semântica da matriz do piloto GO, sem alterar
+XML, cálculo, schema operacional, rede ou produção.
+
+- [x] Separar o bloqueio diagnóstico de `consultar_capacidade_piloto_go` das travas
+  operacionais independentes em preflight, gerador, pré-transmissão e canal externo.
+  Código ausente continua `BLOQUEADO` para a auditoria, mas passa a declarar
+  `SOMENTE_DIAGNOSTICO` e `bloqueio_operacional=NAO_COMPROVADO`.
+- [x] Mapear controles reais para os 36 itens. CST/CSOSN desconhecidos possuem
+  preflight e recusa no gerador; modelo, operação interestadual, destinatário
+  contribuinte, frete e finalidade são avaliados no recorte emissivo; produção é
+  recusada pelos adaptadores enquanto a liberação explícita estiver desligada.
+- [x] Confirmar no Portal Nacional NF-e que a NT 2025.002-RTC v1.51 permanece a
+  versão vigente da NT e que a NT 2026.009 v1.00 não altera leiaute nem schemas.
+- [x] Confirmar a RV UB12-10, cStat 1115, para NF-e/NFC-e de CRT 3 em produção desde
+  03/08/2026. O XML atual do Deigo omite `IBSCBS`; por isso, venda comum do piloto
+  em CRT 3 passa a ser bloqueio interno prioritário, ressalvadas as exceções oficiais
+  que devem ser classificadas por operação.
+- [x] Não extrapolar CRT 3: a NT v1.51 remete CRT 1, 2 e 4 a janeiro de 2027 e a
+  orientação específica futura. Para esses CRTs, não foi confirmada rejeição UB12-10
+  em setembro de 2026.
+- [x] Auditar cadastro, modos, pendências, geradores e totalizadores: existem apenas
+  campos preparatórios de formato; faltam catálogo oficial, regra de negócio,
+  cálculo, grupos XML, totalização e testes/homologação do recorte IBS/CBS.
+- [x] Revalidar `PL_010f_v1.04` como versão oficial em uso, com hashes idênticos aos
+  congelados. Nenhum schema foi substituído, instalado ou promovido.
+- [x] Validar 27 testes focados e 730 testes do módulo Fiscal, com 3 skips de
+  ambiente; `check`, `makemigrations --check --dry-run`, migração integral e
+  `migrate --check` em SQLite descartável e `git diff --check` aprovados. A base
+  SQLite local, já desatualizada, não foi migrada.
+- [ ] Próximo bloqueio interno prioritário: implementar IBS/CBS para CRT 3 em ciclo
+  separado, somente após decisão do contador por SKU/operação. Não iniciar
+  automaticamente a implementação a partir desta auditoria.
+- [ ] Próximo bloqueio externo: aprovar o schema operacional e homologar os modelos
+  55 e 65 por filial/canal com identidade fiscal real antes de produção.
+
+Documento técnico: `docs/AUDITORIA_IBS_CBS_PILOTO_GO_2026.md`.
 
 ## Ponto de retomada — ciclo 169, 24/09/2026
 

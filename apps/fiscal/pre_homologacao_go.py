@@ -23,6 +23,72 @@ STATUS_VALIDOS = {
     NAO_IMPLEMENTADO,
 }
 
+DIAGNOSTICO = "DIAGNOSTICO"
+PREFLIGHT = "PREFLIGHT"
+GERADOR = "GERADOR"
+PRE_TRANSMISSAO = "PRE_TRANSMISSAO"
+EXTERNO = "EXTERNO"
+CONTROLES_VALIDOS = {
+    DIAGNOSTICO,
+    PREFLIGHT,
+    GERADOR,
+    PRE_TRANSMISSAO,
+    EXTERNO,
+}
+
+# A matriz apenas descreve estes controles. Ela nao e chamada por nenhum deles.
+CONTROLES_CAPACIDADE = {
+    "modelo_65_nfce": (DIAGNOSTICO, PREFLIGHT, GERADOR),
+    "modelo_55_nfe": (DIAGNOSTICO, PREFLIGHT, GERADOR),
+    "crt_1_simples": (DIAGNOSTICO, PREFLIGHT, GERADOR),
+    "crt_2_excesso": (DIAGNOSTICO, PREFLIGHT, GERADOR),
+    "crt_3_normal": (DIAGNOSTICO, EXTERNO),
+    "crt_4_mei": (DIAGNOSTICO, PREFLIGHT, GERADOR),
+    "icms_cst_suportados": (DIAGNOSTICO, PREFLIGHT, GERADOR),
+    "icms_cst_desconhecido": (DIAGNOSTICO, PREFLIGHT, GERADOR),
+    "icms_csosn_suportados": (DIAGNOSTICO, PREFLIGHT, GERADOR),
+    "icms_csosn_desconhecido": (DIAGNOSTICO, PREFLIGHT, GERADOR),
+    "pis": (DIAGNOSTICO, PREFLIGHT, GERADOR),
+    "cofins": (DIAGNOSTICO, PREFLIGHT, GERADOR),
+    "ipi": (DIAGNOSTICO, PREFLIGHT, GERADOR),
+    "cbenef": (DIAGNOSTICO, PREFLIGHT, GERADOR),
+    "ibs_cbs": (DIAGNOSTICO, PREFLIGHT, EXTERNO),
+    "pagamento_dinheiro": (DIAGNOSTICO, PREFLIGHT, GERADOR),
+    "pagamento_credito": (DIAGNOSTICO, PREFLIGHT, GERADOR, PRE_TRANSMISSAO, EXTERNO),
+    "pagamento_debito": (DIAGNOSTICO, PREFLIGHT, GERADOR, PRE_TRANSMISSAO, EXTERNO),
+    "pagamento_pix": (DIAGNOSTICO, PREFLIGHT, GERADOR, PRE_TRANSMISSAO, EXTERNO),
+    "pagamento_vale_alimentacao": (DIAGNOSTICO, PREFLIGHT, GERADOR, PRE_TRANSMISSAO, EXTERNO),
+    "pagamento_vale_refeicao": (DIAGNOSTICO, PREFLIGHT, GERADOR, PRE_TRANSMISSAO, EXTERNO),
+    "pagamento_dividido": (DIAGNOSTICO, PREFLIGHT, GERADOR, PRE_TRANSMISSAO, EXTERNO),
+    "destinatario_nao_identificado": (DIAGNOSTICO, PREFLIGHT, GERADOR),
+    "destinatario_cpf": (DIAGNOSTICO, PREFLIGHT, GERADOR),
+    "destinatario_cnpj": (DIAGNOSTICO, PREFLIGHT, GERADOR, EXTERNO),
+    "endereco_emitente": (DIAGNOSTICO, PREFLIGHT, GERADOR, PRE_TRANSMISSAO),
+    "qrcode_nfce": (DIAGNOSTICO, GERADOR, PRE_TRANSMISSAO, EXTERNO),
+    "contingencia_nfce": (DIAGNOSTICO, PREFLIGHT, GERADOR, EXTERNO),
+    "sefaz_direta_go": (DIAGNOSTICO, PRE_TRANSMISSAO, EXTERNO),
+    "focus": (DIAGNOSTICO, PRE_TRANSMISSAO, EXTERNO),
+    "xsd_operacional": (DIAGNOSTICO, PRE_TRANSMISSAO),
+    "venda_interestadual": (DIAGNOSTICO, PREFLIGHT, GERADOR),
+    "destinatario_contribuinte": (DIAGNOSTICO, PREFLIGHT),
+    "frete": (DIAGNOSTICO, PREFLIGHT),
+    "finalidade_nao_suportada": (DIAGNOSTICO, PREFLIGHT, GERADOR),
+    "producao": (DIAGNOSTICO, PRE_TRANSMISSAO),
+}
+
+BLOQUEIO_OPERACIONAL = {
+    "crt_3_normal": "EXTERNO_COMPROVADO",
+    "icms_cst_desconhecido": "COMPROVADO",
+    "icms_csosn_desconhecido": "COMPROVADO",
+    "ibs_cbs": "CONDICIONAL_AO_MODO_EMISSAO_HOMOLOGADA",
+    "xsd_operacional": "COMPROVADO_NA_PRE_TRANSMISSAO",
+    "venda_interestadual": "COMPROVADO",
+    "destinatario_contribuinte": "COMPROVADO",
+    "frete": "COMPROVADO",
+    "finalidade_nao_suportada": "COMPROVADO",
+    "producao": "COMPROVADO_NOS_ADAPTADORES",
+}
+
 PACOTE_XSD = {
     "versao": "PL_010f_v1.04",
     "publicado_em": "2026-08-31",
@@ -62,7 +128,7 @@ CAPACIDADES = (
     ),
     _capacidade(
         "modelo_55_nfe", "documento", "NF-e modelo 55", DEPENDE_DE_HOMOLOGACAO,
-        "Gerador atual cobre pedido online interno dentro do recorte fail-closed do piloto.",
+        "Gerador atual cobre pedido online interno dentro do recorte restrito do piloto.",
         ("services.gerar_xml_nfe_pedido_online", "marketplace.tests"),
     ),
     _capacidade(
@@ -76,9 +142,9 @@ CAPACIDADES = (
         ("services.CST_ICMS_SUPORTADOS", "diagnostico_cbenef"),
     ),
     _capacidade(
-        "crt_3_normal", "tributacao", "CRT 3 - regime normal", DEPENDE_DE_PARAMETRIZACAO,
-        "Exige CST suportado, aliquotas e decisao explicita de cBenef em GO.",
-        ("services.CST_ICMS_SUPORTADOS", "diagnostico_cbenef"),
+        "crt_3_normal", "tributacao", "CRT 3 - regime normal", BLOQUEADO,
+        "Desde 03/08/2026, a RV UB12-10 exige IBSCBS em producao para o recorte comum; o XML atual o omite.",
+        ("NT 2025.002 v1.51, UB12-10", "Ato Conjunto RFB/CGIBS 4/2026"),
     ),
     _capacidade(
         "crt_4_mei", "tributacao", "CRT 4 - MEI", DEPENDE_DE_PARAMETRIZACAO,
@@ -226,6 +292,11 @@ CAPACIDADES = (
         ("cenarios_tributarios.avaliar_cenario_fiscal_go",),
     ),
     _capacidade(
+        "finalidade_nao_suportada", "operacao", "Finalidade diferente de venda normal", NAO_IMPLEMENTADO,
+        "O avaliador GO recusa finalidade diferente de 1 e os geradores atuais fixam finNFe=1.",
+        ("cenarios_tributarios.avaliar_cenario_fiscal_go", "services.gerar_xml_nfce"),
+    ),
+    _capacidade(
         "producao", "seguranca", "Emissao em producao", BLOQUEADO,
         "Nenhum resultado offline, XSD compilado ou adaptador estrutural libera producao.",
         ("sefaz_direta.adapter", "services_evidencias_homologacao"),
@@ -238,6 +309,11 @@ def matriz_capacidades_piloto_go():
     for capacidade in CAPACIDADES:
         item = dict(capacidade)
         item["evidencias"] = list(item["evidencias"])
+        item["controle"] = list(CONTROLES_CAPACIDADE.get(item["codigo"], (DIAGNOSTICO,)))
+        item["efeito_da_consulta"] = "SOMENTE_DIAGNOSTICO"
+        item["bloqueio_operacional"] = BLOQUEIO_OPERACIONAL.get(
+            item["codigo"], "NAO_COMPROVADO"
+        )
         item["autoriza_producao"] = False
         itens.append(item)
     return itens
@@ -253,8 +329,14 @@ def consultar_capacidade_piloto_go(codigo):
         "area": "desconhecida",
         "cenario": "Cenario nao catalogado",
         "status": BLOQUEADO,
-        "escopo": "Combinacao desconhecida nao pode gerar XML transmissivel.",
+        "escopo": (
+            "Codigo ausente do catalogo diagnostico. Este resultado nao prova, por si so, "
+            "que preflight, gerador ou transmissao recusarao o cenario."
+        ),
         "evidencias": [],
+        "controle": [DIAGNOSTICO],
+        "efeito_da_consulta": "SOMENTE_DIAGNOSTICO",
+        "bloqueio_operacional": "NAO_COMPROVADO",
         "autoriza_producao": False,
         "motivo": "CENARIO_NAO_CATALOGADO",
     }

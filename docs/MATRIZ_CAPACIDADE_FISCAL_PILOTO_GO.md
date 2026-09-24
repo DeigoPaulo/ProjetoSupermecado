@@ -5,7 +5,8 @@ Data de congelamento: 24/09/2026. Contrato:
 
 Esta matriz consolida somente evidência existente no código e nos testes. `SUPORTADO`
 significa suporte interno dentro do recorte descrito, não homologação nem autorização de
-produção. Todo item continua com `autoriza_producao=false`.
+produção. Todo item continua com `autoriza_producao=false`. A consulta desta matriz é
+somente diagnóstica: ela não participa do preflight, da geração nem da transmissão.
 
 Estados:
 
@@ -14,6 +15,11 @@ Estados:
 - `DEPENDE_DE_HOMOLOGACAO`: estrutura offline existe, mas falta prova externa real.
 - `DEPENDE_DE_PARAMETRIZACAO`: depende de cadastro ou decisão fiscal explícita.
 - `NAO_IMPLEMENTADO`: não existe cobertura emissiva completa.
+
+O campo `controle` localiza a evidência independente: `DIAGNOSTICO`, `PREFLIGHT`,
+`GERADOR`, `PRE_TRANSMISSAO` ou `EXTERNO`. `bloqueio_operacional=COMPROVADO` só é
+usado quando o caminho emissivo correspondente foi localizado. A presença de um controle
+na lista não significa que a função `consultar_capacidade_piloto_go` o acione.
 
 ## Congelamento do XSD
 
@@ -52,7 +58,7 @@ o arquivo configurado por `FISCAL_SCHEMA_DIR`, `FISCAL_NFE_SCHEMA_FILE` e
 | NF-e modelo 55 | `DEPENDE_DE_HOMOLOGACAO` | Pedido online interno possui gerador no recorte atual |
 | CRT 1 Simples | `DEPENDE_DE_PARAMETRIZACAO` | Exige CSOSN e cadastro completo |
 | CRT 2 excesso | `DEPENDE_DE_PARAMETRIZACAO` | Exige CST e decisão de cBenef GO |
-| CRT 3 normal | `DEPENDE_DE_PARAMETRIZACAO` | Exige CST, alíquotas e decisão de cBenef GO |
+| CRT 3 normal | `BLOQUEADO` | Desde 03/08/2026, UB12-10 exige `IBSCBS` no recorte comum; o XML atual o omite |
 | CRT 4 MEI | `DEPENDE_DE_PARAMETRIZACAO` | Usa ramo CSOSN; enquadramento depende de revisão |
 | CST 00/20/40/41/50 | `SUPORTADO` | Grupos ICMS explícitos no gerador |
 | CST fora da matriz | `BLOQUEADO` | Preflight e gerador recusam |
@@ -82,14 +88,24 @@ o arquivo configurado por `FISCAL_SCHEMA_DIR`, `FISCAL_NFE_SCHEMA_FILE` e
 | Venda interestadual | `NAO_IMPLEMENTADO` | `idDest` atual é interno e o avaliador recusa |
 | Destinatário contribuinte | `NAO_IMPLEMENTADO` | B2B exige regras próprias |
 | Frete | `NAO_IMPLEMENTADO` | XML atual declara sem frete |
+| Finalidade diferente de venda normal | `NAO_IMPLEMENTADO` | Avaliador recusa e geradores fixam `finNFe=1` |
 | Produção | `BLOQUEADO` | Nenhuma evidência offline libera produção |
 
-## Fail-closed
+## Diagnóstico versus bloqueio operacional
 
 O emissor já recusa CST/CSOSN fora das listas, cenário GO com modelo desconhecido,
 operação interestadual, finalidade não normal, destinatário contribuinte e frete. O novo
-diagnóstico não altera esses portões. `consultar_capacidade_piloto_go` classifica qualquer
-código ausente da matriz como `BLOQUEADO/CENARIO_NAO_CATALOGADO` e não gera XML.
+diagnóstico não altera esses portões. Essas recusas estão em
+`pendencias_preparacao_fiscal`, `pendencias_preparacao_nfe_pedido`, `_icms_produto` e
+`avaliar_cenario_fiscal_go`; produção também é recusada pelos adaptadores quando sua
+liberação explícita está desligada.
+
+`consultar_capacidade_piloto_go` classifica código ausente como
+`BLOQUEADO/CENARIO_NAO_CATALOGADO`, mas retorna `controle=[DIAGNOSTICO]`,
+`efeito_da_consulta=SOMENTE_DIAGNOSTICO` e
+`bloqueio_operacional=NAO_COMPROVADO`. Portanto, esse retorno impede uma conclusão
+positiva da auditoria, porém não prova que um XML seria recusado pelo emissor. Ligar toda a
+matriz ao caminho emissivo exigiria um contrato próprio e não faz parte deste ciclo.
 
 O comando abaixo apenas recompõe hashes, compila o ZIP em diretório temporário e publica
 JSON determinístico. Ele não consulta rede, banco ou credenciais e não instala schema:
