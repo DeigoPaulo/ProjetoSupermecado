@@ -3140,3 +3140,17 @@ Próximo passo interno depende de nova auditoria: decidir qual endurecimento ou
 novo recorte fiscal será priorizado sem ampliar automaticamente o catálogo. As
 pendências externas continuam sendo homologação real por canal/filial, aceite do
 responsável fiscal e aprovação controlada do schema antes de qualquer produção.
+
+## Ponto de retomada - ciclo 173
+
+- [x] Remover dependência da truthiness de `Element` na detecção e reconciliação de `IBSCBS`.
+- [x] Rejeitar localmente grupo vazio, CST/cClassTrib/gIBSCBS ausentes e presença em somente parte dos itens.
+- [x] Cobrir as barreiras pré-transmissão nos caminhos Focus e SEFAZ direta.
+- [x] Bloquear PISST, COFINSST, vFCPUFDest, vICMSUFDest e marcadores monofásicos não modelados.
+- [x] Preservar o pacote XSD 010f auditado, o catálogo congelado e a ausência de rede, transmissão e migration.
+- [x] Manter inalterado o recorte `fiscal_ibs_cbs_go_crt3_standard_v1`, sem novos códigos ou hipóteses tributárias.
+
+Próximo bloqueio interno recomendado: auditar a cardinalidade e a exclusividade
+dos grupos legados ICMS/PIS/COFINS aceitos pela recomposição da base, ainda sem
+habilitar novos cenários. Depois do push deste ciclo, nenhuma evolução seguinte
+deve ser iniciada sem nova auditoria externa.

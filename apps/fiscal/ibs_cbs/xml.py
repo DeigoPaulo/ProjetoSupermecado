@@ -70,7 +70,7 @@ def reconciliar_xml(inf_nfe, *, namespace):
     caminho = lambda valor: f".//{{{namespace}}}{valor}"
     itens = inf_nfe.findall(caminho("det"))
     grupos = [item.find(f"{{{namespace}}}imposto/{{{namespace}}}IBSCBS") for item in itens]
-    if not any(grupos):
+    if not any(grupo is not None for grupo in grupos):
         return False
     if any(grupo is None for grupo in grupos):
         raise ValueError("XML IBS/CBS incompleto: todos os itens devem possuir IBSCBS")

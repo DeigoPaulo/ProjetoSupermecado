@@ -34,7 +34,10 @@ vPIS - vCOFINS - vICMS - vFCP` e recalcula `vIBSUF`, `vIBSMun`, `vIBS` e
 `vCBS`. Para documentos de 2026, as alíquotas informadas precisam ser exatamente
 `0.1000`, `0.0000` e `0.9000`; o contrato não projeta esses valores para anos
 futuros. Frete, seguro, outras despesas, II, ICMSUFDest, ICMS monofásico, ISSQN
-e IS no item falham fechado.
+e IS no item falham fechado. O mesmo ocorre para `vFCPUFDest`, `vICMSUFDest`,
+`PISST`, `COFINSST` e qualquer marcador monofásico encontrado no grupo de
+impostos. Esses bloqueios refletem componentes da fórmula oficial que o recorte
+atual não modela; não representam suporte novo.
 `vNFTot` não foi antecipado porque sua validação permanece futura na NT vigente.
 
 O adaptador Focus projeta os campos IBS/CBS já validados a partir do XML; ele
@@ -57,6 +60,14 @@ classificação e totalizadores, inclusive quando item e total são adulterados 
 forma coerente. Focus e SEFAZ direta passam pela mesma validação matemática antes
 do envio. Homologação real por filial e canal, aprovação do schema operacional e
 aceite do responsável fiscal continuam externos.
+
+No endurecimento do ciclo 173, a presença de `IBSCBS` passou a ser verificada
+explicitamente, sem depender da avaliação booleana de elementos XML. Assim,
+`IBSCBS` vazio, campos estruturais ausentes, preenchimento parcial e presença em
+somente parte dos itens são recusados localmente também quando o adaptador Focus
+declara validação de schema própria. O caminho SEFAZ direta usa a mesma barreira.
+O ciclo não adicionou CST, cClassTrib, redução, monofasia, regime ou autorização
+de produção.
 
 ## Catálogo e capacidade
 

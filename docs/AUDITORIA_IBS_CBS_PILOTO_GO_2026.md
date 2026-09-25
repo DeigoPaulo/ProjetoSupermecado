@@ -223,3 +223,20 @@ declara explicitamente a ausência de hash em vez de criar evidência fictícia.
 `capacidade_tributaria_fiscal()` agora separa emissão genérica desabilitada dos
 recortes emissivos habilitados. Produção, rede, promoção do XSD, monofasia,
 reduções, novos códigos e CRT 1/2/4 continuam bloqueados.
+
+## Atualização de endurecimento - ciclo 173
+
+O ciclo 173 fechou bordas defensivas sem ampliar o contrato
+`fiscal_ibs_cbs_go_crt3_standard_v1`. A pré-transmissão e a reconciliação não
+usam mais a avaliação booleana de `Element` para detectar `IBSCBS`; um grupo
+vazio agora é reconhecido como presente e rejeitado como incompleto antes do
+provedor. CST, cClassTrib e gIBSCBS ausentes, grupo parcial e grupo presente em
+somente parte dos itens também falham localmente nos caminhos Focus e SEFAZ
+direta.
+
+A auditoria da fórmula oficial confirmou que o cálculo implementado cobre apenas
+os componentes do recorte atual. Permanecem fail-closed frete, seguro, outras
+despesas, II, ICMSUFDest, vFCPUFDest, vICMSUFDest, ICMS monofásico, PISST,
+COFINSST, ISSQN e IS. Nenhum desses componentes passou a ser calculado ou
+suportado. O pacote XSD 010f, seu SHA-256, a rastreabilidade do catálogo e todas
+as travas de rede e produção foram preservados.

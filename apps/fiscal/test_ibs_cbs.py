@@ -177,6 +177,52 @@ class XmlIbsCbsTests(SimpleTestCase):
         with self.assertRaisesRegex(ValueError, "SOMA_ITENS diverge de TOTAL_XML"):
             reconciliar_xml(inf_nfe, namespace=NFE_NS)
 
+    def test_reconciliacao_reconhece_ibs_cbs_vazio_como_grupo_presente(self):
+        _, inf_nfe = self._xml()
+        grupo = inf_nfe.find(
+            f"{{{NFE_NS}}}det/{{{NFE_NS}}}imposto/{{{NFE_NS}}}IBSCBS"
+        )
+        grupo.clear()
+
+        with self.assertRaises(ValueError):
+            reconciliar_xml(inf_nfe, namespace=NFE_NS)
+
+    def test_paridade_bloqueia_ibs_cbs_vazio_e_campos_obrigatorios_ausentes(self):
+        caminhos = (None, "CST", "cClassTrib", "gIBSCBS")
+        for caminho in caminhos:
+            with self.subTest(caminho=caminho or "IBSCBS vazio"):
+                _, inf_nfe = self._xml()
+                grupo = inf_nfe.find(
+                    f"{{{NFE_NS}}}det/{{{NFE_NS}}}imposto/{{{NFE_NS}}}IBSCBS"
+                )
+                if caminho is None:
+                    grupo.clear()
+                else:
+                    grupo.remove(grupo.find(f"{{{NFE_NS}}}{caminho}"))
+
+                with self.assertRaises(ValueError):
+                    validar_paridade_xml(
+                        inf_nfe,
+                        namespace=NFE_NS,
+                        modelo="65",
+                        data_emissao=date(2026, 9, 25),
+                    )
+
+    def test_paridade_bloqueia_ibs_cbs_presente_somente_em_parte_dos_itens(self):
+        _, inf_nfe = self._xml()
+        primeiro_imposto = inf_nfe.find(
+            f"{{{NFE_NS}}}det/{{{NFE_NS}}}imposto"
+        )
+        primeiro_imposto.remove(primeiro_imposto.find(f"{{{NFE_NS}}}IBSCBS"))
+
+        with self.assertRaisesRegex(ValueError, "item 1 sem IBSCBS"):
+            validar_paridade_xml(
+                inf_nfe,
+                namespace=NFE_NS,
+                modelo="65",
+                data_emissao=date(2026, 9, 25),
+            )
+
     def test_paridade_bloqueia_adulteracao_de_cada_campo_do_item(self):
         caminhos = {
             "CST": ("CST", "999"),
@@ -275,7 +321,15 @@ class XmlIbsCbsTests(SimpleTestCase):
                         data_emissao=date(2026, 9, 25),
                     )
 
-        for grupo_nome in ("II", "ICMSUFDest", "ISSQN", "IS", "ICMSMono"):
+        for grupo_nome in (
+            "II",
+            "ICMSUFDest",
+            "ISSQN",
+            "IS",
+            "PISST",
+            "COFINSST",
+            "ICMSMono",
+        ):
             with self.subTest(grupo=grupo_nome):
                 _, inf_nfe = self._xml()
                 imposto = inf_nfe.find(
@@ -283,6 +337,21 @@ class XmlIbsCbsTests(SimpleTestCase):
                 )
                 ET.SubElement(imposto, f"{{{NFE_NS}}}{grupo_nome}")
                 with self.assertRaises(ValueError):
+                    validar_paridade_xml(
+                        inf_nfe,
+                        namespace=NFE_NS,
+                        modelo="65",
+                        data_emissao=date(2026, 9, 25),
+                    )
+
+        for campo in ("vFCPUFDest", "vICMSUFDest", "vICMSMono"):
+            with self.subTest(campo=campo):
+                _, inf_nfe = self._xml()
+                imposto = inf_nfe.find(
+                    f"{{{NFE_NS}}}det/{{{NFE_NS}}}imposto"
+                )
+                ET.SubElement(imposto, f"{{{NFE_NS}}}{campo}").text = "1.00"
+                with self.assertRaisesRegex(ValueError, "ainda nao suportado"):
                     validar_paridade_xml(
                         inf_nfe,
                         namespace=NFE_NS,

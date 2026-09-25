@@ -1867,6 +1867,20 @@ class FiscalTests(TestCase):
         with self.assertRaisesMessage(ValidationError, "pCBS informado"):
             validar_xml_pre_transmissao(documento, FocusNFeSefazAdapter())
 
+    def test_pre_transmissao_focus_bloqueia_ibs_cbs_vazio(self):
+        self._habilitar_nfce_go_teste()
+        documento = preparar_documento_venda(self.venda, self.user)
+        raiz = ET.fromstring(documento.xml_conteudo)
+        grupo = raiz.find(
+            f"{{{NFE_NS}}}infNFe/{{{NFE_NS}}}det/{{{NFE_NS}}}imposto/"
+            f"{{{NFE_NS}}}IBSCBS"
+        )
+        grupo.clear()
+        documento.xml_conteudo = ET.tostring(raiz, encoding="unicode")
+
+        with self.assertRaisesMessage(ValidationError, "XML IBS/CBS incompleto"):
+            validar_xml_pre_transmissao(documento, FocusNFeSefazAdapter())
+
     def test_pre_transmissao_sefaz_direta_bloqueia_calculo_ibs_cbs_adulterado(self):
         self._habilitar_nfce_go_teste()
         documento = preparar_documento_venda(self.venda, self.user)
@@ -1875,6 +1889,20 @@ class FiscalTests(TestCase):
         )
 
         with self.assertRaisesMessage(ValidationError, "vIBSUF informado"):
+            validar_xml_pre_transmissao(documento, SefazDiretaAdapter())
+
+    def test_pre_transmissao_sefaz_direta_bloqueia_ibs_cbs_parcial(self):
+        self._habilitar_nfce_go_teste()
+        documento = preparar_documento_venda(self.venda, self.user)
+        raiz = ET.fromstring(documento.xml_conteudo)
+        grupo = raiz.find(
+            f"{{{NFE_NS}}}infNFe/{{{NFE_NS}}}det/{{{NFE_NS}}}imposto/"
+            f"{{{NFE_NS}}}IBSCBS"
+        )
+        grupo.remove(grupo.find(f"{{{NFE_NS}}}gIBSCBS"))
+        documento.xml_conteudo = ET.tostring(raiz, encoding="unicode")
+
+        with self.assertRaisesMessage(ValidationError, "sem gIBSCBS"):
             validar_xml_pre_transmissao(documento, SefazDiretaAdapter())
 
     def test_pre_transmissao_nao_aplica_recorte_ibs_cbs_a_outro_crt(self):

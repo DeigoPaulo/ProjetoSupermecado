@@ -138,7 +138,7 @@ def validar_xml_pre_transmissao(documento, adapter):
             raise ValidationError(
                 "CRT 3 exige IBS/CBS neste modelo e data; o modo LEGADO não pode omitir o grupo IBSCBS."
             )
-        if any(grupos_ibs_cbs):
+        if any(grupo is not None for grupo in grupos_ibs_cbs):
             if any(grupo is None for grupo in grupos_ibs_cbs):
                 raise ValidationError(
                     "XML IBS/CBS incompleto: todos os itens devem possuir IBSCBS."

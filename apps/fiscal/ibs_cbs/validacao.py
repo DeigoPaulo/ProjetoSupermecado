@@ -9,6 +9,10 @@ def _tag(namespace, nome):
     return f"{{{namespace}}}{nome}"
 
 
+def _nome_local(elemento):
+    return elemento.tag.rsplit("}", 1)[-1]
+
+
 def _decimal(elemento, caminho, campo, *, obrigatorio=True):
     texto = elemento.findtext(caminho)
     if texto is None or not texto.strip():
@@ -35,15 +39,21 @@ def _validar_ausencias_contrato(item, imposto, *, namespace):
             raise ValueError(
                 f"cenario IBS/CBS ainda nao suportado pelo contrato fiscal atual: {campo} no item"
             )
-    for grupo in ("II", "ICMSUFDest", "ISSQN", "IS"):
+    for grupo in ("II", "ICMSUFDest", "ISSQN", "IS", "PISST", "COFINSST"):
         if imposto.find(_tag(namespace, grupo)) is not None:
             raise ValueError(
                 f"cenario IBS/CBS ainda nao suportado pelo contrato fiscal atual: grupo {grupo}"
             )
-    if any("mono" in elemento.tag.rsplit("}", 1)[-1].lower() for elemento in imposto.iter()):
-        raise ValueError(
-            "cenario IBS/CBS ainda nao suportado pelo contrato fiscal atual: ICMS monofasico"
-        )
+    for elemento in imposto.iter():
+        nome = _nome_local(elemento)
+        if nome in {"vFCPUFDest", "vICMSUFDest"}:
+            raise ValueError(
+                f"cenario IBS/CBS ainda nao suportado pelo contrato fiscal atual: {nome}"
+            )
+        if "mono" in nome.lower():
+            raise ValueError(
+                "cenario IBS/CBS ainda nao suportado pelo contrato fiscal atual: ICMS monofasico"
+            )
 
 
 def validar_paridade_xml(inf_nfe, *, namespace, modelo, data_emissao):
@@ -64,6 +74,16 @@ def validar_paridade_xml(inf_nfe, *, namespace, modelo, data_emissao):
         if grupo is None:
             raise ValueError(f"XML IBS/CBS incompleto: item {indice} sem IBSCBS")
         _validar_ausencias_contrato(item, imposto, namespace=namespace)
+
+        cst = grupo.findtext(_tag(namespace, "CST"))
+        if cst is None or not cst.strip():
+            raise ValueError(f"XML IBS/CBS incompleto: item {indice} sem CST")
+        cclass_trib = grupo.findtext(_tag(namespace, "cClassTrib"))
+        if cclass_trib is None or not cclass_trib.strip():
+            raise ValueError(f"XML IBS/CBS incompleto: item {indice} sem cClassTrib")
+        g_ibs_cbs = grupo.find(_tag(namespace, "gIBSCBS"))
+        if g_ibs_cbs is None:
+            raise ValueError(f"XML IBS/CBS incompleto: item {indice} sem gIBSCBS")
 
         prod = item.find(_tag(namespace, "prod"))
         valor_produtos = _decimal(prod, _tag(namespace, "vProd"), "vProd")
@@ -95,13 +115,10 @@ def validar_paridade_xml(inf_nfe, *, namespace, modelo, data_emissao):
         )
         calculo = calcular_ibs_cbs_padrao(
             valor_operacao=base,
-            cst=grupo.findtext(_tag(namespace, "CST")),
-            cclass_trib=grupo.findtext(_tag(namespace, "cClassTrib")),
+            cst=cst,
+            cclass_trib=cclass_trib,
             modelo=modelo,
         )
-        g_ibs_cbs = grupo.find(_tag(namespace, "gIBSCBS"))
-        if g_ibs_cbs is None:
-            raise ValueError(f"XML IBS/CBS incompleto: item {indice} sem gIBSCBS")
 
         campos = (
             ("vBC", _tag(namespace, "vBC"), calculo.base),
