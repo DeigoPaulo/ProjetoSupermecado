@@ -887,6 +887,8 @@ document.addEventListener("DOMContentLoaded", function () {
     var paymentTemplate = document.getElementById("pdv-payment-row-template");
     var pagamentoLancado = document.getElementById("pdv-pagamento-lancado");
     var pagamentoRestante = document.getElementById("pdv-pagamento-restante");
+    var modalSubtotal = document.getElementById("pdv-modal-subtotal");
+    var modalDesconto = document.getElementById("pdv-modal-desconto");
     var modalTotal = document.getElementById("pdv-modal-total");
     var modalLancado = document.getElementById("pdv-modal-lancado");
     var modalRestante = document.getElementById("pdv-modal-restante");
@@ -915,6 +917,11 @@ document.addEventListener("DOMContentLoaded", function () {
     var focusBeforePayment = null;
     var focusBeforeModal = null;
     var selectedItemStatus = document.getElementById("pdv-selected-item");
+    var quantityModal = document.getElementById("pdv-modal-quantity");
+    var quantityForm = document.getElementById("pdv-quantity-form");
+    var quantityInput = document.getElementById("pdv-quantity-input");
+    var quantityProduct = document.getElementById("pdv-quantity-product");
+    var quantityCurrent = document.getElementById("pdv-quantity-current");
 
     function fecharResultadosClienteEntrega() {
       if (!deliveryClientResults || !deliveryClientSearch) return;
@@ -1096,6 +1103,8 @@ document.addEventListener("DOMContentLoaded", function () {
       if (trocoDisplay) trocoDisplay.textContent = formatMoney(troco);
       if (pagamentoLancado) pagamentoLancado.textContent = formatMoney(recebidoPagamentos);
       if (pagamentoRestante) pagamentoRestante.textContent = formatMoney(restante);
+      if (modalSubtotal) modalSubtotal.textContent = formatMoney(subtotal);
+      if (modalDesconto) modalDesconto.textContent = formatMoney(desconto);
       if (modalTotal) modalTotal.textContent = formatMoney(totalFinal);
       if (modalLancado) modalLancado.textContent = formatMoney(recebidoPagamentos);
       if (modalRestante) modalRestante.textContent = formatMoney(restante);
@@ -1336,6 +1345,12 @@ document.addEventListener("DOMContentLoaded", function () {
         return false;
       }
       var desconto = Math.max(decimalFromInput(descontoInput && descontoInput.value), 0);
+      var subtotal = Math.max(decimalFromInput(resumo && resumo.dataset.total), 0);
+      if (desconto > subtotal) {
+        informarPagamentoFeedback("O desconto não pode ser maior que o total da venda.");
+        if (descontoInput) { descontoInput.focus(); descontoInput.select(); }
+        return false;
+      }
       if (desconto > 0 && (!discountSupervisor || !discountSupervisor.value.trim() || !discountPassword || !discountPassword.value)) {
         informarPagamentoFeedback("Informe usuário e senha do supervisor ou administrador para autorizar o desconto.");
         if (discountSupervisor && !discountSupervisor.value.trim()) discountSupervisor.focus();
@@ -1903,13 +1918,18 @@ document.addEventListener("DOMContentLoaded", function () {
     if (descontoInput) {
       descontoInput.addEventListener("input", function () {
         var autorizados = paymentRows && paymentRows.querySelectorAll(".pdv-payment-row.is-authorized");
+        var pagamentosReprocessados = Boolean(autorizados && autorizados.length);
         if (autorizados && autorizados.length) {
           autorizados.forEach(function (row) { limparAutorizacaoPagamento(row); });
           ocultarPixPanel();
-          informarPagamentoFeedback("O desconto alterou o total. Reprocesse os pagamentos eletrônicos.");
         }
         atualizarAutorizacaoDesconto();
         atualizarResumoPdv();
+        var desconto = Math.max(decimalFromInput(descontoInput.value), 0);
+        var subtotal = Math.max(decimalFromInput(resumo && resumo.dataset.total), 0);
+        if (desconto > subtotal) informarPagamentoFeedback("O desconto não pode ser maior que o total da venda.");
+        else if (pagamentosReprocessados) informarPagamentoFeedback("O desconto alterou o total. Reprocesse os pagamentos eletrônicos.");
+        else informarPagamentoFeedback("");
       });
     }
     if (recebidoInput) recebidoInput.addEventListener("input", atualizarResumoPdv);
@@ -2093,6 +2113,18 @@ document.addEventListener("DOMContentLoaded", function () {
       if (window.confirm("Remover uma unidade de " + produto + "?")) window.location.href = row.dataset.removeUrl;
     }
 
+    function abrirEdicaoQuantidade(row) {
+      if (!row || !row.dataset.quantityUrl || !quantityModal || !quantityForm || !quantityInput) return;
+      selecionarItemCarrinho(row, false);
+      quantityForm.action = row.dataset.quantityUrl;
+      if (quantityProduct) quantityProduct.textContent = row.dataset.productLabel || "Item selecionado";
+      if (quantityCurrent) quantityCurrent.textContent = row.dataset.productQuantity || "0";
+      quantityInput.value = String(row.dataset.productQuantity || "").replace(",", ".");
+      abrirModalPdv("quantity");
+      quantityInput.focus();
+      quantityInput.select();
+    }
+
     function manterFocoNoDialog(container, event) {
       if (!container || event.key !== "Tab") return false;
       var focusable = Array.prototype.slice.call(container.querySelectorAll("button:not([disabled]), a[href], input:not([type='hidden']):not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex='-1'])")).filter(function (element) {
@@ -2114,6 +2146,11 @@ document.addEventListener("DOMContentLoaded", function () {
         if (!event.target.closest("a, button")) selecionarItemCarrinho(row, false);
       });
       row.addEventListener("focus", function () { selecionarItemCarrinho(row, false); });
+    });
+    document.querySelectorAll("[data-pdv-edit-quantity]").forEach(function (button) {
+      button.addEventListener("click", function () {
+        abrirEdicaoQuantidade(button.closest(".pdv-cart-row"));
+      });
     });
     document.querySelectorAll("[data-pdv-remove-item]").forEach(function (link) {
       link.addEventListener("click", function (event) {
@@ -2495,6 +2532,11 @@ document.addEventListener("DOMContentLoaded", function () {
         var atual = Math.max(0, selectedCartIndex);
         var destino = key === "ArrowUp" ? Math.max(0, atual - 1) : Math.min(cartRows.length - 1, atual + 1);
         selecionarItemCarrinho(cartRows[destino], true);
+        return;
+      }
+      if (key === "Enter" && document.activeElement && document.activeElement.classList.contains("pdv-cart-row")) {
+        event.preventDefault();
+        abrirEdicaoQuantidade(document.activeElement);
         return;
       }
       if ((key === "Delete" || key === "Del") && cartRows.length && !campoEditavelAtivo()) {

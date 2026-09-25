@@ -841,6 +841,52 @@ class AcessoPdvNuvemTests(TestCase):
         uso = UsoCredencialAutorizacao.objects.get(credencial=credencial)
         self.assertEqual(uso.supervisor, self.admin)
         self.assertEqual(uso.operador, self.operador)
+
+    def test_desconto_maior_que_total_nao_finaliza_e_preserva_carrinho(self):
+        categoria = Categoria.objects.create(nome="Mercearia limite desconto")
+        produto = Produto.objects.create(
+            codigo_barras="789100000091",
+            nome="Produto limite desconto",
+            categoria=categoria,
+            preco_custo=Decimal("6"),
+            preco_venda=Decimal("10"),
+        )
+        Estoque.objects.create(produto=produto, filial=self.filial, quantidade_atual=Decimal("10"))
+        caixa = Caixa.objects.create(filial=self.filial, usuario_abertura=self.operador, valor_inicial=Decimal("100"))
+        forma = FormaPagamento.objects.create(nome="Dinheiro limite desconto", tipo="DINHEIRO", permite_troco=True)
+        credencial = CredencialAutorizacao(
+            usuario=self.admin,
+            tipo=TipoCredencialAutorizacao.NFC,
+            nome="Cartão limite desconto",
+            criada_por=self.admin,
+        )
+        credencial.definir_identificador("CARTAO-LIMITE-DESCONTO")
+        credencial.save()
+        session = self.client.session
+        session["pdv_cart"] = {str(produto.id): "1"}
+        session.save()
+        self.client.force_login(self.operador)
+
+        resposta = self.client.post(
+            "/pdv/",
+            {
+                "action": "finish",
+                "cpf_na_nota": "NAO",
+                "caixa": caixa.id,
+                "cliente": "",
+                "desconto": "10.01",
+                "vencimento_financeiro": "",
+                "pagamento_forma": [forma.id],
+                "pagamento_valor": ["0.01"],
+                "supervisor_credencial": "CARTAO-LIMITE-DESCONTO",
+            },
+            follow=True,
+        )
+
+        self.assertContains(resposta, "Desconto não pode ser maior que o total da venda.")
+        self.assertEqual(Venda.objects.count(), 0)
+        self.assertEqual(self.client.session["pdv_cart"], {str(produto.id): "1"})
+
     def test_impressao_desktop_avisa_quando_cupom_nao_tem_impressora_padrao(self):
         categoria = Categoria.objects.create(nome="Mercearia")
         produto = Produto.objects.create(codigo_barras="789100000002", nome="Feijao", categoria=categoria, preco_custo=Decimal("7"), preco_venda=Decimal("12"))
@@ -900,6 +946,119 @@ class AcessoPdvNuvemTests(TestCase):
         terceira = self.client.get(f"/pdv/item/remover/{produto.id}/", follow=True)
         self.assertNotIn(str(produto.id), self.client.session["pdv_cart"])
         self.assertContains(terceira, "Item removido.")
+
+    def test_alterar_quantidade_item_aceita_decimal_e_preserva_outros_itens(self):
+        categoria = Categoria.objects.create(nome="Mercearia quantidade")
+        produto = Produto.objects.create(
+            codigo_barras="789100000101",
+            nome="Produto fracionado",
+            categoria=categoria,
+            preco_custo=Decimal("5"),
+            preco_venda=Decimal("8"),
+        )
+        outro = Produto.objects.create(
+            codigo_barras="789100000102",
+            nome="Outro produto",
+            categoria=categoria,
+            preco_custo=Decimal("3"),
+            preco_venda=Decimal("6"),
+        )
+        session = self.client.session
+        session["pdv_cart"] = {str(produto.id): "2.000", str(outro.id): "4.000"}
+        session.save()
+        self.client.force_login(self.operador)
+
+        resposta = self.client.post(
+            f"/pdv/item/quantidade/{produto.id}/",
+            {"quantidade": "0.750"},
+            follow=True,
+        )
+
+        self.assertRedirects(resposta, "/pdv/")
+        self.assertContains(resposta, "Quantidade atualizada.")
+        self.assertEqual(Decimal(self.client.session["pdv_cart"][str(produto.id)]), Decimal("0.750"))
+        self.assertEqual(self.client.session["pdv_cart"][str(outro.id)], "4.000")
+
+    def test_alterar_quantidade_item_rejeita_valores_invalidos_sem_mudar_carrinho(self):
+        categoria = Categoria.objects.create(nome="Mercearia quantidade inválida")
+        produto = Produto.objects.create(
+            codigo_barras="789100000103",
+            nome="Produto quantidade inválida",
+            categoria=categoria,
+            preco_custo=Decimal("5"),
+            preco_venda=Decimal("8"),
+        )
+        self.client.force_login(self.operador)
+
+        for quantidade in ("", "texto", "0", "-1", "1.2345"):
+            with self.subTest(quantidade=quantidade):
+                session = self.client.session
+                session["pdv_cart"] = {str(produto.id): "2.000"}
+                session.save()
+
+                resposta = self.client.post(
+                    f"/pdv/item/quantidade/{produto.id}/",
+                    {"quantidade": quantidade},
+                    follow=True,
+                )
+
+                self.assertEqual(resposta.status_code, 200)
+                self.assertEqual(self.client.session["pdv_cart"][str(produto.id)], "2.000")
+
+    def test_alterar_quantidade_item_exige_post_permissao_e_item_no_carrinho(self):
+        User = get_user_model()
+        categoria = Categoria.objects.create(nome="Mercearia segurança quantidade")
+        produto = Produto.objects.create(
+            codigo_barras="789100000104",
+            nome="Produto protegido",
+            categoria=categoria,
+            preco_custo=Decimal("5"),
+            preco_venda=Decimal("8"),
+        )
+        url = f"/pdv/item/quantidade/{produto.id}/"
+        self.client.force_login(self.operador)
+
+        self.assertEqual(self.client.get(url).status_code, 405)
+        ausente = self.client.post(url, {"quantidade": "1"}, follow=True)
+        self.assertContains(ausente, "O produto não está mais no carrinho.")
+
+        sem_perfil = User.objects.create_user(username="sem-perfil-quantidade", password="senha")
+        self.client.force_login(sem_perfil)
+        session = self.client.session
+        session["pdv_cart"] = {str(produto.id): "2.000"}
+        session.save()
+
+        negado = self.client.post(url, {"quantidade": "1.000"})
+
+        self.assertEqual(negado.status_code, 403)
+        self.assertEqual(self.client.session["pdv_cart"][str(produto.id)], "2.000")
+
+    def test_pdv_renderiza_edicao_de_quantidade_e_resumo_com_desconto(self):
+        categoria = Categoria.objects.create(nome="Mercearia interface quantidade")
+        produto = Produto.objects.create(
+            codigo_barras="789100000105",
+            nome="Produto da interface",
+            categoria=categoria,
+            preco_custo=Decimal("5"),
+            preco_venda=Decimal("8"),
+        )
+        session = self.client.session
+        session["pdv_cart"] = {str(produto.id): "1.250"}
+        session.save()
+        self.client.force_login(self.operador)
+
+        resposta = self.client.get("/pdv/")
+
+        self.assertEqual(resposta.status_code, 200)
+        self.assertContains(resposta, f'data-quantity-url="/pdv/item/quantidade/{produto.id}/"')
+        self.assertContains(resposta, "data-pdv-edit-quantity")
+        self.assertContains(resposta, 'id="pdv-modal-quantity"')
+        self.assertContains(resposta, 'role="dialog" aria-modal="true" aria-labelledby="pdv-quantity-title"')
+        self.assertContains(resposta, 'name="quantidade" step="0.001" min="0.001"')
+        self.assertContains(resposta, 'id="pdv-modal-subtotal"')
+        self.assertContains(resposta, 'id="pdv-modal-desconto"')
+        self.assertContains(resposta, 'id="pdv-modal-total"')
+        self.assertContains(resposta, "Desconto total da venda")
 
     def test_pdv_bloqueia_pagamento_eletronico_sem_retorno_da_maquininha(self):
         categoria = Categoria.objects.create(nome="Mercearia")

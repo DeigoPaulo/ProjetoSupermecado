@@ -12,6 +12,7 @@ urlpatterns = [
     path("consulta-preco/", views.consulta_preco, name="consulta_preco"),
     path("acessos-nuvem/", views.acessos_pdv_nuvem, name="acessos_pdv_nuvem"),
     path("acessos-nuvem/<int:acesso_id>/decidir/", views.decidir_acesso_pdv_nuvem_view, name="decidir_acesso_pdv_nuvem"),
+    path("item/quantidade/<int:produto_id>/", views.alterar_quantidade_item, name="alterar_quantidade_item"),
     path("item/remover/<int:produto_id>/", views.remover_item, name="remover_item"),
     path("carrinho/limpar/", views.limpar_carrinho, name="limpar_carrinho"),
     path("pre-vendas/", views.PreVendaListView.as_view(), name="pre_vendas"),

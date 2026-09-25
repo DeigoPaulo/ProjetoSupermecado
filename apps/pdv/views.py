@@ -41,7 +41,7 @@ from apps.promocoes.services import preco_atual_produto, promocao_ativa_para_pro
 from apps.vendas.models import EstornoParcialPagamento, FormaPagamento, PagamentoVenda, PreVenda, StatusEstornoParcial, StatusPagamento, StatusPreVenda, Venda
 from apps.vendas.services import calcular_item, cancelar_pre_venda, cancelar_venda, confirmar_estorno_pagamento_eletronico, confirmar_estorno_parcial_eletronico, converter_pre_venda, criar_pre_venda, finalizar_venda, forma_pagamento_disponivel, formas_pagamento_disponiveis, quantidade_devolvida_item, registrar_devolucao_venda
 
-from .forms import AbrirCaixaForm, AdicionarItemForm, ConferirCaixaForm, EntregaPdvForm, FecharCaixaForm, FinalizarVendaForm, PreVendaForm, SangriaForm, SuprimentoForm
+from .forms import AbrirCaixaForm, AdicionarItemForm, AlterarQuantidadeItemForm, ConferirCaixaForm, EntregaPdvForm, FecharCaixaForm, FinalizarVendaForm, PreVendaForm, SangriaForm, SuprimentoForm
 from .models import AcessoPdvNuvem, Caixa, CanalAtualizacaoPdv, EventoDispositivoTerminal, StatusAcessoPdvNuvem, StatusCaixa, TerminalPdv
 from .services_caixa import fechar_caixa_operacional, registrar_sangria_caixa, registrar_suprimento_caixa
 from .services_acesso import acesso_pdv_nuvem_aprovado, decidir_acesso_pdv_nuvem, solicitar_acesso_pdv_nuvem
@@ -981,6 +981,32 @@ def pdv(request):
             "ultima_entrega": ultima_entrega,
         },
     )
+
+
+@login_required
+@role_required(*PDV)
+@require_POST
+def alterar_quantidade_item(request, produto_id):
+    cart = _get_cart(request)
+    chave = str(produto_id)
+    if chave not in cart:
+        messages.error(request, "O produto não está mais no carrinho.")
+        return redirect("pdv:pdv")
+
+    form = AlterarQuantidadeItemForm(request.POST)
+    if not form.is_valid():
+        erros = " ".join(
+            str(mensagem)
+            for mensagens in form.errors.values()
+            for mensagem in mensagens
+        )
+        messages.error(request, erros or "Informe uma quantidade válida.")
+        return redirect("pdv:pdv")
+
+    cart[chave] = format(form.cleaned_data["quantidade"], "f")
+    _save_cart(request, cart)
+    messages.success(request, "Quantidade atualizada.")
+    return redirect("pdv:pdv")
 
 
 @login_required

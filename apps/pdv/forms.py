@@ -25,6 +25,21 @@ class AdicionarItemForm(forms.Form):
     )
 
 
+class AlterarQuantidadeItemForm(forms.Form):
+    quantidade = forms.DecimalField(
+        label="Nova quantidade",
+        max_digits=12,
+        decimal_places=3,
+        min_value=0.001,
+        error_messages={
+            "required": "Informe a nova quantidade.",
+            "invalid": "Informe uma quantidade válida.",
+            "min_value": "A quantidade deve ser maior que zero.",
+        },
+        widget=forms.NumberInput(attrs={"step": "0.001", "min": "0.001", "inputmode": "decimal"}),
+    )
+
+
 class AbrirCaixaForm(forms.ModelForm):
     class Meta:
         model = Caixa

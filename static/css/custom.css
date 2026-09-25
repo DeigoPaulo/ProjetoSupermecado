@@ -1787,6 +1787,33 @@ input[type="checkbox"] {
   font-size: 11px;
 }
 
+.pdv-quantity-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 72px;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.pdv-quantity-button:hover,
+.pdv-quantity-button:focus-visible {
+  border-color: #9db4df;
+  background: #ffffff;
+  color: #004db3;
+  outline: none;
+}
+
+.pdv-quantity-button i {
+  color: #52627a;
+  font-size: 11px;
+}
+
 .pdv-cart-row {
   cursor: pointer;
   outline: none;
@@ -2639,6 +2666,12 @@ input[type="checkbox"] {
   padding: 12px 16px;
 }
 
+.pdv-discount-field small {
+  color: #805f2c;
+  font-size: 11px;
+  font-weight: 700;
+}
+
 .pdv-cpf-question {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;
@@ -2782,7 +2815,7 @@ input[type="checkbox"] {
 
 .pdv-payment-totals {
   display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
+  grid-template-columns: repeat(6, minmax(0, 1fr));
   gap: 8px;
   border-top: 1px solid var(--border);
   background: #f8fbff;
@@ -2801,6 +2834,70 @@ input[type="checkbox"] {
   margin-top: 2px;
   color: #002060;
   font-size: 17px;
+}
+
+.pdv-modal-discount strong {
+  color: #a34b00;
+}
+
+.pdv-quantity-dialog {
+  width: min(520px, 100%);
+  grid-template-rows: auto minmax(0, 1fr);
+}
+
+.pdv-quantity-dialog form {
+  display: grid;
+  grid-template-rows: minmax(0, 1fr) auto;
+}
+
+.pdv-quantity-content {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px;
+  padding: 18px 16px;
+}
+
+.pdv-quantity-content div,
+.pdv-quantity-content span,
+.pdv-quantity-content strong {
+  display: block;
+}
+
+.pdv-quantity-content div {
+  min-width: 0;
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  background: #f8fbff;
+  padding: 10px 12px;
+}
+
+.pdv-quantity-content span,
+.pdv-quantity-content > small {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.pdv-quantity-content strong {
+  margin-top: 3px;
+  overflow-wrap: anywhere;
+  color: #002060;
+}
+
+.pdv-quantity-content .form-field,
+.pdv-quantity-content > small {
+  grid-column: 1 / -1;
+}
+
+@media (max-width: 760px) {
+  .pdv-payment-totals {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .pdv-payment-adjustments,
+  .pdv-quantity-content {
+    grid-template-columns: 1fr;
+  }
 }
 
 #pdv-modal-troco {

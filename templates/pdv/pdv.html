@@ -114,13 +114,13 @@
           </thead>
           <tbody role="listbox" aria-label="Itens da venda">
             {% for item in items %}
-              <tr class="pdv-cart-row{% if forloop.last %} is-selected{% endif %}" role="option" tabindex="0" aria-selected="{% if forloop.last %}true{% else %}false{% endif %}" data-product-label="{{ item.produto.nome }}" data-product-quantity="{{ item.quantidade|quantidade_br }}" data-remove-url="{% url 'pdv:remover_item' item.produto.id %}">
+              <tr class="pdv-cart-row{% if forloop.last %} is-selected{% endif %}" role="option" tabindex="0" aria-selected="{% if forloop.last %}true{% else %}false{% endif %}" data-product-label="{{ item.produto.nome }}" data-product-quantity="{{ item.quantidade|quantidade_br }}" data-quantity-url="{% url 'pdv:alterar_quantidade_item' item.produto.id %}" data-remove-url="{% url 'pdv:remover_item' item.produto.id %}">
                 <td>{{ forloop.counter }}</td>
                 <td>
                   <strong>{{ item.produto.nome }}</strong>
                   <small>{{ item.produto.codigo_barras }}</small>
                 </td>
-                <td>{{ item.quantidade|quantidade_br }}</td>
+                <td><button class="pdv-quantity-button" type="button" data-pdv-edit-quantity title="Alterar quantidade (Enter)" aria-label="Alterar quantidade de {{ item.produto.nome }}">{{ item.quantidade|quantidade_br }} <i class="fa-solid fa-pen" aria-hidden="true"></i></button></td>
                 <td>R$ {{ item.produto.preco_venda|floatformat:2 }}</td>
                 <td><strong>R$ {{ item.subtotal|floatformat:2 }}</strong></td>
                 <td><a class="icon-action danger-button" href="{% url 'pdv:remover_item' item.produto.id %}" data-pdv-remove-item title="Remover item (Del)" aria-label="Remover item (Del)"><i class="fa-regular fa-trash-can"></i></a></td>
@@ -141,6 +141,7 @@
           {% with selected_item=items|last %}
             <span class="pdv-selected-item" id="pdv-selected-item" aria-live="polite">{% if selected_item %}Selecionado: {{ selected_item.produto.nome }} (qtd. {{ selected_item.quantidade|quantidade_br }}){% else %}Nenhum item selecionado{% endif %}</span>
           {% endwith %}
+          <span title="Alterar quantidade do item selecionado">Editar quantidade (<kbd>Enter</kbd>)</span>
           <span title="Remover item (Del)">Remover item (<kbd>Del</kbd>)</span>
           <span title="Limpar carrinho (Ctrl+Del)">Limpar tudo (<kbd>Ctrl+Del</kbd>)</span>
           <strong>Itens: {{ quantidade_itens|quantidade_br }}</strong>
@@ -206,7 +207,7 @@
               {% if finish_form.documento_consumidor.errors %}<span class="pdv-cpf-error">{{ finish_form.documento_consumidor.errors|striptags }}</span>{% endif %}
             </div>
             <div class="pdv-payment-adjustments">
-              <label class="form-field"><span>Desconto da venda</span>{{ finish_form.desconto }}</label>
+              <label class="form-field pdv-discount-field"><span>Desconto total da venda</span>{{ finish_form.desconto }}<small>Exige autorização de supervisor quando maior que zero.</small></label>
               <label class="form-field"><span>Vencimento do crediário</span>{{ finish_form.vencimento_financeiro }}</label>
             </div>
             <div class="pdv-discount-authorization" id="pdv-discount-authorization" hidden>
@@ -285,6 +286,8 @@
               </div>
             </template>
             <div class="pdv-payment-totals">
+              <div><span>Subtotal</span><strong id="pdv-modal-subtotal">R$ {{ total|floatformat:2 }}</strong></div>
+              <div class="pdv-modal-discount"><span>Desconto</span><strong id="pdv-modal-desconto">R$ 0,00</strong></div>
               <div><span>Total final</span><strong id="pdv-modal-total">R$ {{ total|floatformat:2 }}</strong></div>
               <div><span>Lancado</span><strong id="pdv-modal-lancado">R$ 0,00</strong></div>
               <div><span>Restante</span><strong id="pdv-modal-restante">R$ {{ total|floatformat:2 }}</strong></div>
@@ -632,6 +635,27 @@
           </aside>
         {% endif %}
       </div>
+    </div>
+  </div>
+  <div class="pdv-modal" id="pdv-modal-quantity" aria-hidden="true">
+    <div class="pdv-modal-dialog pdv-quantity-dialog" role="dialog" aria-modal="true" aria-labelledby="pdv-quantity-title">
+      <header class="pdv-modal-header">
+        <strong id="pdv-quantity-title">Alterar quantidade</strong>
+        <button type="button" data-pdv-modal-close aria-label="Fechar"><i class="fa-solid fa-xmark"></i></button>
+      </header>
+      <form method="post" id="pdv-quantity-form">
+        {% csrf_token %}
+        <div class="pdv-quantity-content">
+          <div><span>Produto</span><strong id="pdv-quantity-product">Item selecionado</strong></div>
+          <div><span>Quantidade atual</span><strong id="pdv-quantity-current">0</strong></div>
+          <label class="form-field"><span>Nova quantidade</span><input type="number" id="pdv-quantity-input" name="quantidade" step="0.001" min="0.001" inputmode="decimal" required aria-describedby="pdv-quantity-help"></label>
+          <small id="pdv-quantity-help">Use até três casas decimais.</small>
+        </div>
+        <div class="pdv-modal-footer">
+          <button class="secondary-button" type="button" data-pdv-modal-close>Cancelar <kbd>Esc</kbd></button>
+          <button class="primary-button" type="submit"><i class="fa-solid fa-check"></i> Confirmar <kbd>Enter</kbd></button>
+        </div>
+      </form>
     </div>
   </div>
   <div class="pdv-modal" id="pdv-modal-open-cash" aria-hidden="true">
