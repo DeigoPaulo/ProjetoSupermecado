@@ -112,9 +112,9 @@
           <thead>
             <tr><th>#</th><th>Produto</th><th>Qtd</th><th>Unitario</th><th>Subtotal</th><th></th></tr>
           </thead>
-          <tbody>
+          <tbody role="listbox" aria-label="Itens da venda">
             {% for item in items %}
-              <tr class="pdv-cart-row{% if forloop.last %} is-selected{% endif %}" tabindex="0" aria-selected="{% if forloop.last %}true{% else %}false{% endif %}" data-remove-url="{% url 'pdv:remover_item' item.produto.id %}">
+              <tr class="pdv-cart-row{% if forloop.last %} is-selected{% endif %}" role="option" tabindex="0" aria-selected="{% if forloop.last %}true{% else %}false{% endif %}" data-product-label="{{ item.produto.nome }}" data-product-quantity="{{ item.quantidade|quantidade_br }}" data-remove-url="{% url 'pdv:remover_item' item.produto.id %}">
                 <td>{{ forloop.counter }}</td>
                 <td>
                   <strong>{{ item.produto.nome }}</strong>
@@ -123,7 +123,7 @@
                 <td>{{ item.quantidade|quantidade_br }}</td>
                 <td>R$ {{ item.produto.preco_venda|floatformat:2 }}</td>
                 <td><strong>R$ {{ item.subtotal|floatformat:2 }}</strong></td>
-                <td><a class="icon-action danger-button" href="{% url 'pdv:remover_item' item.produto.id %}" title="Remover item (Del)" aria-label="Remover item (Del)"><i class="fa-regular fa-trash-can"></i></a></td>
+                <td><a class="icon-action danger-button" href="{% url 'pdv:remover_item' item.produto.id %}" data-pdv-remove-item title="Remover item (Del)" aria-label="Remover item (Del)"><i class="fa-regular fa-trash-can"></i></a></td>
               </tr>
             {% empty %}
               <tr><td colspan="6" class="empty">Nenhum item no carrinho.</td></tr>
@@ -138,6 +138,9 @@
           <span></span>
         {% endif %}
         <div class="pdv-cart-footer-info">
+          {% with selected_item=items|last %}
+            <span class="pdv-selected-item" id="pdv-selected-item" aria-live="polite">{% if selected_item %}Selecionado: {{ selected_item.produto.nome }} (qtd. {{ selected_item.quantidade|quantidade_br }}){% else %}Nenhum item selecionado{% endif %}</span>
+          {% endwith %}
           <span title="Remover item (Del)">Remover item (<kbd>Del</kbd>)</span>
           <span title="Limpar carrinho (Ctrl+Del)">Limpar tudo (<kbd>Ctrl+Del</kbd>)</span>
           <strong>Itens: {{ quantidade_itens|quantidade_br }}</strong>
@@ -172,11 +175,11 @@
           <div class="pdv-summary-total"><span>Total final</span><strong id="pdv-total-final">R$ {{ total|floatformat:2 }}</strong></div>
           <div class="pdv-change-line"><span>Troco estimado</span><strong id="pdv-troco-estimado">R$ 0,00</strong></div>
         </div>
-        <div class="pdv-payment-modal{% if finish_form.errors %} is-open{% endif %}" id="pdv-payment-modal" aria-hidden="{% if finish_form.errors %}false{% else %}true{% endif %}">
+        <div class="pdv-payment-modal{% if finish_form.errors %} is-open{% endif %}" id="pdv-payment-modal" aria-hidden="{% if finish_form.errors %}false{% else %}true{% endif %}" role="dialog" aria-modal="true" aria-labelledby="pdv-payment-title">
           <div class="pdv-payment-dialog">
             <div class="pdv-payment-header">
               <div>
-                <strong>Pagamentos</strong>
+                <strong id="pdv-payment-title">Pagamentos</strong>
                 <span>Receba a venda no caixa ou transforme o carrinho em pedido para entrega com pagamento pendente</span>
               </div>
               <button type="button" id="pdv-close-payment" aria-label="Fechar"><i class="fa-solid fa-xmark"></i></button>
@@ -343,6 +346,7 @@
     <button type="button" data-pdv-focus-search><i class="fa-solid fa-magnifying-glass"></i><span><kbd>F2</kbd> Buscar produto</span></button>
     <button type="button" data-pdv-modal-open="price"><i class="fa-solid fa-tag"></i><span><kbd>F3</kbd> Consulta de preço</span></button>
     <button type="button" data-pdv-modal-open="clients"><i class="fa-regular fa-user"></i><span><kbd>F4</kbd> Cliente</span></button>
+    <button type="button" data-pdv-modal-open="products"><i class="fa-solid fa-box-open"></i><span><kbd>F5</kbd> Produtos</span></button>
     <button type="button" data-pdv-modal-open="delivery" {% if not items %}disabled{% endif %}><i class="fa-solid fa-truck"></i><span><kbd>Ctrl+E</kbd> Entrega</span></button>
     <button type="button" data-pdv-modal-open="deliveries"><i class="fa-solid fa-truck-ramp-box"></i><span><kbd>Shift+E</kbd> Entregas</span></button>
     <button type="button" data-pdv-modal-open="refunds"><i class="fa-solid fa-rotate-left"></i><span><kbd>F6</kbd> Estorno</span></button>

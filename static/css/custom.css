@@ -1448,6 +1448,7 @@ input[type="checkbox"] {
   display: grid;
   grid-template-rows: 64px minmax(0, 1fr) 58px;
   height: 100vh;
+  height: 100dvh;
   min-height: 0;
   background: #f3f6fb;
 }
@@ -1819,6 +1820,15 @@ input[type="checkbox"] {
   display: flex;
   align-items: center;
   gap: 18px;
+}
+
+.pdv-selected-item {
+  max-width: 250px;
+  overflow: hidden;
+  color: #17325f !important;
+  font-weight: 900;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .pdv-cart-footer-info span {
@@ -2809,13 +2819,75 @@ input[type="checkbox"] {
 
 .pdv-shortcut-bar {
   display: grid;
-  grid-template-columns: repeat(8, minmax(0, 1fr));
+  grid-template-columns: repeat(9, minmax(0, 1fr));
   gap: 8px;
   min-height: 58px;
   overflow: hidden;
   border-top: 1px solid var(--border);
   background: #ffffff;
   padding: 7px 14px;
+}
+
+.pdv-mode :focus-visible {
+  outline: 3px solid #f6b500;
+  outline-offset: 2px;
+}
+
+.pdv-mode button[aria-busy="true"] {
+  cursor: wait;
+  opacity: .72;
+}
+
+@media (min-width: 921px) and (max-height: 820px) {
+  .pdv-screen {
+    grid-template-rows: 58px minmax(0, 1fr) 52px;
+  }
+
+  .pdv-header {
+    min-height: 58px;
+    padding-block: 6px;
+  }
+
+  .pdv-workspace {
+    gap: 8px;
+    padding-block: 8px;
+  }
+
+  .pdv-workspace .panel-title,
+  .pdv-mode .compact-form {
+    padding-block: 8px;
+  }
+
+  .pdv-quick-grid {
+    gap: 6px;
+    padding-bottom: 8px;
+  }
+
+  .pdv-quick-grid a,
+  .pdv-quick-grid button {
+    min-height: 38px;
+  }
+
+  .pdv-manufacturer {
+    display: none;
+  }
+
+  .pdv-shortcut-bar {
+    min-height: 52px;
+    gap: 5px;
+    padding-block: 5px;
+  }
+
+  .pdv-shortcut-bar a,
+  .pdv-shortcut-bar button {
+    gap: 6px;
+    padding: 4px 6px;
+  }
+
+  .pdv-shortcut-bar i {
+    width: 28px;
+    height: 28px;
+  }
 }
 
 .pdv-shortcut-bar a,

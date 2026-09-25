@@ -912,6 +912,9 @@ document.addEventListener("DOMContentLoaded", function () {
     var deliveryClientIndex = -1;
     var deliveryClientRequest = 0;
     var deliveryClientTimer = null;
+    var focusBeforePayment = null;
+    var focusBeforeModal = null;
+    var selectedItemStatus = document.getElementById("pdv-selected-item");
 
     function fecharResultadosClienteEntrega() {
       if (!deliveryClientResults || !deliveryClientSearch) return;
@@ -1164,6 +1167,7 @@ document.addEventListener("DOMContentLoaded", function () {
 
     function abrirPagamentos() {
       if (!paymentModal) return;
+      focusBeforePayment = document.activeElement;
       paymentModal.classList.add("is-open");
       paymentModal.setAttribute("aria-hidden", "false");
       atualizarAutorizacaoDesconto();
@@ -1421,6 +1425,10 @@ document.addEventListener("DOMContentLoaded", function () {
     }
 
     function finalizarVendaPdv() {
+      if (finishForm && finishForm.dataset.submitting === "1") {
+        informarPagamentoFeedback("Venda em processamento. Aguarde a confirmação.");
+        return;
+      }
       if (!validarFinalizacaoVendaPdv()) return;
       abrirPerguntaEntrega();
     }
@@ -1663,7 +1671,8 @@ document.addEventListener("DOMContentLoaded", function () {
       ocultarPixPanel();
       paymentModal.classList.remove("is-open");
       paymentModal.setAttribute("aria-hidden", "true");
-      if (openPaymentButton) openPaymentButton.focus();
+      if (focusBeforePayment && document.contains(focusBeforePayment)) focusBeforePayment.focus();
+      else focarBuscaProduto();
     }
 
     function modalAberto() {
@@ -1673,7 +1682,8 @@ document.addEventListener("DOMContentLoaded", function () {
     function abrirModalPdv(name) {
       var modal = document.getElementById("pdv-modal-" + name);
       if (!modal) return;
-      fecharModalPdv();
+      focusBeforeModal = document.activeElement;
+      fecharModalPdv(false);
       modal.classList.add("is-open");
       modal.setAttribute("aria-hidden", "false");
       var input = modal.querySelector("[data-pdv-modal-filter]");
@@ -1689,11 +1699,12 @@ document.addEventListener("DOMContentLoaded", function () {
       selecionarPrimeiraLinhaVisivelModal(modal, false);
     }
 
-    function fecharModalPdv() {
+    function fecharModalPdv(restoreFocus) {
       pdvModals.forEach(function (modal) {
         modal.classList.remove("is-open");
         modal.setAttribute("aria-hidden", "true");
       });
+      if (restoreFocus !== false && focusBeforeModal && document.contains(focusBeforeModal)) focusBeforeModal.focus();
     }
 
     function abrirConferenciaEntrega(deliveryId) {
@@ -1995,8 +2006,8 @@ document.addEventListener("DOMContentLoaded", function () {
         var clientSelect = document.getElementById("id_cliente");
         if (clientButton && clientSelect) {
           clientSelect.value = clientButton.getAttribute("data-pdv-select-client") || "";
-          fecharModalPdv();
-          clientSelect.focus();
+          fecharModalPdv(false);
+          focarBuscaProduto();
         }
       });
       modal.addEventListener("input", function (event) {
@@ -2064,7 +2075,38 @@ document.addEventListener("DOMContentLoaded", function () {
         item.setAttribute("aria-selected", selected ? "true" : "false");
         if (selected) selectedCartIndex = cartRows.indexOf(item);
       });
+      if (selectedItemStatus) {
+        selectedItemStatus.textContent = "Selecionado: " + (row.dataset.productLabel || "item") + " (qtd. " + (row.dataset.productQuantity || "0") + ")";
+      }
       if (focus) row.focus();
+    }
+
+    function campoEditavelAtivo() {
+      var active = document.activeElement;
+      if (!active) return false;
+      return active.matches("input, textarea, select, [contenteditable='true']");
+    }
+
+    function confirmarRemocaoItem(row) {
+      if (!row || !row.dataset.removeUrl) return;
+      var produto = row.dataset.productLabel || "o item selecionado";
+      if (window.confirm("Remover uma unidade de " + produto + "?")) window.location.href = row.dataset.removeUrl;
+    }
+
+    function manterFocoNoDialog(container, event) {
+      if (!container || event.key !== "Tab") return false;
+      var focusable = Array.prototype.slice.call(container.querySelectorAll("button:not([disabled]), a[href], input:not([type='hidden']):not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex='-1'])")).filter(function (element) {
+        return element.offsetParent !== null && !element.closest("[hidden]");
+      });
+      if (!focusable.length) return false;
+      var index = focusable.indexOf(document.activeElement);
+      var next = event.shiftKey ? index - 1 : index + 1;
+      if (index === -1 || next < 0 || next >= focusable.length) {
+        event.preventDefault();
+        focusable[event.shiftKey ? focusable.length - 1 : 0].focus();
+        return true;
+      }
+      return false;
     }
 
     cartRows.forEach(function (row) {
@@ -2072,6 +2114,12 @@ document.addEventListener("DOMContentLoaded", function () {
         if (!event.target.closest("a, button")) selecionarItemCarrinho(row, false);
       });
       row.addEventListener("focus", function () { selecionarItemCarrinho(row, false); });
+    });
+    document.querySelectorAll("[data-pdv-remove-item]").forEach(function (link) {
+      link.addEventListener("click", function (event) {
+        event.preventDefault();
+        confirmarRemocaoItem(link.closest(".pdv-cart-row"));
+      });
     });
     if (clearCartLink) {
       clearCartLink.addEventListener("click", function (event) {
@@ -2192,6 +2240,7 @@ document.addEventListener("DOMContentLoaded", function () {
         return;
       }
       var activeModal = modalAberto();
+      if (activeModal && manterFocoNoDialog(activeModal, event)) return;
       if (activeModal && activeModal.id === "pdv-modal-refunds") {
         var focoEmFormulario = document.activeElement && document.activeElement.closest && document.activeElement.closest(".pdv-refund-form");
         if (key === "F6") {
@@ -2389,12 +2438,14 @@ document.addEventListener("DOMContentLoaded", function () {
           return;
         }
       }
+      if (activeModal) return;
       if (key === "F12" && !(paymentModal && paymentModal.classList.contains("is-open"))) {
         event.preventDefault();
         lerPesoBalancaPdv();
         return;
       }
       if (paymentModal && paymentModal.classList.contains("is-open")) {
+        if (manterFocoNoDialog(paymentModal, event)) return;
         if (key === "Enter" && document.activeElement && document.activeElement.name === "cpf_na_nota") {
           event.preventDefault();
           document.activeElement.checked = true;
@@ -2439,22 +2490,21 @@ document.addEventListener("DOMContentLoaded", function () {
           return;
         }
       }
-      if ((key === "ArrowUp" || key === "ArrowDown") && cartRows.length && !modalAberto()) {
-        if (document.activeElement && document.activeElement.closest && document.activeElement.closest(".pdv-payment-row")) return;
+      if ((key === "ArrowUp" || key === "ArrowDown") && cartRows.length && !modalAberto() && !campoEditavelAtivo()) {
         event.preventDefault();
         var atual = Math.max(0, selectedCartIndex);
         var destino = key === "ArrowUp" ? Math.max(0, atual - 1) : Math.min(cartRows.length - 1, atual + 1);
         selecionarItemCarrinho(cartRows[destino], true);
         return;
       }
-      if ((key === "Delete" || key === "Del") && cartRows.length) {
+      if ((key === "Delete" || key === "Del") && cartRows.length && !campoEditavelAtivo()) {
         event.preventDefault();
         if (event.ctrlKey) {
           if (clearCartLink && window.confirm("Excluir todos os produtos desta venda?")) window.location.href = clearCartLink.href;
           return;
         }
         var selectedCartRow = document.querySelector(".pdv-cart-row.is-selected") || cartRows[cartRows.length - 1];
-        if (selectedCartRow && selectedCartRow.dataset.removeUrl) window.location.href = selectedCartRow.dataset.removeUrl;
+        confirmarRemocaoItem(selectedCartRow);
         return;
       }
       if (!key || !key.startsWith("F")) return;
@@ -2483,12 +2533,32 @@ document.addEventListener("DOMContentLoaded", function () {
         }
       });
     }
+    document.querySelectorAll(".pdv-mode form[method='post']").forEach(function (form) {
+      form.addEventListener("submit", function (event) {
+        if (event.defaultPrevented) return;
+        if (form.dataset.submitting === "1") {
+          event.preventDefault();
+          return;
+        }
+        form.dataset.submitting = "1";
+        form.setAttribute("aria-busy", "true");
+        var submitter = event.submitter || (form === finishForm ? confirmPaymentButton : form.querySelector("button[type='submit']"));
+        if (submitter) {
+          submitter.disabled = true;
+          submitter.setAttribute("aria-busy", "true");
+          submitter.dataset.originalHtml = submitter.innerHTML;
+          submitter.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Processando...';
+        }
+      });
+    });
     document.querySelectorAll(".pdv-mode .content > .messages .message").forEach(function (message) {
       window.setTimeout(function () { message.remove(); }, message.classList.contains("error") ? 3800 : 1800);
     });
     atualizarAutorizacaoDesconto();
     atualizarCpfNaNota();
     atualizarResumoPdv();
+    var blockingOverlay = (paymentModal && paymentModal.classList.contains("is-open")) || (postSaleModal && postSaleModal.classList.contains("is-open")) || modalAberto();
+    if (!blockingOverlay) focarBuscaProduto();
   }
 });
 

@@ -1253,6 +1253,44 @@ class AcessoPdvNuvemTests(TestCase):
         self.assertNotContains(resposta, "<kbd>Shift+M</kbd> Menu", html=True)
         self.assertContains(resposta, "Navegador")
 
+    def test_pdv_expoe_controles_operacionais_acessiveis_e_atalhos_completos(self):
+        self.client.force_login(self.operador)
+
+        resposta = self.client.get("/pdv/")
+
+        self.assertEqual(resposta.status_code, 200)
+        self.assertContains(resposta, 'role="listbox"')
+        self.assertContains(resposta, 'id="pdv-selected-item"')
+        self.assertContains(resposta, 'aria-live="polite"')
+        self.assertContains(resposta, 'role="dialog"')
+        self.assertContains(resposta, 'aria-labelledby="pdv-payment-title"')
+        for atalho in ("F2", "F3", "F4", "F5", "F6", "F7", "F8", "F9"):
+            self.assertContains(resposta, f"<kbd>{atalho}</kbd>", html=True)
+
+    def test_item_do_carrinho_expoe_contexto_para_selecao_e_remocao_segura(self):
+        categoria = Categoria.objects.create(nome="Mercearia operacional")
+        produto = Produto.objects.create(
+            nome="Arroz operacional",
+            codigo_barras="7890000000999",
+            categoria=categoria,
+            preco_custo=Decimal("10.00"),
+            preco_venda=Decimal("12.50"),
+            vendido_no_pdv=True,
+        )
+        session = self.client.session
+        session["pdv_cart"] = {str(produto.id): "2.000"}
+        session.save()
+        self.client.force_login(self.operador)
+
+        resposta = self.client.get("/pdv/")
+
+        self.assertEqual(resposta.status_code, 200)
+        self.assertContains(resposta, 'role="option"')
+        self.assertContains(resposta, 'data-product-label="Arroz operacional"')
+        self.assertContains(resposta, 'data-product-quantity="2"')
+        self.assertContains(resposta, "data-pdv-remove-item")
+        self.assertContains(resposta, "Selecionado: Arroz operacional (qtd. 2)")
+
     def test_pdv_exibe_status_fiscal_do_terminal_identificado(self):
         terminal = TerminalPdv.objects.create(filial=self.filial, nome="Caixa sem fiscal", emite_documento_fiscal=False)
         self.client.force_login(self.operador)
