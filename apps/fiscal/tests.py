@@ -1881,6 +1881,20 @@ class FiscalTests(TestCase):
         with self.assertRaisesMessage(ValidationError, "XML IBS/CBS incompleto"):
             validar_xml_pre_transmissao(documento, FocusNFeSefazAdapter())
 
+    def test_pre_transmissao_focus_bloqueia_ibs_cbs_duplicado(self):
+        self._habilitar_nfce_go_teste()
+        documento = preparar_documento_venda(self.venda, self.user)
+        raiz = ET.fromstring(documento.xml_conteudo)
+        imposto = raiz.find(
+            f"{{{NFE_NS}}}infNFe/{{{NFE_NS}}}det/{{{NFE_NS}}}imposto"
+        )
+        grupo = imposto.find(f"{{{NFE_NS}}}IBSCBS")
+        imposto.append(ET.fromstring(ET.tostring(grupo, encoding="unicode")))
+        documento.xml_conteudo = ET.tostring(raiz, encoding="unicode")
+
+        with self.assertRaisesMessage(ValidationError, "XML IBS/CBS ambiguo"):
+            validar_xml_pre_transmissao(documento, FocusNFeSefazAdapter())
+
     def test_pre_transmissao_sefaz_direta_bloqueia_calculo_ibs_cbs_adulterado(self):
         self._habilitar_nfce_go_teste()
         documento = preparar_documento_venda(self.venda, self.user)
@@ -1902,7 +1916,21 @@ class FiscalTests(TestCase):
         grupo.remove(grupo.find(f"{{{NFE_NS}}}gIBSCBS"))
         documento.xml_conteudo = ET.tostring(raiz, encoding="unicode")
 
-        with self.assertRaisesMessage(ValidationError, "sem gIBSCBS"):
+        with self.assertRaisesMessage(ValidationError, "IBSCBS/gIBSCBS ausente"):
+            validar_xml_pre_transmissao(documento, SefazDiretaAdapter())
+
+    def test_pre_transmissao_sefaz_direta_bloqueia_variantes_pis_simultaneas(self):
+        self._habilitar_nfce_go_teste()
+        documento = preparar_documento_venda(self.venda, self.user)
+        raiz = ET.fromstring(documento.xml_conteudo)
+        pis = raiz.find(
+            f"{{{NFE_NS}}}infNFe/{{{NFE_NS}}}det/{{{NFE_NS}}}imposto/"
+            f"{{{NFE_NS}}}PIS"
+        )
+        ET.SubElement(pis, f"{{{NFE_NS}}}PISNT")
+        documento.xml_conteudo = ET.tostring(raiz, encoding="unicode")
+
+        with self.assertRaisesMessage(ValidationError, "variantes simultaneas"):
             validar_xml_pre_transmissao(documento, SefazDiretaAdapter())
 
     def test_pre_transmissao_nao_aplica_recorte_ibs_cbs_a_outro_crt(self):

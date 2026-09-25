@@ -69,6 +69,19 @@ declara validação de schema própria. O caminho SEFAZ direta usa a mesma barre
 O ciclo não adicionou CST, cClassTrib, redução, monofasia, regime ou autorização
 de produção.
 
+O endurecimento do ciclo 174 exige ocorrência única de `IBSCBS`, CST,
+cClassTrib, `gIBSCBS`, todos os grupos e campos matemáticos internos, além de
+`IBSCBSTot` e seus totalizadores usados na reconciliação. A mesma política vale
+para os grupos legados que formam a base: um ICMS, um PIS e um COFINS por item,
+com exatamente uma variante interna. Campos de valor obrigatórios ou ausentes
+seguem a variante produzida pelo gerador; campos incompatíveis, variantes
+simultâneas e duplicidades são recusados como ambiguidade.
+
+As variantes reconhecidas continuam sendo somente as já geradas pelo sistema:
+`ICMS00/20/40`, `PISAliq/PISNT/PISOutr` e
+`COFINSAliq/COFINSNT/COFINSOutr`. Esta enumeração não amplia o recorte IBS/CBS,
+não declara homologação e não libera produção.
+
 ## Catálogo e capacidade
 
 O catálogo permanece mínimo: `CST=000` com `cClassTrib=000001`. Sua evidência

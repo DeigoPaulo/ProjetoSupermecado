@@ -130,6 +130,15 @@ class XmlIbsCbsTests(SimpleTestCase):
             prod = ET.SubElement(det, f"{{{NFE_NS}}}prod")
             ET.SubElement(prod, f"{{{NFE_NS}}}vProd").text = f"{base:.2f}"
             imposto = ET.SubElement(det, f"{{{NFE_NS}}}imposto")
+            icms = ET.SubElement(imposto, f"{{{NFE_NS}}}ICMS")
+            icms00 = ET.SubElement(icms, f"{{{NFE_NS}}}ICMS00")
+            ET.SubElement(icms00, f"{{{NFE_NS}}}vICMS").text = "0.00"
+            pis = ET.SubElement(imposto, f"{{{NFE_NS}}}PIS")
+            pis_aliq = ET.SubElement(pis, f"{{{NFE_NS}}}PISAliq")
+            ET.SubElement(pis_aliq, f"{{{NFE_NS}}}vPIS").text = "0.00"
+            cofins = ET.SubElement(imposto, f"{{{NFE_NS}}}COFINS")
+            cofins_aliq = ET.SubElement(cofins, f"{{{NFE_NS}}}COFINSAliq")
+            ET.SubElement(cofins_aliq, f"{{{NFE_NS}}}vCOFINS").text = "0.00"
             calculo = calcular_ibs_cbs_padrao(
                 valor_operacao=base,
                 cst="000",
@@ -141,6 +150,12 @@ class XmlIbsCbsTests(SimpleTestCase):
         total = ET.SubElement(inf_nfe, f"{{{NFE_NS}}}total")
         adicionar_totais(total, calculos, namespace=NFE_NS)
         return nfe, inf_nfe
+
+    @staticmethod
+    def _duplicar(pai, elemento):
+        duplicado = ET.fromstring(ET.tostring(elemento, encoding="unicode"))
+        pai.append(duplicado)
+        return duplicado
 
     def test_itens_e_total_reconciliam_e_projetam_no_payload_focus(self):
         nfe, inf_nfe = self._xml()
@@ -215,13 +230,139 @@ class XmlIbsCbsTests(SimpleTestCase):
         )
         primeiro_imposto.remove(primeiro_imposto.find(f"{{{NFE_NS}}}IBSCBS"))
 
-        with self.assertRaisesRegex(ValueError, "item 1 sem IBSCBS"):
+        with self.assertRaisesRegex(ValueError, "item 1 IBSCBS ausente"):
             validar_paridade_xml(
                 inf_nfe,
                 namespace=NFE_NS,
                 modelo="65",
                 data_emissao=date(2026, 9, 25),
             )
+
+    def test_paridade_bloqueia_cardinalidade_duplicada_do_item_ibs_cbs(self):
+        cenarios = (
+            ("IBSCBS", "imposto", "IBSCBS"),
+            ("CST", "IBSCBS", "CST"),
+            ("cClassTrib", "IBSCBS", "cClassTrib"),
+            ("gIBSCBS", "IBSCBS", "gIBSCBS"),
+            ("vBC", "gIBSCBS", "vBC"),
+            ("gIBSUF", "gIBSCBS", "gIBSUF"),
+            ("pIBSUF", "gIBSUF", "pIBSUF"),
+            ("vIBSUF", "gIBSUF", "vIBSUF"),
+            ("gIBSMun", "gIBSCBS", "gIBSMun"),
+            ("pIBSMun", "gIBSMun", "pIBSMun"),
+            ("vIBSMun", "gIBSMun", "vIBSMun"),
+            ("vIBS", "gIBSCBS", "vIBS"),
+            ("gCBS", "gIBSCBS", "gCBS"),
+            ("pCBS", "gCBS", "pCBS"),
+            ("vCBS", "gCBS", "vCBS"),
+        )
+        for nome, pai_nome, filho_nome in cenarios:
+            with self.subTest(campo=nome):
+                _, inf_nfe = self._xml()
+                imposto = inf_nfe.find(
+                    f"{{{NFE_NS}}}det/{{{NFE_NS}}}imposto"
+                )
+                ibs_cbs = imposto.find(f"{{{NFE_NS}}}IBSCBS")
+                g_ibs_cbs = ibs_cbs.find(f"{{{NFE_NS}}}gIBSCBS")
+                pais = {
+                    "imposto": imposto,
+                    "IBSCBS": ibs_cbs,
+                    "gIBSCBS": g_ibs_cbs,
+                    "gIBSUF": g_ibs_cbs.find(f"{{{NFE_NS}}}gIBSUF"),
+                    "gIBSMun": g_ibs_cbs.find(f"{{{NFE_NS}}}gIBSMun"),
+                    "gCBS": g_ibs_cbs.find(f"{{{NFE_NS}}}gCBS"),
+                }
+                pai = pais[pai_nome]
+                self._duplicar(pai, pai.find(f"{{{NFE_NS}}}{filho_nome}"))
+
+                with self.assertRaisesRegex(ValueError, "XML IBS/CBS ambiguo"):
+                    validar_paridade_xml(
+                        inf_nfe,
+                        namespace=NFE_NS,
+                        modelo="65",
+                        data_emissao=date(2026, 9, 25),
+                    )
+
+    def test_reconciliacao_bloqueia_cardinalidade_duplicada_dos_totais(self):
+        cenarios = (
+            ("total", "IBSCBSTot"),
+            ("IBSCBSTot", "vBCIBSCBS"),
+            ("IBSCBSTot", "gIBS"),
+            ("gIBS", "gIBSUF"),
+            ("gIBSUF", "vIBSUF"),
+            ("gIBS", "gIBSMun"),
+            ("gIBSMun", "vIBSMun"),
+            ("gIBS", "vIBS"),
+            ("IBSCBSTot", "gCBS"),
+            ("gCBS", "vCBS"),
+        )
+        for pai_nome, filho_nome in cenarios:
+            with self.subTest(campo=f"{pai_nome}/{filho_nome}"):
+                _, inf_nfe = self._xml()
+                total = inf_nfe.find(f"{{{NFE_NS}}}total")
+                ibs_cbs = total.find(f"{{{NFE_NS}}}IBSCBSTot")
+                g_ibs = ibs_cbs.find(f"{{{NFE_NS}}}gIBS")
+                pais = {
+                    "total": total,
+                    "IBSCBSTot": ibs_cbs,
+                    "gIBS": g_ibs,
+                    "gIBSUF": g_ibs.find(f"{{{NFE_NS}}}gIBSUF"),
+                    "gIBSMun": g_ibs.find(f"{{{NFE_NS}}}gIBSMun"),
+                    "gCBS": ibs_cbs.find(f"{{{NFE_NS}}}gCBS"),
+                }
+                pai = pais[pai_nome]
+                self._duplicar(pai, pai.find(f"{{{NFE_NS}}}{filho_nome}"))
+
+                with self.assertRaisesRegex(ValueError, "XML IBS/CBS ambiguo"):
+                    reconciliar_xml(inf_nfe, namespace=NFE_NS)
+
+    def test_paridade_bloqueia_ambiguidades_nos_grupos_legados(self):
+        cenarios = (
+            ("ICMS duplicado", "imposto", "ICMS", "grupo"),
+            ("ICMS variantes", "ICMS", "ICMS20", "variante"),
+            ("vICMS duplicado", "ICMS00", "vICMS", "campo"),
+            ("vFCP duplicado", "ICMS00", "vFCP", "campo_novo_duplo"),
+            ("PIS duplicado", "imposto", "PIS", "grupo"),
+            ("PIS variantes", "PIS", "PISNT", "variante"),
+            ("vPIS duplicado", "PISAliq", "vPIS", "campo"),
+            ("COFINS duplicado", "imposto", "COFINS", "grupo"),
+            ("COFINS variantes", "COFINS", "COFINSNT", "variante"),
+            ("vCOFINS duplicado", "COFINSAliq", "vCOFINS", "campo"),
+        )
+        for nome, pai_nome, filho_nome, operacao in cenarios:
+            with self.subTest(cenario=nome):
+                _, inf_nfe = self._xml()
+                imposto = inf_nfe.find(
+                    f"{{{NFE_NS}}}det/{{{NFE_NS}}}imposto"
+                )
+                icms = imposto.find(f"{{{NFE_NS}}}ICMS")
+                pis = imposto.find(f"{{{NFE_NS}}}PIS")
+                cofins = imposto.find(f"{{{NFE_NS}}}COFINS")
+                pais = {
+                    "imposto": imposto,
+                    "ICMS": icms,
+                    "ICMS00": icms.find(f"{{{NFE_NS}}}ICMS00"),
+                    "PIS": pis,
+                    "PISAliq": pis.find(f"{{{NFE_NS}}}PISAliq"),
+                    "COFINS": cofins,
+                    "COFINSAliq": cofins.find(f"{{{NFE_NS}}}COFINSAliq"),
+                }
+                pai = pais[pai_nome]
+                if operacao in {"grupo", "campo"}:
+                    self._duplicar(pai, pai.find(f"{{{NFE_NS}}}{filho_nome}"))
+                elif operacao == "campo_novo_duplo":
+                    for _ in range(2):
+                        ET.SubElement(pai, f"{{{NFE_NS}}}{filho_nome}").text = "0.00"
+                else:
+                    ET.SubElement(pai, f"{{{NFE_NS}}}{filho_nome}")
+
+                with self.assertRaisesRegex(ValueError, "XML IBS/CBS ambiguo"):
+                    validar_paridade_xml(
+                        inf_nfe,
+                        namespace=NFE_NS,
+                        modelo="65",
+                        data_emissao=date(2026, 9, 25),
+                    )
 
     def test_paridade_bloqueia_adulteracao_de_cada_campo_do_item(self):
         caminhos = {

@@ -2,6 +2,7 @@ from decimal import Decimal
 from xml.etree import ElementTree as ET
 
 from .calculo import totalizar_calculos
+from .estrutura import ler_item_ibs_cbs, ler_total_ibs_cbs, obter_unico
 
 
 def _tag(namespace, nome):
@@ -69,36 +70,42 @@ def adicionar_totais(total, calculos, *, namespace):
 def reconciliar_xml(inf_nfe, *, namespace):
     caminho = lambda valor: f".//{{{namespace}}}{valor}"
     itens = inf_nfe.findall(caminho("det"))
-    grupos = [item.find(f"{{{namespace}}}imposto/{{{namespace}}}IBSCBS") for item in itens]
-    if not any(grupo is not None for grupo in grupos):
+    estruturas = []
+    for indice, item in enumerate(itens, start=1):
+        imposto = obter_unico(
+            item,
+            namespace=namespace,
+            nome="imposto",
+            contexto=f"item {indice} grupo imposto",
+        )
+        estruturas.append(
+            ler_item_ibs_cbs(
+                imposto,
+                namespace=namespace,
+                indice=indice,
+                obrigatorio=False,
+            )
+        )
+    if not any(estrutura is not None for estrutura in estruturas):
         return False
-    if any(grupo is None for grupo in grupos):
+    if any(estrutura is None for estrutura in estruturas):
         raise ValueError("XML IBS/CBS incompleto: todos os itens devem possuir IBSCBS")
-    total = inf_nfe.find(f"{{{namespace}}}total/{{{namespace}}}IBSCBSTot")
-    if total is None:
-        raise ValueError("XML IBS/CBS incompleto: IBSCBSTot ausente")
+    total = ler_total_ibs_cbs(inf_nfe, namespace=namespace)
 
-    def soma(caminho_relativo):
+    def soma(campo):
         return sum(
-            (Decimal(grupo.findtext(caminho_relativo, "0")) for grupo in grupos),
+            (Decimal(estrutura[campo]) for estrutura in estruturas),
             Decimal("0.00"),
         )
 
     comparacoes = (
-        (soma(f"{{{namespace}}}gIBSCBS/{{{namespace}}}vBC"), "vBCIBSCBS"),
-        (soma(f"{{{namespace}}}gIBSCBS/{{{namespace}}}gIBSUF/{{{namespace}}}vIBSUF"), "gIBS/vIBSUF"),
-        (soma(f"{{{namespace}}}gIBSCBS/{{{namespace}}}gIBSMun/{{{namespace}}}vIBSMun"), "gIBS/vIBSMun"),
-        (soma(f"{{{namespace}}}gIBSCBS/{{{namespace}}}vIBS"), "gIBS/vIBS"),
-        (soma(f"{{{namespace}}}gIBSCBS/{{{namespace}}}gCBS/{{{namespace}}}vCBS"), "gCBS/vCBS"),
+        (soma("vBC"), "vBCIBSCBS"),
+        (soma("vIBSUF"), "vIBSUF"),
+        (soma("vIBSMun"), "vIBSMun"),
+        (soma("vIBS"), "vIBS"),
+        (soma("vCBS"), "vCBS"),
     )
-    caminhos_total = {
-        "vBCIBSCBS": f"{{{namespace}}}vBCIBSCBS",
-        "gIBS/vIBSUF": f"{{{namespace}}}gIBS/{{{namespace}}}gIBSUF/{{{namespace}}}vIBSUF",
-        "gIBS/vIBSMun": f"{{{namespace}}}gIBS/{{{namespace}}}gIBSMun/{{{namespace}}}vIBSMun",
-        "gIBS/vIBS": f"{{{namespace}}}gIBS/{{{namespace}}}vIBS",
-        "gCBS/vCBS": f"{{{namespace}}}gCBS/{{{namespace}}}vCBS",
-    }
     for soma_itens, nome in comparacoes:
-        if soma_itens != Decimal(total.findtext(caminhos_total[nome], "0")):
+        if soma_itens != Decimal(total[nome]):
             raise ValueError(f"SOMA_ITENS diverge de TOTAL_XML em {nome}")
     return True

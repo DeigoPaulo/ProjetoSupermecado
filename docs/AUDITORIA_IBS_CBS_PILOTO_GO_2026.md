@@ -240,3 +240,22 @@ despesas, II, ICMSUFDest, vFCPUFDest, vICMSUFDest, ICMS monofásico, PISST,
 COFINSST, ISSQN e IS. Nenhum desses componentes passou a ser calculado ou
 suportado. O pacote XSD 010f, seu SHA-256, a rastreabilidade do catálogo e todas
 as travas de rede e produção foram preservados.
+
+## Atualização de cardinalidade e exclusividade - ciclo 174
+
+O ciclo 174 eliminou a seleção silenciosa da primeira ocorrência em campos
+fiscais críticos. Uma leitura estrutural única, compartilhada entre validação e
+reconciliação, exige cardinalidade exata para `IBSCBS`, seus campos e subgrupos,
+`IBSCBSTot` e os totalizadores confrontados. Duplicidades passam a falhar
+localmente como XML ambíguo antes de qualquer adaptador externo.
+
+A recomposição da base também valida um único grupo ICMS, PIS e COFINS por item,
+uma única variante interna e cardinalidade compatível de `vICMS`, `vFCP`, `vPIS`
+e `vCOFINS`. A allowlist foi derivada exclusivamente do gerador existente:
+`ICMS00`, `ICMS20`, `ICMS40`, `PISAliq`, `PISNT`, `PISOutr`, `COFINSAliq`,
+`COFINSNT` e `COFINSOutr`. Isso não habilita variante, redução ou cenário novo;
+apenas rejeita combinações e repetições que antes poderiam ser interpretadas
+pelo primeiro valor encontrado.
+
+Nenhuma homologação real ocorreu. Não houve acesso à SEFAZ, transmissão,
+promoção do XSD ou liberação de produção.

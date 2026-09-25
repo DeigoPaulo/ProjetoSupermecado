@@ -3154,3 +3154,18 @@ Próximo bloqueio interno recomendado: auditar a cardinalidade e a exclusividade
 dos grupos legados ICMS/PIS/COFINS aceitos pela recomposição da base, ainda sem
 habilitar novos cenários. Depois do push deste ciclo, nenhuma evolução seguinte
 deve ser iniciada sem nova auditoria externa.
+
+## Ponto de retomada - ciclo 174
+
+- [x] Centralizar leitura única de elementos IBS/CBS e totalizadores.
+- [x] Rejeitar duplicidades em grupos, subgrupos, alíquotas e valores do item.
+- [x] Rejeitar duplicidade de `IBSCBSTot` e dos campos usados na reconciliação.
+- [x] Validar cardinalidade e exclusividade de ICMS, PIS e COFINS usados na base.
+- [x] Derivar variantes aceitas somente do gerador existente, sem criar capacidade nova.
+- [x] Cobrir ambiguidades localmente nos caminhos Focus e SEFAZ direta.
+- [x] Preservar XSD 010f, catálogo, bloqueio de rede e bloqueio de produção.
+
+Permanecem externos a homologação real por canal e filial, o aceite do
+responsável fiscal e a aprovação controlada do schema operacional. O próximo
+passo interno depende de nova auditoria e não deve ampliar automaticamente o
+catálogo ou as hipóteses tributárias.

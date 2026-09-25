@@ -2,6 +2,7 @@ from datetime import date
 from decimal import Decimal, InvalidOperation
 
 from .calculo import calcular_base_operacao_padrao, calcular_ibs_cbs_padrao
+from .estrutura import ler_item_ibs_cbs, nome_local, obter_unico, texto_unico
 from .xml import reconciliar_xml
 
 
@@ -9,13 +10,8 @@ def _tag(namespace, nome):
     return f"{{{namespace}}}{nome}"
 
 
-def _nome_local(elemento):
-    return elemento.tag.rsplit("}", 1)[-1]
-
-
-def _decimal(elemento, caminho, campo, *, obrigatorio=True):
-    texto = elemento.findtext(caminho)
-    if texto is None or not texto.strip():
+def _decimal_texto(texto, campo, *, obrigatorio=True):
+    if texto is None:
         if obrigatorio:
             raise ValueError(f"XML IBS/CBS incompleto: {campo} ausente")
         return Decimal("0.00")
@@ -28,6 +24,98 @@ def _decimal(elemento, caminho, campo, *, obrigatorio=True):
     if valor < 0:
         raise ValueError(f"XML IBS/CBS invalido: {campo} nao pode ser negativo")
     return valor
+
+
+def _decimal_unico(
+    pai, nome, campo, *, namespace, obrigatorio=True, permitido=True
+):
+    texto = texto_unico(
+        pai,
+        namespace=namespace,
+        nome=nome,
+        contexto=campo,
+        obrigatorio=obrigatorio,
+    )
+    if texto is not None and not permitido:
+        raise ValueError(f"XML IBS/CBS ambiguo: {campo} incompativel com a variante")
+    return _decimal_texto(texto, campo, obrigatorio=obrigatorio)
+
+
+def _grupo_variante_unico(container, *, grupo, permitidos, indice):
+    variantes = list(container)
+    contexto = f"item {indice} {grupo}"
+    if not variantes:
+        raise ValueError(f"XML IBS/CBS incompleto: {contexto} sem variante")
+    if len(variantes) > 1:
+        nomes = ", ".join(nome_local(elemento) for elemento in variantes)
+        raise ValueError(
+            f"XML IBS/CBS ambiguo: {contexto} possui variantes simultaneas ({nomes})"
+        )
+    variante = variantes[0]
+    nome = nome_local(variante)
+    if nome not in permitidos:
+        raise ValueError(
+            "cenario IBS/CBS ainda nao suportado pelo contrato fiscal atual: "
+            f"variante {nome} em {grupo}"
+        )
+    return variante, nome
+
+
+def _validar_grupos_legados(imposto, *, namespace, indice):
+    icms = obter_unico(
+        imposto,
+        namespace=namespace,
+        nome="ICMS",
+        contexto=f"item {indice} grupo ICMS",
+    )
+    variante_icms, nome_icms = _grupo_variante_unico(
+        icms,
+        grupo="ICMS",
+        permitidos={"ICMS00", "ICMS20", "ICMS40"},
+        indice=indice,
+    )
+    valor_icms = _decimal_unico(
+        variante_icms,
+        "vICMS",
+        f"item {indice} ICMS/{nome_icms}/vICMS",
+        namespace=namespace,
+        obrigatorio=nome_icms in {"ICMS00", "ICMS20"},
+        permitido=nome_icms in {"ICMS00", "ICMS20"},
+    )
+    valor_fcp = _decimal_unico(
+        variante_icms,
+        "vFCP",
+        f"item {indice} ICMS/{nome_icms}/vFCP",
+        namespace=namespace,
+        obrigatorio=False,
+        permitido=nome_icms in {"ICMS00", "ICMS20"},
+    )
+
+    valores = {"ICMS": valor_icms, "FCP": valor_fcp}
+    for grupo in ("PIS", "COFINS"):
+        container = obter_unico(
+            imposto,
+            namespace=namespace,
+            nome=grupo,
+            contexto=f"item {indice} grupo {grupo}",
+        )
+        permitidos = {f"{grupo}Aliq", f"{grupo}NT", f"{grupo}Outr"}
+        variante, nome_variante = _grupo_variante_unico(
+            container,
+            grupo=grupo,
+            permitidos=permitidos,
+            indice=indice,
+        )
+        campo = f"v{grupo}"
+        valores[grupo] = _decimal_unico(
+            variante,
+            campo,
+            f"item {indice} {grupo}/{nome_variante}/{campo}",
+            namespace=namespace,
+            obrigatorio=nome_variante != f"{grupo}NT",
+            permitido=nome_variante != f"{grupo}NT",
+        )
+    return valores
 
 
 def _validar_ausencias_contrato(item, imposto, *, namespace):
@@ -45,7 +133,7 @@ def _validar_ausencias_contrato(item, imposto, *, namespace):
                 f"cenario IBS/CBS ainda nao suportado pelo contrato fiscal atual: grupo {grupo}"
             )
     for elemento in imposto.iter():
-        nome = _nome_local(elemento)
+        nome = nome_local(elemento)
         if nome in {"vFCPUFDest", "vICMSUFDest"}:
             raise ValueError(
                 f"cenario IBS/CBS ainda nao suportado pelo contrato fiscal atual: {nome}"
@@ -65,53 +153,48 @@ def validar_paridade_xml(inf_nfe, *, namespace, modelo, data_emissao):
 
     itens = inf_nfe.findall(_tag(namespace, "det"))
     for indice, item in enumerate(itens, start=1):
-        imposto = item.find(_tag(namespace, "imposto"))
-        grupo = (
-            imposto.find(_tag(namespace, "IBSCBS"))
-            if imposto is not None
-            else None
+        imposto = obter_unico(
+            item,
+            namespace=namespace,
+            nome="imposto",
+            contexto=f"item {indice} grupo imposto",
         )
-        if grupo is None:
-            raise ValueError(f"XML IBS/CBS incompleto: item {indice} sem IBSCBS")
+        estrutura = ler_item_ibs_cbs(
+            imposto, namespace=namespace, indice=indice
+        )
         _validar_ausencias_contrato(item, imposto, namespace=namespace)
 
-        cst = grupo.findtext(_tag(namespace, "CST"))
-        if cst is None or not cst.strip():
-            raise ValueError(f"XML IBS/CBS incompleto: item {indice} sem CST")
-        cclass_trib = grupo.findtext(_tag(namespace, "cClassTrib"))
-        if cclass_trib is None or not cclass_trib.strip():
-            raise ValueError(f"XML IBS/CBS incompleto: item {indice} sem cClassTrib")
-        g_ibs_cbs = grupo.find(_tag(namespace, "gIBSCBS"))
-        if g_ibs_cbs is None:
-            raise ValueError(f"XML IBS/CBS incompleto: item {indice} sem gIBSCBS")
-
-        prod = item.find(_tag(namespace, "prod"))
-        valor_produtos = _decimal(prod, _tag(namespace, "vProd"), "vProd")
-        desconto = _decimal(
-            prod, _tag(namespace, "vDesc"), "vDesc", obrigatorio=False
+        cst = estrutura["CST"]
+        cclass_trib = estrutura["cClassTrib"]
+        prod = obter_unico(
+            item,
+            namespace=namespace,
+            nome="prod",
+            contexto=f"item {indice} grupo prod",
         )
-        valor_pis = _decimal(
-            imposto, f".//{_tag(namespace, 'vPIS')}", "vPIS", obrigatorio=False
+        valor_produtos = _decimal_unico(
+            prod,
+            "vProd",
+            f"item {indice} prod/vProd",
+            namespace=namespace,
         )
-        valor_cofins = _decimal(
-            imposto,
-            f".//{_tag(namespace, 'vCOFINS')}",
-            "vCOFINS",
+        desconto = _decimal_unico(
+            prod,
+            "vDesc",
+            f"item {indice} prod/vDesc",
+            namespace=namespace,
             obrigatorio=False,
         )
-        valor_icms = _decimal(
-            imposto, f".//{_tag(namespace, 'vICMS')}", "vICMS", obrigatorio=False
-        )
-        valor_fcp = _decimal(
-            imposto, f".//{_tag(namespace, 'vFCP')}", "vFCP", obrigatorio=False
+        legados = _validar_grupos_legados(
+            imposto, namespace=namespace, indice=indice
         )
         base = calcular_base_operacao_padrao(
             valor_produtos=valor_produtos,
             desconto=desconto,
-            valor_pis=valor_pis,
-            valor_cofins=valor_cofins,
-            valor_icms=valor_icms,
-            valor_fcp=valor_fcp,
+            valor_pis=legados["PIS"],
+            valor_cofins=legados["COFINS"],
+            valor_icms=legados["ICMS"],
+            valor_fcp=legados["FCP"],
         )
         calculo = calcular_ibs_cbs_padrao(
             valor_operacao=base,
@@ -121,41 +204,19 @@ def validar_paridade_xml(inf_nfe, *, namespace, modelo, data_emissao):
         )
 
         campos = (
-            ("vBC", _tag(namespace, "vBC"), calculo.base),
-            (
-                "pIBSUF",
-                f"{_tag(namespace, 'gIBSUF')}/{_tag(namespace, 'pIBSUF')}",
-                calculo.aliquota_ibs_uf,
-            ),
-            (
-                "vIBSUF",
-                f"{_tag(namespace, 'gIBSUF')}/{_tag(namespace, 'vIBSUF')}",
-                calculo.valor_ibs_uf,
-            ),
-            (
-                "pIBSMun",
-                f"{_tag(namespace, 'gIBSMun')}/{_tag(namespace, 'pIBSMun')}",
-                calculo.aliquota_ibs_municipio,
-            ),
-            (
-                "vIBSMun",
-                f"{_tag(namespace, 'gIBSMun')}/{_tag(namespace, 'vIBSMun')}",
-                calculo.valor_ibs_municipio,
-            ),
-            ("vIBS", _tag(namespace, "vIBS"), calculo.valor_ibs),
-            (
-                "pCBS",
-                f"{_tag(namespace, 'gCBS')}/{_tag(namespace, 'pCBS')}",
-                calculo.aliquota_cbs,
-            ),
-            (
-                "vCBS",
-                f"{_tag(namespace, 'gCBS')}/{_tag(namespace, 'vCBS')}",
-                calculo.valor_cbs,
-            ),
+            ("vBC", calculo.base),
+            ("pIBSUF", calculo.aliquota_ibs_uf),
+            ("vIBSUF", calculo.valor_ibs_uf),
+            ("pIBSMun", calculo.aliquota_ibs_municipio),
+            ("vIBSMun", calculo.valor_ibs_municipio),
+            ("vIBS", calculo.valor_ibs),
+            ("pCBS", calculo.aliquota_cbs),
+            ("vCBS", calculo.valor_cbs),
         )
-        for campo, caminho, esperado in campos:
-            informado = _decimal(g_ibs_cbs, caminho, campo)
+        for campo, esperado in campos:
+            informado = _decimal_texto(
+                estrutura[campo], f"item {indice} IBS/CBS/{campo}"
+            )
             if informado != esperado:
                 raise ValueError(
                     f"Divergencia matematica IBS/CBS no item {indice}: "
