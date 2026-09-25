@@ -196,3 +196,30 @@ Próximo bloqueio interno prioritário: suportar IBS/CBS para `CRT=3` em um cicl
 separado, depois de decisão do responsável fiscal sobre o catálogo e as operações
 reais. Bloqueios externos permanecem aprovação do XSD operacional e homologação por
 canal/filial. Esta auditoria, isoladamente, não libera nenhuma emissão.
+
+## Atualização de endurecimento — ciclo 172
+
+O ciclo 172 não ampliou CST, cClassTrib ou hipótese tributária. O recorte
+`fiscal_ibs_cbs_go_crt3_standard_v1` continua limitado a GO, CRT 3, modelos
+55/65, CST `000`, cClassTrib `000001` e operação interna padrão.
+
+A conformidade estrutural deixou de ser opcional: a suíte usa diretamente
+`docs/evidencias/nfe_2026_09_10/schemas_010f.zip`, cujo SHA-256 permanece
+`b8589490a58a09a993a80e6ac4d7ed10f20892061ecfc56719337098d4b95998`.
+NF-e 55 e NFC-e 65 são geradas pelo fluxo real, assinadas e validadas offline no
+`nfe_v4.00.xsd`, sem variável de ambiente, rede, DTD, entidades externas ou
+extração persistente. O teste 55 também tornou explícito o `enderEmit` obrigatório.
+
+A pré-transmissão agora recompõe por item a base a partir de `vProd`, `vDesc`,
+`vPIS`, `vCOFINS`, `vICMS` e `vFCP`; exige em 2026 `pIBSUF=0.1000`,
+`pIBSMun=0.0000` e `pCBS=0.9000`; recalcula os quatro valores resultantes; e só
+depois reconcilia os totalizadores. Testes adulteram isoladamente todos esses
+campos, CST, cClassTrib, `vBCIBSCBS`, IBS total e CBS total, inclusive com item e
+total coerentes entre si. Focus e SEFAZ direta usam a mesma barreira.
+
+O catálogo congelou versão, data, URLs e data de consulta. Como a classificação
+foi confrontada em endpoint oficial sem snapshot versionado estável, o registro
+declara explicitamente a ausência de hash em vez de criar evidência fictícia.
+`capacidade_tributaria_fiscal()` agora separa emissão genérica desabilitada dos
+recortes emissivos habilitados. Produção, rede, promoção do XSD, monofasia,
+reduções, novos códigos e CRT 1/2/4 continuam bloqueados.

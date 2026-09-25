@@ -7,8 +7,13 @@ from django.test import SimpleTestCase
 
 from .focus_sefaz_adapter import FocusNFeSefazAdapter
 from .ibs_cbs.calculo import calcular_base_operacao_padrao, calcular_ibs_cbs_padrao
-from .ibs_cbs.catalogo import ClassificacaoIbsCbsInvalida, validar_classificacao
+from .ibs_cbs.catalogo import (
+    METADADOS_CATALOGO,
+    ClassificacaoIbsCbsInvalida,
+    validar_classificacao,
+)
 from .ibs_cbs.contrato import emissao_ibs_cbs_obrigatoria
+from .ibs_cbs.validacao import validar_paridade_xml
 from .ibs_cbs.xml import adicionar_grupo_item, adicionar_totais, reconciliar_xml
 from .models import ModoTransicaoIbsCbs
 from .services import _pendencias_emissao_ibs_cbs
@@ -64,6 +69,14 @@ class ContratoIbsCbsTests(SimpleTestCase):
                 with self.assertRaisesRegex(ClassificacaoIbsCbsInvalida, mensagem):
                     validar_classificacao(cst, cclass_trib, modelo)
 
+    def test_catalogo_congela_rastreabilidade_oficial_sem_hash_ficticio(self):
+        self.assertEqual(METADADOS_CATALOGO["versao_it"], "IT 2025.002 v1.60")
+        self.assertEqual(METADADOS_CATALOGO["data_oficial"], "2026-06-23")
+        self.assertEqual(METADADOS_CATALOGO["data_consulta"], "2026-09-24")
+        self.assertTrue(METADADOS_CATALOGO["url_oficial"].startswith("https://"))
+        self.assertIsNone(METADADOS_CATALOGO["artefato_oficial_sha256"])
+        self.assertIn("endpoint oficial", METADADOS_CATALOGO["evidencia"])
+
     def test_calculo_padrao_aplica_exclusoes_aliquotas_e_arredondamento(self):
         base = calcular_base_operacao_padrao(
             valor_produtos=Decimal("82.70"),
@@ -114,6 +127,8 @@ class XmlIbsCbsTests(SimpleTestCase):
         calculos = []
         for numero, base in enumerate((Decimal("58.20"), Decimal("10.00")), start=1):
             det = ET.SubElement(inf_nfe, f"{{{NFE_NS}}}det", {"nItem": str(numero)})
+            prod = ET.SubElement(det, f"{{{NFE_NS}}}prod")
+            ET.SubElement(prod, f"{{{NFE_NS}}}vProd").text = f"{base:.2f}"
             imposto = ET.SubElement(det, f"{{{NFE_NS}}}imposto")
             calculo = calcular_ibs_cbs_padrao(
                 valor_operacao=base,
@@ -130,6 +145,14 @@ class XmlIbsCbsTests(SimpleTestCase):
     def test_itens_e_total_reconciliam_e_projetam_no_payload_focus(self):
         nfe, inf_nfe = self._xml()
         self.assertTrue(reconciliar_xml(inf_nfe, namespace=NFE_NS))
+        self.assertTrue(
+            validar_paridade_xml(
+                inf_nfe,
+                namespace=NFE_NS,
+                modelo="65",
+                data_emissao=date(2026, 9, 25),
+            )
+        )
         total = inf_nfe.findtext(
             f"{{{NFE_NS}}}total/{{{NFE_NS}}}IBSCBSTot/{{{NFE_NS}}}vBCIBSCBS"
         )
@@ -153,3 +176,125 @@ class XmlIbsCbsTests(SimpleTestCase):
         total_cbs.text = "99.99"
         with self.assertRaisesRegex(ValueError, "SOMA_ITENS diverge de TOTAL_XML"):
             reconciliar_xml(inf_nfe, namespace=NFE_NS)
+
+    def test_paridade_bloqueia_adulteracao_de_cada_campo_do_item(self):
+        caminhos = {
+            "CST": ("CST", "999"),
+            "cClassTrib": ("cClassTrib", "999999"),
+            "vBC": ("gIBSCBS/vBC", "58.21"),
+            "pIBSUF": ("gIBSCBS/gIBSUF/pIBSUF", "0.2000"),
+            "vIBSUF": ("gIBSCBS/gIBSUF/vIBSUF", "0.07"),
+            "pIBSMun": ("gIBSCBS/gIBSMun/pIBSMun", "0.1000"),
+            "vIBSMun": ("gIBSCBS/gIBSMun/vIBSMun", "0.01"),
+            "vIBS": ("gIBSCBS/vIBS", "0.07"),
+            "pCBS": ("gIBSCBS/gCBS/pCBS", "1.0000"),
+            "vCBS": ("gIBSCBS/gCBS/vCBS", "0.53"),
+        }
+        for campo, (caminho, valor) in caminhos.items():
+            with self.subTest(campo=campo):
+                _, inf_nfe = self._xml()
+                grupo = inf_nfe.find(
+                    f"{{{NFE_NS}}}det/{{{NFE_NS}}}imposto/{{{NFE_NS}}}IBSCBS"
+                )
+                elemento = grupo.find(
+                    "/".join(f"{{{NFE_NS}}}{parte}" for parte in caminho.split("/"))
+                )
+                elemento.text = valor
+                with self.assertRaises(ValueError):
+                    validar_paridade_xml(
+                        inf_nfe,
+                        namespace=NFE_NS,
+                        modelo="65",
+                        data_emissao=date(2026, 9, 25),
+                    )
+
+    def test_paridade_bloqueia_item_e_total_adulterados_coerentemente(self):
+        cenarios = (
+            ("vBC", "58.21", "vBCIBSCBS", "68.21"),
+            ("vIBS", "0.07", "gIBS/vIBS", "0.08"),
+            ("gCBS/vCBS", "0.53", "gCBS/vCBS", "0.62"),
+        )
+        for caminho_item, valor_item, caminho_total, valor_total in cenarios:
+            with self.subTest(campo=caminho_item):
+                _, inf_nfe = self._xml()
+                grupo = inf_nfe.find(
+                    f"{{{NFE_NS}}}det/{{{NFE_NS}}}imposto/{{{NFE_NS}}}IBSCBS/"
+                    f"{{{NFE_NS}}}gIBSCBS"
+                )
+                grupo.find(
+                    "/".join(
+                        f"{{{NFE_NS}}}{parte}" for parte in caminho_item.split("/")
+                    )
+                ).text = valor_item
+                total = inf_nfe.find(
+                    f"{{{NFE_NS}}}total/{{{NFE_NS}}}IBSCBSTot"
+                )
+                total.find(
+                    "/".join(
+                        f"{{{NFE_NS}}}{parte}" for parte in caminho_total.split("/")
+                    )
+                ).text = valor_total
+                with self.assertRaisesRegex(ValueError, "Divergencia matematica"):
+                    validar_paridade_xml(
+                        inf_nfe,
+                        namespace=NFE_NS,
+                        modelo="65",
+                        data_emissao=date(2026, 9, 25),
+                    )
+
+    def test_paridade_bloqueia_totais_adulterados(self):
+        caminhos = ("vBCIBSCBS", "gIBS/vIBS", "gCBS/vCBS")
+        for caminho in caminhos:
+            with self.subTest(campo=caminho):
+                _, inf_nfe = self._xml()
+                total = inf_nfe.find(
+                    f"{{{NFE_NS}}}total/{{{NFE_NS}}}IBSCBSTot"
+                )
+                total.find(
+                    "/".join(f"{{{NFE_NS}}}{parte}" for parte in caminho.split("/"))
+                ).text = "99.99"
+                with self.assertRaisesRegex(ValueError, "SOMA_ITENS diverge de TOTAL_XML"):
+                    validar_paridade_xml(
+                        inf_nfe,
+                        namespace=NFE_NS,
+                        modelo="65",
+                        data_emissao=date(2026, 9, 25),
+                    )
+
+    def test_paridade_bloqueia_componentes_fora_do_contrato_e_ano_futuro(self):
+        for campo in ("vFrete", "vSeg", "vOutro"):
+            with self.subTest(campo=campo):
+                _, inf_nfe = self._xml()
+                prod = inf_nfe.find(f"{{{NFE_NS}}}det/{{{NFE_NS}}}prod")
+                ET.SubElement(prod, f"{{{NFE_NS}}}{campo}").text = "1.00"
+                with self.assertRaisesRegex(ValueError, campo):
+                    validar_paridade_xml(
+                        inf_nfe,
+                        namespace=NFE_NS,
+                        modelo="65",
+                        data_emissao=date(2026, 9, 25),
+                    )
+
+        for grupo_nome in ("II", "ICMSUFDest", "ISSQN", "IS", "ICMSMono"):
+            with self.subTest(grupo=grupo_nome):
+                _, inf_nfe = self._xml()
+                imposto = inf_nfe.find(
+                    f"{{{NFE_NS}}}det/{{{NFE_NS}}}imposto"
+                )
+                ET.SubElement(imposto, f"{{{NFE_NS}}}{grupo_nome}")
+                with self.assertRaises(ValueError):
+                    validar_paridade_xml(
+                        inf_nfe,
+                        namespace=NFE_NS,
+                        modelo="65",
+                        data_emissao=date(2026, 9, 25),
+                    )
+
+        _, inf_nfe = self._xml()
+        with self.assertRaisesRegex(ValueError, "somente para 2026"):
+            validar_paridade_xml(
+                inf_nfe,
+                namespace=NFE_NS,
+                modelo="65",
+                data_emissao=date(2027, 1, 1),
+            )

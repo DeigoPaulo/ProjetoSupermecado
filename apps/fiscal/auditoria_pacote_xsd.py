@@ -214,3 +214,63 @@ def auditar_pacote_xsd(*, arquivo, sha256_esperado, versao, arquivo_raiz="nfe_v4
             "transmitiu": False,
         },
     }
+
+
+def validar_xml_no_pacote_xsd(
+    *, xml, arquivo, sha256_esperado, versao, arquivo_raiz="nfe_v4.00.xsd"
+):
+    auditoria = auditar_pacote_xsd(
+        arquivo=arquivo,
+        sha256_esperado=sha256_esperado,
+        versao=versao,
+        arquivo_raiz=arquivo_raiz,
+    )
+    caminho = Path(arquivo).expanduser().resolve()
+    conteudo = caminho.read_bytes()
+    esperado = _validar_sha256(sha256_esperado)
+    if _sha256(conteudo) != esperado:
+        raise AuditoriaPacoteXSDErro("O pacote XSD mudou durante a validação.")
+
+    with zipfile.ZipFile(io.BytesIO(conteudo)) as pacote:
+        arquivos = {
+            _nome_seguro(info): pacote.read(info)
+            for info in pacote.infolist()
+            if not info.is_dir()
+        }
+    candidatos = [nome for nome in arquivos if nome.name == arquivo_raiz]
+    if len(candidatos) != 1:
+        raise AuditoriaPacoteXSDErro(
+            f"O pacote deve conter exatamente um {arquivo_raiz}; encontrados: {len(candidatos)}."
+        )
+
+    parser = etree.XMLParser(resolve_entities=False, no_network=True, load_dtd=False)
+    try:
+        with tempfile.TemporaryDirectory(prefix="validacao-xsd-") as temporario:
+            base = Path(temporario)
+            for nome, dados in arquivos.items():
+                alvo = base.joinpath(*nome.parts)
+                alvo.parent.mkdir(parents=True, exist_ok=True)
+                alvo.write_bytes(dados)
+            schema = etree.XMLSchema(
+                etree.parse(str(base.joinpath(*candidatos[0].parts)), parser)
+            )
+            raiz_xml = etree.fromstring(
+                xml.encode("utf-8") if isinstance(xml, str) else xml,
+                parser,
+            )
+            schema.assertValid(raiz_xml)
+    except (
+        OSError,
+        etree.XMLSyntaxError,
+        etree.XMLSchemaParseError,
+        etree.DocumentInvalid,
+    ) as exc:
+        raise AuditoriaPacoteXSDErro(f"XML rejeitado pelo pacote XSD auditado: {exc}") from exc
+
+    return {
+        "valido": True,
+        "versao": auditoria["versao"],
+        "pacote_sha256": auditoria["pacote"]["sha256"],
+        "schema_raiz": auditoria["schema"]["arquivo_raiz"],
+        "somente_offline": True,
+    }

@@ -518,7 +518,10 @@ def capacidade_tributaria_fiscal(configuracoes=None):
             "cadastro_produto_disponivel": True,
             "campos": ["CST IBS/CBS", "cClassTrib"],
             "filiais_em_preparacao": len(preparacao_ibs_cbs),
-            "emissao_xml_habilitada": False,
+            "emissao_xml_generica_habilitada": False,
+            "recortes_emissivos_habilitados": [
+                "fiscal_ibs_cbs_go_crt3_standard_v1",
+            ],
             "emissao_xml_recorte": "GO CRT 3, modelos 55/65, CST 000 e cClassTrib 000001",
             "modo_seguro": "contrato normativo por cenário e falha fechada fora do catálogo",
             "bloqueio": (
@@ -1315,6 +1318,7 @@ def gerar_xml_nfe_pedido_online(documento):
     _texto(emit, "CNPJ", cnpj_emitente)
     _texto(emit, "xNome", empresa.razao_social[:60])
     _texto(emit, "xFant", empresa.nome_fantasia[:60])
+    _endereco_emitente_nfce(emit, pedido.filial)
     _texto(emit, "IE", configuracao.inscricao_estadual)
     _texto(emit, "CRT", _crt_configuracao(configuracao))
 

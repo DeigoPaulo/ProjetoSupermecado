@@ -1,12 +1,9 @@
 import hashlib
 import json
-import os
 import tempfile
 import uuid
-import zipfile
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
-from unittest import skipUnless
 from unittest.mock import patch
 from decimal import Decimal
 from xml.etree import ElementTree as ET
@@ -25,7 +22,6 @@ from cryptography.hazmat.primitives import hashes, serialization
 from cryptography.hazmat.primitives.asymmetric import rsa
 from cryptography.hazmat.primitives.serialization import pkcs12
 from cryptography.x509.oid import NameOID
-from lxml import etree
 
 from apps.accounts.models import PerfilUsuario, TipoPerfil
 from apps.auditoria.models import LogAuditoria
@@ -66,7 +62,14 @@ from .models import (
 )
 from .certificados import abrir_certificado_a1, criptografar, salvar_certificado_a1
 from .assinaturas import assinar_xml_documento, verificar_assinatura_xml
-from .validacoes import diagnosticar_schemas_fiscais, validar_xml_schema
+from .auditoria_pacote_xsd import validar_xml_no_pacote_xsd
+from .focus_sefaz_adapter import FocusNFeSefazAdapter
+from .sefaz_direta.adapter import SefazDiretaAdapter
+from .validacoes import (
+    diagnosticar_schemas_fiscais,
+    validar_xml_pre_transmissao,
+    validar_xml_schema,
+)
 from .test_support_identidades_fiscais import obter_identidade_fiscal_teste
 from .test_support_documentos import origem_documento_fiscal_teste
 from .chave_acesso import construir_chave_acesso
@@ -91,10 +94,21 @@ from .services import (
     consultar_situacao_documento,
     pendencias_produto_fiscal,
     preparar_documento_venda,
+    preparar_documento_pedido_online,
     solicitar_inutilizacao_numeracao,
     transmitir_documento_sefaz,
     transmitir_documento_simulado,
 )
+
+
+IBS_CBS_XSD_ZIP = (
+    Path(__file__).resolve().parents[2]
+    / "docs"
+    / "evidencias"
+    / "nfe_2026_09_10"
+    / "schemas_010f.zip"
+)
+IBS_CBS_XSD_SHA256 = "b8589490a58a09a993a80e6ac4d7ed10f20892061ecfc56719337098d4b95998"
 
 
 def _criar_catalogo_cbenef_go_teste():
@@ -745,7 +759,17 @@ class FiscalTests(TestCase):
             ["102", "103", "300", "400"],
         )
         self.assertTrue(payload["capacidade_tributaria"]["ibs_cbs"]["cadastro_produto_disponivel"])
-        self.assertFalse(payload["capacidade_tributaria"]["ibs_cbs"]["emissao_xml_habilitada"])
+        self.assertFalse(
+            payload["capacidade_tributaria"]["ibs_cbs"][
+                "emissao_xml_generica_habilitada"
+            ]
+        )
+        self.assertEqual(
+            payload["capacidade_tributaria"]["ibs_cbs"][
+                "recortes_emissivos_habilitados"
+            ],
+            ["fiscal_ibs_cbs_go_crt3_standard_v1"],
+        )
         self.assertEqual(payload["producao"]["filiais_em_producao"], 0)
         self.assertFalse(payload["producao"]["transmissao_real_disponivel"])
         self.assertTrue(payload["producao"]["homologacao_simulada_disponivel"])
@@ -1744,26 +1768,126 @@ class FiscalTests(TestCase):
         self.assertIn("<vIBS>0.07</vIBS>", documento.xml_conteudo)
         self.assertIn("<vCBS>0.65</vCBS>", documento.xml_conteudo)
 
-    @skipUnless(
-        os.getenv("FISCAL_IBS_CBS_XSD_ZIP"),
-        "Pacote XSD oficial nao fornecido para o confronto offline opcional.",
-    )
     def test_nfce_go_ibs_cbs_confronta_xsd_010f_oficial(self):
         self._habilitar_nfce_go_teste()
         documento = preparar_documento_venda(self.venda, self.user)
         assinar_xml_documento(documento)
-        pacote = Path(os.environ["FISCAL_IBS_CBS_XSD_ZIP"]).resolve()
-        self.assertEqual(
-            hashlib.sha256(pacote.read_bytes()).hexdigest(),
-            "b8589490a58a09a993a80e6ac4d7ed10f20892061ecfc56719337098d4b95998",
+
+        resultado = validar_xml_no_pacote_xsd(
+            xml=documento.xml_conteudo,
+            arquivo=IBS_CBS_XSD_ZIP,
+            sha256_esperado=IBS_CBS_XSD_SHA256,
+            versao="PL_010f_v1.04",
         )
-        with tempfile.TemporaryDirectory(prefix="xsd-ibs-cbs-") as diretorio:
-            with zipfile.ZipFile(pacote) as arquivo:
-                arquivo.extractall(diretorio)
-            raizes = list(Path(diretorio).rglob("nfe_v4.00.xsd"))
-            self.assertEqual(len(raizes), 1)
-            schema = etree.XMLSchema(etree.parse(str(raizes[0])))
-            schema.assertValid(etree.fromstring(documento.xml_conteudo.encode("utf-8")))
+
+        self.assertTrue(resultado["valido"])
+        self.assertEqual(resultado["pacote_sha256"], IBS_CBS_XSD_SHA256)
+        self.assertIn("<IBSCBS>", documento.xml_conteudo)
+        self.assertIn("<IBSCBSTot>", documento.xml_conteudo)
+        verificar_assinatura_xml(documento.xml_conteudo)
+
+    def test_nfe_go_ibs_cbs_confronta_xsd_010f_oficial(self):
+        from apps.marketplace.models import (
+            FormaPagamentoPedido,
+            ItemPedidoOnline,
+            PedidoOnline,
+            StatusPagamentoPedido,
+        )
+
+        self._endereco_go_teste()
+        SerieFiscal.objects.create(
+            filial=self.filial,
+            tipo_documento=TipoDocumentoFiscal.NFE,
+            serie=55,
+            proximo_numero=200,
+        )
+        natureza = NaturezaOperacao.objects.create(
+            empresa=self.empresa,
+            descricao="Venda online interna",
+            cfop="5102",
+            tipo_documento=TipoDocumentoFiscal.NFE,
+        )
+        ParametrizacaoBeneficioFiscalProduto.objects.create(
+            produto=self.produto,
+            natureza_operacao=natureza,
+            situacao=SituacaoBeneficioFiscalICMS.SEM_BENEFICIO,
+            atualizado_por=self.user,
+        )
+        pedido = PedidoOnline.objects.create(
+            filial=self.filial,
+            nome_cliente="Consumidor final de teste",
+            usuario=self.user,
+        )
+        ItemPedidoOnline.objects.create(
+            pedido=pedido,
+            produto=self.produto,
+            quantidade=Decimal("1.000"),
+            preco_unitario=Decimal("82.70"),
+        )
+        pedido.recalcular()
+        pedido.documento_cliente_tipo = TipoDocumentoConsumidor.CNPJ
+        pedido.documento_cliente = obter_identidade_fiscal_teste(
+            "CLIENTE_PJ", finalidade="TESTE_INTEGRACAO_LOCAL"
+        )
+        pedido.status_pagamento = StatusPagamentoPedido.PAGO
+        pedido.forma_pagamento = FormaPagamentoPedido.GATEWAY
+        pedido.valor_pago = pedido.total
+        pedido.destinatario_indicador_ie = "9"
+        pedido.destinatario_logradouro = "Rua do Consumidor"
+        pedido.destinatario_numero = "100"
+        pedido.destinatario_bairro = "Centro"
+        pedido.destinatario_codigo_municipio_ibge = "5208707"
+        pedido.destinatario_municipio = "Goiania"
+        pedido.destinatario_uf = "GO"
+        pedido.destinatario_cep = "74000000"
+        pedido.save()
+
+        documento = preparar_documento_pedido_online(pedido, self.user)
+        assinar_xml_documento(documento)
+        resultado = validar_xml_no_pacote_xsd(
+            xml=documento.xml_conteudo,
+            arquivo=IBS_CBS_XSD_ZIP,
+            sha256_esperado=IBS_CBS_XSD_SHA256,
+            versao="PL_010f_v1.04",
+        )
+
+        self.assertTrue(resultado["valido"])
+        self.assertIn("<mod>55</mod>", documento.xml_conteudo)
+        self.assertIn("<IBSCBS>", documento.xml_conteudo)
+        self.assertIn("<IBSCBSTot>", documento.xml_conteudo)
+        verificar_assinatura_xml(documento.xml_conteudo)
+
+    def test_pre_transmissao_focus_bloqueia_calculo_ibs_cbs_adulterado(self):
+        self._habilitar_nfce_go_teste()
+        documento = preparar_documento_venda(self.venda, self.user)
+        documento.xml_conteudo = documento.xml_conteudo.replace(
+            "<pCBS>0.9000</pCBS>", "<pCBS>1.0000</pCBS>", 1
+        )
+
+        with self.assertRaisesMessage(ValidationError, "pCBS informado"):
+            validar_xml_pre_transmissao(documento, FocusNFeSefazAdapter())
+
+    def test_pre_transmissao_sefaz_direta_bloqueia_calculo_ibs_cbs_adulterado(self):
+        self._habilitar_nfce_go_teste()
+        documento = preparar_documento_venda(self.venda, self.user)
+        documento.xml_conteudo = documento.xml_conteudo.replace(
+            "<vIBSUF>0.06</vIBSUF>", "<vIBSUF>0.07</vIBSUF>", 1
+        )
+
+        with self.assertRaisesMessage(ValidationError, "vIBSUF informado"):
+            validar_xml_pre_transmissao(documento, SefazDiretaAdapter())
+
+    def test_pre_transmissao_nao_aplica_recorte_ibs_cbs_a_outro_crt(self):
+        self._habilitar_nfce_go_teste()
+        documento = preparar_documento_venda(self.venda, self.user)
+        documento.xml_conteudo = documento.xml_conteudo.replace(
+            "<CRT>3</CRT>", "<CRT>1</CRT>", 1
+        )
+
+        with self.assertRaisesMessage(
+            ValidationError, "o recorte emissivo exige GO, CRT 3"
+        ):
+            validar_xml_pre_transmissao(documento, FocusNFeSefazAdapter())
 
     def test_nfce_go_ibs_cbs_bloqueia_classificacao_fora_do_recorte(self):
         self._habilitar_nfce_go_teste()

@@ -2,6 +2,8 @@ from dataclasses import dataclass
 
 
 VERSAO_CATALOGO = "IT_2025_002_v1.60_2026-06-23"
+VERSAO_IT = "IT 2025.002 v1.60"
+DATA_OFICIAL_IT = "2026-06-23"
 FONTE_OFICIAL = (
     "https://www.nfe.fazenda.gov.br/portal/listaConteudo.aspx?"
     "tipoConteudo=%2FNJarYc9nus%3D"
@@ -11,6 +13,22 @@ FONTE_DADOS_ABERTOS = (
     "calculadora/dados-abertos/classificacoes-tributarias/cbs-ibs"
 )
 DATA_CONSULTA = "2026-09-24"
+ARTEFATO_OFICIAL_SHA256 = None
+EVIDENCIA_OFICIAL = (
+    "Classificacoes confrontadas no endpoint oficial de dados abertos; "
+    "na consulta registrada nao havia snapshot versionado estavel para hash local."
+)
+
+METADADOS_CATALOGO = {
+    "versao": VERSAO_CATALOGO,
+    "versao_it": VERSAO_IT,
+    "data_oficial": DATA_OFICIAL_IT,
+    "url_oficial": FONTE_OFICIAL,
+    "url_dados_abertos": FONTE_DADOS_ABERTOS,
+    "data_consulta": DATA_CONSULTA,
+    "artefato_oficial_sha256": ARTEFATO_OFICIAL_SHA256,
+    "evidencia": EVIDENCIA_OFICIAL,
+}
 
 
 class ClassificacaoIbsCbsInvalida(ValueError):

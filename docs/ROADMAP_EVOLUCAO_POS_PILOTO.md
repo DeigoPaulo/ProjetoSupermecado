@@ -3124,3 +3124,19 @@ Classificacao tributaria, CFOP, CST/CSOSN, IBS/CBS, plano de contas, regras de c
 - A migration `fiscal.0028_consultacadastrocontribuinte` materializa o histórico no banco e deve estar aplicada em cada ambiente antes do uso.
 - Em 24/08/2026 foram acrescentados sete testes offline para montagem e interpretação do SOAP, validação de contrato, bloqueios independentes de rede e produção, persistência, falha auditada e ausência de adaptador; todos passaram sem comunicação externa.
 - Nenhuma consulta real foi enviada. Pendência externa: revalidar endpoint e retorno vigente, testar com A1/IE válidos em homologação e obter aceite fiscal.
+
+## Ponto de retomada — ciclo 172
+
+- [x] Tornar obrigatório o confronto XSD 010f dos XMLs assinados NF-e 55 e NFC-e 65, usando o pacote auditado do repositório e sem skips por ambiente.
+- [x] Reutilizar a auditoria segura do ZIP, com SHA-256 `b8589490a58a09a993a80e6ac4d7ed10f20892061ecfc56719337098d4b95998`, parser offline e temporário descartável.
+- [x] Recalcular na pré-transmissão base, alíquotas e valores IBS/CBS por item antes de reconciliar os totais.
+- [x] Bloquear adulterações de CST, cClassTrib, base, alíquotas, valores e totalizadores, inclusive alterações coerentes entre item e total.
+- [x] Aplicar a defesa matemática aos caminhos Focus e SEFAZ direta sem criar cálculo alternativo nos adaptadores.
+- [x] Separar no diagnóstico emissão IBS/CBS genérica, que continua desabilitada, do recorte `fiscal_ibs_cbs_go_crt3_standard_v1`.
+- [x] Congelar metadados do catálogo oficial sem inventar hash para endpoint sem snapshot versionável.
+- [x] Preservar o escopo: nenhum novo CST, cClassTrib, cenário tributário, schema operacional ou migration foi criado.
+
+Próximo passo interno depende de nova auditoria: decidir qual endurecimento ou
+novo recorte fiscal será priorizado sem ampliar automaticamente o catálogo. As
+pendências externas continuam sendo homologação real por canal/filial, aceite do
+responsável fiscal e aprovação controlada do schema antes de qualquer produção.

@@ -9,9 +9,8 @@ from lxml import etree
 
 from .models import TipoDocumentoFiscal
 from .chave_acesso import normalizar_chave_acesso, normalizar_cnpj_emitente
-from .ibs_cbs.catalogo import ClassificacaoIbsCbsInvalida, validar_classificacao
 from .ibs_cbs.contrato import emissao_ibs_cbs_obrigatoria
-from .ibs_cbs.xml import reconciliar_xml
+from .ibs_cbs.validacao import validar_paridade_xml
 
 NFE_NS = "http://www.portalfiscal.inf.br/nfe"
 DSIG_NS = "http://www.w3.org/2000/09/xmldsig#"
@@ -144,15 +143,19 @@ def validar_xml_pre_transmissao(documento, adapter):
                 raise ValidationError(
                     "XML IBS/CBS incompleto: todos os itens devem possuir IBSCBS."
                 )
+            if not obrigatorio_ibs_cbs:
+                raise ValidationError(
+                    "Cenário IBS/CBS ainda não suportado pelo contrato fiscal atual: "
+                    "o recorte emissivo exige GO, CRT 3, modelo 55/65 e vigência aplicável."
+                )
             try:
-                for grupo in grupos_ibs_cbs:
-                    validar_classificacao(
-                        grupo.findtext(f"{{{NFE_NS}}}CST"),
-                        grupo.findtext(f"{{{NFE_NS}}}cClassTrib"),
-                        modelo,
-                    )
-                reconciliar_xml(inf_nfe, namespace=NFE_NS)
-            except (ClassificacaoIbsCbsInvalida, ValueError) as exc:
+                validar_paridade_xml(
+                    inf_nfe,
+                    namespace=NFE_NS,
+                    modelo=modelo,
+                    data_emissao=data_emissao,
+                )
+            except ValueError as exc:
                 raise ValidationError(str(exc)) from exc
 
     from .services import pendencias_endereco_emitente_nfce, validar_vinculos_pagamentos_xml

@@ -75,7 +75,11 @@ class CenariosTributariosGoTests(SimpleTestCase):
 
         self.assertEqual(capacidade["regime_normal"]["cst_suportados"], ["00", "20", "40", "41", "50"])
         self.assertEqual(capacidade["simples_nacional"]["csosn_suportados"], ["102", "103", "300", "400"])
-        self.assertFalse(capacidade["ibs_cbs"]["emissao_xml_habilitada"])
+        self.assertFalse(capacidade["ibs_cbs"]["emissao_xml_generica_habilitada"])
+        self.assertEqual(
+            capacidade["ibs_cbs"]["recortes_emissivos_habilitados"],
+            ["fiscal_ibs_cbs_go_crt3_standard_v1"],
+        )
 
     def test_sefaz_direta_nao_declara_emissao_completa(self):
         itens = {item["codigo"]: item for item in resumo_capacidades()["itens"]}
