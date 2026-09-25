@@ -110,3 +110,16 @@ a iniciar o processo quando autorizado; não representa homologação, emissão 
 liberação de produção. Dados fiscais e credenciais reais, respostas externas e
 aceite fiscal humano continuam fora deste contrato e devem ser comprovados por
 filial, modelo e canal.
+
+## Proveniência das evidências
+
+Desde o ciclo 176, o gate não aceita presença lexical de implementação como
+prova operacional. Contrato e catálogo são evidências estruturais versionadas;
+cálculo, vigência, cardinalidade e demais smoke checks seguros são executados
+offline; XML completo, assinatura, pré-transmissão, séries, pagamentos e
+contingência são provas executáveis da suíte integrada quando o banco temporário
+é necessário. Cada entrada da matriz lista todas as evidências usadas no estado.
+
+Dependências reais são classificadas à parte por canal. Nenhuma mudança foi
+feita no CST `000`, cClassTrib `000001`, modelos, vigência ou escopo tributário,
+e nenhuma homologação ou produção foi habilitada.

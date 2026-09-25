@@ -279,3 +279,17 @@ humana continuam ausentes. Nenhum desses dados foi simulado como credencial
 válida, nenhuma transmissão ocorreu e produção segue bloqueada. A homologação
 separada por modelo, canal e filial, seguida de aceite fiscal humano, permanece
 obrigatória.
+
+## Qualidade da evidência de prontidão - ciclo 176
+
+As provas do recorte passaram a distinguir `EVIDENCIA_ESTRUTURAL`,
+`EVIDENCIA_EXECUTAVEL` e `DEPENDENCIA_EXTERNA`. A prontidão crítica não deriva
+mais de busca por strings: cálculo, paridade, cardinalidade, vigência, chave, QR
+Code, endereço, XSD e travas de produção possuem execução offline direta. Os
+fluxos que exigem modelos persistidos ou certificado temporário são identificados
+explicitamente como provas da suíte integrada.
+
+Falhas simuladas em QR Code, pré-transmissão e XSD agora produzem
+`BLOQUEADO_LACUNA_INTERNA` no canal afetado e no respectivo dia zero. Os canais
+permanecem independentes e sem fallback. Isso não representa homologação externa,
+emissão real ou produção liberada.

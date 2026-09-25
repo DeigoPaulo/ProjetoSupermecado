@@ -6,14 +6,28 @@ from collections import Counter
 from datetime import date
 from decimal import Decimal
 from pathlib import Path
+from types import SimpleNamespace
+from urllib.parse import urlsplit
 from xml.etree import ElementTree as ET
 
-from .auditoria_pacote_xsd import auditar_pacote_xsd
+from django.core.exceptions import ValidationError
+from django.utils import timezone
+
+from .auditoria_pacote_xsd import (
+    AuditoriaPacoteXSDErro,
+    auditar_pacote_xsd,
+    validar_xml_no_pacote_xsd,
+)
+from .chave_acesso import construir_chave_acesso
+from .focus_sefaz_adapter import FocusNFeFiscalError, FocusNFeSefazAdapter
 from .ibs_cbs.calculo import calcular_base_operacao_padrao, calcular_ibs_cbs_padrao
 from .ibs_cbs.catalogo import METADADOS_CATALOGO, validar_classificacao
 from .ibs_cbs.contrato import CONTRATO as CONTRATO_IBS_CBS, emissao_ibs_cbs_obrigatoria
 from .ibs_cbs.validacao import validar_paridade_xml
 from .ibs_cbs.xml import adicionar_grupo_item, adicionar_totais
+from .qrcode_nfce import gerar_url_qrcode_nfce
+from .sefaz_direta.adapter import SefazDiretaAdapter, SefazDiretaError
+from .services import pendencias_endereco_emitente_nfce
 
 
 CONTRATO = "fiscal_go_pre_homologation_matrix_v1"
@@ -23,6 +37,9 @@ PRONTO_INTERNAMENTE = "PRONTO_INTERNAMENTE"
 DEPENDE_DE_DADO_REAL = "DEPENDE_DE_DADO_REAL"
 DEPENDE_DE_HOMOLOGACAO_EXTERNA = "DEPENDE_DE_HOMOLOGACAO_EXTERNA"
 BLOQUEADO_LACUNA_INTERNA = "BLOQUEADO_LACUNA_INTERNA"
+EVIDENCIA_ESTRUTURAL = "EVIDENCIA_ESTRUTURAL"
+EVIDENCIA_EXECUTAVEL = "EVIDENCIA_EXECUTAVEL"
+DEPENDENCIA_EXTERNA = "DEPENDENCIA_EXTERNA"
 ESTADOS_PRONTIDAO_INTERNA = {
     PRONTO_INTERNAMENTE,
     DEPENDE_DE_DADO_REAL,
@@ -136,57 +153,239 @@ NFE_NS = "http://www.portalfiscal.inf.br/nfe"
 
 
 EVIDENCIAS_PRONTIDAO = {
-    "xml_assinado_xsd_55": (
-        "apps/fiscal/tests.py",
-        ("test_nfe_go_ibs_cbs_confronta_xsd_010f_oficial", "assinar_xml_documento"),
-    ),
-    "xml_assinado_xsd_65": (
-        "apps/fiscal/tests.py",
-        ("test_nfce_go_ibs_cbs_confronta_xsd_010f_oficial", "assinar_xml_documento"),
-    ),
-    "pre_transmissao_focus": (
-        "apps/fiscal/tests.py",
-        ("test_pre_transmissao_focus_bloqueia_calculo_ibs_cbs_adulterado",),
-    ),
-    "pre_transmissao_sefaz_direta": (
-        "apps/fiscal/tests.py",
-        ("test_pre_transmissao_sefaz_direta_bloqueia_calculo_ibs_cbs_adulterado",),
-    ),
-    "endereco_emitente": (
-        "apps/fiscal/services.py",
-        ("pendencias_endereco_emitente_nfce", "enderEmit"),
-    ),
-    "series_fiscais": ("apps/fiscal/services.py", ("SerieFiscal", "proximo_numero")),
-    "chave_acesso": ("apps/fiscal/chave_acesso.py", ("construir_chave_acesso",)),
-    "qrcode_nfce": ("apps/fiscal/qrcode_nfce.py", ("gerar_url_qrcode_nfce",)),
-    "pagamentos_eletronicos": (
-        "apps/fiscal/services.py",
-        ("validar_vinculos_pagamentos_xml", "_adicionar_integracao_pagamento_nfce"),
-    ),
-    "contingencia": ("apps/fiscal/services.py", ("ativar_contingencia_offline",)),
-    "bloqueio_producao_focus": (
-        "apps/fiscal/focus_sefaz_adapter.py",
-        ("FOCUS_NFE_FISCAL_ALLOW_PRODUCTION", "Produção Focus NFe bloqueada"),
-    ),
-    "bloqueio_producao_sefaz": (
-        "apps/fiscal/sefaz_direta/adapter.py",
-        ("SEFAZ_DIRETA_ALLOW_PRODUCTION", "Produção da SEFAZ direta permanece bloqueada"),
-    ),
+    "xml_assinado_xsd_55": {
+        "tipo": EVIDENCIA_EXECUTAVEL,
+        "origem": "SUITE_INTEGRADA",
+        "teste": "apps.fiscal.tests.FiscalTests.test_nfe_go_ibs_cbs_confronta_xsd_010f_oficial",
+    },
+    "xml_assinado_xsd_65": {
+        "tipo": EVIDENCIA_EXECUTAVEL,
+        "origem": "SUITE_INTEGRADA",
+        "teste": "apps.fiscal.tests.FiscalTests.test_nfce_go_ibs_cbs_confronta_xsd_010f_oficial",
+    },
+    "pre_transmissao_focus": {
+        "tipo": EVIDENCIA_EXECUTAVEL,
+        "origem": "SUITE_INTEGRADA",
+        "teste": (
+            "apps.fiscal.tests.FiscalTests."
+            "test_pre_transmissao_focus_bloqueia_calculo_ibs_cbs_adulterado"
+        ),
+    },
+    "pre_transmissao_sefaz_direta": {
+        "tipo": EVIDENCIA_EXECUTAVEL,
+        "origem": "SUITE_INTEGRADA",
+        "teste": (
+            "apps.fiscal.tests.FiscalTests."
+            "test_pre_transmissao_sefaz_direta_bloqueia_calculo_ibs_cbs_adulterado"
+        ),
+    },
+    "series_fiscais": {
+        "tipo": EVIDENCIA_EXECUTAVEL,
+        "origem": "SUITE_INTEGRADA",
+        "teste": (
+            "apps.fiscal.test_serie_ambiente.SerieFiscalAmbienteTests."
+            "test_preparacao_venda_usa_somente_serie_do_ambiente_configurado"
+        ),
+    },
+    "pagamentos_eletronicos": {
+        "tipo": EVIDENCIA_EXECUTAVEL,
+        "origem": "SUITE_INTEGRADA",
+        "teste": (
+            "apps.fiscal.tests.FiscalTests."
+            "test_nfce_com_credito_pix_e_divisao_confronta_xsd_arquivado_e_canais"
+        ),
+    },
+    "contingencia": {
+        "tipo": EVIDENCIA_EXECUTAVEL,
+        "origem": "SUITE_INTEGRADA",
+        "teste": (
+            "apps.fiscal.tests.FiscalTests."
+            "test_contingencia_offline_gera_xml_prazo_auditoria_e_fila"
+        ),
+    },
+    "assinatura_local": {
+        "tipo": EVIDENCIA_EXECUTAVEL,
+        "origem": "SUITE_INTEGRADA",
+        "teste": "apps.fiscal.tests.FiscalTests.test_nfce_go_ibs_cbs_confronta_xsd_010f_oficial",
+    },
+    "endereco_emitente": {
+        "tipo": EVIDENCIA_EXECUTAVEL,
+        "origem": "SMOKE_CHECK_OFFLINE",
+        "executor": "endereco_emitente",
+    },
+    "chave_acesso": {
+        "tipo": EVIDENCIA_EXECUTAVEL,
+        "origem": "SMOKE_CHECK_OFFLINE",
+        "executor": "chave_acesso",
+    },
+    "qrcode_nfce": {
+        "tipo": EVIDENCIA_EXECUTAVEL,
+        "origem": "SMOKE_CHECK_OFFLINE",
+        "executor": "qrcode_nfce",
+    },
+    "validador_xsd_offline": {
+        "tipo": EVIDENCIA_EXECUTAVEL,
+        "origem": "SMOKE_CHECK_OFFLINE",
+        "executor": "validador_xsd_offline",
+    },
+    "bloqueio_producao_focus": {
+        "tipo": EVIDENCIA_EXECUTAVEL,
+        "origem": "SMOKE_CHECK_OFFLINE",
+        "executor": "bloqueio_producao_focus",
+    },
+    "bloqueio_producao_sefaz": {
+        "tipo": EVIDENCIA_EXECUTAVEL,
+        "origem": "SMOKE_CHECK_OFFLINE",
+        "executor": "bloqueio_producao_sefaz",
+    },
+}
+
+
+def _provar_chave_acesso():
+    chave = construir_chave_acesso(
+        codigo_uf="52",
+        aamm="2609",
+        cnpj_emitente="11222333000181",
+        modelo="65",
+        serie="001",
+        numero="000000001",
+        tipo_emissao="1",
+        codigo_numerico="12345678",
+    )
+    if len(chave) != 44:
+        raise ValueError("Chave de acesso offline não possui 44 posições.")
+    return {"chave_formada": True, "tamanho": len(chave)}
+
+
+def _provar_endereco_emitente():
+    filial = SimpleNamespace(
+        uf="GO",
+        logradouro="Rua Ficticia",
+        numero="100",
+        bairro="Centro",
+        codigo_municipio_ibge="5208707",
+        municipio="Goiania",
+        cep="74000000",
+        telefone="6230000000",
+    )
+    if pendencias_endereco_emitente_nfce(filial):
+        raise ValidationError("Endereço fictício válido foi recusado pelo preflight.")
+    filial.cep = "invalido"
+    if not pendencias_endereco_emitente_nfce(filial):
+        raise ValidationError("Endereço fictício inválido não foi bloqueado.")
+    return {"caso_valido": True, "erro_esperado_exercitado": True}
+
+
+def _provar_qrcode_nfce():
+    chave = _provar_chave_acesso()
+    documento = SimpleNamespace(
+        chave_acesso=construir_chave_acesso(
+            codigo_uf="52",
+            aamm="2609",
+            cnpj_emitente="11222333000181",
+            modelo="65",
+            serie="001",
+            numero="000000001",
+            tipo_emissao="1",
+            codigo_numerico="12345678",
+        ),
+        ambiente="HOMOLOGACAO",
+        status="AUTORIZADO",
+        criado_em=timezone.now(),
+        valor_total=Decimal("82.70"),
+        venda=SimpleNamespace(
+            documento_consumidor_tipo="NAO_IDENTIFICADO",
+            documento_consumidor="",
+        ),
+    )
+    configuracao = SimpleNamespace(url_qrcode_nfce="https://homologacao.exemplo.invalid/qrcode")
+    url = gerar_url_qrcode_nfce(documento, configuracao)
+    partes = urlsplit(url)
+    if partes.scheme != "https" or "p=" not in partes.query:
+        raise ValidationError("QR Code NFC-e offline não gerou URL HTTPS com parâmetros.")
+    return {"url_gerada": True, "chave_formada": chave["chave_formada"]}
+
+
+def _provar_validador_xsd_offline(base):
+    try:
+        validar_xml_no_pacote_xsd(
+            xml=f'<NFe xmlns="{NFE_NS}"><infNFe versao="4.00"/></NFe>',
+            arquivo=base / PACOTE_XSD["arquivo_relativo"],
+            sha256_esperado=PACOTE_XSD["sha256"],
+            versao=PACOTE_XSD["versao"],
+        )
+    except AuditoriaPacoteXSDErro:
+        return {"validador_executado": True, "xml_invalido_rejeitado": True}
+    raise AuditoriaPacoteXSDErro("Validador XSD aceitou XML deliberadamente incompleto.")
+
+
+def _provar_bloqueio_producao_focus():
+    adapter = FocusNFeSefazAdapter()
+    adapter.base_url = "https://api.focusnfe.com.br"
+    adapter.allow_production = False
+    try:
+        adapter._validar_ambiente("PRODUCAO")
+    except FocusNFeFiscalError as exc:
+        if "Produção Focus NFe bloqueada" in str(exc):
+            return {"erro_esperado_exercitado": True}
+        raise
+    raise FocusNFeFiscalError("Produção Focus não foi bloqueada no smoke check.")
+
+
+def _provar_bloqueio_producao_sefaz():
+    adapter = SefazDiretaAdapter()
+    adapter.allow_production = False
+    documento = SimpleNamespace(filial=SimpleNamespace(uf="GO"), tipo_documento="NFCE")
+    try:
+        adapter._endpoint(documento, "PRODUCAO", "autorizacao")
+    except SefazDiretaError as exc:
+        if "Produção da SEFAZ direta permanece bloqueada" in str(exc):
+            return {"erro_esperado_exercitado": True}
+        raise
+    raise SefazDiretaError("Produção SEFAZ direta não foi bloqueada no smoke check.")
+
+
+EXECUTORES_EVIDENCIA = {
+    "chave_acesso": lambda base: _provar_chave_acesso(),
+    "endereco_emitente": lambda base: _provar_endereco_emitente(),
+    "qrcode_nfce": lambda base: _provar_qrcode_nfce(),
+    "validador_xsd_offline": _provar_validador_xsd_offline,
+    "bloqueio_producao_focus": lambda base: _provar_bloqueio_producao_focus(),
+    "bloqueio_producao_sefaz": lambda base: _provar_bloqueio_producao_sefaz(),
 }
 
 
 def _evidencia_local(base, codigo):
-    arquivo, marcadores = EVIDENCIAS_PRONTIDAO[codigo]
-    caminho = base / arquivo
-    conteudo = caminho.read_text(encoding="utf-8") if caminho.is_file() else ""
-    ausentes = [marcador for marcador in marcadores if marcador not in conteudo]
-    return {
+    """Executa smoke checks ou registra explicitamente a prova da suíte integrada."""
+    definicao = EVIDENCIAS_PRONTIDAO[codigo]
+    resultado = {
         "codigo": codigo,
-        "arquivo": arquivo,
-        "marcadores": list(marcadores),
-        "estado": PRONTO_INTERNAMENTE if not ausentes else BLOQUEADO_LACUNA_INTERNA,
-        "ausentes": ausentes,
+        "tipo": definicao["tipo"],
+        "origem": definicao["origem"],
+        "estado": PRONTO_INTERNAMENTE,
+        "executada_no_gate": definicao["origem"] == "SMOKE_CHECK_OFFLINE",
     }
+    if definicao["origem"] == "SUITE_INTEGRADA":
+        resultado.update(
+            {
+                "teste": definicao["teste"],
+                "observacao": (
+                    "Prova executável exige banco temporário e é validada pela "
+                    "suíte, não por busca textual."
+                ),
+            }
+        )
+        return resultado
+    try:
+        resultado["resultado"] = EXECUTORES_EVIDENCIA[definicao["executor"]](base)
+    except Exception as exc:
+        resultado.update(
+            {
+                "estado": BLOQUEADO_LACUNA_INTERNA,
+                "erro": exc.__class__.__name__,
+            }
+        )
+    return resultado
 
 
 def _validar_nucleo_ibs_cbs_offline(modelo):
@@ -254,42 +453,41 @@ def diagnostico_prontidao_interna_piloto_go(base_dir):
     """Consolida prontidao offline; nao le segredos, nao acessa rede e nao homologa."""
     base = Path(base_dir).resolve()
     arquivo_xsd = base / PACOTE_XSD["arquivo_relativo"]
-    auditoria_xsd = auditar_pacote_xsd(
-        arquivo=arquivo_xsd,
-        sha256_esperado=PACOTE_XSD["sha256"],
-        versao=PACOTE_XSD["versao"],
-    )
-    nucleos = [_validar_nucleo_ibs_cbs_offline(modelo) for modelo in ("55", "65")]
+    try:
+        auditoria_xsd = auditar_pacote_xsd(
+            arquivo=arquivo_xsd,
+            sha256_esperado=PACOTE_XSD["sha256"],
+            versao=PACOTE_XSD["versao"],
+        )
+    except Exception as exc:
+        auditoria_xsd = None
+        evidencia_pacote_xsd = {
+            "codigo": "pacote_xsd_offline",
+            "tipo": EVIDENCIA_EXECUTAVEL,
+            "origem": "SMOKE_CHECK_OFFLINE",
+            "estado": BLOQUEADO_LACUNA_INTERNA,
+            "executada_no_gate": True,
+            "erro": exc.__class__.__name__,
+        }
+    else:
+        evidencia_pacote_xsd = {
+            "codigo": "pacote_xsd_offline",
+            "tipo": EVIDENCIA_EXECUTAVEL,
+            "origem": "SMOKE_CHECK_OFFLINE",
+            "estado": PRONTO_INTERNAMENTE,
+            "executada_no_gate": True,
+            "resultado": {
+                "crc_integro": auditoria_xsd["pacote"]["crc_integro"],
+                "sha256": auditoria_xsd["pacote"]["sha256"],
+                "dependencias": len(auditoria_xsd["schema"]["dependencias"]),
+                "compilacao_offline": auditoria_xsd["schema"]["compilacao_offline"],
+            },
+        }
+
     evidencias = {
         codigo: _evidencia_local(base, codigo) for codigo in EVIDENCIAS_PRONTIDAO
     }
-    gaps = [item for item in evidencias.values() if item["estado"] == BLOQUEADO_LACUNA_INTERNA]
-    evidencias_comuns = {
-        "xml_assinado_xsd_55",
-        "xml_assinado_xsd_65",
-        "endereco_emitente",
-        "series_fiscais",
-        "chave_acesso",
-        "qrcode_nfce",
-        "pagamentos_eletronicos",
-        "contingencia",
-    }
-    evidencias_por_canal = {
-        "SEFAZ_DIRETA_GO": evidencias_comuns
-        | {"pre_transmissao_sefaz_direta", "bloqueio_producao_sefaz"},
-        "FOCUS": evidencias_comuns
-        | {"pre_transmissao_focus", "bloqueio_producao_focus"},
-    }
-
-    def estado_evidencias_canal(canal):
-        return (
-            PRONTO_INTERNAMENTE
-            if all(
-                evidencias[codigo]["estado"] == PRONTO_INTERNAMENTE
-                for codigo in evidencias_por_canal[canal]
-            )
-            else BLOQUEADO_LACUNA_INTERNA
-        )
+    evidencias["pacote_xsd_offline"] = evidencia_pacote_xsd
 
     contrato_ok = CONTRATO_IBS_CBS == "fiscal_ibs_cbs_go_crt3_standard_v1"
     catalogo_ok = bool(
@@ -305,27 +503,125 @@ def diagnostico_prontidao_interna_piloto_go(base_dir):
         ambiente="HOMOLOGACAO",
         data_emissao=date(2026, 9, 25),
     )
-    nucleo_ok = contrato_ok and catalogo_ok and vigencia_ok and len(nucleos) == 2
+    evidencias.update(
+        {
+            "contrato_ibs_cbs": {
+                "codigo": "contrato_ibs_cbs",
+                "tipo": EVIDENCIA_ESTRUTURAL,
+                "origem": "CONTRATO_IMPORTADO",
+                "estado": PRONTO_INTERNAMENTE if contrato_ok else BLOQUEADO_LACUNA_INTERNA,
+                "executada_no_gate": True,
+            },
+            "catalogo_ibs_cbs": {
+                "codigo": "catalogo_ibs_cbs",
+                "tipo": EVIDENCIA_ESTRUTURAL,
+                "origem": "METADADOS_VERSIONADOS",
+                "estado": PRONTO_INTERNAMENTE if catalogo_ok else BLOQUEADO_LACUNA_INTERNA,
+                "executada_no_gate": True,
+            },
+            "vigencia_ibs_cbs_2026": {
+                "codigo": "vigencia_ibs_cbs_2026",
+                "tipo": EVIDENCIA_EXECUTAVEL,
+                "origem": "SMOKE_CHECK_OFFLINE",
+                "estado": PRONTO_INTERNAMENTE if vigencia_ok else BLOQUEADO_LACUNA_INTERNA,
+                "executada_no_gate": True,
+            },
+        }
+    )
+    nucleos = []
+    for modelo in ("55", "65"):
+        codigo = f"nucleo_ibs_cbs_{modelo}"
+        try:
+            nucleo = _validar_nucleo_ibs_cbs_offline(modelo)
+        except Exception as exc:
+            evidencias[codigo] = {
+                "codigo": codigo,
+                "tipo": EVIDENCIA_EXECUTAVEL,
+                "origem": "SMOKE_CHECK_OFFLINE",
+                "estado": BLOQUEADO_LACUNA_INTERNA,
+                "executada_no_gate": True,
+                "erro": exc.__class__.__name__,
+            }
+        else:
+            nucleos.append(nucleo)
+            evidencias[codigo] = {
+                "codigo": codigo,
+                "tipo": EVIDENCIA_EXECUTAVEL,
+                "origem": "SMOKE_CHECK_OFFLINE",
+                "estado": PRONTO_INTERNAMENTE,
+                "executada_no_gate": True,
+                "resultado": nucleo,
+            }
+
+    evidencias_nucleo = {
+        "contrato_ibs_cbs",
+        "catalogo_ibs_cbs",
+        "vigencia_ibs_cbs_2026",
+        "nucleo_ibs_cbs_55",
+        "nucleo_ibs_cbs_65",
+        "pacote_xsd_offline",
+        "validador_xsd_offline",
+        "xml_assinado_xsd_55",
+        "xml_assinado_xsd_65",
+        "assinatura_local",
+    }
+    evidencias_comuns = {
+        "endereco_emitente",
+        "series_fiscais",
+        "chave_acesso",
+        "qrcode_nfce",
+        "pagamentos_eletronicos",
+        "contingencia",
+    }
+    evidencias_por_canal = {
+        "SEFAZ_DIRETA_GO": evidencias_nucleo
+        | evidencias_comuns
+        | {"pre_transmissao_sefaz_direta", "bloqueio_producao_sefaz"},
+        "FOCUS": evidencias_nucleo
+        | evidencias_comuns
+        | {"pre_transmissao_focus", "bloqueio_producao_focus"},
+    }
+
+    def estado_evidencias_canal(canal):
+        return (
+            PRONTO_INTERNAMENTE
+            if all(
+                evidencias[codigo]["estado"] == PRONTO_INTERNAMENTE
+                for codigo in evidencias_por_canal[canal]
+            )
+            else BLOQUEADO_LACUNA_INTERNA
+        )
+
+    gaps = [
+        item
+        for item in evidencias.values()
+        if item["estado"] == BLOQUEADO_LACUNA_INTERNA
+    ]
+    evidencias_xsd = {
+        "pacote_xsd_offline",
+        "validador_xsd_offline",
+        "xml_assinado_xsd_55",
+        "xml_assinado_xsd_65",
+    }
+    estado_xsd = (
+        PRONTO_INTERNAMENTE
+        if all(
+            evidencias[codigo]["estado"] == PRONTO_INTERNAMENTE
+            for codigo in evidencias_xsd
+        )
+        else BLOQUEADO_LACUNA_INTERNA
+    )
+    nucleo_ok = all(
+        evidencias[codigo]["estado"] == PRONTO_INTERNAMENTE
+        for codigo in evidencias_nucleo
+    )
     estado_nucleo = PRONTO_INTERNAMENTE if nucleo_ok else BLOQUEADO_LACUNA_INTERNA
 
     capacidades = []
     for canal in ("SEFAZ_DIRETA_GO", "FOCUS"):
-        evidencias_canal = (
-            "xml_assinado_xsd_55",
-            "xml_assinado_xsd_65",
-            (
-                "pre_transmissao_sefaz_direta"
-                if canal == "SEFAZ_DIRETA_GO"
-                else "pre_transmissao_focus"
-            ),
-        )
+        evidencias_canal = sorted(evidencias_por_canal[canal])
         for capacidade in ("NF-e 55", "NFC-e 65", CONTRATO_IBS_CBS):
-            estado = (
-                PRONTO_INTERNAMENTE
-                if estado_nucleo == PRONTO_INTERNAMENTE
-                and estado_evidencias_canal(canal) == PRONTO_INTERNAMENTE
-                else BLOQUEADO_LACUNA_INTERNA
-            )
+            estado = estado_evidencias_canal(canal)
             capacidades.append(
                 _item_gate(
                     capacidade,
@@ -340,23 +636,67 @@ def diagnostico_prontidao_interna_piloto_go(base_dir):
                 )
             )
 
-    dados_reais = (
+    dependencias_comuns = (
         ("CNPJ da filial GO", True, "CNPJ_REAL"),
         ("Inscricao estadual da filial GO", True, "IE_REAL"),
-        ("Certificado A1 e senha", True, "A1_E_SENHA_REAIS"),
+        ("Certificado A1", True, "A1_REAL"),
+        ("Senha do certificado A1", True, "SENHA_A1_REAL"),
         ("CSC e idCSC", False, "CONDICIONAL_APENAS_PARA_COMPATIBILIDADE_QRCODE_V2"),
-        ("Token Focus NFe de homologacao", True, "CREDENCIAL_FOCUS_REAL"),
-        ("Credenciamento e endpoints externos vigentes", True, "VALIDACAO_EXTERNA_POR_CANAL"),
         ("Autorizacao humana para iniciar homologacao", True, "ACEITE_FISCAL_E_OPERACIONAL"),
     )
-    dia_zero = [
-        {
+    dependencias_por_canal = {
+        "SEFAZ_DIRETA_GO": (
+            (
+                "Credenciamento e configuracoes reais da SEFAZ direta GO",
+                True,
+                "CREDENCIAMENTO_SEFAZ_DIRETA_REAL",
+            ),
+        ),
+        "FOCUS": (
+            ("Token Focus NFe de homologacao", True, "CREDENCIAL_FOCUS_REAL"),
+            (
+                "Endpoint vigente da Focus NFe",
+                True,
+                "CONFIGURACAO_FOCUS_REAL",
+            ),
+        ),
+    }
+
+    def dependencia_externa(item, obrigatorio, bloqueio):
+        return {
             "item": item,
             "obrigatorio_para_o_cenario": obrigatorio,
+            "tipo": DEPENDENCIA_EXTERNA,
             "estado": DEPENDE_DE_DADO_REAL,
             "bloqueio": bloqueio,
         }
-        for item, obrigatorio, bloqueio in dados_reais
+
+    dia_zero_por_canal = {}
+    for canal in ("SEFAZ_DIRETA_GO", "FOCUS"):
+        estado = estado_evidencias_canal(canal)
+        dependencias = [
+            dependencia_externa(item, obrigatorio, bloqueio)
+            for item, obrigatorio, bloqueio in (
+                dependencias_comuns + dependencias_por_canal[canal]
+            )
+        ]
+        dia_zero_por_canal[canal] = {
+            "estado_interno": estado,
+            "dependencias": dependencias,
+            "ausencia_dados_reais_e_lacuna_interna": (
+                estado == BLOQUEADO_LACUNA_INTERNA
+            ),
+        }
+
+    dependencias_externas = [
+        {
+            "item": item,
+            "obrigatorio_para_o_cenario": obrigatorio,
+            "tipo": DEPENDENCIA_EXTERNA,
+            "estado": DEPENDE_DE_DADO_REAL,
+            "bloqueio": bloqueio,
+        }
+        for item, obrigatorio, bloqueio in dependencias_comuns
     ]
 
     canais = {
@@ -396,11 +736,19 @@ def diagnostico_prontidao_interna_piloto_go(base_dir):
             "modelos": nucleos,
         },
         "xsd_offline": {
-            "estado": PRONTO_INTERNAMENTE,
-            "pacote_integro": auditoria_xsd["pacote"]["crc_integro"],
-            "sha256": auditoria_xsd["pacote"]["sha256"],
-            "dependencias_validas": bool(auditoria_xsd["schema"]["dependencias"]),
-            "compilacao": auditoria_xsd["schema"]["compilacao_offline"],
+            "estado": estado_xsd,
+            "pacote_integro": bool(
+                auditoria_xsd and auditoria_xsd["pacote"]["crc_integro"]
+            ),
+            "sha256": (
+                auditoria_xsd["pacote"]["sha256"] if auditoria_xsd else ""
+            ),
+            "dependencias_validas": bool(
+                auditoria_xsd and auditoria_xsd["schema"]["dependencias"]
+            ),
+            "compilacao": bool(
+                auditoria_xsd and auditoria_xsd["schema"]["compilacao_offline"]
+            ),
             "xml_55_valido_e_assinado": (
                 evidencias["xml_assinado_xsd_55"]["estado"] == PRONTO_INTERNAMENTE
             ),
@@ -424,9 +772,16 @@ def diagnostico_prontidao_interna_piloto_go(base_dir):
         "matriz": capacidades,
         "dia_zero_homologacao": {
             "fixture": "FILIAL_FICTICIA_GO_SEM_IDENTIDADE_OU_CREDENCIAL_REAL",
-            "estado_interno": estado_nucleo,
-            "dependencias": dia_zero,
-            "ausencia_dados_reais_e_lacuna_interna": False,
+            "canal_principal": "SEFAZ_DIRETA_GO",
+            "estado_interno": dia_zero_por_canal["SEFAZ_DIRETA_GO"]["estado_interno"],
+            "dependencias": (
+                dependencias_externas
+                + dia_zero_por_canal["SEFAZ_DIRETA_GO"]["dependencias"][-1:]
+            ),
+            "ausencia_dados_reais_e_lacuna_interna": dia_zero_por_canal[
+                "SEFAZ_DIRETA_GO"
+            ]["ausencia_dados_reais_e_lacuna_interna"],
+            "por_canal": dia_zero_por_canal,
         },
         "politica": {
             "acessou_rede": False,

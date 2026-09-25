@@ -20,6 +20,9 @@ from .pre_homologacao_go import (
     DEPENDE_DE_DADO_REAL,
     DEPENDE_DE_HOMOLOGACAO_EXTERNA,
     BLOQUEADO_LACUNA_INTERNA,
+    DEPENDENCIA_EXTERNA,
+    EVIDENCIA_ESTRUTURAL,
+    EVIDENCIA_EXECUTAVEL,
     NAO_IMPLEMENTADO,
     PRONTO_INTERNAMENTE,
     STATUS_VALIDOS,
@@ -127,12 +130,45 @@ class PreHomologacaoGoTests(SimpleTestCase):
             {
                 "CNPJ da filial GO",
                 "Inscricao estadual da filial GO",
-                "Certificado A1 e senha",
+                "Certificado A1",
+                "Senha do certificado A1",
                 "CSC e idCSC",
-                "Token Focus NFe de homologacao",
                 "Autorizacao humana para iniciar homologacao",
+                "Credenciamento e configuracoes reais da SEFAZ direta GO",
             }.issubset(nomes)
         )
+        por_canal = dia_zero["por_canal"]
+        dependencias_sefaz = {
+            item["item"] for item in por_canal["SEFAZ_DIRETA_GO"]["dependencias"]
+        }
+        dependencias_focus = {
+            item["item"] for item in por_canal["FOCUS"]["dependencias"]
+        }
+        self.assertNotIn("Token Focus NFe de homologacao", dependencias_sefaz)
+        self.assertIn("Token Focus NFe de homologacao", dependencias_focus)
+        self.assertTrue(
+            all(
+                item["tipo"] == DEPENDENCIA_EXTERNA
+                for canal in por_canal.values()
+                for item in canal["dependencias"]
+            )
+        )
+
+    def test_gate_classifica_smokes_e_suite_sem_busca_lexical(self):
+        resultado = diagnostico_prontidao_interna_piloto_go(settings.BASE_DIR)
+        evidencias = {
+            item["codigo"]: item for item in resultado["evidencias_internas"]
+        }
+
+        self.assertEqual(evidencias["contrato_ibs_cbs"]["tipo"], EVIDENCIA_ESTRUTURAL)
+        self.assertEqual(evidencias["qrcode_nfce"]["tipo"], EVIDENCIA_EXECUTAVEL)
+        self.assertTrue(evidencias["qrcode_nfce"]["executada_no_gate"])
+        self.assertEqual(evidencias["xml_assinado_xsd_55"]["origem"], "SUITE_INTEGRADA")
+        self.assertFalse(evidencias["xml_assinado_xsd_55"]["executada_no_gate"])
+        self.assertNotIn("marcadores", evidencias["qrcode_nfce"])
+        for item in resultado["matriz"]:
+            self.assertGreater(len(item["evidencias"]), 3)
+            self.assertTrue(set(item["evidencias"]).issubset(evidencias))
 
     def test_gate_nunca_transmite_nem_libera_producao(self):
         with patch.object(
@@ -175,6 +211,115 @@ class PreHomologacaoGoTests(SimpleTestCase):
             resultado["canais"]["FOCUS"]["estado_interno"],
             BLOQUEADO_LACUNA_INTERNA,
         )
+        self.assertEqual(
+            resultado["dia_zero_homologacao"]["por_canal"]["SEFAZ_DIRETA_GO"][
+                "estado_interno"
+            ],
+            PRONTO_INTERNAMENTE,
+        )
+        dia_zero_focus = resultado["dia_zero_homologacao"]["por_canal"]["FOCUS"]
+        self.assertEqual(dia_zero_focus["estado_interno"], BLOQUEADO_LACUNA_INTERNA)
+        self.assertTrue(dia_zero_focus["ausencia_dados_reais_e_lacuna_interna"])
+
+    def test_lacuna_sefaz_nao_e_mascarada_pelo_focus(self):
+        from . import pre_homologacao_go
+
+        original = pre_homologacao_go._evidencia_local
+
+        def evidencia_com_sefaz_ausente(base, codigo):
+            item = original(base, codigo)
+            if codigo == "pre_transmissao_sefaz_direta":
+                item["estado"] = BLOQUEADO_LACUNA_INTERNA
+                item["erro"] = "EVIDENCIA_SEFAZ_SIMULADA_AUSENTE"
+            return item
+
+        with patch(
+            "apps.fiscal.pre_homologacao_go._evidencia_local",
+            side_effect=evidencia_com_sefaz_ausente,
+        ):
+            resultado = diagnostico_prontidao_interna_piloto_go(settings.BASE_DIR)
+
+        self.assertEqual(resultado["estado_geral_interno"], BLOQUEADO_LACUNA_INTERNA)
+        self.assertEqual(
+            resultado["canais"]["SEFAZ_DIRETA_GO"]["estado_interno"],
+            BLOQUEADO_LACUNA_INTERNA,
+        )
+        self.assertEqual(resultado["canais"]["FOCUS"]["estado_interno"], PRONTO_INTERNAMENTE)
+        dia_zero = resultado["dia_zero_homologacao"]
+        self.assertTrue(dia_zero["ausencia_dados_reais_e_lacuna_interna"])
+        self.assertTrue(
+            dia_zero["por_canal"]["SEFAZ_DIRETA_GO"][
+                "ausencia_dados_reais_e_lacuna_interna"
+            ]
+        )
+        self.assertFalse(
+            dia_zero["por_canal"]["FOCUS"]["ausencia_dados_reais_e_lacuna_interna"]
+        )
+
+    def test_qrcode_quebrado_bloqueia_os_dois_canais_e_dia_zero(self):
+        from . import pre_homologacao_go
+
+        original = pre_homologacao_go._evidencia_local
+
+        def evidencia_com_qrcode_quebrado(base, codigo):
+            item = original(base, codigo)
+            if codigo == "qrcode_nfce":
+                item["estado"] = BLOQUEADO_LACUNA_INTERNA
+                item["erro"] = "QRCODE_SIMULADO_QUEBRADO"
+            return item
+
+        with patch(
+            "apps.fiscal.pre_homologacao_go._evidencia_local",
+            side_effect=evidencia_com_qrcode_quebrado,
+        ):
+            resultado = diagnostico_prontidao_interna_piloto_go(settings.BASE_DIR)
+
+        for canal in ("SEFAZ_DIRETA_GO", "FOCUS"):
+            self.assertEqual(
+                resultado["canais"][canal]["estado_interno"],
+                BLOQUEADO_LACUNA_INTERNA,
+            )
+            self.assertTrue(
+                resultado["dia_zero_homologacao"]["por_canal"][canal][
+                    "ausencia_dados_reais_e_lacuna_interna"
+                ]
+            )
+
+    def test_falha_na_auditoria_xsd_vira_lacuna_interna_sem_falsa_prontidao(self):
+        with patch(
+            "apps.fiscal.pre_homologacao_go.auditar_pacote_xsd",
+            side_effect=ValueError("pacote simulado invalido"),
+        ):
+            resultado = diagnostico_prontidao_interna_piloto_go(settings.BASE_DIR)
+
+        self.assertEqual(resultado["xsd_offline"]["estado"], BLOQUEADO_LACUNA_INTERNA)
+        self.assertFalse(resultado["xsd_offline"]["pacote_integro"])
+        for canal in ("SEFAZ_DIRETA_GO", "FOCUS"):
+            self.assertEqual(
+                resultado["canais"][canal]["estado_interno"],
+                BLOQUEADO_LACUNA_INTERNA,
+            )
+
+    def test_falha_no_validador_xsd_tambem_bloqueia_estado_agregado(self):
+        from . import pre_homologacao_go
+
+        original = pre_homologacao_go._evidencia_local
+
+        def evidencia_com_validador_quebrado(base, codigo):
+            item = original(base, codigo)
+            if codigo == "validador_xsd_offline":
+                item["estado"] = BLOQUEADO_LACUNA_INTERNA
+                item["erro"] = "VALIDADOR_XSD_SIMULADO_QUEBRADO"
+            return item
+
+        with patch(
+            "apps.fiscal.pre_homologacao_go._evidencia_local",
+            side_effect=evidencia_com_validador_quebrado,
+        ):
+            resultado = diagnostico_prontidao_interna_piloto_go(settings.BASE_DIR)
+
+        self.assertEqual(resultado["xsd_offline"]["estado"], BLOQUEADO_LACUNA_INTERNA)
+        self.assertEqual(resultado["estado_geral_interno"], BLOQUEADO_LACUNA_INTERNA)
 
     def test_matriz_cobre_recorte_minimo_e_status_validos(self):
         itens = matriz_capacidades_piloto_go()

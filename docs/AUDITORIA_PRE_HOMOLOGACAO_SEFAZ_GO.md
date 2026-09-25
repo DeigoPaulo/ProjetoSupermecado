@@ -236,3 +236,18 @@ CSC/idCSC quando aplicável, token Focus e autorização humana como
 respostas efetivas de SEFAZ/Focus permanecem
 `DEPENDE_DE_HOMOLOGACAO_EXTERNA`. O aceite fiscal humano e a aprovação formal do
 schema operacional continuam obrigatórios antes de qualquer produção.
+
+## Evidências executáveis do gate - ciclo 176
+
+O gate deixou de declarar capacidade operacional pela simples presença de nomes
+ou trechos de código em arquivos Python. Contrato e catálogo permanecem
+`EVIDENCIA_ESTRUTURAL`; chave de acesso, endereço do emitente, QR Code NFC-e,
+validador XSD e bloqueios de produção agora são exercitados por smoke checks
+offline. Geração completa, assinatura, séries, pagamentos, contingência e
+pré-transmissão continuam como `EVIDENCIA_EXECUTAVEL` da suíte integrada porque
+dependem de banco temporário e fixtures controladas.
+
+A matriz publica todos os checks que formam cada estado. O dia zero é calculado
+separadamente para SEFAZ direta GO e Focus, sem exigir token Focus do canal
+direto, e passa a indicar automaticamente qualquer lacuna interna. Nenhuma rede,
+homologação externa ou liberação de produção foi realizada.

@@ -3191,3 +3191,19 @@ SEFAZ/Focus ocorreu e produção continua bloqueada. O próximo marco é externo
 fornecer dados reais da filial piloto, autorizar a homologação, executar os
 roteiros separadamente por modelo e canal e obter o aceite fiscal humano. Não
 iniciar nova ampliação tributária antes dessa decisão.
+
+## Ponto de retomada - ciclo 176
+
+- [x] Remover a busca lexical como prova de prontidão operacional do gate.
+- [x] Classificar evidências como estruturais, executáveis ou externas.
+- [x] Executar offline chave, endereço, QR Code, validador XSD, núcleo IBS/CBS e
+  bloqueios de produção; identificar honestamente as provas da suíte integrada.
+- [x] Fazer a matriz expor todos os checks usados pelo estado de cada canal.
+- [x] Separar dados reais do dia zero por canal e derivar automaticamente a
+  presença simultânea de lacuna interna.
+- [x] Cobrir falhas simuladas de XSD, QR Code, Focus e pré-transmissão direta,
+  preservando independência e ausência de fallback.
+
+SEFAZ direta GO continua principal e Focus secundário. Evidência estrutural não
+equivale a execução, e prontidão interna não equivale a homologação. Nenhuma
+rede fiscal, transmissão, migration ou liberação de produção integra este ciclo.
