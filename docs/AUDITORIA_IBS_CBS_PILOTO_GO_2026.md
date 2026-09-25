@@ -1,9 +1,26 @@
 # Auditoria IBS/CBS do piloto GO em 2026
 
-Data de corte: 24/09/2026. Escopo: NF-e modelo 55 e NFC-e modelo 65 de
+Data de corte normativa: 24/09/2026. Atualização de implementação: 25/09/2026.
+Escopo: NF-e modelo 55 e NFC-e modelo 65 de
 supermercado varejista, operação interna em Goiás, consumidor final, com CRT 1, 2,
-3 e 4 analisados separadamente. Esta auditoria não implementa tributo, não promove
-schema e não autoriza produção.
+3 e 4 analisados separadamente. O ciclo 171 implementa somente o recorte comum
+GO CRT 3 descrito em `CONTRATO_IBS_CBS_CRT3_GO.md`; não promove schema e não
+autoriza produção.
+
+## Atualização do ciclo 171
+
+O bloqueio interno prioritário identificado nesta auditoria foi tratado para a
+operação padrão `CST=000/cClassTrib=000001`: os modelos 55 e 65 agora calculam,
+serializam e reconciliam `IBSCBS` e `IBSCBSTot` para GO CRT 3 nas datas oficiais.
+A pré-transmissão impede omissão pelo modo `LEGADO` e recusa catálogo desconhecido,
+modelo incompatível, monofasia e regimes especiais.
+
+O pacote `PL_010f_v1.04` foi revalidado na listagem oficial em 25/09/2026. ZIP e
+schema raiz mantiveram os hashes registrados, e uma NFC-e assinada passou na
+validação XSD offline. O pacote continua sem instalação ou promoção operacional.
+CRT 1, 2 e 4, `vNFTot` e todas as hipóteses fora do catálogo mínimo permanecem
+inalterados. As seções abaixo preservam a fotografia diagnóstica anterior ao ciclo
+171 para rastreabilidade.
 
 ## Fontes oficiais e versão vigente
 

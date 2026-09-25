@@ -379,7 +379,39 @@ class FocusNFeSefazAdapter:
         self._contribuicao(item, imposto, "PIS", "pis")
         self._contribuicao(item, imposto, "COFINS", "cofins")
         self._ipi(item, imposto)
+        self._ibs_cbs(item, imposto)
         return item
+
+    def _ibs_cbs(self, item, imposto):
+        grupo = imposto.find("nfe:IBSCBS", NS) if imposto is not None else None
+        if grupo is None:
+            return
+        calculo = grupo.find("nfe:gIBSCBS", NS)
+        ibs_uf = calculo.find("nfe:gIBSUF", NS) if calculo is not None else None
+        ibs_mun = calculo.find("nfe:gIBSMun", NS) if calculo is not None else None
+        cbs = calculo.find("nfe:gCBS", NS) if calculo is not None else None
+        item["ibs_cbs_situacao_tributaria"] = self._texto(grupo, "CST")
+        item["ibs_cbs_classificacao_tributaria"] = self._texto(grupo, "cClassTrib")
+        self._copiar(
+            item,
+            calculo,
+            {"ibs_cbs_base_calculo": "vBC", "ibs_valor": "vIBS"},
+        )
+        self._copiar(
+            item,
+            ibs_uf,
+            {"ibs_uf_aliquota": "pIBSUF", "ibs_uf_valor": "vIBSUF"},
+        )
+        self._copiar(
+            item,
+            ibs_mun,
+            {"ibs_municipio_aliquota": "pIBSMun", "ibs_municipio_valor": "vIBSMun"},
+        )
+        self._copiar(
+            item,
+            cbs,
+            {"cbs_aliquota": "pCBS", "cbs_valor": "vCBS"},
+        )
 
     def _ipi(self, item, imposto):
         grupo = imposto.find("nfe:IPI", NS) if imposto is not None else None

@@ -60,7 +60,16 @@ class FluxoPedidoOnlineTests(TestCase):
         empresa = Empresa.objects.create(razao_social="Mercado Teste", nome_fantasia="Mercado Teste", cnpj="12345678000195")
         self.filial = Filial.objects.create(empresa=empresa, nome="Matriz")
         categoria = Categoria.objects.create(nome="Mercearia")
-        self.produto = Produto.objects.create(codigo_barras="789100000001", nome="Arroz", categoria=categoria, preco_custo=Decimal("10"), preco_venda=Decimal("15"), vendido_no_marketplace=True)
+        self.produto = Produto.objects.create(
+            codigo_barras="789100000001",
+            nome="Arroz",
+            categoria=categoria,
+            preco_custo=Decimal("10"),
+            preco_venda=Decimal("15"),
+            vendido_no_marketplace=True,
+            cst_ibs_cbs="000",
+            classificacao_tributaria_ibs_cbs="000001",
+        )
         self.estoque = Estoque.objects.create(produto=self.produto, filial=self.filial, quantidade_atual=Decimal("10"))
         self.pedido = PedidoOnline.objects.create(filial=self.filial, nome_cliente="Cliente Online", usuario=self.usuario)
         ItemPedidoOnline.objects.create(pedido=self.pedido, produto=self.produto, quantidade=Decimal("2"), preco_unitario=Decimal("15"))
@@ -715,6 +724,15 @@ class FluxoPedidoOnlineTests(TestCase):
         self._preencher_destinatario_fiscal(uf="GO", codigo_ibge="5208707", municipio="Goiânia")
         documento = preparar_documento_pedido_online(self.pedido, self.usuario)
         chave_normal = documento.chave_acesso
+
+        self.assertIn(
+            "<IBSCBS><CST>000</CST><cClassTrib>000001</cClassTrib>"
+            "<gIBSCBS><vBC>21.82</vBC>",
+            documento.xml_conteudo,
+        )
+        self.assertIn("<vIBS>0.02</vIBS>", documento.xml_conteudo)
+        self.assertIn("<vCBS>0.20</vCBS>", documento.xml_conteudo)
+        self.assertIn("<IBSCBSTot><vBCIBSCBS>21.82</vBCIBSCBS>", documento.xml_conteudo)
 
         self.client.force_login(self.usuario)
         detalhe = self.client.get(f"/fiscal/documentos/{documento.pk}/")

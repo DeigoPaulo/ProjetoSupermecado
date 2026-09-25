@@ -1,6 +1,6 @@
 # Matriz de capacidade fiscal do piloto GO
 
-Data de congelamento: 24/09/2026. Contrato:
+Data de atualização: 25/09/2026. Contrato:
 `fiscal_go_pre_homologation_matrix_v1`.
 
 Esta matriz consolida somente evidência existente no código e nos testes. `SUPORTADO`
@@ -28,7 +28,7 @@ na lista não significa que a função `consultar_capacidade_piloto_go` o acione
 
 `PACOTE_OFICIAL_IDENTIFICADO`: o Portal Nacional NF-e ainda lista o pacote 010f entre as
 versões oficiais em uso, publicado em 31/08/2026 e relacionado à NT 2025.002 v1.50 e à
-NT 2026.007 v1.00. A cópia foi baixada novamente da fonte oficial em 24/09/2026 apenas
+NT 2026.007 v1.00. A cópia foi baixada novamente da fonte oficial em 25/09/2026 apenas
 para comparação local e descartada em seguida.
 
 | Evidência | Resultado |
@@ -58,7 +58,7 @@ o arquivo configurado por `FISCAL_SCHEMA_DIR`, `FISCAL_NFE_SCHEMA_FILE` e
 | NF-e modelo 55 | `DEPENDE_DE_HOMOLOGACAO` | Pedido online interno possui gerador no recorte atual |
 | CRT 1 Simples | `DEPENDE_DE_PARAMETRIZACAO` | Exige CSOSN e cadastro completo |
 | CRT 2 excesso | `DEPENDE_DE_PARAMETRIZACAO` | Exige CST e decisão de cBenef GO |
-| CRT 3 normal | `BLOQUEADO` | Desde 03/08/2026, UB12-10 exige `IBSCBS` no recorte comum; o XML atual o omite |
+| CRT 3 normal | `DEPENDE_DE_HOMOLOGACAO` | O recorte comum GO 55/65 emite e reconcilia `IBSCBS`; hipóteses especiais falham fechado |
 | CRT 4 MEI | `DEPENDE_DE_PARAMETRIZACAO` | Usa ramo CSOSN; enquadramento depende de revisão |
 | CST 00/20/40/41/50 | `SUPORTADO` | Grupos ICMS explícitos no gerador |
 | CST fora da matriz | `BLOQUEADO` | Preflight e gerador recusam |
@@ -68,7 +68,8 @@ o arquivo configurado por `FISCAL_SCHEMA_DIR`, `FISCAL_NFE_SCHEMA_FILE` e
 | COFINS | `DEPENDE_DE_PARAMETRIZACAO` | CST 01/02, 04-09, 49 e 99 possuem ramos explícitos |
 | IPI | `DEPENDE_DE_PARAMETRIZACAO` | Exige CST, cEnq e política da natureza |
 | cBenef GO | `DEPENDE_DE_PARAMETRIZACAO` | Decisão por produto/natureza; validade exige revisão fiscal |
-| IBS/CBS | `NAO_IMPLEMENTADO` | Cadastro existe, cálculo e XML continuam bloqueados |
+| IBS/CBS genérico | `NAO_IMPLEMENTADO` | Somente o recorte GO CRT 3 operação padrão foi catalogado |
+| IBS/CBS GO CRT 3 padrão | `DEPENDE_DE_HOMOLOGACAO` | CST 000/cClassTrib 000001 possui cálculo, grupos de item/total e pré-transmissão nos modelos 55/65 |
 | Dinheiro | `SUPORTADO` | `tPag=01`, inclusive em pagamento dividido offline |
 | Crédito | `DEPENDE_DE_HOMOLOGACAO` | `tPag=03`; sem driver/adquirente real |
 | Débito | `DEPENDE_DE_HOMOLOGACAO` | `tPag=04`; sem driver/adquirente real |
@@ -116,8 +117,9 @@ python manage.py diagnosticar_pre_homologacao_go
 
 ## Pendências
 
-Internas: manter a matriz sincronizada quando um ramo emissivo mudar; não implementar
-IBS/CBS, B2B, frete ou interestadual sem contrato normativo e testes próprios.
+Internas: manter a matriz sincronizada quando um ramo emissivo mudar; não ampliar
+IBS/CBS além do contrato GO CRT 3 padrão, nem implementar B2B, frete ou interestadual,
+sem contrato normativo e testes próprios.
 
 Externas: dados representativos por SKU/operação, decisão do contador, filial e identidade
 fiscal reais, A1, credenciamento, adquirentes/verificadores, equipamento, aprovação formal

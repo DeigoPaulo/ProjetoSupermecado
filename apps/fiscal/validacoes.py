@@ -1,4 +1,5 @@
 import hashlib
+from datetime import date
 from pathlib import Path
 from xml.etree import ElementTree as ET
 
@@ -8,6 +9,9 @@ from lxml import etree
 
 from .models import TipoDocumentoFiscal
 from .chave_acesso import normalizar_chave_acesso, normalizar_cnpj_emitente
+from .ibs_cbs.catalogo import ClassificacaoIbsCbsInvalida, validar_classificacao
+from .ibs_cbs.contrato import emissao_ibs_cbs_obrigatoria
+from .ibs_cbs.xml import reconciliar_xml
 
 NFE_NS = "http://www.portalfiscal.inf.br/nfe"
 DSIG_NS = "http://www.w3.org/2000/09/xmldsig#"
@@ -110,6 +114,46 @@ def validar_xml_pre_transmissao(documento, adapter):
         raise ValidationError("Modelo fiscal do XML não corresponde ao documento.")
     if inf_nfe.findtext(f"{{{NFE_NS}}}ide/{{{NFE_NS}}}cDV") != chave[-1]:
         raise ValidationError("Digito verificador do XML não corresponde a chave de acesso.")
+
+    if getattr(documento, "filial", None) is not None:
+        data_texto = inf_nfe.findtext(f"{{{NFE_NS}}}ide/{{{NFE_NS}}}dhEmi") or ""
+        try:
+            data_emissao = date.fromisoformat(data_texto[:10])
+        except ValueError as exc:
+            raise ValidationError("Data de emissão inválida no XML fiscal.") from exc
+        crt = inf_nfe.findtext(f"{{{NFE_NS}}}emit/{{{NFE_NS}}}CRT")
+        obrigatorio_ibs_cbs = emissao_ibs_cbs_obrigatoria(
+            uf=documento.filial.uf,
+            crt=crt,
+            modelo=modelo,
+            ambiente=documento.ambiente,
+            data_emissao=data_emissao,
+        )
+        itens = inf_nfe.findall(f"{{{NFE_NS}}}det")
+        grupos_ibs_cbs = [
+            item.find(f"{{{NFE_NS}}}imposto/{{{NFE_NS}}}IBSCBS") for item in itens
+        ]
+        if obrigatorio_ibs_cbs and (
+            not grupos_ibs_cbs or any(grupo is None for grupo in grupos_ibs_cbs)
+        ):
+            raise ValidationError(
+                "CRT 3 exige IBS/CBS neste modelo e data; o modo LEGADO não pode omitir o grupo IBSCBS."
+            )
+        if any(grupos_ibs_cbs):
+            if any(grupo is None for grupo in grupos_ibs_cbs):
+                raise ValidationError(
+                    "XML IBS/CBS incompleto: todos os itens devem possuir IBSCBS."
+                )
+            try:
+                for grupo in grupos_ibs_cbs:
+                    validar_classificacao(
+                        grupo.findtext(f"{{{NFE_NS}}}CST"),
+                        grupo.findtext(f"{{{NFE_NS}}}cClassTrib"),
+                        modelo,
+                    )
+                reconciliar_xml(inf_nfe, namespace=NFE_NS)
+            except (ClassificacaoIbsCbsInvalida, ValueError) as exc:
+                raise ValidationError(str(exc)) from exc
 
     from .services import pendencias_endereco_emitente_nfce, validar_vinculos_pagamentos_xml
 

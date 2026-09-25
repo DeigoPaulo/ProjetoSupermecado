@@ -42,7 +42,7 @@ CONTROLES_CAPACIDADE = {
     "modelo_55_nfe": (DIAGNOSTICO, PREFLIGHT, GERADOR),
     "crt_1_simples": (DIAGNOSTICO, PREFLIGHT, GERADOR),
     "crt_2_excesso": (DIAGNOSTICO, PREFLIGHT, GERADOR),
-    "crt_3_normal": (DIAGNOSTICO, EXTERNO),
+    "crt_3_normal": (DIAGNOSTICO, PREFLIGHT, GERADOR, PRE_TRANSMISSAO, EXTERNO),
     "crt_4_mei": (DIAGNOSTICO, PREFLIGHT, GERADOR),
     "icms_cst_suportados": (DIAGNOSTICO, PREFLIGHT, GERADOR),
     "icms_cst_desconhecido": (DIAGNOSTICO, PREFLIGHT, GERADOR),
@@ -53,6 +53,9 @@ CONTROLES_CAPACIDADE = {
     "ipi": (DIAGNOSTICO, PREFLIGHT, GERADOR),
     "cbenef": (DIAGNOSTICO, PREFLIGHT, GERADOR),
     "ibs_cbs": (DIAGNOSTICO, PREFLIGHT, EXTERNO),
+    "ibs_cbs_crt3_operacao_padrao": (
+        DIAGNOSTICO, PREFLIGHT, GERADOR, PRE_TRANSMISSAO, EXTERNO,
+    ),
     "pagamento_dinheiro": (DIAGNOSTICO, PREFLIGHT, GERADOR),
     "pagamento_credito": (DIAGNOSTICO, PREFLIGHT, GERADOR, PRE_TRANSMISSAO, EXTERNO),
     "pagamento_debito": (DIAGNOSTICO, PREFLIGHT, GERADOR, PRE_TRANSMISSAO, EXTERNO),
@@ -77,10 +80,11 @@ CONTROLES_CAPACIDADE = {
 }
 
 BLOQUEIO_OPERACIONAL = {
-    "crt_3_normal": "EXTERNO_COMPROVADO",
+    "crt_3_normal": "HOMOLOGACAO_EXTERNA_PENDENTE",
     "icms_cst_desconhecido": "COMPROVADO",
     "icms_csosn_desconhecido": "COMPROVADO",
-    "ibs_cbs": "CONDICIONAL_AO_MODO_EMISSAO_HOMOLOGADA",
+    "ibs_cbs": "COMPROVADO_FORA_DO_RECORTE_CATALOGADO",
+    "ibs_cbs_crt3_operacao_padrao": "HOMOLOGACAO_EXTERNA_PENDENTE",
     "xsd_operacional": "COMPROVADO_NA_PRE_TRANSMISSAO",
     "venda_interestadual": "COMPROVADO",
     "destinatario_contribuinte": "COMPROVADO",
@@ -142,9 +146,9 @@ CAPACIDADES = (
         ("services.CST_ICMS_SUPORTADOS", "diagnostico_cbenef"),
     ),
     _capacidade(
-        "crt_3_normal", "tributacao", "CRT 3 - regime normal", BLOQUEADO,
-        "Desde 03/08/2026, a RV UB12-10 exige IBSCBS em producao para o recorte comum; o XML atual o omite.",
-        ("NT 2025.002 v1.51, UB12-10", "Ato Conjunto RFB/CGIBS 4/2026"),
+        "crt_3_normal", "tributacao", "CRT 3 - regime normal", DEPENDE_DE_HOMOLOGACAO,
+        "O recorte comum GO 55/65 serializa e reconcilia IBSCBS; classificacoes especiais falham fechado.",
+        ("ibs_cbs.contrato", "services.gerar_xml_nfce", "services.gerar_xml_nfe_pedido_online"),
     ),
     _capacidade(
         "crt_4_mei", "tributacao", "CRT 4 - MEI", DEPENDE_DE_PARAMETRIZACAO,
@@ -193,8 +197,14 @@ CAPACIDADES = (
     ),
     _capacidade(
         "ibs_cbs", "tributacao", "IBS/CBS no XML", NAO_IMPLEMENTADO,
-        "Cadastro preparatorio existe, mas calculo e grupos XML emissivos permanecem desabilitados.",
-        ("services.capacidade_tributaria_fiscal",),
+        "Suporte generico permanece ausente; somente o recorte GO CRT 3 operacao padrao esta catalogado.",
+        ("ibs_cbs.catalogo", "ibs_cbs.contrato"),
+    ),
+    _capacidade(
+        "ibs_cbs_crt3_operacao_padrao", "tributacao",
+        "IBS/CBS GO CRT 3 - operacao padrao", DEPENDE_DE_HOMOLOGACAO,
+        "CST 000/cClassTrib 000001 nos modelos 55/65 possui calculo, XML, total e pre-transmissao; producao segue bloqueada.",
+        ("ibs_cbs.calculo", "ibs_cbs.xml", "test_ibs_cbs", "PL_010f_v1.04"),
     ),
     _capacidade(
         "pagamento_dinheiro", "pagamento", "Dinheiro", SUPORTADO,

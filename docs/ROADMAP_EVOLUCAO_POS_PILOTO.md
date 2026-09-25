@@ -45,8 +45,10 @@ Matriz, evidências locais e critérios:
   homologação real; nenhum pacote está operacionalmente promovido.
 - [x] Confirmar o cronograma IBS/CBS por CRT em 24/09/2026: CRT 3 possui UB12-10
   em produção desde 03/08/2026; CRT 1, 2 e 4 têm implementação indicada para 2027.
-- [ ] Fechar catálogo, grupos, cálculos, totalizadores, testes e homologação IBS/CBS
-  em ciclo próprio, começando pelo bloqueio prioritário do CRT 3.
+- [x] Fechar o primeiro recorte IBS/CBS GO CRT 3 padrão com catálogo mínimo,
+  cálculo, grupos, totalizadores, testes e validação XSD offline no ciclo 171.
+- [ ] Homologar IBS/CBS por filial/canal e ampliar o catálogo somente com decisão
+  fiscal explícita; monofasia, regimes especiais e CRT 1, 2 e 4 seguem fora do recorte.
 - [ ] Confirmar CNPJ, IE, CNAE, A1, credenciamento, configuração e produtos reais do piloto.
 - [ ] Classificar cada SKU/operação real como SUPORTADO ou BLOQUEADO. A matriz do
   ciclo 169 é diagnóstica e não bloqueia o emissor; somente os controles operacionais
@@ -1378,6 +1380,37 @@ Nenhuma dessas etapas está concluída pelos testes sintéticos. Migrações: ne
   e obter decisão documentada do responsável fiscal sobre divergências e regras
   oficiais por UF/CRT. Sem esse aceite, não substituir o fallback, não corrigir
   dados encontrados e não remover a coluna legado.
+
+## Ponto de retomada — ciclo 171, 25/09/2026
+
+Primeiro recorte emissivo seguro de IBS/CBS para venda comum em Goiás, sem liberar
+produção nem generalizar classificação fiscal.
+
+- [x] Criar o contrato `fiscal_ibs_cbs_go_crt3_standard_v1` para NF-e 55 e
+  NFC-e 65, CRT 3, homologação desde 01/07/2026 e produção desde 03/08/2026.
+  O modo `LEGADO` não contorna a exigência normativa.
+- [x] Catalogar somente `CST=000/cClassTrib=000001`; classificação desconhecida,
+  incompatível com o modelo, automotiva especial e monofásica falham fechado.
+- [x] Calcular a base com exclusões do recorte, IBS UF 0,1%, IBS municipal 0% e
+  CBS 0,9%, usando `Decimal`, arredondamento por item e reconciliação dos totais.
+- [x] Serializar `IBSCBS/gIBSCBS` por item e `IBSCBSTot` na NF-e/NFC-e; validar
+  presença, catálogo e soma antes da transmissão. `vNFTot` permanece futuro.
+- [x] Projetar os campos no adaptador Focus sem recalcular; a SEFAZ direta preserva
+  o XML assinado. Rede e produção continuam desligadas.
+- [x] Revalidar em 25/09/2026 que o `PL_010f_v1.04` segue oficial em uso. O ZIP e
+  o schema raiz mantêm os hashes congelados, e uma NFC-e assinada do novo recorte
+  passou no XSD oficial offline. Nenhum schema foi promovido.
+- [x] Cobrir datas/CRTs, catálogo fechado, modelos 55/65, desconto, dois itens,
+  arredondamento, totais adulterados, pré-transmissão, Focus e ausência de vazamento
+  para CRT 1. A regressão de Fiscal, Vendas, PDV, Produtos e Marketplace aprovou
+  963 testes, com 8 skips previstos de ambiente.
+- [ ] Próximo bloqueio interno: ampliar classificação somente após decisão do
+  responsável fiscal por SKU/operação; não iniciar monofasia, benefícios, redução,
+  diferimento, crédito presumido, devolução ou CRT 1/2/4 por inferência.
+- [ ] Próximo bloqueio externo: aprovar e instalar o schema operacional, configurar
+  dados reais e homologar 55/65 separadamente na SEFAZ-GO e na Focus antes de produção.
+
+Documento técnico: `docs/CONTRATO_IBS_CBS_CRT3_GO.md`.
 
 ## Ponto de retomada — ciclo 170, 24/09/2026
 

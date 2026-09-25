@@ -1,9 +1,12 @@
 import hashlib
 import json
+import os
 import tempfile
 import uuid
+import zipfile
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
+from unittest import skipUnless
 from unittest.mock import patch
 from decimal import Decimal
 from xml.etree import ElementTree as ET
@@ -22,6 +25,7 @@ from cryptography.hazmat.primitives import hashes, serialization
 from cryptography.hazmat.primitives.asymmetric import rsa
 from cryptography.hazmat.primitives.serialization import pkcs12
 from cryptography.x509.oid import NameOID
+from lxml import etree
 
 from apps.accounts.models import PerfilUsuario, TipoPerfil
 from apps.auditoria.models import LogAuditoria
@@ -401,6 +405,8 @@ class FiscalTests(TestCase):
             aliquota_pis=Decimal("1.6500"),
             cst_cofins="01",
             aliquota_cofins=Decimal("7.6000"),
+            cst_ibs_cbs="000",
+            classificacao_tributaria_ibs_cbs="000001",
         )
         ItemVenda.objects.create(
             venda=self.venda,
@@ -452,6 +458,15 @@ class FiscalTests(TestCase):
         self.filial.save(update_fields=[
             "uf", "codigo_municipio_ibge", "municipio", "logradouro", "numero", "bairro", "cep",
         ])
+
+    def _habilitar_nfce_go_teste(self):
+        self._endereco_go_teste()
+        endpoints = endpoints_nfce_uf("GO", AmbienteFiscal.HOMOLOGACAO)
+        self.configuracao.url_qrcode_nfce = endpoints["qrcode"]
+        self.configuracao.url_consulta_nfce = endpoints["consulta"]
+        self.configuracao.save(
+            update_fields=["url_qrcode_nfce", "url_consulta_nfce", "atualizado_em"]
+        )
 
     def test_beneficio_indefinido_bloqueia_emissao_go_regime_normal(self):
         self.filial.uf = "GO"
@@ -1662,6 +1677,117 @@ class FiscalTests(TestCase):
         self.assertIn("<CRT>3</CRT>", documento.xml_conteudo)
         self.assertIn("<ICMS00>", documento.xml_conteudo)
         self.assertNotIn("<ICMSSN102>", documento.xml_conteudo)
+
+    def test_nfce_go_crt3_emite_ibs_cbs_mesmo_com_modo_legado(self):
+        self._habilitar_nfce_go_teste()
+        self.assertEqual(self.configuracao.modo_transicao_ibs_cbs, ModoTransicaoIbsCbs.LEGADO)
+
+        documento = preparar_documento_venda(self.venda, self.user)
+
+        self.assertIn(
+            "<IBSCBS><CST>000</CST><cClassTrib>000001</cClassTrib>"
+            "<gIBSCBS><vBC>60.16</vBC>",
+            documento.xml_conteudo,
+        )
+        self.assertIn(
+            "<gIBSUF><pIBSUF>0.1000</pIBSUF><vIBSUF>0.06</vIBSUF></gIBSUF>",
+            documento.xml_conteudo,
+        )
+        self.assertIn("<gIBSMun><pIBSMun>0.0000</pIBSMun><vIBSMun>0.00</vIBSMun>", documento.xml_conteudo)
+        self.assertIn("<gCBS><pCBS>0.9000</pCBS><vCBS>0.54</vCBS></gCBS>", documento.xml_conteudo)
+        self.assertIn("<IBSCBSTot><vBCIBSCBS>60.16</vBCIBSCBS>", documento.xml_conteudo)
+
+    def test_nfce_go_ibs_cbs_considera_desconto_e_reconcilia_pre_transmissao(self):
+        from .validacoes import validar_xml_pre_transmissao
+
+        self._habilitar_nfce_go_teste()
+        self.venda.desconto = Decimal("2.70")
+        self.venda.total_liquido = Decimal("80.00")
+        self.venda.save(update_fields=["desconto", "total_liquido"])
+        pagamento = self.venda.pagamentos.get()
+        pagamento.valor = Decimal("80.00")
+        pagamento.save(update_fields=["valor"])
+
+        documento = preparar_documento_venda(self.venda, self.user)
+
+        self.assertIn("<gIBSCBS><vBC>58.20</vBC>", documento.xml_conteudo)
+        self.assertIn("<vCBS>0.52</vCBS>", documento.xml_conteudo)
+        validar_xml_pre_transmissao(documento, FakeSefazAdapter())
+        documento.xml_conteudo = documento.xml_conteudo.replace(
+            "<vBCIBSCBS>58.20</vBCIBSCBS>",
+            "<vBCIBSCBS>58.21</vBCIBSCBS>",
+        )
+        with self.assertRaisesMessage(ValidationError, "SOMA_ITENS diverge de TOTAL_XML"):
+            validar_xml_pre_transmissao(documento, FakeSefazAdapter())
+
+    def test_nfce_go_ibs_cbs_totaliza_dois_itens(self):
+        self._habilitar_nfce_go_teste()
+        ItemVenda.objects.create(
+            venda=self.venda,
+            produto=self.produto,
+            quantidade=Decimal("1.000"),
+            preco_unitario_venda=Decimal("17.30"),
+            total=Decimal("17.30"),
+            custo_unitario_no_momento=Decimal("15.00"),
+        )
+        self.venda.total_bruto = Decimal("100.00")
+        self.venda.total_liquido = Decimal("100.00")
+        self.venda.save(update_fields=["total_bruto", "total_liquido"])
+        pagamento = self.venda.pagamentos.get()
+        pagamento.valor = Decimal("100.00")
+        pagamento.save(update_fields=["valor"])
+
+        documento = preparar_documento_venda(self.venda, self.user)
+
+        self.assertEqual(documento.xml_conteudo.count("<IBSCBS>"), 2)
+        self.assertIn("<IBSCBSTot><vBCIBSCBS>72.75</vBCIBSCBS>", documento.xml_conteudo)
+        self.assertIn("<vIBS>0.07</vIBS>", documento.xml_conteudo)
+        self.assertIn("<vCBS>0.65</vCBS>", documento.xml_conteudo)
+
+    @skipUnless(
+        os.getenv("FISCAL_IBS_CBS_XSD_ZIP"),
+        "Pacote XSD oficial nao fornecido para o confronto offline opcional.",
+    )
+    def test_nfce_go_ibs_cbs_confronta_xsd_010f_oficial(self):
+        self._habilitar_nfce_go_teste()
+        documento = preparar_documento_venda(self.venda, self.user)
+        assinar_xml_documento(documento)
+        pacote = Path(os.environ["FISCAL_IBS_CBS_XSD_ZIP"]).resolve()
+        self.assertEqual(
+            hashlib.sha256(pacote.read_bytes()).hexdigest(),
+            "b8589490a58a09a993a80e6ac4d7ed10f20892061ecfc56719337098d4b95998",
+        )
+        with tempfile.TemporaryDirectory(prefix="xsd-ibs-cbs-") as diretorio:
+            with zipfile.ZipFile(pacote) as arquivo:
+                arquivo.extractall(diretorio)
+            raizes = list(Path(diretorio).rglob("nfe_v4.00.xsd"))
+            self.assertEqual(len(raizes), 1)
+            schema = etree.XMLSchema(etree.parse(str(raizes[0])))
+            schema.assertValid(etree.fromstring(documento.xml_conteudo.encode("utf-8")))
+
+    def test_nfce_go_ibs_cbs_bloqueia_classificacao_fora_do_recorte(self):
+        self._habilitar_nfce_go_teste()
+        self.produto.classificacao_tributaria_ibs_cbs = "999999"
+        self.produto.save(update_fields=["classificacao_tributaria_ibs_cbs"])
+
+        with self.assertRaisesRegex(ValidationError, "nao catalogados no recorte"):
+            preparar_documento_venda(self.venda, self.user)
+
+        self.assertFalse(DocumentoFiscal.objects.exists())
+
+    def test_nfce_go_simples_nao_antecipa_ibs_cbs_de_2027(self):
+        self._habilitar_nfce_go_teste()
+        self.configuracao.crt = CodigoRegimeTributario.SIMPLES_NACIONAL
+        self.configuracao.regime_tributario = "Simples Nacional"
+        self.configuracao.save(update_fields=["crt", "regime_tributario", "atualizado_em"])
+        self.produto.cst_icms = ""
+        self.produto.csosn = "102"
+        self.produto.save(update_fields=["cst_icms", "csosn"])
+
+        documento = preparar_documento_venda(self.venda, self.user)
+
+        self.assertNotIn("<IBSCBS>", documento.xml_conteudo)
+        self.assertNotIn("<IBSCBSTot>", documento.xml_conteudo)
 
     def test_icms00_calcula_base_imposto_e_totais(self):
         documento = preparar_documento_venda(self.venda, self.user)
@@ -3376,6 +3502,9 @@ class FiscalTests(TestCase):
         self.assertFalse(any("cBenef" in pendencia for pendencia in pendencias))
 
     def test_preparacao_ibs_cbs_exige_codigos_no_produto_apos_vigencia(self):
+        self.produto.cst_ibs_cbs = ""
+        self.produto.classificacao_tributaria_ibs_cbs = ""
+        self.produto.save(update_fields=["cst_ibs_cbs", "classificacao_tributaria_ibs_cbs"])
         self.configuracao.modo_transicao_ibs_cbs = ModoTransicaoIbsCbs.PREPARACAO
         self.configuracao.ibs_cbs_vigencia_inicio = django_timezone.localdate()
         self.configuracao.ibs_cbs_versao_leiaute = "NT 2025.002"

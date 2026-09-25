@@ -75,6 +75,8 @@ class FiscalOriginFixtureMixin:
             aliquota_pis=Decimal("1.6500"),
             cst_cofins="01",
             aliquota_cofins=Decimal("7.6000"),
+            cst_ibs_cbs="000",
+            classificacao_tributaria_ibs_cbs="000001",
         )
         self.caixa = Caixa.objects.create(
             filial=self.filial,

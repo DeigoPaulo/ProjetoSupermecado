@@ -88,6 +88,7 @@ class PreHomologacaoGoTests(SimpleTestCase):
             "pagamento_dividido", "destinatario_nao_identificado", "destinatario_cpf",
             "destinatario_cnpj", "endereco_emitente", "qrcode_nfce",
             "contingencia_nfce", "sefaz_direta_go", "focus", "ibs_cbs",
+            "ibs_cbs_crt3_operacao_padrao",
             "finalidade_nao_suportada",
         }:
             self.assertIn(codigo, por_codigo)
@@ -100,6 +101,10 @@ class PreHomologacaoGoTests(SimpleTestCase):
         self.assertEqual(itens["pagamento_pix"]["status"], DEPENDE_DE_HOMOLOGACAO)
         self.assertEqual(itens["xsd_operacional"]["status"], BLOQUEADO)
         self.assertEqual(itens["ibs_cbs"]["status"], NAO_IMPLEMENTADO)
+        self.assertEqual(
+            itens["ibs_cbs_crt3_operacao_padrao"]["status"],
+            DEPENDE_DE_HOMOLOGACAO,
+        )
 
     def test_combinacao_desconhecida_bloqueia_so_o_diagnostico(self):
         resultado = consultar_capacidade_piloto_go("tributo-futuro-nao-catalogado")

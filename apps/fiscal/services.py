@@ -37,6 +37,11 @@ from .chave_acesso import (
     normalizar_cnpj_emitente,
 )
 from .ncm import queryset_codigos_ncm_vigentes, validar_ncm
+from .ibs_cbs.calculo import calcular_base_operacao_padrao, calcular_ibs_cbs_padrao
+from .ibs_cbs.catalogo import ClassificacaoIbsCbsInvalida, validar_classificacao
+from .ibs_cbs.contrato import emissao_ibs_cbs_obrigatoria
+from .ibs_cbs.xml import adicionar_grupo_item as adicionar_ibs_cbs_item
+from .ibs_cbs.xml import adicionar_totais as adicionar_totais_ibs_cbs
 from .validacoes import validar_xml_pre_transmissao
 from .qrcode_nfce import gerar_url_qrcode_nfce
 from .perfis_uf import codigo_beneficio_produto_operacao, pendencias_endpoints_nfce, pendencias_produto_por_uf
@@ -514,10 +519,11 @@ def capacidade_tributaria_fiscal(configuracoes=None):
             "campos": ["CST IBS/CBS", "cClassTrib"],
             "filiais_em_preparacao": len(preparacao_ibs_cbs),
             "emissao_xml_habilitada": False,
-            "modo_seguro": "legado ou preparação controlada",
+            "emissao_xml_recorte": "GO CRT 3, modelos 55/65, CST 000 e cClassTrib 000001",
+            "modo_seguro": "contrato normativo por cenário e falha fechada fora do catálogo",
             "bloqueio": (
-                "O emissor continua usando ICMS, PIS e COFINS até que o grupo IBS/CBS do XML "
-                "seja implementado com schema oficial, adaptador e homologação da SEFAZ."
+                "O suporte genérico permanece bloqueado; monofasia, regimes especiais e "
+                "classificações fora do recorte GO CRT 3 exigem contrato e homologação próprios."
             ),
         },
         "regime_normal": {
@@ -708,7 +714,9 @@ def filtro_pendencias_produto_fiscal(
     return pendente
 
 
-def _pendencias_ibs_cbs_produto(produto, exigido=False):
+def _pendencias_ibs_cbs_produto(
+    produto, exigido=False, modelo="65", *, validar_catalogo=False
+):
     if not exigido:
         return []
     pendencias = []
@@ -716,16 +724,38 @@ def _pendencias_ibs_cbs_produto(produto, exigido=False):
         pendencias.append("CST IBS/CBS com 3 dígitos")
     if not re.fullmatch(r"\d{6}", produto.classificacao_tributaria_ibs_cbs or ""):
         pendencias.append("cClassTrib IBS/CBS com 6 dígitos")
+    if pendencias or not validar_catalogo:
+        return pendencias
+    try:
+        validar_classificacao(
+            produto.cst_ibs_cbs,
+            produto.classificacao_tributaria_ibs_cbs,
+            modelo,
+        )
+    except ClassificacaoIbsCbsInvalida as exc:
+        pendencias.append(str(exc))
     return pendencias
 
 
-def _pendencias_emissao_ibs_cbs(configuracao):
+def _pendencias_emissao_ibs_cbs(configuracao, filial, modelo):
     if configuracao.modo_transicao_ibs_cbs != ModoTransicaoIbsCbs.EMISSAO_HOMOLOGADA:
         return []
+    if _ibs_cbs_obrigatorio(configuracao, filial, modelo):
+        return []
     return [
-        "Emissão XML IBS/CBS bloqueada: instale o schema oficial, implemente o grupo XML vigente "
-        "e homologue o adaptador SEFAZ antes de ativar esta modalidade."
+        "Emissão XML IBS/CBS fora do recorte GO CRT 3 padrão permanece bloqueada; "
+        "classifique a operação e homologue um contrato fiscal específico."
     ]
+
+
+def _ibs_cbs_obrigatorio(configuracao, filial, modelo, data_emissao=None):
+    return emissao_ibs_cbs_obrigatoria(
+        uf=filial.uf,
+        crt=_crt_configuracao(configuracao),
+        modelo=modelo,
+        ambiente=configuracao.ambiente,
+        data_emissao=data_emissao or timezone.localdate(),
+    )
 
 
 def _pendencias_contribuicoes_produto(produto):
@@ -878,6 +908,7 @@ def _adicionar_totais_icms(inf_nfe, *, base_icms, valor_icms, valor_fcp, valor_i
     _texto(icmstot, "vCOFINS", _valor(valor_cofins))
     _texto(icmstot, "vOutro", _valor(outros))
     _texto(icmstot, "vNF", _valor(total_nota))
+    return total
 
 def pendencias_produto_fiscal(
     produto,
@@ -963,6 +994,12 @@ def gerar_xml_nfce(documento):
     except ValueError as exc:
         raise ValidationError(str(exc)) from exc
     data_emissao = timezone.localtime(documento.criado_em).replace(microsecond=0).isoformat()
+    exigir_ibs_cbs = _ibs_cbs_obrigatorio(
+        configuracao,
+        venda.filial,
+        "65",
+        timezone.localtime(documento.criado_em).date(),
+    )
     em_contingencia = documento_em_contingencia_offline(documento)
     tipo_emissao = "9" if em_contingencia else "1"
     chave_acesso, codigo_numerico = _chave_acesso_documento(documento, venda.filial, "65", tipo_emissao)
@@ -1027,6 +1064,7 @@ def gerar_xml_nfce(documento):
     valor_cofins_total = Decimal("0.00")
     valor_produtos_total = Decimal("0.00")
     desconto_total = Decimal("0.00")
+    calculos_ibs_cbs = []
     for numero, (item, valor_bruto, desconto_item, valor_liquido) in enumerate(itens_rateados, start=1):
         produto = item.produto
         composicao_ipi = _composicao_item_ipi(produto, natureza, valor_bruto, desconto_item)
@@ -1070,12 +1108,31 @@ def gerar_xml_nfce(documento):
         valor_pis, valor_cofins = _pis_cofins_produto(
             imposto, produto, composicao_ipi["base_pis_cofins"]
         )
+        if exigir_ibs_cbs:
+            try:
+                calculo_ibs_cbs = calcular_ibs_cbs_padrao(
+                    valor_operacao=calcular_base_operacao_padrao(
+                        valor_produtos=composicao_ipi["valor_produto"],
+                        desconto=composicao_ipi["desconto"],
+                        valor_pis=valor_pis,
+                        valor_cofins=valor_cofins,
+                        valor_icms=calculo_icms["valor_icms"],
+                        valor_fcp=calculo_icms["valor_fcp"],
+                    ),
+                    cst=produto.cst_ibs_cbs,
+                    cclass_trib=produto.classificacao_tributaria_ibs_cbs,
+                    modelo="65",
+                )
+            except (ClassificacaoIbsCbsInvalida, ValueError) as exc:
+                raise ValidationError(str(exc)) from exc
+            adicionar_ibs_cbs_item(imposto, calculo_ibs_cbs, namespace=NFE_NS)
+            calculos_ibs_cbs.append(calculo_ibs_cbs)
         valor_pis_total += valor_pis
         valor_cofins_total += valor_cofins
         valor_produtos_total += composicao_ipi["valor_produto"]
         desconto_total += composicao_ipi["desconto"]
 
-    _adicionar_totais_icms(
+    total = _adicionar_totais_icms(
         inf_nfe,
         base_icms=base_icms_total,
         valor_icms=valor_icms_total,
@@ -1088,6 +1145,8 @@ def gerar_xml_nfce(documento):
         outros=Decimal("0.00"),
         total_nota=venda.total_liquido,
     )
+    if exigir_ibs_cbs:
+        adicionar_totais_ibs_cbs(total, calculos_ibs_cbs, namespace=NFE_NS)
     transp = ET.SubElement(inf_nfe, f"{{{NFE_NS}}}transp")
     _texto(transp, "modFrete", "9")
 
@@ -1203,6 +1262,12 @@ def gerar_xml_nfe_pedido_online(documento):
     except ValueError as exc:
         raise ValidationError(str(exc)) from exc
     data_emissao = timezone.localtime(documento.criado_em).replace(microsecond=0).isoformat()
+    exigir_ibs_cbs = _ibs_cbs_obrigatorio(
+        configuracao,
+        pedido.filial,
+        "55",
+        timezone.localtime(documento.criado_em).date(),
+    )
     destinatario = _dados_destinatario_nfe_pedido(pedido)
     em_svc = bool(
         documento.status == StatusDocumentoFiscal.CONTINGENCIA
@@ -1287,6 +1352,7 @@ def gerar_xml_nfe_pedido_online(documento):
     valor_cofins_total = Decimal("0.00")
     valor_produtos_total = Decimal("0.00")
     desconto_total = Decimal("0.00")
+    calculos_ibs_cbs = []
     for numero, (item, valor_bruto, desconto_item, valor_liquido) in enumerate(itens_rateados, start=1):
         produto = item.produto
         composicao_ipi = _composicao_item_ipi(produto, natureza, valor_bruto, desconto_item)
@@ -1330,12 +1396,31 @@ def gerar_xml_nfe_pedido_online(documento):
         valor_pis, valor_cofins = _pis_cofins_produto(
             imposto, produto, composicao_ipi["base_pis_cofins"]
         )
+        if exigir_ibs_cbs:
+            try:
+                calculo_ibs_cbs = calcular_ibs_cbs_padrao(
+                    valor_operacao=calcular_base_operacao_padrao(
+                        valor_produtos=composicao_ipi["valor_produto"],
+                        desconto=composicao_ipi["desconto"],
+                        valor_pis=valor_pis,
+                        valor_cofins=valor_cofins,
+                        valor_icms=calculo_icms["valor_icms"],
+                        valor_fcp=calculo_icms["valor_fcp"],
+                    ),
+                    cst=produto.cst_ibs_cbs,
+                    cclass_trib=produto.classificacao_tributaria_ibs_cbs,
+                    modelo="55",
+                )
+            except (ClassificacaoIbsCbsInvalida, ValueError) as exc:
+                raise ValidationError(str(exc)) from exc
+            adicionar_ibs_cbs_item(imposto, calculo_ibs_cbs, namespace=NFE_NS)
+            calculos_ibs_cbs.append(calculo_ibs_cbs)
         valor_pis_total += valor_pis
         valor_cofins_total += valor_cofins
         valor_produtos_total += composicao_ipi["valor_produto"]
         desconto_total += composicao_ipi["desconto"]
 
-    _adicionar_totais_icms(
+    total = _adicionar_totais_icms(
         inf_nfe,
         base_icms=base_icms_total,
         valor_icms=valor_icms_total,
@@ -1348,6 +1433,8 @@ def gerar_xml_nfe_pedido_online(documento):
         outros=pedido.taxa_entrega,
         total_nota=pedido.total,
     )
+    if exigir_ibs_cbs:
+        adicionar_totais_ibs_cbs(total, calculos_ibs_cbs, namespace=NFE_NS)
 
     transp = ET.SubElement(inf_nfe, f"{{{NFE_NS}}}transp")
     _texto(transp, "modFrete", "9")
@@ -1370,7 +1457,7 @@ def salvar_xml_documento(documento):
 
 
 def pendencias_preparacao_fiscal(venda, configuracao, natureza):
-    erros = _pendencias_emissao_ibs_cbs(configuracao)
+    erros = _pendencias_emissao_ibs_cbs(configuracao, venda.filial, "65")
     erros.extend(pendencias_endereco_emitente_nfce(venda.filial))
     if not configuracao.inscricao_estadual.strip():
         erros.append("Informe a inscricao estadual da filial.")
@@ -1405,6 +1492,7 @@ def pendencias_preparacao_fiscal(venda, configuracao, natureza):
     )
 
     simples_nacional = _usa_csosn(configuracao)
+    exigir_ibs_cbs = _ibs_cbs_obrigatorio(configuracao, venda.filial, "65")
     itens = list(venda.itens.select_related("produto"))
     if not itens:
         erros.append("A venda não possui itens para emissao fiscal.")
@@ -1441,7 +1529,9 @@ def pendencias_preparacao_fiscal(venda, configuracao, natureza):
         erros.extend(f"{prefixo} {pendencia}." for pendencia in _pendencias_contribuicoes_produto(produto))
         erros.extend(
             f"{prefixo} {pendencia}."
-            for pendencia in _pendencias_ibs_cbs_produto(produto, configuracao.ibs_cbs_exigido_em())
+            for pendencia in _pendencias_ibs_cbs_produto(
+                produto, exigir_ibs_cbs, "65", validar_catalogo=True
+            )
         )
         if produto.cst_ipi in CST_IPI_TRIBUTADO and (not natureza or not natureza.ipi_incluso_preco):
             erros.append(
@@ -1463,7 +1553,7 @@ def validar_preparacao_fiscal(venda, configuracao, natureza):
 
 
 def pendencias_preparacao_nfe_pedido(pedido, configuracao, natureza):
-    erros = _pendencias_emissao_ibs_cbs(configuracao)
+    erros = _pendencias_emissao_ibs_cbs(configuracao, pedido.filial, "55")
     if not configuracao.inscricao_estadual.strip():
         erros.append("Informe a inscricao estadual da filial.")
     if not configuracao.regime_tributario.strip():
@@ -1506,6 +1596,7 @@ def pendencias_preparacao_nfe_pedido(pedido, configuracao, natureza):
     if not itens:
         erros.append("O pedido online não possui itens para emissao fiscal.")
     simples_nacional = _usa_csosn(configuracao)
+    exigir_ibs_cbs = _ibs_cbs_obrigatorio(configuracao, pedido.filial, "55")
     for item in itens:
         produto = item.produto
         prefixo = f"Produto {produto.nome}:"
@@ -1539,7 +1630,9 @@ def pendencias_preparacao_nfe_pedido(pedido, configuracao, natureza):
         erros.extend(f"{prefixo} {pendencia}." for pendencia in _pendencias_contribuicoes_produto(produto))
         erros.extend(
             f"{prefixo} {pendencia}."
-            for pendencia in _pendencias_ibs_cbs_produto(produto, configuracao.ibs_cbs_exigido_em())
+            for pendencia in _pendencias_ibs_cbs_produto(
+                produto, exigir_ibs_cbs, "55", validar_catalogo=True
+            )
         )
         if produto.cst_ipi in CST_IPI_TRIBUTADO and (not natureza or not natureza.ipi_incluso_preco):
             erros.append(
