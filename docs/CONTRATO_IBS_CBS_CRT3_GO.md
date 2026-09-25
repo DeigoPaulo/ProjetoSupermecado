@@ -94,3 +94,19 @@ inventado. A capacidade distingue emissão genérica desabilitada do recorte
 Fontes oficiais: NT 2025.002-RTC v1.51, IT 2025.002 v1.60, Ato Conjunto
 RFB/CGIBS 4/2026 e pacote de schemas `PL_010f_v1.04`, todos listados no Portal
 Nacional da NF-e na data de corte.
+
+## Gate de prontidão interna
+
+O ciclo 175 integrou este contrato ao diagnóstico
+`fiscal_go_internal_homologation_readiness_v1`. O gate verifica offline o
+recorte para NF-e 55 e NFC-e 65, incluindo cálculo `Decimal`, paridade,
+cardinalidade, XML assinado, XSD 010f e pré-transmissão independente por canal.
+Os únicos estados aceitos são `PRONTO_INTERNAMENTE`, `DEPENDE_DE_DADO_REAL`,
+`DEPENDE_DE_HOMOLOGACAO_EXTERNA` e `BLOQUEADO_LACUNA_INTERNA`.
+
+SEFAZ direta GO continua como canal principal e Focus NFe como secundário, sem
+fallback. `PRONTO_INTERNAMENTE` comprova apenas que o código conhecido está apto
+a iniciar o processo quando autorizado; não representa homologação, emissão ou
+liberação de produção. Dados fiscais e credenciais reais, respostas externas e
+aceite fiscal humano continuam fora deste contrato e devem ser comprovados por
+filial, modelo e canal.

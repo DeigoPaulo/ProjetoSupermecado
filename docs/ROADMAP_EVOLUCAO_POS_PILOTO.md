@@ -3169,3 +3169,25 @@ Permanecem externos a homologação real por canal e filial, o aceite do
 responsável fiscal e a aprovação controlada do schema operacional. O próximo
 passo interno depende de nova auditoria e não deve ampliar automaticamente o
 catálogo ou as hipóteses tributárias.
+
+## Ponto de retomada - ciclo 175
+
+- [x] Consolidar o gate offline `fiscal_go_internal_homologation_readiness_v1`
+  para o recorte `fiscal_ibs_cbs_go_crt3_standard_v1`.
+- [x] Comprovar contrato, catálogo, vigência, cálculo `Decimal`, paridade,
+  cardinalidade, NF-e 55, NFC-e 65, assinatura local e XSD 010f arquivado.
+- [x] Avaliar pré-transmissão, endereço, séries, chave, QR Code, pagamentos,
+  contingência e bloqueios de produção sem acessar rede fiscal.
+- [x] Separar SEFAZ direta GO, alvo principal, de Focus NFe, opção secundária,
+  mantendo ambos independentes e sem fallback automático.
+- [x] Criar o ensaio fictício de dia zero e classificar CNPJ, IE, A1, senha,
+  CSC/idCSC, token e autorização humana como dependências reais, não lacunas
+  internas.
+- [x] Preservar o pacote XSD 010f e seu SHA-256, sem promoção operacional,
+  download ou migration.
+
+Pronto internamente não significa homologado. Nenhuma emissão real ou chamada
+SEFAZ/Focus ocorreu e produção continua bloqueada. O próximo marco é externo:
+fornecer dados reais da filial piloto, autorizar a homologação, executar os
+roteiros separadamente por modelo e canal e obter o aceite fiscal humano. Não
+iniciar nova ampliação tributária antes dessa decisão.

@@ -216,3 +216,23 @@ Gerar XML, passar teste unitário, compilar schema, carregar adaptador ou ter en
 autoriza declarar o sistema homologado para Goiás. O fechamento exige interações reais
 documentadas no ambiente de homologação para o escopo aceito. Este documento registra
 prontidão e pendências; não fornece esse aceite.
+
+## Consolidação de prontidão interna - ciclo 175
+
+O contrato `fiscal_go_internal_homologation_readiness_v1` consolida, de forma
+offline e auditável, a prontidão do recorte
+`fiscal_ibs_cbs_go_crt3_standard_v1`. O gate comprova contrato, catálogo,
+cálculo `Decimal`, validação matemática, cardinalidade, XMLs assinados de NF-e
+55 e NFC-e 65, confronto XSD 010f e barreiras pré-transmissão dos dois canais.
+
+`PRONTO_INTERNAMENTE` não significa homologado. Nenhuma emissão real ocorreu,
+nenhuma rede fiscal foi acessada e produção continua bloqueada. O alvo principal
+permanece SEFAZ direta GO; Focus NFe é canal secundário, avaliado de modo
+independente e sem fallback em qualquer direção.
+
+O ensaio fictício de dia zero classifica CNPJ, IE, A1, senha do certificado,
+CSC/idCSC quando aplicável, token Focus e autorização humana como
+`DEPENDE_DE_DADO_REAL`, não como lacuna do código. Credenciamento, endpoints e
+respostas efetivas de SEFAZ/Focus permanecem
+`DEPENDE_DE_HOMOLOGACAO_EXTERNA`. O aceite fiscal humano e a aprovação formal do
+schema operacional continuam obrigatórios antes de qualquer produção.

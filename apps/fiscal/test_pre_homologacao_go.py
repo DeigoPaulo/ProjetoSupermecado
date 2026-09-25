@@ -17,11 +17,16 @@ from .pre_homologacao_go import (
     DIAGNOSTICO,
     DEPENDE_DE_HOMOLOGACAO,
     DEPENDE_DE_PARAMETRIZACAO,
+    DEPENDE_DE_DADO_REAL,
+    DEPENDE_DE_HOMOLOGACAO_EXTERNA,
+    BLOQUEADO_LACUNA_INTERNA,
     NAO_IMPLEMENTADO,
+    PRONTO_INTERNAMENTE,
     STATUS_VALIDOS,
     SUPORTADO,
     consultar_capacidade_piloto_go,
     diagnostico_pre_homologacao_go,
+    diagnostico_prontidao_interna_piloto_go,
     matriz_capacidades_piloto_go,
 )
 
@@ -66,7 +71,110 @@ class PreHomologacaoGoTests(SimpleTestCase):
 
         publicado = json.loads(saida.getvalue())
         esperado = diagnostico_pre_homologacao_go(settings.BASE_DIR)
+        esperado["prontidao_interna_piloto"] = diagnostico_prontidao_interna_piloto_go(
+            settings.BASE_DIR
+        )
         self.assertEqual(publicado, esperado)
+
+    def test_gate_consolida_recorte_ibs_cbs_e_canais_independentes(self):
+        resultado = diagnostico_prontidao_interna_piloto_go(settings.BASE_DIR)
+
+        self.assertEqual(resultado["recorte"], "fiscal_ibs_cbs_go_crt3_standard_v1")
+        self.assertEqual(resultado["estado_geral_interno"], PRONTO_INTERNAMENTE)
+        self.assertEqual(resultado["gaps_internos"], [])
+        self.assertEqual(resultado["canais"]["SEFAZ_DIRETA_GO"]["papel"], "ALVO_PRINCIPAL")
+        self.assertEqual(resultado["canais"]["FOCUS"]["papel"], "CANAL_SECUNDARIO")
+        for canal in resultado["canais"].values():
+            self.assertEqual(canal["estado_interno"], PRONTO_INTERNAMENTE)
+            self.assertEqual(canal["estado_para_iniciar"], DEPENDE_DE_DADO_REAL)
+            self.assertEqual(
+                canal["estado_para_concluir"], DEPENDE_DE_HOMOLOGACAO_EXTERNA
+            )
+            self.assertFalse(canal["fallback_automatico"])
+
+    def test_gate_prova_nucleo_decimal_cardinalidade_e_xsd_55_65_offline(self):
+        resultado = diagnostico_prontidao_interna_piloto_go(settings.BASE_DIR)
+
+        nucleo = resultado["nucleo_ibs_cbs"]
+        self.assertTrue(nucleo["contrato_carregavel"])
+        self.assertTrue(nucleo["catalogo_rastreavel"])
+        self.assertEqual({item["modelo"] for item in nucleo["modelos"]}, {"55", "65"})
+        self.assertTrue(all(item["decimal"] for item in nucleo["modelos"]))
+        self.assertTrue(all(item["validacao_matematica"] for item in nucleo["modelos"]))
+        self.assertTrue(all(item["cardinalidade_exclusividade"] for item in nucleo["modelos"]))
+        xsd = resultado["xsd_offline"]
+        self.assertTrue(xsd["pacote_integro"])
+        self.assertTrue(xsd["dependencias_validas"])
+        self.assertTrue(xsd["compilacao"])
+        self.assertTrue(xsd["xml_55_valido_e_assinado"])
+        self.assertTrue(xsd["xml_65_valido_e_assinado"])
+        self.assertFalse(xsd["instalado"])
+        self.assertFalse(xsd["promovido"])
+
+    def test_dia_zero_classifica_dados_reais_sem_mascarar_lacuna_interna(self):
+        resultado = diagnostico_prontidao_interna_piloto_go(settings.BASE_DIR)
+        dia_zero = resultado["dia_zero_homologacao"]
+
+        self.assertIn("FICTICIA", dia_zero["fixture"])
+        self.assertEqual(dia_zero["estado_interno"], PRONTO_INTERNAMENTE)
+        self.assertFalse(dia_zero["ausencia_dados_reais_e_lacuna_interna"])
+        self.assertTrue(dia_zero["dependencias"])
+        self.assertTrue(
+            all(item["estado"] == DEPENDE_DE_DADO_REAL for item in dia_zero["dependencias"])
+        )
+        nomes = {item["item"] for item in dia_zero["dependencias"]}
+        self.assertTrue(
+            {
+                "CNPJ da filial GO",
+                "Inscricao estadual da filial GO",
+                "Certificado A1 e senha",
+                "CSC e idCSC",
+                "Token Focus NFe de homologacao",
+                "Autorizacao humana para iniciar homologacao",
+            }.issubset(nomes)
+        )
+
+    def test_gate_nunca_transmite_nem_libera_producao(self):
+        with patch.object(
+            socket,
+            "create_connection",
+            side_effect=AssertionError("rede acionada"),
+        ):
+            resultado = diagnostico_prontidao_interna_piloto_go(settings.BASE_DIR)
+
+        self.assertNotEqual(resultado["estado_geral_interno"], BLOQUEADO_LACUNA_INTERNA)
+        self.assertFalse(resultado["politica"]["acessou_rede"])
+        self.assertFalse(resultado["politica"]["transmitiu"])
+        self.assertFalse(resultado["politica"]["homologacao_real"])
+        self.assertFalse(resultado["politica"]["producao_liberada"])
+
+    def test_lacuna_focus_nao_mascara_prontidao_independente_sefaz_direta(self):
+        from . import pre_homologacao_go
+
+        original = pre_homologacao_go._evidencia_local
+
+        def evidencia_com_focus_ausente(base, codigo):
+            item = original(base, codigo)
+            if codigo == "pre_transmissao_focus":
+                item["estado"] = BLOQUEADO_LACUNA_INTERNA
+                item["ausentes"] = ["evidencia Focus simulada como ausente"]
+            return item
+
+        with patch(
+            "apps.fiscal.pre_homologacao_go._evidencia_local",
+            side_effect=evidencia_com_focus_ausente,
+        ):
+            resultado = diagnostico_prontidao_interna_piloto_go(settings.BASE_DIR)
+
+        self.assertEqual(resultado["estado_geral_interno"], PRONTO_INTERNAMENTE)
+        self.assertEqual(
+            resultado["canais"]["SEFAZ_DIRETA_GO"]["estado_interno"],
+            PRONTO_INTERNAMENTE,
+        )
+        self.assertEqual(
+            resultado["canais"]["FOCUS"]["estado_interno"],
+            BLOQUEADO_LACUNA_INTERNA,
+        )
 
     def test_matriz_cobre_recorte_minimo_e_status_validos(self):
         itens = matriz_capacidades_piloto_go()

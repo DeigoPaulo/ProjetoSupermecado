@@ -259,3 +259,23 @@ pelo primeiro valor encontrado.
 
 Nenhuma homologação real ocorreu. Não houve acesso à SEFAZ, transmissão,
 promoção do XSD ou liberação de produção.
+
+## Prontidão interna para homologação real - ciclo 175
+
+O recorte `fiscal_ibs_cbs_go_crt3_standard_v1` passou a ter diagnóstico próprio
+no contrato `fiscal_go_internal_homologation_readiness_v1`. A verificação roda
+sem rede e reúne as evidências do catálogo mínimo, vigência, cálculo `Decimal`,
+paridade matemática, cardinalidade/exclusividade, geração e assinatura local de
+NF-e 55 e NFC-e 65 e validação no XSD 010f arquivado.
+
+A matriz separa SEFAZ direta GO, canal principal, de Focus NFe, canal
+secundário. Não existe fallback automático e a indisponibilidade do Focus não
+reduz artificialmente a capacidade interna do canal direto. De forma simétrica,
+o suporte Focus não mascara uma eventual lacuna direta.
+
+O resultado interno não declara homologação. CNPJ e IE reais, A1 e senha,
+CSC/idCSC quando exigidos, token Focus, credenciamento externo e autorização
+humana continuam ausentes. Nenhum desses dados foi simulado como credencial
+válida, nenhuma transmissão ocorreu e produção segue bloqueada. A homologação
+separada por modelo, canal e filial, seguida de aceite fiscal humano, permanece
+obrigatória.
