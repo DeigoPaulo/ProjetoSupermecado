@@ -3,6 +3,18 @@ from decimal import Decimal, InvalidOperation
 from django import forms
 
 
+def formatar_decimal_sem_zeros(numero):
+    """Remove zeros somente da parte fracionária de um número decimal."""
+    if numero == 0:
+        return "0"
+    texto = format(numero, "f")
+    if "." not in texto:
+        return texto
+    inteiro, decimal = texto.split(".", 1)
+    decimal = decimal.rstrip("0")
+    return inteiro if not decimal else f"{inteiro}.{decimal}"
+
+
 def _decimal_sem_zeros(valor):
     try:
         numero = valor if isinstance(valor, Decimal) else Decimal(str(valor))
@@ -10,9 +22,7 @@ def _decimal_sem_zeros(valor):
         return None
     if not numero.is_finite():
         return None
-    if numero == 0:
-        return "0"
-    return format(numero, "f").rstrip("0").rstrip(".")
+    return formatar_decimal_sem_zeros(numero)
 
 
 class QuantidadeNumberInput(forms.NumberInput):

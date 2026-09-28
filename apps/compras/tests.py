@@ -510,6 +510,11 @@ class ComprasFinanceiroTests(TestCase):
 
     def test_item_entrada_remove_zeros_finais_de_quantidades_iniciais(self):
         for quantidade, valor_esperado in (
+            (Decimal("10.000"), "10"),
+            (Decimal("20.000"), "20"),
+            (Decimal("100.000"), "100"),
+            (Decimal("120.000"), "120"),
+            (Decimal("1000.000"), "1000"),
             (Decimal("12.000"), "12"),
             (Decimal("12.500"), "12.5"),
             (Decimal("0.750"), "0.75"),

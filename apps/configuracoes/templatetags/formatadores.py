@@ -2,6 +2,8 @@ from decimal import Decimal, InvalidOperation
 
 from django import template
 
+from apps.core_forms import formatar_decimal_sem_zeros
+
 
 register = template.Library()
 
@@ -17,9 +19,7 @@ def quantidade_br(valor):
 
     if not numero.is_finite():
         return valor
-    if numero == 0:
-        return "0"
-    return format(numero, "f").rstrip("0").rstrip(".").replace(".", ",")
+    return formatar_decimal_sem_zeros(numero).replace(".", ",")
 
 
 @register.filter
@@ -33,6 +33,4 @@ def quantidade_input(valor):
         return valor
     if not numero.is_finite():
         return valor
-    if numero == 0:
-        return "0"
-    return format(numero, "f").rstrip("0").rstrip(".")
+    return formatar_decimal_sem_zeros(numero)

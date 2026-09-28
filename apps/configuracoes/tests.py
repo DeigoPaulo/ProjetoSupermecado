@@ -87,10 +87,23 @@ def criar_pacote_servidor_teste(
 class FormatadoresTemplateTests(SimpleTestCase):
     def test_quantidade_br_remove_zeros_de_unidade_e_mantem_fracao_brasileira(self):
         casos = {
+            Decimal("10"): "10",
+            Decimal("20"): "20",
+            Decimal("100"): "100",
+            Decimal("120"): "120",
+            Decimal("1000"): "1000",
+            Decimal("10.000"): "10",
+            Decimal("100.000"): "100",
+            Decimal("120.000"): "120",
+            Decimal("1000.000"): "1000",
             Decimal("12.000"): "12",
             Decimal("12.500"): "12,5",
             Decimal("12.250"): "12,25",
             Decimal("12.125"): "12,125",
+            Decimal("10.500"): "10,5",
+            Decimal("100.500"): "100,5",
+            Decimal("120.050"): "120,05",
+            Decimal("1000.010"): "1000,01",
             Decimal("1.000"): "1",
             Decimal("1.100"): "1,1",
             Decimal("1.010"): "1,01",
@@ -98,6 +111,9 @@ class FormatadoresTemplateTests(SimpleTestCase):
             Decimal("0.075"): "0,075",
             Decimal("0.001"): "0,001",
             Decimal("12.005"): "12,005",
+            Decimal("-10.000"): "-10",
+            Decimal("-10.500"): "-10,5",
+            Decimal("0"): "0",
         }
         for valor, esperado in casos.items():
             with self.subTest(valor=valor):
@@ -110,8 +126,30 @@ class FormatadoresTemplateTests(SimpleTestCase):
         self.assertEqual(quantidade_br("12,500"), "12,5")
 
     def test_quantidade_input_usa_ponto_e_preserva_valor_invalido(self):
-        self.assertEqual(quantidade_input(Decimal("12.500")), "12.5")
-        self.assertEqual(quantidade_input(Decimal("0.750")), "0.75")
+        casos = {
+            Decimal("10"): "10",
+            Decimal("20"): "20",
+            Decimal("100"): "100",
+            Decimal("120"): "120",
+            Decimal("1000"): "1000",
+            Decimal("10.000"): "10",
+            Decimal("100.000"): "100",
+            Decimal("120.000"): "120",
+            Decimal("1000.000"): "1000",
+            Decimal("12.500"): "12.5",
+            Decimal("10.500"): "10.5",
+            Decimal("100.500"): "100.5",
+            Decimal("120.050"): "120.05",
+            Decimal("1000.010"): "1000.01",
+            Decimal("0.750"): "0.75",
+            Decimal("-10.000"): "-10",
+            Decimal("-10.500"): "-10.5",
+            Decimal("0"): "0",
+        }
+        for valor, esperado in casos.items():
+            with self.subTest(valor=valor):
+                self.assertEqual(quantidade_input(valor), esperado)
+
         self.assertEqual(quantidade_input("valor-invalido"), "valor-invalido")
 
 class ClassificadorRoadmapTests(SimpleTestCase):
