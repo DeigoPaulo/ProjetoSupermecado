@@ -28,7 +28,7 @@ class MovimentacaoEstoqueForm(forms.Form):
     quantidade = forms.DecimalField(max_digits=12, decimal_places=3, min_value=0.001, widget=QuantidadeNumberInput())
     motivo = forms.CharField(max_length=255, required=False)
     referencia = forms.CharField(max_length=120, required=False)
-    custo_unitario = forms.DecimalField(max_digits=10, decimal_places=2, required=False, min_value=0)
+    custo_unitario = forms.DecimalField(max_digits=14, decimal_places=6, required=False, min_value=0)
     codigo_lote = forms.CharField(max_length=60, required=False, label="Lote")
     fabricacao = forms.DateField(required=False, widget=forms.DateInput(attrs={"type": "date"}))
     validade = forms.DateField(required=False, widget=forms.DateInput(attrs={"type": "date"}))
@@ -72,7 +72,7 @@ class MovimentacaoEstoqueForm(forms.Form):
 class AtribuirSaldoLoteForm(forms.Form):
     codigo = forms.CharField(max_length=60, label="Código do lote")
     quantidade = forms.DecimalField(max_digits=12, decimal_places=3, min_value=0.001, widget=QuantidadeNumberInput())
-    custo_unitario = forms.DecimalField(max_digits=10, decimal_places=2, min_value=0)
+    custo_unitario = forms.DecimalField(max_digits=14, decimal_places=6, min_value=0)
     fabricacao = forms.DateField(required=False, widget=forms.DateInput(attrs={"type": "date"}))
     validade = forms.DateField(required=False, widget=forms.DateInput(attrs={"type": "date"}))
     motivo = forms.CharField(max_length=255)

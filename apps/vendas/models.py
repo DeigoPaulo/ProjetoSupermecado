@@ -138,7 +138,7 @@ class ItemVenda(models.Model):
     preco_unitario_venda = models.DecimalField(max_digits=10, decimal_places=2)
     desconto = models.DecimalField(max_digits=10, decimal_places=2, default=0)
     total = models.DecimalField(max_digits=12, decimal_places=2)
-    custo_unitario_no_momento = models.DecimalField(max_digits=10, decimal_places=2, null=True, blank=True)
+    custo_unitario_no_momento = models.DecimalField(max_digits=14, decimal_places=6, null=True, blank=True)
 
     def __str__(self):
         return f"{self.quantidade} x {self.produto}"

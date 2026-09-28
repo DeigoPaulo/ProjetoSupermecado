@@ -15,7 +15,7 @@ from apps.pdv.models import Caixa
 from apps.produtos.models import Categoria, Produto
 
 from .models import EstornoParcialPagamento, FormaPagamento, FormaPagamentoFilial, PagamentoVenda, StatusEstornoParcial, StatusPagamento, StatusVenda, TipoDocumentoConsumidor, Venda
-from .services import cancelar_venda, confirmar_estorno_pagamento_eletronico, confirmar_estorno_parcial_eletronico, finalizar_venda, formas_pagamento_disponiveis, registrar_devolucao_venda
+from .services import calcular_item, cancelar_venda, confirmar_estorno_pagamento_eletronico, confirmar_estorno_parcial_eletronico, finalizar_venda, formas_pagamento_disponiveis, registrar_devolucao_venda
 
 
 class VendaServiceTests(TestCase):
@@ -187,6 +187,93 @@ class VendaServiceTests(TestCase):
             LancamentoFinanceiro.objects.filter(tipo=TipoLancamentoFinanceiro.ENTRADA).aggregate(total=Sum("valor"))["total"],
             Decimal("50.00"),
         )
+
+    def test_calcular_item_quantiza_venda_fracionada_uma_vez_em_centavos(self):
+        for quantidade, preco, esperado in (
+            ("0.155", "14.99", "2.32"),
+            ("0.750", "14.99", "11.24"),
+            ("1.000", "14.99", "14.99"),
+            ("1.250", "14.99", "18.74"),
+            ("0.333", "19.99", "6.66"),
+        ):
+            with self.subTest(quantidade=quantidade, preco=preco):
+                self.produto.preco_venda = Decimal(preco)
+                self.assertEqual(calcular_item(self.produto, Decimal(quantidade)), Decimal(esperado))
+
+    def test_venda_pesavel_preserva_quantidade_custo_e_total_monetario(self):
+        self.produto.nome = "Carne bovina"
+        self.produto.unidade = "KG"
+        self.produto.produto_pesavel = True
+        self.produto.preco_venda = Decimal("14.99")
+        self.produto.save(update_fields=["nome", "unidade", "produto_pesavel", "preco_venda", "updated_at"])
+        self.estoque.custo_medio = Decimal("10.123456")
+        self.estoque.save(update_fields=["custo_medio", "atualizado_em"])
+
+        venda = finalizar_venda(
+            caixa=self.caixa,
+            usuario=self.usuario,
+            itens=[{"produto": self.produto, "quantidade": Decimal("0.155")}],
+            pagamentos=[{"forma_pagamento": self.dinheiro, "valor": Decimal("2.32")}],
+        )
+
+        item = venda.itens.get()
+        self.assertEqual(item.quantidade, Decimal("0.155"))
+        self.assertEqual(item.preco_unitario_venda, Decimal("14.99"))
+        self.assertEqual(item.total, Decimal("2.32"))
+        self.assertEqual(venda.total_bruto, Decimal("2.32"))
+        self.assertEqual(venda.total_liquido, Decimal("2.32"))
+        self.assertEqual(venda.pagamentos.get().valor, Decimal("2.32"))
+        self.assertEqual(item.custo_unitario_no_momento, Decimal("10.123456"))
+        self.assertEqual(item.quantidade * item.custo_unitario_no_momento, Decimal("1.569135680"))
+
+    def test_snapshot_cmv_preserva_custo_de_fracao_de_centavo(self):
+        self.produto.preco_venda = Decimal("1.00")
+        self.produto.save(update_fields=["preco_venda", "updated_at"])
+        self.estoque.custo_medio = Decimal("0.833333")
+        self.estoque.save(update_fields=["custo_medio", "atualizado_em"])
+
+        venda = finalizar_venda(
+            caixa=self.caixa,
+            usuario=self.usuario,
+            itens=[{"produto": self.produto, "quantidade": Decimal("1.000")}],
+            pagamentos=[{"forma_pagamento": self.dinheiro, "valor": Decimal("1.00")}],
+        )
+
+        self.assertEqual(venda.itens.get().custo_unitario_no_momento, Decimal("0.833333"))
+
+    def test_pagamento_com_fracao_inferior_a_centavo_e_rejeitado(self):
+        self.produto.preco_venda = Decimal("10.00")
+        self.produto.save(update_fields=["preco_venda", "updated_at"])
+
+        with self.assertRaisesMessage(ValidationError, "A soma dos pagamentos deve ser igual ao total da venda"):
+            finalizar_venda(
+                caixa=self.caixa,
+                usuario=self.usuario,
+                itens=[{"produto": self.produto, "quantidade": Decimal("1.000")}],
+                pagamentos=[{"forma_pagamento": self.dinheiro, "valor": Decimal("10.001")}],
+            )
+
+        self.assertFalse(Venda.objects.exists())
+
+    def test_devolucao_fracionada_quantiza_valor_em_centavos(self):
+        self.produto.preco_venda = Decimal("14.99")
+        self.produto.save(update_fields=["preco_venda", "updated_at"])
+        venda = finalizar_venda(
+            caixa=self.caixa,
+            usuario=self.usuario,
+            itens=[{"produto": self.produto, "quantidade": Decimal("0.750")}],
+            pagamentos=[{"forma_pagamento": self.dinheiro, "valor": Decimal("11.24")}],
+        )
+
+        devolucao = registrar_devolucao_venda(
+            venda=venda,
+            usuario=self.usuario,
+            itens=[{"item_venda": venda.itens.get(), "quantidade": Decimal("0.250")}],
+            motivo="Devolução fracionada",
+        )
+
+        self.assertEqual(devolucao.valor_total, Decimal("3.75"))
+        self.assertEqual(devolucao.itens.get().valor_total, Decimal("3.75"))
 
     def test_devolucao_parcial_rateia_estorno_financeiro_por_pagamento(self):
         venda = finalizar_venda(

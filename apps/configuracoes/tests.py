@@ -22,7 +22,7 @@ from apps.vendas.models import FormaPagamento, FormaPagamentoFilial, PagamentoVe
 
 from .models import ConfiguracaoImpressao, HomologacaoOperacional, ModeloEtiqueta, ModeloPapel, TipoDocumentoImpressao
 from .services import configuracao_impressao_para, criar_configuracoes_padrao, estilos_impressao
-from .templatetags.formatadores import quantidade_br, quantidade_input
+from .templatetags.formatadores import peso_br, quantidade_br, quantidade_input
 from .views import CHECKLIST_GRUPOS, DOCUMENTOS_PROJETO, _classificar_dependencia_roadmap, _classificar_etapa_roadmap
 
 def criar_artefato_pdv_teste(caminho, conteudo, versao=None, assinado=False):
@@ -85,6 +85,16 @@ def criar_pacote_servidor_teste(
     return conteudo_pacote
 
 class FormatadoresTemplateTests(SimpleTestCase):
+    def test_peso_br_preserva_tres_casas_de_medicao(self):
+        for valor, esperado in (
+            (Decimal("0.750"), "0,750"),
+            (Decimal("1.000"), "1,000"),
+            (Decimal("1.250"), "1,250"),
+            (Decimal("10.500"), "10,500"),
+        ):
+            with self.subTest(valor=valor):
+                self.assertEqual(peso_br(valor), esperado)
+
     def test_quantidade_br_remove_zeros_de_unidade_e_mantem_fracao_brasileira(self):
         casos = {
             Decimal("10"): "10",

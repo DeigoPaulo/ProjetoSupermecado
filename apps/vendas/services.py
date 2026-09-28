@@ -1,4 +1,4 @@
-from decimal import Decimal, ROUND_HALF_UP
+from decimal import Decimal
 from uuid import uuid4
 
 from django.core.exceptions import ValidationError
@@ -6,6 +6,7 @@ from django.db import transaction
 from django.utils import timezone
 
 from apps.auditoria.models import LogAuditoria
+from apps.core_money import quantizar_moeda
 from apps.estoque.models import TipoMovimentacaoEstoque, movimentar_estoque
 from apps.promocoes.services import preco_atual_produto
 
@@ -14,7 +15,7 @@ from .models import DevolucaoVenda, EstornoParcialPagamento, FormaPagamento, For
 
 def calcular_item(produto, quantidade):
     preco = preco_atual_produto(produto)
-    return preco * quantidade
+    return quantizar_moeda(preco * quantidade)
 
 
 def quantidade_devolvida_item(item_venda):
@@ -439,7 +440,7 @@ def criar_pre_venda(*, filial, usuario, itens, desconto=Decimal("0.00"), cliente
             produto = item["produto"]
             quantidade = item["quantidade"]
             preco_unitario = preco_atual_produto(produto)
-            total_item = preco_unitario * quantidade
+            total_item = quantizar_moeda(preco_unitario * quantidade)
             total_bruto += total_item
             ItemPreVenda.objects.create(
                 pre_venda=pre_venda,
@@ -491,7 +492,7 @@ def registrar_devolucao_venda(*, venda, usuario, itens, motivo, supervisor=None,
     valor_total = Decimal("0.00")
 
     for item_venda, quantidade in itens_validos:
-        valor_item = item_venda.preco_unitario_venda * quantidade
+        valor_item = quantizar_moeda(item_venda.preco_unitario_venda * quantidade)
         valor_total += valor_item
         ItemDevolucaoVenda.objects.create(
             devolucao=devolucao,
@@ -529,7 +530,7 @@ def registrar_devolucao_venda(*, venda, usuario, itens, motivo, supervisor=None,
 
 
 def _quantizar_moeda(valor):
-    return Decimal(valor).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+    return quantizar_moeda(valor)
 
 
 def _ratear_estorno_financeiro_devolucao(devolucao, *, usuario, motivo):

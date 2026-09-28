@@ -114,14 +114,14 @@
           </thead>
           <tbody role="listbox" aria-label="Itens da venda">
             {% for item in items %}
-              <tr class="pdv-cart-row{% if forloop.last %} is-selected{% endif %}" role="option" tabindex="0" aria-selected="{% if forloop.last %}true{% else %}false{% endif %}" data-product-label="{{ item.produto.nome }}" data-product-quantity="{{ item.quantidade|quantidade_br }}" data-quantity-url="{% url 'pdv:alterar_quantidade_item' item.produto.id %}" data-remove-url="{% url 'pdv:remover_item' item.produto.id %}">
+              <tr class="pdv-cart-row{% if forloop.last %} is-selected{% endif %}" role="option" tabindex="0" aria-selected="{% if forloop.last %}true{% else %}false{% endif %}" data-product-label="{{ item.produto.nome }}" data-product-quantity="{{ item.quantidade|quantidade_input }}" data-quantity-url="{% url 'pdv:alterar_quantidade_item' item.produto.id %}" data-remove-url="{% url 'pdv:remover_item' item.produto.id %}">
                 <td>{{ forloop.counter }}</td>
                 <td>
                   <strong>{{ item.produto.nome }}</strong>
                   <small>{{ item.produto.codigo_barras }}</small>
                 </td>
-                <td><button class="pdv-quantity-button" type="button" data-pdv-edit-quantity title="Alterar quantidade (Enter)" aria-label="Alterar quantidade de {{ item.produto.nome }}">{{ item.quantidade|quantidade_br }} <i class="fa-solid fa-pen" aria-hidden="true"></i></button></td>
-                <td>R$ {{ item.produto.preco_venda|floatformat:2 }}</td>
+                <td><button class="pdv-quantity-button" type="button" data-pdv-edit-quantity title="Alterar quantidade (Enter)" aria-label="Alterar quantidade de {{ item.produto.nome }}">{% if item.produto.produto_pesavel and item.produto.unidade == "KG" %}{{ item.quantidade|peso_br }} kg{% else %}{{ item.quantidade|quantidade_br }}{% endif %} <i class="fa-solid fa-pen" aria-hidden="true"></i></button></td>
+                <td>R$ {{ item.produto.preco_venda|floatformat:2 }}{% if item.produto.produto_pesavel and item.produto.unidade == "KG" %}/kg{% endif %}</td>
                 <td><strong>R$ {{ item.subtotal|floatformat:2 }}</strong></td>
                 <td><a class="icon-action danger-button" href="{% url 'pdv:remover_item' item.produto.id %}" data-pdv-remove-item title="Remover item (Del)" aria-label="Remover item (Del)"><i class="fa-regular fa-trash-can"></i></a></td>
               </tr>
@@ -139,7 +139,7 @@
         {% endif %}
         <div class="pdv-cart-footer-info">
           {% with selected_item=items|last %}
-            <span class="pdv-selected-item" id="pdv-selected-item" aria-live="polite">{% if selected_item %}Selecionado: {{ selected_item.produto.nome }} (qtd. {{ selected_item.quantidade|quantidade_br }}){% else %}Nenhum item selecionado{% endif %}</span>
+            <span class="pdv-selected-item" id="pdv-selected-item" aria-live="polite">{% if selected_item %}Selecionado: {{ selected_item.produto.nome }} ({% if selected_item.produto.produto_pesavel and selected_item.produto.unidade == "KG" %}{{ selected_item.quantidade|peso_br }} kg{% else %}qtd. {{ selected_item.quantidade|quantidade_br }}{% endif %}){% else %}Nenhum item selecionado{% endif %}</span>
           {% endwith %}
           <span title="Alterar quantidade do item selecionado">Editar quantidade (<kbd>Enter</kbd>)</span>
           <span title="Remover item (Del)">Remover item (<kbd>Del</kbd>)</span>

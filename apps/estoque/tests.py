@@ -83,6 +83,31 @@ class EstoqueViewsTests(TestCase):
         self.assertContains(response, "Movimentações manuais ficam registradas")
         self.assertContains(response, "select2-field")
 
+    def test_custo_medio_e_lote_preservam_seis_casas(self):
+        estoque = Estoque.objects.create(
+            produto=self.produto,
+            filial=self.filial,
+            quantidade_atual=Decimal("10.000"),
+            custo_medio=Decimal("0.833333"),
+        )
+
+        movimentacao = movimentar_estoque(
+            produto=self.produto,
+            filial=self.filial,
+            tipo=TipoMovimentacaoEstoque.ENTRADA,
+            quantidade=Decimal("12.000"),
+            custo_unitario=Decimal("0.912345"),
+            codigo_lote="PRECISAO-6",
+        )
+
+        estoque.refresh_from_db()
+        lote = LoteEstoque.objects.get(codigo="PRECISAO-6")
+        alocacao = MovimentacaoLoteEstoque.objects.get(movimentacao=movimentacao)
+        self.assertEqual(estoque.custo_medio, Decimal("0.876430"))
+        self.assertEqual(movimentacao.custo_unitario, Decimal("0.912345"))
+        self.assertEqual(lote.custo_unitario, Decimal("0.912345"))
+        self.assertEqual(alocacao.custo_unitario, Decimal("0.912345"))
+
 
     def test_form_perda_exibe_rastreabilidade_e_autorizacao(self):
         response = self.client.get("/estoque/perdas/nova/")

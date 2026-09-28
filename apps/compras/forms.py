@@ -69,7 +69,7 @@ class PrecoRespostaCotacaoForm(forms.Form):
     item = forms.ModelChoiceField(queryset=ItemCotacaoCompra.objects.none(), widget=forms.HiddenInput)
     disponivel = forms.BooleanField(label="Disponível", required=False, initial=True)
     custo_unitario = forms.DecimalField(
-        label="Custo unitário", max_digits=10, decimal_places=2, min_value=0, required=False
+        label="Custo unitário", max_digits=14, decimal_places=6, min_value=0, required=False
     )
 
     def __init__(self, *args, item_queryset=None, **kwargs):

@@ -19,6 +19,7 @@ from django.views.generic.edit import ModelFormMixin, ProcessFormView
 
 from apps.accounts.permissions import COMPRAS, RoleRequiredMixin, role_required, supervisor_from_request
 from apps.auditoria.models import LogAuditoria
+from apps.core_money import quantizar_moeda
 from apps.estoque.models import Estoque, MovimentacaoEstoque
 from apps.estoque.escopo import filiais_para_usuario
 from apps.empresas.models import AcaoPinSupervisor
@@ -358,7 +359,7 @@ def pedido_compra_form(request, pk=None):
             formset.instance = pedido
             itens = formset.save(commit=False)
             for item in itens:
-                item.total_previsto = item.quantidade * item.custo_unitario_previsto
+                item.total_previsto = quantizar_moeda(item.quantidade * item.custo_unitario_previsto)
                 item.save()
             for removido in formset.deleted_objects:
                 removido.delete()
@@ -827,7 +828,7 @@ class EntradaCompraFormMixin(LoginRequiredMixin, RoleRequiredMixin, TemplateResp
             formset.instance = self.object
             itens = formset.save(commit=False)
             for item in itens:
-                item.total = item.quantidade * item.custo_unitario
+                item.total = quantizar_moeda(item.quantidade * item.custo_unitario)
                 item.save()
             for deleted in formset.deleted_objects:
                 deleted.delete()

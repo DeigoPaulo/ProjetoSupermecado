@@ -7,6 +7,8 @@ from django.db import transaction
 from django.db.models import Q
 from django.utils import timezone
 
+from apps.core_money import quantizar_custo
+
 from apps.auditoria.models import LogAuditoria
 from apps.empresas.models import Filial
 from apps.clientes.escopo import empresa_id_do_usuario
@@ -177,8 +179,8 @@ def ler_xml_nfe(conteudo):
                 **dados_base,
                 **lote_item,
                 "custo_unitario": (
-                    total_lote / lote_item["quantidade"]
-                ).quantize(CENTAVOS, rounding=ROUND_HALF_UP),
+                    quantizar_custo(total_lote / lote_item["quantidade"])
+                ),
                 "total": total_lote,
             })
     if not itens:

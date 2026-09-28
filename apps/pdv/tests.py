@@ -1482,6 +1482,30 @@ class AcessoPdvNuvemTests(TestCase):
         self.assertContains(resposta, "data-pdv-remove-item")
         self.assertContains(resposta, "Selecionado: Arroz operacional (qtd. 2)")
 
+    def test_carrinho_distingue_quantidade_unitaria_de_peso_em_kg(self):
+        categoria = Categoria.objects.create(nome="Açougue operacional")
+        produto = Produto.objects.create(
+            nome="Carne bovina",
+            codigo_barras="7890000000982",
+            categoria=categoria,
+            unidade="KG",
+            produto_pesavel=True,
+            preco_custo=Decimal("10.123456"),
+            preco_venda=Decimal("14.99"),
+            vendido_no_pdv=True,
+        )
+        session = self.client.session
+        session["pdv_cart"] = {str(produto.id): "0.750"}
+        session.save()
+        self.client.force_login(self.operador)
+
+        resposta = self.client.get("/pdv/")
+
+        self.assertContains(resposta, 'data-product-quantity="0.75"')
+        self.assertContains(resposta, "0,750 kg")
+        self.assertContains(resposta, "R$ 14,99/kg")
+        self.assertContains(resposta, "R$ 11,24")
+
     def test_pdv_exibe_status_fiscal_do_terminal_identificado(self):
         terminal = TerminalPdv.objects.create(filial=self.filial, nome="Caixa sem fiscal", emite_documento_fiscal=False)
         self.client.force_login(self.operador)

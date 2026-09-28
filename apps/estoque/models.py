@@ -8,6 +8,8 @@ from django.core.exceptions import ValidationError
 from django.db import models, transaction
 from django.utils import timezone
 
+from apps.core_money import quantizar_custo
+
 
 class TipoMovimentacaoEstoque(models.TextChoices):
     ENTRADA = "ENTRADA", "Entrada"
@@ -157,8 +159,8 @@ class MovimentacaoEstoque(models.Model):
     quantidade = models.DecimalField(max_digits=12, decimal_places=3)
     motivo = models.CharField(max_length=255, blank=True)
     referencia = models.CharField(max_length=120, blank=True)
-    custo_unitario = models.DecimalField(max_digits=10, decimal_places=2, null=True, blank=True)
-    custo_total = models.DecimalField(max_digits=12, decimal_places=2, null=True, blank=True)
+    custo_unitario = models.DecimalField(max_digits=14, decimal_places=6, null=True, blank=True)
+    custo_total = models.DecimalField(max_digits=18, decimal_places=6, null=True, blank=True)
     usuario = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.PROTECT, null=True, blank=True)
     data = models.DateTimeField(auto_now_add=True)
 
@@ -237,7 +239,7 @@ class LoteEstoque(models.Model):
     quantidade_inicial = models.DecimalField(max_digits=12, decimal_places=3)
     quantidade_acrescimos_auditados = models.DecimalField(max_digits=12, decimal_places=3, default=0)
     quantidade_atual = models.DecimalField(max_digits=12, decimal_places=3)
-    custo_unitario = models.DecimalField(max_digits=10, decimal_places=2)
+    custo_unitario = models.DecimalField(max_digits=14, decimal_places=6)
     origem_referencia = models.CharField(max_length=120, blank=True)
     tratamento_validade_status = models.CharField(max_length=30, choices=StatusTratamentoValidade.choices, default=StatusTratamentoValidade.NAO_INICIADO)
     tratamento_validade_observacao = models.CharField(max_length=255, blank=True)
@@ -317,7 +319,7 @@ class ConferenciaFisicaValidadeLote(models.Model):
     quantidade_sistema_snapshot = models.DecimalField(max_digits=12, decimal_places=3)
     quantidade_observada = models.DecimalField(max_digits=12, decimal_places=3)
     diferenca_snapshot = models.DecimalField(max_digits=12, decimal_places=3)
-    custo_unitario_snapshot = models.DecimalField(max_digits=10, decimal_places=2)
+    custo_unitario_snapshot = models.DecimalField(max_digits=14, decimal_places=6)
     tratamento_status_snapshot = models.CharField(max_length=30, choices=StatusTratamentoValidade.choices)
     observacao = models.CharField(max_length=255, blank=True)
     conferido_por = models.ForeignKey(
@@ -350,7 +352,7 @@ class MovimentacaoLoteEstoque(models.Model):
     movimentacao = models.ForeignKey(MovimentacaoEstoque, on_delete=models.CASCADE, related_name="alocacoes_lote")
     lote = models.ForeignKey(LoteEstoque, on_delete=models.PROTECT, related_name="movimentacoes_lote")
     quantidade = models.DecimalField(max_digits=12, decimal_places=3)
-    custo_unitario = models.DecimalField(max_digits=10, decimal_places=2)
+    custo_unitario = models.DecimalField(max_digits=14, decimal_places=6)
     lote_codigo_snapshot = models.CharField(max_length=60, blank=True)
     lote_validade_snapshot = models.DateField(null=True, blank=True)
     tratamento_status_snapshot = models.CharField(
@@ -366,11 +368,18 @@ class MovimentacaoLoteEstoque(models.Model):
         *, movimentacao_id, lote_id, quantidade, custo_unitario, lote_codigo,
         lote_validade, tratamento_status,
     ):
+        custo_decimal = Decimal(custo_unitario)
+        custo_centavos = custo_decimal.quantize(Decimal("0.01"))
+        custo_serializado = (
+            format(custo_decimal, ".2f")
+            if custo_decimal == custo_centavos
+            else format(custo_decimal, ".6f")
+        )
         payload = {
             "movimentacao_id": movimentacao_id,
             "lote_id": lote_id,
             "quantidade": str(quantidade),
-            "custo_unitario": str(custo_unitario),
+            "custo_unitario": custo_serializado,
             "lote_codigo": lote_codigo,
             "lote_validade": lote_validade.isoformat() if lote_validade else None,
             "tratamento_status": tratamento_status,
@@ -721,7 +730,7 @@ class PerdaEstoque(models.Model):
     tipo = models.CharField(max_length=40, choices=TipoPerdaEstoque.choices)
     quantidade = models.DecimalField(max_digits=12, decimal_places=3)
     motivo = models.CharField(max_length=255)
-    custo_unitario_no_momento = models.DecimalField(max_digits=10, decimal_places=2)
+    custo_unitario_no_momento = models.DecimalField(max_digits=14, decimal_places=6)
     preco_venda_no_momento = models.DecimalField(max_digits=10, decimal_places=2)
     valor_custo_estimado = models.DecimalField(max_digits=12, decimal_places=2)
     valor_venda_estimado = models.DecimalField(max_digits=12, decimal_places=2)
@@ -863,7 +872,7 @@ class ProducaoComposicaoProduto(models.Model):
     filial = models.ForeignKey("empresas.Filial", on_delete=models.PROTECT, related_name="producoes_composicao")
     produto_final = models.ForeignKey("produtos.Produto", on_delete=models.PROTECT, related_name="producoes_composicao")
     quantidade_final = models.DecimalField(max_digits=12, decimal_places=3)
-    custo_total = models.DecimalField(max_digits=12, decimal_places=2)
+    custo_total = models.DecimalField(max_digits=18, decimal_places=6)
     status = models.CharField(max_length=20, choices=StatusProducaoComposicao.choices, default=StatusProducaoComposicao.CONFIRMADO)
     usuario = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.PROTECT, related_name="producoes_composicao")
     motivo = models.CharField(max_length=255)
@@ -890,8 +899,8 @@ class ItemProducaoComposicaoProduto(models.Model):
     producao = models.ForeignKey(ProducaoComposicaoProduto, on_delete=models.CASCADE, related_name="itens")
     produto_componente = models.ForeignKey("produtos.Produto", on_delete=models.PROTECT, related_name="itens_producao_composicao")
     quantidade_consumida = models.DecimalField(max_digits=12, decimal_places=3)
-    custo_unitario = models.DecimalField(max_digits=10, decimal_places=2)
-    custo_total = models.DecimalField(max_digits=12, decimal_places=2)
+    custo_unitario = models.DecimalField(max_digits=14, decimal_places=6)
+    custo_total = models.DecimalField(max_digits=18, decimal_places=6)
 
     class Meta:
         ordering = ["produto_componente__nome"]
@@ -1032,7 +1041,7 @@ class DesmembramentoProduto(models.Model):
     filial = models.ForeignKey("empresas.Filial", on_delete=models.PROTECT, related_name="desmembramentos_produto")
     produto_origem = models.ForeignKey("produtos.Produto", on_delete=models.PROTECT, related_name="desmembramentos_origem")
     quantidade_origem = models.DecimalField(max_digits=12, decimal_places=3)
-    custo_total_origem = models.DecimalField(max_digits=12, decimal_places=2)
+    custo_total_origem = models.DecimalField(max_digits=18, decimal_places=6)
     tipo = models.CharField(max_length=30, choices=TipoDesmembramentoProduto.choices, default=TipoDesmembramentoProduto.SIMPLES)
     metodo_custo = models.CharField(max_length=20, choices=MetodoCustoDesmembramento.choices, default=MetodoCustoDesmembramento.QUANTIDADE)
     status = models.CharField(max_length=20, choices=StatusDesmembramentoProduto.choices, default=StatusDesmembramentoProduto.CONFIRMADO)
@@ -1054,8 +1063,8 @@ class ItemDesmembramentoProduto(models.Model):
     produto_destino = models.ForeignKey("produtos.Produto", on_delete=models.PROTECT, related_name="desmembramentos_destino")
     quantidade_gerada = models.DecimalField(max_digits=12, decimal_places=3)
     unidade = models.CharField(max_length=3)
-    custo_unitario_calculado = models.DecimalField(max_digits=10, decimal_places=2)
-    custo_total = models.DecimalField(max_digits=12, decimal_places=2)
+    custo_unitario_calculado = models.DecimalField(max_digits=14, decimal_places=6)
+    custo_total = models.DecimalField(max_digits=18, decimal_places=6)
     percentual_rendimento = models.DecimalField(max_digits=7, decimal_places=2, default=0)
     percentual_rendimento_esperado = models.DecimalField(max_digits=7, decimal_places=2, null=True, blank=True)
     lote = models.CharField(max_length=60, blank=True)
@@ -1144,7 +1153,7 @@ def criar_lote_movimentacao(
         return None
     if custo_unitario is None:
         raise ValidationError("Informe o custo unitario para uma entrada com lote.")
-    custo_unitario = Decimal(custo_unitario).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+    custo_unitario = quantizar_custo(custo_unitario)
     lote = LoteEstoque(
         produto=movimentacao.produto,
         filial=movimentacao.filial,

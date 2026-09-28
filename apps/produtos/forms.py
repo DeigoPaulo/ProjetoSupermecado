@@ -6,7 +6,7 @@ from django.forms.models import BaseInlineFormSet
 
 from apps.clientes.escopo import empresa_id_do_usuario
 from apps.configuracoes.models import ModeloEtiqueta
-from apps.core_forms import QuantidadeNumberInput, aplicar_select2
+from apps.core_forms import PesoNumberInput, QuantidadeNumberInput, aplicar_select2
 from apps.fiscal.cest import validar_cest
 from apps.fornecedores.escopo import fornecedores_para_usuario
 
@@ -89,8 +89,8 @@ class ProdutoForm(forms.ModelForm):
         widgets = {
             "imagem": forms.ClearableFileInput(attrs={"accept": ".png,.jpg,.jpeg,image/png,image/jpeg"}),
             "fator_conversao_compra": QuantidadeNumberInput(),
-            "peso_liquido": QuantidadeNumberInput(),
-            "peso_bruto": QuantidadeNumberInput(),
+            "peso_liquido": PesoNumberInput(),
+            "peso_bruto": PesoNumberInput(),
             "estoque_minimo": QuantidadeNumberInput(),
         }
 
@@ -313,7 +313,7 @@ class ConfiguracaoBalancaProdutoForm(forms.ModelForm):
         fields = ["setor", "plu", "tara_kg", "validade_dias", "is_active"]
         widgets = {
             "plu": forms.NumberInput(attrs={"min": 1, "max": 999999, "inputmode": "numeric"}),
-            "tara_kg": forms.NumberInput(attrs={"min": 0, "step": "0.001", "inputmode": "decimal"}),
+            "tara_kg": PesoNumberInput(attrs={"min": 0}),
             "validade_dias": forms.NumberInput(attrs={"min": 0, "max": 3650, "inputmode": "numeric"}),
         }
 

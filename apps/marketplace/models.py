@@ -5,6 +5,7 @@ from django.core.exceptions import ValidationError
 from django.db import models
 from django.contrib.auth.hashers import check_password, make_password
 
+from apps.core_money import quantizar_moeda
 from apps.vendas.models import TipoDocumentoConsumidor
 from apps.clientes.models import IndicadorInscricaoEstadual
 
@@ -293,7 +294,7 @@ class ItemPedidoOnline(models.Model):
             raise ValidationError({"quantidade_separada": "A quantidade separada deve ficar entre zero e a quantidade pedida."})
 
     def save(self, *args, **kwargs):
-        self.total = self.quantidade * self.preco_unitario
+        self.total = quantizar_moeda(self.quantidade * self.preco_unitario)
         super().save(*args, **kwargs)
 
     def __str__(self):

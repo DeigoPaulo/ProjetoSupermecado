@@ -313,6 +313,22 @@ class ProdutoViewsTests(TestCase):
         self.assertContains(invalido, 'href="#id_nome"')
         self.assertContains(invalido, 'data-form-error-summary')
 
+    def test_custo_interno_e_pesos_preservam_precisoes_distintas(self):
+        self.produto.preco_custo = Decimal("99.999999")
+        self.produto.peso_liquido = Decimal("1.000")
+        self.produto.peso_bruto = Decimal("1.050")
+        self.produto.fator_conversao_compra = Decimal("12.000")
+        self.produto.save(
+            update_fields=["preco_custo", "peso_liquido", "peso_bruto", "fator_conversao_compra", "updated_at"]
+        )
+        self.produto.refresh_from_db()
+        form = ProdutoForm(instance=self.produto)
+
+        self.assertEqual(self.produto.preco_custo, Decimal("99.999999"))
+        self.assertIn('value="1.000"', str(form["peso_liquido"]))
+        self.assertIn('value="1.050"', str(form["peso_bruto"]))
+        self.assertIn('value="12"', str(form["fator_conversao_compra"]))
+
     def test_form_produto_exibe_nutricao_e_similares_como_opcionais(self):
         response = self.client.get(f"/produtos/{self.produto.pk}/editar/")
 

@@ -7,6 +7,7 @@ from django.db import transaction
 from django.utils import timezone
 
 from apps.auditoria.models import LogAuditoria
+from apps.core_money import quantizar_moeda
 from apps.estoque.models import Estoque, TipoMovimentacaoEstoque, movimentar_estoque
 
 from .models import (
@@ -152,7 +153,7 @@ def gerar_pedido_da_resposta(resposta, *, usuario, ip=None):
         itens_pedido = []
         for item in itens_cotacao:
             custo = precos[item.id].custo_unitario
-            item_total = item.quantidade * custo
+            item_total = quantizar_moeda(item.quantidade * custo)
             total += item_total
             itens_pedido.append(
                 ItemPedidoCompra(
@@ -204,7 +205,7 @@ def enviar_pedido_compra(pedido, *, usuario, ip=None):
                 raise ValidationError("Quantidade deve ser maior que zero.")
             if item.custo_unitario_previsto < 0:
                 raise ValidationError("Custo previsto não pode ser negativo.")
-            item.total_previsto = item.quantidade * item.custo_unitario_previsto
+            item.total_previsto = quantizar_moeda(item.quantidade * item.custo_unitario_previsto)
             item.save(update_fields=["total_previsto"])
             total += item.total_previsto
 
@@ -285,7 +286,7 @@ def converter_pedido_em_entrada(pedido, *, usuario, ip=None):
                     produto=item.produto,
                     quantidade=item.quantidade,
                     custo_unitario=item.custo_unitario_previsto,
-                    total=item.quantidade * item.custo_unitario_previsto,
+                    total=quantizar_moeda(item.quantidade * item.custo_unitario_previsto),
                     atualizar_preco_custo=True,
                 )
                 for item in itens_pedido
@@ -492,7 +493,7 @@ def finalizar_entrada_compra(entrada, *, supervisor=None, ip=None):
             if item.custo_unitario < 0:
                 raise ValidationError("Custo unitário não pode ser negativo.")
 
-            item.total = item.quantidade * item.custo_unitario
+            item.total = quantizar_moeda(item.quantidade * item.custo_unitario)
             item.save(update_fields=["total"])
             total_produtos += item.total
 

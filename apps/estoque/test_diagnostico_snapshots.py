@@ -46,7 +46,12 @@ class DiagnosticoCoberturaSnapshotsLoteTests(TestCase):
             preco_venda=Decimal("5.00"),
         )
 
-    def criar_alocacao(self, codigo, status=StatusTratamentoValidade.NAO_INICIADO):
+    def criar_alocacao(
+        self,
+        codigo,
+        status=StatusTratamentoValidade.NAO_INICIADO,
+        custo_unitario=Decimal("2.00"),
+    ):
         movimento = MovimentacaoEstoque.objects.create(
             produto=self.produto,
             filial=self.filial,
@@ -61,14 +66,14 @@ class DiagnosticoCoberturaSnapshotsLoteTests(TestCase):
             validade=timezone.localdate() + timedelta(days=10),
             quantidade_inicial=Decimal("1.000"),
             quantidade_atual=Decimal("0.000"),
-            custo_unitario=Decimal("2.00"),
+            custo_unitario=custo_unitario,
             tratamento_validade_status=status,
         )
         return MovimentacaoLoteEstoque.objects.create(
             movimentacao=movimento,
             lote=lote,
             quantidade=Decimal("1.000"),
-            custo_unitario=Decimal("2.00"),
+            custo_unitario=custo_unitario,
         )
 
     def test_classifica_integras_legadas_e_inconsistentes_por_filial(self):
@@ -158,6 +163,19 @@ class DiagnosticoCoberturaSnapshotsLoteTests(TestCase):
         prontidao = diagnostico_prontidao_piloto_real(filial_id=self.filial.pk)
         self.assertEqual(prontidao["estado"], "BLOQUEADA_LEGADO")
         self.assertFalse(prontidao["pronta_para_aceite"])
+
+    def test_snapshot_preserva_hash_legado_e_custo_com_seis_casas(self):
+        legado = self.criar_alocacao("CUSTO-CENTAVOS")
+        preciso = self.criar_alocacao(
+            "CUSTO-PRECISO", custo_unitario=Decimal("2.123456")
+        )
+
+        legado.refresh_from_db()
+        preciso.refresh_from_db()
+        self.assertTrue(legado.snapshot_integro)
+        self.assertTrue(preciso.snapshot_integro)
+        self.assertEqual(legado.custo_unitario, Decimal("2.000000"))
+        self.assertEqual(preciso.custo_unitario, Decimal("2.123456"))
 
     def test_previa_sem_base_lista_impedimentos_sem_selecionar_ids(self):
         previa = previsualizar_candidatos_piloto(filial_id=self.filial.pk)

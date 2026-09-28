@@ -165,7 +165,7 @@ class Produto(models.Model):
     peso_liquido = models.DecimalField("Peso líquido (kg)", max_digits=12, decimal_places=3, null=True, blank=True)
     peso_bruto = models.DecimalField("Peso bruto (kg)", max_digits=12, decimal_places=3, null=True, blank=True)
     produto_pesavel = models.BooleanField(default=False)
-    preco_custo = models.DecimalField(max_digits=10, decimal_places=2, default=0)
+    preco_custo = models.DecimalField(max_digits=14, decimal_places=6, default=0)
     margem_desejada_percentual = models.DecimalField(
         "Margem desejada (%)",
         max_digits=5,
@@ -430,7 +430,7 @@ class ProdutoFornecedor(models.Model):
         "fornecedores.Fornecedor", on_delete=models.PROTECT, related_name="produtos_vinculados"
     )
     codigo_no_fornecedor = models.CharField("Código no fornecedor", max_length=80, blank=True)
-    ultimo_custo = models.DecimalField("Último custo cotado", max_digits=10, decimal_places=2, null=True, blank=True)
+    ultimo_custo = models.DecimalField("Último custo cotado", max_digits=14, decimal_places=6, null=True, blank=True)
     principal = models.BooleanField("Fornecedor principal", default=False)
     is_active = models.BooleanField(default=True)
     created_at = models.DateTimeField(auto_now_add=True)

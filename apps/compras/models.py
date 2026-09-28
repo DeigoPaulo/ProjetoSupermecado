@@ -117,7 +117,7 @@ class PrecoRespostaCotacao(models.Model):
     resposta = models.ForeignKey(RespostaCotacaoFornecedor, on_delete=models.CASCADE, related_name="precos")
     item = models.ForeignKey(ItemCotacaoCompra, on_delete=models.CASCADE, related_name="precos_fornecedores")
     disponivel = models.BooleanField(default=True)
-    custo_unitario = models.DecimalField(max_digits=10, decimal_places=2, null=True, blank=True)
+    custo_unitario = models.DecimalField(max_digits=14, decimal_places=6, null=True, blank=True)
 
     class Meta:
         ordering = ["item_id"]
@@ -175,8 +175,8 @@ class ItemPedidoCompra(models.Model):
         validators=[MinValueValidator(Decimal("0.001"))],
     )
     custo_unitario_previsto = models.DecimalField(
-        max_digits=10,
-        decimal_places=2,
+        max_digits=14,
+        decimal_places=6,
         validators=[MinValueValidator(0)],
     )
     total_previsto = models.DecimalField(max_digits=12, decimal_places=2, default=0)
@@ -245,7 +245,7 @@ class ItemEntradaCompra(models.Model):
     entrada = models.ForeignKey(EntradaCompra, on_delete=models.CASCADE, related_name="itens")
     produto = models.ForeignKey("produtos.Produto", on_delete=models.PROTECT, related_name="itens_compra")
     quantidade = models.DecimalField(max_digits=12, decimal_places=3)
-    custo_unitario = models.DecimalField(max_digits=10, decimal_places=2)
+    custo_unitario = models.DecimalField(max_digits=14, decimal_places=6)
     total = models.DecimalField(max_digits=12, decimal_places=2)
     atualizar_preco_custo = models.BooleanField(default=True)
     codigo_lote = models.CharField(max_length=60, blank=True)

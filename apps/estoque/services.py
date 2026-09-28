@@ -10,6 +10,7 @@ from django.db.models import F, Q, Sum
 from django.utils import timezone
 
 from apps.auditoria.models import LogAuditoria
+from apps.core_money import quantizar_custo, quantizar_moeda
 
 from .models import (
     ComposicaoProduto,
@@ -1248,8 +1249,8 @@ def registrar_perda_lote_validade(*, lote, quantidade, motivo, usuario, supervis
         tipo=TipoPerdaEstoque.VENCIMENTO, quantidade=quantidade, motivo=motivo,
         custo_unitario_no_momento=lote.custo_unitario,
         preco_venda_no_momento=lote.produto.preco_venda,
-        valor_custo_estimado=lote.custo_unitario * quantidade,
-        valor_venda_estimado=lote.produto.preco_venda * quantidade,
+        valor_custo_estimado=quantizar_moeda(lote.custo_unitario * quantidade),
+        valor_venda_estimado=quantizar_moeda(lote.produto.preco_venda * quantidade),
     )
     movimentar_estoque(
         produto=lote.produto, filial=lote.filial, tipo=TipoMovimentacaoEstoque.PERDA,
@@ -1283,8 +1284,8 @@ def registrar_perda_estoque(*, produto, filial, usuario, tipo, quantidade, motiv
         motivo=motivo,
         custo_unitario_no_momento=custo_unitario,
         preco_venda_no_momento=preco_venda,
-        valor_custo_estimado=custo_unitario * quantidade,
-        valor_venda_estimado=preco_venda * quantidade,
+        valor_custo_estimado=quantizar_moeda(custo_unitario * quantidade),
+        valor_venda_estimado=quantizar_moeda(preco_venda * quantidade),
     )
     movimentar_estoque(
         produto=produto,
@@ -1365,8 +1366,8 @@ def confirmar_producao_composicao(
         )
         if estoque_componente.quantidade_disponivel < quantidade_consumida:
             raise ValidationError(f"Estoque insuficiente do componente {item_receita.produto_componente}.")
-        custo_unitario = Decimal(item_receita.produto_componente.preco_custo)
-        custo_item = custo_unitario * quantidade_consumida
+        custo_unitario = quantizar_custo(item_receita.produto_componente.preco_custo)
+        custo_item = quantizar_custo(custo_unitario * quantidade_consumida)
         custo_total += custo_item
         consumos.append((item_receita.produto_componente, quantidade_consumida, custo_unitario, custo_item, estoque_componente))
 
@@ -1420,7 +1421,7 @@ def confirmar_producao_composicao(
         quantidade=quantidade_final,
         motivo=f"Composicao {producao.id}: entrada do produto final",
         referencia=f"composicao:{producao.id}:final",
-        custo_unitario=custo_total / quantidade_final,
+        custo_unitario=quantizar_custo(custo_total / quantidade_final),
         custo_total=custo_total,
         usuario=usuario,
     )
@@ -1429,7 +1430,7 @@ def confirmar_producao_composicao(
             movimentacao=movimento_final,
             codigo_lote=codigo_lote,
             quantidade=quantidade_final,
-            custo_unitario=custo_total / quantidade_final,
+            custo_unitario=quantizar_custo(custo_total / quantidade_final),
             fabricacao=fabricacao,
             validade=validade,
         )
@@ -1656,7 +1657,7 @@ def confirmar_desmembramento_multidestino(
         raise ValidationError("Estoque insuficiente para desmembrar o produto origem.")
 
     custo_origem = Decimal(produto_origem.preco_custo)
-    custo_total_origem = custo_origem * quantidade_origem
+    custo_total_origem = quantizar_custo(custo_origem * quantidade_origem)
     quantidade_total_destinos = sum(destino["quantidade"] for destino in destinos)
     if quantidade_total_destinos <= 0:
         raise ValidationError("As quantidades do desmembramento devem ser maiores que zero.")
@@ -1675,7 +1676,7 @@ def confirmar_desmembramento_multidestino(
             f"Conservação de massa inválida: {quantidade_origem:.3f} KG de origem devem corresponder "
             f"aos {quantidade_total_destinos:.3f} KG de destinos, incluindo perdas. {detalhe}"
         )
-    custo_unitario_base = custo_total_origem / quantidade_total_destinos
+    custo_unitario_base = quantizar_custo(custo_total_origem / quantidade_total_destinos)
 
     desmembramento = DesmembramentoProduto.objects.create(
         empresa=filial.empresa,
@@ -1712,7 +1713,7 @@ def confirmar_desmembramento_multidestino(
         produto_destino = destino["produto"]
         quantidade_destino = destino["quantidade"]
         tipo_saida = destino.get("tipo_saida") or TipoSaidaDesmembramento.VENDAVEL
-        custo_total_item = custo_unitario_base * quantidade_destino
+        custo_total_item = quantizar_custo(custo_unitario_base * quantidade_destino)
         percentual_rendimento = ((quantidade_destino / quantidade_origem) * Decimal("100")).quantize(Decimal("0.01"))
         item = ItemDesmembramentoProduto.objects.create(
             desmembramento=desmembramento,
@@ -1739,8 +1740,8 @@ def confirmar_desmembramento_multidestino(
                 motivo=f"Desmembramento {desmembramento.id}: {motivo}",
                 custo_unitario_no_momento=custo_unitario_base,
                 preco_venda_no_momento=preco_venda_destino,
-                valor_custo_estimado=custo_total_item,
-                valor_venda_estimado=preco_venda_destino * quantidade_destino,
+                valor_custo_estimado=quantizar_moeda(custo_total_item),
+                valor_venda_estimado=quantizar_moeda(preco_venda_destino * quantidade_destino),
             )
             MovimentacaoEstoque.objects.create(
                 produto=produto_destino,

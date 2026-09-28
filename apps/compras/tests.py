@@ -167,6 +167,42 @@ class ComprasFinanceiroTests(TestCase):
         self.assertEqual(estoque.custo_medio, Decimal("2.250000"))
         self.assertEqual(item.custo_unitario, Decimal("2.50"))
         self.assertEqual(self.produto.preco_custo, Decimal("2.50"))
+
+    def test_compra_em_unidade_base_preserva_custo_fracionario_sem_converter_duas_vezes(self):
+        self.produto.unidade = "UN"
+        self.produto.unidade_compra = "CX"
+        self.produto.fator_conversao_compra = Decimal("12.000")
+        self.produto.save(update_fields=["unidade", "unidade_compra", "fator_conversao_compra", "updated_at"])
+        entrada = EntradaCompra.objects.create(
+            fornecedor=self.fornecedor,
+            filial=self.filial,
+            usuario=self.usuario,
+            numero_documento="CX-12",
+            gerar_conta_financeira=False,
+        )
+        ItemEntradaCompra.objects.create(
+            entrada=entrada,
+            produto=self.produto,
+            quantidade=Decimal("12.000"),
+            custo_unitario=Decimal("0.833333"),
+            total=Decimal("10.00"),
+        )
+
+        finalizar_entrada_compra(entrada)
+
+        item = entrada.itens.get()
+        estoque = Estoque.objects.get(produto=self.produto, filial=self.filial)
+        self.produto.refresh_from_db()
+        self.assertEqual(item.quantidade, Decimal("12.000"))
+        self.assertEqual(item.custo_unitario, Decimal("0.833333"))
+        self.assertEqual(item.total, Decimal("10.00"))
+        self.assertEqual(estoque.quantidade_atual, Decimal("12.000"))
+        self.assertEqual(estoque.custo_medio, Decimal("0.833333"))
+        self.assertEqual(self.produto.preco_custo, Decimal("0.833333"))
+        self.produto.preco_custo = Decimal("99.999999")
+        self.produto.save(update_fields=["preco_custo", "updated_at"])
+        self.produto.refresh_from_db()
+        self.assertEqual(self.produto.preco_custo, Decimal("99.999999"))
     def test_cancelar_compra_finalizada_reverte_estoque_e_cancela_conta_aberta(self):
         entrada = EntradaCompra.objects.create(
             fornecedor=self.fornecedor,

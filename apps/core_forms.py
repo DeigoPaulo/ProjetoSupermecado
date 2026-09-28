@@ -36,6 +36,25 @@ class QuantidadeNumberInput(forms.NumberInput):
         return super().format_value(value)
 
 
+class PesoNumberInput(forms.NumberInput):
+    """Preserva três casas em medições explícitas de peso."""
+
+    def __init__(self, attrs=None):
+        attrs = {"step": "0.001", "inputmode": "decimal", **(attrs or {})}
+        super().__init__(attrs=attrs)
+
+    def format_value(self, value):
+        if isinstance(value, (Decimal, int)) and not isinstance(value, bool):
+            try:
+                numero = value if isinstance(value, Decimal) else Decimal(str(value))
+            except (InvalidOperation, TypeError, ValueError):
+                pass
+            else:
+                if numero.is_finite():
+                    return format(numero, ".3f")
+        return super().format_value(value)
+
+
 def aplicar_select2(form, campos, placeholder="Pesquise ou selecione", ajax_urls=None):
     ajax_urls = ajax_urls or {}
     for campo in campos:
