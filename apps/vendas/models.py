@@ -122,6 +122,15 @@ class Venda(models.Model):
     desconto = models.DecimalField(max_digits=12, decimal_places=2, default=0)
     total_liquido = models.DecimalField(max_digits=12, decimal_places=2, default=0)
     status = models.CharField(max_length=20, choices=StatusVenda.choices, default=StatusVenda.ABERTA)
+    cancelada_em = models.DateTimeField(null=True, blank=True)
+    cancelada_por = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.PROTECT,
+        null=True,
+        blank=True,
+        related_name="vendas_canceladas",
+    )
+    motivo_cancelamento = models.CharField(max_length=255, blank=True)
     data = models.DateTimeField(auto_now_add=True)
 
     class Meta:

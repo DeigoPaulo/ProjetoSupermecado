@@ -9,6 +9,7 @@
     <p>Receitas, despesas e resultado realizados pelo livro financeiro.</p>
   </div>
   <div class="actions">
+    <a class="primary-button" href="{% url 'financeiro:dre' %}?data_inicio={{ data_inicio|date:'Y-m-d' }}&amp;data_fim={{ data_fim|date:'Y-m-d' }}{% if filial_id %}&amp;filial={{ filial_id }}{% endif %}"><i class="fa-solid fa-chart-line"></i> DRE gerencial 2.0</a>
     <a class="secondary-button" href="{% url 'financeiro:resultado_csv' %}?data_inicio={{ data_inicio|date:'Y-m-d' }}&amp;data_fim={{ data_fim|date:'Y-m-d' }}{% if filial_id %}&amp;filial={{ filial_id }}{% endif %}"><i class="fa-solid fa-file-csv"></i> Excel/CSV</a>
     <a class="secondary-button" href="{% url 'financeiro:resultado_pacote_contabil_json' %}?data_inicio={{ data_inicio|date:'Y-m-d' }}&amp;data_fim={{ data_fim|date:'Y-m-d' }}{% if filial_id %}&amp;filial={{ filial_id }}{% endif %}"><i class="fa-solid fa-code"></i> Pacote contábil JSON</a>
     <a class="secondary-button" href="{% url 'financeiro:diagnostico_contabil_json' %}"><i class="fa-solid fa-stethoscope"></i> Diagnóstico contábil</a>

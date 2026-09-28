@@ -46,6 +46,7 @@ from .models import AceiteAmostraContabil, CategoriaFinanceira, CentroCusto, Con
 from .services import baixar_conta, cancelar_conta, conciliar_lancamento, estornar_lancamento, realizar_transferencia
 from .services_conciliacao import conciliar_item_extrato, importar_extrato
 from .services_recebiveis import candidatos_recebivel_item, conciliar_recebivel_com_item, sincronizar_recebiveis
+from .services_dre import calcular_dre_gerencial, serializar_dre_json
 from .reconciliacao_contabil import gerar_reconciliacao_operacional
 from .contrato_contabil import registrar_contrato_contabil, resumo_contrato_contabil
 from .amostra_contabil import registrar_aceite_amostra, validar_amostra_contabil
@@ -85,6 +86,24 @@ def _escopo_filiais_financeiro(request):
     else:
         filial_id = filiais.values_list("id", flat=True).first()
     return filiais, filial_id, permite_consolidado, empresa_id
+
+
+def _escopo_dre(request):
+    filiais, filial_id, permite_consolidado, empresa_id = _escopo_filiais_financeiro(request)
+    empresas = Empresa.objects.none()
+    if request.user.is_superuser:
+        empresas = Empresa.objects.filter(filiais__in=filiais).distinct().order_by("nome_fantasia")
+        if filial_id:
+            empresa_id = filiais.filter(pk=filial_id).values_list("empresa_id", flat=True).first()
+        else:
+            empresa_parametro = (request.GET.get("empresa") or "").strip()
+            if empresa_parametro and empresa_parametro.isdigit() and empresas.filter(pk=empresa_parametro).exists():
+                empresa_id = int(empresa_parametro)
+            else:
+                empresa_id = empresas.values_list("pk", flat=True).first()
+        filiais = filiais.filter(empresa_id=empresa_id)
+    filial_ids = [filial_id] if filial_id else list(filiais.values_list("pk", flat=True))
+    return filiais, filial_id, permite_consolidado, empresa_id, empresas, filial_ids
 
 def _queryset_no_escopo_financeiro(request, queryset, campo_filial="filial"):
     filiais, _filial_id, _permite_consolidado, _empresa_id = _escopo_filiais_financeiro(request)
@@ -841,6 +860,71 @@ def resultado_financeiro(request):
         "exportacoes_contabeis": exportacoes[:10],
         **resultado,
     })
+
+
+@login_required
+@role_required(*RELATORIOS)
+def dre_gerencial(request):
+    data_inicio, data_fim = _periodo_from_request(request)
+    filiais, filial_id, permite_consolidado, empresa_id, empresas, filial_ids = _escopo_dre(request)
+    resultado = calcular_dre_gerencial(
+        data_inicio=data_inicio, data_fim=data_fim, filial_ids=filial_ids
+    )
+    return render(
+        request,
+        "financeiro/dre.html",
+        {
+            "data_inicio": data_inicio,
+            "data_fim": data_fim,
+            "filiais": filiais,
+            "filial_id": filial_id,
+            "permite_consolidado": permite_consolidado,
+            "empresa_id": empresa_id,
+            "empresas": empresas,
+            "dre": resultado,
+        },
+    )
+
+
+@login_required
+@role_required(*RELATORIOS)
+@require_GET
+def dre_gerencial_json(request):
+    data_inicio, data_fim = _periodo_from_request(request)
+    _filiais, _filial_id, _permite, _empresa_id, _empresas, filial_ids = _escopo_dre(request)
+    resultado = calcular_dre_gerencial(
+        data_inicio=data_inicio, data_fim=data_fim, filial_ids=filial_ids
+    )
+    return JsonResponse(serializar_dre_json(resultado))
+
+
+@login_required
+@role_required(*RELATORIOS)
+@require_GET
+def dre_gerencial_csv(request):
+    data_inicio, data_fim = _periodo_from_request(request)
+    _filiais, _filial_id, _permite, _empresa_id, _empresas, filial_ids = _escopo_dre(request)
+    resultado = calcular_dre_gerencial(
+        data_inicio=data_inicio, data_fim=data_fim, filial_ids=filial_ids
+    )
+    response = HttpResponse(content_type="text/csv; charset=utf-8")
+    response["Content-Disposition"] = f'attachment; filename="dre_gerencial_{data_inicio}_{data_fim}.csv"'
+    response.write("\ufeff")
+    writer = csv.writer(response, delimiter=";")
+    writer.writerow(["Contrato", resultado["contrato"]])
+    writer.writerow(["Período", f"{data_inicio:%d/%m/%Y} a {data_fim:%d/%m/%Y}"])
+    writer.writerow([])
+    writer.writerow(["Linha", "Natureza", "Valor", "Cobertura", "Observação"])
+    for linha in resultado["linhas"]:
+        valor = "Não apurado" if linha["valor"] is None else f"{linha['valor']:.2f}".replace(".", ",")
+        writer.writerow(
+            [linha["rotulo"], linha["natureza"], valor, "Completa" if linha["completo"] else "Incompleta", linha["observacao"]]
+        )
+    writer.writerow([])
+    writer.writerow(["Cobertura CMV", f"{resultado['cmv']['cobertura_cmv_percentual']:.2f}%".replace(".", ",")])
+    writer.writerow(["Estado da reconciliação", resultado["reconciliacao_cmv"]["estado"]])
+    writer.writerow(["Saídas não classificadas", f"{resultado['saidas_nao_classificadas']['valor']:.2f}".replace(".", ",")])
+    return response
 
 @login_required
 @role_required(*RELATORIOS)

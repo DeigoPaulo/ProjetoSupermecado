@@ -2907,11 +2907,13 @@ Esta frente registra as lacunas financeiras, contábeis e fiscais identificadas 
 
 ### DRE 2.0 e CMV
 
-- [ ] Evoluir a DRE gerencial para separar explicitamente receita bruta, cancelamentos, devoluções, descontos, receita líquida, CMV, lucro bruto, despesas operacionais, perdas, taxas financeiras, resultado operacional, resultado antes dos tributos e resultado líquido.
-- [ ] Formalizar o cálculo de CMV por período com base no custo congelado no momento da venda e reconciliação com o fechamento contábil de estoque.
-- [ ] Validar devoluções, cancelamentos, perdas e ajustes para que não distorçam CMV, receita líquida ou margem.
-- [ ] Garantir que taxas de cartão, PIX, antecipações, chargebacks e divergências de adquirentes tenham classificação financeira/contábil coerente e impacto correto na DRE.
-- [ ] Criar testes de reconciliação entre vendas, CMV, estoque final, perdas e resultado gerencial.
+- [x] Evoluir a DRE gerencial para separar explicitamente receita bruta, cancelamentos, devoluções, descontos, receita líquida, CMV, lucro bruto, despesas operacionais, perdas, taxas financeiras, resultado operacional, resultado antes dos tributos e resultado líquido.
+- [x] Formalizar o cálculo de CMV por período com base no custo congelado no momento da venda, reconciliação principal com movimentos de estoque e fechamentos contábeis como evidência complementar.
+- [x] Validar devoluções, cancelamentos, perdas e ajustes para que não distorçam CMV, receita líquida ou margem.
+- [x] Garantir que taxas realizadas, antecipações deriváveis, chargebacks e divergências de adquirentes tenham classificação gerencial explícita e impacto rastreável na DRE.
+- [x] Criar testes de reconciliação entre vendas, CMV, movimentos e fechamentos de estoque, perdas e resultado gerencial.
+
+Concluído estruturalmente no Ciclo 186. Permanecem fora deste marco o fechamento mensal formal, o bloqueio de períodos e a reconciliação contábil integral da equação de inventário.
 
 Critério de aceite:
 

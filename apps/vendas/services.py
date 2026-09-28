@@ -658,7 +658,10 @@ def cancelar_venda(*, venda, usuario, motivo, supervisor=None, ip=None):
         )
 
     venda.status = StatusVenda.CANCELADA
-    venda.save(update_fields=["status"])
+    venda.cancelada_em = timezone.now()
+    venda.cancelada_por = supervisor or usuario
+    venda.motivo_cancelamento = motivo
+    venda.save(update_fields=["status", "cancelada_em", "cancelada_por", "motivo_cancelamento"])
     _solicitar_estorno_pagamentos(venda, motivo=motivo)
     _cancelar_contas_receber_venda(venda, usuario=usuario, motivo=motivo, ip=ip)
 

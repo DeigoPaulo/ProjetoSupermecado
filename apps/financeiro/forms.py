@@ -9,7 +9,7 @@ from apps.fornecedores.escopo import fornecedores_para_usuario
 
 from .extrato_adapters import listar_adaptadores_extrato, validar_arquivo_adaptador
 
-from .models import CategoriaFinanceira, CentroCusto, ContaContabil, ContaFinanceira, ContaMovimentoFinanceiro, FormatoEntregaContabil, RegraLiquidacaoEletronica, ResponsavelEFDICMSIPI, TransferenciaFinanceira
+from .models import CategoriaFinanceira, CentroCusto, ContaContabil, ContaFinanceira, ContaMovimentoFinanceiro, FormatoEntregaContabil, GrupoDRE, RegraLiquidacaoEletronica, ResponsavelEFDICMSIPI, TransferenciaFinanceira
 
 
 def _filiais_para_usuario(user):
@@ -114,10 +114,11 @@ class CentroCustoForm(forms.ModelForm):
 class CategoriaFinanceiraForm(forms.ModelForm):
     class Meta:
         model = CategoriaFinanceira
-        fields = ["empresa", "nome", "tipo", "conta_contabil", "is_active"]
+        fields = ["empresa", "nome", "tipo", "grupo_dre", "conta_contabil", "is_active"]
 
     def __init__(self, *args, user=None, **kwargs):
         super().__init__(*args, **kwargs)
+        self.fields["grupo_dre"].required = False
         filiais = _filiais_para_usuario(user)
         self.empresa_id_do_usuario = filiais.values_list("empresa", flat=True).first()
         if user and user.is_superuser:
@@ -135,6 +136,8 @@ class CategoriaFinanceiraForm(forms.ModelForm):
 
     def clean(self):
         cleaned_data = super().clean()
+        if not cleaned_data.get("grupo_dre"):
+            cleaned_data["grupo_dre"] = GrupoDRE.NAO_CLASSIFICADO
         empresa = cleaned_data.get("empresa")
         if "empresa" not in self.fields:
             empresa = Empresa.objects.filter(pk=self.empresa_id_do_usuario).first()

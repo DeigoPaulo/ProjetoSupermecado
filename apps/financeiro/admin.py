@@ -19,8 +19,8 @@ class CentroCustoAdmin(admin.ModelAdmin):
 
 @admin.register(CategoriaFinanceira)
 class CategoriaFinanceiraAdmin(admin.ModelAdmin):
-    list_display = ("nome", "tipo", "is_active")
-    list_filter = ("tipo", "is_active")
+    list_display = ("nome", "tipo", "grupo_dre", "is_active")
+    list_filter = ("tipo", "grupo_dre", "is_active")
     search_fields = ("nome",)
 
 

@@ -659,6 +659,7 @@ class VendaServiceTests(TestCase):
 
         cancelar_venda(venda=venda, usuario=self.usuario, motivo="Venda duplicada")
 
+        venda.refresh_from_db()
         dinheiro = venda.pagamentos.get(forma_pagamento=self.dinheiro)
         pix = venda.pagamentos.get(forma_pagamento=self.pix)
         self.assertEqual(dinheiro.status, StatusPagamento.ESTORNADO)
@@ -666,6 +667,9 @@ class VendaServiceTests(TestCase):
         self.assertEqual(pix.status, StatusPagamento.ESTORNO_PENDENTE)
         self.assertIsNone(pix.estornado_em)
         self.assertEqual(pix.motivo_estorno, "Venda duplicada")
+        self.assertIsNotNone(venda.cancelada_em)
+        self.assertEqual(venda.cancelada_por, self.usuario)
+        self.assertEqual(venda.motivo_cancelamento, "Venda duplicada")
         self.assertEqual(LancamentoFinanceiro.objects.filter(origem="PDV_VENDA").count(), 2)
         self.assertEqual(LancamentoFinanceiro.objects.filter(origem="ESTORNO").count(), 1)
         self.assertTrue(LancamentoFinanceiro.objects.filter(pagamento_venda=dinheiro, tipo=TipoLancamentoFinanceiro.ENTRADA).exists())

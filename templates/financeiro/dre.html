@@ -1,0 +1,112 @@
+{% extends "base.html" %}
+
+{% block title %}DRE gerencial 2.0{% endblock %}
+
+{% block content %}
+<header class="page-header">
+  <div>
+    <h1>DRE gerencial 2.0</h1>
+    <p>Resultado econômico gerencial baseado em vendas, custos históricos, estoque e movimentos realizados.</p>
+  </div>
+  <div class="actions">
+    <a class="secondary-button" href="{% url 'financeiro:dre_csv' %}?data_inicio={{ data_inicio|date:'Y-m-d' }}&amp;data_fim={{ data_fim|date:'Y-m-d' }}{% if filial_id %}&amp;filial={{ filial_id }}{% endif %}{% if empresa_id %}&amp;empresa={{ empresa_id }}{% endif %}"><i class="fa-solid fa-file-csv"></i> Excel/CSV</a>
+    <a class="secondary-button" href="{% url 'financeiro:dre_json' %}?data_inicio={{ data_inicio|date:'Y-m-d' }}&amp;data_fim={{ data_fim|date:'Y-m-d' }}{% if filial_id %}&amp;filial={{ filial_id }}{% endif %}{% if empresa_id %}&amp;empresa={{ empresa_id }}{% endif %}"><i class="fa-solid fa-code"></i> JSON</a>
+    <a class="secondary-button" href="{% url 'financeiro:resultado' %}?data_inicio={{ data_inicio|date:'Y-m-d' }}&amp;data_fim={{ data_fim|date:'Y-m-d' }}{% if filial_id %}&amp;filial={{ filial_id }}{% endif %}"><i class="fa-solid fa-book"></i> Resultado financeiro</a>
+  </div>
+</header>
+
+<form method="get" class="toolbar report-filter">
+  <label><span>Início</span><input type="date" name="data_inicio" value="{{ data_inicio|date:'Y-m-d' }}"></label>
+  <label><span>Fim</span><input type="date" name="data_fim" value="{{ data_fim|date:'Y-m-d' }}"></label>
+  {% if empresas %}<label><span>Empresa</span><select name="empresa" class="select2-field">{% for empresa in empresas %}<option value="{{ empresa.pk }}"{% if empresa.pk == empresa_id %} selected{% endif %}>{{ empresa.nome_fantasia }}</option>{% endfor %}</select></label>{% endif %}
+  <label>
+    <span>Filial</span>
+    <select name="filial" class="select2-field">
+      {% if permite_consolidado %}<option value="">Consolidado da empresa</option>{% endif %}
+      {% for filial in filiais %}<option value="{{ filial.pk }}"{% if filial.pk == filial_id %} selected{% endif %}>{{ filial.nome }}</option>{% endfor %}
+    </select>
+  </label>
+  <button type="submit">Filtrar</button>
+</form>
+
+<section class="operation-notice">
+  <strong>DRE gerencial, não contábil oficial.</strong> A competência segue a data de cada evento operacional e a data realizada do livro financeiro. Este demonstrativo não substitui ECD, ECF, SPED ou o trabalho do contador.
+</section>
+
+{% for alerta in dre.alertas %}<div class="notice notice-warning"><strong>Atenção</strong><span>{{ alerta }}</span></div>{% endfor %}
+
+<section class="metrics-grid">
+  <article class="metric"><span>Receita líquida</span><strong>R$ {{ dre.totais.receita_liquida|floatformat:2 }}</strong></article>
+  <article class="metric"><span>CMV</span><strong>R$ {{ dre.totais.cmv|floatformat:2 }}</strong></article>
+  <article class="metric"><span>Lucro bruto</span><strong>R$ {{ dre.totais.lucro_bruto|floatformat:2 }}</strong><small>{% if dre.margem_bruta_percentual is not None %}Margem {{ dre.margem_bruta_percentual|floatformat:2 }}%{% else %}Margem não aplicável{% endif %}</small></article>
+  <article class="metric"><span>Resultado operacional</span><strong>R$ {{ dre.totais.resultado_operacional|floatformat:2 }}</strong></article>
+  <article class="metric"><span>Cobertura CMV</span><strong>{{ dre.cmv.cobertura_cmv_percentual|floatformat:2 }}%</strong><small>{% if dre.cmv.cmv_completo %}Completa{% else %}Incompleta{% endif %}</small></article>
+</section>
+
+<section class="panel table-panel">
+  <div class="panel-title">Demonstrativo do resultado</div>
+  <div class="table-wrap"><table>
+    <thead><tr><th>Linha</th><th>Valor</th><th>Qualidade</th></tr></thead>
+    <tbody>{% for linha in dre.linhas %}<tr>
+      <td>{% if linha.natureza == 'deducao' %}(-) {% elif linha.codigo == 'outras_receitas' %}(+) {% endif %}{{ linha.rotulo }}</td>
+      <td><strong>{% if linha.valor is None %}Não apurado{% else %}R$ {{ linha.valor|floatformat:2 }}{% endif %}</strong></td>
+      <td>{% if linha.completo %}Apurado{% else %}Cobertura incompleta{% endif %}{% if linha.observacao %}<br><small>{{ linha.observacao }}</small>{% endif %}</td>
+    </tr>{% endfor %}</tbody>
+  </table></div>
+</section>
+
+<section class="panel table-panel">
+  <div class="panel-title">Composição e cobertura do CMV</div>
+  <div class="metrics-grid">
+    <article class="metric"><span>CMV bruto das vendas</span><strong>R$ {{ dre.cmv.cmv_bruto_vendas|floatformat:2 }}</strong></article>
+    <article class="metric"><span>Reversão de cancelamentos</span><strong>R$ {{ dre.cmv.cmv_reversao_cancelamentos|floatformat:2 }}</strong></article>
+    <article class="metric"><span>Reversão de devoluções</span><strong>R$ {{ dre.cmv.cmv_reversao_devolucoes|floatformat:2 }}</strong></article>
+    <article class="metric"><span>Itens sem snapshot</span><strong>{{ dre.cmv.itens_sem_snapshot }}</strong><small>R$ {{ dre.cmv.valor_vendas_sem_cobertura_cmv|floatformat:2 }} sem cobertura</small></article>
+  </div>
+  <p class="muted">{{ dre.cmv.criterio_arredondamento }}</p>
+</section>
+
+<section class="panel table-panel">
+  <div class="panel-title">Reconciliação Venda × Estoque</div>
+  <div class="metrics-grid">
+    <article class="metric"><span>Estado</span><strong>{{ dre.reconciliacao_cmv.estado }}</strong></article>
+    <article class="metric"><span>Operações</span><strong>{{ dre.reconciliacao_cmv.quantidade_operacoes }}</strong></article>
+    <article class="metric"><span>Snapshot de vendas</span><strong>R$ {{ dre.reconciliacao_cmv.cmv_snapshot_vendas|floatformat:2 }}</strong></article>
+    <article class="metric"><span>Movimentos de venda</span><strong>R$ {{ dre.reconciliacao_cmv.custo_movimentos_venda|floatformat:2 }}</strong></article>
+    <article class="metric"><span>Diferença acumulada</span><strong>R$ {{ dre.reconciliacao_cmv.diferenca|floatformat:2 }}</strong></article>
+  </div>
+  <div class="table-wrap"><table>
+    <thead><tr><th>Operação</th><th>Referência</th><th>Snapshot</th><th>Movimento</th><th>Diferença</th><th>Estado</th></tr></thead>
+    <tbody>{% for item in dre.reconciliacao_cmv.divergencias %}<tr><td>{{ item.tipo }} #{{ item.id }}</td><td>{{ item.referencia }}</td><td>R$ {{ item.cmv_snapshot|floatformat:2 }}</td><td>R$ {{ item.custo_movimentacoes|floatformat:2 }}</td><td>R$ {{ item.diferenca|floatformat:2 }}</td><td><strong>{{ item.estado }}</strong></td></tr>{% empty %}<tr><td colspan="6" class="empty">Nenhuma divergência individual no período.</td></tr>{% endfor %}</tbody>
+  </table></div>
+</section>
+
+<section class="panel table-panel">
+  <div class="panel-title">Fechamentos de estoque disponíveis</div>
+  <p class="muted">Evidência complementar. Não representa a equação contábil completa do estoque.</p>
+  <div class="table-wrap"><table>
+    <thead><tr><th>Filial</th><th>Referência inicial</th><th>Referência final</th><th>Qualidade</th></tr></thead>
+    <tbody>{% for item in dre.reconciliacao_cmv.fechamentos_estoque %}<tr><td>{{ item.filial }}</td><td>{% if item.inicial %}{{ item.inicial.data|date:'d/m/Y' }} · R$ {{ item.inicial.valor_custo|floatformat:2 }}{% else %}Não disponível{% endif %}</td><td>{% if item.final %}{{ item.final.data|date:'d/m/Y' }} · R$ {{ item.final.valor_custo|floatformat:2 }}{% else %}Não disponível{% endif %}</td><td>{{ item.qualidade }}</td></tr>{% endfor %}</tbody>
+  </table></div>
+</section>
+
+<section class="panel table-panel">
+  <div class="panel-title">Diagnósticos financeiros</div>
+  <div class="metrics-grid">
+    <article class="metric"><span>Saídas não classificadas</span><strong>R$ {{ dre.saidas_nao_classificadas.valor|floatformat:2 }}</strong><small>{{ dre.saidas_nao_classificadas.quantidade }} movimentos · {{ dre.saidas_nao_classificadas.percentual|floatformat:2 }}%</small></article>
+    <article class="metric"><span>Taxas realizadas</span><strong>R$ {{ dre.recebiveis.taxas_realizadas|floatformat:2 }}</strong></article>
+    <article class="metric"><span>Chargebacks</span><strong>R$ {{ dre.recebiveis.chargebacks|floatformat:2 }}</strong></article>
+    <article class="metric"><span>Taxas previstas</span><strong>R$ {{ dre.recebiveis.taxas_previstas_diagnostico|floatformat:2 }}</strong><small>Diagnóstico, fora do resultado realizado</small></article>
+  </div>
+</section>
+
+<section class="panel table-panel">
+  <div class="panel-title">CMV por produto</div>
+  <div class="table-wrap"><table><thead><tr><th>Produto</th><th>CMV bruto</th><th>Reversões</th><th>CMV líquido</th></tr></thead><tbody>{% for item in dre.cmv_por_produto %}<tr><td>{{ item.produto }}</td><td>R$ {{ item.cmv_bruto|floatformat:2 }}</td><td>R$ {{ item.reversoes|floatformat:2 }}</td><td><strong>R$ {{ item.cmv_liquido|floatformat:2 }}</strong></td></tr>{% empty %}<tr><td colspan="4" class="empty">Nenhum custo de venda no período.</td></tr>{% endfor %}</tbody></table></div>
+</section>
+
+<section class="panel table-panel">
+  <div class="panel-title">Perdas por tipo</div>
+  <div class="table-wrap"><table><thead><tr><th>Tipo</th><th>Registros</th><th>Valor</th></tr></thead><tbody>{% for item in dre.perdas_por_tipo %}<tr><td>{{ item.tipo }}</td><td>{{ item.quantidade }}</td><td><strong>R$ {{ item.valor|floatformat:2 }}</strong></td></tr>{% empty %}<tr><td colspan="3" class="empty">Nenhuma perda registrada no período.</td></tr>{% endfor %}</tbody></table></div>
+</section>
+{% endblock %}

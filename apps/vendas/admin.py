@@ -25,8 +25,9 @@ class ItemDevolucaoVendaInline(admin.TabularInline):
 
 @admin.register(Venda)
 class VendaAdmin(admin.ModelAdmin):
-    list_display = ("id", "filial", "caixa", "usuario", "total_liquido", "status", "data")
+    list_display = ("id", "filial", "caixa", "usuario", "total_liquido", "status", "data", "cancelada_em")
     list_filter = ("status", "filial", "data")
+    readonly_fields = ("cancelada_em", "cancelada_por", "motivo_cancelamento")
     inlines = [ItemVendaInline, PagamentoVendaInline]
 
 

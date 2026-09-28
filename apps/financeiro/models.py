@@ -14,6 +14,15 @@ class TipoContaFinanceira(models.TextChoices):
     RECEBER = "RECEBER", "Conta a receber"
 
 
+class GrupoDRE(models.TextChoices):
+    NAO_CLASSIFICADO = "NAO_CLASSIFICADO", "Não classificado"
+    DESPESA_OPERACIONAL = "DESPESA_OPERACIONAL", "Despesa operacional"
+    DESPESA_FINANCEIRA = "DESPESA_FINANCEIRA", "Despesa financeira"
+    TRIBUTO_RESULTADO = "TRIBUTO_RESULTADO", "Tributo sobre resultado"
+    OUTRA_RECEITA = "OUTRA_RECEITA", "Outra receita"
+    OUTRA_DESPESA = "OUTRA_DESPESA", "Outra despesa"
+
+
 class StatusContaFinanceira(models.TextChoices):
     ABERTA = "ABERTA", "Aberta"
     PAGA = "PAGA", "Paga"
@@ -119,6 +128,15 @@ class CategoriaFinanceira(models.Model):
     nome = models.CharField(max_length=120)
     conta_contabil = models.ForeignKey(ContaContabil, on_delete=models.PROTECT, null=True, blank=True, related_name="categorias_financeiras", verbose_name="Conta contábil")
     tipo = models.CharField(max_length=20, choices=TipoContaFinanceira.choices)
+    grupo_dre = models.CharField(
+        max_length=30,
+        choices=GrupoDRE.choices,
+        default=GrupoDRE.NAO_CLASSIFICADO,
+        help_text=(
+            "Classificação gerencial utilizada na DRE; não substitui conta contábil "
+            "nem classificação do contador."
+        ),
+    )
     is_active = models.BooleanField(default=True)
 
     class Meta:
@@ -130,6 +148,15 @@ class CategoriaFinanceira(models.Model):
             raise ValidationError({"conta_contabil": "A conta contábil pertence a outra empresa."})
         if self.conta_contabil_id and self.conta_contabil.tipo != TipoContaContabil.ANALITICA:
             raise ValidationError({"conta_contabil": "Selecione uma conta contábil analítica para a categoria."})
+        if self.tipo == TipoContaFinanceira.RECEBER and self.grupo_dre in {
+            GrupoDRE.DESPESA_OPERACIONAL,
+            GrupoDRE.DESPESA_FINANCEIRA,
+            GrupoDRE.TRIBUTO_RESULTADO,
+            GrupoDRE.OUTRA_DESPESA,
+        }:
+            raise ValidationError({"grupo_dre": "Categoria a receber não pode pertencer a um grupo de despesa."})
+        if self.tipo == TipoContaFinanceira.PAGAR and self.grupo_dre == GrupoDRE.OUTRA_RECEITA:
+            raise ValidationError({"grupo_dre": "Categoria a pagar não pode ser classificada como outra receita."})
 
     def __str__(self):
         return self.nome
