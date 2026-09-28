@@ -1416,6 +1416,8 @@ class AcessoPdvNuvemTests(TestCase):
         self.client.force_login(self.operador)
 
         resposta = self.client.get("/pdv/")
+        html = resposta.content.decode()
+        barra_atalhos = html.split('<footer class="pdv-shortcut-bar">', 1)[1].split("</footer>", 1)[0]
 
         self.assertEqual(resposta.status_code, 200)
         self.assertContains(resposta, 'role="listbox"')
@@ -1423,8 +1425,38 @@ class AcessoPdvNuvemTests(TestCase):
         self.assertContains(resposta, 'aria-live="polite"')
         self.assertContains(resposta, 'role="dialog"')
         self.assertContains(resposta, 'aria-labelledby="pdv-payment-title"')
-        for atalho in ("F2", "F3", "F4", "F5", "F6", "F7", "F8", "F9"):
+        self.assertEqual(barra_atalhos.count("<button"), 10)
+        self.assertIn('id="pdv-finish-shortcut"', barra_atalhos)
+        for atalho in ("F2", "F3", "F4", "F5", "F6", "F7", "F8", "F9", "F11", "F12"):
             self.assertContains(resposta, f"<kbd>{atalho}</kbd>", html=True)
+
+    def test_pdv_expoe_contrato_visual_de_cpf_e_desconto_por_teclado(self):
+        self.client.force_login(self.operador)
+
+        resposta = self.client.get("/pdv/")
+
+        self.assertEqual(resposta.status_code, 200)
+        for tecla, escolha in (("1", "Não"), ("2", "CPF"), ("3", "CNPJ")):
+            self.assertContains(resposta, f"<kbd>{tecla}</kbd>", html=True)
+            self.assertContains(resposta, escolha)
+        self.assertContains(resposta, "Desconto total da venda")
+        self.assertContains(resposta, "<kbd>F6</kbd>", html=True)
+        self.assertContains(resposta, 'role="group" aria-labelledby="pdv-cpf-question-title"')
+
+    def test_assets_pdv_definem_contextos_keyboard_first_sem_finalizacao_generica(self):
+        raiz = Path(__file__).resolve().parents[2]
+        javascript = (raiz / "static" / "js" / "app.js").read_text(encoding="utf-8")
+        css = (raiz / "static" / "css" / "custom.css").read_text(encoding="utf-8")
+        contrato = (raiz / "docs" / "PDV_DESKTOP_KEYBOARD_CONTRACT_V1.md").read_text(encoding="utf-8")
+
+        self.assertIn("function avancarPagamentoComEnter()", javascript)
+        self.assertIn('selecionarDecisaoCpf(Number(key) - 1)', javascript)
+        self.assertIn('if (key === "F6")', javascript)
+        self.assertIn('if (key === "F11") abrirModalPdv("promos")', javascript)
+        self.assertIn('row.dataset.tefProcessing === "1"', javascript)
+        self.assertIn("grid-template-columns: repeat(10, minmax(0, 1fr));", css)
+        self.assertIn("pdv_desktop_keyboard_contract_v1", contrato)
+        self.assertNotIn("LACUNA_TECLADO", contrato.split("## Contextos de tecla", 1)[0])
 
     def test_item_do_carrinho_expoe_contexto_para_selecao_e_remocao_segura(self):
         categoria = Categoria.objects.create(nome="Mercearia operacional")

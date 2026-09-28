@@ -1276,6 +1276,7 @@ class AppDesktopTests(unittest.TestCase):
         self.assertNotIn("52998224725", json.dumps(evidencia))
     def test_atalhos_globais_de_saida_existem_no_shell_desktop_com_confirmacao(self):
         fonte = Path(app.__file__).read_text(encoding="utf-8")
+        hook_desktop = fonte.split("window.__deigoDesktopQuitInstalled", 1)[1].split("document.dispatchEvent", 1)[0]
 
         self.assertIn("window.__deigoDesktopQuitInstalled", fonte)
         self.assertIn("event.key.toLowerCase() === 'q'", fonte)
@@ -1284,6 +1285,22 @@ class AppDesktopTests(unittest.TestCase):
         self.assertIn("Operações ainda não salvas serão descartadas", fonte)
         self.assertIn('raiz.bind_all("<Control-q>"', fonte)
         self.assertIn("window.SupermercadoDesktop.closeApplication();", fonte)
+        self.assertIn("document.documentElement.classList.add('desktop-pdv')", fonte)
+        self.assertIn("url_pdv = f\"{config['servidor_base_url']}/pdv/\"", fonte)
+        for tecla in ("F1", "F2", "F3", "F4", "F6", "F7", "F8", "F9", "F10", "F11", "F12", "Enter", "Escape", "Delete", "ArrowUp", "ArrowDown"):
+            self.assertNotIn(f"event.key === '{tecla}'", hook_desktop)
+        for tecla in ("1", "2", "3"):
+            self.assertNotIn(f"event.key === '{tecla}'", hook_desktop)
+
+    def test_contrato_keyboard_first_documenta_webview_bridge_e_dependencias_fisicas(self):
+        contrato = (Path(app.__file__).resolve().parent.parent / "docs" / "PDV_DESKTOP_KEYBOARD_CONTRACT_V1.md").read_text(encoding="utf-8")
+
+        self.assertIn("pdv_desktop_keyboard_contract_v1", contrato)
+        self.assertIn("COBERTO_TECLADO", contrato)
+        self.assertIn("DEPENDE_HARDWARE", contrato)
+        self.assertIn("Ctrl+Q", contrato)
+        self.assertIn("Ctrl+F5", contrato)
+        self.assertIn("F11", contrato)
 
 if __name__ == "__main__":
     unittest.main()

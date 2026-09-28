@@ -94,7 +94,7 @@
         <button type="button" data-pdv-modal-open="products"><i class="fa-solid fa-star"></i><span>Produtos</span></button>
         <button type="button" data-pdv-modal-open="price"><i class="fa-solid fa-tag"></i><span>Preço</span></button>
         <button type="button" data-pdv-modal-open="clients"><i class="fa-solid fa-user"></i><span>Clientes</span></button>
-        <button type="button" data-pdv-modal-open="promos"><i class="fa-solid fa-percent"></i><span>Promoções</span></button>
+        <button type="button" data-pdv-modal-open="promos"><i class="fa-solid fa-percent"></i><span>Promoções <kbd>F11</kbd></span></button>
         <button type="button" data-pdv-modal-open="delivery" {% if not items %}disabled{% endif %}><i class="fa-solid fa-truck"></i><span>Entrega</span></button>
       </div>
     </aside>
@@ -190,7 +190,17 @@
                 <strong id="pdv-cpf-question-title">CPF na nota?</strong>
                 <span>Escolha Não, CPF ou CNPJ antes de receber o pagamento.</span>
               </div>
-              <div class="pdv-cpf-options">{{ finish_form.cpf_na_nota }}</div>
+              <div class="pdv-cpf-options">
+                <ul id="id_cpf_na_nota">
+                  {% for radio in finish_form.cpf_na_nota %}
+                    <li>
+                      <label for="{{ radio.id_for_label }}">
+                        <kbd>{{ forloop.counter }}</kbd>{{ radio.tag }}<span>{{ radio.choice_label }}</span>
+                      </label>
+                    </li>
+                  {% endfor %}
+                </ul>
+              </div>
               {{ finish_form.documento_consumidor_tipo }}
               {% if finish_form.cpf_na_nota.errors %}<span class="pdv-cpf-error">{{ finish_form.cpf_na_nota.errors|striptags }}</span>{% endif %}
             </div>
@@ -207,7 +217,7 @@
               {% if finish_form.documento_consumidor.errors %}<span class="pdv-cpf-error">{{ finish_form.documento_consumidor.errors|striptags }}</span>{% endif %}
             </div>
             <div class="pdv-payment-adjustments">
-              <label class="form-field pdv-discount-field"><span>Desconto total da venda</span>{{ finish_form.desconto }}<small>Exige autorização de supervisor quando maior que zero.</small></label>
+              <label class="form-field pdv-discount-field"><span>Desconto total da venda <kbd>F6</kbd></span>{{ finish_form.desconto }}<small>Exige autorização de supervisor quando maior que zero.</small></label>
               <label class="form-field"><span>Vencimento do crediário</span>{{ finish_form.vencimento_financeiro }}</label>
             </div>
             <div class="pdv-discount-authorization" id="pdv-discount-authorization" hidden>

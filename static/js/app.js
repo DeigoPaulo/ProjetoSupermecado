@@ -1174,6 +1174,35 @@ document.addEventListener("DOMContentLoaded", function () {
       if (decisao === "NAO" && documentInput) documentInput.value = "";
     }
 
+    function focarPrimeiraFormaPagamento() {
+      var firstSelect = paymentModal && paymentModal.querySelector(".pdv-payment-row select");
+      if (firstSelect) firstSelect.focus();
+    }
+
+    function selecionarDecisaoCpf(indice) {
+      var input = cpfDecisionInputs && cpfDecisionInputs[indice];
+      if (!input) return false;
+      input.checked = true;
+      input.focus();
+      input.dispatchEvent(new Event("change", { bubbles: true }));
+      return true;
+    }
+
+    function avancarDocumentoConsumidor() {
+      var decisao = decisaoCpfNaNota();
+      var valido = decisao === "CNPJ"
+        ? cnpjValidoNoPdv(documentInput && documentInput.value)
+        : cpfValidoNoPdv(documentInput && documentInput.value);
+      if (!valido) {
+        informarPagamentoFeedback(decisao === "CNPJ" ? "Informe um CNPJ válido." : "Informe um CPF válido com 11 números.");
+        if (documentInput) { documentInput.focus(); documentInput.select(); }
+        return false;
+      }
+      informarPagamentoFeedback("");
+      focarPrimeiraFormaPagamento();
+      return true;
+    }
+
     function abrirPagamentos() {
       if (!paymentModal) return;
       focusBeforePayment = document.activeElement;
@@ -1192,8 +1221,7 @@ document.addEventListener("DOMContentLoaded", function () {
         documentInput.focus();
         return;
       }
-      var firstSelect = paymentModal.querySelector("select");
-      if (firstSelect) firstSelect.focus();
+      focarPrimeiraFormaPagamento();
     }
 
     function informarPagamentoFeedback(texto) {
@@ -1448,6 +1476,70 @@ document.addEventListener("DOMContentLoaded", function () {
       abrirPerguntaEntrega();
     }
 
+    function avancarPagamentoComEnter() {
+      var active = document.activeElement;
+      if (!active) return false;
+      if (active === documentInput) return avancarDocumentoConsumidor();
+      if (active === descontoInput) {
+        atualizarAutorizacaoDesconto();
+        atualizarResumoPdv();
+        if (decimalFromInput(descontoInput.value) > 0 && discountAuthorization) {
+          var primeiraCredencial = discountAuthorization.querySelector(
+            "input[name='supervisor_credencial'], input[name='supervisor_usuario'], input[name='supervisor_pin'], input[name='supervisor_senha']"
+          );
+          if (primeiraCredencial) primeiraCredencial.focus();
+        } else {
+          focarPrimeiraFormaPagamento();
+        }
+        return true;
+      }
+      if (active === recebidoInput || active.name === "vencimento_financeiro") {
+        focarPrimeiraFormaPagamento();
+        return true;
+      }
+      if (discountAuthorization && discountAuthorization.contains(active)) {
+        var proximoPorNome = {
+          supervisor_credencial: "supervisor_pin",
+          supervisor_usuario: "supervisor_senha",
+        }[active.name];
+        var proximo = proximoPorNome && discountAuthorization.querySelector("input[name='" + proximoPorNome + "']");
+        if (proximo && !proximo.disabled) proximo.focus();
+        else focarPrimeiraFormaPagamento();
+        return true;
+      }
+      var paymentRow = active.closest && active.closest(".pdv-payment-row");
+      if (paymentRow) {
+        var select = paymentRow.querySelector("select");
+        var input = paymentRow.querySelector("input[name='pagamento_valor']");
+        if (active === select) {
+          if (!select.value) return false;
+          input.focus();
+          input.select();
+          return true;
+        }
+        if (active === input) {
+          if (decimalFromInput(input.value) <= 0) {
+            informarPagamentoFeedback("Informe um valor maior que zero.");
+            input.focus();
+            input.select();
+            return true;
+          }
+          atualizarResumoPdv();
+          if (pagamentoCompleto()) finalizarVendaPdv();
+          else adicionarLinhaPagamento({ somenteSeRestante: true });
+          return true;
+        }
+      }
+      if (active === confirmPaymentButton) {
+        finalizarVendaPdv();
+        return true;
+      }
+      if (active.matches && active.matches("button, a")) return false;
+      if (pagamentoCompleto()) finalizarVendaPdv();
+      else focarPrimeiraFormaPagamento();
+      return true;
+    }
+
     function selecionarFormaPagamento(atalho) {
       if (!paymentRows) return;
       if (atalho === "F3") {
@@ -1627,6 +1719,10 @@ document.addEventListener("DOMContentLoaded", function () {
       var input = row && row.querySelector("input[name='pagamento_valor']");
       var select = row && row.querySelector("select");
       if (!row || !input || !select) return;
+      if (row.dataset.tefProcessing === "1") {
+        informarPagamentoFeedback("Pagamento eletrônico em processamento. Aguarde a resposta da maquininha.");
+        return;
+      }
       limparAutorizacaoPagamento(row, true);
       ocultarPixPanel();
       if (!bridge) {
@@ -1647,7 +1743,11 @@ document.addEventListener("DOMContentLoaded", function () {
           : "pdv-" + Date.now() + "-" + Math.random().toString(16).slice(2);
         row.dataset.tefRequestSignature = assinaturaRequisicao;
       }
-      informarPagamentoFeedback(tipoTef === "PIX" ? "Gerando QR Code PIX..." : "Aguardando resposta da maquininha...");
+      row.dataset.tefProcessing = "1";
+      row.setAttribute("aria-busy", "true");
+      select.disabled = true;
+      input.readOnly = true;
+      informarPagamentoFeedback(tipoTef === "PIX" ? "Processando PIX: gerando QR Code..." : "Processando pagamento na maquininha...");
       Promise.resolve(bridge.call(window.SupermercadoDesktop, {
         tipo: tipoTef,
         valor: valor,
@@ -1671,12 +1771,17 @@ document.addEventListener("DOMContentLoaded", function () {
           } else {
             informarPagamentoFeedback("Pagamento " + tipoTef.replaceAll("_", " ") + " aprovado. Aut. " + resultado.codigo_autorizacao + ".");
           }
-          select.focus();
         })
         .catch(function (erro) {
           limparAutorizacaoPagamento(row, true);
           ocultarPixPanel();
           informarPagamentoFeedback("Não foi possível confirmar na maquininha: " + erro.message);
+        })
+        .finally(function () {
+          delete row.dataset.tefProcessing;
+          row.removeAttribute("aria-busy");
+          select.disabled = false;
+          input.readOnly = false;
           select.focus();
         });
     }
@@ -2475,6 +2580,26 @@ document.addEventListener("DOMContentLoaded", function () {
           return;
         }
       }
+      if (activeModal && ["pdv-modal-products", "pdv-modal-clients", "pdv-modal-promos", "pdv-modal-price"].indexOf(activeModal.id) !== -1) {
+        if (key === "ArrowUp" || key === "ArrowDown") {
+          event.preventDefault();
+          moverSelecaoModal(activeModal, key === "ArrowUp" ? -1 : 1);
+          return;
+        }
+        if (key === "PageUp" || key === "PageDown") {
+          event.preventDefault();
+          trocarPaginaModal(activeModal, key === "PageUp" ? -1 : 1);
+          return;
+        }
+        if (key === "Enter") {
+          var selectedModalRow = linhaSelecionadaModal(activeModal);
+          if (selectedModalRow && selectedModalRow.matches("button, a")) {
+            event.preventDefault();
+            selectedModalRow.click();
+          }
+          return;
+        }
+      }
       if (activeModal) return;
       if (key === "F12" && !(paymentModal && paymentModal.classList.contains("is-open"))) {
         event.preventDefault();
@@ -2483,6 +2608,18 @@ document.addEventListener("DOMContentLoaded", function () {
       }
       if (paymentModal && paymentModal.classList.contains("is-open")) {
         if (manterFocoNoDialog(paymentModal, event)) return;
+        if (["1", "2", "3"].indexOf(key) !== -1 && document.activeElement && document.activeElement.name === "cpf_na_nota") {
+          event.preventDefault();
+          selecionarDecisaoCpf(Number(key) - 1);
+          return;
+        }
+        if (["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown"].indexOf(key) !== -1 && document.activeElement && document.activeElement.name === "cpf_na_nota") {
+          event.preventDefault();
+          var currentCpfIndex = Array.prototype.indexOf.call(cpfDecisionInputs, document.activeElement);
+          var cpfDirection = key === "ArrowLeft" || key === "ArrowUp" ? -1 : 1;
+          selecionarDecisaoCpf((currentCpfIndex + cpfDirection + cpfDecisionInputs.length) % cpfDecisionInputs.length);
+          return;
+        }
         if (key === "Enter" && document.activeElement && document.activeElement.name === "cpf_na_nota") {
           event.preventDefault();
           document.activeElement.checked = true;
@@ -2492,6 +2629,14 @@ document.addEventListener("DOMContentLoaded", function () {
         if (event.shiftKey && key === "F4") {
           event.preventDefault();
           capturarDocumentoPinpad();
+          return;
+        }
+        if (key === "F6") {
+          event.preventDefault();
+          if (descontoInput) {
+            descontoInput.focus();
+            descontoInput.select();
+          }
           return;
         }
         if ((event.shiftKey && (key === "+" || key === "=")) || key === "Add") {
@@ -2522,10 +2667,10 @@ document.addEventListener("DOMContentLoaded", function () {
           return;
         }
         if (key === "Enter") {
-          event.preventDefault();
-          finalizarVendaPdv();
+          if (avancarPagamentoComEnter()) event.preventDefault();
           return;
         }
+        return;
       }
       if ((key === "ArrowUp" || key === "ArrowDown") && cartRows.length && !modalAberto() && !campoEditavelAtivo()) {
         event.preventDefault();
@@ -2550,7 +2695,7 @@ document.addEventListener("DOMContentLoaded", function () {
         return;
       }
       if (!key || !key.startsWith("F")) return;
-      if (["F2", "F3", "F4", "F5", "F6", "F7", "F8", "F9"].indexOf(key) === -1) return;
+      if (["F2", "F3", "F4", "F5", "F6", "F7", "F8", "F9", "F11"].indexOf(key) === -1) return;
       event.preventDefault();
       if (key === "F2") focarBuscaProduto();
       if (key === "F3") abrirModalPdv("price");
@@ -2565,6 +2710,7 @@ document.addEventListener("DOMContentLoaded", function () {
       if (key === "F9") {
         if (finishShortcut && !finishShortcut.disabled) abrirPagamentos();
       }
+      if (key === "F11") abrirModalPdv("promos");
     });
     if (finishForm) {
       finishForm.addEventListener("submit", function (event) {
