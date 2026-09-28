@@ -58,13 +58,13 @@
   <div class="panel-title">Itens da venda</div>
   <div class="table-wrap">
     <table>
-      <thead><tr><th>Produto</th><th>Código</th><th>Qtd</th><th>Unitario</th><th>Total</th></tr></thead>
+      <thead><tr><th>Produto</th><th>Código</th><th>Qtd</th><th>Unitário</th><th>Total</th></tr></thead>
       <tbody>
         {% for item in itens %}
           <tr>
             <td>{{ item.produto }}</td>
             <td>{{ item.codigo_barras|default:"-" }}</td>
-            <td>{{ item.quantidade|default:"-" }}</td>
+            <td>{% if item.quantidade is not None %}{{ item.quantidade|quantidade_br }}{% else %}-{% endif %}</td>
             <td>R$ {{ item.preco_unitario|default:"0,00" }}</td>
             <td>R$ {{ item.total|default:"0,00" }}</td>
           </tr>

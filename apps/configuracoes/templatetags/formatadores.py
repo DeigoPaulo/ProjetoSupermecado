@@ -15,6 +15,24 @@ def quantidade_br(valor):
     except (InvalidOperation, ValueError):
         return valor
 
-    if numero == numero.to_integral_value():
-        return f"{numero:.0f}"
-    return f"{numero:.3f}".replace(".", ",")
+    if not numero.is_finite():
+        return valor
+    if numero == 0:
+        return "0"
+    return format(numero, "f").rstrip("0").rstrip(".").replace(".", ",")
+
+
+@register.filter
+def quantidade_input(valor):
+    """Formata quantidade para o valor técnico de um input HTML number."""
+    if valor in (None, ""):
+        return ""
+    try:
+        numero = Decimal(str(valor).replace(",", "."))
+    except (InvalidOperation, ValueError):
+        return valor
+    if not numero.is_finite():
+        return valor
+    if numero == 0:
+        return "0"
+    return format(numero, "f").rstrip("0").rstrip(".")

@@ -773,12 +773,12 @@ class EstoqueViewsTests(TestCase):
         self.assertContains(response, "Alertas")
         self.assertContains(response, "Insumo baixo")
         self.assertContains(response, "Kit com alerta")
-        self.assertContains(response, "<strong>0,500</strong>", html=True)
+        self.assertContains(response, "<strong>0,5</strong>", html=True)
         self.assertContains(response, "Produzir capacidade")
 
         detalhe = self.client.get(f"/estoque/composicoes/{composicao.pk}/", {"quantidade": "0.500"})
 
-        self.assertContains(detalhe, 'value="0.500"')
+        self.assertContains(detalhe, 'value="0.5"')
 
     def test_lista_de_composicoes_sugere_producao_por_demanda_minima(self):
         componente = Produto.objects.create(
@@ -825,7 +825,7 @@ class EstoqueViewsTests(TestCase):
 
         detalhe = self.client.get(f"/estoque/composicoes/{composicao.pk}/", {"quantidade": "3.000"})
 
-        self.assertContains(detalhe, 'value="3.000"')
+        self.assertContains(detalhe, 'value="3"')
         self.assertContains(detalhe, "Reposição até estoque mínimo")
         self.assertContains(detalhe, "Demanda de reposição")
 
@@ -1694,7 +1694,7 @@ class EstoqueViewsTests(TestCase):
         self.assertNotContains(response, "10,000")
 
         lista = self.client.get("/estoque/desmembramentos/")
-        self.assertContains(lista, "Saida: 1")
+        self.assertContains(lista, "Saída: 1")
         self.assertContains(lista, "Entrada: 10 UN")
         self.assertNotContains(lista, "Saida: 1,000")
         self.assertNotContains(lista, "Entrada: 10,000")
@@ -1837,8 +1837,8 @@ class EstoqueViewsTests(TestCase):
 
         self.assertEqual(form.status_code, 200)
         self.assertContains(form, 'data-recipe-select="true"')
-        self.assertContains(form, 'value="1.000"')
-        self.assertContains(form, 'value="30.000"')
+        self.assertContains(form, 'value="1"')
+        self.assertContains(form, 'value="30"')
         self.assertContains(form, 'name="destinos-0-tipo_saida_destino"')
         self.assertContains(form, "Receita aplicada no formulario")
         self.assertEqual(payload.status_code, 200)

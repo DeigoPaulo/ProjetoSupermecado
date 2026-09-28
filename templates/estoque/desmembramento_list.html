@@ -41,7 +41,7 @@
         <tr>
           <td>{{ item.criado_em|date:"d/m/Y H:i" }}</td>
           <td>{{ item.filial }}</td>
-          <td><a href="{% url 'estoque:desmembramento_detalhe' item.pk %}"><strong>{{ item.produto_origem }}</strong></a><br><small>Saida: {{ item.quantidade_origem|quantidade_br }}</small></td>
+          <td><a href="{% url 'estoque:desmembramento_detalhe' item.pk %}"><strong>{{ item.produto_origem }}</strong></a><br><small>Saída: {{ item.quantidade_origem|quantidade_br }}</small></td>
           <td>
             {% for destino in item.itens.all %}
               <strong>{{ destino.produto_destino }}</strong><br>

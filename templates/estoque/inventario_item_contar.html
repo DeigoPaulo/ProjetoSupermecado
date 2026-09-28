@@ -13,7 +13,7 @@
 
 <section class="panel">
   <div class="panel-title">{{ item.produto }}</div>
-  <p>Saldo registrado antes da contagem: <strong>{{ item.quantidade_sistema }}</strong></p>
+  <p>Saldo registrado antes da contagem: <strong>{{ item.quantidade_sistema|quantidade_br }}</strong></p>
   <form method="post" class="form-grid">
     {% include "includes/form.html" %}
     <div class="form-actions">

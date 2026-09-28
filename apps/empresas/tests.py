@@ -1586,7 +1586,7 @@ class EmpresasViewsTests(TestCase):
         self.assertContains(busca_fiscal, "nfce-200")
         self.assertContains(busca_fiscal, "CHAVE-FISCAL-FILTRADA")
         self.assertContains(busca_fiscal, "Fiscal CSV")
-        self.assertContains(busca_fiscal, "Saida CSV")
+        self.assertContains(busca_fiscal, "Saída CSV")
         self.assertContains(busca_fiscal, "Entrada CSV")
         self.assertContains(busca_fiscal, "Diagnóstico JSON")
         self.assertContains(busca_fiscal, f"/empresas/sincronizacao/documentos-fiscais/{documento.pk}/")

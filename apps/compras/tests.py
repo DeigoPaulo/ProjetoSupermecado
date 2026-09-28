@@ -9,6 +9,7 @@ from django.utils import timezone
 
 from apps.accounts.models import PerfilUsuario, TipoPerfil
 from apps.auditoria.models import LogAuditoria
+from apps.core_forms import QuantidadeNumberInput
 from apps.empresas.models import Empresa, Filial
 from apps.estoque.models import Estoque, LoteEstoque, MovimentacaoEstoque, TipoMovimentacaoEstoque
 from apps.financeiro.models import ContaFinanceira, ContaMovimentoFinanceiro, StatusContaFinanceira, TipoContaFinanceira, TipoContaMovimento
@@ -16,6 +17,12 @@ from apps.financeiro.services import baixar_conta
 from apps.fornecedores.models import Fornecedor
 from apps.produtos.models import Categoria, Produto
 
+from .forms import (
+    ItemCotacaoCompraForm,
+    ItemEntradaCompraForm,
+    ItemPedidoCompraForm,
+    PrecoRespostaCotacaoForm,
+)
 from .models import (
     CotacaoCompra,
     DuplicataNFeEntrada,
@@ -486,6 +493,62 @@ class ComprasFinanceiroTests(TestCase):
         self.assertContains(response, 'data-ajax-url="/fornecedores/busca.json"')
         self.assertContains(response, 'data-ajax-url="/empresas/filiais/busca.json"')
         self.assertContains(response, 'data-ajax-url="/estoque/produtos/busca.json"')
+        self.assertContains(response, "Custo unitário")
+        self.assertContains(response, "Código do lote")
+        self.assertContains(response, "Fabricação")
+        self.assertContains(response, "Atualizar preço de custo")
+        self.assertNotContains(response, "Codigo lote")
+        self.assertNotContains(response, "Fabricacao")
+        self.assertNotContains(response, "Atualizar preco custo")
+
+    def test_forms_de_compra_usam_widget_unico_para_quantidade(self):
+        for form_class in (ItemCotacaoCompraForm, ItemPedidoCompraForm, ItemEntradaCompraForm):
+            with self.subTest(form=form_class.__name__):
+                form = form_class()
+                self.assertIsInstance(form.fields["quantidade"].widget, QuantidadeNumberInput)
+                self.assertEqual(form.fields["quantidade"].widget.attrs["step"], "0.001")
+
+    def test_item_entrada_remove_zeros_finais_de_quantidades_iniciais(self):
+        for quantidade, valor_esperado in (
+            (Decimal("12.000"), "12"),
+            (Decimal("12.500"), "12.5"),
+            (Decimal("0.750"), "0.75"),
+        ):
+            with self.subTest(quantidade=quantidade):
+                item = ItemEntradaCompra(
+                    produto=self.produto,
+                    quantidade=quantidade,
+                    custo_unitario=Decimal("4.50"),
+                )
+                html = str(ItemEntradaCompraForm(instance=item)["quantidade"])
+                self.assertIn(f'value="{valor_esperado}"', html)
+
+    def test_item_entrada_preserva_decimal_valido_e_post_invalido(self):
+        dados = {
+            "produto": self.produto.pk,
+            "quantidade": "12.125",
+            "custo_unitario": "4.50",
+            "codigo_lote": "",
+            "fabricacao": "",
+            "validade": "",
+            "atualizar_preco_custo": "on",
+        }
+        valido = ItemEntradaCompraForm(data=dados)
+
+        self.assertTrue(valido.is_valid(), valido.errors)
+        self.assertEqual(valido.cleaned_data["quantidade"], Decimal("12.125"))
+
+        dados["quantidade"] = "valor-invalido"
+        invalido = ItemEntradaCompraForm(data=dados)
+
+        self.assertFalse(invalido.is_valid())
+        self.assertIn('value="valor-invalido"', str(invalido["quantidade"]))
+
+    def test_labels_da_resposta_de_cotacao_estao_acentuados(self):
+        form = PrecoRespostaCotacaoForm()
+
+        self.assertEqual(form.fields["disponivel"].label, "Disponível")
+        self.assertEqual(form.fields["custo_unitario"].label, "Custo unitário")
 
     def test_form_entrada_exibe_ux_progressiva_e_impacto_da_finalizacao(self):
         self.client.force_login(self.admin)

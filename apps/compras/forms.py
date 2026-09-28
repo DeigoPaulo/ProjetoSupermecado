@@ -2,7 +2,7 @@ from django import forms
 from django.forms import formset_factory, inlineformset_factory
 
 from apps.clientes.escopo import empresa_id_do_usuario
-from apps.core_forms import aplicar_select2
+from apps.core_forms import QuantidadeNumberInput, aplicar_select2
 from apps.fornecedores.escopo import fornecedores_para_usuario
 
 from .models import (
@@ -37,6 +37,7 @@ class ItemCotacaoCompraForm(forms.ModelForm):
     class Meta:
         model = ItemCotacaoCompra
         fields = ["produto", "quantidade"]
+        widgets = {"quantidade": QuantidadeNumberInput()}
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
@@ -66,9 +67,9 @@ class RespostaCotacaoFornecedorForm(forms.ModelForm):
 
 class PrecoRespostaCotacaoForm(forms.Form):
     item = forms.ModelChoiceField(queryset=ItemCotacaoCompra.objects.none(), widget=forms.HiddenInput)
-    disponivel = forms.BooleanField(label="Disponivel", required=False, initial=True)
+    disponivel = forms.BooleanField(label="Disponível", required=False, initial=True)
     custo_unitario = forms.DecimalField(
-        label="Custo unitario", max_digits=10, decimal_places=2, min_value=0, required=False
+        label="Custo unitário", max_digits=10, decimal_places=2, min_value=0, required=False
     )
 
     def __init__(self, *args, item_queryset=None, **kwargs):
@@ -119,6 +120,8 @@ class ItemPedidoCompraForm(forms.ModelForm):
     class Meta:
         model = ItemPedidoCompra
         fields = ["produto", "quantidade", "custo_unitario_previsto"]
+        widgets = {"quantidade": QuantidadeNumberInput()}
+        labels = {"custo_unitario_previsto": "Custo unitário previsto"}
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
@@ -141,6 +144,13 @@ class EntradaCompraForm(forms.ModelForm):
             "data_emissao": forms.DateInput(attrs={"type": "date"}),
             "vencimento_financeiro": forms.DateInput(attrs={"type": "date"}),
             "observacoes": forms.Textarea(attrs={"rows": 3}),
+        }
+        labels = {
+            "numero_documento": "Número do documento",
+            "data_emissao": "Data de emissão",
+            "vencimento_financeiro": "Vencimento financeiro",
+            "gerar_conta_financeira": "Gerar conta financeira",
+            "observacoes": "Observações",
         }
 
     def __init__(self, *args, user=None, **kwargs):
@@ -176,12 +186,12 @@ class EntradaCompraForm(forms.ModelForm):
             if cleaned_data.get("fornecedor") and cleaned_data["fornecedor"].pk != original.fornecedor_id:
                 self.add_error("fornecedor", "O fornecedor identificado pelo XML não pode ser alterado.")
             if cleaned_data.get("filial") and cleaned_data["filial"].pk != original.filial_id:
-                self.add_error("filial", "A filial destinataria identificada pelo XML não pode ser alterada.")
+                self.add_error("filial", "A filial destinatária identificada pelo XML não pode ser alterada.")
         return cleaned_data
 
 
 class ImportarXMLEntradaForm(forms.Form):
-    arquivo_xml = forms.FileField(label="Arquivo XML da NF-e", help_text="Envie uma NF-e autorizada de ate 5 MB.")
+    arquivo_xml = forms.FileField(label="Arquivo XML da NF-e", help_text="Envie uma NF-e autorizada de até 5 MB.")
     gerar_conta_financeira = forms.BooleanField(
         label="Gerar conta financeira ao finalizar", required=False, initial=True
     )
@@ -191,7 +201,7 @@ class ImportarXMLEntradaForm(forms.Form):
         if arquivo.size > 5 * 1024 * 1024:
             raise forms.ValidationError("O arquivo XML deve ter no máximo 5 MB.")
         if not arquivo.name.lower().endswith(".xml"):
-            raise forms.ValidationError("Envie um arquivo com extensao .xml.")
+            raise forms.ValidationError("Envie um arquivo com extensão .xml.")
         return arquivo
 
 
@@ -203,8 +213,18 @@ class ItemEntradaCompraForm(forms.ModelForm):
             "atualizar_preco_custo",
         ]
         widgets = {
+            "quantidade": QuantidadeNumberInput(),
             "fabricacao": forms.DateInput(attrs={"type": "date"}),
             "validade": forms.DateInput(attrs={"type": "date"}),
+        }
+        labels = {
+            "produto": "Produto",
+            "quantidade": "Quantidade",
+            "custo_unitario": "Custo unitário",
+            "codigo_lote": "Código do lote",
+            "fabricacao": "Fabricação",
+            "validade": "Validade",
+            "atualizar_preco_custo": "Atualizar preço de custo",
         }
 
     def __init__(self, *args, **kwargs):

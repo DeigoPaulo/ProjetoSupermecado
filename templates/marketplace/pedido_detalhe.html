@@ -164,7 +164,7 @@ document.addEventListener("DOMContentLoaded", function () {
 <section class="panel mt-panel">
   <div class="panel-title">Itens do pedido</div>
   <table>
-    <thead><tr><th>Produto</th><th>Pedido</th><th>Separado</th><th>Unitario</th><th>Total</th><th></th></tr></thead>
+    <thead><tr><th>Produto</th><th>Pedido</th><th>Separado</th><th>Unitário</th><th>Total</th><th></th></tr></thead>
     <tbody>
       {% for item in pedido.itens.all %}
         <tr><td>{{ item.produto }}</td><td>{{ item.quantidade|quantidade_br }}</td><td>{{ item.quantidade_separada|quantidade_br }}</td><td>R$ {{ item.preco_unitario|floatformat:2 }}</td><td>R$ {{ item.total|floatformat:2 }}</td><td>{% if pedido.status == "RASCUNHO" %}<form method="post" action="{% url 'marketplace:remover_item' pedido.pk item.pk %}">{% csrf_token %}<button class="secondary-button" type="submit" title="Remover"><i class="fa-solid fa-trash"></i></button></form>{% endif %}</td></tr>
@@ -178,7 +178,7 @@ document.addEventListener("DOMContentLoaded", function () {
   <div class="panel-title">Conferência da separação</div>
   <form id="delivery-conference-form" method="post" action="{% url 'marketplace:acao' pedido.pk %}" class="form-grid">
     {% csrf_token %}<input type="hidden" name="acao" value="separacao">
-    {% for item in pedido.itens.all %}<label class="form-field"><span>{{ item.produto }} (pedido: {{ item.quantidade|quantidade_br }})</span><input type="number" name="item_{{ item.pk }}" value="{{ item.quantidade_separada|stringformat:'s' }}" min="0" max="{{ item.quantidade|stringformat:'s' }}" step="0.001" required></label>{% endfor %}
+    {% for item in pedido.itens.all %}<label class="form-field"><span>{{ item.produto }} (pedido: {{ item.quantidade|quantidade_br }})</span><input type="number" name="item_{{ item.pk }}" value="{{ item.quantidade_separada|quantidade_input }}" min="0" max="{{ item.quantidade|quantidade_input }}" step="0.001" required></label>{% endfor %}
     <div class="form-actions"><button class="secondary-button" type="submit">Salvar conferência <kbd>Ctrl+Enter</kbd></button></div>
   </form>
 </section>

@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% load static %}
+{% load static formatadores %}
 {% block title %}Entrada de Compra{% endblock %}
 {% block content %}
 <header class="page-header"><div><h1>{% if object %}Revisar entrada #{{ object.pk }}{% else %}Nova entrada{% endif %}</h1><p>Registre o recebimento como rascunho antes de atualizar estoque e financeiro.</p></div></header>
@@ -20,7 +20,7 @@
     <div class="field checkbox-field purchase-finance-choice">{{ form.gerar_conta_financeira }}{{ form.gerar_conta_financeira.label_tag }}{{ form.gerar_conta_financeira.errors }}<small data-finance-message></small></div><div class="field span-2">{{ form.observacoes.label_tag }}{{ form.observacoes }}{{ form.observacoes.errors }}</div>
   </div></section>
 
-  <section class="purchase-live-summary" aria-label="Resumo operacional"><div><span>Itens</span><strong data-summary-items>{{ resumo_entrada.itens }}</strong></div><div><span>Quantidade</span><strong data-summary-quantity>{{ resumo_entrada.quantidade|floatformat:3 }}</strong></div><div><span>Total previsto/recebido</span><strong data-summary-total>R$ {{ resumo_entrada.total|floatformat:2 }}</strong></div></section>
+  <section class="purchase-live-summary" aria-label="Resumo operacional"><div><span>Itens</span><strong data-summary-items>{{ resumo_entrada.itens }}</strong></div><div><span>Quantidade</span><strong data-summary-quantity>{{ resumo_entrada.quantidade|quantidade_br }}</strong></div><div><span>Total previsto/recebido</span><strong data-summary-total>R$ {{ resumo_entrada.total|floatformat:2 }}</strong></div></section>
 
   <section class="form-section purchase-section"><div class="form-section-header"><div><span class="status status-success">Recebimento físico</span><h2>Itens recebidos</h2></div><p>Produto, quantidade e custo são essenciais; informe lote e datas quando aplicáveis.</p></div>
     {{ formset.management_form }}{% if formset.non_form_errors %}<div class="message error">{{ formset.non_form_errors|striptags }}</div>{% endif %}

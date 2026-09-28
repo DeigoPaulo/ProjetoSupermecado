@@ -879,7 +879,7 @@ def atribuir_saldo_historico_lote(
     if quantidade <= 0:
         raise ValidationError("Quantidade deve ser maior que zero.")
     if custo_unitario < 0:
-        raise ValidationError("Custo unitario não pode ser negativo.")
+        raise ValidationError("Custo unitário não pode ser negativo.")
 
     estoque = Estoque.objects.select_for_update().select_related("produto", "filial").get(pk=estoque.pk)
     lotes_atuais = list(

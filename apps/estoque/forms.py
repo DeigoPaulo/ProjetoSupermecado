@@ -2,7 +2,7 @@ from django import forms
 from django.forms import formset_factory, inlineformset_factory
 
 from apps.clientes.escopo import empresa_id_do_usuario
-from apps.core_forms import aplicar_select2
+from apps.core_forms import QuantidadeNumberInput, aplicar_select2
 
 from .escopo import usuarios_para_usuario
 from .models import (
@@ -25,7 +25,7 @@ class MovimentacaoEstoqueForm(forms.Form):
     produto = forms.ModelChoiceField(queryset=None)
     filial = forms.ModelChoiceField(queryset=None)
     tipo = forms.ChoiceField(choices=TipoMovimentacaoEstoque.choices)
-    quantidade = forms.DecimalField(max_digits=12, decimal_places=3, min_value=0.001)
+    quantidade = forms.DecimalField(max_digits=12, decimal_places=3, min_value=0.001, widget=QuantidadeNumberInput())
     motivo = forms.CharField(max_length=255, required=False)
     referencia = forms.CharField(max_length=120, required=False)
     custo_unitario = forms.DecimalField(max_digits=10, decimal_places=2, required=False, min_value=0)
@@ -71,7 +71,7 @@ class MovimentacaoEstoqueForm(forms.Form):
 
 class AtribuirSaldoLoteForm(forms.Form):
     codigo = forms.CharField(max_length=60, label="Código do lote")
-    quantidade = forms.DecimalField(max_digits=12, decimal_places=3, min_value=0.001)
+    quantidade = forms.DecimalField(max_digits=12, decimal_places=3, min_value=0.001, widget=QuantidadeNumberInput())
     custo_unitario = forms.DecimalField(max_digits=10, decimal_places=2, min_value=0)
     fabricacao = forms.DateField(required=False, widget=forms.DateInput(attrs={"type": "date"}))
     validade = forms.DateField(required=False, widget=forms.DateInput(attrs={"type": "date"}))
@@ -102,6 +102,7 @@ class ItemInventarioEstoqueForm(forms.ModelForm):
     class Meta:
         model = ItemInventarioEstoque
         fields = ["produto", "quantidade_contada", "observacao"]
+        widgets = {"quantidade_contada": QuantidadeNumberInput()}
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
@@ -120,6 +121,7 @@ class ContagemItemInventarioForm(forms.ModelForm):
             "quantidade_contada": "Quantidade contada",
             "observacao": "Observação",
         }
+        widgets = {"quantidade_contada": QuantidadeNumberInput()}
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
@@ -136,6 +138,7 @@ class ContagemLoteInventarioValidadeForm(forms.Form):
         max_digits=12,
         decimal_places=3,
         min_value=0,
+        widget=QuantidadeNumberInput(),
     )
     observacao = forms.CharField(
         label="Observação",
@@ -153,6 +156,7 @@ class ConferenciaFisicaValidadeLoteForm(forms.Form):
         max_digits=12,
         decimal_places=3,
         min_value=0,
+        widget=QuantidadeNumberInput(),
     )
     observacao = forms.CharField(
         label="Observação",
@@ -177,7 +181,7 @@ class TratamentoValidadeLoteForm(forms.Form):
     observacao = forms.CharField(label="Orientação/observação", max_length=255, widget=forms.Textarea(attrs={"rows": 3}))
 
 class PerdaLoteValidadeForm(forms.Form):
-    quantidade = forms.DecimalField(max_digits=12, decimal_places=3, min_value=0.001)
+    quantidade = forms.DecimalField(max_digits=12, decimal_places=3, min_value=0.001, widget=QuantidadeNumberInput())
     motivo = forms.CharField(max_length=255, widget=forms.Textarea(attrs={"rows": 3}))
 
 
@@ -185,6 +189,7 @@ class PerdaEstoqueForm(forms.ModelForm):
     class Meta:
         model = PerdaEstoque
         fields = ["produto", "filial", "tipo", "quantidade", "motivo"]
+        widgets = {"quantidade": QuantidadeNumberInput()}
 
     def __init__(self, *args, user=None, **kwargs):
         super().__init__(*args, **kwargs)
@@ -202,7 +207,7 @@ class DesmembramentoProdutoForm(forms.Form):
     receita = forms.ModelChoiceField(queryset=None, required=False, label="Receita padrão")
     filial = forms.ModelChoiceField(queryset=None)
     produto_origem = forms.ModelChoiceField(queryset=None, label="Produto origem")
-    quantidade_origem = forms.DecimalField(max_digits=12, decimal_places=3, min_value=0.001)
+    quantidade_origem = forms.DecimalField(max_digits=12, decimal_places=3, min_value=0.001, widget=QuantidadeNumberInput())
     tipo = forms.ChoiceField(choices=TipoDesmembramentoProduto.choices, initial=TipoDesmembramentoProduto.SIMPLES)
     motivo = forms.CharField(max_length=255)
     observacao = forms.CharField(widget=forms.Textarea(attrs={"rows": 3}), required=False)
@@ -247,7 +252,9 @@ class DesmembramentoProdutoForm(forms.Form):
 
 class DesmembramentoDestinoForm(forms.Form):
     produto_destino = forms.ModelChoiceField(queryset=None, label="Produto destino")
-    quantidade_destino = forms.DecimalField(max_digits=12, decimal_places=3, min_value=0.001, label="Quantidade")
+    quantidade_destino = forms.DecimalField(
+        max_digits=12, decimal_places=3, min_value=0.001, label="Quantidade", widget=QuantidadeNumberInput()
+    )
     percentual_rendimento_esperado = forms.DecimalField(
         max_digits=7,
         decimal_places=2,
@@ -261,7 +268,7 @@ class DesmembramentoDestinoForm(forms.Form):
     tipo_saida_destino = forms.ChoiceField(
         choices=TipoSaidaDesmembramento.choices,
         initial=TipoSaidaDesmembramento.VENDAVEL,
-        label="Classificacao",
+        label="Classificação",
     )
 
     def __init__(self, *args, **kwargs):
@@ -290,6 +297,10 @@ class ReceitaDesmembramentoForm(forms.ModelForm):
             "empresa", "filial", "produto_origem", "quantidade_origem", "produto_destino",
             "quantidade_destino", "tipo", "tipo_saida", "observacao", "is_active",
         ]
+        widgets = {
+            "quantidade_origem": QuantidadeNumberInput(),
+            "quantidade_destino": QuantidadeNumberInput(),
+        }
 
     def __init__(self, *args, user=None, **kwargs):
         super().__init__(*args, **kwargs)
@@ -312,6 +323,7 @@ class ComposicaoProdutoForm(forms.ModelForm):
     class Meta:
         model = ComposicaoProduto
         fields = ["empresa", "filial", "produto_final", "quantidade_final", "tipo", "observacao", "is_active"]
+        widgets = {"quantidade_final": QuantidadeNumberInput()}
 
     def __init__(self, *args, user=None, **kwargs):
         super().__init__(*args, **kwargs)
@@ -332,6 +344,7 @@ class ItemComposicaoProdutoForm(forms.ModelForm):
     class Meta:
         model = ItemComposicaoProduto
         fields = ["produto_componente", "quantidade"]
+        widgets = {"quantidade": QuantidadeNumberInput()}
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
@@ -356,7 +369,7 @@ ItemComposicaoProdutoFormSet = inlineformset_factory(
 
 class ProducaoComposicaoForm(forms.Form):
     filial = forms.ModelChoiceField(queryset=None)
-    quantidade_final = forms.DecimalField(max_digits=12, decimal_places=3, min_value=0.001)
+    quantidade_final = forms.DecimalField(max_digits=12, decimal_places=3, min_value=0.001, widget=QuantidadeNumberInput())
     motivo = forms.CharField(max_length=255)
     observacao = forms.CharField(widget=forms.Textarea(attrs={"rows": 3}), required=False)
     codigo_lote = forms.CharField(max_length=60, required=False, label="Lote do produto final")
@@ -402,7 +415,11 @@ class OrdemProducaoComposicaoForm(forms.ModelForm):
             "composicao", "filial", "quantidade_planejada", "data_programada", "prioridade",
             "setor_responsavel", "etapa_operacional", "responsavel_operacional", "motivo", "observacao",
         ]
-        widgets = {"data_programada": forms.DateInput(attrs={"type": "date"}), "observacao": forms.Textarea(attrs={"rows": 3})}
+        widgets = {
+            "quantidade_planejada": QuantidadeNumberInput(),
+            "data_programada": forms.DateInput(attrs={"type": "date"}),
+            "observacao": forms.Textarea(attrs={"rows": 3}),
+        }
 
     def __init__(self, *args, user=None, **kwargs):
         super().__init__(*args, **kwargs)

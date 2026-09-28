@@ -1,5 +1,5 @@
 {% if page_obj and page_obj.paginator.num_pages > 1 %}
-<nav class="pagination" aria-label="Paginacao">
+<nav class="pagination" aria-label="Paginação">
   {% if page_obj.has_previous %}
     <a class="secondary-button" href="{% querystring page=page_obj.previous_page_number %}"><i class="fa-solid fa-chevron-left"></i> Anterior</a>
   {% else %}<span class="secondary-button disabled"><i class="fa-solid fa-chevron-left"></i> Anterior</span>{% endif %}

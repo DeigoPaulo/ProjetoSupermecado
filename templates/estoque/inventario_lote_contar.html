@@ -12,13 +12,13 @@
 </header>
 
 <section class="metrics-grid">
-  <article class="metric"><span>Saldo atual do lote</span><strong>{{ escopo.lote.quantidade_atual }}</strong></article>
-  <article class="metric"><span>Quantidade inicial</span><strong>{{ escopo.lote.quantidade_inicial }}</strong></article>
-  <article class="metric"><span>Capacidade auditada</span><strong>{{ escopo.lote.quantidade_maxima_auditada }}</strong></article>
+  <article class="metric"><span>Saldo atual do lote</span><strong>{{ escopo.lote.quantidade_atual|quantidade_br }}</strong></article>
+  <article class="metric"><span>Quantidade inicial</span><strong>{{ escopo.lote.quantidade_inicial|quantidade_br }}</strong></article>
+  <article class="metric"><span>Capacidade auditada</span><strong>{{ escopo.lote.quantidade_maxima_auditada|quantidade_br }}</strong></article>
   <article class="metric"><span>Validade</span><strong>{{ escopo.lote.validade|date:"d/m/Y" }}</strong></article>
   {% if escopo.origem %}
-    <article class="metric"><span>Evidência anterior</span><strong>{{ escopo.origem.conferencia.quantidade_observada }}</strong></article>
-    <article class="metric"><span>Diferença anterior</span><strong>{{ escopo.origem.conferencia.diferenca_snapshot }}</strong></article>
+    <article class="metric"><span>Evidência anterior</span><strong>{{ escopo.origem.conferencia.quantidade_observada|quantidade_br }}</strong></article>
+    <article class="metric"><span>Diferença anterior</span><strong>{{ escopo.origem.conferencia.diferenca_snapshot|quantidade_br }}</strong></article>
   {% else %}
     <article class="metric"><span>Origem</span><strong>Lote complementar</strong></article>
     <article class="metric"><span>Finalidade</span><strong>Fechar o total do produto</strong></article>

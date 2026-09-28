@@ -490,7 +490,7 @@ def finalizar_entrada_compra(entrada, *, supervisor=None, ip=None):
             if item.quantidade <= 0:
                 raise ValidationError("Quantidade deve ser maior que zero.")
             if item.custo_unitario < 0:
-                raise ValidationError("Custo unitario não pode ser negativo.")
+                raise ValidationError("Custo unitário não pode ser negativo.")
 
             item.total = item.quantidade * item.custo_unitario
             item.save(update_fields=["total"])

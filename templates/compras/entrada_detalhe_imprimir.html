@@ -45,7 +45,7 @@
 
   <h2>Itens recebidos</h2>
   <table>
-    <thead><tr><th>Produto</th><th>Quantidade</th><th>Custo unitario</th><th>Total</th><th>Atualiza custo</th></tr></thead>
+    <thead><tr><th>Produto</th><th>Quantidade</th><th>Custo unitário</th><th>Total</th><th>Atualiza custo</th></tr></thead>
     <tbody>
       {% for item in entrada.itens.all %}
         <tr><td>{{ item.produto }}</td><td>{{ item.quantidade|quantidade_br }}</td><td class="money">R$ {{ item.custo_unitario|floatformat:2 }}</td><td class="money">R$ {{ item.total|floatformat:2 }}</td><td>{{ item.atualizar_preco_custo|yesno:"Sim,Não" }}</td></tr>

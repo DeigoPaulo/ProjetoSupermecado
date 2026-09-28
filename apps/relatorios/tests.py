@@ -428,7 +428,7 @@ class DashboardTests(TestCase):
         response = self.client.get("/movimentacoes-estoque/")
 
         self.assertContains(response, "<strong>20</strong>", html=True)
-        self.assertContains(response, "<strong>1,250</strong>", html=True)
+        self.assertContains(response, "<strong>1,25</strong>", html=True)
         self.assertNotContains(response, "20,000")
 
 

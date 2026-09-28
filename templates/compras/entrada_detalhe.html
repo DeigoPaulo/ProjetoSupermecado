@@ -207,7 +207,7 @@
                       <td>{{ linha.item.produto }}{% if linha.item.codigo_lote %}<br><small>Lote {{ linha.item.codigo_lote }}</small>{% endif %}</td>
                       <td>{% if linha.numero_item_xml %}nItem {{ linha.numero_item_xml }}{% else %}<span class="status status-warning">Mapear ao salvar</span>{% endif %}</td>
                       <td>{{ linha.item.quantidade|quantidade_br }}</td>
-                      <td><input type="number" name="quantidade_{{ linha.item.pk }}" min="0" max="{{ linha.quantidade_maxima_html }}" step="0.001" value="{{ linha.quantidade_selecionada_html }}"></td>
+                      <td><input type="number" name="quantidade_{{ linha.item.pk }}" min="0" max="{{ linha.quantidade_maxima_html|quantidade_input }}" step="0.001" value="{{ linha.quantidade_selecionada_html|quantidade_input }}"></td>
                     </tr>
                   {% endfor %}
                 </tbody>
@@ -289,7 +289,7 @@
 <div class="panel">
   <div class="panel-title">Itens recebidos</div>
   <table>
-    <thead><tr><th>Produto</th><th>Quantidade</th><th>Custo unitario</th><th>Total</th><th>Lote / validade</th><th>Atualiza custo</th></tr></thead>
+    <thead><tr><th>Produto</th><th>Quantidade</th><th>Custo unitário</th><th>Total</th><th>Lote / validade</th><th>Atualiza custo</th></tr></thead>
     <tbody>
       {% for item in entrada.itens.all %}
         <tr>

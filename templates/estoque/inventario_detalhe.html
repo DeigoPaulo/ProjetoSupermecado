@@ -97,19 +97,19 @@
         {% for item in inventario.itens.all %}
           <tr>
             <td>{{ item.produto }}</td>
-            <td>{{ item.quantidade_sistema }}</td>
+            <td>{{ item.quantidade_sistema|quantidade_br }}</td>
             <td>
               {% if item.quantidade_contada is None %}
                 <span class="status">Pendente</span>
               {% else %}
-                {{ item.quantidade_contada }}
+                {{ item.quantidade_contada|quantidade_br }}
                 {% if inventario.origem == "DIVERGENCIA_VALIDADE" %}
                   <br><small>Soma dos lotes: {{ item.total_contado_lotes|quantidade_br }}</small>
                   {% if item.soma_lotes_confere %}<br><small>Conferida</small>{% else %}<br><small>Soma divergente</small>{% endif %}
                 {% endif %}
               {% endif %}
             </td>
-            <td>{% if item.quantidade_contada is None %}-{% else %}<strong>{{ item.diferenca }}</strong>{% endif %}</td>
+            <td>{% if item.quantidade_contada is None %}-{% else %}<strong>{{ item.diferenca|quantidade_br }}</strong>{% endif %}</td>
             <td>{{ item.observacao|default:"-" }}</td>
             <td>
               {% for escopo in item.escopos_validade.all %}

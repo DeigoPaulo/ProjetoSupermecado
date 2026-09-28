@@ -44,8 +44,8 @@
             <td><input type="checkbox" name="estoques" value="{{ item.estoque.pk }}" aria-label="Selecionar {{ item.estoque.produto.nome }}"></td>
             <td><span class="status">{{ item.nivel_label }} · {{ item.score }}</span></td>
             <td><strong>{{ item.estoque.produto.nome }}</strong><br><small>{{ item.estoque.produto.codigo_barras }}</small></td>
-            <td>{{ item.estoque.quantidade_disponivel }}</td>
-            <td>{{ item.estoque.produto.estoque_minimo }}</td>
+            <td>{{ item.estoque.quantidade_disponivel|quantidade_br }}</td>
+            <td>{{ item.estoque.produto.estoque_minimo|quantidade_br }}</td>
             <td>{{ item.ultima_contagem|date:"d/m/Y H:i"|default:"Nunca" }}</td>
             <td>{{ item.motivos|join:"; " }}</td>
           </tr>

@@ -36,7 +36,7 @@
         {% for item in perdas_por_tipo %}
           <tr>
             <td>{{ item.tipo_label }}</td>
-            <td>{{ item.quantidade }}</td>
+            <td>{{ item.quantidade|quantidade_br }}</td>
             <td>R$ {{ item.custo|floatformat:2 }}</td>
             <td>R$ {{ item.venda|floatformat:2 }}</td>
           </tr>

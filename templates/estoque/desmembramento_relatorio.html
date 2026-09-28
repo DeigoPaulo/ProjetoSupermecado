@@ -90,7 +90,7 @@
           <td>{{ item.desmembramento.filial }}</td>
           <td>
             <a href="{% url 'estoque:desmembramento_detalhe' item.desmembramento_id %}"><strong>{{ item.desmembramento.produto_origem }}</strong></a>
-            <br><small>{{ item.desmembramento.get_tipo_display }} | Saida: {{ item.desmembramento.quantidade_origem|quantidade_br }}</small>
+            <br><small>{{ item.desmembramento.get_tipo_display }} | Saída: {{ item.desmembramento.quantidade_origem|quantidade_br }}</small>
           </td>
           <td>
             <strong>{{ item.produto_destino }}</strong><br>

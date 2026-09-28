@@ -22,7 +22,7 @@ from apps.vendas.models import FormaPagamento, FormaPagamentoFilial, PagamentoVe
 
 from .models import ConfiguracaoImpressao, HomologacaoOperacional, ModeloEtiqueta, ModeloPapel, TipoDocumentoImpressao
 from .services import configuracao_impressao_para, criar_configuracoes_padrao, estilos_impressao
-from .templatetags.formatadores import quantidade_br
+from .templatetags.formatadores import quantidade_br, quantidade_input
 from .views import CHECKLIST_GRUPOS, DOCUMENTOS_PROJETO, _classificar_dependencia_roadmap, _classificar_etapa_roadmap
 
 def criar_artefato_pdv_teste(caminho, conteudo, versao=None, assinado=False):
@@ -86,9 +86,33 @@ def criar_pacote_servidor_teste(
 
 class FormatadoresTemplateTests(SimpleTestCase):
     def test_quantidade_br_remove_zeros_de_unidade_e_mantem_fracao_brasileira(self):
-        self.assertEqual(quantidade_br("20.000"), "20")
-        self.assertEqual(quantidade_br("1.000"), "1")
-        self.assertEqual(quantidade_br("1.250"), "1,250")
+        casos = {
+            Decimal("12.000"): "12",
+            Decimal("12.500"): "12,5",
+            Decimal("12.250"): "12,25",
+            Decimal("12.125"): "12,125",
+            Decimal("1.000"): "1",
+            Decimal("1.100"): "1,1",
+            Decimal("1.010"): "1,01",
+            Decimal("0.750"): "0,75",
+            Decimal("0.075"): "0,075",
+            Decimal("0.001"): "0,001",
+            Decimal("12.005"): "12,005",
+        }
+        for valor, esperado in casos.items():
+            with self.subTest(valor=valor):
+                self.assertEqual(quantidade_br(valor), esperado)
+
+        self.assertEqual(quantidade_br(None), "0")
+        self.assertEqual(quantidade_br(""), "0")
+        self.assertEqual(quantidade_br("invalido"), "invalido")
+        self.assertEqual(quantidade_br(12), "12")
+        self.assertEqual(quantidade_br("12,500"), "12,5")
+
+    def test_quantidade_input_usa_ponto_e_preserva_valor_invalido(self):
+        self.assertEqual(quantidade_input(Decimal("12.500")), "12.5")
+        self.assertEqual(quantidade_input(Decimal("0.750")), "0.75")
+        self.assertEqual(quantidade_input("valor-invalido"), "valor-invalido")
 
 class ClassificadorRoadmapTests(SimpleTestCase):
     def test_credenciais_smtp_nao_sao_confundidas_com_adquirente_rede(self):

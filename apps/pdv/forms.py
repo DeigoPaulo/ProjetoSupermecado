@@ -4,6 +4,7 @@ from django import forms
 from django.core.exceptions import ValidationError
 from django.utils import timezone
 
+from apps.core_forms import QuantidadeNumberInput
 from apps.vendas.models import TipoDocumentoConsumidor
 
 from .models import Caixa, Sangria, Suprimento
@@ -21,7 +22,7 @@ class AdicionarItemForm(forms.Form):
         decimal_places=3,
         min_value=0.001,
         initial=1,
-        widget=forms.NumberInput(attrs={"step": "0.001", "inputmode": "decimal"}),
+        widget=QuantidadeNumberInput(attrs={"step": "0.001", "inputmode": "decimal"}),
     )
 
 
@@ -36,7 +37,7 @@ class AlterarQuantidadeItemForm(forms.Form):
             "invalid": "Informe uma quantidade válida.",
             "min_value": "A quantidade deve ser maior que zero.",
         },
-        widget=forms.NumberInput(attrs={"step": "0.001", "min": "0.001", "inputmode": "decimal"}),
+        widget=QuantidadeNumberInput(attrs={"step": "0.001", "min": "0.001", "inputmode": "decimal"}),
     )
 
 
@@ -166,7 +167,7 @@ class PreVendaForm(forms.Form):
     cliente = forms.ModelChoiceField(label="Cliente", queryset=None, required=False, empty_label="Cliente avulso")
     desconto = forms.DecimalField(label="Desconto", max_digits=12, decimal_places=2, min_value=0, initial=0)
     validade = forms.DateField(label="Validade", required=False, widget=forms.DateInput(attrs={"type": "date"}))
-    observacao = forms.CharField(label="Observacao", required=False, widget=forms.Textarea(attrs={"rows": 3}))
+    observacao = forms.CharField(label="Observação", required=False, widget=forms.Textarea(attrs={"rows": 3}))
 
     def __init__(self, *args, user=None, **kwargs):
         super().__init__(*args, **kwargs)

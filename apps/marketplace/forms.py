@@ -2,7 +2,7 @@ from django import forms
 from django.forms import inlineformset_factory
 
 from apps.clientes.escopo import clientes_para_usuario, empresa_id_do_usuario
-from apps.core_forms import aplicar_select2
+from apps.core_forms import QuantidadeNumberInput, aplicar_select2
 from apps.produtos.models import Produto
 
 from .models import (
@@ -60,6 +60,8 @@ class ItemPedidoOnlineForm(forms.ModelForm):
     class Meta:
         model = ItemPedidoOnline
         fields = ["produto", "quantidade", "preco_unitario"]
+        widgets = {"quantidade": QuantidadeNumberInput()}
+        labels = {"preco_unitario": "Preço unitário"}
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)

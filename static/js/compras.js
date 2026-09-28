@@ -1,4 +1,8 @@
 document.addEventListener("DOMContentLoaded", function () {
+  function formatarQuantidadePtBR(valor) {
+    return valor.toLocaleString("pt-BR", { minimumFractionDigits: 0, maximumFractionDigits: 3 });
+  }
+
   document.querySelectorAll("[data-purchase-form]").forEach(function (form) {
     var revealButton = form.querySelector("[data-formset-reveal]");
     var draftButton = form.querySelector("[data-draft-submit]");
@@ -49,7 +53,7 @@ document.addEventListener("DOMContentLoaded", function () {
       var quantityOutput = form.querySelector("[data-summary-quantity]");
       var totalOutput = form.querySelector("[data-summary-total]");
       if (itemOutput) itemOutput.textContent = String(activeRows.length);
-      if (quantityOutput) quantityOutput.textContent = quantity.toLocaleString("pt-BR", { minimumFractionDigits: 3, maximumFractionDigits: 3 });
+      if (quantityOutput) quantityOutput.textContent = formatarQuantidadePtBR(quantity);
       if (totalOutput) totalOutput.textContent = total.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
     }
 

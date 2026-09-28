@@ -6,7 +6,7 @@ from django.forms.models import BaseInlineFormSet
 
 from apps.clientes.escopo import empresa_id_do_usuario
 from apps.configuracoes.models import ModeloEtiqueta
-from apps.core_forms import aplicar_select2
+from apps.core_forms import QuantidadeNumberInput, aplicar_select2
 from apps.fiscal.cest import validar_cest
 from apps.fornecedores.escopo import fornecedores_para_usuario
 
@@ -88,6 +88,10 @@ class ProdutoForm(forms.ModelForm):
         ]
         widgets = {
             "imagem": forms.ClearableFileInput(attrs={"accept": ".png,.jpg,.jpeg,image/png,image/jpeg"}),
+            "fator_conversao_compra": QuantidadeNumberInput(),
+            "peso_liquido": QuantidadeNumberInput(),
+            "peso_bruto": QuantidadeNumberInput(),
+            "estoque_minimo": QuantidadeNumberInput(),
         }
 
     def __init__(self, *args, **kwargs):
@@ -481,7 +485,7 @@ class EtiquetaProdutoForm(forms.Form):
     categoria = forms.ModelChoiceField(label="Categoria", queryset=Categoria.objects.none(), required=False)
     marca = forms.ModelChoiceField(label="Marca", queryset=Marca.objects.none(), required=False)
     modelo_salvo = forms.ModelChoiceField(label="Modelo profissional", queryset=ModeloEtiqueta.objects.none(), required=False)
-    quantidade_copias = forms.IntegerField(label="Copias por produto", min_value=1, max_value=20, initial=1)
+    quantidade_copias = forms.IntegerField(label="Cópias por produto", min_value=1, max_value=20, initial=1)
     incluir_inativos = forms.BooleanField(label="Incluir produtos inativos", required=False)
 
     def __init__(self, *args, filial=None, **kwargs):
