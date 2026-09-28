@@ -275,6 +275,44 @@ class ProdutoViewsTests(TestCase):
         self.assertContains(response, 'data-ajax-url="/produtos/categorias/busca.json"')
         self.assertContains(response, 'data-ajax-url="/produtos/marcas/busca.json"')
 
+    def test_form_produto_exibe_navegacao_erros_acoes_sticky_e_formsets_progressivos(self):
+        pagina = self.client.get("/produtos/novo/")
+
+        self.assertEqual(pagina.status_code, 200)
+        self.assertContains(pagina, 'class="product-section-nav"')
+        self.assertContains(pagina, 'id="produto-geral"')
+        self.assertContains(pagina, 'id="produto-precos"')
+        self.assertContains(pagina, 'class="sticky-form-actions product-save-actions"')
+        self.assertContains(pagina, "Ctrl+S")
+        self.assertContains(pagina, "Adicionar código")
+        self.assertContains(pagina, "Adicionar fornecedor")
+        self.assertContains(pagina, "Adicionar imagem")
+        self.assertContains(pagina, 'name="codigos-TOTAL_FORMS"')
+        self.assertContains(pagina, 'name="fornecedores-TOTAL_FORMS"')
+        self.assertContains(pagina, 'name="galeria-TOTAL_FORMS"')
+
+        invalido = self.client.post(
+            "/produtos/novo/",
+            {
+                "codigo_barras": "",
+                "nome": "",
+                "categoria": self.categoria.pk,
+                "unidade": "UN",
+                "preco_custo": "1.00",
+                "preco_venda": "",
+                "estoque_minimo": "0",
+                "galeria-TOTAL_FORMS": "0",
+                "galeria-INITIAL_FORMS": "0",
+                "galeria-MIN_NUM_FORMS": "0",
+                "galeria-MAX_NUM_FORMS": "1000",
+            },
+        )
+
+        self.assertEqual(invalido.status_code, 200)
+        self.assertContains(invalido, "Não foi possível salvar o produto.")
+        self.assertContains(invalido, 'href="#id_nome"')
+        self.assertContains(invalido, 'data-form-error-summary')
+
     def test_form_produto_exibe_nutricao_e_similares_como_opcionais(self):
         response = self.client.get(f"/produtos/{self.produto.pk}/editar/")
 
@@ -490,6 +528,74 @@ class ProdutoViewsTests(TestCase):
 
         self.assertContains(lista, self.produto.nome)
         self.assertContains(etiquetas, self.produto.nome)
+
+    def test_lista_busca_por_nome_ean_principal_adicional_e_codigo_interno(self):
+        CodigoBarrasProduto.objects.create(
+            produto=self.produto,
+            codigo="17891234560000",
+            tipo="CAIXA",
+            fator_conversao=Decimal("6.000"),
+        )
+
+        for termo in ("Arroz", self.produto.codigo_barras, "17891234560000", self.produto.codigo_interno):
+            with self.subTest(termo=termo):
+                resposta = self.client.get("/produtos/", {"q": termo})
+                self.assertEqual(list(resposta.context["produtos"]), [self.produto])
+
+    def test_lista_filtra_status_canal_tipo_e_categoria(self):
+        outra_categoria = Categoria.objects.create(nome="Bebidas filtro")
+        inativo = Produto.all_objects.create(
+            codigo_barras="7890000000881",
+            nome="Produto inativo",
+            categoria=outra_categoria,
+            preco_venda=Decimal("2.00"),
+            is_active=False,
+        )
+        pesavel_marketplace = Produto.objects.create(
+            codigo_barras="7890000000882",
+            nome="Produto pesável online",
+            categoria=outra_categoria,
+            preco_venda=Decimal("9.00"),
+            produto_pesavel=True,
+            vendido_no_pdv=False,
+            vendido_no_marketplace=True,
+        )
+
+        self.assertEqual(
+            list(self.client.get("/produtos/", {"status": "inativos"}).context["produtos"]),
+            [inativo],
+        )
+        self.assertEqual(
+            list(self.client.get("/produtos/", {"canal": "marketplace"}).context["produtos"]),
+            [pesavel_marketplace],
+        )
+        self.assertEqual(
+            list(self.client.get("/produtos/", {"tipo": "pesaveis"}).context["produtos"]),
+            [pesavel_marketplace],
+        )
+        self.assertEqual(
+            set(self.client.get("/produtos/", {"categoria": outra_categoria.pk}).context["produtos"]),
+            {inativo, pesavel_marketplace},
+        )
+
+    def test_lista_preserva_filtros_na_paginacao(self):
+        Produto.objects.bulk_create([
+            Produto(
+                codigo_barras=f"789000001{indice:03d}",
+                nome=f"Produto pagina {indice:02d}",
+                categoria=self.categoria,
+                preco_venda=Decimal("3.00"),
+            )
+            for indice in range(30)
+        ])
+
+        resposta = self.client.get("/produtos/", {"q": "Produto", "status": "ativos", "canal": "pdv"})
+
+        self.assertEqual(resposta.status_code, 200)
+        self.assertContains(resposta, "q=Produto")
+        self.assertContains(resposta, "status=ativos")
+        self.assertContains(resposta, "canal=pdv")
+        self.assertContains(resposta, "page=2")
     def test_produto_e_galeria_aceitam_png_e_bloqueiam_gif(self):
         imagem_png = SimpleUploadedFile("produto.png", png_1x1(), content_type="image/png")
         resposta_png = self.client.post(

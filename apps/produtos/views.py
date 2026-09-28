@@ -45,11 +45,29 @@ class ProdutoListView(LoginRequiredMixin, RoleRequiredMixin, ListView):
     context_object_name = "produtos"
     paginate_by = 25
 
+    FILTROS_STATUS = {"ativos", "inativos"}
+    FILTROS_CANAL = {"pdv", "marketplace"}
+    FILTROS_TIPO = {"pesaveis", "nao_pesaveis"}
+
+    def _filtros(self):
+        status = (self.request.GET.get("status") or "").strip()
+        canal = (self.request.GET.get("canal") or "").strip()
+        tipo = (self.request.GET.get("tipo") or "").strip()
+        categoria = (self.request.GET.get("categoria") or "").strip()
+        return {
+            "q": (self.request.GET.get("q") or "").strip(),
+            "status": status if status in self.FILTROS_STATUS else "",
+            "canal": canal if canal in self.FILTROS_CANAL else "",
+            "tipo": tipo if tipo in self.FILTROS_TIPO else "",
+            "categoria": categoria if categoria.isdigit() else "",
+        }
+
     def get_queryset(self):
+        filtros = self._filtros()
         queryset = Produto.all_objects.select_related(
             "categoria", "categoria__parent", "categoria__parent__parent", "categoria__parent__parent__parent", "marca"
         ).order_by("nome")
-        termo = self.request.GET.get("q")
+        termo = filtros["q"]
         if termo:
             queryset = queryset.filter(
                 Q(nome__icontains=termo)
@@ -57,7 +75,30 @@ class ProdutoListView(LoginRequiredMixin, RoleRequiredMixin, ListView):
                 | Q(codigo_interno__icontains=termo)
                 | Q(codigos_adicionais__codigo__icontains=termo)
             ).distinct()
+        if filtros["status"] == "ativos":
+            queryset = queryset.filter(is_active=True)
+        elif filtros["status"] == "inativos":
+            queryset = queryset.filter(is_active=False)
+        if filtros["canal"] == "pdv":
+            queryset = queryset.filter(vendido_no_pdv=True)
+        elif filtros["canal"] == "marketplace":
+            queryset = queryset.filter(vendido_no_marketplace=True)
+        if filtros["tipo"] == "pesaveis":
+            queryset = queryset.filter(produto_pesavel=True)
+        elif filtros["tipo"] == "nao_pesaveis":
+            queryset = queryset.filter(produto_pesavel=False)
+        if filtros["categoria"]:
+            queryset = queryset.filter(categoria_id=filtros["categoria"])
         return queryset
+
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        filtros = self._filtros()
+        context["filtros"] = filtros
+        context["categoria_selecionada"] = (
+            Categoria.objects.filter(pk=filtros["categoria"]).first() if filtros["categoria"] else None
+        )
+        return context
 
 
 class ProdutoGaleriaMixin:
@@ -135,6 +176,11 @@ class ProdutoGaleriaMixin:
                 queryset=self._fornecedores_queryset(),
                 form_kwargs={"user": self.request.user},
             )
+        context["codigos_tem_registros"] = any(form.instance.pk for form in context["codigos_formset"])
+        context["balanca_tem_registros"] = any(form.instance.pk for form in context["balanca_formset"])
+        context["fornecedores_tem_registros"] = any(form.instance.pk for form in context["fornecedores_formset"])
+        context["galeria_tem_registros"] = any(form.instance.pk for form in context["galeria_formset"])
+        context["nutricao_tem_registro"] = any(form.instance.pk for form in context["nutricao_formset"])
         return context
 
     def _balanca_queryset(self):

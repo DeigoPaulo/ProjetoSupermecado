@@ -3,68 +3,49 @@
 {% block title %}Produtos{% endblock %}
 
 {% block content %}
-<header class="page-header">
-  <div>
-    <h1>Produtos</h1>
-    <p>Cadastro central para PDV, estoque e futuro marketplace.</p>
-  </div>
-  <div class="actions">
-    <a class="secondary-button" href="{% url 'produtos:categoria_nova' %}">Nova categoria</a>
-    <a class="secondary-button" href="{% url 'produtos:marca_nova' %}">Nova marca</a>
-    <a class="secondary-button" href="{% url 'produtos:importar_csv' %}">Importar CSV</a>
-    <a class="secondary-button" href="{% url 'produtos:reajustar_precos' %}">Reajustar preços</a>
-    <a class="secondary-button" href="{% url 'produtos:versoes_preco' %}"><i class="fa-solid fa-calendar-days"></i> Preços programados</a>
-    <a class="secondary-button" href="{% url 'produtos:etiquetas' %}">Etiquetas</a>
-    <a class="primary-button" href="{% url 'produtos:novo' %}">Novo produto</a>
+<header class="page-header product-list-header">
+  <div><h1>Produtos</h1><p>Cadastro central para PDV, estoque e marketplace.</p></div>
+  <div class="actions product-header-actions">
+    <details class="actions-menu">
+      <summary class="secondary-button"><i class="fa-solid fa-ellipsis"></i> Mais ações</summary>
+      <div class="actions-menu-panel">
+        <a href="{% url 'produtos:categoria_nova' %}"><i class="fa-solid fa-folder-tree"></i> Nova categoria</a>
+        <a href="{% url 'produtos:marca_nova' %}"><i class="fa-solid fa-copyright"></i> Nova marca</a>
+        <a href="{% url 'produtos:importar_csv' %}"><i class="fa-solid fa-file-import"></i> Importar CSV</a>
+        <a href="{% url 'produtos:reajustar_precos' %}"><i class="fa-solid fa-percent"></i> Reajustar preços</a>
+        <a href="{% url 'produtos:versoes_preco' %}"><i class="fa-solid fa-calendar-days"></i> Preços programados</a>
+        <a href="{% url 'produtos:etiquetas' %}"><i class="fa-solid fa-tags"></i> Etiquetas</a>
+      </div>
+    </details>
+    <a class="primary-button" href="{% url 'produtos:novo' %}"><i class="fa-solid fa-plus"></i> Novo produto</a>
   </div>
 </header>
 
-<form method="get" class="toolbar">
-  <input type="search" name="q" value="{{ request.GET.q }}" placeholder="Buscar por nome ou código de barras">
-  <button type="submit">Buscar</button>
+<form method="get" class="toolbar product-filters" aria-label="Filtros de produtos">
+  <label class="product-filter-search"><span>Buscar</span><input type="search" name="q" value="{{ filtros.q }}" placeholder="Nome, EAN ou código interno"></label>
+  <label><span>Status</span><select name="status"><option value="">Todos</option><option value="ativos"{% if filtros.status == "ativos" %} selected{% endif %}>Ativos</option><option value="inativos"{% if filtros.status == "inativos" %} selected{% endif %}>Inativos</option></select></label>
+  <label><span>Canal</span><select name="canal"><option value="">Todos</option><option value="pdv"{% if filtros.canal == "pdv" %} selected{% endif %}>PDV</option><option value="marketplace"{% if filtros.canal == "marketplace" %} selected{% endif %}>Marketplace</option></select></label>
+  <label><span>Tipo</span><select name="tipo"><option value="">Todos</option><option value="pesaveis"{% if filtros.tipo == "pesaveis" %} selected{% endif %}>Pesáveis</option><option value="nao_pesaveis"{% if filtros.tipo == "nao_pesaveis" %} selected{% endif %}>Não pesáveis</option></select></label>
+  <label class="product-filter-category"><span>Categoria</span><select name="categoria" class="select2-field" data-ajax-url="{% url 'produtos:categorias_busca' %}" data-placeholder="Todas as categorias"><option value=""></option>{% if categoria_selecionada %}<option value="{{ categoria_selecionada.pk }}" selected>{{ categoria_selecionada.caminho_completo }}</option>{% endif %}</select></label>
+  <button type="submit"><i class="fa-solid fa-filter"></i> Filtrar</button>
+  {% if filtros.q or filtros.status or filtros.canal or filtros.tipo or filtros.categoria %}<a class="secondary-button" href="{% url 'produtos:lista' %}">Limpar</a>{% endif %}
 </form>
 
-<div class="panel">
-  <table>
-    <thead>
-      <tr><th>Imagem</th><th>Produto</th><th>Código</th><th>Categoria</th><th>Preço</th><th>Unidade</th><th>Marketplace</th><th>Status</th><th></th></tr>
-    </thead>
+<div class="panel table-wrapper product-table-wrap">
+  <table class="product-table">
+    <thead><tr><th>Produto</th><th>Categoria / unidade</th><th>Preço</th><th>Canais</th><th>Status</th><th>Ações</th></tr></thead>
     <tbody>
       {% for produto in produtos %}
         <tr>
-          <td>
-            <span class="product-thumb">
-              {% if produto.imagem %}
-                <img src="{{ produto.imagem.url }}" alt="{{ produto.nome }}" onerror="this.hidden=true; this.nextElementSibling.hidden=false">
-                <i class="fa-solid fa-image" hidden></i>
-              {% else %}
-                <i class="fa-solid fa-image"></i>
-              {% endif %}
-            </span>
-          </td>
-          <td>{{ produto.nome }}</td>
-          <td>{{ produto.codigo_barras }}</td>
-          <td>{{ produto.categoria }}</td>
-          <td>R$ {{ produto.preco_venda|floatformat:2 }}</td>
-          <td>{{ produto.unidade }}</td>
-          <td>
-            {% if produto.vendido_no_marketplace and produto.imagem %}
-              <span class="status status-success">Pronto</span>
-            {% elif produto.vendido_no_marketplace %}
-              <span class="status status-warning">Sem imagem</span>
-            {% else %}
-              <span class="status status-muted">Não vendido</span>
-            {% endif %}
-          </td>
-          <td><span class="status">{{ produto.is_active|yesno:"Ativo,Inativo" }}</span></td>
-          <td>
-            <a href="{% url 'produtos:kardex' produto.pk %}">Kardex</a>
-            &nbsp;
-            <a href="{% url 'produtos:editar' produto.pk %}">Editar</a>
-          </td>
+          <td><div class="product-identification-cell"><span class="product-thumb">{% if produto.imagem %}<img src="{{ produto.imagem.url }}" alt="{{ produto.nome }}" onerror="this.hidden=true; this.nextElementSibling.hidden=false"><i class="fa-solid fa-image" hidden></i>{% else %}<i class="fa-solid fa-image"></i>{% endif %}</span><span><strong>{{ produto.nome }}</strong><small>EAN {{ produto.codigo_barras }}</small>{% if produto.codigo_interno %}<small>Interno {{ produto.codigo_interno }}</small>{% endif %}</span></div></td>
+          <td><strong>{{ produto.categoria }}</strong><br><small>{{ produto.unidade }}</small></td>
+          <td class="product-price-cell"><strong>R$ {{ produto.preco_venda|floatformat:2 }}</strong>{% if produto.preco_promocional %}<small>Promo R$ {{ produto.preco_promocional|floatformat:2 }}</small>{% endif %}</td>
+          <td><div class="status-stack">{% if produto.vendido_no_pdv %}<span class="status status-success">PDV</span>{% else %}<span class="status status-muted">Fora do PDV</span>{% endif %}{% if produto.vendido_no_marketplace and produto.imagem %}<span class="status status-success">Marketplace pronto</span>{% elif produto.vendido_no_marketplace %}<span class="status status-warning">Marketplace · Sem imagem</span>{% else %}<span class="status status-muted">Não vendido online</span>{% endif %}{% if produto.produto_pesavel %}<span class="status">Pesável</span>{% endif %}</div></td>
+          <td>{% if produto.is_active %}<span class="status status-success">Ativo</span>{% else %}<span class="status status-muted">Inativo</span>{% endif %}</td>
+          <td><div class="table-actions"><a class="secondary-button" href="{% url 'produtos:editar' produto.pk %}"><i class="fa-solid fa-pen"></i> Editar</a><a class="secondary-button" href="{% url 'produtos:kardex' produto.pk %}"><i class="fa-solid fa-clock-rotate-left"></i> Kardex</a></div></td>
         </tr>
       {% empty %}
-        <tr><td colspan="9" class="empty">Nenhum produto cadastrado.</td></tr>
+        <tr><td colspan="6" class="empty">Nenhum produto encontrado para os filtros informados.</td></tr>
       {% endfor %}
     </tbody>
   </table>

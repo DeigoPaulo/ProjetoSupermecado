@@ -30,6 +30,7 @@ from apps.estoque.models import (
     ReceitaDesmembramento,
     StatusDesmembramentoProduto,
     StatusInventario,
+    StatusTratamentoValidade,
     StatusOrdemProducaoComposicao,
     StatusProducaoComposicao,
     TipoDesmembramentoProduto,
@@ -50,7 +51,7 @@ from apps.estoque.services import (
     simular_desmembramento_multidestino,
     simular_desmembramento_simples,
 )
-from apps.produtos.models import Categoria, Produto, UnidadeMedida
+from apps.produtos.models import Categoria, CodigoBarrasProduto, Produto, UnidadeMedida
 
 
 class EstoqueViewsTests(TestCase):
@@ -98,6 +99,76 @@ class EstoqueViewsTests(TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertContains(response, "Abertura da contagem")
         self.assertContains(response, "antes de adicionar os produtos contados")
+
+    def test_lista_estoque_busca_por_nome_eans_e_codigo_interno(self):
+        estoque = Estoque.objects.create(
+            produto=self.produto,
+            filial=self.filial,
+            quantidade_atual=Decimal("4.000"),
+        )
+        CodigoBarrasProduto.objects.create(
+            produto=self.produto,
+            codigo="17892222222229",
+            tipo="CAIXA",
+            fator_conversao=Decimal("4.000"),
+        )
+
+        for termo in ("Produto Estoque", self.produto.codigo_barras, self.produto.codigo_interno, "17892222222229"):
+            with self.subTest(termo=termo):
+                resposta = self.client.get("/estoque/", {"q": termo})
+                self.assertEqual(list(resposta.context["estoques"]), [estoque])
+
+    def test_lista_estoque_filtra_filial_saldo_zerado_e_regra_oficial_de_baixo(self):
+        outra_filial = Filial.objects.create(
+            empresa=self.empresa,
+            nome="Filial estoque filtro",
+            cnpj="22.222.222/0002-03",
+        )
+        self.produto.estoque_minimo = Decimal("5.000")
+        self.produto.save(update_fields=["estoque_minimo"])
+        baixo = Estoque.objects.create(
+            produto=self.produto,
+            filial=self.filial,
+            quantidade_atual=Decimal("5.000"),
+        )
+        outro_produto = Produto.objects.create(
+            codigo_barras="7892222222208",
+            nome="Produto zerado filtro",
+            categoria=self.categoria,
+            preco_venda=Decimal("2.00"),
+        )
+        zerado = Estoque.objects.create(produto=outro_produto, filial=outra_filial, quantidade_atual=0)
+
+        self.assertEqual(list(self.client.get("/estoque/", {"filial": self.filial.pk}).context["estoques"]), [baixo])
+        self.assertEqual(list(self.client.get("/estoque/", {"situacao": "com_saldo"}).context["estoques"]), [baixo])
+        self.assertEqual(list(self.client.get("/estoque/", {"situacao": "zerado"}).context["estoques"]), [zerado])
+        baixos = self.client.get("/estoque/", {"situacao": "baixo"})
+        self.assertIn(baixo, list(baixos.context["estoques"]))
+        self.assertContains(baixos, "Estoque baixo")
+        self.assertContains(baixos, "Kardex")
+
+    def test_lista_estoque_exibe_saldo_vendavel_e_bloqueio_por_lote(self):
+        Estoque.objects.create(
+            produto=self.produto,
+            filial=self.filial,
+            quantidade_atual=Decimal("10.000"),
+        )
+        LoteEstoque.objects.create(
+            produto=self.produto,
+            filial=self.filial,
+            codigo="LOTE-BLOQUEADO",
+            validade=timezone.localdate() + timedelta(days=10),
+            quantidade_inicial=Decimal("3.000"),
+            quantidade_atual=Decimal("3.000"),
+            custo_unitario=Decimal("3.00"),
+            tratamento_validade_status=StatusTratamentoValidade.SEPARADO,
+        )
+
+        resposta = self.client.get("/estoque/")
+
+        self.assertContains(resposta, "7")
+        self.assertContains(resposta, "vendável")
+        self.assertContains(resposta, "3 bloqueado")
 
     def test_desmembramento_simples_baixa_origem_gera_destino_custo_e_auditoria(self):
         destino = Produto.objects.create(
@@ -2452,6 +2523,14 @@ class EstoqueCoreMultiempresaTests(TestCase):
         self.assertContains(reconciliacao, "Matriz A")
         self.assertNotContains(reconciliacao, "Matriz B")
         self.assertEqual(lotes.context["resumo_lotes"]["com_saldo"], 1)
+
+    def test_filtro_de_filial_da_lista_estoque_nao_fura_escopo_da_empresa(self):
+        resposta = self.client.get("/estoque/", {"filial": self.filial_b.pk})
+
+        self.assertEqual(resposta.status_code, 200)
+        self.assertEqual(list(resposta.context["estoques"]), [])
+        self.assertEqual(list(resposta.context["filiais_filtro"]), [self.filial_a])
+        self.assertNotContains(resposta, "Matriz B")
 
     def test_ids_de_outra_empresa_nao_abrem_nem_alteram_inventario_ou_reconciliacao(self):
         self.assertEqual(self.client.get(f"/estoque/inventarios/{self.inventario_b.pk}/").status_code, 404)

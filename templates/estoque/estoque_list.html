@@ -4,44 +4,29 @@
 
 {% block content %}
 <header class="page-header">
-  <div>
-    <h1>Estoque</h1>
-    <p>Saldos por produto e filial, incluindo reservas.</p>
-  </div>
-  <div class="actions">
-    <a class="secondary-button" href="{% url 'estoque:lotes' %}">Lotes e validades</a>
-    <a class="secondary-button" href="{% url 'estoque:inventarios' %}">Inventários</a>
-    <a class="secondary-button" href="{% url 'estoque:desmembramentos' %}">Desmembramentos</a>
-    <a class="secondary-button" href="{% url 'estoque:composicoes' %}">Composicoes</a>
-    <a class="primary-button" href="{% url 'estoque:movimentar' %}">Movimentar</a>
-  </div>
+  <div><h1>Estoque</h1><p>Consulta operacional de saldos por produto e filial.</p></div>
+  <div class="actions"><a class="secondary-button" href="{% url 'estoque:lotes' %}">Lotes e validades</a><a class="secondary-button" href="{% url 'estoque:inventarios' %}">Inventários</a><a class="secondary-button" href="{% url 'estoque:desmembramentos' %}">Desmembramentos</a><a class="secondary-button" href="{% url 'estoque:composicoes' %}">Composições</a><a class="primary-button" href="{% url 'estoque:movimentar' %}"><i class="fa-solid fa-arrow-right-arrow-left"></i> Movimentar</a></div>
 </header>
-<section class="operation-notice operation-notice-info">
-  <i class="fa-solid fa-shield-halved"></i>
-  <div><strong>Saldo vendável</strong><span>Desconta reservas, lotes vencidos e lotes separados para análise, devolução ou descarte. Promoção planejada continua liberada para venda.</span></div>
-</section>
-<form method="get" class="toolbar">
-  <input type="search" name="q" value="{{ request.GET.q }}" placeholder="Buscar produto ou código">
-  <button type="submit">Buscar</button>
+<section class="operation-notice operation-notice-info"><i class="fa-solid fa-shield-halved"></i><div><strong>Saldo vendável</strong><span>Desconta reservas, lotes vencidos e lotes separados para análise, devolução ou descarte. Promoção planejada continua liberada para venda.</span></div></section>
+<form method="get" class="toolbar stock-filters" aria-label="Filtros de estoque">
+  <label class="stock-filter-search"><span>Buscar</span><input type="search" name="q" value="{{ filtros.q }}" placeholder="Nome, EAN ou código interno"></label>
+  <label><span>Filial</span><select name="filial"><option value="">Todas permitidas</option>{% for filial in filiais_filtro %}<option value="{{ filial.pk }}"{% if filtros.filial == filial.pk|stringformat:"s" %} selected{% endif %}>{{ filial.nome }}</option>{% endfor %}</select></label>
+  <label><span>Situação</span><select name="situacao"><option value="">Todos</option><option value="com_saldo"{% if filtros.situacao == "com_saldo" %} selected{% endif %}>Com saldo</option><option value="zerado"{% if filtros.situacao == "zerado" %} selected{% endif %}>Zerado</option><option value="baixo"{% if filtros.situacao == "baixo" %} selected{% endif %}>Estoque baixo</option></select></label>
+  <button type="submit"><i class="fa-solid fa-filter"></i> Filtrar</button>{% if filtros.q or filtros.filial or filtros.situacao %}<a class="secondary-button" href="{% url 'estoque:lista' %}">Limpar</a>{% endif %}
 </form>
-<div class="panel">
-  <table>
-    <thead><tr><th>Produto</th><th>Filial</th><th>Físico</th><th>Reservado</th><th>Disponível físico</th><th>Vendável</th><th>Bloqueado por lote</th><th>Atualizado</th></tr></thead>
+<div class="panel table-wrapper stock-table-wrap">
+  <table class="stock-table">
+    <thead><tr><th>Produto</th><th>Filial</th><th>Físico</th><th>Reservado</th><th>Disponível físico</th><th>Vendável</th><th>Bloqueado por lote</th><th>Atualizado</th><th>Ações</th></tr></thead>
     <tbody>
       {% for estoque in estoques %}
-        <tr>
-          <td>{{ estoque.produto }}</td>
-          <td>{{ estoque.filial }}</td>
-          <td>{{ estoque.quantidade_atual|quantidade_br }}</td>
-          <td>{{ estoque.quantidade_reservada|quantidade_br }}</td>
-          <td>{{ estoque.quantidade_disponivel|quantidade_br }}</td>
-          <td><strong>{{ estoque.quantidade_vendavel_operacional|quantidade_br }}</strong></td>
-          <td>{{ estoque.quantidade_bloqueada_venda|quantidade_br }}</td>
-          <td>{{ estoque.atualizado_em|date:"d/m/Y H:i" }}</td>
+        <tr{% if estoque.estoque_baixo_operacional %} class="table-row-warning"{% endif %}>
+          <td><strong>{{ estoque.produto.nome }}</strong><br><small>EAN {{ estoque.produto.codigo_barras }}{% if estoque.produto.codigo_interno %} · {{ estoque.produto.codigo_interno }}{% endif %}</small>{% if estoque.estoque_baixo_operacional %}<br><span class="status status-warning">Estoque baixo</span>{% endif %}</td>
+          <td>{{ estoque.filial }}</td><td>{{ estoque.quantidade_atual|quantidade_br }}</td><td>{{ estoque.quantidade_reservada|quantidade_br }}</td><td>{{ estoque.quantidade_disponivel|quantidade_br }}</td>
+          <td class="stock-sellable-cell"><strong>{{ estoque.quantidade_vendavel_operacional|quantidade_br }}</strong><small>vendável</small></td>
+          <td>{% if estoque.quantidade_bloqueada_venda > 0 %}<span class="status status-warning">{{ estoque.quantidade_bloqueada_venda|quantidade_br }} bloqueado</span><br><small>por validade ou tratamento de lote</small>{% else %}<span class="status status-success">Sem bloqueio</span>{% endif %}</td>
+          <td>{{ estoque.atualizado_em|date:"d/m/Y H:i" }}</td><td>{% if access.cadastros %}<a class="secondary-button" href="{% url 'produtos:kardex' estoque.produto.pk %}"><i class="fa-solid fa-clock-rotate-left"></i> Kardex</a>{% else %}<span class="status status-muted">Consulta</span>{% endif %}</td>
         </tr>
-      {% empty %}
-        <tr><td colspan="8" class="empty">Nenhum saldo de estoque registrado.</td></tr>
-      {% endfor %}
+      {% empty %}<tr><td colspan="9" class="empty">Nenhum saldo encontrado para os filtros informados.</td></tr>{% endfor %}
     </tbody>
   </table>
 </div>

@@ -6,22 +6,50 @@
 <header class="page-header">
   <div>
     <h1>{% if object %}Editar produto{% else %}Novo produto{% endif %}</h1>
-    <p>Use valores decimais para preços e quantidades pesáveis.</p>
+    <p>{% if object %}<strong>{{ object.nome }}</strong> · {{ object.codigo_interno|default:object.codigo_barras }}{% else %}Preencha o núcleo essencial e salve; configurações avançadas são opcionais.{% endif %}</p>
   </div>
 </header>
-<form method="post" enctype="multipart/form-data" class="form-grid panel">
+<nav class="product-section-nav" aria-label="Seções do produto">
+  <a href="#produto-geral" data-product-section-link>Geral</a>
+  <a href="#produto-embalagens" data-product-section-link>Embalagens</a>
+  <a href="#produto-balanca" data-product-section-link>Balança</a>
+  <a href="#produto-fornecedores" data-product-section-link>Fornecedores</a>
+  <a href="#produto-precos" data-product-section-link>Preços</a>
+  <a href="#produto-venda" data-product-section-link>Venda e imagem</a>
+  <a href="#produto-opcionais" data-product-section-link>Opcionais</a>
+  <a href="#produto-fiscal" data-product-section-link>Fiscal</a>
+</nav>
+<form method="post" enctype="multipart/form-data" class="form-grid panel product-form" data-product-form>
   {% csrf_token %}
+  {% if form.errors or codigos_formset.total_error_count or balanca_formset.total_error_count or fornecedores_formset.total_error_count or galeria_formset.total_error_count or nutricao_formset.total_error_count %}
+    <section class="form-error-summary product-error-summary form-field-wide" role="alert" tabindex="-1" data-form-error-summary>
+      <i class="fa-solid fa-circle-exclamation" aria-hidden="true"></i>
+      <div>
+        <strong>Não foi possível salvar o produto.</strong>
+        <span>Revise os campos e seções indicados:</span>
+        <ul>
+          {% for field in form %}{% if field.errors %}<li><a href="#{{ field.id_for_label }}">{{ field.label }}</a>: {{ field.errors|striptags }}</li>{% endif %}{% endfor %}
+          {% if form.non_field_errors %}<li><a href="#produto-geral">Dados gerais</a>: {{ form.non_field_errors|striptags }}</li>{% endif %}
+          {% if codigos_formset.total_error_count %}<li><a href="#produto-embalagens">Embalagens e códigos adicionais</a></li>{% endif %}
+          {% if balanca_formset.total_error_count %}<li><a href="#produto-balanca">Balança e PLU</a></li>{% endif %}
+          {% if fornecedores_formset.total_error_count %}<li><a href="#produto-fornecedores">Fornecedores</a></li>{% endif %}
+          {% if galeria_formset.total_error_count %}<li><a href="#produto-venda">Imagens do produto</a></li>{% endif %}
+          {% if nutricao_formset.total_error_count %}<li><a href="#produto-opcionais">Nutrição e similares</a></li>{% endif %}
+        </ul>
+      </div>
+    </section>
+  {% endif %}
   <div class="form-note form-field-wide">
     <strong>Cadastro central do produto.</strong>
     <span>Salve uma vez: os PDVs ligados a este servidor usam a alteracao imediatamente e instalações híbridas recebem a atualização automática.</span>
   </div>
   {% if form.non_field_errors %}<div class="form-note form-note-danger">{{ form.non_field_errors }}</div>{% endif %}
 
-  <section class="form-section form-field-wide">
-    <h2>Identificação</h2>
+  <section class="form-section form-field-wide product-core-section" id="produto-geral" data-product-section tabindex="-1">
+    <div class="form-section-heading"><div><span class="status status-success">Essencial</span><h2>Identificação</h2></div><p>Nome, código e classificação usados em todas as operações.</p></div>
     <div class="form-grid form-grid-inner">
       <label class="form-field"><span>{{ form.nome.label }}</span>{{ form.nome }}{{ form.nome.errors }}</label>
-      <label class="form-field"><span>{{ form.codigo_barras.label }}</span>{{ form.codigo_barras }}{{ form.codigo_barras.errors }}</label>
+      <label class="form-field"><span>EAN principal</span>{{ form.codigo_barras }}{{ form.codigo_barras.errors }}<small>Unidade base vendida normalmente.</small></label>
       <label class="form-field">
         <span>{{ form.codigo_interno.label }}</span>
         {% if object %}
@@ -44,8 +72,8 @@
     </div>
   </section>
 
-  <section class="form-section form-field-wide">
-    <h2>Unidades, embalagens e códigos</h2>
+  <section class="form-section form-field-wide" id="produto-embalagens" data-product-section tabindex="-1">
+    <div class="form-section-heading"><div><span class="status status-success">Essencial</span><h2>Unidades e embalagens</h2></div><p>Defina a unidade base antes de cadastrar apresentações adicionais.</p></div>
     <div class="form-grid form-grid-inner">
       <label class="form-field"><span>Unidade base do estoque</span>{{ form.unidade }}{{ form.unidade.errors }}<small>Unidade usada no saldo e na venda.</small></label>
       <label class="form-field"><span>{{ form.unidade_compra.label }}</span>{{ form.unidade_compra }}{{ form.unidade_compra.errors }}</label>
@@ -56,13 +84,13 @@
         <strong>EAN principal e apresentações comerciais.</strong>
         <span>O código principal representa a unidade base. Abaixo, cadastre pacote, fardo ou caixa e informe quantas unidades base cada leitura adiciona ao PDV.</span>
       </div>
-      <div class="product-codes-editor form-field-wide">
-        <h3>Códigos de barras adicionais</h3>
+      <details class="product-codes-editor product-progressive-block form-field-wide"{% if codigos_tem_registros or codigos_formset.total_error_count %} open{% endif %}>
+        <summary><span><strong>Apresentações adicionais</strong><small>Caixa, pacote, fardo e outros códigos além do EAN principal.</small></span><i class="fa-solid fa-chevron-down" aria-hidden="true"></i></summary>
         {{ codigos_formset.management_form }}
         {% if codigos_formset.non_form_errors %}<div class="form-note form-note-danger">{{ codigos_formset.non_form_errors }}</div>{% endif %}
         <div class="product-codes-grid">
           {% for codigo_form in codigos_formset %}
-            <div class="product-code-item">
+            <div class="product-code-item{% if not codigo_form.instance.pk and not codigos_formset.is_bound %} is-formset-empty{% endif %}" data-formset-item>
               {{ codigo_form.id }}
               <label class="form-field"><span>EAN / código</span>{{ codigo_form.codigo }}{{ codigo_form.codigo.errors }}</label>
               <label class="form-field"><span>Apresentação</span>{{ codigo_form.tipo }}{{ codigo_form.tipo.errors }}</label>
@@ -73,13 +101,15 @@
             </div>
           {% endfor %}
         </div>
-      </div>
+        <button class="secondary-button product-add-formset" type="button" data-formset-reveal><i class="fa-solid fa-plus"></i> Adicionar código</button>
+      </details>
     </div>
   </section>
-  <section class="form-section form-field-wide">
+  <details class="form-section form-field-wide product-optional-section product-advanced-section" id="produto-balanca" data-product-section tabindex="-1"{% if balanca_tem_registros or balanca_formset.total_error_count or object.produto_pesavel %} open{% endif %}>
+    <summary><span><strong>Balança e PLU</strong><small>Avançado. Use para produtos pesáveis configurados em balanças.</small></span><i class="fa-solid fa-chevron-down" aria-hidden="true"></i></summary>
+    <div class="product-section-content">
     <div class="form-section-header">
       <div>
-        <h2>Balança e PLU</h2>
         <p>Configuração por empresa para balanças de checkout ou etiquetadoras.</p>
       </div>
       <a class="secondary-button" href="{% url 'produtos:setor_balanca_novo' %}"><i class="fa-solid fa-plus"></i> Novo setor</a>
@@ -92,7 +122,7 @@
     {% if balanca_formset.non_form_errors %}<div class="form-note form-note-danger">{{ balanca_formset.non_form_errors }}</div>{% endif %}
     <div class="product-codes-grid form-field-wide">
       {% for balanca_form in balanca_formset %}
-        <div class="product-code-item">
+        <div class="product-code-item{% if not balanca_form.instance.pk and not balanca_formset.is_bound %} is-formset-empty{% endif %}" data-formset-item>
           {{ balanca_form.id }}
           <label class="form-field"><span>Setor de balança</span>{{ balanca_form.setor }}{{ balanca_form.setor.errors }}</label>
           <label class="form-field"><span>{{ balanca_form.plu.label }}</span>{{ balanca_form.plu }}{{ balanca_form.plu.errors }}</label>
@@ -103,9 +133,12 @@
         </div>
       {% endfor %}
     </div>
-  </section>
-  <section class="form-section form-field-wide">
-    <h2>Fornecedores do produto</h2>
+    <button class="secondary-button product-add-formset" type="button" data-formset-reveal><i class="fa-solid fa-plus"></i> Adicionar configuração</button>
+    </div>
+  </details>
+  <details class="form-section form-field-wide product-optional-section product-advanced-section" id="produto-fornecedores" data-product-section tabindex="-1"{% if fornecedores_tem_registros or fornecedores_formset.total_error_count %} open{% endif %}>
+    <summary><span><strong>Fornecedores do produto</strong><small>Opcional. Vínculos, códigos e custos por fornecedor.</small></span><i class="fa-solid fa-chevron-down" aria-hidden="true"></i></summary>
+    <div class="product-section-content">
     <div class="form-note form-field-wide">
       <strong>Cadastro no mesmo lugar.</strong>
       <span>Vincule os fornecedores que comercializam este item, o código usado por cada um e o último custo cotado. A lista respeita a empresa do usuário.</span>
@@ -114,7 +147,7 @@
     {% if fornecedores_formset.non_form_errors %}<div class="form-note form-note-danger">{{ fornecedores_formset.non_form_errors }}</div>{% endif %}
     <div class="product-codes-grid form-field-wide">
       {% for fornecedor_form in fornecedores_formset %}
-        <div class="product-code-item">
+        <div class="product-code-item{% if not fornecedor_form.instance.pk and not fornecedores_formset.is_bound %} is-formset-empty{% endif %}" data-formset-item>
           {{ fornecedor_form.id }}
           <label class="form-field"><span>Fornecedor</span>{{ fornecedor_form.fornecedor }}{{ fornecedor_form.fornecedor.errors }}</label>
           <label class="form-field"><span>{{ fornecedor_form.codigo_no_fornecedor.label }}</span>{{ fornecedor_form.codigo_no_fornecedor }}{{ fornecedor_form.codigo_no_fornecedor.errors }}</label>
@@ -125,16 +158,19 @@
         </div>
       {% endfor %}
     </div>
-  </section>
+    <button class="secondary-button product-add-formset" type="button" data-formset-reveal><i class="fa-solid fa-plus"></i> Adicionar fornecedor</button>
+    </div>
+  </details>
 
-  <section class="form-section form-field-wide">
-    <h2>Preços e estoque</h2>
+  <section class="form-section form-field-wide product-pricing-section" id="produto-precos" data-product-section tabindex="-1">
+    <div class="form-section-heading"><div><span class="status status-success">Essencial</span><h2>Preços e estoque</h2></div><p>Preço sugerido orienta; o preço de venda continua sob seu controle.</p></div>
     <div class="form-grid form-grid-inner">
       <label class="form-field"><span>{{ form.preco_custo.label }}</span><span class="money-input"><span>R$</span>{{ form.preco_custo }}</span>{{ form.preco_custo.errors }}</label>
       <label class="form-field"><span>{{ form.margem_desejada_percentual.label }}</span>{{ form.margem_desejada_percentual }}{{ form.margem_desejada_percentual.errors }}<small>Margem sobre o preço de venda, não simples acréscimo sobre o custo.</small></label>
       <div class="form-note" data-margin-calculator>
         <strong>Preço sugerido: <span data-suggested-price>{% if object.preco_venda_sugerido != None %}R$ {{ object.preco_venda_sugerido|floatformat:2 }}{% else %}informe custo e margem{% endif %}</span></strong>
         <span>O cálculo é apenas uma sugestão e não altera automaticamente o preço de venda.</span>
+        <span class="status" data-margin-status hidden></span>
       </div>
       <label class="form-field"><span>{{ form.preco_venda.label }}</span><span class="money-input"><span>R$</span>{{ form.preco_venda }}</span>{{ form.preco_venda.errors }}{% if object.margem_atual_percentual != None %}<small>Margem atual: {{ object.margem_atual_percentual|floatformat:2 }}%</small>{% endif %}</label>
       <label class="form-field"><span>{{ form.preco_promocional.label }}</span>{{ form.preco_promocional }}{{ form.preco_promocional.errors }}</label>
@@ -142,13 +178,15 @@
     </div>
   </section>
 
-  <section class="form-section form-field-wide">
-    <h2>Venda e imagem</h2>
+  <section class="form-section form-field-wide" id="produto-venda" data-product-section tabindex="-1" data-marketplace-section>
+    <div class="form-section-heading"><div><span class="status status-success">Essencial</span><h2>Venda e imagem</h2></div><p>Defina os canais e mantenha a imagem pronta quando o produto for vendido online.</p></div>
     <div class="form-grid form-grid-inner">
-      <label class="toggle-field">{{ form.produto_pesavel }} <span>{{ form.produto_pesavel.label }}</span>{{ form.produto_pesavel.errors }}</label>
-      <label class="toggle-field">{{ form.vendido_no_pdv }} <span>{{ form.vendido_no_pdv.label }}</span>{{ form.vendido_no_pdv.errors }}</label>
-      <label class="toggle-field">{{ form.vendido_no_marketplace }} <span>{{ form.vendido_no_marketplace.label }}</span>{{ form.vendido_no_marketplace.errors }}</label>
-      <label class="toggle-field">{{ form.is_active }} <span>{{ form.is_active.label }}</span>{{ form.is_active.errors }}</label>
+      <div class="product-sales-status form-field-wide">
+        <label class="toggle-field">{{ form.is_active }} <span>{{ form.is_active.label }}</span>{{ form.is_active.errors }}</label>
+        <label class="toggle-field">{{ form.vendido_no_pdv }} <span>{{ form.vendido_no_pdv.label }}</span>{{ form.vendido_no_pdv.errors }}</label>
+        <label class="toggle-field">{{ form.vendido_no_marketplace }} <span>{{ form.vendido_no_marketplace.label }}</span>{{ form.vendido_no_marketplace.errors }}</label>
+        <label class="toggle-field">{{ form.produto_pesavel }} <span>{{ form.produto_pesavel.label }}</span>{{ form.produto_pesavel.errors }}</label>
+      </div>
       <div class="product-image-preview">
         {% if object and object.imagem %}
           <img src="{{ object.imagem.url }}" alt="{{ object.nome }}">
@@ -163,13 +201,13 @@
         <strong>Imagem para marketplace.</strong>
         <span>Use a foto principal como capa. As imagens adicionais permitem mostrar outros angulos e detalhes no marketplace.</span>
       </div>
-      <div class="product-gallery-editor form-field-wide">
-        <h3>Galeria adicional</h3>
+      <details class="product-gallery-editor product-progressive-block form-field-wide"{% if galeria_tem_registros or galeria_formset.total_error_count %} open{% endif %}>
+        <summary><span><strong>Galeria adicional</strong><small>Opcional. Outros ângulos e detalhes para o marketplace.</small></span><i class="fa-solid fa-chevron-down" aria-hidden="true"></i></summary>
         {{ galeria_formset.management_form }}
         {% if galeria_formset.non_form_errors %}<div class="form-note form-note-danger">{{ galeria_formset.non_form_errors }}</div>{% endif %}
         <div class="product-gallery-grid">
           {% for gallery_form in galeria_formset %}
-            <div class="product-gallery-item">
+            <div class="product-gallery-item{% if not gallery_form.instance.pk and not galeria_formset.is_bound %} is-formset-empty{% endif %}" data-formset-item>
               {{ gallery_form.id }}
               {% if gallery_form.instance.pk and gallery_form.instance.imagem %}
                 <img src="{{ gallery_form.instance.imagem.url }}" alt="{{ gallery_form.instance.legenda|default:object.nome }}">
@@ -183,11 +221,12 @@
             </div>
           {% endfor %}
         </div>
-      </div>
+        <button class="secondary-button product-add-formset" type="button" data-formset-reveal><i class="fa-solid fa-plus"></i> Adicionar imagem</button>
+      </details>
     </div>
   </section>
 
-  <details class="form-section form-field-wide product-optional-section">
+  <details class="form-section form-field-wide product-optional-section" id="produto-opcionais" data-product-section tabindex="-1"{% if nutricao_tem_registro or nutricao_formset.total_error_count %} open{% endif %}>
     <summary>
       <span><strong>Nutrição e produtos similares</strong><small>Opcional. Preencha para alimentos embalados, marketplace e sugestões de substituição.</small></span>
       <i class="fa-solid fa-chevron-down" aria-hidden="true"></i>
@@ -233,7 +272,7 @@
     </div>
   </details>
 
-  <section class="form-section form-field-wide">
+  <section class="form-section form-field-wide" id="produto-fiscal" data-product-section tabindex="-1">
     <h2>Dados fiscais</h2>
     <div class="form-grid form-grid-inner">
       <label class="form-field"><span>{{ form.ncm.label }}</span>{{ form.ncm }}{{ form.ncm.errors }}<small>Obrigatório para NFC-e, com 8 dígitos.</small></label>
@@ -245,7 +284,7 @@
     </div>
   </section>
 
-  <details class="form-section form-field-wide product-optional-section">
+  <details class="form-section form-field-wide product-optional-section" data-product-section tabindex="-1">
     <summary>
       <span><i class="fa-solid fa-file-invoice"></i> Perfil fiscal avançado <small>Opcional</small></span>
       <i class="fa-solid fa-chevron-down"></i>
@@ -274,9 +313,10 @@
     </div>
   </details>
 
-  <div class="form-actions">
+  <div class="sticky-form-actions product-save-actions">
+    <span class="product-save-context">{% if object %}Editando <strong>{{ object.nome }}</strong>{% else %}Novo produto{% endif %}</span>
     <a class="secondary-button" href="{% url 'produtos:lista' %}">Cancelar</a>
-    <button class="primary-button" type="submit">Salvar</button>
+    <button class="primary-button" type="submit"><i class="fa-solid fa-floppy-disk"></i> Salvar produto <kbd>Ctrl+S</kbd></button>
   </div>
 </form>
 {% endblock %}
@@ -285,7 +325,9 @@
 (function () {
   const custo = document.getElementById("id_preco_custo");
   const margem = document.getElementById("id_margem_desejada_percentual");
+  const venda = document.getElementById("id_preco_venda");
   const saida = document.querySelector("[data-suggested-price]");
+  const status = document.querySelector("[data-margin-status]");
   if (!custo || !margem || !saida) return;
   const numero = (valor) => Number(String(valor || "").replace(",", "."));
   const atualizar = () => {
@@ -293,14 +335,85 @@
     const margemValor = numero(margem.value);
     if (!Number.isFinite(custoValor) || !Number.isFinite(margemValor) || margemValor < 0 || margemValor >= 100) {
       saida.textContent = "informe custo e margem";
+      if (status) status.hidden = true;
       return;
     }
     const sugerido = custoValor / (1 - margemValor / 100);
     saida.textContent = sugerido.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
+    const vendaValor = numero(venda && venda.value);
+    if (status && Number.isFinite(vendaValor) && vendaValor > 0) {
+      const margemAtual = ((vendaValor - custoValor) / vendaValor) * 100;
+      const atende = margemAtual >= margemValor;
+      status.hidden = false;
+      status.className = "status " + (atende ? "status-success" : "status-warning");
+      status.textContent = atende ? "Margem atual atende à desejada" : "Margem atual abaixo da desejada";
+    } else if (status) {
+      status.hidden = true;
+    }
   };
   custo.addEventListener("input", atualizar);
   margem.addEventListener("input", atualizar);
+  if (venda) venda.addEventListener("input", atualizar);
   atualizar();
+})();
+(function () {
+  const form = document.querySelector("[data-product-form]");
+  if (!form) return;
+  let dirty = false;
+  let submitting = false;
+
+  document.querySelectorAll("[data-product-section-link]").forEach((link) => {
+    link.addEventListener("click", () => {
+      const section = document.querySelector(link.getAttribute("href"));
+      if (section && section.tagName === "DETAILS") section.open = true;
+      window.setTimeout(() => section && section.focus({ preventScroll: true }), 0);
+    });
+  });
+
+  form.querySelectorAll(".errorlist").forEach((errors) => {
+    if (!errors.textContent.trim()) return;
+    const section = errors.closest("[data-product-section]");
+    if (section) {
+      section.classList.add("has-section-error");
+      if (section.tagName === "DETAILS") section.open = true;
+    }
+  });
+
+  form.querySelectorAll("[data-formset-reveal]").forEach((button) => {
+    const container = button.closest("details, [data-product-section]");
+    const update = () => {
+      button.hidden = !container.querySelector(".is-formset-empty");
+    };
+    button.addEventListener("click", () => {
+      const item = container.querySelector(".is-formset-empty");
+      if (!item) return;
+      item.classList.remove("is-formset-empty");
+      const field = item.querySelector("input:not([type='hidden']), select, textarea");
+      if (field) field.focus();
+      update();
+    });
+    update();
+  });
+
+  const marketplace = document.getElementById("id_vendido_no_marketplace");
+  const marketplaceSection = document.querySelector("[data-marketplace-section]");
+  const updateMarketplace = () => marketplaceSection && marketplaceSection.classList.toggle("is-marketplace-relevant", Boolean(marketplace && marketplace.checked));
+  if (marketplace) marketplace.addEventListener("change", updateMarketplace);
+  updateMarketplace();
+
+  form.addEventListener("input", () => { dirty = true; });
+  form.addEventListener("change", () => { dirty = true; });
+  form.addEventListener("submit", () => { submitting = true; dirty = false; });
+  document.addEventListener("keydown", (event) => {
+    if (!(event.ctrlKey || event.metaKey) || event.key.toLowerCase() !== "s") return;
+    event.preventDefault();
+    if (!submitting) form.requestSubmit();
+  });
+  window.addEventListener("beforeunload", (event) => {
+    if (!dirty || submitting) return;
+    event.preventDefault();
+    event.returnValue = "";
+  });
 })();
 </script>
 {% endblock %}

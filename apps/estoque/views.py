@@ -225,19 +225,54 @@ class EstoqueListView(LoginRequiredMixin, RoleRequiredMixin, ListView):
     context_object_name = "estoques"
     paginate_by = 30
 
+    SITUACOES = {"com_saldo", "zerado", "baixo"}
+
+    def _filtros(self):
+        filial = (self.request.GET.get("filial") or "").strip()
+        situacao = (self.request.GET.get("situacao") or "").strip()
+        return {
+            "q": (self.request.GET.get("q") or "").strip(),
+            "filial": filial if filial.isdigit() else "",
+            "situacao": situacao if situacao in self.SITUACOES else "",
+        }
+
     def get_queryset(self):
+        filtros = self._filtros()
         queryset = estoques_para_usuario(
             self.request.user,
             Estoque.objects.select_related("produto", "filial", "filial__empresa"),
-        ).order_by("produto__nome")
-        termo = self.request.GET.get("q")
+        )
+        termo = filtros["q"]
         if termo:
-            queryset = queryset.filter(produto__nome__icontains=termo) | queryset.filter(produto__codigo_barras__icontains=termo)
-        return queryset
+            queryset = queryset.filter(
+                Q(produto__nome__icontains=termo)
+                | Q(produto__codigo_barras__icontains=termo)
+                | Q(produto__codigo_interno__icontains=termo)
+                | Q(produto__codigos_adicionais__codigo__icontains=termo)
+            ).distinct()
+        if filtros["filial"]:
+            queryset = queryset.filter(filial_id=filtros["filial"])
+        if filtros["situacao"] == "com_saldo":
+            queryset = queryset.filter(quantidade_atual__gt=0)
+        elif filtros["situacao"] == "zerado":
+            queryset = queryset.filter(quantidade_atual=0)
+        elif filtros["situacao"] == "baixo":
+            queryset = queryset.filter(
+                produto__is_active=True,
+                quantidade_atual__lte=F("produto__estoque_minimo"),
+            )
+        return queryset.order_by("produto__nome", "filial__nome")
 
 
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
+        filtros = self._filtros()
+        filiais = filiais_para_usuario(self.request.user).filter(is_active=True).order_by("nome")
+        filiais_ids = {str(filial.pk) for filial in filiais}
+        if filtros["filial"] not in filiais_ids:
+            filtros["filial"] = ""
+        context["filtros"] = filtros
+        context["filiais_filtro"] = filiais
         estoques = list(context["estoques"])
         chaves = {(estoque.produto_id, estoque.filial_id) for estoque in estoques}
         lotes_por_estoque = defaultdict(list)
@@ -260,6 +295,10 @@ class EstoqueListView(LoginRequiredMixin, RoleRequiredMixin, ListView):
             )
             estoque.quantidade_vendavel_operacional = resumo["quantidade_vendavel"]
             estoque.quantidade_bloqueada_venda = resumo["quantidade_bloqueada"]
+            estoque.estoque_baixo_operacional = (
+                estoque.produto.is_active
+                and estoque.quantidade_atual <= estoque.produto.estoque_minimo
+            )
         return context
 
 class LoteEstoqueListView(LoginRequiredMixin, RoleRequiredMixin, ListView):
