@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% load static %}
 
 {% block title %}Pedido de compra{% endblock %}
 
@@ -9,8 +10,11 @@
     <p>Prepare os itens e custos previstos antes de enviar ao fornecedor.</p>
   </div>
 </header>
+<nav class="purchase-flow" aria-label="Fluxo de compras"><a href="{% url 'compras:cotacoes' %}"><span>1</span>Cotação</a><i class="fa-solid fa-chevron-right"></i><strong><span>2</span>Pedido</strong><i class="fa-solid fa-chevron-right"></i><span><span>3</span>Recebimento</span><i class="fa-solid fa-chevron-right"></i><span><span>4</span>Estoque / financeiro</span></nav>
+{% if form.errors or formset.total_error_count %}<div class="form-error-summary" data-form-error-summary role="alert" tabindex="-1"><i class="fa-solid fa-circle-exclamation"></i><div><strong>Não foi possível salvar o pedido.</strong><span>Revise os dados e os itens destacados.</span></div></div>{% endif %}
+{% if pedido.cotacao_origem %}<section class="operation-notice"><i class="fa-solid fa-scale-balanced"></i><div><strong>Pedido originado da cotação #{{ pedido.cotacao_origem.pk }}</strong><span><a href="{% url 'compras:cotacao_detalhe' pedido.cotacao_origem.pk %}">Abrir cotação de origem</a></span></div></section>{% endif %}
 
-<form method="post" class="panel purchase-form">
+<form method="post" class="panel purchase-form" data-purchase-form data-purchase-kind="order">
   {% csrf_token %}
   <section class="form-section purchase-section">
     <div class="form-section-header">
@@ -28,6 +32,8 @@
     </div>
   </section>
 
+  <section class="purchase-live-summary" aria-label="Resumo do pedido"><div><span>Itens</span><strong data-summary-items>0</strong></div><div><span>Quantidade</span><strong data-summary-quantity>0,000</strong></div><div><span>Total previsto</span><strong data-summary-total>R$ 0,00</strong></div></section>
+
   <section class="form-section purchase-section">
     <div class="form-section-header">
       <h2>Itens solicitados</h2>
@@ -37,18 +43,19 @@
     {% if formset.non_form_errors %}<div class="message error">{{ formset.non_form_errors|striptags }}</div>{% endif %}
     <div class="purchase-items">
       {% for item_form in formset %}
-        <div class="purchase-item-row">
+        <div class="purchase-item-row{% if not item_form.instance.pk and not formset.is_bound and not item_form.has_changed %} is-formset-empty{% endif %}" data-formset-item>
           {% for hidden in item_form.hidden_fields %}{{ hidden }}{% endfor %}
           {% for field in item_form.visible_fields %}
-            <label class="form-field">
+            {% if field.name == "DELETE" %}<label class="purchase-delete-field">{{ field }}<span>Remover item ao salvar</span></label>{% else %}<label class="form-field">
               <span>{{ field.label }}</span>
               {{ field }}
               {% if field.errors %}<small class="field-error">{{ field.errors|striptags }}</small>{% endif %}
-            </label>
+            </label>{% endif %}
           {% endfor %}
         </div>
       {% endfor %}
     </div>
+    <button class="secondary-button purchase-add-item" type="button" data-formset-reveal><i class="fa-solid fa-plus"></i> Adicionar item</button>
   </section>
 
   <div class="form-actions purchase-actions">
@@ -57,3 +64,4 @@
   </div>
 </form>
 {% endblock %}
+{% block extra_js %}<script src="{% static 'js/compras.js' %}?v=20260928-1"></script>{% endblock %}

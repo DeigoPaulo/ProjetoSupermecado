@@ -11,6 +11,7 @@ from django.http import HttpResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse, reverse_lazy
 from django.utils import timezone
+from django.utils.dateparse import parse_date
 from django.utils.http import url_has_allowed_host_and_scheme
 from django.views.generic import DetailView, ListView
 from django.views.generic.base import TemplateResponseMixin
@@ -19,8 +20,10 @@ from django.views.generic.edit import ModelFormMixin, ProcessFormView
 from apps.accounts.permissions import COMPRAS, RoleRequiredMixin, role_required, supervisor_from_request
 from apps.auditoria.models import LogAuditoria
 from apps.estoque.models import Estoque, MovimentacaoEstoque
+from apps.estoque.escopo import filiais_para_usuario
 from apps.empresas.models import AcaoPinSupervisor
 from apps.financeiro.models import ContaFinanceira, StatusContaFinanceira
+from apps.fornecedores.escopo import fornecedores_para_usuario
 from apps.fiscal.devolucao_fornecedor import (
     cancelar_rascunho_devolucao_fornecedor,
     preparar_devolucao_fornecedor,
@@ -177,6 +180,21 @@ def cotacao_compra_detalhe(request, pk):
         ),
         pk=pk,
     )
+    menores_custos = {}
+    for resposta in cotacao.respostas.all():
+        for preco in resposta.precos.all():
+            if not preco.disponivel or preco.custo_unitario is None:
+                continue
+            atual = menores_custos.get(preco.item_id)
+            if atual is None or preco.custo_unitario < atual:
+                menores_custos[preco.item_id] = preco.custo_unitario
+    for resposta in cotacao.respostas.all():
+        for preco in resposta.precos.all():
+            preco.menor_custo_item = (
+                preco.disponivel
+                and preco.custo_unitario is not None
+                and preco.custo_unitario == menores_custos.get(preco.item_id)
+            )
     return render(request, "compras/cotacao_detalhe.html", {"cotacao": cotacao})
 
 
@@ -290,7 +308,9 @@ def cotacao_selecionar_resposta(request, pk, resposta_pk):
 @login_required
 @role_required(*COMPRAS)
 def pedidos_compra_lista(request):
-    pedidos = pedidos_para_usuario(request.user).select_related("fornecedor", "filial", "usuario").prefetch_related("itens")
+    pedidos = pedidos_para_usuario(request.user).select_related(
+        "fornecedor", "filial", "usuario", "cotacao_origem"
+    ).prefetch_related("itens")
     termo = (request.GET.get("q") or "").strip()
     if termo:
         pedidos = pedidos.filter(
@@ -369,7 +389,9 @@ def pedido_compra_form(request, pk=None):
 @role_required(*COMPRAS)
 def pedido_compra_detalhe(request, pk):
     pedido = get_object_or_404(
-        pedidos_para_usuario(request.user).select_related("fornecedor", "filial", "usuario").prefetch_related("itens__produto"),
+        pedidos_para_usuario(request.user).select_related(
+            "fornecedor", "filial", "usuario", "cotacao_origem"
+        ).prefetch_related("itens__produto"),
         pk=pk,
     )
     return render(request, "compras/pedido_detalhe.html", {"pedido": pedido})
@@ -441,7 +463,7 @@ def entradas_filtradas(params, user=None):
     if termo:
         queryset = queryset.filter(Q(numero_documento__icontains=termo) | Q(fornecedor__razao_social__icontains=termo) | Q(fornecedor__nome_fantasia__icontains=termo))
     status = (params.get("status") or "").strip()
-    if status:
+    if status in dict(StatusEntradaCompra.choices):
         queryset = queryset.filter(status=status)
     financeiro = (params.get("financeiro") or "").strip()
     if financeiro == "SEM_CONTA":
@@ -450,6 +472,18 @@ def entradas_filtradas(params, user=None):
         queryset = queryset.filter(contas_financeiras__status=StatusContaFinanceira.ABERTA, contas_financeiras__vencimento__lt=timezone.localdate())
     elif financeiro in dict(FINANCEIRO_CHOICES):
         queryset = queryset.filter(contas_financeiras__status=financeiro)
+    filial = (params.get("filial") or "").strip()
+    if filial.isdigit():
+        queryset = queryset.filter(filial_id=filial)
+    fornecedor = (params.get("fornecedor") or "").strip()
+    if fornecedor.isdigit():
+        queryset = queryset.filter(fornecedor_id=fornecedor)
+    data_inicial = parse_date((params.get("data_inicial") or "").strip())
+    data_final = parse_date((params.get("data_final") or "").strip())
+    if data_inicial:
+        queryset = queryset.filter(data_recebimento__date__gte=data_inicial)
+    if data_final:
+        queryset = queryset.filter(data_recebimento__date__lte=data_final)
     return queryset.distinct()
 
 
@@ -483,7 +517,7 @@ class EntradaCompraListView(LoginRequiredMixin, RoleRequiredMixin, ListView):
             "total_finalizado": por_status.get(StatusEntradaCompra.FINALIZADA, {}).get("total") or 0,
         }
         hoje = timezone.localdate()
-        contas_compra = ContaFinanceira.objects.filter(entrada_compra__isnull=False)
+        contas_compra = ContaFinanceira.objects.filter(entrada_compra__in=base_queryset).distinct()
         contas_abertas = contas_compra.filter(status=StatusContaFinanceira.ABERTA)
         context["resumo_financeiro_compras"] = {
             "abertas": contas_abertas.count(),
@@ -498,7 +532,16 @@ class EntradaCompraListView(LoginRequiredMixin, RoleRequiredMixin, ListView):
         }
         context["status_choices"] = StatusEntradaCompra.choices
         context["financeiro_choices"] = self.financeiro_choices
-        context["filtros_ativos"] = any((self.request.GET.get("q"), self.request.GET.get("status"), self.request.GET.get("financeiro")))
+        filiais = filiais_para_usuario(self.request.user).filter(is_active=True).order_by("nome")
+        fornecedores = fornecedores_para_usuario(self.request.user).order_by("razao_social")
+        filial_id = (self.request.GET.get("filial") or "").strip()
+        fornecedor_id = (self.request.GET.get("fornecedor") or "").strip()
+        context["filial_selecionada"] = filiais.filter(pk=filial_id).first() if filial_id.isdigit() else None
+        context["fornecedor_selecionado"] = fornecedores.filter(pk=fornecedor_id).first() if fornecedor_id.isdigit() else None
+        context["filtros_ativos"] = any(
+            self.request.GET.get(nome)
+            for nome in ("q", "status", "financeiro", "filial", "fornecedor", "data_inicial", "data_final")
+        )
         status_labels = dict(StatusEntradaCompra.choices)
         financeiro_labels = dict(self.financeiro_choices)
         filtros_aplicados = []
@@ -508,6 +551,14 @@ class EntradaCompraListView(LoginRequiredMixin, RoleRequiredMixin, ListView):
             filtros_aplicados.append(("Status", status_labels.get(self.request.GET.get("status"), self.request.GET.get("status"))))
         if self.request.GET.get("financeiro"):
             filtros_aplicados.append(("Financeiro", financeiro_labels.get(self.request.GET.get("financeiro"), self.request.GET.get("financeiro"))))
+        if context["filial_selecionada"]:
+            filtros_aplicados.append(("Filial", context["filial_selecionada"]))
+        if context["fornecedor_selecionado"]:
+            filtros_aplicados.append(("Fornecedor", context["fornecedor_selecionado"]))
+        if parse_date((self.request.GET.get("data_inicial") or "").strip()):
+            filtros_aplicados.append(("Desde", self.request.GET.get("data_inicial")))
+        if parse_date((self.request.GET.get("data_final") or "").strip()):
+            filtros_aplicados.append(("Até", self.request.GET.get("data_final")))
         context["filtros_aplicados"] = filtros_aplicados
         return context
 
@@ -576,6 +627,10 @@ def entradas_imprimir(request):
             "q": request.GET.get("q", ""),
             "status": request.GET.get("status", ""),
             "financeiro": request.GET.get("financeiro", ""),
+            "filial": request.GET.get("filial", ""),
+            "fornecedor": request.GET.get("fornecedor", ""),
+            "data_inicial": request.GET.get("data_inicial", ""),
+            "data_final": request.GET.get("data_final", ""),
         },
     })
 
@@ -609,8 +664,11 @@ class EntradaCompraDetailView(LoginRequiredMixin, RoleRequiredMixin, DetailView)
     context_object_name = "entrada"
 
     def get_queryset(self):
-        return entradas_para_usuario(self.request.user).select_related("fornecedor", "filial", "usuario", "pedido_origem").prefetch_related(
+        return entradas_para_usuario(self.request.user).select_related(
+            "fornecedor", "filial", "filial__empresa", "usuario", "pedido_origem", "pedido_origem__cotacao_origem"
+        ).prefetch_related(
             "itens__produto",
+            "fatura_nfe__duplicatas",
             "contas_financeiras__lancamentos__conta",
             "contas_financeiras__lancamentos__usuario",
         )
@@ -739,6 +797,19 @@ class EntradaCompraFormMixin(LoginRequiredMixin, RoleRequiredMixin, TemplateResp
         else:
             context["formset"] = ItemEntradaCompraFormSet(instance=self.object)
         context["retorno_lista_url"] = self.get_retorno_lista_url()
+        itens = list(self.object.itens.all()) if self.object and self.object.pk else []
+        context["resumo_entrada"] = {
+            "itens": len(itens),
+            "quantidade": sum((item.quantidade for item in itens), 0),
+            "total": sum((item.quantidade * item.custo_unitario for item in itens), 0),
+        }
+        context["finalizacao_bloqueada"] = bool(
+            self.object
+            and self.object.pedido_origem_id
+            and self.object.conferencia_status == "DIVERGENTE"
+            and self.object.filial.empresa.bloquear_finalizacao_entrada_divergente
+            and not self.object.conferencia_fisica_em
+        )
         return context
 
     def form_valid(self, form):

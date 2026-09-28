@@ -487,6 +487,78 @@ class ComprasFinanceiroTests(TestCase):
         self.assertContains(response, 'data-ajax-url="/empresas/filiais/busca.json"')
         self.assertContains(response, 'data-ajax-url="/estoque/produtos/busca.json"')
 
+    def test_form_entrada_exibe_ux_progressiva_e_impacto_da_finalizacao(self):
+        self.client.force_login(self.admin)
+
+        response = self.client.get("/compras/nova/")
+
+        self.assertContains(response, "data-purchase-form")
+        self.assertContains(response, "data-formset-reveal")
+        self.assertContains(response, "Adicionar item")
+        self.assertContains(response, "Ctrl+S")
+        self.assertContains(response, "data-finalize-submit")
+        self.assertContains(response, "Finalizar e atualizar estoque")
+        self.assertContains(response, 'src="/static/js/compras.js?v=20260928-1"')
+
+    def test_paginacao_preserva_filtros_sem_duplicar_parametro_page(self):
+        self.client.force_login(self.admin)
+        EntradaCompra.objects.bulk_create(
+            [
+                EntradaCompra(
+                    fornecedor=self.fornecedor,
+                    filial=self.filial,
+                    usuario=self.usuario,
+                    numero_documento=f"NF-PAGE-{indice:03d}",
+                )
+                for indice in range(51)
+            ]
+        )
+
+        response = self.client.get("/compras/", {"q": "NF-PAGE", "page": 2})
+
+        self.assertContains(response, "Página 2 de 3")
+        self.assertContains(response, 'href="?q=NF-PAGE&amp;page=1"')
+        self.assertContains(response, 'href="?q=NF-PAGE&amp;page=3"')
+        self.assertNotContains(response, "page=2&amp;page=")
+
+    def test_lista_filtra_por_filial_fornecedor_e_periodo(self):
+        self.client.force_login(self.admin)
+        outra_filial = Filial.objects.create(empresa=self.empresa, nome="Filial Secundária")
+        outro_fornecedor = Fornecedor.objects.create(razao_social="Outro Fornecedor")
+        entrada_alvo = EntradaCompra.objects.create(
+            fornecedor=self.fornecedor,
+            filial=self.filial,
+            usuario=self.usuario,
+            numero_documento="NF-FILTROS-NOVOS",
+        )
+        entrada_fora = EntradaCompra.objects.create(
+            fornecedor=outro_fornecedor,
+            filial=outra_filial,
+            usuario=self.usuario,
+            numero_documento="NF-FORA-FILTROS",
+        )
+        hoje = timezone.localdate()
+        EntradaCompra.objects.filter(pk=entrada_alvo.pk).update(
+            data_recebimento=timezone.now() - timedelta(days=1)
+        )
+
+        response = self.client.get(
+            "/compras/",
+            {
+                "filial": self.filial.pk,
+                "fornecedor": self.fornecedor.pk,
+                "data_inicial": (hoje - timedelta(days=2)).isoformat(),
+                "data_final": hoje.isoformat(),
+            },
+        )
+
+        self.assertContains(response, entrada_alvo.numero_documento)
+        self.assertNotContains(response, entrada_fora.numero_documento)
+        self.assertContains(response, "Filial:")
+        self.assertContains(response, "Fornecedor:")
+        self.assertContains(response, "Desde:")
+        self.assertContains(response, "Até:")
+
     def test_lista_compras_destaca_rascunhos_e_filtra_status(self):
         self.client.force_login(self.admin)
         rascunho = EntradaCompra.objects.create(
@@ -1509,6 +1581,12 @@ class ImportacaoXMLEntradaTests(TestCase):
         self.assertEqual([item.numero for item in duplicatas], ["001", "002"])
         self.assertEqual([item.valor for item in duplicatas], [Decimal("9.00"), Decimal("9.00")])
 
+        revisao = self.client.get(f"/compras/{entrada.pk}/editar/")
+        detalhe = self.client.get(f"/compras/{entrada.pk}/")
+        self.assertContains(revisao, "Total R$ 18,00")
+        self.assertContains(detalhe, "Total das parcelas")
+        self.assertContains(detalhe, "R$ 18,00")
+
         finalizar_entrada_compra(entrada)
 
         contas = list(ContaFinanceira.objects.filter(entrada_compra=entrada).order_by("vencimento"))
@@ -1915,3 +1993,28 @@ class ComprasIsolamentoEmpresaTests(TestCase):
 
         self.assertContains(response, "NF-EMPRESA-A")
         self.assertContains(response, "NF-EMPRESA-B")
+
+    def test_filtros_e_resumo_financeiro_nao_vazam_outra_empresa(self):
+        ContaFinanceira.objects.create(
+            tipo=TipoContaFinanceira.PAGAR,
+            status=StatusContaFinanceira.ABERTA,
+            descricao="Conta estrangeira",
+            filial=self.filial_b,
+            fornecedor=self.fornecedor_b,
+            entrada_compra=self.entrada_b,
+            valor=Decimal("999.00"),
+            vencimento=timezone.localdate(),
+            usuario=self.super_admin,
+        )
+
+        lista = self.client.get("/compras/")
+        filtro_estrangeiro = self.client.get(
+            "/compras/",
+            {"filial": self.filial_b.pk, "fornecedor": self.fornecedor_b.pk},
+        )
+
+        self.assertEqual(lista.context["resumo_financeiro_compras"]["abertas"], 0)
+        self.assertEqual(lista.context["resumo_financeiro_compras"]["total_aberto"], 0)
+        self.assertNotContains(lista, "R$ 999,00")
+        self.assertNotContains(filtro_estrangeiro, self.entrada_a.numero_documento)
+        self.assertNotContains(filtro_estrangeiro, self.entrada_b.numero_documento)

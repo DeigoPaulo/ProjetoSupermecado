@@ -14,6 +14,7 @@
     <a class="primary-button" href="{% url 'compras:cotacao_nova' %}"><i class="fa-solid fa-circle-plus"></i> Nova cotação</a>
   </div>
 </header>
+<nav class="purchase-flow" aria-label="Fluxo de compras"><strong><span>1</span>Cotação</strong><i class="fa-solid fa-chevron-right"></i><a href="{% url 'compras:pedidos' %}"><span>2</span>Pedido</a><i class="fa-solid fa-chevron-right"></i><a href="{% url 'compras:lista' %}"><span>3</span>Recebimento</a><i class="fa-solid fa-chevron-right"></i><span><span>4</span>Estoque / financeiro</span></nav>
 
 <section class="metrics-grid">
   <article class="metric"><span>Total</span><strong>{{ resumo.total }}</strong></article>
@@ -34,23 +35,22 @@
   {% if request.GET.q or request.GET.status %}<a class="secondary-button" href="{% url 'compras:cotacoes' %}">Limpar</a>{% endif %}
 </form>
 
-<div class="panel">
-  <table>
-    <thead><tr><th>Cotação</th><th>Referência</th><th>Filial</th><th>Itens</th><th>Propostas</th><th>Status</th><th>Validade</th><th></th></tr></thead>
+<div class="panel table-wrapper purchase-table-wrap">
+  <table class="purchase-list-table">
+    <thead><tr><th>Referência</th><th>Filial</th><th>Itens</th><th>Propostas</th><th>Status</th><th>Validade</th><th>Ações</th></tr></thead>
     <tbody>
       {% for cotacao in cotacoes %}
         <tr>
-          <td>#{{ cotacao.id }}</td>
-          <td>{{ cotacao.referencia|default:"-" }}</td>
+          <td><strong>{{ cotacao.referencia|default:"Sem referência" }}</strong><small>Cotação #{{ cotacao.id }}</small></td>
           <td>{{ cotacao.filial }}</td>
           <td>{{ cotacao.itens.count }}</td>
           <td>{{ cotacao.respostas.count }}</td>
-          <td><span class="status {% if cotacao.status == 'ENCERRADA' %}status-success{% elif cotacao.status == 'ABERTA' %}status-warning{% elif cotacao.status == 'CANCELADA' %}status-muted{% endif %}">{{ cotacao.get_status_display }}</span></td>
+          <td><span class="status {% if cotacao.status == 'ENCERRADA' %}status-success{% elif cotacao.status == 'ABERTA' %}status-warning{% elif cotacao.status == 'CANCELADA' %}status-muted{% endif %}">{{ cotacao.get_status_display }}</span>{% if cotacao.status == 'ABERTA' %}<small>Aceita propostas</small>{% endif %}</td>
           <td>{{ cotacao.validade|date:"d/m/Y"|default:"-" }}</td>
-          <td><a href="{% url 'compras:cotacao_detalhe' cotacao.pk %}">Abrir</a></td>
+          <td><div class="table-actions"><a class="secondary-button" href="{% url 'compras:cotacao_detalhe' cotacao.pk %}"><i class="fa-solid fa-folder-open"></i> Abrir</a>{% if cotacao.status == 'RASCUNHO' %}<a class="secondary-button" href="{% url 'compras:cotacao_editar' cotacao.pk %}"><i class="fa-solid fa-pen"></i> Editar</a>{% endif %}</div></td>
         </tr>
       {% empty %}
-        <tr><td colspan="8" class="empty">Nenhuma cotação registrada.</td></tr>
+        <tr><td colspan="7" class="empty">Nenhuma cotação registrada.</td></tr>
       {% endfor %}
     </tbody>
   </table>

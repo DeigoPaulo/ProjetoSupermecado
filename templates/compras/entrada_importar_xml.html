@@ -14,6 +14,7 @@
   A importação não altera estoque nem financeiro. O sistema exige uma NF-e autorizada, fornecedor e filial
   cadastrados pelos respectivos CNPJs e todos os produtos associados por GTIN ou código interno.
 </section>
+<ol class="purchase-import-steps" aria-label="Etapas da importação"><li><span>1</span><strong>Selecionar XML</strong><small>NF-e autorizada de até 5 MB</small></li><li><span>2</span><strong>Importar</strong><small>Validar fornecedor, filial e produtos</small></li><li><span>3</span><strong>Revisar rascunho</strong><small>Conferir itens, valores e parcelas</small></li><li><span>4</span><strong>Finalizar</strong><small>Somente então atualizar estoque e financeiro</small></li></ol>
 
 <form method="post" enctype="multipart/form-data" class="panel purchase-form">
   {% csrf_token %}
@@ -33,6 +34,7 @@
         {{ form.gerar_conta_financeira }}
         {{ form.gerar_conta_financeira.label_tag }}
         {{ form.gerar_conta_financeira.errors }}
+        <small>Marcado: será gerado contas a pagar ao finalizar. Desmarcado: nenhuma conta será criada.</small>
       </div>
     </div>
   </section>

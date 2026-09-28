@@ -1,135 +1,39 @@
 {% extends "base.html" %}
-
+{% load static %}
 {% block title %}Entrada de Compra{% endblock %}
-
 {% block content %}
-<header class="page-header">
-  <div>
-    <h1>{% if object %}Editar entrada{% else %}Nova entrada{% endif %}</h1>
-    <p>Informe fornecedor, filial e os produtos recebidos.</p>
-  </div>
-</header>
+<header class="page-header"><div><h1>{% if object %}Revisar entrada #{{ object.pk }}{% else %}Nova entrada{% endif %}</h1><p>Registre o recebimento como rascunho antes de atualizar estoque e financeiro.</p></div></header>
+<nav class="purchase-flow" aria-label="Fluxo de compras"><a href="{% url 'compras:cotacoes' %}"><span>1</span>Cotação</a><i class="fa-solid fa-chevron-right"></i>{% if object.pedido_origem %}<a href="{% url 'compras:pedido_detalhe' object.pedido_origem.pk %}"><span>2</span>Pedido #{{ object.pedido_origem.pk }}</a>{% else %}<a href="{% url 'compras:pedidos' %}"><span>2</span>Pedido</a>{% endif %}<i class="fa-solid fa-chevron-right"></i><strong><span>3</span>Recebimento</strong><i class="fa-solid fa-chevron-right"></i><span><span>4</span>Estoque / financeiro</span></nav>
 
-{% if object and object.pedido_origem %}
-  <section class="operation-notice">
-    Conferência em três vias: {{ object.get_conferencia_status_display }}. {{ object.conferencia_resumo }}
-  </section>
-{% endif %}
-{% if object.chave_acesso_xml %}
-  <section class="operation-notice">
-    Rascunho importado da NF-e {{ object.chave_acesso_xml }}. Confira fornecedor, filial, itens, quantidades,
-    custos e parcelas antes de finalizar.
-  </section>
-{% endif %}
+{% if form.errors or formset.total_error_count %}<div class="form-error-summary" data-form-error-summary role="alert" tabindex="-1"><i class="fa-solid fa-circle-exclamation"></i><div><strong>Não foi possível salvar a entrada.</strong><span>Revise os campos destacados e tente novamente.</span></div></div>{% endif %}
+{% if object.pedido_origem %}<section class="operation-notice"><i class="fa-solid fa-code-compare"></i><div><strong>Entrada originada do pedido #{{ object.pedido_origem.pk }} · {{ object.get_conferencia_status_display }}</strong><span>{{ object.conferencia_resumo }}</span></div></section>{% endif %}
+{% if object.chave_acesso_xml %}<section class="operation-notice purchase-xml-notice"><i class="fa-solid fa-file-code"></i><div><strong><span class="status status-warning" aria-label="Rascunho importado da NF-e">Importada da NF-e</span> Rascunho · Documento {{ object.numero_documento }}</strong><span>Chave {{ object.chave_acesso_xml }}. Os dados fiscais ainda não confirmam o recebimento físico.</span></div></section>{% endif %}
+{% if finalizacao_bloqueada %}<section class="operation-notice operation-notice-danger"><i class="fa-solid fa-triangle-exclamation"></i><div><strong>Finalização bloqueada antes da conferência física</strong><span>{{ object.conferencia_resumo }} Registre a conferência física no detalhe da entrada antes de finalizar.</span></div></section>{% endif %}
 
-{% if object.fatura_nfe.parcelas_financeiras_validas %}
-  <section class="panel">
-    <div class="panel-heading"><div><h2>Parcelas importadas da NF-e</h2><p>Dados preservados do XML. Ao finalizar, cada parcela gera uma conta a pagar separada.</p></div></div>
-    <div class="table-wrapper"><table>
-      <thead><tr><th>Parcela</th><th>Vencimento</th><th>Valor</th></tr></thead>
-      <tbody>{% for duplicata in object.fatura_nfe.duplicatas.all %}<tr><td>{{ duplicata.numero }}</td><td>{{ duplicata.vencimento|date:"d/m/Y" }}</td><td>R$ {{ duplicata.valor|floatformat:2 }}</td></tr>{% endfor %}</tbody>
-    </table></div>
-  </section>
-{% endif %}
+{% if object.fatura_nfe.parcelas_financeiras_validas %}<section class="panel purchase-installments"><div class="panel-heading"><div><h2>Parcelas importadas da NF-e</h2><p>Serão usadas somente se a entrada for finalizada com geração financeira ativa.</p></div><strong>Total R$ {{ object.fatura_nfe.valor_liquido|floatformat:2 }}</strong></div><div class="table-wrapper"><table><thead><tr><th>Número</th><th>Vencimento</th><th>Valor</th></tr></thead><tbody>{% for duplicata in object.fatura_nfe.duplicatas.all %}<tr><td>{{ duplicata.numero }}</td><td>{{ duplicata.vencimento|date:"d/m/Y" }}</td><td>R$ {{ duplicata.valor|floatformat:2 }}</td></tr>{% endfor %}</tbody></table></div></section>{% endif %}
 
-<form method="post" class="panel purchase-form">
-  {% csrf_token %}
-  {% if retorno_lista_url %}<input type="hidden" name="next" value="{{ retorno_lista_url }}">{% endif %}
-  <section class="form-section purchase-section">
-    <div class="form-section-header">
-      <h2>Dados da entrada</h2>
-      <p>Identifique fornecedor, filial, documento e vencimento financeiro antes de receber os itens.</p>
-    </div>
-    <div class="form-grid purchase-head">
-      <div class="field">
-        {{ form.fornecedor.label_tag }}
-        {{ form.fornecedor }}
-        {{ form.fornecedor.errors }}
-      </div>
-      <div class="field">
-        {{ form.filial.label_tag }}
-        {{ form.filial }}
-        {{ form.filial.errors }}
-      </div>
-      <div class="field">
-        {{ form.numero_documento.label_tag }}
-        {{ form.numero_documento }}
-        {{ form.numero_documento.errors }}
-      </div>
-      <div class="field">
-        {{ form.data_emissao.label_tag }}
-        {{ form.data_emissao }}
-        {{ form.data_emissao.errors }}
-      </div>
-      <div class="field">
-        {{ form.vencimento_financeiro.label_tag }}
-        {{ form.vencimento_financeiro }}
-        {{ form.vencimento_financeiro.errors }}
-      </div>
-      {% if object.chave_acesso_xml %}
-        <div class="field">
-          {{ form.total_documento.label_tag }}
-          {{ form.total_documento }}
-          <small>Sem parcelas no XML, este total é usado na conta a pagar. Com parcelas, prevalecem os valores de cada duplicata.</small>
-          {{ form.total_documento.errors }}
-        </div>
-      {% endif %}
-      <div class="field checkbox-field">
-        {{ form.gerar_conta_financeira }}
-        {{ form.gerar_conta_financeira.label_tag }}
-        {{ form.gerar_conta_financeira.errors }}
-      </div>
-      <div class="field span-2">
-        {{ form.observacoes.label_tag }}
-        {{ form.observacoes }}
-        {{ form.observacoes.errors }}
-      </div>
-    </div>
+<form method="post" class="panel purchase-form" data-purchase-form data-purchase-kind="entry">
+  {% csrf_token %}{% if retorno_lista_url %}<input type="hidden" name="next" value="{{ retorno_lista_url }}">{% endif %}
+  <section class="form-section purchase-section"><div class="form-section-header"><div><span class="status status-success">Cabeçalho</span><h2>Dados da entrada</h2></div><p>Fornecedor e documento do recebimento.</p></div><div class="form-grid purchase-head">
+    <div class="field">{{ form.fornecedor.label_tag }}{{ form.fornecedor }}{{ form.fornecedor.errors }}</div><div class="field">{{ form.filial.label_tag }}{{ form.filial }}{{ form.filial.errors }}</div><div class="field">{{ form.numero_documento.label_tag }}{{ form.numero_documento }}{{ form.numero_documento.errors }}</div><div class="field">{{ form.data_emissao.label_tag }}{{ form.data_emissao }}{{ form.data_emissao.errors }}</div><div class="field">{{ form.vencimento_financeiro.label_tag }}{{ form.vencimento_financeiro }}{{ form.vencimento_financeiro.errors }}</div>
+    {% if object.chave_acesso_xml %}<div class="field">{{ form.total_documento.label_tag }}{{ form.total_documento }}<small>Com parcelas, prevalecem os valores das duplicatas.</small>{{ form.total_documento.errors }}</div>{% endif %}
+    <div class="field checkbox-field purchase-finance-choice">{{ form.gerar_conta_financeira }}{{ form.gerar_conta_financeira.label_tag }}{{ form.gerar_conta_financeira.errors }}<small data-finance-message></small></div><div class="field span-2">{{ form.observacoes.label_tag }}{{ form.observacoes }}{{ form.observacoes.errors }}</div>
+  </div></section>
+
+  <section class="purchase-live-summary" aria-label="Resumo operacional"><div><span>Itens</span><strong data-summary-items>{{ resumo_entrada.itens }}</strong></div><div><span>Quantidade</span><strong data-summary-quantity>{{ resumo_entrada.quantidade|floatformat:3 }}</strong></div><div><span>Total previsto/recebido</span><strong data-summary-total>R$ {{ resumo_entrada.total|floatformat:2 }}</strong></div></section>
+
+  <section class="form-section purchase-section"><div class="form-section-header"><div><span class="status status-success">Recebimento físico</span><h2>Itens recebidos</h2></div><p>Produto, quantidade e custo são essenciais; informe lote e datas quando aplicáveis.</p></div>
+    {{ formset.management_form }}{% if formset.non_form_errors %}<div class="message error">{{ formset.non_form_errors|striptags }}</div>{% endif %}
+    <div class="purchase-items" data-purchase-items>{% for item_form in formset %}<div class="purchase-item-row{% if not item_form.instance.pk and not formset.is_bound and not item_form.has_changed %} is-formset-empty{% endif %}" data-formset-item>
+      {% for hidden in item_form.hidden_fields %}{{ hidden }}{% endfor %}
+      {% for field in item_form.visible_fields %}{% if field.name == "DELETE" %}<label class="purchase-delete-field">{{ field }}<span>Remover item ao salvar</span></label>{% else %}<label class="form-field"><span>{{ field.label }}</span>{{ field }}{% if field.errors %}<small class="field-error">{{ field.errors|striptags }}</small>{% endif %}</label>{% endif %}{% endfor %}
+    </div>{% endfor %}</div>
+    <button class="secondary-button purchase-add-item" type="button" data-formset-reveal><i class="fa-solid fa-plus"></i> Adicionar item</button>
   </section>
 
-  <section class="form-section purchase-section">
-    <div class="form-section-header">
-      <h2>Itens recebidos</h2>
-      <p>Informe produto, quantidade e custo. Ao finalizar, o sistema atualiza estoque e financeiro. Lote, fabricacao e validade sao opcionais e ativam o rastreio FEFO.</p>
-    </div>
-    {{ formset.management_form }}
-    <div class="purchase-items">
-      {% for item_form in formset %}
-        <div class="purchase-item-row">
-          {% for hidden in item_form.hidden_fields %}{{ hidden }}{% endfor %}
-          {% for field in item_form.visible_fields %}
-            <label class="form-field">
-              <span>{{ field.label }}</span>
-              {{ field }}
-              {% if field.errors %}<small class="field-error">{{ field.errors|striptags }}</small>{% endif %}
-            </label>
-          {% endfor %}
-        </div>
-      {% endfor %}
-    </div>
-  </section>
+  <section class="form-section purchase-section purchase-finalization"><div class="form-section-header"><div><span class="status status-warning">Alto impacto</span><h2>Finalização</h2></div><p>Ao finalizar, o sistema atualiza estoque e financeiro. Salvar rascunho não altera estoque nem gera contas a pagar.</p></div><div class="form-grid purchase-head"><label class="form-field"><span>Supervisor ou admin</span><input class="no-upper" type="text" name="supervisor_usuario" autocomplete="username"></label><label class="form-field"><span>Senha</span><input class="no-upper" type="password" name="supervisor_senha" autocomplete="current-password"></label></div></section>
 
-  <section class="form-section purchase-section">
-    <div class="form-section-header">
-      <h2>Recebimento</h2>
-      <p>Salvar rascunho não altera estoque. Para aumentar o saldo dos produtos agora, finalize a entrada com autorização.</p>
-    </div>
-    <div class="form-grid">
-      <label class="form-field">
-        <span>Supervisor ou admin</span>
-        <input class="no-upper" type="text" name="supervisor_usuario" autocomplete="username">
-      </label>
-      <label class="form-field">
-        <span>Senha</span>
-        <input class="no-upper" type="password" name="supervisor_senha" autocomplete="current-password">
-      </label>
-    </div>
-  </section>
-
-  <div class="form-actions purchase-actions">
-    <a class="secondary-button" href="{% if object %}{% url 'compras:detalhe' object.pk %}{% if retorno_lista_url %}?next={{ retorno_lista_url|urlencode }}{% endif %}{% else %}{% url 'compras:lista' %}{% endif %}">Cancelar</a>
-    <button class="secondary-button" type="submit" name="acao" value="rascunho">Salvar rascunho</button>
-    <button class="primary-button" type="submit" name="acao" value="finalizar">Finalizar e atualizar estoque</button>
-  </div>
+  <div class="sticky-form-actions purchase-actions"><span class="purchase-save-context"><strong>Rascunho:</strong> sem estoque e sem conta</span><a class="secondary-button" href="{% if object %}{% url 'compras:detalhe' object.pk %}{% if retorno_lista_url %}?next={{ retorno_lista_url|urlencode }}{% endif %}{% else %}{% url 'compras:lista' %}{% endif %}">Cancelar</a><button class="secondary-button" type="submit" name="acao" value="rascunho" data-draft-submit><i class="fa-solid fa-floppy-disk"></i> Salvar rascunho <kbd>Ctrl+S</kbd></button><button class="primary-button purchase-finalize-button" type="submit" name="acao" value="finalizar" data-finalize-submit{% if finalizacao_bloqueada %} disabled{% endif %}><i class="fa-solid fa-boxes-stacked"></i> Finalizar e atualizar estoque</button></div>
 </form>
 {% endblock %}
+{% block extra_js %}<script src="{% static 'js/compras.js' %}?v=20260928-1"></script>{% endblock %}

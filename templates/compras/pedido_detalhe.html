@@ -13,6 +13,7 @@
     <a class="secondary-button" href="{% url 'compras:pedidos' %}">Voltar</a>
   </div>
 </header>
+<nav class="purchase-flow" aria-label="Fluxo de compras">{% if pedido.cotacao_origem %}<a href="{% url 'compras:cotacao_detalhe' pedido.cotacao_origem.pk %}"><span>1</span>Cotação #{{ pedido.cotacao_origem.pk }}</a>{% else %}<span><span>1</span>Cotação</span>{% endif %}<i class="fa-solid fa-chevron-right"></i><strong><span>2</span>Pedido #{{ pedido.pk }}</strong><i class="fa-solid fa-chevron-right"></i>{% if pedido.entrada_gerada %}<a href="{% url 'compras:detalhe' pedido.entrada_gerada.pk %}"><span>3</span>Entrada #{{ pedido.entrada_gerada.pk }}</a>{% else %}<span><span>3</span>Recebimento</span>{% endif %}<i class="fa-solid fa-chevron-right"></i><span><span>4</span>Estoque / financeiro</span></nav>
 
 <section class="metrics-grid">
   <article class="metric"><span>Status</span><strong>{{ pedido.get_status_display }}</strong></article>
@@ -38,7 +39,7 @@
 {% if pedido.status == "ENVIADO" %}
   <section class="panel mt-panel">
     <div class="panel-title">Gerar entrada de compra</div>
-    <p>Os dados serão copiados para uma entrada em rascunho. Estoque e financeiro só serão alterados quando essa entrada for finalizada.</p>
+    <p><strong>Pedido não é recebimento.</strong> A conversão apenas copia os dados para uma entrada em rascunho. Estoque e financeiro só mudam após conferência e finalização.</p>
     <form method="post" action="{% url 'compras:pedido_gerar_entrada' pedido.pk %}" class="form-confirm" data-msg="Gerar uma entrada em rascunho a partir deste pedido?">
       {% csrf_token %}
       <button class="primary-button" type="submit">Gerar entrada em rascunho</button>

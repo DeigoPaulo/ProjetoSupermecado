@@ -14,6 +14,7 @@
     <a class="secondary-button" href="{% url 'compras:cotacoes' %}">Voltar</a>
   </div>
 </header>
+<nav class="purchase-flow" aria-label="Fluxo de compras"><strong><span>1</span>Cotação #{{ cotacao.pk }}</strong><i class="fa-solid fa-chevron-right"></i>{% if cotacao.pedido_gerado %}<a href="{% url 'compras:pedido_detalhe' cotacao.pedido_gerado.pk %}"><span>2</span>Pedido #{{ cotacao.pedido_gerado.pk }}</a>{% else %}<span><span>2</span>Pedido</span>{% endif %}<i class="fa-solid fa-chevron-right"></i><span><span>3</span>Recebimento</span><i class="fa-solid fa-chevron-right"></i><span><span>4</span>Estoque / financeiro</span></nav>
 
 <section class="metrics-grid">
   <article class="metric"><span>Status</span><strong>{{ cotacao.get_status_display }}</strong></article>
@@ -40,6 +41,7 @@
     <a href="{% url 'compras:pedido_detalhe' cotacao.pedido_gerado.pk %}">#{{ cotacao.pedido_gerado.pk }}</a>.
   </section>
 {% endif %}
+{% if cotacao.status == "ABERTA" %}<section class="operation-notice"><i class="fa-solid fa-comments-dollar"></i><div><strong>Cotação aberta para propostas</strong><span>Compare custo e disponibilidade. O destaque de menor custo é informativo e não seleciona fornecedor.</span></div></section>{% endif %}
 
 <div class="panel">
   <div class="panel-title">Itens solicitados</div>
@@ -69,8 +71,8 @@
           {% for preco in resposta.precos.all %}
             <tr>
               <td>{{ preco.item.produto }}</td>
-              <td>{{ preco.disponivel|yesno:"Sim,Não" }}</td>
-              <td>{% if preco.custo_unitario is not None %}R$ {{ preco.custo_unitario|floatformat:2 }}{% else %}-{% endif %}</td>
+              <td>{% if preco.disponivel %}<span class="status status-success">Disponível</span>{% else %}<span class="status status-muted">Indisponível</span>{% endif %}</td>
+              <td>{% if preco.custo_unitario is not None %}R$ {{ preco.custo_unitario|floatformat:2 }}{% if preco.menor_custo_item %} <span class="status status-success">Menor custo</span>{% endif %}{% else %}-{% endif %}</td>
               <td>{% if preco.total_proposto is not None %}R$ {{ preco.total_proposto|floatformat:2 }}{% else %}-{% endif %}</td>
             </tr>
           {% endfor %}
