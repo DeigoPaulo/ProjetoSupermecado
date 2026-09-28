@@ -9,6 +9,7 @@
 - Custo medio usa 6 casas.
 - Totais comerciais, documentais e financeiros usam 2 casas, com `ROUND_HALF_UP` no limite monetario.
 - Totais analiticos de estoque, producao e desmembramento podem usar 6 casas quando alimentam custeio posterior.
+- Snapshots cuja integridade depende do custo preservam as 6 casas no payload versionado; contratos historicos continuam verificaveis sem regravacao.
 
 ## Compra e conversao
 

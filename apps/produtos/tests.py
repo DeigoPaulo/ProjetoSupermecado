@@ -968,6 +968,12 @@ class ProdutoViewsTests(TestCase):
         self.assertEqual(self.produto.margem_atual_percentual, Decimal("20.00"))
         self.assertEqual(self.produto.preco_venda_sugerido, Decimal("100.00"))
 
+    def test_preco_sugerido_arredonda_meio_centavo_com_half_up(self):
+        self.produto.preco_custo = Decimal("1.005000")
+        self.produto.margem_desejada_percentual = Decimal("0.00")
+
+        self.assertEqual(self.produto.preco_venda_sugerido, Decimal("1.01"))
+
     def test_tela_produto_exibe_fornecedores_margem_e_preco_sugerido(self):
         response = self.client.get(f"/produtos/{self.produto.pk}/editar/")
 

@@ -677,38 +677,6 @@ def _normalizar_data_lote(valor, rotulo):
         raise ValidationError(f"Informe uma data de {rotulo} valida.") from exc
 
 
-def _conteudo_conferencia_fisica_lote(
-    *,
-    lote,
-    quantidade_sistema,
-    quantidade_observada,
-    diferenca,
-    observacao,
-    usuario,
-    momento,
-):
-    return {
-        "contrato": "inventory_expiry_physical_check_v1",
-        "empresa_id": lote.filial.empresa_id,
-        "filial_id": lote.filial_id,
-        "filial_nome": lote.filial.nome,
-        "produto_id": lote.produto_id,
-        "produto_nome": lote.produto.nome,
-        "produto_codigo_barras": lote.produto.codigo_barras or "",
-        "lote_id": lote.pk,
-        "lote_codigo": lote.codigo,
-        "validade": lote.validade.isoformat() if lote.validade else "",
-        "quantidade_sistema": format(quantidade_sistema, ".3f"),
-        "quantidade_observada": format(quantidade_observada, ".3f"),
-        "diferenca": format(diferenca, ".3f"),
-        "custo_unitario": format(lote.custo_unitario, ".2f"),
-        "tratamento_status": lote.tratamento_validade_status,
-        "observacao": observacao,
-        "usuario_id": usuario.pk,
-        "conferido_em": momento.isoformat(),
-    }
-
-
 def conferencia_fisica_vigente_lote(lote, *, momento=None):
     momento = momento or timezone.now()
     conferencia = (
@@ -719,7 +687,8 @@ def conferencia_fisica_vigente_lote(lote, *, momento=None):
     if not conferencia or timezone.localdate(conferencia.conferido_em) != timezone.localdate(momento):
         return None
     if (
-        conferencia.lote_codigo_snapshot != lote.codigo
+        not conferencia.snapshot_integro
+        or conferencia.lote_codigo_snapshot != lote.codigo
         or conferencia.validade_snapshot != lote.validade
         or conferencia.quantidade_sistema_snapshot != lote.quantidade_atual
         or conferencia.custo_unitario_snapshot != lote.custo_unitario
@@ -759,19 +728,7 @@ def registrar_conferencia_fisica_validade_lote(
     if diferenca != 0 and not observacao:
         raise ValidationError("Explique a divergência entre a quantidade observada e o saldo do sistema.")
     momento = timezone.now()
-    conteudo = _conteudo_conferencia_fisica_lote(
-        lote=lote,
-        quantidade_sistema=quantidade_sistema,
-        quantidade_observada=quantidade_observada,
-        diferenca=diferenca,
-        observacao=observacao,
-        usuario=usuario,
-        momento=momento,
-    )
-    conteudo_sha256 = hashlib.sha256(
-        json.dumps(conteudo, ensure_ascii=False, sort_keys=True, separators=(",", ":")).encode("utf-8")
-    ).hexdigest()
-    conferencia = ConferenciaFisicaValidadeLote.objects.create(
+    conferencia = ConferenciaFisicaValidadeLote(
         lote=lote,
         empresa=lote.filial.empresa,
         filial_id_snapshot=lote.filial_id,
@@ -789,8 +746,9 @@ def registrar_conferencia_fisica_validade_lote(
         observacao=observacao,
         conferido_por=usuario,
         conferido_em=momento,
-        conteudo_sha256=conteudo_sha256,
     )
+    conferencia.conteudo_sha256 = conferencia.calcular_snapshot_sha256()
+    conferencia.save()
     LogAuditoria.objects.create(
         usuario=usuario,
         modulo="estoque",

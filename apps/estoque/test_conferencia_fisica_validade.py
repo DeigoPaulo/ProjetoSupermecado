@@ -13,6 +13,7 @@ from apps.empresas.models import Empresa, Filial
 from apps.produtos.models import Categoria, Produto
 
 from .models import (
+    CONTRATO_CONFERENCIA_FISICA_LOTE_V1,
     ConferenciaFisicaValidadeLote,
     Estoque,
     LoteEstoque,
@@ -91,12 +92,79 @@ class ConferenciaFisicaValidadeLoteTests(TestCase):
         self.assertFalse(MovimentacaoEstoque.objects.exists())
         self.assertFalse(PerdaEstoque.objects.exists())
         self.assertEqual(LogAuditoria.objects.filter(acao="CONFERENCIA_FISICA_VALIDADE_LOTE").count(), 1)
+        self.assertTrue(conferencia.snapshot_integro)
 
         conferencia.observacao = "Tentativa de alteração"
         with self.assertRaisesMessage(ValidationError, "imutável"):
             conferencia.save()
         with self.assertRaisesMessage(ValidationError, "imutável"):
             conferencia.delete()
+
+    def test_hash_v2_protege_sexta_casa_quantidades_e_observacao(self):
+        self.lote.custo_unitario = Decimal("2.123456")
+        self.lote.save(update_fields=["custo_unitario"])
+        conferencia = self.registrar()
+
+        self.assertEqual(conferencia.custo_unitario_snapshot, Decimal("2.123456"))
+        self.assertEqual(
+            conferencia.conteudo_snapshot()["custo_unitario"], "2.123456"
+        )
+        hash_original = conferencia.conteudo_sha256
+        self.assertEqual(hash_original, conferencia.calcular_snapshot_sha256())
+        self.assertTrue(conferencia.snapshot_integro)
+
+        conferencia.custo_unitario_snapshot = Decimal("2.123457")
+        self.assertNotEqual(hash_original, conferencia.calcular_snapshot_sha256())
+        self.assertFalse(conferencia.snapshot_integro)
+        conferencia.custo_unitario_snapshot = Decimal("2.123456")
+        conferencia.quantidade_observada = Decimal("10.001")
+        self.assertNotEqual(hash_original, conferencia.calcular_snapshot_sha256())
+        conferencia.quantidade_observada = Decimal("10.000")
+        conferencia.observacao = "Outra observacao."
+        self.assertNotEqual(hash_original, conferencia.calcular_snapshot_sha256())
+
+    def test_hash_v1_historico_continua_integro_sem_regravacao(self):
+        self.lote.custo_unitario = Decimal("2.000000")
+        self.lote.save(update_fields=["custo_unitario"])
+        conferencia = self.registrar()
+        self.assertEqual(
+            conferencia.conteudo_snapshot()["custo_unitario"], "2.000000"
+        )
+        hash_v1 = conferencia.calcular_snapshot_sha256(
+            contrato=CONTRATO_CONFERENCIA_FISICA_LOTE_V1
+        )
+        ConferenciaFisicaValidadeLote.objects.filter(pk=conferencia.pk).update(
+            conteudo_sha256=hash_v1
+        )
+
+        conferencia.refresh_from_db()
+        self.assertEqual(conferencia.conteudo_sha256, hash_v1)
+        self.assertEqual(
+            conferencia.conteudo_snapshot(
+                contrato=CONTRATO_CONFERENCIA_FISICA_LOTE_V1
+            )["custo_unitario"],
+            "2.00",
+        )
+        self.assertTrue(conferencia.snapshot_integro)
+
+        ConferenciaFisicaValidadeLote.objects.filter(pk=conferencia.pk).update(
+            conteudo_sha256="0" * 64
+        )
+        conferencia.refresh_from_db()
+        self.assertFalse(conferencia.snapshot_integro)
+        self.assertIsNone(conferencia_fisica_vigente_lote(self.lote))
+
+    def test_verificacao_do_hash_usa_snapshots_e_nao_nomes_atuais(self):
+        conferencia = self.registrar()
+        Produto.objects.filter(pk=self.produto.pk).update(nome="Produto renomeado")
+        Filial.objects.filter(pk=self.filial.pk).update(nome="Filial renomeada")
+        LoteEstoque.objects.filter(pk=self.lote.pk).update(codigo="LOTE-RENOMEADO")
+
+        conferencia.refresh_from_db()
+        self.assertEqual(conferencia.produto_nome_snapshot, "Produto conferido")
+        self.assertEqual(conferencia.filial_nome_snapshot, "Matriz")
+        self.assertEqual(conferencia.lote_codigo_snapshot, "CONF-01")
+        self.assertTrue(conferencia.snapshot_integro)
 
     def test_divergencia_exige_observacao_e_snapshot_fica_invalido_se_saldo_mudar(self):
         with self.assertRaisesMessage(ValidationError, "Explique a divergência"):

@@ -184,6 +184,9 @@ STATUS_TRATAMENTO_LOTE_VENDAVEL = {
     StatusTratamentoValidade.PROMOCAO_PLANEJADA,
 }
 
+CONTRATO_CONFERENCIA_FISICA_LOTE_V1 = "inventory_expiry_physical_check_v1"
+CONTRATO_CONFERENCIA_FISICA_LOTE_V2 = "inventory_expiry_physical_check_v2"
+
 
 def resumo_disponibilidade_venda_lotes(
     *, produto, filial, estoque=None, momento=None, bloquear=False, lotes=None
@@ -336,6 +339,57 @@ class ConferenciaFisicaValidadeLote(models.Model):
             models.Index(fields=["lote", "conferido_em"], name="est_conf_val_lote_em_idx"),
             models.Index(fields=["empresa", "conferido_em"], name="est_conf_val_emp_em_idx"),
         ]
+
+    def conteudo_snapshot(self, *, contrato=CONTRATO_CONFERENCIA_FISICA_LOTE_V2):
+        if contrato not in {
+            CONTRATO_CONFERENCIA_FISICA_LOTE_V1,
+            CONTRATO_CONFERENCIA_FISICA_LOTE_V2,
+        }:
+            raise ValueError("Contrato de conferencia fisica de lote nao suportado.")
+        casas_custo = 2 if contrato == CONTRATO_CONFERENCIA_FISICA_LOTE_V1 else 6
+        return {
+            "contrato": contrato,
+            "empresa_id": self.empresa_id,
+            "filial_id": self.filial_id_snapshot,
+            "filial_nome": self.filial_nome_snapshot,
+            "produto_id": self.produto_id_snapshot,
+            "produto_nome": self.produto_nome_snapshot,
+            "produto_codigo_barras": self.produto_codigo_barras_snapshot,
+            "lote_id": self.lote_id,
+            "lote_codigo": self.lote_codigo_snapshot,
+            "validade": self.validade_snapshot.isoformat() if self.validade_snapshot else "",
+            "quantidade_sistema": format(self.quantidade_sistema_snapshot, ".3f"),
+            "quantidade_observada": format(self.quantidade_observada, ".3f"),
+            "diferenca": format(self.diferenca_snapshot, ".3f"),
+            "custo_unitario": format(self.custo_unitario_snapshot, f".{casas_custo}f"),
+            "tratamento_status": self.tratamento_status_snapshot,
+            "observacao": self.observacao,
+            "usuario_id": self.conferido_por_id,
+            "conferido_em": self.conferido_em.isoformat(),
+        }
+
+    def calcular_snapshot_sha256(self, *, contrato=CONTRATO_CONFERENCIA_FISICA_LOTE_V2):
+        conteudo = self.conteudo_snapshot(contrato=contrato)
+        return hashlib.sha256(
+            json.dumps(
+                conteudo,
+                ensure_ascii=False,
+                sort_keys=True,
+                separators=(",", ":"),
+            ).encode("utf-8")
+        ).hexdigest()
+
+    @property
+    def snapshot_integro(self):
+        if not self.conteudo_sha256:
+            return False
+        return any(
+            self.conteudo_sha256 == self.calcular_snapshot_sha256(contrato=contrato)
+            for contrato in (
+                CONTRATO_CONFERENCIA_FISICA_LOTE_V2,
+                CONTRATO_CONFERENCIA_FISICA_LOTE_V1,
+            )
+        )
 
     def save(self, *args, **kwargs):
         if self.pk and type(self).objects.filter(pk=self.pk).exists():

@@ -3100,6 +3100,27 @@ Classificacao tributaria, CFOP, CST/CSOSN, IBS/CBS, plano de contas, regras de c
 - O intervalo solicitado pela SEFAZ fica salvo por filial e bloqueia repetição antecipada da consulta.
 - Rede e produção permanecem desligadas por padrão e nenhum web service real foi chamado nesta etapa.
 - Pendência externa: validar A1/CNPJ no Ambiente Nacional, executar homologação real e obter aceite técnico e fiscal.
+
+### Automatização da consulta de DF-e recebidos
+
+A distribuição DF-e por NSU já está implementada estruturalmente. Existem serviço de
+distribuição, cursor por filial, `ultimo_nsu`, cooldown, armazenamento, tela DF-e e o
+comando `consultar_dfe_recebidos`. A pendência é automatizar a execução periódica, sem
+ampliar os efeitos operacionais da consulta.
+
+- [ ] Agendar execução periódica de `consultar_dfe_recebidos`.
+- [ ] Respeitar `ultimo_nsu`, cursor por filial e `proxima_consulta_em`.
+- [ ] Respeitar cooldown informado pela SEFAZ e evitar consulta antecipada/cStat 656.
+- [ ] Não manifestar documento automaticamente.
+- [ ] Não criar EntradaCompra automaticamente.
+- [ ] Não alterar estoque automaticamente.
+- [ ] Não gerar financeiro automaticamente.
+- [ ] Disponibilizar novos documentos na caixa de entrada DF-e após consulta.
+- [ ] Registrar falhas operacionais do job de forma segura.
+- [ ] Definir mecanismo de produção adequado: cron, systemd timer ou scheduler equivalente.
+- [ ] Homologar A1/CNPJ/rede real antes de habilitar produção.
+
+Este item é apenas documental neste ciclo; nenhum scheduler foi implementado.
 ## Manifestação do Destinatário concluída estruturalmente em 20/08/2026
 
 - Implementados os eventos 210200 (confirmação), 210210 (ciência), 210220 (desconhecimento) e 210240 (operação não realizada).

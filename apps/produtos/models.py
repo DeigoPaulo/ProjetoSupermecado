@@ -5,6 +5,8 @@ from django.core.exceptions import ValidationError
 from django.core.validators import FileExtensionValidator, MaxValueValidator, MinValueValidator
 from django.db import models, transaction
 
+from apps.core_money import quantizar_moeda
+
 
 VALIDAR_IMAGEM_PNG_JPEG = FileExtensionValidator(
     allowed_extensions=["png", "jpg", "jpeg"],
@@ -286,7 +288,7 @@ class Produto(models.Model):
         if self.margem_desejada_percentual is None:
             return None
         divisor = Decimal("1") - (self.margem_desejada_percentual / Decimal("100"))
-        return (self.preco_custo / divisor).quantize(Decimal("0.01"))
+        return quantizar_moeda(self.preco_custo / divisor)
 
     def __str__(self):
         return self.nome
