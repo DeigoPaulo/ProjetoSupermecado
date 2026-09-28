@@ -94,10 +94,12 @@
   <div class="panel-title">Diagnósticos financeiros</div>
   <div class="metrics-grid">
     <article class="metric"><span>Saídas não classificadas</span><strong>R$ {{ dre.saidas_nao_classificadas.valor|floatformat:2 }}</strong><small>{{ dre.saidas_nao_classificadas.quantidade }} movimentos · {{ dre.saidas_nao_classificadas.percentual|floatformat:2 }}%</small></article>
-    <article class="metric"><span>Taxas realizadas</span><strong>R$ {{ dre.recebiveis.taxas_realizadas|floatformat:2 }}</strong></article>
+    <article class="metric"><span>Custos de liquidação realizados</span><strong>R$ {{ dre.recebiveis.custos_liquidacao_realizados|floatformat:2 }}</strong><small>Impacto conhecido entre bruto e efetivamente liquidado</small></article>
+    <article class="metric"><span>Divergência da liquidação</span><strong>R$ {{ dre.recebiveis.divergencia_liquidacao|floatformat:2 }}</strong><small>Realizado menos líquido previsto</small></article>
     <article class="metric"><span>Chargebacks</span><strong>R$ {{ dre.recebiveis.chargebacks|floatformat:2 }}</strong></article>
     <article class="metric"><span>Taxas previstas</span><strong>R$ {{ dre.recebiveis.taxas_previstas_diagnostico|floatformat:2 }}</strong><small>Diagnóstico, fora do resultado realizado</small></article>
   </div>
+  <div class="table-wrap"><table><thead><tr><th>Recebível</th><th>Liquidação</th><th>Bruto</th><th>Previsto</th><th>Realizado</th><th>Custo conhecido</th><th>Divergência</th><th>Antecipado</th></tr></thead><tbody>{% for item in dre.recebiveis.liquidacoes %}<tr><td>#{{ item.recebivel_id }}</td><td>{{ item.data_liquidacao|date:'d/m/Y' }}</td><td>R$ {{ item.valor_bruto|floatformat:2 }}</td><td>R$ {{ item.valor_liquido_previsto|floatformat:2 }}</td><td>R$ {{ item.valor_liquidado|floatformat:2 }}</td><td>R$ {{ item.custo_liquidacao_realizado|floatformat:2 }}</td><td>R$ {{ item.divergencia_liquidacao|floatformat:2 }}</td><td>{% if item.antecipado %}Sim{% else %}Não{% endif %}</td></tr>{% empty %}<tr><td colspan="8" class="empty">Nenhuma liquidação realizada no período.</td></tr>{% endfor %}</tbody></table></div>
 </section>
 
 <section class="panel table-panel">

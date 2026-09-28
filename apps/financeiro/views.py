@@ -648,12 +648,12 @@ def _pacote_contabil_gerencial(data_inicio, data_fim, receitas, despesas, concil
         {
             "item": "Receitas operacionais",
             "valor": receitas,
-            "observacao": "Entradas sem transferências internas, usadas na DRE gerencial.",
+            "observacao": "Entradas sem transferências internas do resumo financeiro histórico.",
         },
         {
             "item": "Despesas operacionais",
             "valor": despesas,
-            "observacao": "Saídas sem transferências internas, usadas na DRE gerencial.",
+            "observacao": "Saídas sem transferências internas do resumo financeiro histórico.",
         },
         {
             "item": "Resultado operacional",
@@ -950,11 +950,7 @@ def resultado_financeiro_csv(request):
         f"{resultado['resultado']:.2f}".replace(".", ","),
     ])
     writer.writerow([])
-    writer.writerow(["DRE gerencial"])
-    writer.writerow(["Grupo", "Valor", "Observacao"])
-    for linha in resultado["dre_gerencial"]["linhas"]:
-        writer.writerow([linha["grupo"], valor_csv(linha["valor"]), linha["observacao"]])
-    writer.writerow(["Margem operacional", f"{resultado['dre_gerencial']['margem_percentual']:.2f}".replace(".", ",") + "%", "Resultado dividido pela receita operacional."])
+    writer.writerow(["DRE econômica disponível separadamente em DRE Gerencial 2.0"])
     writer.writerow([])
     writer.writerow(["Origem", "Receitas", "Despesas", "Resultado"])
     for linha in resultado["por_origem"]:

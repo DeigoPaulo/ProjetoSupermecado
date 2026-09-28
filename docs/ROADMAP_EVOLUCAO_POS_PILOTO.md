@@ -2910,10 +2910,10 @@ Esta frente registra as lacunas financeiras, contábeis e fiscais identificadas 
 - [x] Evoluir a DRE gerencial para separar explicitamente receita bruta, cancelamentos, devoluções, descontos, receita líquida, CMV, lucro bruto, despesas operacionais, perdas, taxas financeiras, resultado operacional, resultado antes dos tributos e resultado líquido.
 - [x] Formalizar o cálculo de CMV por período com base no custo congelado no momento da venda, reconciliação principal com movimentos de estoque e fechamentos contábeis como evidência complementar.
 - [x] Validar devoluções, cancelamentos, perdas e ajustes para que não distorçam CMV, receita líquida ou margem.
-- [x] Garantir que taxas realizadas, antecipações deriváveis, chargebacks e divergências de adquirentes tenham classificação gerencial explícita e impacto rastreável na DRE.
+- [x] Garantir que custos conhecidos de liquidação, antecipações efetivamente liquidadas, chargebacks e divergências de adquirentes tenham classificação gerencial explícita e impacto rastreável na DRE, sem inferir taxa específica inexistente.
 - [x] Criar testes de reconciliação entre vendas, CMV, movimentos e fechamentos de estoque, perdas e resultado gerencial.
 
-Concluído estruturalmente no Ciclo 186. Permanecem fora deste marco o fechamento mensal formal, o bloqueio de períodos e a reconciliação contábil integral da equação de inventário.
+Concluído estruturalmente no Ciclo 186 e consolidado no Ciclo 187. A DRE Gerencial 2.0 passou a ser a única DRE visual; o resultado financeiro preserva somente a visão de livro e caixa, enquanto o campo legado `dre_gerencial` do contrato `financial_accounting_package_v1` permanece como resumo histórico compatível. Recebimentos de vendas não duplicam receita econômica, e cada recebível liquidado impacta os custos uma única vez pelo valor efetivo. Permanecem fora deste marco o fechamento mensal formal, o bloqueio de períodos e a reconciliação contábil integral da equação de inventário.
 
 Critério de aceite:
 

@@ -5,9 +5,11 @@ from django.contrib.auth import get_user_model
 from django.test import Client, TestCase
 from django.utils import timezone
 
+from apps.clientes.models import Cliente
 from apps.compras.models import EntradaCompra
 from apps.empresas.models import Empresa, Filial
 from apps.estoque.models import (
+    Estoque,
     FechamentoEstoqueContabil,
     MovimentacaoEstoque,
     PerdaEstoque,
@@ -26,6 +28,7 @@ from apps.vendas.models import (
     StatusVenda,
     Venda,
 )
+from apps.vendas.services import finalizar_venda
 
 from .models import (
     CategoriaFinanceira,
@@ -46,6 +49,7 @@ from .models import (
     TransferenciaFinanceira,
 )
 from .services_dre import calcular_dre_gerencial
+from .services import baixar_conta
 
 
 class DREGerencialV2Tests(TestCase):
@@ -158,6 +162,66 @@ class DREGerencialV2Tests(TestCase):
             conta_financeira=conta,
             usuario=self.usuario,
         )
+
+    def _recebivel_liquidado(
+        self,
+        *,
+        valor_liquidado,
+        tipo_movimento=TipoMovimentoRecebivelEletronico.LIQUIDACAO,
+        movimentos_liquidacao=1,
+    ):
+        venda, _ = self._venda(desconto=Decimal("0.00"))
+        indice = RecebivelEletronico.objects.count() + 1
+        forma = FormaPagamento.objects.create(nome=f"Cartão liquidação {indice}", tipo="CARTAO")
+        pagamento = PagamentoVenda.objects.create(
+            venda=venda, forma_pagamento=forma, valor=Decimal("100.00")
+        )
+        regra = RegraLiquidacaoEletronica.objects.create(
+            filial=self.filial, forma_pagamento=forma, taxa_percentual=Decimal("3.5000")
+        )
+        recebivel = RecebivelEletronico.objects.create(
+            pagamento=pagamento,
+            regra=regra,
+            status=(
+                StatusRecebivelEletronico.ANTECIPADO
+                if tipo_movimento == TipoMovimentoRecebivelEletronico.ANTECIPACAO
+                else StatusRecebivelEletronico.LIQUIDADO
+            ),
+            data_venda=self.hoje,
+            data_prevista=self.hoje + timedelta(days=2),
+            valor_bruto=Decimal("100.00"),
+            taxa_prevista=Decimal("3.50"),
+            valor_liquido_previsto=Decimal("96.50"),
+            data_liquidacao=self.hoje,
+            valor_liquidado=valor_liquidado,
+        )
+        importacao = ImportacaoExtratoFinanceiro.objects.create(
+            conta=self.conta_movimento,
+            arquivo_nome=f"liquidacao-{indice}.csv",
+            arquivo_sha256=f"{indice:064d}",
+            usuario=self.usuario,
+        )
+        for numero in range(1, movimentos_liquidacao + 1):
+            item = ItemExtratoFinanceiro.objects.create(
+                importacao=importacao,
+                conta=self.conta_movimento,
+                numero_linha=numero,
+                data=self.hoje,
+                tipo=TipoLancamentoFinanceiro.ENTRADA,
+                valor=valor_liquidado,
+                descricao="Liquidação histórica",
+                referencia_externa=f"LIQ-{indice}-{numero}",
+            )
+            MovimentoRecebivelEletronico.objects.create(
+                recebivel=recebivel,
+                item_extrato=item,
+                tipo=tipo_movimento,
+                data=self.hoje,
+                valor=valor_liquidado,
+                referencia=f"LIQ-{indice}-{numero}",
+                usuario=self.usuario,
+            )
+        return recebivel
 
     def test_venda_simples_e_fracionada_preservam_decimal(self):
         self._venda()
@@ -325,6 +389,98 @@ class DREGerencialV2Tests(TestCase):
         self.assertEqual(dre["totais"]["despesas_operacionais"], Decimal("120.00"))
         self.assertEqual(dre["saidas_nao_classificadas"]["valor"], Decimal("30.00"))
 
+    def test_fluxo_real_pdv_reconhece_receita_sem_reclassificar_recebimento(self):
+        Estoque.objects.create(
+            produto=self.produto,
+            filial=self.filial,
+            quantidade_atual=Decimal("10.000"),
+            custo_medio=Decimal("60.000000"),
+        )
+        dinheiro = FormaPagamento.objects.create(
+            nome="Dinheiro DRE", tipo="DINHEIRO", conta_movimento_padrao=self.conta_movimento
+        )
+
+        venda = finalizar_venda(
+            caixa=self.caixa,
+            usuario=self.usuario,
+            itens=[{"produto": self.produto, "quantidade": Decimal("1.000")}],
+            pagamentos=[{"forma_pagamento": dinheiro, "valor": Decimal("100.00")}],
+            preparar_fiscal=False,
+        )
+        dre = self._dre()
+
+        self.assertTrue(venda.pagamentos.exists())
+        self.assertTrue(
+            LancamentoFinanceiro.objects.filter(
+                pagamento_venda__venda=venda, origem="PDV_VENDA"
+            ).exists()
+        )
+        self.assertTrue(
+            MovimentacaoEstoque.objects.filter(referencia=f"venda:{venda.pk}").exists()
+        )
+        self.assertEqual(dre["totais"]["receita_bruta"], Decimal("100.00"))
+        self.assertEqual(dre["totais"]["cmv"], Decimal("60.00"))
+        self.assertEqual(dre["totais"]["outras_receitas"], Decimal("0.00"))
+        self.assertEqual(dre["entradas_nao_classificadas"]["quantidade"], 0)
+
+    def test_crediario_recebido_permanece_no_resultado_financeiro_mas_nao_na_dre(self):
+        Estoque.objects.create(
+            produto=self.produto,
+            filial=self.filial,
+            quantidade_atual=Decimal("10.000"),
+            custo_medio=Decimal("60.000000"),
+        )
+        cliente = Cliente.objects.create(
+            empresa=self.empresa, nome="Cliente crediário DRE", cpf_cnpj="123.456.789-00"
+        )
+        crediario = FormaPagamento.objects.create(nome="Crediário DRE", tipo="CREDIARIO")
+        venda = finalizar_venda(
+            caixa=self.caixa,
+            usuario=self.usuario,
+            cliente=cliente,
+            itens=[{"produto": self.produto, "quantidade": Decimal("1.000")}],
+            pagamentos=[{"forma_pagamento": crediario, "valor": Decimal("100.00")}],
+            vencimento_financeiro=self.hoje,
+            preparar_fiscal=False,
+        )
+        conta = ContaFinanceira.objects.get(venda=venda)
+        baixar_conta(
+            conta=conta,
+            usuario=self.usuario,
+            data_pagamento=self.hoje,
+            valor_pago=Decimal("100.00"),
+            forma_pagamento="PIX",
+            conta_movimento=self.conta_movimento,
+        )
+
+        dre = self._dre()
+        cliente_http = Client(HTTP_HOST="localhost")
+        cliente_http.force_login(self.usuario)
+        resultado = cliente_http.get(
+            "/financeiro/resultado/",
+            {"data_inicio": self.hoje.isoformat(), "data_fim": self.hoje.isoformat(), "filial": self.filial.pk},
+        )
+
+        self.assertEqual(resultado.status_code, 200)
+        self.assertEqual(resultado.context["receitas"], Decimal("100.00"))
+        self.assertEqual(dre["totais"]["receita_bruta"], Decimal("100.00"))
+        self.assertEqual(dre["totais"]["outras_receitas"], Decimal("0.00"))
+        self.assertEqual(dre["entradas_nao_classificadas"]["quantidade"], 0)
+
+    def test_outra_receita_legitima_e_saida_nao_classificada_permanecem_visiveis(self):
+        self._lancamento(
+            valor=Decimal("25.00"),
+            grupo=GrupoDRE.OUTRA_RECEITA,
+            tipo=TipoLancamentoFinanceiro.ENTRADA,
+            origem="RECEITA_EXTRAORDINARIA",
+        )
+        self._lancamento(valor=Decimal("12.00"), grupo=GrupoDRE.NAO_CLASSIFICADO)
+
+        dre = self._dre()
+
+        self.assertEqual(dre["totais"]["outras_receitas"], Decimal("25.00"))
+        self.assertEqual(dre["saidas_nao_classificadas"]["valor"], Decimal("12.00"))
+
     def test_perda_taxa_realizada_chargeback_e_taxa_prevista(self):
         venda, _ = self._venda(desconto=Decimal("0.00"))
         PerdaEstoque.objects.create(
@@ -389,10 +545,87 @@ class DREGerencialV2Tests(TestCase):
         dre = self._dre()
 
         self.assertEqual(dre["totais"]["perdas_estoque"], Decimal("15.00"))
+        self.assertEqual(dre["recebiveis"]["custos_liquidacao_realizados"], Decimal("3.50"))
         self.assertEqual(dre["recebiveis"]["taxas_realizadas"], Decimal("3.50"))
         self.assertEqual(dre["recebiveis"]["taxas_previstas_diagnostico"], Decimal("3.50"))
+        self.assertEqual(dre["recebiveis"]["divergencia_liquidacao"], Decimal("0.00"))
         self.assertEqual(dre["recebiveis"]["chargebacks"], Decimal("40.00"))
         self.assertEqual(dre["totais"]["despesas_financeiras"], Decimal("43.50"))
+
+    def test_liquidacao_divergente_usa_realizado_e_expoe_diferenca_prevista(self):
+        self._recebivel_liquidado(valor_liquidado=Decimal("95.00"))
+
+        dre = self._dre()
+
+        self.assertEqual(dre["recebiveis"]["custos_liquidacao_realizados"], Decimal("5.00"))
+        self.assertEqual(dre["recebiveis"]["divergencia_liquidacao"], Decimal("-1.50"))
+        self.assertEqual(dre["totais"]["despesas_financeiras"], Decimal("5.00"))
+
+    def test_liquidacao_acima_do_previsto_reduz_custo_realizado(self):
+        self._recebivel_liquidado(valor_liquidado=Decimal("97.00"))
+
+        dre = self._dre()
+
+        self.assertEqual(dre["recebiveis"]["custos_liquidacao_realizados"], Decimal("3.00"))
+        self.assertEqual(dre["recebiveis"]["divergencia_liquidacao"], Decimal("0.50"))
+
+    def test_antecipacao_nao_inventa_taxa_especifica(self):
+        self._recebivel_liquidado(
+            valor_liquidado=Decimal("96.00"),
+            tipo_movimento=TipoMovimentoRecebivelEletronico.ANTECIPACAO,
+        )
+
+        dre = self._dre()
+
+        self.assertEqual(dre["recebiveis"]["custos_liquidacao_realizados"], Decimal("4.00"))
+        self.assertEqual(dre["recebiveis"]["antecipacoes_quantidade"], 1)
+        self.assertEqual(
+            dre["recebiveis"]["antecipacoes_valor_liquidado_sem_taxa_segregada"],
+            Decimal("96.00"),
+        )
+
+    def test_multiplos_movimentos_nao_repetem_custo_do_recebivel(self):
+        self._recebivel_liquidado(
+            valor_liquidado=Decimal("96.50"), movimentos_liquidacao=2
+        )
+
+        dre = self._dre()
+
+        self.assertEqual(dre["recebiveis"]["custos_liquidacao_realizados"], Decimal("3.50"))
+        self.assertEqual(len(dre["recebiveis"]["liquidacoes"]), 1)
+
+    def test_chargeback_posterior_permanece_evento_separado(self):
+        recebivel = self._recebivel_liquidado(valor_liquidado=Decimal("96.50"))
+        dia_chargeback = self.hoje + timedelta(days=1)
+        importacao = recebivel.movimentos.first().item_extrato.importacao
+        item = ItemExtratoFinanceiro.objects.create(
+            importacao=importacao,
+            conta=self.conta_movimento,
+            numero_linha=99,
+            data=dia_chargeback,
+            tipo=TipoLancamentoFinanceiro.SAIDA,
+            valor=Decimal("40.00"),
+            descricao="Chargeback posterior",
+            referencia_externa="CHARGEBACK-POSTERIOR",
+        )
+        MovimentoRecebivelEletronico.objects.create(
+            recebivel=recebivel,
+            item_extrato=item,
+            tipo=TipoMovimentoRecebivelEletronico.CHARGEBACK,
+            data=dia_chargeback,
+            valor=Decimal("40.00"),
+            referencia="CHARGEBACK-POSTERIOR",
+            usuario=self.usuario,
+        )
+
+        dre_liquidacao = self._dre(self.hoje, self.hoje)
+        dre_chargeback = self._dre(dia_chargeback, dia_chargeback)
+        dre_total = self._dre(self.hoje, dia_chargeback)
+
+        self.assertEqual(dre_liquidacao["totais"]["despesas_financeiras"], Decimal("3.50"))
+        self.assertEqual(dre_liquidacao["recebiveis"]["chargebacks"], Decimal("0.00"))
+        self.assertEqual(dre_chargeback["totais"]["despesas_financeiras"], Decimal("40.00"))
+        self.assertEqual(dre_total["totais"]["despesas_financeiras"], Decimal("43.50"))
 
     def test_snapshot_ausente_divergencia_e_fechamento_complementar(self):
         self._venda(custo=None, criar_movimento=False)

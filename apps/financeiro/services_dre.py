@@ -2,6 +2,8 @@ from collections import defaultdict
 from datetime import date, datetime
 from decimal import Decimal
 
+from django.db.models import Q
+
 from apps.core_money import quantizar_moeda
 from apps.estoque.models import (
     FechamentoEstoqueContabil,
@@ -310,6 +312,10 @@ def calcular_dre_gerencial(*, data_inicio, data_fim, filial_ids):
         )
         .filter(transferencia__isnull=True, sangria__isnull=True, suprimento__isnull=True, estorno_de__isnull=True)
         .exclude(conta_financeira__entrada_compra__isnull=False)
+        .exclude(
+            Q(pagamento_venda__isnull=False)
+            | Q(conta_financeira__venda__isnull=False)
+        )
     )
     originais_estornados = LancamentoFinanceiro.objects.filter(estorno_de__isnull=False).values("estorno_de_id")
     lancamentos = list(lancamentos_base.exclude(pk__in=originais_estornados))
@@ -345,26 +351,50 @@ def calcular_dre_gerencial(*, data_inicio, data_fim, filial_ids):
     saidas_nao = grupos[(TipoLancamentoFinanceiro.SAIDA, GrupoDRE.NAO_CLASSIFICADO)]
     entradas_nao = grupos[(TipoLancamentoFinanceiro.ENTRADA, GrupoDRE.NAO_CLASSIFICADO)]
 
-    movimentos_recebiveis = list(
+    recebiveis_liquidados = list(
+        RecebivelEletronico.objects.filter(
+            pagamento__venda__filial_id__in=filial_ids,
+            data_liquidacao__range=(data_inicio, data_fim),
+            valor_liquidado__isnull=False,
+        ).prefetch_related("movimentos")
+    )
+    custos_liquidacao_realizados = ZERO
+    divergencia_liquidacao = ZERO
+    antecipacoes_sem_taxa_segregada = ZERO
+    antecipacoes_quantidade = 0
+    liquidacoes_detalhadas = []
+    for recebivel in recebiveis_liquidados:
+        custo_realizado = max(recebivel.valor_bruto - recebivel.valor_liquidado, ZERO)
+        divergencia = recebivel.valor_liquidado - recebivel.valor_liquido_previsto
+        antecipado = any(
+            movimento.tipo == TipoMovimentoRecebivelEletronico.ANTECIPACAO
+            for movimento in recebivel.movimentos.all()
+        )
+        custos_liquidacao_realizados += custo_realizado
+        divergencia_liquidacao += divergencia
+        if antecipado:
+            antecipacoes_quantidade += 1
+            antecipacoes_sem_taxa_segregada += recebivel.valor_liquidado
+        liquidacoes_detalhadas.append(
+            {
+                "recebivel_id": recebivel.pk,
+                "data_liquidacao": recebivel.data_liquidacao,
+                "valor_bruto": _moeda(recebivel.valor_bruto),
+                "valor_liquido_previsto": _moeda(recebivel.valor_liquido_previsto),
+                "valor_liquidado": _moeda(recebivel.valor_liquidado),
+                "custo_liquidacao_realizado": _moeda(custo_realizado),
+                "divergencia_liquidacao": _moeda(divergencia),
+                "antecipado": antecipado,
+            }
+        )
+    chargebacks = sum(
         MovimentoRecebivelEletronico.objects.filter(
             recebivel__pagamento__venda__filial_id__in=filial_ids,
+            tipo=TipoMovimentoRecebivelEletronico.CHARGEBACK,
             data__range=(data_inicio, data_fim),
-        ).select_related("recebivel")
+        ).values_list("valor", flat=True),
+        ZERO,
     )
-    taxas_realizadas = ZERO
-    chargebacks = ZERO
-    antecipacoes_sem_taxa_segregada = ZERO
-    for movimento in movimentos_recebiveis:
-        if movimento.tipo in {
-            TipoMovimentoRecebivelEletronico.LIQUIDACAO,
-            TipoMovimentoRecebivelEletronico.ANTECIPACAO,
-        }:
-            taxa = max(movimento.recebivel.valor_bruto - movimento.valor, ZERO)
-            taxas_realizadas += taxa
-            if movimento.tipo == TipoMovimentoRecebivelEletronico.ANTECIPACAO:
-                antecipacoes_sem_taxa_segregada += movimento.valor
-        elif movimento.tipo == TipoMovimentoRecebivelEletronico.CHARGEBACK:
-            chargebacks += movimento.valor
     taxas_previstas = sum(
         RecebivelEletronico.objects.filter(
             pagamento__venda__filial_id__in=filial_ids,
@@ -372,7 +402,7 @@ def calcular_dre_gerencial(*, data_inicio, data_fim, filial_ids):
         ).values_list("taxa_prevista", flat=True),
         ZERO,
     )
-    despesas_financeiras = despesas_financeiras_livro + taxas_realizadas + chargebacks
+    despesas_financeiras = despesas_financeiras_livro + custos_liquidacao_realizados + chargebacks
 
     lucro_bruto = receita_liquida - cmv_liquido
     resultado_operacional = (
@@ -545,10 +575,14 @@ def calcular_dre_gerencial(*, data_inicio, data_fim, filial_ids):
             for tipo, dados in sorted(perdas_por_tipo.items())
         ],
         "recebiveis": {
-            "taxas_realizadas": _moeda(taxas_realizadas),
+            "custos_liquidacao_realizados": _moeda(custos_liquidacao_realizados),
+            "taxas_realizadas": _moeda(custos_liquidacao_realizados),
             "taxas_previstas_diagnostico": _moeda(taxas_previstas),
+            "divergencia_liquidacao": _moeda(divergencia_liquidacao),
             "chargebacks": _moeda(chargebacks),
+            "antecipacoes_quantidade": antecipacoes_quantidade,
             "antecipacoes_valor_liquidado_sem_taxa_segregada": _moeda(antecipacoes_sem_taxa_segregada),
+            "liquidacoes": liquidacoes_detalhadas,
         },
         "despesas_detalhadas": [
             {

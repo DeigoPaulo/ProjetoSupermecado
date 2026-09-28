@@ -4,7 +4,9 @@
 
 A DRE Gerencial 2.0 é um demonstrativo econômico interno, reproduzível por período e segregado por empresa e filial. Ela não substitui DRE contábil oficial, ECD, ECF, SPED ou a classificação realizada pelo contador.
 
-A tela `/financeiro/resultado/` continua sendo a visão do caixa e do livro realizado. A DRE possui tela, JSON e CSV próprios em `/financeiro/dre/`, `/financeiro/dre.json` e `/financeiro/dre/exportar.csv`. As três saídas usam o mesmo serviço.
+A tela `/financeiro/resultado/` continua sendo exclusivamente a visão financeira do caixa e do livro realizado. A única DRE visual do sistema é a DRE Gerencial 2.0, com tela, JSON e CSV próprios em `/financeiro/dre/`, `/financeiro/dre.json` e `/financeiro/dre/exportar.csv`. As três saídas usam o mesmo serviço.
+
+O contrato legado `financial_accounting_package_v1` preserva o campo `dre_gerencial` para consumidores existentes. Esse campo é um resumo financeiro histórico de entradas e saídas, não representa a DRE Gerencial 2.0 e não é mais exibido como DRE na tela ou no CSV de resultado.
 
 Contratos:
 
@@ -19,7 +21,8 @@ Contratos:
 - Devolução: `DevolucaoVenda.data`.
 - Perda: `PerdaEstoque.data`.
 - Despesa ou receita realizada: `LancamentoFinanceiro.data`.
-- Liquidação, antecipação e chargeback: `MovimentoRecebivelEletronico.data`.
+- Liquidação e antecipação: `RecebivelEletronico.data_liquidacao`.
+- Chargeback: `MovimentoRecebivelEletronico.data`.
 
 Essa política é gerencial e orientada aos eventos disponíveis. Ela não declara regime de competência contábil formal.
 
@@ -76,13 +79,15 @@ Perdas usam `PerdaEstoque.valor_custo_estimado` e aparecem separadas do CMV, det
 
 Não existe classificação automática pelo nome. Saídas e entradas sem grupo aparecem nos diagnósticos e tornam o resultado líquido incompleto.
 
-Pagamentos ligados a `ContaFinanceira.entrada_compra` são excluídos da despesa da DRE: a mercadoria será reconhecida pelo CMV quando vendida. Transferências, sangrias, suprimentos e estornos técnicos também não geram resultado econômico por si sós.
+Pagamentos ligados a `ContaFinanceira.entrada_compra` são excluídos da despesa da DRE: a mercadoria será reconhecida pelo CMV quando vendida. Recebimentos ligados a `PagamentoVenda` ou a `ContaFinanceira.venda` também são excluídos da classificação econômica, pois a receita já é reconhecida pela venda. Esses recebimentos continuam íntegros no livro e no resultado financeiro. Transferências, sangrias, suprimentos e estornos técnicos também não geram resultado econômico por si sós.
 
 As despesas detalhadas preservam categoria, conta contábil, centro de custo e filial quando disponíveis.
 
 ## Recebíveis eletrônicos
 
-`taxa_prevista` é apenas diagnóstico e não altera o resultado realizado. Em uma liquidação efetiva, a taxa realizada é a diferença não negativa entre valor bruto e valor liquidado. A antecipação não é tratada como taxa: o valor do movimento é valor liquidado, e somente a diferença derivável em relação ao bruto é custo financeiro.
+`taxa_prevista` é apenas diagnóstico e não altera o resultado realizado. Cada recebível entra uma única vez na data de liquidação, mesmo quando possui múltiplos movimentos históricos. O custo de liquidação conhecido é a diferença não negativa entre valor bruto e valor liquidado. A divergência de liquidação é `valor liquidado - valor líquido previsto` e permanece destacada para não ser confundida com taxa.
+
+A antecipação é identificada como evento, mas seu valor é o total efetivamente liquidado. Sem um campo estruturado próprio, a DRE não inventa nem segrega uma taxa específica de antecipação.
 
 Chargebacks usam o movimento estruturado e sua data, uma única vez, dentro das despesas financeiras. Não são confundidos com devoluções comerciais.
 
