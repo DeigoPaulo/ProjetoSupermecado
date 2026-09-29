@@ -173,7 +173,10 @@ def _snapshot_financeiro(empresa, filiais, data_inicio, data_fim):
     estornos = lancamentos_periodo.filter(estorno_de__isnull=False)
 
     saldos = []
-    for conta in ContaMovimentoFinanceiro.objects.filter(filial__in=filiais).select_related("filial").order_by("filial_id", "pk"):
+    for conta in ContaMovimentoFinanceiro.objects.filter(
+        filial__in=filiais,
+        criado_em__date__lte=data_fim,
+    ).select_related("filial").order_by("filial_id", "pk"):
         movimentos = conta.lancamentos.filter(data__lte=data_fim).values("tipo").annotate(total=Sum("valor"))
         totais = {item["tipo"]: item["total"] for item in movimentos}
         saldo = conta.saldo_inicial + totais.get(TipoLancamentoFinanceiro.ENTRADA, ZERO) - totais.get(TipoLancamentoFinanceiro.SAIDA, ZERO)
@@ -228,14 +231,35 @@ def _snapshot_contas(filiais, data_inicio, data_fim):
     contas = ContaFinanceira.objects.filter(
         filial__in=filiais, criado_em__date__lte=data_fim
     ).select_related("filial")
+    canceladas_legadas = contas.filter(
+        status=StatusContaFinanceira.CANCELADA,
+        cancelada_em__isnull=True,
+    )
     limitacoes = []
-    if contas.filter(status=StatusContaFinanceira.CANCELADA).exists():
+    if canceladas_legadas.exists():
         limitacoes.append(
-            "Contas canceladas não possuem timestamp estruturado; não são reconstruídas retroativamente."
+            "Há contas canceladas legadas sem data estruturada; a posição histórica não pode ser afirmada."
         )
-    resultado = {"PAGAR": {}, "RECEBER": {}, "limitacoes": limitacoes}
+    resultado = {
+        "PAGAR": {},
+        "RECEBER": {},
+        "cancelamentos_legados_sem_data": canceladas_legadas.count(),
+        "limitacoes": limitacoes,
+    }
     for tipo in (TipoContaFinanceira.PAGAR, TipoContaFinanceira.RECEBER):
-        grupo = contas.filter(tipo=tipo).exclude(status=StatusContaFinanceira.CANCELADA)
+        grupo = [
+            conta
+            for conta in contas.filter(tipo=tipo)
+            if not (
+                conta.status == StatusContaFinanceira.CANCELADA
+                and conta.cancelada_em
+                and timezone.localtime(conta.cancelada_em).date() <= data_fim
+            )
+            and not (
+                conta.status == StatusContaFinanceira.CANCELADA
+                and conta.cancelada_em is None
+            )
+        ]
         abertas = [conta for conta in grupo if not conta.data_pagamento or conta.data_pagamento > data_fim]
         vencidas = [conta for conta in abertas if conta.vencimento <= data_fim]
         realizadas = [
@@ -254,31 +278,42 @@ def _snapshot_contas(filiais, data_inicio, data_fim):
 
 
 def _snapshot_recebiveis(filiais, data_inicio, data_fim):
-    recebiveis = list(
+    posicao = list(
         RecebivelEletronico.objects.filter(
             pagamento__venda__filial__in=filiais,
-            data_venda__range=(data_inicio, data_fim),
+            data_venda__lte=data_fim,
         ).order_by("pk")
     )
-    pendentes = [item for item in recebiveis if not item.data_liquidacao or item.data_liquidacao > data_fim]
-    liquidados = [item for item in recebiveis if item.data_liquidacao and item.data_liquidacao <= data_fim]
-    antecipados = [item for item in liquidados if item.status == StatusRecebivelEletronico.ANTECIPADO]
-    divergentes = [item for item in liquidados if item.status == StatusRecebivelEletronico.DIVERGENTE]
+    pendentes = [item for item in posicao if not item.data_liquidacao or item.data_liquidacao > data_fim]
+    liquidados_periodo = list(
+        RecebivelEletronico.objects.filter(
+            pagamento__venda__filial__in=filiais,
+            data_liquidacao__range=(data_inicio, data_fim),
+        ).order_by("pk")
+    )
     movimentos = MovimentoRecebivelEletronico.objects.filter(
         recebivel__pagamento__venda__filial__in=filiais,
         data__range=(data_inicio, data_fim),
     )
+    antecipacoes = movimentos.filter(tipo=TipoMovimentoRecebivelEletronico.ANTECIPACAO)
     chargebacks = movimentos.filter(tipo=TipoMovimentoRecebivelEletronico.CHARGEBACK)
-    bruto = sum((item.valor_bruto for item in recebiveis), ZERO)
-    previsto = sum((item.valor_liquido_previsto for item in recebiveis), ZERO)
-    liquidado = sum((item.valor_liquidado or ZERO for item in liquidados), ZERO)
-    custos = sum((max(item.valor_bruto - (item.valor_liquidado or ZERO), ZERO) for item in liquidados), ZERO)
-    divergencias = sum(((item.valor_liquidado or ZERO) - item.valor_liquido_previsto for item in liquidados), ZERO)
+    bruto = sum((item.valor_bruto for item in liquidados_periodo), ZERO)
+    previsto = sum((item.valor_liquido_previsto for item in liquidados_periodo), ZERO)
+    liquidado = sum((item.valor_liquidado or ZERO for item in liquidados_periodo), ZERO)
+    custos = sum(
+        (max(item.valor_bruto - (item.valor_liquidado or ZERO), ZERO) for item in liquidados_periodo),
+        ZERO,
+    )
+    divergencias_individuais = [
+        (item.valor_liquidado or ZERO) - item.valor_liquido_previsto
+        for item in liquidados_periodo
+    ]
+    divergencias = sum(divergencias_individuais, ZERO)
     return {
         "pendentes": len(pendentes),
-        "liquidados": len(liquidados),
-        "antecipados": len(antecipados),
-        "divergentes": len(divergentes),
+        "liquidados": len(liquidados_periodo),
+        "antecipados": antecipacoes.values("recebivel_id").distinct().count(),
+        "divergentes": sum(1 for valor in divergencias_individuais if valor != ZERO),
         "chargebacks": chargebacks.count(),
         "valor_chargebacks": format(chargebacks.aggregate(total=Sum("valor"))["total"] or ZERO, "f"),
         "valor_bruto": format(bruto, "f"),
@@ -287,7 +322,7 @@ def _snapshot_recebiveis(filiais, data_inicio, data_fim):
         "custos_liquidacao": format(custos, "f"),
         "divergencias_liquidacao": format(divergencias, "f"),
         "limitacoes": [
-            "O status histórico é reconstruído por data_liquidacao; alterações de status sem evento datado não são inventadas."
+            "A posição é reconstruída por data de venda e liquidação; antecipações e chargebacks usam movimentos estruturados datados."
         ],
     }
 
@@ -340,8 +375,11 @@ def diagnosticar_fechamento_mensal(empresa, competencia):
     hoje = timezone.localdate()
     if data_inicio > hoje:
         bloqueios.append({"codigo": "COMPETENCIA_FUTURA", "mensagem": "Competência futura não pode ser fechada."})
-    elif data_fim > hoje:
-        bloqueios.append({"codigo": "COMPETENCIA_EM_ANDAMENTO", "mensagem": "A competência só pode ser fechada no último dia do mês ou depois."})
+    elif data_fim >= hoje:
+        bloqueios.append({
+            "codigo": "COMPETENCIA_EM_ANDAMENTO",
+            "mensagem": "A competência ainda está em andamento. O fechamento mensal formal pode ser realizado a partir do dia seguinte ao encerramento.",
+        })
     if not filiais:
         bloqueios.append({"codigo": "SEM_FILIAIS_ATIVAS", "mensagem": "A empresa não possui filiais ativas para o fechamento."})
 
@@ -377,6 +415,11 @@ def diagnosticar_fechamento_mensal(empresa, competencia):
         alertas.append({"codigo": "TRIBUTOS_NAO_APURADOS", "mensagem": "Tributos sobre o resultado não foram apurados."})
 
     contas = _snapshot_contas(filiais, data_inicio, data_fim)
+    if contas["cancelamentos_legados_sem_data"]:
+        bloqueios.append({
+            "codigo": "CONTA_CANCELADA_LEGADA_SEM_DATA",
+            "mensagem": "Há conta cancelada legada sem data estruturada; a posição patrimonial histórica não pode ser reconstruída com segurança.",
+        })
     recebiveis = _snapshot_recebiveis(filiais, data_inicio, data_fim)
     if recebiveis["divergentes"]:
         alertas.append({"codigo": "RECEBIVEIS_DIVERGENTES", "mensagem": "Existem recebíveis divergentes; a diferença realizada permanece registrada na DRE."})
@@ -565,14 +608,10 @@ def validar_competencia_aberta(*, data_operacao, empresa=None, filial=None, oper
         )
 
 
-def obter_dre_competencia(*, empresa, data_inicio, data_fim, filial_ids):
+def obter_dre_competencia(*, empresa, data_inicio, data_fim, filial_ids, consolidado=False):
     competencia_inicio, competencia_fim = periodo_competencia(data_inicio.replace(day=1))
-    filiais_ativas = set(
-        Filial.objects.filter(empresa=empresa, is_active=True).values_list("pk", flat=True)
-    )
     periodo_exato = data_inicio == competencia_inicio and data_fim == competencia_fim
-    escopo_completo = set(filial_ids) == filiais_ativas
-    if periodo_exato and escopo_completo:
+    if periodo_exato and consolidado:
         estado = CompetenciaFinanceiroContabil.objects.filter(
             empresa=empresa,
             competencia=competencia_inicio,

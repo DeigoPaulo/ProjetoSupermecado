@@ -2,6 +2,7 @@ import json
 from datetime import date, datetime, time
 from decimal import Decimal
 from io import BytesIO
+from unittest.mock import patch
 from zipfile import ZipFile
 
 from django.contrib.auth import get_user_model
@@ -23,18 +24,24 @@ from .models import (
     EventoCompetenciaFinanceiroContabil,
     FechamentoMensalSnapshot,
     GrupoDRE,
+    ImportacaoExtratoFinanceiro,
+    ItemExtratoFinanceiro,
+    MovimentoRecebivelEletronico,
     RecebivelEletronico,
     RegraLiquidacaoEletronica,
     StatusCompetenciaFinanceiroContabil,
     StatusContaFinanceira,
+    StatusItemExtratoFinanceiro,
     StatusRecebivelEletronico,
     TipoContaFinanceira,
     TipoContaMovimento,
     TipoLancamentoFinanceiro,
+    TipoMovimentoRecebivelEletronico,
 )
-from .services import registrar_lancamento
+from .services import cancelar_conta, registrar_lancamento
 from .services_fechamento_mensal import (
     _json_canonico,
+    _snapshot_recebiveis,
     calcular_hash_snapshot,
     diagnosticar_fechamento_mensal,
     fechar_competencia,
@@ -66,19 +73,23 @@ class FechamentoMensalFinanceiroContabilTests(TestCase):
             tipo=TipoContaMovimento.BANCO,
             saldo_inicial=Decimal("100.00"),
         )
+        ContaMovimentoFinanceiro.objects.filter(pk=self.conta_movimento.pk).update(
+            criado_em=timezone.make_aware(datetime.combine(date(2026, 8, 1), time(9)))
+        )
         self._criar_fechamento_estoque()
 
-    def _criar_fechamento_estoque(self, filial=None):
+    def _criar_fechamento_estoque(self, filial=None, data_referencia=None):
         filial = filial or self.filial
+        data_referencia = data_referencia or self.fim
         conteudo = {
             "filial_id": filial.pk,
-            "data_referencia": self.fim.isoformat(),
+            "data_referencia": data_referencia.isoformat(),
             "criterio_custo": "CUSTO_MEDIO_PONDERADO_MOVEL",
             "itens": [],
         }
         return FechamentoEstoqueContabil.objects.create(
             filial=filial,
-            data_referencia=self.fim,
+            data_referencia=data_referencia,
             criterio_custo="CUSTO_MEDIO_PONDERADO_MOVEL",
             total_itens=0,
             valor_total_custo=Decimal("0.00"),
@@ -320,6 +331,7 @@ class FechamentoMensalFinanceiroContabilTests(TestCase):
         dre, metadados = obter_dre_competencia(
             empresa=self.empresa, data_inicio=self.competencia, data_fim=self.fim,
             filial_ids=[self.filial.pk],
+            consolidado=True,
         )
 
         self.assertEqual(metadados["fonte"], "SNAPSHOT_FECHADO")
@@ -352,6 +364,11 @@ class FechamentoMensalFinanceiroContabilTests(TestCase):
         self.assertIn("financeiro/fechamento-mensal.json", nomes)
         self.assertTrue(manifesto["fechamento_mensal"]["fechado"])
         self.assertEqual(manifesto["fechamento_mensal"]["sha256"], snapshot.conteudo_sha256)
+        self.assertEqual(fechamento["conteudo_economico"]["dre"], dre)
+        self.assertEqual(
+            calcular_hash_snapshot(fechamento["conteudo_economico"]),
+            snapshot.conteudo_sha256,
+        )
         self.assertEqual(fechamento["dre_snapshot"], dre)
         self.assertEqual(dre, snapshot.dre_snapshot)
 
@@ -365,6 +382,33 @@ class FechamentoMensalFinanceiroContabilTests(TestCase):
             nomes = set(pacote.namelist())
         self.assertFalse(manifesto["fechamento_mensal"])
         self.assertNotIn("financeiro/fechamento-mensal.json", nomes)
+
+    def test_pacote_fechado_usa_escopo_historico_apos_desativacao(self):
+        filial_b = Filial.objects.create(
+            empresa=self.empresa,
+            nome="Filial pacote histórica",
+            cnpj="41.111.111/0004-94",
+        )
+        self._criar_fechamento_estoque(filial_b)
+        snapshot = self._fechar()
+        filial_b.is_active = False
+        filial_b.save(update_fields=["is_active"])
+        cliente = Client(HTTP_HOST="localhost")
+        cliente.force_login(self.usuario)
+
+        resposta = cliente.get(
+            "/financeiro/contabilidade/pacote-mensal.zip",
+            {"competencia": "2026-08"},
+        )
+
+        self.assertEqual(resposta.status_code, 200)
+        with ZipFile(BytesIO(resposta.content)) as pacote:
+            fechamento = json.loads(pacote.read("financeiro/fechamento-mensal.json"))
+        self.assertEqual(
+            {item["id"] for item in fechamento["conteudo_economico"]["filiais"]},
+            {self.filial.pk, filial_b.pk},
+        )
+        self.assertEqual(fechamento["sha256"], snapshot.conteudo_sha256)
 
     def test_interface_lista_e_detalhe(self):
         cliente = Client(HTTP_HOST="localhost")
@@ -393,6 +437,220 @@ class FechamentoMensalFinanceiroContabilTests(TestCase):
         segundo = {"itens": [1, 2], "data": self.fim, "valor": Decimal("10.00")}
         self.assertEqual(_json_canonico(primeiro), _json_canonico(segundo))
         self.assertEqual(calcular_hash_snapshot(primeiro), calcular_hash_snapshot(segundo))
+
+    @patch("apps.financeiro.services_fechamento_mensal.timezone.localdate", return_value=date(2026, 8, 31))
+    def test_ultimo_dia_do_mes_ainda_bloqueia_fechamento(self, _localdate):
+        diagnostico = diagnosticar_fechamento_mensal(self.empresa, self.competencia)
+
+        bloqueio = next(
+            item for item in diagnostico["bloqueios"]
+            if item["codigo"] == "COMPETENCIA_EM_ANDAMENTO"
+        )
+        self.assertIn("dia seguinte ao encerramento", bloqueio["mensagem"])
+
+    def test_conta_movimento_criada_depois_nao_entra_no_snapshot(self):
+        conta_futura = ContaMovimentoFinanceiro.objects.create(
+            filial=self.filial,
+            nome="Banco criado em setembro",
+            tipo=TipoContaMovimento.BANCO,
+            saldo_inicial=Decimal("1000.00"),
+        )
+        ContaMovimentoFinanceiro.objects.filter(pk=conta_futura.pk).update(
+            criado_em=timezone.make_aware(datetime.combine(date(2026, 9, 1), time(10)))
+        )
+
+        snapshot = self._fechar()
+
+        self.assertEqual(
+            [item["conta_id"] for item in snapshot.financeiro_snapshot["saldos_contas"]],
+            [self.conta_movimento.pk],
+        )
+        self.assertEqual(snapshot.financeiro_snapshot["saldos_contas"][0]["saldo"], "100.00")
+
+    def test_dre_fechada_preserva_filial_desativada_depois(self):
+        filial_b = Filial.objects.create(
+            empresa=self.empresa,
+            nome="Filial histórica B",
+            cnpj="41.111.111/0002-22",
+        )
+        self._criar_fechamento_estoque(filial_b)
+        snapshot = self._fechar()
+        filial_b.is_active = False
+        filial_b.save(update_fields=["is_active"])
+
+        dre, metadados = obter_dre_competencia(
+            empresa=self.empresa,
+            data_inicio=self.competencia,
+            data_fim=self.fim,
+            filial_ids=[self.filial.pk],
+            consolidado=True,
+        )
+
+        self.assertEqual(metadados["fonte"], "SNAPSHOT_FECHADO")
+        self.assertEqual(dre, snapshot.dre_snapshot)
+        self.assertEqual(
+            {item["id"] for item in snapshot.filiais_snapshot},
+            {self.filial.pk, filial_b.pk},
+        )
+
+    def test_dre_fechada_nao_inventa_filial_criada_depois(self):
+        snapshot = self._fechar()
+        filial_b = Filial.objects.create(
+            empresa=self.empresa,
+            nome="Filial criada depois",
+            cnpj="41.111.111/0003-03",
+        )
+
+        dre, metadados = obter_dre_competencia(
+            empresa=self.empresa,
+            data_inicio=self.competencia,
+            data_fim=self.fim,
+            filial_ids=[self.filial.pk, filial_b.pk],
+            consolidado=True,
+        )
+
+        self.assertEqual(metadados["fonte"], "SNAPSHOT_FECHADO")
+        self.assertEqual(dre, snapshot.dre_snapshot)
+        self.assertEqual([item["id"] for item in snapshot.filiais_snapshot], [self.filial.pk])
+
+    @patch("apps.financeiro.services_fechamento_mensal.timezone.localdate", return_value=date(2026, 10, 1))
+    def test_liquidacao_de_venda_anterior_entra_no_fechamento_do_evento(self, _localdate):
+        venda = self._venda_com_cmv()
+        forma = FormaPagamento.objects.create(nome="Cartão setembro", tipo="CARTAO")
+        pagamento = PagamentoVenda.objects.create(
+            venda=venda,
+            forma_pagamento=forma,
+            valor=Decimal("100.00"),
+        )
+        regra = RegraLiquidacaoEletronica.objects.create(filial=self.filial, forma_pagamento=forma)
+        RecebivelEletronico.objects.create(
+            pagamento=pagamento,
+            regra=regra,
+            status=StatusRecebivelEletronico.LIQUIDADO,
+            data_venda=date(2026, 8, 10),
+            data_prevista=date(2026, 9, 10),
+            data_liquidacao=date(2026, 9, 10),
+            valor_bruto=Decimal("100.00"),
+            taxa_prevista=Decimal("3.50"),
+            valor_liquido_previsto=Decimal("96.50"),
+            valor_liquidado=Decimal("96.50"),
+        )
+        fim_setembro = date(2026, 9, 30)
+        self._criar_fechamento_estoque(data_referencia=fim_setembro)
+
+        snapshot = fechar_competencia(
+            empresa=self.empresa,
+            competencia=date(2026, 9, 1),
+            usuario=self.usuario,
+            confirmacao="Confirmo o fechamento da competência 09/2026",
+        )
+
+        self.assertEqual(snapshot.recebiveis_snapshot["liquidados"], 1)
+        self.assertEqual(snapshot.recebiveis_snapshot["valor_liquidado"], "96.50")
+        self.assertEqual(snapshot.recebiveis_snapshot["custos_liquidacao"], "3.50")
+
+    def test_chargeback_posterior_nao_repete_liquidacao_anterior(self):
+        venda = self._venda_com_cmv()
+        forma = FormaPagamento.objects.create(nome="Cartão chargeback", tipo="CARTAO")
+        pagamento = PagamentoVenda.objects.create(
+            venda=venda,
+            forma_pagamento=forma,
+            valor=Decimal("100.00"),
+        )
+        regra = RegraLiquidacaoEletronica.objects.create(filial=self.filial, forma_pagamento=forma)
+        recebivel = RecebivelEletronico.objects.create(
+            pagamento=pagamento,
+            regra=regra,
+            status=StatusRecebivelEletronico.CHARGEBACK,
+            data_venda=date(2026, 7, 20),
+            data_prevista=date(2026, 8, 10),
+            data_liquidacao=date(2026, 8, 10),
+            valor_bruto=Decimal("100.00"),
+            valor_liquido_previsto=Decimal("96.50"),
+            valor_liquidado=Decimal("96.50"),
+        )
+        importacao = ImportacaoExtratoFinanceiro.objects.create(
+            conta=self.conta_movimento,
+            arquivo_nome="chargeback.csv",
+            arquivo_sha256="c" * 64,
+            usuario=self.usuario,
+        )
+        item = ItemExtratoFinanceiro.objects.create(
+            importacao=importacao,
+            conta=self.conta_movimento,
+            numero_linha=1,
+            data=date(2026, 9, 12),
+            tipo=TipoLancamentoFinanceiro.SAIDA,
+            valor=Decimal("96.50"),
+            descricao="Chargeback",
+            referencia_externa="CB-SET",
+            status=StatusItemExtratoFinanceiro.CONCILIADO,
+        )
+        MovimentoRecebivelEletronico.objects.create(
+            recebivel=recebivel,
+            item_extrato=item,
+            tipo=TipoMovimentoRecebivelEletronico.CHARGEBACK,
+            data=date(2026, 9, 12),
+            valor=Decimal("96.50"),
+            referencia="CB-SET",
+            usuario=self.usuario,
+        )
+
+        snapshot = _snapshot_recebiveis(
+            [self.filial], date(2026, 9, 1), date(2026, 9, 30)
+        )
+
+        self.assertEqual(snapshot["chargebacks"], 1)
+        self.assertEqual(snapshot["valor_chargebacks"], "96.5")
+        self.assertEqual(snapshot["liquidados"], 0)
+        self.assertEqual(snapshot["custos_liquidacao"], "0.00")
+
+    def _conta_aberta_agosto(self, descricao):
+        conta = ContaFinanceira.objects.create(
+            tipo=TipoContaFinanceira.PAGAR,
+            descricao=descricao,
+            filial=self.filial,
+            valor=Decimal("80.00"),
+            vencimento=date(2026, 8, 20),
+            usuario=self.usuario,
+        )
+        ContaFinanceira.objects.filter(pk=conta.pk).update(
+            criado_em=timezone.make_aware(datetime.combine(date(2026, 8, 5), time(10)))
+        )
+        return conta
+
+    def test_conta_cancelada_depois_permanece_aberta_no_periodo(self):
+        conta = self._conta_aberta_agosto("Cancelada depois")
+        cancelar_conta(conta=conta, usuario=self.usuario, motivo="Cancelamento em setembro")
+
+        snapshot = self._fechar()
+
+        self.assertEqual(snapshot.contas_snapshot["PAGAR"]["quantidade_aberta"], 1)
+        conta.refresh_from_db()
+        self.assertEqual(conta.cancelada_por, self.usuario)
+        self.assertEqual(conta.motivo_cancelamento, "Cancelamento em setembro")
+
+    def test_conta_cancelada_no_mes_nao_fica_aberta(self):
+        conta = self._conta_aberta_agosto("Cancelada em agosto")
+        cancelar_conta(conta=conta, usuario=self.usuario, motivo="Cancelamento em agosto")
+        ContaFinanceira.objects.filter(pk=conta.pk).update(
+            cancelada_em=timezone.make_aware(datetime(2026, 8, 20, 10))
+        )
+
+        snapshot = self._fechar()
+
+        self.assertEqual(snapshot.contas_snapshot["PAGAR"]["quantidade_aberta"], 0)
+
+    def test_conta_cancelada_legada_sem_data_bloqueia(self):
+        conta = self._conta_aberta_agosto("Cancelamento legado")
+        ContaFinanceira.objects.filter(pk=conta.pk).update(status=StatusContaFinanceira.CANCELADA)
+
+        diagnostico = diagnosticar_fechamento_mensal(self.empresa, self.competencia)
+
+        self.assertIn(
+            "CONTA_CANCELADA_LEGADA_SEM_DATA",
+            {item["codigo"] for item in diagnostico["bloqueios"]},
+        )
 
 
 ZERO = Decimal("0.00")

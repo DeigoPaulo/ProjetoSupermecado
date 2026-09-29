@@ -48,6 +48,7 @@ from .services_conciliacao import conciliar_item_extrato, importar_extrato
 from .services_recebiveis import candidatos_recebivel_item, conciliar_recebivel_com_item, sincronizar_recebiveis
 from .services_dre import calcular_dre_gerencial, serializar_dre_json
 from .services_fechamento_mensal import (
+    conteudo_economico_snapshot,
     diagnosticar_fechamento_mensal,
     fechar_competencia,
     obter_dre_competencia,
@@ -291,16 +292,31 @@ def _conciliacao_bancaria_json(resumo):
         "valor_pendente": _valor_monetario_json(resumo["valor_pendente"]),
         "por_conta": por_conta,
     }
-def _resultado_financeiro_periodo(data_inicio, data_fim, filial_id=None, empresa_id=None):
+def _aplicar_escopo_filiais(queryset, campo_filial, *, filial_id=None, empresa_id=None, filial_ids=None):
+    if filial_ids is not None:
+        return queryset.filter(**{f"{campo_filial}__in": filial_ids})
+    if filial_id:
+        return queryset.filter(**{f"{campo_filial}_id": filial_id})
+    if empresa_id:
+        return queryset.filter(**{f"{campo_filial}__empresa_id": empresa_id})
+    return queryset
+
+
+def _resultado_financeiro_periodo(
+    data_inicio, data_fim, filial_id=None, empresa_id=None, filial_ids=None
+):
     lancamentos = (
         LancamentoFinanceiro.objects.select_related("conta", "conta__filial", "conta_financeira", "conta_financeira__categoria", "centro_custo", "conta_contabil")
         .filter(data__gte=data_inicio, data__lte=data_fim)
         .exclude(origem="TRANSFERENCIA")
     )
-    if filial_id:
-        lancamentos = lancamentos.filter(conta__filial_id=filial_id)
-    elif empresa_id:
-        lancamentos = lancamentos.filter(conta__filial__empresa_id=empresa_id)
+    lancamentos = _aplicar_escopo_filiais(
+        lancamentos,
+        "conta__filial",
+        filial_id=filial_id,
+        empresa_id=empresa_id,
+        filial_ids=filial_ids,
+    )
     receitas = lancamentos.filter(tipo=TipoLancamentoFinanceiro.ENTRADA).aggregate(total=Sum("valor"))["total"] or Decimal("0.00")
     despesas = lancamentos.filter(tipo=TipoLancamentoFinanceiro.SAIDA).aggregate(total=Sum("valor"))["total"] or Decimal("0.00")
     por_origem = []
@@ -398,10 +414,13 @@ def _resultado_financeiro_periodo(data_inicio, data_fim, filial_id=None, empresa
 
     saldos_contas = []
     contas_movimento = ContaMovimentoFinanceiro.objects.select_related("filial", "filial__empresa").filter(ativa=True)
-    if filial_id:
-        contas_movimento = contas_movimento.filter(filial_id=filial_id)
-    elif empresa_id:
-        contas_movimento = contas_movimento.filter(filial__empresa_id=empresa_id)
+    contas_movimento = _aplicar_escopo_filiais(
+        contas_movimento,
+        "filial",
+        filial_id=filial_id,
+        empresa_id=empresa_id,
+        filial_ids=filial_ids,
+    )
     for conta in contas_movimento:
         entradas_periodo = lancamentos.filter(conta=conta, tipo=TipoLancamentoFinanceiro.ENTRADA).aggregate(total=Sum("valor"))["total"] or Decimal("0.00")
         saidas_periodo = lancamentos.filter(conta=conta, tipo=TipoLancamentoFinanceiro.SAIDA).aggregate(total=Sum("valor"))["total"] or Decimal("0.00")
@@ -417,8 +436,12 @@ def _resultado_financeiro_periodo(data_inicio, data_fim, filial_id=None, empresa
             }
         )
 
-    conciliacao_bancaria = _resumo_conciliacao_periodo(data_inicio, data_fim, filial_id, empresa_id)
-    integracao_fiscal = _resumo_integracao_fiscal(data_inicio, data_fim, filial_id, empresa_id)
+    conciliacao_bancaria = _resumo_conciliacao_periodo(
+        data_inicio, data_fim, filial_id, empresa_id, filial_ids
+    )
+    integracao_fiscal = _resumo_integracao_fiscal(
+        data_inicio, data_fim, filial_id, empresa_id, filial_ids
+    )
     return {
         "receitas": receitas,
         "despesas": despesas,
@@ -429,11 +452,16 @@ def _resultado_financeiro_periodo(data_inicio, data_fim, filial_id=None, empresa
         "por_centro_custo": por_centro_custo,
         "por_conta_contabil": por_conta_contabil,
         "saldos_contas": saldos_contas,
-        "balancete_contas": _balancete_contas_periodo(data_inicio, data_fim, filial_id, empresa_id),
+        "balancete_contas": _balancete_contas_periodo(
+            data_inicio, data_fim, filial_id, empresa_id, filial_ids
+        ),
         "dre_gerencial": _dre_gerencial(receitas, despesas, por_categoria),
         "conciliacao_bancaria": conciliacao_bancaria,
         "integracao_fiscal": integracao_fiscal,
-        "pacote_contabil": _pacote_contabil_gerencial(data_inicio, data_fim, receitas, despesas, conciliacao_bancaria, filial_id, empresa_id),
+        "pacote_contabil": _pacote_contabil_gerencial(
+            data_inicio, data_fim, receitas, despesas, conciliacao_bancaria,
+            filial_id, empresa_id, filial_ids,
+        ),
     }
 
 
@@ -469,13 +497,18 @@ def _dre_gerencial(receitas, despesas, por_categoria):
     }
 
 
-def _balancete_contas_periodo(data_inicio, data_fim, filial_id=None, empresa_id=None):
+def _balancete_contas_periodo(
+    data_inicio, data_fim, filial_id=None, empresa_id=None, filial_ids=None
+):
     linhas = []
     contas = ContaMovimentoFinanceiro.objects.select_related("filial", "filial__empresa").filter(ativa=True)
-    if filial_id:
-        contas = contas.filter(filial_id=filial_id)
-    elif empresa_id:
-        contas = contas.filter(filial__empresa_id=empresa_id)
+    contas = _aplicar_escopo_filiais(
+        contas,
+        "filial",
+        filial_id=filial_id,
+        empresa_id=empresa_id,
+        filial_ids=filial_ids,
+    )
     for conta in contas:
         anteriores = conta.lancamentos.filter(data__lt=data_inicio).values("tipo").annotate(total=Sum("valor"))
         anteriores_por_tipo = {item["tipo"]: item["total"] for item in anteriores}
@@ -503,12 +536,17 @@ def _balancete_contas_periodo(data_inicio, data_fim, filial_id=None, empresa_id=
 
 
 
-def _resumo_conciliacao_periodo(data_inicio, data_fim, filial_id=None, empresa_id=None):
+def _resumo_conciliacao_periodo(
+    data_inicio, data_fim, filial_id=None, empresa_id=None, filial_ids=None
+):
     lancamentos = LancamentoFinanceiro.objects.filter(data__range=(data_inicio, data_fim))
-    if filial_id:
-        lancamentos = lancamentos.filter(conta__filial_id=filial_id)
-    elif empresa_id:
-        lancamentos = lancamentos.filter(conta__filial__empresa_id=empresa_id)
+    lancamentos = _aplicar_escopo_filiais(
+        lancamentos,
+        "conta__filial",
+        filial_id=filial_id,
+        empresa_id=empresa_id,
+        filial_ids=filial_ids,
+    )
     total_lancamentos = lancamentos.count()
     total_valor = lancamentos.aggregate(total=Sum("valor"))["total"] or Decimal("0.00")
     conciliados_qs = lancamentos.filter(conciliacao_bancaria__isnull=False)
@@ -521,10 +559,13 @@ def _resumo_conciliacao_periodo(data_inicio, data_fim, filial_id=None, empresa_i
     contas_conciliacao = ContaMovimentoFinanceiro.objects.select_related("filial").filter(
         lancamentos__data__range=(data_inicio, data_fim)
     ).distinct()
-    if filial_id:
-        contas_conciliacao = contas_conciliacao.filter(filial_id=filial_id)
-    elif empresa_id:
-        contas_conciliacao = contas_conciliacao.filter(filial__empresa_id=empresa_id)
+    contas_conciliacao = _aplicar_escopo_filiais(
+        contas_conciliacao,
+        "filial",
+        filial_id=filial_id,
+        empresa_id=empresa_id,
+        filial_ids=filial_ids,
+    )
     for conta in contas_conciliacao:
         movimentos = lancamentos.filter(conta=conta)
         movimentos_conciliados = movimentos.filter(conciliacao_bancaria__isnull=False)
@@ -551,16 +592,21 @@ def _resumo_conciliacao_periodo(data_inicio, data_fim, filial_id=None, empresa_i
     }
 
 
-def _resumo_integracao_fiscal(data_inicio, data_fim, filial_id=None, empresa_id=None):
+def _resumo_integracao_fiscal(
+    data_inicio, data_fim, filial_id=None, empresa_id=None, filial_ids=None
+):
     documentos = (
         DocumentoFiscal.objects.select_related("filial", "venda", "pedido_online")
         .filter(criado_em__date__range=(data_inicio, data_fim))
         .exclude(status=StatusDocumentoFiscal.CANCELADO)
     )
-    if filial_id:
-        documentos = documentos.filter(filial_id=filial_id)
-    elif empresa_id:
-        documentos = documentos.filter(filial__empresa_id=empresa_id)
+    documentos = _aplicar_escopo_filiais(
+        documentos,
+        "filial",
+        filial_id=filial_id,
+        empresa_id=empresa_id,
+        filial_ids=filial_ids,
+    )
     documentos_venda = documentos.filter(venda__isnull=False)
     vendas_documentadas = {
         item["venda_id"]: item
@@ -571,10 +617,13 @@ def _resumo_integracao_fiscal(data_inicio, data_fim, filial_id=None, empresa_id=
         data__range=(data_inicio, data_fim), tipo=TipoLancamentoFinanceiro.ENTRADA,
         pagamento_venda__venda_id__isnull=False,
     )
-    if filial_id:
-        entradas_qs = entradas_qs.filter(conta__filial_id=filial_id)
-    elif empresa_id:
-        entradas_qs = entradas_qs.filter(conta__filial__empresa_id=empresa_id)
+    entradas_qs = _aplicar_escopo_filiais(
+        entradas_qs,
+        "conta__filial",
+        filial_id=filial_id,
+        empresa_id=empresa_id,
+        filial_ids=filial_ids,
+    )
     entradas_venda = {
         item["pagamento_venda__venda_id"]: item
         for item in entradas_qs.values(
@@ -640,12 +689,18 @@ def _integracao_fiscal_json(resumo):
         ],
     }
 
-def _pacote_contabil_gerencial(data_inicio, data_fim, receitas, despesas, conciliacao_bancaria, filial_id=None, empresa_id=None):
+def _pacote_contabil_gerencial(
+    data_inicio, data_fim, receitas, despesas, conciliacao_bancaria,
+    filial_id=None, empresa_id=None, filial_ids=None,
+):
     lancamentos_periodo = LancamentoFinanceiro.objects.filter(data__gte=data_inicio, data__lte=data_fim)
-    if filial_id:
-        lancamentos_periodo = lancamentos_periodo.filter(conta__filial_id=filial_id)
-    elif empresa_id:
-        lancamentos_periodo = lancamentos_periodo.filter(conta__filial__empresa_id=empresa_id)
+    lancamentos_periodo = _aplicar_escopo_filiais(
+        lancamentos_periodo,
+        "conta__filial",
+        filial_id=filial_id,
+        empresa_id=empresa_id,
+        filial_ids=filial_ids,
+    )
     transferencias = lancamentos_periodo.filter(origem="TRANSFERENCIA")
     estornos = lancamentos_periodo.filter(estorno_de__isnull=False)
     total_entradas_livro = lancamentos_periodo.filter(tipo=TipoLancamentoFinanceiro.ENTRADA).aggregate(total=Sum("valor"))["total"] or Decimal("0.00")
@@ -882,6 +937,7 @@ def dre_gerencial(request):
         data_inicio=data_inicio,
         data_fim=data_fim,
         filial_ids=filial_ids,
+        consolidado=not bool(filial_id),
     )
     return render(
         request,
@@ -905,12 +961,13 @@ def dre_gerencial(request):
 @require_GET
 def dre_gerencial_json(request):
     data_inicio, data_fim = _periodo_from_request(request)
-    _filiais, _filial_id, _permite, empresa_id, _empresas, filial_ids = _escopo_dre(request)
+    _filiais, filial_id, _permite, empresa_id, _empresas, filial_ids = _escopo_dre(request)
     resultado, fechamento = obter_dre_competencia(
         empresa=get_object_or_404(Empresa, pk=empresa_id),
         data_inicio=data_inicio,
         data_fim=data_fim,
         filial_ids=filial_ids,
+        consolidado=not bool(filial_id),
     )
     payload = serializar_dre_json(resultado)
     payload["fechamento"] = serializar_dre_json(fechamento)
@@ -922,12 +979,13 @@ def dre_gerencial_json(request):
 @require_GET
 def dre_gerencial_csv(request):
     data_inicio, data_fim = _periodo_from_request(request)
-    _filiais, _filial_id, _permite, empresa_id, _empresas, filial_ids = _escopo_dre(request)
+    _filiais, filial_id, _permite, empresa_id, _empresas, filial_ids = _escopo_dre(request)
     resultado, fechamento = obter_dre_competencia(
         empresa=get_object_or_404(Empresa, pk=empresa_id),
         data_inicio=data_inicio,
         data_fim=data_fim,
         filial_ids=filial_ids,
+        consolidado=not bool(filial_id),
     )
     response = HttpResponse(content_type="text/csv; charset=utf-8")
     response["Content-Disposition"] = f'attachment; filename="dre_gerencial_{data_inicio}_{data_fim}.csv"'
@@ -1214,9 +1272,52 @@ def _csv_excel_bytes(cabecalho, linhas):
 
 
 def _pacote_contabil_zip(competencia, data_inicio, data_fim, filiais, filial_id, empresa_id):
-    resultado = _resultado_financeiro_periodo(data_inicio, data_fim, filial_id, empresa_id)
-    filiais_pacote = (filiais.filter(pk=filial_id) if filial_id else filiais).filter(is_active=True)
-    payload = _payload_pacote_contabil(data_inicio, data_fim, filiais_pacote, filial_id, empresa_id, resultado)
+    empresa = Empresa.objects.filter(pk=empresa_id).first()
+    if not empresa:
+        empresa = (filiais.filter(pk=filial_id) if filial_id else filiais).select_related("empresa").first()
+        empresa = empresa.empresa if empresa else None
+
+    fechamento_snapshot = None
+    if not filial_id and empresa:
+        estado_fechado = CompetenciaFinanceiroContabil.objects.filter(
+            empresa=empresa,
+            competencia=data_inicio,
+            status=StatusCompetenciaFinanceiroContabil.FECHADA,
+            fechamento_vigente__isnull=False,
+        ).select_related("fechamento_vigente", "fechamento_vigente__fechado_por").first()
+        if estado_fechado:
+            fechamento_snapshot = estado_fechado.fechamento_vigente
+            if not validar_hash_snapshot(fechamento_snapshot):
+                raise ValidationError("O hash do fechamento mensal vigente é inválido.")
+
+    if fechamento_snapshot:
+        ids_snapshot = [item["id"] for item in fechamento_snapshot.filiais_snapshot]
+        filiais_pacote = Filial.objects.select_related("empresa").filter(
+            empresa=empresa,
+            pk__in=ids_snapshot,
+        ).order_by("empresa__nome_fantasia", "nome")
+        if filiais_pacote.count() != len(set(ids_snapshot)):
+            raise ValidationError("O escopo histórico de filiais do fechamento é inválido para a empresa.")
+        filial_ids_historicos = ids_snapshot
+    else:
+        filiais_pacote = (filiais.filter(pk=filial_id) if filial_id else filiais).filter(is_active=True)
+        filial_ids_historicos = None
+
+    resultado = _resultado_financeiro_periodo(
+        data_inicio,
+        data_fim,
+        filial_id,
+        empresa.pk if empresa else empresa_id,
+        filial_ids_historicos,
+    )
+    payload = _payload_pacote_contabil(
+        data_inicio,
+        data_fim,
+        filiais_pacote,
+        filial_id,
+        empresa.pk if empresa else empresa_id,
+        resultado,
+    )
     documentos_saida = _documentos_saida_competencia(filiais_pacote, data_inicio, data_fim)
     documentos_entrada = _documentos_entrada_competencia(
         filiais_pacote, data_inicio, data_fim, consolidado=not bool(filial_id)
@@ -1228,7 +1329,6 @@ def _pacote_contabil_zip(competencia, data_inicio, data_fim, filiais, filial_id,
         data__gte=data_inicio,
         data__lte=data_fim,
     ).order_by("data", "pk")
-    empresa = filiais_pacote.first().empresa if filiais_pacote.exists() else None
     estoques = Estoque.objects.select_related("filial", "produto").filter(
         filial__in=filiais_pacote
     ).order_by("filial__nome", "produto__nome", "produto_id")
@@ -1256,22 +1356,6 @@ def _pacote_contabil_zip(competencia, data_inicio, data_fim, filiais, filial_id,
     qualidade_inventario = contrato_inventario["qualidade_temporal"]
     arquivos = OrderedDict()
 
-    fechamento_snapshot = None
-    if not filial_id and empresa:
-        estado_fechado = CompetenciaFinanceiroContabil.objects.filter(
-            empresa=empresa,
-            competencia=data_inicio,
-            status=StatusCompetenciaFinanceiroContabil.FECHADA,
-            fechamento_vigente__isnull=False,
-        ).select_related("fechamento_vigente", "fechamento_vigente__fechado_por").first()
-        if estado_fechado:
-            ids_pacote = set(filiais_pacote.filter(is_active=True).values_list("pk", flat=True))
-            ids_snapshot = {item["id"] for item in estado_fechado.fechamento_vigente.filiais_snapshot}
-            if ids_pacote == ids_snapshot:
-                fechamento_snapshot = estado_fechado.fechamento_vigente
-                if not validar_hash_snapshot(fechamento_snapshot):
-                    raise ValidationError("O hash do fechamento mensal vigente é inválido.")
-
     def adicionar_texto(nome, conteudo):
         arquivos[nome] = conteudo.encode("utf-8") if isinstance(conteudo, str) else conteudo
 
@@ -1288,6 +1372,7 @@ def _pacote_contabil_zip(competencia, data_inicio, data_fim, filiais, filial_id,
         json.dumps(payload, cls=DjangoJSONEncoder, ensure_ascii=False, indent=2),
     )
     if fechamento_snapshot:
+        conteudo_economico = conteudo_economico_snapshot(fechamento_snapshot)
         fechamento_payload = {
             "contrato": "financial_monthly_close_v1",
             "competencia": fechamento_snapshot.competencia.competencia.isoformat(),
@@ -1298,6 +1383,7 @@ def _pacote_contabil_zip(competencia, data_inicio, data_fim, filiais, filial_id,
             "com_ressalvas": fechamento_snapshot.com_ressalvas,
             "fechamentos_estoque": fechamento_snapshot.inventario_snapshot.get("fechamentos", []),
             "dre_snapshot": fechamento_snapshot.dre_snapshot,
+            "conteudo_economico": conteudo_economico,
         }
         adicionar_texto(
             "financeiro/fechamento-mensal.json",

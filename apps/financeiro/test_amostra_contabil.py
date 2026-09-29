@@ -19,6 +19,7 @@ from apps.financeiro.models import (
     FormatoEntregaContabil,
     ResponsavelEFDICMSIPI,
 )
+from apps.financeiro.services_fechamento_mensal import calcular_hash_snapshot
 
 
 class AmostraContabilTests(TestCase):
@@ -76,19 +77,36 @@ class AmostraContabilTests(TestCase):
         if fechamento:
             dre = {"contrato": "financial_dre_v2", "totais": {"resultado": "10.00"}}
             dre_arquivo = {"contrato": "financial_dre_v2", "totais": {"resultado": "9.00"}} if dre_divergente else dre
+            conteudo_economico = {
+                "contrato": "financial_monthly_close_v1",
+                "competencia": timezone.localdate().replace(day=1).isoformat(),
+                "versao": 1,
+                "periodo": {"inicio": "2026-08-01", "fim": "2026-08-31"},
+                "filiais": [{"id": self.filial.pk, "nome": self.filial.nome}],
+                "dre": dre,
+                "financeiro": {"resultado": "10.00"},
+                "contas": {},
+                "recebiveis": {},
+                "inventario": {},
+                "fiscal": {},
+                "diagnostico": {"bloqueios": [], "alertas": []},
+                "com_ressalvas": False,
+            }
+            fechamento_sha256 = calcular_hash_snapshot(conteudo_economico)
             fechamento_payload = {
                 "contrato": "financial_monthly_close_v1",
                 "competencia": timezone.localdate().replace(day=1).isoformat(),
                 "versao": 1,
-                "sha256": "a" * 64,
+                "sha256": fechamento_sha256,
                 "dre_snapshot": dre,
+                "conteudo_economico": conteudo_economico,
             }
             arquivos["financeiro/fechamento-mensal.json"] = json.dumps(fechamento_payload).encode("utf-8")
             arquivos["financeiro/dre-gerencial-v2.json"] = json.dumps(dre_arquivo).encode("utf-8")
             fechamento_manifesto = {
                 "fechado": True,
                 "versao": 1,
-                "sha256": "a" * 64,
+                "sha256": fechamento_sha256,
                 "com_ressalvas": False,
             }
         integridade = [
@@ -207,6 +225,37 @@ class AmostraContabilTests(TestCase):
         self.assertTrue(valido["aprovado"])
         self.assertFalse(divergente["aprovado"])
         self.assertIn("DRE_FECHAMENTO_DIVERGENTE", {item["codigo"] for item in divergente["erros"]})
+
+    def test_validador_detecta_adulteracao_economica_com_hash_do_arquivo_atualizado(self):
+        pacote_valido = self._pacote(fechamento=True)
+        with ZipFile(BytesIO(pacote_valido)) as origem:
+            arquivos = {nome: origem.read(nome) for nome in origem.namelist()}
+        manifesto = json.loads(arquivos["manifesto.json"])
+        fechamento = json.loads(arquivos["financeiro/fechamento-mensal.json"])
+        fechamento["conteudo_economico"]["financeiro"]["resultado"] = "999999.99"
+        fechamento_bytes = json.dumps(fechamento).encode("utf-8")
+        arquivos["financeiro/fechamento-mensal.json"] = fechamento_bytes
+        for item in manifesto["arquivos"]:
+            if item["caminho"] == "financeiro/fechamento-mensal.json":
+                item["bytes"] = len(fechamento_bytes)
+                item["sha256"] = hashlib.sha256(fechamento_bytes).hexdigest()
+        arquivos["manifesto.json"] = json.dumps(manifesto).encode("utf-8")
+        buffer = BytesIO()
+        with ZipFile(buffer, "w", ZIP_DEFLATED) as destino:
+            for nome, conteudo in arquivos.items():
+                destino.writestr(nome, conteudo)
+
+        relatorio = validar_amostra_contabil(
+            pacote_bytes=buffer.getvalue(),
+            empresa=self.empresa,
+            contrato_integracao=self.contrato,
+        )
+
+        self.assertFalse(relatorio["aprovado"])
+        self.assertIn(
+            "FECHAMENTO_HASH_INVALIDO",
+            {item["codigo"] for item in relatorio["erros"]},
+        )
 
     def test_aceite_recusa_relatorio_reprovado_e_usuario_nao_master(self):
         pacote = self._pacote(vendas_divergentes=1)

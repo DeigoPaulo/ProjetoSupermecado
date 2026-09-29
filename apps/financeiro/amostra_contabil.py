@@ -15,6 +15,7 @@ from .models import (
     FormatoEntregaContabil,
     StatusContratoIntegracaoContabil,
 )
+from .services_fechamento_mensal import calcular_hash_snapshot
 
 
 CONTRATO_VALIDACAO = "accounting_monthly_sample_validation_v1"
@@ -130,6 +131,30 @@ def validar_amostra_contabil(*, pacote_bytes, empresa, contrato_integracao):
                 else:
                     if fechamento.get("contrato") != "financial_monthly_close_v1":
                         _erro(erros, "CONTRATO_FECHAMENTO_INVALIDO", "O fechamento mensal usa contrato incompatível.")
+                    conteudo_economico = fechamento.get("conteudo_economico")
+                    if not isinstance(conteudo_economico, dict):
+                        _erro(
+                            erros,
+                            "FECHAMENTO_CONTEUDO_ECONOMICO_AUSENTE",
+                            "O fechamento mensal não contém o conteúdo econômico canônico.",
+                        )
+                    else:
+                        sha_calculado = calcular_hash_snapshot(conteudo_economico)
+                        if (
+                            sha_calculado != fechamento.get("sha256")
+                            or sha_calculado != fechamento_manifesto.get("sha256")
+                        ):
+                            _erro(
+                                erros,
+                                "FECHAMENTO_HASH_INVALIDO",
+                                "O SHA-256 econômico do fechamento não corresponde ao conteúdo canônico.",
+                            )
+                        if conteudo_economico.get("dre") != dre_fechada:
+                            _erro(
+                                erros,
+                                "DRE_FECHAMENTO_DIVERGENTE",
+                                "A DRE do pacote não corresponde ao conteúdo econômico protegido.",
+                            )
                     if fechamento.get("sha256") != fechamento_manifesto.get("sha256"):
                         _erro(erros, "SHA_FECHAMENTO_DIVERGENTE", "O SHA-256 do fechamento diverge do manifesto.")
                     if fechamento.get("versao") != fechamento_manifesto.get("versao"):

@@ -12,7 +12,7 @@ Desde o Ciclo 188 existem dois níveis distintos de evidência:
 - `FechamentoEstoqueContabil`: snapshot diário imutável por filial, usado como fonte da posição de estoque;
 - `financial_monthly_close_v1`: fechamento mensal formal por empresa, que referencia os snapshots diários exatos do último dia e congela também DRE, financeiro, contas, recebíveis, fiscal e diagnósticos.
 
-O snapshot diário, isoladamente, não fecha a competência. O fechamento mensal só existe após ação administrativa explícita e versionada.
+O snapshot diário, isoladamente, não fecha a competência. O fechamento mensal só existe após ação administrativa explícita e versionada, a partir do dia seguinte ao encerramento do mês.
 
 ## Estados da competência
 
@@ -53,6 +53,11 @@ O `manifesto.json` do pacote informa:
 
 Os hashes continuam permitindo conferir as capturas usadas, inclusive quando a
 competência corrente possui uma posição diária imutável ainda parcial.
+
+No pacote de uma competência formalmente fechada, o escopo de filiais vem do
+`filiais_snapshot`, não do cadastro ativo atual. O arquivo de fechamento também
+carrega o conteúdo econômico canônico completo; seu SHA-256 é recalculado pelo
+validador e a DRE protegida deve ser idêntica ao arquivo de DRE congelada.
 
 ## Limites
 

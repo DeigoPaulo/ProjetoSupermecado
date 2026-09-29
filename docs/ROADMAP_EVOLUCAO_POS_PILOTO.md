@@ -2928,7 +2928,7 @@ A DRE de um período deve ser reproduzível, conciliável com vendas, estoque e 
 - [x] Registrar divergências pendentes e limitações temporais no fechamento em vez de ocultá-las.
 - [x] Integrar o fechamento mensal e a DRE congelada ao pacote do contador v2 sem quebrar pacotes históricos.
 
-Concluído estruturalmente no Ciclo 188 pelo contrato `financial_monthly_close_v1`. O fechamento é gerencial interno, versionado e por empresa; não representa homologação contábil ou fiscal externa.
+Concluído estruturalmente no Ciclo 188 pelo contrato `financial_monthly_close_v1` e consolidado temporalmente no Ciclo 189. O fechamento passou a ocorrer somente após o fim do mês, usa o escopo histórico de filiais e contas de movimento, separa posição e eventos de recebíveis, estrutura o cancelamento de contas e permite verificação independente do SHA econômico no pacote. A prova concorrente real permanece executável em PostgreSQL e explicitamente ignorada no SQLite. O fechamento é gerencial interno, versionado e por empresa; não representa homologação contábil ou fiscal externa.
 
 Critério de aceite:
 

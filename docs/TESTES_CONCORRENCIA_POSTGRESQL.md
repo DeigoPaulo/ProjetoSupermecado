@@ -30,6 +30,13 @@ O teste de unicidade fiscal por venda e pedido usa o mesmo ambiente:
     -TestLabel "apps.fiscal.test_concorrencia_preparacao.DocumentoFiscalOriginConcurrencyTests"
 ```
 
+O fechamento mensal concorrente pode ser executado isoladamente com:
+
+```powershell
+.\scripts\test_concorrencia_postgresql.ps1 `
+    -TestLabel "apps.financeiro.test_concorrencia_fechamento.FechamentoMensalConcorrenciaPostgreSQLTests"
+```
+
 O script recusa nome de teste sem o prefixo `test_`, recusa usar a mesma base nos dois
 campos, desativa conexões persistentes e executa somente o caminho informado em
 `TestLabel`. Sem esse parâmetro, executa
@@ -51,6 +58,7 @@ PostgreSQL 16 descartável, instala apenas as dependências declaradas no projet
 - as constraints e validações de origem dos documentos fiscais;
 - a reserva concorrente de transmissão fiscal;
 - as corridas entre fechamento, venda, sangria e suprimento do caixa;
+- duas tentativas simultâneas de fechamento mensal, garantindo uma única versão 1;
 - as constraints de origem das contas financeiras.
 - a unicidade e o consumo concorrente da confirmação TEF/PIX por parcela, com
   bloqueio de reuso, adulteração e associação a outro caixa/forma/valor.

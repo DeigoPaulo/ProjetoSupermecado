@@ -256,9 +256,16 @@ def cancelar_conta(*, conta, usuario, motivo="", ip=None):
         return conta
     if conta.status == StatusContaFinanceira.PAGA:
         raise ValidationError("Conta paga não pode ser cancelada.")
+    motivo = (motivo or "").strip()
     conta.status = StatusContaFinanceira.CANCELADA
     conta.observacoes = f"{conta.observacoes}\nCancelada: {motivo}".strip()
-    conta.save(update_fields=["status", "observacoes", "atualizado_em"])
+    conta.cancelada_em = timezone.now()
+    conta.cancelada_por = usuario
+    conta.motivo_cancelamento = motivo
+    conta.save(update_fields=[
+        "status", "observacoes", "cancelada_em", "cancelada_por",
+        "motivo_cancelamento", "atualizado_em",
+    ])
     LogAuditoria.objects.create(
         usuario=usuario,
         modulo="financeiro",

@@ -213,6 +213,15 @@ class ContaFinanceira(models.Model):
     conta_movimento = models.ForeignKey(ContaMovimentoFinanceiro, on_delete=models.PROTECT, null=True, blank=True, related_name="baixas")
     observacoes = models.TextField(blank=True)
     usuario = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.PROTECT, related_name="contas_financeiras")
+    cancelada_em = models.DateTimeField(null=True, blank=True)
+    cancelada_por = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.PROTECT,
+        null=True,
+        blank=True,
+        related_name="contas_financeiras_canceladas",
+    )
+    motivo_cancelamento = models.TextField(blank=True)
     criado_em = models.DateTimeField(auto_now_add=True)
     atualizado_em = models.DateTimeField(auto_now=True)
 
