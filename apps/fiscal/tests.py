@@ -3266,7 +3266,7 @@ class FiscalTests(TestCase):
 
         documento.refresh_from_db()
         self.assertEqual(documento.status, StatusDocumentoFiscal.PRONTO)
-        self.assertEqual(documento.tentativas_transmissao, 1)
+        self.assertEqual(documento.tentativas_transmissao, 0)
         self.assertFalse(documento.protocolo)
         self.assertTrue(LogAuditoria.objects.filter(acao="TRANSMISSAO_SEFAZ_FALHA").exists())
 

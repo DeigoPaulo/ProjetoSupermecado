@@ -2032,9 +2032,6 @@ def transmitir_documento_sefaz(documento, usuario, ip=None, reserva_token=None):
         token, gerenciada_pela_fila = _reserva_transmissao(documento, reserva_token)
         if not documento.xml_conteudo:
             salvar_xml_documento(documento)
-        documento.tentativas_transmissao += 1
-        documento.ultima_tentativa_em = timezone.now()
-        documento.save(update_fields=["tentativas_transmissao", "ultima_tentativa_em", "atualizado_em"])
         idempotency_key = (
             f"fiscal:{documento.pk}:{documento.numero or 0}:"
             f"{documento.xml_gerado_em.isoformat() if documento.xml_gerado_em else 'sem-xml'}"
@@ -2059,12 +2056,20 @@ def transmitir_documento_sefaz(documento, usuario, ip=None, reserva_token=None):
         with transaction.atomic():
             reservado = DocumentoFiscal.objects.select_for_update().get(pk=documento.pk)
             _confirmar_reserva_transmissao(reservado, token)
+            reservado.tentativas_transmissao += 1
+            reservado.ultima_tentativa_em = timezone.now()
             reservado.aguardando_consulta_sefaz = True
             reservado.mensagem_retorno = (
                 "Envio iniciado. A situação deve ser consultada antes de qualquer retransmissão."
             )
             reservado.save(
-                update_fields=["aguardando_consulta_sefaz", "mensagem_retorno", "atualizado_em"]
+                update_fields=[
+                    "tentativas_transmissao",
+                    "ultima_tentativa_em",
+                    "aguardando_consulta_sefaz",
+                    "mensagem_retorno",
+                    "atualizado_em",
+                ]
             )
         envio_iniciado = True
         retorno = adapter.transmitir(

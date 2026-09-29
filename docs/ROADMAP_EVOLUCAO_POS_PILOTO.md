@@ -2936,10 +2936,12 @@ Um mês fechado deve poder ser reprocessado para conferência sem alterar seus t
 
 ### Concorrência e integridade da numeração fiscal
 
-- [ ] Auditar a reserva de numeração de NF-e/NFC-e sob concorrência real com vários PDVs simultâneos.
-- [ ] Garantir lock transacional ou estratégia equivalente na combinação filial + modelo + série + ambiente.
-- [ ] Criar testes concorrentes para impedir número duplicado, salto indevido por retry e dupla emissão da mesma venda.
-- [ ] Validar idempotência ponta a ponta entre venda, DocumentoFiscal, fila, retransmissão e consulta SEFAZ.
+- [x] Auditar a reserva de numeração de NF-e/NFC-e sob concorrência real com vários PDVs simultâneos.
+- [x] Garantir lock transacional ou estratégia equivalente na combinação filial + modelo + série + ambiente.
+- [x] Criar testes concorrentes para impedir número duplicado, salto indevido por retry e dupla emissão da mesma venda.
+- [x] Validar idempotência ponta a ponta entre venda, DocumentoFiscal, fila, retransmissão e consulta SEFAZ.
+
+Concluído internamente no Ciclo 190. A suíte PostgreSQL comprovou cinco caixas da mesma filial compartilhando a série NFC-e com números 100 a 104 e próximo número 105, isolamento entre filiais e modelos, rollback sem consumo, dois workers sem envio duplicado, exclusão entre fila e operação manual, retomada de lease, consulta antes de retransmissão e evidências idempotentes. Uma lacuna produtiva foi corrigida para que falhas anteriores ao início do envio externo não incrementem `tentativas_transmissao`. A prova é offline e não representa homologação externa com Focus ou SEFAZ, que permanece pendente de credenciais e aceite reais.
 
 Critério de aceite:
 
