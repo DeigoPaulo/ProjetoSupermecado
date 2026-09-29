@@ -81,6 +81,7 @@
             <details class="nav-section" {% if not access.relatorios %}open{% endif %}>
               <summary><i class="fa-solid fa-calculator"></i> Contabilidade</summary>
               <a href="{% url 'financeiro:portal_contabilidade' %}"><i class="fa-solid fa-folder-open"></i> Portal contábil</a>
+              <a href="{% url 'financeiro:fechamentos_mensais' %}"><i class="fa-solid fa-lock"></i> Fechamentos mensais</a>
               {% if access.revisao_fiscal %}
                 <a href="{% url 'fiscal:revisoes_devolucao' %}"><i class="fa-solid fa-clipboard-check"></i> Revisões fiscais</a>
                 <a href="{% url 'fiscal:diagnostico_cbenef' %}"><i class="fa-solid fa-scale-balanced"></i> Diagnóstico cBenef</a>

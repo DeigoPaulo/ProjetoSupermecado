@@ -33,6 +33,13 @@
   <strong>DRE gerencial, não contábil oficial.</strong> A competência segue a data de cada evento operacional e a data realizada do livro financeiro. Este demonstrativo não substitui ECD, ECF, SPED ou o trabalho do contador.
 </section>
 
+{% if fechamento.fonte == 'SNAPSHOT_FECHADO' %}
+<section class="operation-notice">
+  <strong>Competência fechada · Snapshot v{{ fechamento.versao }}</strong>
+  Valores congelados no fechamento vigente. SHA-256: <code>{{ fechamento.hash }}</code>.
+</section>
+{% endif %}
+
 {% for alerta in dre.alertas %}<div class="notice notice-warning"><strong>Atenção</strong><span>{{ alerta }}</span></div>{% endfor %}
 
 <section class="metrics-grid">

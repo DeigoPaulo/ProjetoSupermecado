@@ -2921,12 +2921,14 @@ A DRE de um período deve ser reproduzível, conciliável com vendas, estoque e 
 
 ### Fechamento mensal financeiro-contábil
 
-- [ ] Definir um fechamento mensal formal por empresa/filial, com data de corte e responsável.
-- [ ] Exigir conciliação bancária, recebíveis eletrônicos, contas a pagar/receber e inventário contábil em estado aceitável antes do fechamento.
-- [ ] Criar snapshot ou referência imutável dos saldos, DRE, CMV, inventário valorizado e documentos fiscais do período.
-- [ ] Bloquear alterações retroativas que afetem período fechado ou exigir fluxo formal de reabertura/ajuste auditado.
-- [ ] Registrar divergências pendentes no fechamento em vez de ocultá-las.
-- [ ] Integrar o fechamento mensal ao pacote do contador v2.
+- [x] Definir um fechamento mensal formal por empresa e competência, cobrindo todas as filiais ativas, com data de corte e responsável.
+- [x] Exigir conciliação bancária, recebíveis eletrônicos, contas a pagar/receber e inventário contábil em estado aceitável antes do fechamento, distinguindo bloqueios de alertas.
+- [x] Criar snapshot ou referência imutável dos saldos, DRE, CMV, inventário valorizado e documentos fiscais do período.
+- [x] Bloquear alterações financeiras retroativas com data explícita que afetem período fechado e exigir reabertura formal auditada.
+- [x] Registrar divergências pendentes e limitações temporais no fechamento em vez de ocultá-las.
+- [x] Integrar o fechamento mensal e a DRE congelada ao pacote do contador v2 sem quebrar pacotes históricos.
+
+Concluído estruturalmente no Ciclo 188 pelo contrato `financial_monthly_close_v1`. O fechamento é gerencial interno, versionado e por empresa; não representa homologação contábil ou fiscal externa.
 
 Critério de aceite:
 

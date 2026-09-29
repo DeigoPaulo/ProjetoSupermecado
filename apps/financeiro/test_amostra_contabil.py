@@ -45,7 +45,7 @@ class AmostraContabilTests(TestCase):
             validar=True,
         )
 
-    def _pacote(self, *, vendas_divergentes=0, adulterar=False):
+    def _pacote(self, *, vendas_divergentes=0, adulterar=False, fechamento=False, dre_divergente=False):
         reconciliacao = {
             "contrato": "accounting_operational_reconciliation_v1",
             "resumo": {
@@ -72,6 +72,25 @@ class AmostraContabilTests(TestCase):
             "fiscal/xml/saida/NFCE-1.xml": b"<nfeProc><NFe/></nfeProc>",
             "estoque/inventario-valorizado.csv": b"produto;quantidade;valor\n1;1;10\n",
         }
+        fechamento_manifesto = False
+        if fechamento:
+            dre = {"contrato": "financial_dre_v2", "totais": {"resultado": "10.00"}}
+            dre_arquivo = {"contrato": "financial_dre_v2", "totais": {"resultado": "9.00"}} if dre_divergente else dre
+            fechamento_payload = {
+                "contrato": "financial_monthly_close_v1",
+                "competencia": timezone.localdate().replace(day=1).isoformat(),
+                "versao": 1,
+                "sha256": "a" * 64,
+                "dre_snapshot": dre,
+            }
+            arquivos["financeiro/fechamento-mensal.json"] = json.dumps(fechamento_payload).encode("utf-8")
+            arquivos["financeiro/dre-gerencial-v2.json"] = json.dumps(dre_arquivo).encode("utf-8")
+            fechamento_manifesto = {
+                "fechado": True,
+                "versao": 1,
+                "sha256": "a" * 64,
+                "com_ressalvas": False,
+            }
         integridade = [
             {
                 "caminho": nome,
@@ -102,6 +121,7 @@ class AmostraContabilTests(TestCase):
                 "entradas_divergentes": 0,
             },
             "inventario": {"snapshot_completo": True},
+            "fechamento_mensal": fechamento_manifesto,
             "arquivos": integridade,
         }
         if adulterar:
@@ -171,6 +191,22 @@ class AmostraContabilTests(TestCase):
         self.assertIn("HASH_DIVERGENTE", {item["codigo"] for item in adulterado["erros"]})
         self.assertFalse(divergente["aprovado"])
         self.assertIn("VENDAS_DIVERGENTES", {item["codigo"] for item in divergente["erros"]})
+
+    def test_validador_reconhece_fechamento_e_confere_dre_congelada(self):
+        valido = validar_amostra_contabil(
+            pacote_bytes=self._pacote(fechamento=True),
+            empresa=self.empresa,
+            contrato_integracao=self.contrato,
+        )
+        divergente = validar_amostra_contabil(
+            pacote_bytes=self._pacote(fechamento=True, dre_divergente=True),
+            empresa=self.empresa,
+            contrato_integracao=self.contrato,
+        )
+
+        self.assertTrue(valido["aprovado"])
+        self.assertFalse(divergente["aprovado"])
+        self.assertIn("DRE_FECHAMENTO_DIVERGENTE", {item["codigo"] for item in divergente["erros"]})
 
     def test_aceite_recusa_relatorio_reprovado_e_usuario_nao_master(self):
         pacote = self._pacote(vendas_divergentes=1)

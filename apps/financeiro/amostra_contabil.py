@@ -111,6 +111,31 @@ def validar_amostra_contabil(*, pacote_bytes, empresa, contrato_integracao):
             return relatorio
         if manifesto.get("contrato") != "accounting_monthly_package_v2":
             _erro(erros, "CONTRATO_PACOTE_INVALIDO", "O pacote não segue accounting_monthly_package_v2.")
+        fechamento_manifesto = manifesto.get("fechamento_mensal", False)
+        if fechamento_manifesto and not isinstance(fechamento_manifesto, dict):
+            _erro(erros, "FECHAMENTO_MANIFESTO_INVALIDO", "Os metadados do fechamento mensal são inválidos.")
+        elif fechamento_manifesto:
+            arquivos_fechamento = {
+                "financeiro/fechamento-mensal.json",
+                "financeiro/dre-gerencial-v2.json",
+            }
+            if not arquivos_fechamento.issubset(set(nomes)):
+                _erro(erros, "FECHAMENTO_ARQUIVOS_AUSENTES", "O pacote fechado não contém fechamento mensal e DRE congelada.")
+            else:
+                try:
+                    fechamento = json.loads(arquivo_zip.read("financeiro/fechamento-mensal.json"))
+                    dre_fechada = json.loads(arquivo_zip.read("financeiro/dre-gerencial-v2.json"))
+                except (json.JSONDecodeError, UnicodeDecodeError, OSError):
+                    _erro(erros, "FECHAMENTO_INVALIDO", "Os arquivos do fechamento mensal não são JSON válido.")
+                else:
+                    if fechamento.get("contrato") != "financial_monthly_close_v1":
+                        _erro(erros, "CONTRATO_FECHAMENTO_INVALIDO", "O fechamento mensal usa contrato incompatível.")
+                    if fechamento.get("sha256") != fechamento_manifesto.get("sha256"):
+                        _erro(erros, "SHA_FECHAMENTO_DIVERGENTE", "O SHA-256 do fechamento diverge do manifesto.")
+                    if fechamento.get("versao") != fechamento_manifesto.get("versao"):
+                        _erro(erros, "VERSAO_FECHAMENTO_DIVERGENTE", "A versão do fechamento diverge do manifesto.")
+                    if fechamento.get("dre_snapshot") != dre_fechada:
+                        _erro(erros, "DRE_FECHAMENTO_DIVERGENTE", "A DRE do pacote não corresponde ao snapshot fechado.")
         empresa_manifesto = manifesto.get("empresa") or {}
         if empresa_manifesto.get("id") != empresa.pk:
             _erro(erros, "EMPRESA_DIVERGENTE", "O manifesto pertence a outra empresa.")

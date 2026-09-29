@@ -846,3 +846,201 @@ class AceiteAmostraContabil(models.Model):
 
     def __str__(self):
         return f"Aceite contábil {self.empresa} - {self.competencia:%Y-%m}"
+
+
+class StatusCompetenciaFinanceiroContabil(models.TextChoices):
+    ABERTA = "ABERTA", "Aberta"
+    FECHADA = "FECHADA", "Fechada"
+
+
+class TipoEventoCompetenciaFinanceiroContabil(models.TextChoices):
+    FECHAMENTO = "FECHAMENTO", "Fechamento"
+    REABERTURA = "REABERTURA", "Reabertura"
+
+
+class CompetenciaFinanceiroContabilQuerySet(models.QuerySet):
+    def delete(self):
+        raise ValidationError("Competências financeiro-contábeis não podem ser excluídas.")
+
+
+class CompetenciaFinanceiroContabil(models.Model):
+    objects = CompetenciaFinanceiroContabilQuerySet.as_manager()
+
+    empresa = models.ForeignKey(
+        "empresas.Empresa", on_delete=models.PROTECT, related_name="competencias_financeiro_contabeis"
+    )
+    competencia = models.DateField(help_text="Primeiro dia do mês da competência.")
+    status = models.CharField(
+        max_length=12,
+        choices=StatusCompetenciaFinanceiroContabil.choices,
+        default=StatusCompetenciaFinanceiroContabil.ABERTA,
+    )
+    fechamento_vigente = models.ForeignKey(
+        "FechamentoMensalSnapshot",
+        on_delete=models.PROTECT,
+        null=True,
+        blank=True,
+        related_name="competencias_em_que_e_vigente",
+    )
+    criado_em = models.DateTimeField(auto_now_add=True)
+    atualizado_em = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ["-competencia", "empresa__nome_fantasia"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["empresa", "competencia"],
+                name="fin_competencia_empresa_mes_uniq",
+            )
+        ]
+
+    def clean(self):
+        super().clean()
+        erros = {}
+        if self.competencia and self.competencia.day != 1:
+            erros["competencia"] = "A competência deve usar o primeiro dia do mês."
+        if self.fechamento_vigente_id:
+            if self.fechamento_vigente.competencia_id != self.pk:
+                erros["fechamento_vigente"] = "O snapshot vigente pertence a outra competência."
+            if self.status != StatusCompetenciaFinanceiroContabil.FECHADA:
+                erros["status"] = "Uma competência com snapshot vigente deve estar fechada."
+        if erros:
+            raise ValidationError(erros)
+
+    def delete(self, *args, **kwargs):
+        raise ValidationError("Competências financeiro-contábeis não podem ser excluídas.")
+
+    def __str__(self):
+        return f"{self.empresa} - {self.competencia:%m/%Y} ({self.get_status_display()})"
+
+
+class FechamentoMensalSnapshotQuerySet(models.QuerySet):
+    def update(self, **kwargs):
+        raise ValidationError("Snapshots de fechamento mensal são imutáveis.")
+
+    def delete(self):
+        raise ValidationError("Snapshots de fechamento mensal são imutáveis.")
+
+
+class FechamentoMensalSnapshot(models.Model):
+    objects = FechamentoMensalSnapshotQuerySet.as_manager()
+
+    competencia = models.ForeignKey(
+        CompetenciaFinanceiroContabil,
+        on_delete=models.PROTECT,
+        related_name="snapshots",
+    )
+    versao = models.PositiveIntegerField()
+    data_inicio = models.DateField()
+    data_fim = models.DateField()
+    filiais_snapshot = models.JSONField()
+    dre_snapshot = models.JSONField()
+    financeiro_snapshot = models.JSONField()
+    contas_snapshot = models.JSONField()
+    recebiveis_snapshot = models.JSONField()
+    inventario_snapshot = models.JSONField()
+    fiscal_snapshot = models.JSONField()
+    diagnostico_snapshot = models.JSONField()
+    conteudo_sha256 = models.CharField(max_length=64)
+    com_ressalvas = models.BooleanField(default=False)
+    fechado_por = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.PROTECT,
+        related_name="fechamentos_mensais_realizados",
+    )
+    fechado_em = models.DateTimeField(auto_now_add=True)
+    observacao = models.TextField(blank=True)
+
+    class Meta:
+        ordering = ["-competencia__competencia", "-versao"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["competencia", "versao"],
+                name="fin_fechamento_competencia_versao_uniq",
+            )
+        ]
+
+    def clean(self):
+        super().clean()
+        erros = {}
+        if self.data_inicio and self.data_inicio.day != 1:
+            erros["data_inicio"] = "O fechamento mensal deve iniciar no primeiro dia do mês."
+        if self.competencia_id and self.data_inicio != self.competencia.competencia:
+            erros["data_inicio"] = "O início deve coincidir com a competência."
+        if len(self.conteudo_sha256 or "") != 64:
+            erros["conteudo_sha256"] = "O snapshot exige SHA-256 completo."
+        if erros:
+            raise ValidationError(erros)
+
+    def save(self, *args, **kwargs):
+        if self.pk or not self._state.adding:
+            raise ValidationError("Snapshots de fechamento mensal são imutáveis.")
+        self.full_clean()
+        return super().save(*args, **kwargs)
+
+    def delete(self, *args, **kwargs):
+        raise ValidationError("Snapshots de fechamento mensal são imutáveis.")
+
+    def __str__(self):
+        return f"Fechamento {self.competencia.competencia:%m/%Y} v{self.versao}"
+
+
+class EventoCompetenciaFinanceiroContabilQuerySet(models.QuerySet):
+    def update(self, **kwargs):
+        raise ValidationError("Eventos de competência são imutáveis.")
+
+    def delete(self):
+        raise ValidationError("Eventos de competência são imutáveis.")
+
+
+class EventoCompetenciaFinanceiroContabil(models.Model):
+    objects = EventoCompetenciaFinanceiroContabilQuerySet.as_manager()
+
+    competencia = models.ForeignKey(
+        CompetenciaFinanceiroContabil,
+        on_delete=models.PROTECT,
+        related_name="eventos",
+    )
+    snapshot = models.ForeignKey(
+        FechamentoMensalSnapshot,
+        on_delete=models.PROTECT,
+        null=True,
+        blank=True,
+        related_name="eventos_competencia",
+    )
+    tipo = models.CharField(max_length=16, choices=TipoEventoCompetenciaFinanceiroContabil.choices)
+    usuario = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.PROTECT,
+        related_name="eventos_competencia_financeiro_contabil",
+    )
+    ocorrido_em = models.DateTimeField(auto_now_add=True)
+    motivo = models.TextField(blank=True)
+    ip = models.GenericIPAddressField(null=True, blank=True)
+
+    class Meta:
+        ordering = ["-ocorrido_em", "-pk"]
+
+    def clean(self):
+        super().clean()
+        erros = {}
+        if self.tipo == TipoEventoCompetenciaFinanceiroContabil.FECHAMENTO and not self.snapshot_id:
+            erros["snapshot"] = "O evento de fechamento exige o snapshot criado."
+        if self.snapshot_id and self.snapshot.competencia_id != self.competencia_id:
+            erros["snapshot"] = "O snapshot pertence a outra competência."
+        if self.tipo == TipoEventoCompetenciaFinanceiroContabil.REABERTURA and len((self.motivo or "").strip()) < 15:
+            erros["motivo"] = "A reabertura exige motivo com pelo menos 15 caracteres."
+        if erros:
+            raise ValidationError(erros)
+
+    def save(self, *args, **kwargs):
+        if self.pk or not self._state.adding:
+            raise ValidationError("Eventos de competência são imutáveis.")
+        self.full_clean()
+        return super().save(*args, **kwargs)
+
+    def delete(self, *args, **kwargs):
+        raise ValidationError("Eventos de competência são imutáveis.")
+
+    def __str__(self):
+        return f"{self.get_tipo_display()} - {self.competencia}"

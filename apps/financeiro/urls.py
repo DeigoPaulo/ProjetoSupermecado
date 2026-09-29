@@ -5,6 +5,10 @@ from . import views
 app_name = "financeiro"
 
 urlpatterns = [
+    path("fechamentos/", views.fechamentos_mensais, name="fechamentos_mensais"),
+    path("fechamentos/detalhe/", views.fechamento_mensal_detalhe, name="fechamento_mensal_detalhe"),
+    path("fechamentos/fechar/", views.fechar_competencia_view, name="fechar_competencia"),
+    path("fechamentos/<int:pk>/reabrir/", views.reabrir_competencia_view, name="reabrir_competencia"),
     path("contabilidade/chaves/", views.chaves_integracao_contabil, name="chaves_integracao_contabil"),
     path("contabilidade/validar-amostra/", views.validar_amostra_contabil_view, name="validar_amostra_contabil"),
     path("contabilidade/", views.portal_contabilidade, name="portal_contabilidade"),

@@ -7,6 +7,13 @@ entregue. Uma captura diária feita durante o mês não pode ser apresentada com
 fechamento mensal, e a posição atual não pode ser usada para reconstruir um mês
 passado como se fosse histórica.
 
+Desde o Ciclo 188 existem dois níveis distintos de evidência:
+
+- `FechamentoEstoqueContabil`: snapshot diário imutável por filial, usado como fonte da posição de estoque;
+- `financial_monthly_close_v1`: fechamento mensal formal por empresa, que referencia os snapshots diários exatos do último dia e congela também DRE, financeiro, contas, recebíveis, fiscal e diagnósticos.
+
+O snapshot diário, isoladamente, não fecha a competência. O fechamento mensal só existe após ação administrativa explícita e versionada.
+
 ## Estados da competência
 
 ### Competência em andamento
@@ -49,6 +56,4 @@ competência corrente possui uma posição diária imutável ainda parcial.
 
 ## Limites
 
-Este contrato corrige a classificação temporal do inventário no pacote do contador.
-Ele não implementa o fechamento mensal formal, reabertura de período, CMV ou
-homologação contábil. Essas evoluções permanecem em suas frentes próprias.
+Este contrato continua definindo a qualidade temporal do inventário no pacote do contador. O fechamento mensal formal, sua reabertura, DRE congelada e versionamento são definidos em `docs/FECHAMENTO_MENSAL_FINANCEIRO_CONTABIL.md`. A homologação contábil e fiscal externa permanece fora de ambos os contratos.

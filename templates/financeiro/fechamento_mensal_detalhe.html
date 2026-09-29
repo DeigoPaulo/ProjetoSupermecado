@@ -1,0 +1,39 @@
+{% extends "base.html" %}
+
+{% block title %}Fechamento {{ competencia_texto }}{% endblock %}
+
+{% block content %}
+<header class="page-header"><div><h1>Fechamento {{ competencia_texto }}</h1><p>{{ empresa.nome_fantasia }} · todas as filiais ativas</p></div><div class="actions"><a class="secondary-button" href="{% url 'financeiro:fechamentos_mensais' %}"><i class="fa-solid fa-arrow-left"></i> Voltar</a></div></header>
+
+<section class="metrics-grid">
+  <article class="metric"><span>Status</span><strong>{% if estado %}{{ estado.get_status_display }}{% else %}Aberta{% endif %}</strong></article>
+  <article class="metric"><span>Readiness</span><strong>{% if diagnostico.pronto %}Pronto{% else %}Bloqueado{% endif %}</strong></article>
+  <article class="metric"><span>Versão vigente</span><strong>{% if estado.fechamento_vigente %}v{{ estado.fechamento_vigente.versao }}{% else %}-{% endif %}</strong></article>
+  <article class="metric"><span>Ressalvas</span><strong>{% if diagnostico.alertas %}{{ diagnostico.alertas|length }}{% else %}0{% endif %}</strong></article>
+</section>
+
+{% for item in diagnostico.bloqueios %}<div class="notice notice-danger"><strong>{{ item.codigo }}</strong><span>{{ item.mensagem }}</span></div>{% endfor %}
+{% for item in diagnostico.alertas %}<div class="notice notice-warning"><strong>{{ item.codigo }}</strong><span>{{ item.mensagem }}</span></div>{% endfor %}
+
+<section class="panel table-panel"><div class="panel-title">Posição da competência</div><div class="metrics-grid">
+  <article class="metric"><span>Receita líquida DRE</span><strong>R$ {{ diagnostico.dre.totais.receita_liquida|floatformat:2 }}</strong></article>
+  <article class="metric"><span>CMV</span><strong>R$ {{ diagnostico.dre.totais.cmv|floatformat:2 }}</strong><small>{{ diagnostico.dre.reconciliacao_cmv.estado }}</small></article>
+  <article class="metric"><span>Estoque valorizado</span><strong>R$ {{ diagnostico.estoque.valor_total_custo|floatformat:2 }}</strong></article>
+  <article class="metric"><span>Resultado financeiro</span><strong>R$ {{ diagnostico.financeiro.resultado|floatformat:2 }}</strong></article>
+  <article class="metric"><span>Contas a pagar abertas</span><strong>{{ diagnostico.contas.PAGAR.quantidade_aberta }}</strong><small>R$ {{ diagnostico.contas.PAGAR.valor_aberto|floatformat:2 }}</small></article>
+  <article class="metric"><span>Contas a receber abertas</span><strong>{{ diagnostico.contas.RECEBER.quantidade_aberta }}</strong><small>R$ {{ diagnostico.contas.RECEBER.valor_aberto|floatformat:2 }}</small></article>
+  <article class="metric"><span>Recebíveis pendentes</span><strong>{{ diagnostico.recebiveis.pendentes }}</strong><small>{{ diagnostico.recebiveis.divergentes }} divergentes</small></article>
+  <article class="metric"><span>Conciliação</span><strong>{{ diagnostico.conciliacao.percentual }}%</strong><small>{{ diagnostico.conciliacao.pendentes }} pendentes</small></article>
+  <article class="metric"><span>Documentos fiscais</span><strong>{{ diagnostico.fiscal.quantidade }}</strong><small>Somente leitura</small></article>
+</div></section>
+
+{% if diagnostico.pronto %}{% if not estado or estado.status == 'ABERTA' %}
+<section class="panel"><div class="panel-title">Fechar competência</div><form method="post" action="{% url 'financeiro:fechar_competencia' %}" class="stacked-form">{% csrf_token %}<input type="hidden" name="empresa" value="{{ empresa.pk }}"><input type="hidden" name="competencia" value="{{ competencia_texto }}"><label><span>Confirmação explícita</span><input name="confirmacao" required placeholder="{{ confirmacao_fechamento }}"></label><label><span>Observação</span><textarea name="observacao"></textarea></label><button type="submit"><i class="fa-solid fa-lock"></i> Fechar competência</button></form></section>
+{% endif %}{% endif %}
+
+{% if estado.status == 'FECHADA' %}<section class="panel"><div class="panel-title">Reabrir competência</div><p class="muted">A reabertura não apaga o fechamento anterior. Um novo fechamento criará nova versão.</p><form method="post" action="{% url 'financeiro:reabrir_competencia' estado.pk %}" class="stacked-form">{% csrf_token %}<label><span>Motivo (mínimo 15 caracteres)</span><textarea name="motivo" minlength="15" required></textarea></label><label><span>Confirmação explícita</span><input name="confirmacao" required placeholder="{{ confirmacao_reabertura }}"></label><button type="submit" class="danger-button"><i class="fa-solid fa-lock-open"></i> Reabrir competência</button></form></section>{% endif %}
+
+<section class="panel table-panel"><div class="panel-title">Versões preservadas</div><div class="table-wrap"><table><thead><tr><th>Versão</th><th>Fechado em</th><th>Responsável</th><th>SHA-256</th><th>Ressalvas</th></tr></thead><tbody>{% for item in snapshots %}<tr><td>v{{ item.versao }}</td><td>{{ item.fechado_em|date:'d/m/Y H:i' }}</td><td>{{ item.fechado_por.get_username }}</td><td><code>{{ item.conteudo_sha256 }}</code></td><td>{% if item.com_ressalvas %}Sim{% else %}Não{% endif %}</td></tr>{% empty %}<tr><td colspan="5" class="empty">Nenhum snapshot criado.</td></tr>{% endfor %}</tbody></table></div></section>
+
+<section class="panel table-panel"><div class="panel-title">Eventos</div><div class="table-wrap"><table><thead><tr><th>Data</th><th>Evento</th><th>Usuário</th><th>Versão</th><th>Motivo</th></tr></thead><tbody>{% for item in eventos %}<tr><td>{{ item.ocorrido_em|date:'d/m/Y H:i' }}</td><td>{{ item.get_tipo_display }}</td><td>{{ item.usuario.get_username }}</td><td>{% if item.snapshot %}v{{ item.snapshot.versao }}{% else %}-{% endif %}</td><td>{{ item.motivo|default:'-' }}</td></tr>{% empty %}<tr><td colspan="5" class="empty">Nenhum evento registrado.</td></tr>{% endfor %}</tbody></table></div></section>
+{% endblock %}

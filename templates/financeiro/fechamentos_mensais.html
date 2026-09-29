@@ -1,0 +1,33 @@
+{% extends "base.html" %}
+
+{% block title %}Fechamentos mensais{% endblock %}
+
+{% block content %}
+<header class="page-header">
+  <div>
+    <h1>Fechamentos mensais</h1>
+    <p>Competências financeiro-contábeis gerenciais por empresa, com snapshots versionados e auditáveis.</p>
+  </div>
+</header>
+
+<form method="get" action="{% url 'financeiro:fechamento_mensal_detalhe' %}" class="toolbar report-filter">
+  <label><span>Empresa</span><select name="empresa" required class="select2-field">{% for empresa in empresas %}<option value="{{ empresa.pk }}">{{ empresa.nome_fantasia }}</option>{% endfor %}</select></label>
+  <label><span>Competência</span><input type="month" name="competencia" required></label>
+  <button type="submit"><i class="fa-solid fa-magnifying-glass"></i> Diagnosticar</button>
+</form>
+
+<section class="panel table-panel">
+  <div class="panel-title">Histórico de competências</div>
+  <div class="table-wrap"><table>
+    <thead><tr><th>Empresa</th><th>Competência</th><th>Status</th><th>Versão vigente</th><th>Fechado por</th><th>Data</th><th>Ressalvas</th><th></th></tr></thead>
+    <tbody>{% for item in competencias %}<tr>
+      <td>{{ item.empresa.nome_fantasia }}</td><td>{{ item.competencia|date:'m/Y' }}</td><td><strong>{{ item.get_status_display }}</strong></td>
+      <td>{% if item.fechamento_vigente %}v{{ item.fechamento_vigente.versao }}{% else %}-{% endif %}</td>
+      <td>{% if item.fechamento_vigente %}{{ item.fechamento_vigente.fechado_por.get_username }}{% else %}-{% endif %}</td>
+      <td>{% if item.fechamento_vigente %}{{ item.fechamento_vigente.fechado_em|date:'d/m/Y H:i' }}{% else %}-{% endif %}</td>
+      <td>{% if item.fechamento_vigente.com_ressalvas %}Sim{% else %}Não{% endif %}</td>
+      <td><a class="secondary-button" href="{% url 'financeiro:fechamento_mensal_detalhe' %}?empresa={{ item.empresa_id }}&amp;competencia={{ item.competencia|date:'Y-m' }}">Abrir</a></td>
+    </tr>{% empty %}<tr><td colspan="8" class="empty">Nenhuma competência formal registrada.</td></tr>{% endfor %}</tbody>
+  </table></div>
+</section>
+{% endblock %}

@@ -20,7 +20,7 @@ from django.shortcuts import get_object_or_404, redirect, render
 from django.utils import timezone
 from django.utils.dateparse import parse_date
 from django.utils.http import url_has_allowed_host_and_scheme
-from django.views.decorators.http import require_GET
+from django.views.decorators.http import require_GET, require_POST
 
 from apps.accounts.models import PerfilUsuario, TipoPerfil
 from apps.accounts.permissions import ADMINISTRACAO, CONTABILIDADE, RELATORIOS, SISTEMA, has_role, role_required
@@ -42,11 +42,18 @@ from apps.vendas.models import PagamentoVenda, StatusVenda
 
 from .forms import AlocacaoRecebivelForm, AmostraContabilForm, BaixaContaForm, CategoriaFinanceiraForm, CentroCustoForm, ContratoIntegracaoContabilForm, ContaContabilForm, ContaFinanceiraForm, ContaMovimentoFinanceiroForm, ImportacaoExtratoFinanceiroForm, RegraLiquidacaoEletronicaForm, TransferenciaFinanceiraForm
 from .adapters import carregar_adaptador_contabil, diagnosticar_adaptador_contabil, normalizar_retorno_exportacao
-from .models import AceiteAmostraContabil, CategoriaFinanceira, CentroCusto, ContaContabil, ConciliacaoLancamentoFinanceiro, ContaFinanceira, ContaMovimentoFinanceiro, ChaveIntegracaoContabil, ContratoIntegracaoContabil, ExportacaoContabil, ImportacaoExtratoFinanceiro, ItemExtratoFinanceiro, LancamentoFinanceiro, RecebivelEletronico, RegraLiquidacaoEletronica, StatusContaFinanceira, StatusContratoIntegracaoContabil, StatusExportacaoContabil, StatusItemExtratoFinanceiro, StatusRecebivelEletronico, TipoContaFinanceira, TipoLancamentoFinanceiro, TransferenciaFinanceira
+from .models import AceiteAmostraContabil, CategoriaFinanceira, CentroCusto, CompetenciaFinanceiroContabil, ContaContabil, ConciliacaoLancamentoFinanceiro, ContaFinanceira, ContaMovimentoFinanceiro, ChaveIntegracaoContabil, ContratoIntegracaoContabil, ExportacaoContabil, ImportacaoExtratoFinanceiro, ItemExtratoFinanceiro, LancamentoFinanceiro, RecebivelEletronico, RegraLiquidacaoEletronica, StatusCompetenciaFinanceiroContabil, StatusContaFinanceira, StatusContratoIntegracaoContabil, StatusExportacaoContabil, StatusItemExtratoFinanceiro, StatusRecebivelEletronico, TipoContaFinanceira, TipoLancamentoFinanceiro, TransferenciaFinanceira
 from .services import baixar_conta, cancelar_conta, conciliar_lancamento, estornar_lancamento, realizar_transferencia
 from .services_conciliacao import conciliar_item_extrato, importar_extrato
 from .services_recebiveis import candidatos_recebivel_item, conciliar_recebivel_com_item, sincronizar_recebiveis
 from .services_dre import calcular_dre_gerencial, serializar_dre_json
+from .services_fechamento_mensal import (
+    diagnosticar_fechamento_mensal,
+    fechar_competencia,
+    obter_dre_competencia,
+    reabrir_competencia,
+    validar_hash_snapshot,
+)
 from .reconciliacao_contabil import gerar_reconciliacao_operacional
 from .contrato_contabil import registrar_contrato_contabil, resumo_contrato_contabil
 from .amostra_contabil import registrar_aceite_amostra, validar_amostra_contabil
@@ -102,6 +109,8 @@ def _escopo_dre(request):
             else:
                 empresa_id = empresas.values_list("pk", flat=True).first()
         filiais = filiais.filter(empresa_id=empresa_id)
+    elif not empresa_id:
+        empresa_id = filiais.values_list("empresa_id", flat=True).first()
     filial_ids = [filial_id] if filial_id else list(filiais.values_list("pk", flat=True))
     return filiais, filial_id, permite_consolidado, empresa_id, empresas, filial_ids
 
@@ -867,8 +876,12 @@ def resultado_financeiro(request):
 def dre_gerencial(request):
     data_inicio, data_fim = _periodo_from_request(request)
     filiais, filial_id, permite_consolidado, empresa_id, empresas, filial_ids = _escopo_dre(request)
-    resultado = calcular_dre_gerencial(
-        data_inicio=data_inicio, data_fim=data_fim, filial_ids=filial_ids
+    empresa = get_object_or_404(Empresa, pk=empresa_id)
+    resultado, fechamento = obter_dre_competencia(
+        empresa=empresa,
+        data_inicio=data_inicio,
+        data_fim=data_fim,
+        filial_ids=filial_ids,
     )
     return render(
         request,
@@ -882,6 +895,7 @@ def dre_gerencial(request):
             "empresa_id": empresa_id,
             "empresas": empresas,
             "dre": resultado,
+            "fechamento": fechamento,
         },
     )
 
@@ -891,11 +905,16 @@ def dre_gerencial(request):
 @require_GET
 def dre_gerencial_json(request):
     data_inicio, data_fim = _periodo_from_request(request)
-    _filiais, _filial_id, _permite, _empresa_id, _empresas, filial_ids = _escopo_dre(request)
-    resultado = calcular_dre_gerencial(
-        data_inicio=data_inicio, data_fim=data_fim, filial_ids=filial_ids
+    _filiais, _filial_id, _permite, empresa_id, _empresas, filial_ids = _escopo_dre(request)
+    resultado, fechamento = obter_dre_competencia(
+        empresa=get_object_or_404(Empresa, pk=empresa_id),
+        data_inicio=data_inicio,
+        data_fim=data_fim,
+        filial_ids=filial_ids,
     )
-    return JsonResponse(serializar_dre_json(resultado))
+    payload = serializar_dre_json(resultado)
+    payload["fechamento"] = serializar_dre_json(fechamento)
+    return JsonResponse(payload)
 
 
 @login_required
@@ -903,9 +922,12 @@ def dre_gerencial_json(request):
 @require_GET
 def dre_gerencial_csv(request):
     data_inicio, data_fim = _periodo_from_request(request)
-    _filiais, _filial_id, _permite, _empresa_id, _empresas, filial_ids = _escopo_dre(request)
-    resultado = calcular_dre_gerencial(
-        data_inicio=data_inicio, data_fim=data_fim, filial_ids=filial_ids
+    _filiais, _filial_id, _permite, empresa_id, _empresas, filial_ids = _escopo_dre(request)
+    resultado, fechamento = obter_dre_competencia(
+        empresa=get_object_or_404(Empresa, pk=empresa_id),
+        data_inicio=data_inicio,
+        data_fim=data_fim,
+        filial_ids=filial_ids,
     )
     response = HttpResponse(content_type="text/csv; charset=utf-8")
     response["Content-Disposition"] = f'attachment; filename="dre_gerencial_{data_inicio}_{data_fim}.csv"'
@@ -913,6 +935,10 @@ def dre_gerencial_csv(request):
     writer = csv.writer(response, delimiter=";")
     writer.writerow(["Contrato", resultado["contrato"]])
     writer.writerow(["Período", f"{data_inicio:%d/%m/%Y} a {data_fim:%d/%m/%Y}"])
+    if fechamento["fonte"] == "SNAPSHOT_FECHADO":
+        writer.writerow(["Competência fechada", "Sim"])
+        writer.writerow(["Versão", fechamento["versao"]])
+        writer.writerow(["SHA-256", fechamento["hash"]])
     writer.writerow([])
     writer.writerow(["Linha", "Natureza", "Valor", "Cobertura", "Observação"])
     for linha in resultado["linhas"]:
@@ -1189,7 +1215,7 @@ def _csv_excel_bytes(cabecalho, linhas):
 
 def _pacote_contabil_zip(competencia, data_inicio, data_fim, filiais, filial_id, empresa_id):
     resultado = _resultado_financeiro_periodo(data_inicio, data_fim, filial_id, empresa_id)
-    filiais_pacote = filiais.filter(pk=filial_id) if filial_id else filiais
+    filiais_pacote = (filiais.filter(pk=filial_id) if filial_id else filiais).filter(is_active=True)
     payload = _payload_pacote_contabil(data_inicio, data_fim, filiais_pacote, filial_id, empresa_id, resultado)
     documentos_saida = _documentos_saida_competencia(filiais_pacote, data_inicio, data_fim)
     documentos_entrada = _documentos_entrada_competencia(
@@ -1230,6 +1256,22 @@ def _pacote_contabil_zip(competencia, data_inicio, data_fim, filiais, filial_id,
     qualidade_inventario = contrato_inventario["qualidade_temporal"]
     arquivos = OrderedDict()
 
+    fechamento_snapshot = None
+    if not filial_id and empresa:
+        estado_fechado = CompetenciaFinanceiroContabil.objects.filter(
+            empresa=empresa,
+            competencia=data_inicio,
+            status=StatusCompetenciaFinanceiroContabil.FECHADA,
+            fechamento_vigente__isnull=False,
+        ).select_related("fechamento_vigente", "fechamento_vigente__fechado_por").first()
+        if estado_fechado:
+            ids_pacote = set(filiais_pacote.filter(is_active=True).values_list("pk", flat=True))
+            ids_snapshot = {item["id"] for item in estado_fechado.fechamento_vigente.filiais_snapshot}
+            if ids_pacote == ids_snapshot:
+                fechamento_snapshot = estado_fechado.fechamento_vigente
+                if not validar_hash_snapshot(fechamento_snapshot):
+                    raise ValidationError("O hash do fechamento mensal vigente é inválido.")
+
     def adicionar_texto(nome, conteudo):
         arquivos[nome] = conteudo.encode("utf-8") if isinstance(conteudo, str) else conteudo
 
@@ -1245,6 +1287,26 @@ def _pacote_contabil_zip(competencia, data_inicio, data_fim, filiais, filial_id,
         "financeiro/pacote-gerencial.json",
         json.dumps(payload, cls=DjangoJSONEncoder, ensure_ascii=False, indent=2),
     )
+    if fechamento_snapshot:
+        fechamento_payload = {
+            "contrato": "financial_monthly_close_v1",
+            "competencia": fechamento_snapshot.competencia.competencia.isoformat(),
+            "versao": fechamento_snapshot.versao,
+            "sha256": fechamento_snapshot.conteudo_sha256,
+            "fechado_por": fechamento_snapshot.fechado_por.get_username(),
+            "fechado_em": fechamento_snapshot.fechado_em.isoformat(),
+            "com_ressalvas": fechamento_snapshot.com_ressalvas,
+            "fechamentos_estoque": fechamento_snapshot.inventario_snapshot.get("fechamentos", []),
+            "dre_snapshot": fechamento_snapshot.dre_snapshot,
+        }
+        adicionar_texto(
+            "financeiro/fechamento-mensal.json",
+            json.dumps(fechamento_payload, ensure_ascii=False, indent=2),
+        )
+        adicionar_texto(
+            "financeiro/dre-gerencial-v2.json",
+            json.dumps(fechamento_snapshot.dre_snapshot, ensure_ascii=False, indent=2),
+        )
     arquivos["financeiro/lancamentos.csv"] = _csv_excel_bytes(
         ["Data", "Filial", "Tipo", "Origem", "Descrição", "Valor", "Conta contábil", "Centro de custo"],
         [
@@ -1539,6 +1601,16 @@ def _pacote_contabil_zip(competencia, data_inicio, data_fim, filiais, filial_id,
         "empresa": payload["empresa"],
         "filial": payload["filial"],
         "contrato_integracao_contabil": resumo_contrato_contabil(empresa),
+        "fechamento_mensal": (
+            {
+                "fechado": True,
+                "versao": fechamento_snapshot.versao,
+                "sha256": fechamento_snapshot.conteudo_sha256,
+                "com_ressalvas": fechamento_snapshot.com_ressalvas,
+            }
+            if fechamento_snapshot
+            else False
+        ),
         "criterio_competencia_fiscal": "dhEmi/dEmi do XML; fallback xml_gerado_em e criado_em explicitado nos CSVs",
         "contagens": {
             "documentos_saida": len(documentos_saida),
@@ -1626,6 +1698,119 @@ def portal_contabilidade(request):
             ).order_by("-registrado_em").first(),
         },
     )
+
+
+def _empresas_fechamento_permitidas(request):
+    filiais, _filial_id, _permite, _empresa_id = _escopo_filiais_financeiro(request)
+    return Empresa.objects.filter(filiais__in=filiais).distinct().order_by("nome_fantasia")
+
+
+@login_required
+@role_required(*CONTABILIDADE)
+def fechamentos_mensais(request):
+    empresas = _empresas_fechamento_permitidas(request)
+    competencias = CompetenciaFinanceiroContabil.objects.filter(
+        empresa__in=empresas
+    ).select_related("empresa", "fechamento_vigente", "fechamento_vigente__fechado_por")
+    return render(
+        request,
+        "financeiro/fechamentos_mensais.html",
+        {"empresas": empresas, "competencias": competencias},
+    )
+
+
+@login_required
+@role_required(*CONTABILIDADE)
+def fechamento_mensal_detalhe(request):
+    empresas = _empresas_fechamento_permitidas(request)
+    empresa = get_object_or_404(empresas, pk=request.GET.get("empresa"))
+    competencia_texto = (request.GET.get("competencia") or "").strip()
+    try:
+        ano, mes = (int(parte) for parte in competencia_texto.split("-", 1))
+        competencia_data = date(ano, mes, 1)
+    except (TypeError, ValueError):
+        raise ValidationError("Competência inválida. Informe AAAA-MM.")
+    estado = CompetenciaFinanceiroContabil.objects.filter(
+        empresa=empresa, competencia=competencia_data
+    ).select_related("fechamento_vigente", "fechamento_vigente__fechado_por").first()
+    diagnostico = diagnosticar_fechamento_mensal(empresa, competencia_data)
+    if estado and estado.status == StatusCompetenciaFinanceiroContabil.FECHADA and estado.fechamento_vigente:
+        vigente = estado.fechamento_vigente
+        diagnostico.update(
+            {
+                "dre": vigente.dre_snapshot,
+                "cmv": vigente.dre_snapshot.get("cmv", {}),
+                "estoque": vigente.inventario_snapshot,
+                "financeiro": vigente.financeiro_snapshot,
+                "contas": vigente.contas_snapshot,
+                "recebiveis": vigente.recebiveis_snapshot,
+                "conciliacao": vigente.financeiro_snapshot.get("conciliacao", {}),
+                "fiscal": vigente.fiscal_snapshot,
+                "alertas": vigente.diagnostico_snapshot.get("alertas", []),
+                "com_ressalvas": vigente.com_ressalvas,
+            }
+        )
+    snapshots = estado.snapshots.select_related("fechado_por") if estado else []
+    eventos = estado.eventos.select_related("usuario", "snapshot") if estado else []
+    return render(
+        request,
+        "financeiro/fechamento_mensal_detalhe.html",
+        {
+            "empresa": empresa,
+            "competencia_texto": competencia_texto,
+            "estado": estado,
+            "diagnostico": diagnostico,
+            "snapshots": snapshots,
+            "eventos": eventos,
+            "confirmacao_fechamento": f"Confirmo o fechamento da competência {competencia_data:%m/%Y}",
+            "confirmacao_reabertura": f"Confirmo a reabertura da competência {competencia_data:%m/%Y}",
+        },
+    )
+
+
+@login_required
+@role_required(*CONTABILIDADE)
+@require_POST
+def fechar_competencia_view(request):
+    empresa = get_object_or_404(_empresas_fechamento_permitidas(request), pk=request.POST.get("empresa"))
+    competencia = (request.POST.get("competencia") or "").strip()
+    try:
+        fechar_competencia(
+            empresa=empresa,
+            competencia=competencia,
+            usuario=request.user,
+            confirmacao=request.POST.get("confirmacao"),
+            observacao=request.POST.get("observacao"),
+            ip=request.META.get("REMOTE_ADDR") or None,
+        )
+    except ValidationError as exc:
+        messages.error(request, " ".join(exc.messages))
+    else:
+        messages.success(request, "Competência fechada e snapshot imutável criado.")
+    return redirect(f"/financeiro/fechamentos/detalhe/?empresa={empresa.pk}&competencia={competencia}")
+
+
+@login_required
+@role_required(*CONTABILIDADE)
+@require_POST
+def reabrir_competencia_view(request, pk):
+    estado = get_object_or_404(
+        CompetenciaFinanceiroContabil.objects.filter(empresa__in=_empresas_fechamento_permitidas(request)),
+        pk=pk,
+    )
+    try:
+        reabrir_competencia(
+            competencia=estado,
+            usuario=request.user,
+            motivo=request.POST.get("motivo"),
+            confirmacao=request.POST.get("confirmacao"),
+            ip=request.META.get("REMOTE_ADDR") or None,
+        )
+    except ValidationError as exc:
+        messages.error(request, " ".join(exc.messages))
+    else:
+        messages.success(request, "Competência reaberta. Os snapshots anteriores permanecem preservados.")
+    return redirect(f"/financeiro/fechamentos/detalhe/?empresa={estado.empresa_id}&competencia={estado.competencia:%Y-%m}")
 
 
 @login_required

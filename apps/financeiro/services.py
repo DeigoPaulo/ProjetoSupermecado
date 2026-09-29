@@ -5,6 +5,7 @@ from django.utils import timezone
 from apps.auditoria.models import LogAuditoria
 
 from .models import ConciliacaoLancamentoFinanceiro, ContaFinanceira, ContaMovimentoFinanceiro, LancamentoFinanceiro, StatusContaFinanceira, TipoContaFinanceira, TipoContaMovimento, TipoLancamentoFinanceiro, TransferenciaFinanceira
+from .services_fechamento_mensal import validar_competencia_aberta
 
 
 def _publicar_lancamento_sincronizacao(lancamento):
@@ -54,6 +55,11 @@ def _publicar_lancamento_sincronizacao(lancamento):
 
 
 def registrar_lancamento(*, conta, tipo, descricao, valor, data, usuario, origem, conta_financeira=None, centro_custo=None, conta_contabil=None, transferencia=None, estorno_de=None, pagamento_venda=None, sangria=None, suprimento=None):
+    validar_competencia_aberta(
+        filial=conta.filial,
+        data_operacao=data,
+        operacao="alteração financeira",
+    )
     if centro_custo is None and conta_financeira is not None:
         centro_custo = conta_financeira.centro_custo
     if conta_contabil is None and conta_financeira is not None and conta_financeira.categoria_id:
@@ -109,6 +115,12 @@ def realizar_transferencia(*, conta_origem, conta_destino, valor, data, usuario,
         raise ValidationError("A transferencia exige contas ativas.")
     if origem.filial.empresa_id != destino.filial.empresa_id:
         raise ValidationError("Transferências entre empresas diferentes não são permitidas.")
+    data_transferencia = data or timezone.localdate()
+    validar_competencia_aberta(
+        filial=origem.filial,
+        data_operacao=data_transferencia,
+        operacao="transferência financeira",
+    )
     if valor <= 0:
         raise ValidationError("Valor da transferencia deve ser maior que zero.")
     if origem.saldo_atual < valor:
@@ -118,7 +130,7 @@ def realizar_transferencia(*, conta_origem, conta_destino, valor, data, usuario,
         conta_origem=origem,
         conta_destino=destino,
         valor=valor,
-        data=data or timezone.localdate(),
+        data=data_transferencia,
         descricao=descricao,
         usuario=usuario,
     )
@@ -201,8 +213,14 @@ def baixar_conta(*, conta, usuario, data_pagamento, valor_pago, forma_pagamento=
         )
     if conta_movimento and conta_movimento.filial_id != conta.filial_id:
         raise ValidationError("A conta de movimento deve pertencer a mesma filial da conta financeira.")
+    data_baixa = data_pagamento or timezone.localdate()
+    validar_competencia_aberta(
+        filial=conta.filial,
+        data_operacao=data_baixa,
+        operacao="baixa financeira",
+    )
     conta.status = StatusContaFinanceira.PAGA
-    conta.data_pagamento = data_pagamento or timezone.localdate()
+    conta.data_pagamento = data_baixa
     conta.valor_pago = valor_pago
     conta.forma_pagamento = forma_pagamento
     conta.conta_movimento = conta_movimento

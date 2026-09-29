@@ -1,6 +1,6 @@
 from django.contrib import admin
 
-from .models import AceiteAmostraContabil, CategoriaFinanceira, CentroCusto, ContratoIntegracaoContabil, ContaContabil, ContaFinanceira, ContaMovimentoFinanceiro, LancamentoFinanceiro, TransferenciaFinanceira
+from .models import AceiteAmostraContabil, CategoriaFinanceira, CentroCusto, CompetenciaFinanceiroContabil, ContratoIntegracaoContabil, ContaContabil, ContaFinanceira, ContaMovimentoFinanceiro, EventoCompetenciaFinanceiroContabil, FechamentoMensalSnapshot, LancamentoFinanceiro, TransferenciaFinanceira
 
 
 @admin.register(ContaContabil)
@@ -107,6 +107,45 @@ class AceiteAmostraContabilAdmin(admin.ModelAdmin):
 
     def has_change_permission(self, request, obj=None):
         return bool(request.user.is_superuser)
+
+    def has_delete_permission(self, request, obj=None):
+        return False
+
+
+@admin.register(CompetenciaFinanceiroContabil)
+class CompetenciaFinanceiroContabilAdmin(admin.ModelAdmin):
+    list_display = ("competencia", "empresa", "status", "fechamento_vigente", "atualizado_em")
+    list_filter = ("status", "empresa")
+    readonly_fields = ("empresa", "competencia", "status", "fechamento_vigente", "criado_em", "atualizado_em")
+
+    def has_add_permission(self, request):
+        return False
+
+    def has_delete_permission(self, request, obj=None):
+        return False
+
+
+@admin.register(FechamentoMensalSnapshot)
+class FechamentoMensalSnapshotAdmin(admin.ModelAdmin):
+    list_display = ("competencia", "versao", "fechado_por", "fechado_em", "com_ressalvas")
+    list_filter = ("com_ressalvas", "competencia__empresa")
+    readonly_fields = tuple(field.name for field in FechamentoMensalSnapshot._meta.fields)
+
+    def has_add_permission(self, request):
+        return False
+
+    def has_delete_permission(self, request, obj=None):
+        return False
+
+
+@admin.register(EventoCompetenciaFinanceiroContabil)
+class EventoCompetenciaFinanceiroContabilAdmin(admin.ModelAdmin):
+    list_display = ("competencia", "tipo", "snapshot", "usuario", "ocorrido_em")
+    list_filter = ("tipo", "competencia__empresa")
+    readonly_fields = tuple(field.name for field in EventoCompetenciaFinanceiroContabil._meta.fields)
+
+    def has_add_permission(self, request):
+        return False
 
     def has_delete_permission(self, request, obj=None):
         return False
