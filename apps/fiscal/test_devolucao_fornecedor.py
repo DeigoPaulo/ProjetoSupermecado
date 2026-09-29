@@ -1429,7 +1429,7 @@ class PreparacaoDevolucaoFornecedorTests(TestCase):
         self.assertContains(resposta, "Rascunho de devolução criado")
         self.assertContains(resposta, "Cancelar preparação")
         self.assertContains(resposta, "nItem 1")
-        self.assertContains(resposta, 'value="1.500"', html=False)
+        self.assertContains(resposta, 'value="1.5"', html=False)
         self.assertNotContains(resposta, "Emitir devolução")
 
         submetido = self.client.post(

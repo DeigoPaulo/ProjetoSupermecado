@@ -100,9 +100,11 @@ class AuditoriaImportacoesCatalogoTesteTests(SimpleTestCase):
     def test_git_archive_exclui_catalogo_e_arquivos_de_teste(self):
         with TemporaryDirectory() as temporario:
             arquivo_zip = Path(temporario) / "apps-producao.zip"
+            raiz_repositorio = Path(settings.BASE_DIR).resolve().as_posix()
             subprocess.run(
                 [
-                    "git", "archive", "--format=zip", f"--output={arquivo_zip}",
+                    "git", "-c", f"safe.directory={raiz_repositorio}",
+                    "archive", "--format=zip", f"--output={arquivo_zip}",
                     "HEAD", "--", "apps",
                 ],
                 cwd=settings.BASE_DIR,
