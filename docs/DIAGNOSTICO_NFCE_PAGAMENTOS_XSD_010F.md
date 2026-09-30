@@ -22,6 +22,22 @@ O conversor Focus recebe esse mesmo XML e produz o JSON sem chamar a API. O cana
 direto monta o envelope SOAP localmente, sem transporte. As projeções por parcela
 são comparadas ao XML original, e o diagnóstico devolve apenas hashes e estados.
 
+## Catálogo tPag e validação antecipada
+
+No pacote `PL_010f_v1.04`, o campo `YA02/tPag` de
+`leiauteNFe_v4.00.xsd` possui a restrição estrutural `[0-9]{2}`, sem enumeração.
+O catálogo semântico oficial está no `MOC 7.0 - Anexo I`, página 62, também
+preservado neste diretório de evidências. Ele relaciona os códigos `01`, `02`,
+`03`, `04`, `05`, `10`, `11`, `12`, `13`, `15`, `16`, `17`, `18`, `19`, `90`
+e `99`.
+
+O ERP mantém esse catálogo em uma única fonte em `apps/fiscal/pagamentos.py`.
+Código manual desconhecido é bloqueado no cadastro e novamente na geração e no
+preflight, antes da validação XSD. Campo vazio continua usando o mapeamento
+automático da forma. O código `99` exige `xPag` por filial, e qualquer outro
+código proíbe essa descrição. Essa antecipação não substitui a validação do XML
+final contra o pacote XSD arquivado.
+
 | Verificação offline | Resultado no cenário sintético |
 | --- | --- |
 | XML completo assinado × XSD 010f arquivado | Conforme |

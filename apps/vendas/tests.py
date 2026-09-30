@@ -253,6 +253,11 @@ class VendaServiceTests(TestCase):
         with self.assertRaisesMessage(ValidationError, "xPag só pode"):
             configuracao.full_clean()
 
+        configuracao.codigo_fiscal_tpag = "98"
+        configuracao.descricao_fiscal_xpag = ""
+        with self.assertRaisesMessage(ValidationError, "não é reconhecido"):
+            configuracao.full_clean()
+
     def test_calcular_item_quantiza_venda_fracionada_uma_vez_em_centavos(self):
         for quantidade, preco, esperado in (
             ("0.155", "14.99", "2.32"),

@@ -5,6 +5,8 @@ from django.core.exceptions import ValidationError
 from django.db import models
 from django.utils import timezone
 
+from apps.fiscal.pagamentos import validar_configuracao_tpag
+
 
 class StatusVenda(models.TextChoices):
     ABERTA = "ABERTA", "Aberta"
@@ -117,16 +119,10 @@ class FormaPagamentoFilial(models.Model):
 
     def clean(self):
         super().clean()
-        self.codigo_fiscal_tpag = (self.codigo_fiscal_tpag or "").strip()
-        self.descricao_fiscal_xpag = (self.descricao_fiscal_xpag or "").strip()
-        if self.codigo_fiscal_tpag and not (
-            len(self.codigo_fiscal_tpag) == 2 and self.codigo_fiscal_tpag.isdigit()
-        ):
-            raise ValidationError({"codigo_fiscal_tpag": "Informe o tPag com 2 dígitos."})
-        if self.codigo_fiscal_tpag == "99" and not self.descricao_fiscal_xpag:
-            raise ValidationError({"descricao_fiscal_xpag": "Informe xPag quando tPag for 99."})
-        if self.codigo_fiscal_tpag != "99" and self.descricao_fiscal_xpag:
-            raise ValidationError({"descricao_fiscal_xpag": "xPag só pode ser informado quando tPag for 99."})
+        self.codigo_fiscal_tpag, self.descricao_fiscal_xpag = validar_configuracao_tpag(
+            self.codigo_fiscal_tpag,
+            self.descricao_fiscal_xpag,
+        )
         if (
             self.conta_movimento_padrao_id
             and self.filial_id

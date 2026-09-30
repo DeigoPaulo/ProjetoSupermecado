@@ -370,9 +370,13 @@ XSD_NFE_MINIMO = """<?xml version="1.0" encoding="UTF-8"?>
 
 class CodigoPagamentoFiscalTests(TestCase):
     def test_vales_possuem_codigos_fiscais_proprios(self):
+        self.assertEqual(_codigo_pagamento("DINHEIRO"), "01")
+        self.assertEqual(_codigo_pagamento("CREDITO"), "03")
         self.assertEqual(_codigo_pagamento("VALE_ALIMENTACAO"), "10")
         self.assertEqual(_codigo_pagamento("VALE_REFEICAO"), "11")
         self.assertEqual(_codigo_pagamento("DEBITO"), "04")
+        self.assertEqual(_codigo_pagamento("CREDIARIO"), "05")
+        self.assertEqual(_codigo_pagamento("PIX"), "17")
 
 class FiscalTests(TestCase):
     def setUp(self):
@@ -2242,6 +2246,27 @@ class FiscalTests(TestCase):
 
         self.assertIn("<tPag>99</tPag><xPag>Dinheiro piloto</xPag><vPag>100.00</vPag>", documento.xml_conteudo)
         self.assertIn("<vTroco>17.30</vTroco>", documento.xml_conteudo)
+
+    def test_preparacao_bloqueia_tpag_invalido_persistido_sem_full_clean(self):
+        pagamento = self.venda.pagamentos.select_related("forma_pagamento").get()
+        FormaPagamentoFilial.objects.create(
+            filial=self.filial,
+            forma_pagamento=pagamento.forma_pagamento,
+            codigo_fiscal_tpag="98",
+        )
+
+        with self.assertRaisesMessage(ValidationError, "não é reconhecido"):
+            preparar_documento_venda(self.venda, self.user)
+        self.assertFalse(self.venda.documentos_fiscais.exists())
+
+    def test_preflight_bloqueia_tpag_desconhecido_antes_do_xsd(self):
+        documento = preparar_documento_venda(self.venda, self.user)
+        documento.xml_conteudo = documento.xml_conteudo.replace(
+            "<tPag>01</tPag>", "<tPag>98</tPag>", 1,
+        )
+
+        with self.assertRaisesMessage(ValidationError, "não é reconhecido"):
+            validar_xml_pre_transmissao(documento, FakeSefazAdapter())
 
     def test_preparacao_bloqueia_csosn_ainda_nao_suportado(self):
         self.configuracao.crt = CodigoRegimeTributario.SIMPLES_NACIONAL

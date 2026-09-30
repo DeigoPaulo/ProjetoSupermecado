@@ -2724,6 +2724,32 @@ class EscopoFormasPagamentoFilialTests(TestCase):
             ).conta_movimento_padrao
         )
 
+    def test_form_bloqueia_tpag_desconhecido_e_exibe_orientacao(self):
+        self.client.force_login(self.admin)
+        formulario = self.client.get(
+            f"/configuracoes/formas-pagamento/{self.pix.pk}/editar/"
+            f"?filial={self.filial.pk}"
+        )
+        self.assertContains(formulario, "padrão automático")
+        self.assertContains(formulario, "leiaute fiscal vigente")
+
+        resposta = self.client.post(
+            f"/configuracoes/formas-pagamento/{self.pix.pk}/editar/",
+            {
+                "filial": self.filial.pk,
+                "codigo_fiscal_tpag": "98",
+                "ativo": "on",
+            },
+        )
+
+        self.assertEqual(resposta.status_code, 200)
+        self.assertContains(resposta, "não é reconhecido pelo leiaute fiscal vigente")
+        configuracao = FormaPagamentoFilial.objects.get(
+            filial=self.filial,
+            forma_pagamento=self.pix,
+        )
+        self.assertEqual(configuracao.codigo_fiscal_tpag, "")
+
     def test_gerente_nao_administra_formas_e_admin_nao_cria_catalogo(self):
         self.client.force_login(self.gerente)
         self.assertEqual(self.client.get("/configuracoes/formas-pagamento/").status_code, 403)

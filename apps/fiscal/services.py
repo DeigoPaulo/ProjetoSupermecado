@@ -38,6 +38,7 @@ from .chave_acesso import (
     normalizar_cnpj_emitente,
 )
 from .ncm import queryset_codigos_ncm_vigentes, validar_ncm
+from .pagamentos import validar_configuracao_tpag
 from .ibs_cbs.calculo import calcular_base_operacao_padrao, calcular_ibs_cbs_padrao
 from .ibs_cbs.catalogo import ClassificacaoIbsCbsInvalida, validar_classificacao
 from .ibs_cbs.contrato import emissao_ibs_cbs_obrigatoria
@@ -257,15 +258,14 @@ def _pagamento_fiscal_efetivo(pagamento, configuracoes):
     codigo = (getattr(configuracao, "codigo_fiscal_tpag", "") or "").strip()
     descricao = (getattr(configuracao, "descricao_fiscal_xpag", "") or "").strip()
     codigo = codigo or _codigo_pagamento(pagamento.forma_pagamento.tipo)
-    if codigo == "99" and not descricao:
+    try:
+        return validar_configuracao_tpag(codigo, descricao, permitir_vazio=False)
+    except ValidationError as exc:
+        mensagens = " ".join(exc.messages)
         raise ValidationError(
-            f"A forma {pagamento.forma_pagamento.nome} exige descrição xPag para o tPag 99."
-        )
-    if codigo != "99" and descricao:
-        raise ValidationError(
-            f"A forma {pagamento.forma_pagamento.nome} só pode usar xPag com tPag 99."
-        )
-    return codigo, descricao
+            f"Configuração fiscal inválida para a forma "
+            f"{pagamento.forma_pagamento.nome}: {mensagens}"
+        ) from exc
 
 
 def _valor_fiscal_pagamento(pagamento):
@@ -285,6 +285,12 @@ def validar_vinculos_pagamentos_xml(documento, inf_nfe):
     if documento.tipo_documento != TipoDocumentoFiscal.NFCE or not documento.venda_id:
         return
     parcelas_xml = inf_nfe.findall(f"{{{NFE_NS}}}pag/{{{NFE_NS}}}detPag")
+    for parcela_xml in parcelas_xml:
+        validar_configuracao_tpag(
+            parcela_xml.findtext(f"{{{NFE_NS}}}tPag"),
+            parcela_xml.findtext(f"{{{NFE_NS}}}xPag"),
+            permitir_vazio=False,
+        )
     pagamentos = list(documento.venda.pagamentos.select_related(
         "forma_pagamento", "confirmacao_integracao", "venda",
     ).order_by("pk"))

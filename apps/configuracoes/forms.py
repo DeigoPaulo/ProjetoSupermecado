@@ -327,6 +327,12 @@ class FormaPagamentoFilialForm(forms.ModelForm):
             "descricao_fiscal_xpag": "Descrição fiscal xPag",
             "ativo": "Disponível no PDV desta filial",
         }
+        help_texts = {
+            "codigo_fiscal_tpag": (
+                "Vazio usa o padrão automático da forma. Códigos manuais devem pertencer "
+                "ao leiaute fiscal vigente; o código 99 exige uma descrição xPag."
+            ),
+        }
 
     def __init__(self, *args, filiais_queryset=None, contas_queryset=None, **kwargs):
         super().__init__(*args, **kwargs)
@@ -342,14 +348,6 @@ class FormaPagamentoFilialForm(forms.ModelForm):
         conta = cleaned.get("conta_movimento_padrao")
         if filial and conta and conta.filial_id != filial.id:
             self.add_error("conta_movimento_padrao", "A conta deve pertencer à filial selecionada.")
-        codigo = (cleaned.get("codigo_fiscal_tpag") or "").strip()
-        descricao = (cleaned.get("descricao_fiscal_xpag") or "").strip()
-        if codigo and (len(codigo) != 2 or not codigo.isdigit()):
-            self.add_error("codigo_fiscal_tpag", "Informe o tPag com 2 dígitos.")
-        if codigo == "99" and not descricao:
-            self.add_error("descricao_fiscal_xpag", "Informe xPag quando tPag for 99.")
-        if codigo != "99" and descricao:
-            self.add_error("descricao_fiscal_xpag", "xPag só pode ser informado quando tPag for 99.")
         return cleaned
 
 class TerminalPdvForm(forms.ModelForm):
