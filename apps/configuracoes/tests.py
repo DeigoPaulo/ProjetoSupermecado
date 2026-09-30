@@ -2750,6 +2750,18 @@ class EscopoFormasPagamentoFilialTests(TestCase):
         )
         self.assertEqual(configuracao.codigo_fiscal_tpag, "")
 
+        resposta = self.client.post(
+            f"/configuracoes/formas-pagamento/{self.pix.pk}/editar/",
+            {
+                "filial": self.filial.pk,
+                "codigo_fiscal_tpag": "90",
+                "ativo": "on",
+            },
+        )
+        self.assertContains(resposta, "não é suportado no fluxo de venda normal")
+        configuracao.refresh_from_db()
+        self.assertEqual(configuracao.codigo_fiscal_tpag, "")
+
     def test_gerente_nao_administra_formas_e_admin_nao_cria_catalogo(self):
         self.client.force_login(self.gerente)
         self.assertEqual(self.client.get("/configuracoes/formas-pagamento/").status_code, 403)

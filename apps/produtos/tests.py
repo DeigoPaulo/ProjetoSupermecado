@@ -91,6 +91,26 @@ class ProdutoViewsTests(TestCase):
             ).exists()
         )
 
+    def test_importacao_csv_preserva_quatro_casas_na_reducao_icms(self):
+        conteudo = """codigo_barras;nome;categoria;preco_venda;cst_icms;reducao_base_icms
+7891234567890;Arroz;Mercearia;15,00;20;41,6667
+"""
+        arquivo = SimpleUploadedFile(
+            "produtos-reducao-icms.csv",
+            conteudo.encode("utf-8"),
+            content_type="text/csv",
+        )
+
+        response = self.client.post(
+            "/produtos/importar-csv/",
+            {"arquivo": arquivo, "atualizar_existentes": "on"},
+            follow=True,
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.produto.refresh_from_db()
+        self.assertEqual(self.produto.reducao_base_icms, Decimal("41.6667"))
+
     def test_importacao_csv_fiscal_preserva_dados_comerciais(self):
         conteudo = """codigo_barras;codigo_interno;nome;categoria;preco_venda;ncm;cst_icms;_modo_importacao
 7891234567890;ALTERADO;Nome alterado;Categoria indevida;999,99;10063022;40;fiscal
@@ -1245,6 +1265,29 @@ class ProdutoViewsTests(TestCase):
         self.assertEqual(payload["aliquota_cofins"], "7.6000")
         self.assertEqual(payload["codigo_enquadramento_ipi"], "999")
         self.assertEqual(payload["classificacao_tributaria_ibs_cbs"], "000001")
+
+    def test_formulario_aceita_reducao_icms_com_ponto_e_virgula(self):
+        for indice, reducao in enumerate(("41.6667", "41,6667"), start=1):
+            with self.subTest(reducao=reducao):
+                form = ProdutoForm(data={
+                    "codigo_barras": f"789123456701{indice}",
+                    "nome": f"Produto ICMS20 {indice}",
+                    "categoria": self.categoria.pk,
+                    "unidade": "UN",
+                    "preco_custo": "10.00",
+                    "preco_venda": "24.99",
+                    "estoque_minimo": "0",
+                    "origem_mercadoria": "0",
+                    "cst_icms": "20",
+                    "aliquota_icms": "12.00",
+                    "reducao_base_icms": reducao,
+                    "is_active": "on",
+                })
+                self.assertTrue(form.is_valid(), form.errors.as_text())
+                self.assertEqual(
+                    form.cleaned_data["reducao_base_icms"],
+                    Decimal("41.6667"),
+                )
 
     def test_tela_produto_orienta_beneficio_por_operacao_sem_expor_campo_legado(self):
         response = self.client.get(f"/produtos/{self.produto.pk}/editar/")

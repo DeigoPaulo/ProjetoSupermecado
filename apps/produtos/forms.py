@@ -113,6 +113,9 @@ class ProdutoForm(forms.ModelForm):
         self.fields["tipo_produto"].required = False
         self.fields["unidade_compra"].required = False
         self.fields["fator_conversao_compra"].required = False
+        self.fields["reducao_base_icms"].localize = True
+        self.fields["reducao_base_icms"].widget.is_localized = True
+        self.fields["reducao_base_icms"].widget.attrs["step"] = "0.0001"
 
     def clean_tipo_produto(self):
         return self.cleaned_data.get("tipo_produto") or "MERCADORIA"

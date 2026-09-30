@@ -11,9 +11,15 @@ from django.core.exceptions import ValidationError
 # O XSD limita tPag a [0-9]{2}; o catálogo semântico está no MOC 7.0
 # Anexo I, página 62, arquivado no mesmo diretório como moc_anexo_i.pdf.
 # Auditoria detalhada em docs/DIAGNOSTICO_NFCE_PAGAMENTOS_XSD_010F.md.
-TPAG_SUPORTADOS_LEIAUTE = frozenset({
+TPAG_CONHECIDOS_LEIAUTE = frozenset({
     "01", "02", "03", "04", "05", "10", "11", "12",
     "13", "15", "16", "17", "18", "19", "90", "99",
+})
+
+# Meios com contrato operacional implementado no fluxo comercial do ERP.
+# Códigos apenas documentados no MOC permanecem fail-closed até implementação.
+TPAG_SUPORTADOS_VENDA_NORMAL = frozenset({
+    "01", "03", "04", "05", "10", "11", "17", "99",
 })
 
 ERRO_TPAG_FORMATO = "Informe o tPag com 2 dígitos."
@@ -22,8 +28,8 @@ ERRO_TPAG_DESCONHECIDO = (
 )
 
 
-def validar_configuracao_tpag(codigo, descricao="", *, permitir_vazio=True):
-    """Normaliza e valida tPag/xPag contra o leiaute fiscal vigente."""
+def validar_tpag_leiaute(codigo, descricao="", *, permitir_vazio=True):
+    """Valida formato, catálogo documental e coerência entre tPag e xPag."""
     codigo = (codigo or "").strip()
     descricao = (descricao or "").strip()
     erros = {}
@@ -37,7 +43,7 @@ def validar_configuracao_tpag(codigo, descricao="", *, permitir_vazio=True):
             )
     elif not re.fullmatch(r"[0-9]{2}", codigo):
         erros["codigo_fiscal_tpag"] = ERRO_TPAG_FORMATO
-    elif codigo not in TPAG_SUPORTADOS_LEIAUTE:
+    elif codigo not in TPAG_CONHECIDOS_LEIAUTE:
         erros["codigo_fiscal_tpag"] = ERRO_TPAG_DESCONHECIDO
 
     if codigo == "99" and not descricao:
@@ -49,4 +55,21 @@ def validar_configuracao_tpag(codigo, descricao="", *, permitir_vazio=True):
 
     if erros:
         raise ValidationError(erros)
+    return codigo, descricao
+
+
+def validar_tpag_venda_normal(codigo, descricao="", *, permitir_vazio=True):
+    """Restringe tPag aos meios com contrato operacional de venda normal."""
+    codigo, descricao = validar_tpag_leiaute(
+        codigo,
+        descricao,
+        permitir_vazio=permitir_vazio,
+    )
+    if codigo and codigo not in TPAG_SUPORTADOS_VENDA_NORMAL:
+        raise ValidationError({
+            "codigo_fiscal_tpag": (
+                f"tPag {codigo} existe no leiaute fiscal, mas ainda não é "
+                "suportado no fluxo de venda normal."
+            ),
+        })
     return codigo, descricao

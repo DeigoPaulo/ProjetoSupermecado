@@ -38,7 +38,7 @@ from .chave_acesso import (
     normalizar_cnpj_emitente,
 )
 from .ncm import queryset_codigos_ncm_vigentes, validar_ncm
-from .pagamentos import validar_configuracao_tpag
+from .pagamentos import validar_tpag_venda_normal
 from .ibs_cbs.calculo import calcular_base_operacao_padrao, calcular_ibs_cbs_padrao
 from .ibs_cbs.catalogo import ClassificacaoIbsCbsInvalida, validar_classificacao
 from .ibs_cbs.contrato import emissao_ibs_cbs_obrigatoria
@@ -259,7 +259,7 @@ def _pagamento_fiscal_efetivo(pagamento, configuracoes):
     descricao = (getattr(configuracao, "descricao_fiscal_xpag", "") or "").strip()
     codigo = codigo or _codigo_pagamento(pagamento.forma_pagamento.tipo)
     try:
-        return validar_configuracao_tpag(codigo, descricao, permitir_vazio=False)
+        return validar_tpag_venda_normal(codigo, descricao, permitir_vazio=False)
     except ValidationError as exc:
         mensagens = " ".join(exc.messages)
         raise ValidationError(
@@ -286,7 +286,7 @@ def validar_vinculos_pagamentos_xml(documento, inf_nfe):
         return
     parcelas_xml = inf_nfe.findall(f"{{{NFE_NS}}}pag/{{{NFE_NS}}}detPag")
     for parcela_xml in parcelas_xml:
-        validar_configuracao_tpag(
+        validar_tpag_venda_normal(
             parcela_xml.findtext(f"{{{NFE_NS}}}tPag"),
             parcela_xml.findtext(f"{{{NFE_NS}}}xPag"),
             permitir_vazio=False,
@@ -638,7 +638,7 @@ def _icms_produto(imposto, produto, configuracao, valor_operacao):
     _texto(grupo, "CST", produto.cst_icms)
     _texto(grupo, "modBC", "3")
     if produto.cst_icms == "20":
-        _texto(grupo, "pRedBC", _valor(calculo["reducao"]))
+        _texto(grupo, "pRedBC", _valor(calculo["reducao"], casas=4))
     _texto(grupo, "vBC", _valor(calculo["base"]))
     _texto(grupo, "pICMS", _valor(calculo["aliquota"]))
     _texto(grupo, "vICMS", _valor(calculo["valor_icms"]))

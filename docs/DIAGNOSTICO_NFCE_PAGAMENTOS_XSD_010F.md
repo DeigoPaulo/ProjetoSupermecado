@@ -31,7 +31,14 @@ preservado neste diretório de evidências. Ele relaciona os códigos `01`, `02`
 `03`, `04`, `05`, `10`, `11`, `12`, `13`, `15`, `16`, `17`, `18`, `19`, `90`
 e `99`.
 
-O ERP mantém esse catálogo em uma única fonte em `apps/fiscal/pagamentos.py`.
+O ERP mantém esse catálogo documental em `TPAG_CONHECIDOS_LEIAUTE`, separado do
+contrato operacional `TPAG_SUPORTADOS_VENDA_NORMAL`, ambos em
+`apps/fiscal/pagamentos.py`. Venda normal aceita apenas `01`, `03`, `04`, `05`,
+`10`, `11`, `17` e `99`; códigos conhecidos sem implementação operacional ficam
+fail-closed. O `90` permanece conhecido como sem pagamento, mas é proibido em
+`FormaPagamentoFilial` e em parcelas positivas do PDV, sem afetar o contrato
+próprio de devolução/ajuste.
+
 Código manual desconhecido é bloqueado no cadastro e novamente na geração e no
 preflight, antes da validação XSD. Campo vazio continua usando o mapeamento
 automático da forma. O código `99` exige `xPag` por filial, e qualquer outro

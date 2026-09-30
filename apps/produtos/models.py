@@ -200,7 +200,7 @@ class Produto(models.Model):
     csosn = models.CharField("CSOSN", max_length=3, blank=True)
     aliquota_icms = models.DecimalField("Aliquota ICMS (%)", max_digits=5, decimal_places=2, null=True, blank=True)
     reducao_base_icms = models.DecimalField(
-        "Redução da base ICMS (%)", max_digits=5, decimal_places=2, null=True, blank=True,
+        "Redução da base ICMS (%)", max_digits=7, decimal_places=4, null=True, blank=True,
         validators=[MinValueValidator(0), MaxValueValidator(100)],
     )
     aliquota_fcp = models.DecimalField(

@@ -465,6 +465,26 @@ class FiscalTests(TestCase):
             situacao=SituacaoBeneficioFiscalICMS.SEM_BENEFICIO, atualizado_por=self.user,
         )
 
+    def _configurar_caso_icms20(self, valor_operacao):
+        valor_operacao = Decimal(valor_operacao)
+        self.produto.cst_icms = "20"
+        self.produto.aliquota_icms = Decimal("12.00")
+        self.produto.reducao_base_icms = Decimal("41.6667")
+        self.produto.preco_venda = valor_operacao
+        self.produto.save(update_fields=[
+            "cst_icms", "aliquota_icms", "reducao_base_icms", "preco_venda",
+        ])
+        item = self.venda.itens.get()
+        item.preco_unitario_venda = valor_operacao
+        item.total = valor_operacao
+        item.save(update_fields=["preco_unitario_venda", "total"])
+        self.venda.total_bruto = valor_operacao
+        self.venda.total_liquido = valor_operacao
+        self.venda.save(update_fields=["total_bruto", "total_liquido"])
+        pagamento = self.venda.pagamentos.get()
+        pagamento.valor = valor_operacao
+        pagamento.save(update_fields=["valor"])
+
     def _endereco_go_teste(self):
         self.filial.uf = "GO"
         self.filial.codigo_municipio_ibge = "5208707"
@@ -2107,10 +2127,30 @@ class FiscalTests(TestCase):
         self.assertIn("<modFrete>9</modFrete>", documento.xml_conteudo)
         self.assertIn("<cBenef>GO821019</cBenef>", documento.xml_conteudo)
         self.assertIn("<ICMS20>", documento.xml_conteudo)
-        self.assertIn("<pRedBC>10.00</pRedBC>", documento.xml_conteudo)
+        self.assertIn("<pRedBC>10.0000</pRedBC>", documento.xml_conteudo)
         self.assertIn("<vBC>74.43</vBC>", documento.xml_conteudo)
         self.assertIn("<vICMS>13.40</vICMS>", documento.xml_conteudo)
         self.assertIn("<vFCP>1.49</vFCP>", documento.xml_conteudo)
+
+    def test_icms20_preserva_reducao_real_de_quatro_casas_em_2499(self):
+        self._configurar_caso_icms20("24.99")
+
+        documento = preparar_documento_venda(self.venda, self.user)
+
+        self.assertIn("<pRedBC>41.6667</pRedBC>", documento.xml_conteudo)
+        self.assertIn("<vBC>14.58</vBC>", documento.xml_conteudo)
+        self.assertIn("<pICMS>12.00</pICMS>", documento.xml_conteudo)
+        self.assertIn("<vICMS>1.75</vICMS>", documento.xml_conteudo)
+
+    def test_icms20_preserva_reducao_real_de_quatro_casas_em_1199(self):
+        self._configurar_caso_icms20("11.99")
+
+        documento = preparar_documento_venda(self.venda, self.user)
+
+        self.assertIn("<pRedBC>41.6667</pRedBC>", documento.xml_conteudo)
+        self.assertIn("<vBC>6.99</vBC>", documento.xml_conteudo)
+        self.assertIn("<pICMS>12.00</pICMS>", documento.xml_conteudo)
+        self.assertIn("<vICMS>0.84</vICMS>", documento.xml_conteudo)
 
     def test_goias_bloqueia_cfop_interestadual_antes_de_reservar_numero(self):
         self.filial.uf = "GO"
@@ -2259,6 +2299,21 @@ class FiscalTests(TestCase):
             preparar_documento_venda(self.venda, self.user)
         self.assertFalse(self.venda.documentos_fiscais.exists())
 
+    def test_preparacao_bloqueia_tpag_90_persistido_via_queryset_update(self):
+        pagamento = self.venda.pagamentos.select_related("forma_pagamento").get()
+        configuracao = FormaPagamentoFilial.objects.create(
+            filial=self.filial,
+            forma_pagamento=pagamento.forma_pagamento,
+            codigo_fiscal_tpag="01",
+        )
+        FormaPagamentoFilial.objects.filter(pk=configuracao.pk).update(
+            codigo_fiscal_tpag="90"
+        )
+
+        with self.assertRaisesMessage(ValidationError, "não é suportado no fluxo"):
+            preparar_documento_venda(self.venda, self.user)
+        self.assertFalse(self.venda.documentos_fiscais.exists())
+
     def test_preflight_bloqueia_tpag_desconhecido_antes_do_xsd(self):
         documento = preparar_documento_venda(self.venda, self.user)
         documento.xml_conteudo = documento.xml_conteudo.replace(
@@ -2266,6 +2321,15 @@ class FiscalTests(TestCase):
         )
 
         with self.assertRaisesMessage(ValidationError, "não é reconhecido"):
+            validar_xml_pre_transmissao(documento, FakeSefazAdapter())
+
+    def test_preflight_bloqueia_tpag_90_em_venda_normal(self):
+        documento = preparar_documento_venda(self.venda, self.user)
+        documento.xml_conteudo = documento.xml_conteudo.replace(
+            "<tPag>01</tPag>", "<tPag>90</tPag>", 1,
+        )
+
+        with self.assertRaisesMessage(ValidationError, "não é suportado no fluxo"):
             validar_xml_pre_transmissao(documento, FakeSefazAdapter())
 
     def test_preparacao_bloqueia_csosn_ainda_nao_suportado(self):

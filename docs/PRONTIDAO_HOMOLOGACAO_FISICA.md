@@ -108,6 +108,7 @@ Todos os itens abaixo permanecem **AGUARDANDO HOMOLOGAÇÃO**.
 
 - Emitir NFC-e sintética com CFOP 5102 e 5405 no mesmo documento, incluindo fallback da natureza e parametrização explícita por produto/operação.
 - Conferir CST 60 como `ICMS60` retido anteriormente, sem cálculo de ICMS-ST próprio, MVA, `vBCST` ou `vST`.
+- Conferir ICMS20 sintético com redução de base `41.6667%`, preservando quatro casas em `pRedBC`; para operações de `24,99` e `11,99`, confirmar respectivamente `vBC/vICMS` de `14,58/1,75` e `6,99/0,84`, sem associar automaticamente redução e `cBenef`.
 - Conferir IBS/CBS 200/200003 e 200/200014 com redução de 100%, e 200/200034 com redução de 60%, incluindo `gRed`, alíquotas efetivas e totalização.
 - Testar GTIN válido e código comercial arbitrário convertido fiscalmente para `SEM GTIN`, sem alterar o cadastro do produto.
 - Testar dinheiro+débito, dinheiro+crédito, crédito+débito, três ou mais formas, PIX+dinheiro, vale e convênio.
@@ -115,6 +116,7 @@ Todos os itens abaixo permanecem **AGUARDANDO HOMOLOGAÇÃO**.
 - Confirmar pagamento eletrônico e PIX parciais, atualização de pago/restante e bloqueio de parcela acima do saldo.
 - Testar troco simples e misto, conferindo valor aplicado no financeiro, valor informado no XML, `vTroco` e recibo.
 - Configurar por filial `tPag=99` com `xPag` para convênio e confirmar que o fallback PIX permanece `17`.
+- Confirmar que `tPag=90` continua reservado a contratos específicos sem pagamento e é bloqueado na configuração e no XML de venda normal positiva.
 - Repetir os cenários parciais em TEF real, mantendo cada parcela associada à própria transação.
 
 ## Pendente de credencial real

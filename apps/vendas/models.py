@@ -5,7 +5,7 @@ from django.core.exceptions import ValidationError
 from django.db import models
 from django.utils import timezone
 
-from apps.fiscal.pagamentos import validar_configuracao_tpag
+from apps.fiscal.pagamentos import validar_tpag_venda_normal
 
 
 class StatusVenda(models.TextChoices):
@@ -119,7 +119,7 @@ class FormaPagamentoFilial(models.Model):
 
     def clean(self):
         super().clean()
-        self.codigo_fiscal_tpag, self.descricao_fiscal_xpag = validar_configuracao_tpag(
+        self.codigo_fiscal_tpag, self.descricao_fiscal_xpag = validar_tpag_venda_normal(
             self.codigo_fiscal_tpag,
             self.descricao_fiscal_xpag,
         )
