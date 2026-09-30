@@ -135,7 +135,7 @@
       </section>
     {% else %}
       {% for field in form %}
-        <label class="form-field"><span>{{ field.label }}</span>{{ field }}{{ field.errors }}</label>
+        <label class="form-field"><span>{{ field.label }}</span>{{ field }}{{ field.errors }}{% if field.help_text %}<small>{{ field.help_text }}</small>{% endif %}</label>
       {% endfor %}
     {% endif %}
 

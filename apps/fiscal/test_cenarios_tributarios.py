@@ -55,13 +55,15 @@ class CenariosTributariosGoTests(SimpleTestCase):
         for codigo in {
             "venda_interestadual",
             "venda_contribuinte_b2b",
-            "icms_st_retido",
             "tributacao_monofasica",
             "devolucao_fornecedor",
             "transferencia_bonificacao_remessa",
             "frete_entrega",
         }:
             self.assertEqual(por_codigo[codigo]["status"], BLOQUEADO)
+        self.assertEqual(por_codigo["icms_st_retido"]["status"], PARCIAL)
+        self.assertIn("retido anteriormente", por_codigo["icms_st_retido"]["escopo_atual"])
+        self.assertIn("próprio permanece bloqueado", por_codigo["icms_st_retido"]["proxima_evidencia"])
 
     def test_resumo_publica_contrato_e_total_coerentes(self):
         resumo = resumo_cenarios_tributarios_go()
@@ -73,7 +75,8 @@ class CenariosTributariosGoTests(SimpleTestCase):
     def test_matriz_existente_preserva_limites_reais_de_icms(self):
         capacidade = capacidade_tributaria_fiscal()
 
-        self.assertEqual(capacidade["regime_normal"]["cst_suportados"], ["00", "20", "40", "41", "50"])
+        self.assertEqual(capacidade["regime_normal"]["cst_suportados"], ["00", "20", "40", "41", "50", "60"])
+        self.assertEqual(capacidade["regime_normal"]["grupos_xml"]["60"], "ICMS60")
         self.assertEqual(capacidade["simples_nacional"]["csosn_suportados"], ["102", "103", "300", "400"])
         self.assertFalse(capacidade["ibs_cbs"]["emissao_xml_generica_habilitada"])
         self.assertEqual(

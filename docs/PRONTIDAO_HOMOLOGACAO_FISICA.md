@@ -104,6 +104,19 @@ Todos os itens abaixo permanecem **AGUARDANDO HOMOLOGAÇÃO**.
 - Validar CX, FD e PCT com códigos e fatores distintos, garantindo que uma apresentação adicional não substitui silenciosamente a embalagem padrão.
 - Confirmar que análise, vínculo, cadastro de produto e alteração de fator não movimentam estoque nem criam financeiro antes da finalização da entrada.
 
+### NFC-e do recorte real do piloto
+
+- Emitir NFC-e sintética com CFOP 5102 e 5405 no mesmo documento, incluindo fallback da natureza e parametrização explícita por produto/operação.
+- Conferir CST 60 como `ICMS60` retido anteriormente, sem cálculo de ICMS-ST próprio, MVA, `vBCST` ou `vST`.
+- Conferir IBS/CBS 200/200003 e 200/200014 com redução de 100%, e 200/200034 com redução de 60%, incluindo `gRed`, alíquotas efetivas e totalização.
+- Testar GTIN válido e código comercial arbitrário convertido fiscalmente para `SEM GTIN`, sem alterar o cadastro do produto.
+- Testar dinheiro+débito, dinheiro+crédito, crédito+débito, três ou mais formas, PIX+dinheiro, vale e convênio.
+- Testar dois cartões da mesma modalidade com transações, NSUs e autorizações independentes.
+- Confirmar pagamento eletrônico e PIX parciais, atualização de pago/restante e bloqueio de parcela acima do saldo.
+- Testar troco simples e misto, conferindo valor aplicado no financeiro, valor informado no XML, `vTroco` e recibo.
+- Configurar por filial `tPag=99` com `xPag` para convênio e confirmar que o fallback PIX permanece `17`.
+- Repetir os cenários parciais em TEF real, mantendo cada parcela associada à própria transação.
+
 ## Pendente de credencial real
 
 Os itens fiscais abaixo permanecem **AGUARDANDO HOMOLOGAÇÃO**:

@@ -313,20 +313,18 @@ class FormaPagamentoForm(forms.ModelForm):
         super().__init__(*args, **kwargs)
         aplicar_select2(self, ["conta_movimento_padrao"])
 
-    def clean(self):
-        cleaned = super().clean()
-        if cleaned.get("permite_troco") and cleaned.get("tipo") != "DINHEIRO":
-            self.add_error("permite_troco", "Troco deve ser habilitado somente para pagamentos em dinheiro.")
-        return cleaned
-
-
 class FormaPagamentoFilialForm(forms.ModelForm):
     class Meta:
         model = FormaPagamentoFilial
-        fields = ["filial", "conta_movimento_padrao", "ativo"]
+        fields = [
+            "filial", "conta_movimento_padrao", "codigo_fiscal_tpag",
+            "descricao_fiscal_xpag", "ativo",
+        ]
         labels = {
             "filial": "Filial",
             "conta_movimento_padrao": "Conta de movimento padrão",
+            "codigo_fiscal_tpag": "Código fiscal tPag",
+            "descricao_fiscal_xpag": "Descrição fiscal xPag",
             "ativo": "Disponível no PDV desta filial",
         }
 
@@ -344,6 +342,14 @@ class FormaPagamentoFilialForm(forms.ModelForm):
         conta = cleaned.get("conta_movimento_padrao")
         if filial and conta and conta.filial_id != filial.id:
             self.add_error("conta_movimento_padrao", "A conta deve pertencer à filial selecionada.")
+        codigo = (cleaned.get("codigo_fiscal_tpag") or "").strip()
+        descricao = (cleaned.get("descricao_fiscal_xpag") or "").strip()
+        if codigo and (len(codigo) != 2 or not codigo.isdigit()):
+            self.add_error("codigo_fiscal_tpag", "Informe o tPag com 2 dígitos.")
+        if codigo == "99" and not descricao:
+            self.add_error("descricao_fiscal_xpag", "Informe xPag quando tPag for 99.")
+        if codigo != "99" and descricao:
+            self.add_error("descricao_fiscal_xpag", "xPag só pode ser informado quando tPag for 99.")
         return cleaned
 
 class TerminalPdvForm(forms.ModelForm):

@@ -18,9 +18,9 @@ from .models import (
 
 @admin.register(ParametrizacaoBeneficioFiscalProduto)
 class ParametrizacaoBeneficioFiscalProdutoAdmin(admin.ModelAdmin):
-    list_display = ["produto", "natureza_operacao", "situacao", "codigo_beneficio_fiscal", "atualizado_por"]
+    list_display = ["produto", "natureza_operacao", "cfop", "situacao", "codigo_beneficio_fiscal", "atualizado_por"]
     list_filter = ["situacao", "natureza_operacao__empresa", "natureza_operacao"]
-    search_fields = ["produto__nome", "produto__codigo_barras", "natureza_operacao__descricao", "codigo_beneficio_fiscal"]
+    search_fields = ["produto__nome", "produto__codigo_barras", "natureza_operacao__descricao", "cfop", "codigo_beneficio_fiscal"]
     readonly_fields = ["criado_em", "atualizado_em"]
 
     def save_model(self, request, obj, form, change):

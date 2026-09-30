@@ -188,6 +188,71 @@ class VendaServiceTests(TestCase):
             Decimal("50.00"),
         )
 
+    def test_troco_preserva_valor_informado_sem_inflar_financeiro(self):
+        venda = finalizar_venda(
+            caixa=self.caixa,
+            usuario=self.usuario,
+            itens=[{"produto": self.produto, "quantidade": Decimal("1.000")}],
+            pagamentos=[{
+                "forma_pagamento": self.dinheiro,
+                "valor": Decimal("25.00"),
+                "valor_informado": Decimal("40.00"),
+            }],
+            preparar_fiscal=False,
+        )
+
+        pagamento = venda.pagamentos.get()
+        self.assertEqual(pagamento.valor, Decimal("25.00"))
+        self.assertEqual(pagamento.valor_informado, Decimal("40.00"))
+        self.assertEqual(
+            LancamentoFinanceiro.objects.get(pagamento_venda=pagamento).valor,
+            Decimal("25.00"),
+        )
+
+    def test_forma_sem_troco_nao_pode_exceder_valor_aplicado(self):
+        with self.assertRaisesMessage(ValidationError, "Somente uma forma configurada para troco"):
+            finalizar_venda(
+                caixa=self.caixa,
+                usuario=self.usuario,
+                itens=[{"produto": self.produto, "quantidade": Decimal("1.000")}],
+                pagamentos=[{
+                    "forma_pagamento": self.pix,
+                    "valor": Decimal("25.00"),
+                    "valor_informado": Decimal("30.00"),
+                }],
+                preparar_fiscal=False,
+            )
+        self.assertFalse(Venda.objects.exists())
+
+    def test_duas_parcelas_da_mesma_modalidade_permanecem_independentes(self):
+        venda = finalizar_venda(
+            caixa=self.caixa,
+            usuario=self.usuario,
+            itens=[{"produto": self.produto, "quantidade": Decimal("1.000")}],
+            pagamentos=[
+                {"forma_pagamento": self.pix, "valor": Decimal("10.00")},
+                {"forma_pagamento": self.pix, "valor": Decimal("15.00")},
+            ],
+            preparar_fiscal=False,
+        )
+
+        pagamentos = list(venda.pagamentos.order_by("pk"))
+        self.assertEqual([item.valor for item in pagamentos], [Decimal("10.00"), Decimal("15.00")])
+        self.assertEqual(len({item.transacao_externa_id for item in pagamentos}), 2)
+
+    def test_configuracao_fiscal_tpag_xpag_falha_fechada(self):
+        configuracao = FormaPagamentoFilial(
+            filial=self.filial,
+            forma_pagamento=self.crediario,
+            codigo_fiscal_tpag="99",
+        )
+        with self.assertRaisesMessage(ValidationError, "Informe xPag"):
+            configuracao.full_clean()
+        configuracao.codigo_fiscal_tpag = "05"
+        configuracao.descricao_fiscal_xpag = "Convênio"
+        with self.assertRaisesMessage(ValidationError, "xPag só pode"):
+            configuracao.full_clean()
+
     def test_calcular_item_quantiza_venda_fracionada_uma_vez_em_centavos(self):
         for quantidade, preco, esperado in (
             ("0.155", "14.99", "2.32"),

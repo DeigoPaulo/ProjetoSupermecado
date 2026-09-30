@@ -30,7 +30,7 @@ from apps.empresas.models import Empresa, Filial
 from apps.fornecedores.models import Fornecedor
 from apps.pdv.models import Caixa
 from apps.produtos.models import Categoria, Produto
-from apps.vendas.models import FormaPagamento, ItemVenda, PagamentoVenda, StatusVenda, TipoDocumentoConsumidor, Venda
+from apps.vendas.models import FormaPagamento, FormaPagamentoFilial, ItemVenda, PagamentoVenda, StatusVenda, TipoDocumentoConsumidor, Venda
 
 from .adapters import carregar_adaptador_sefaz
 from .evidencias import registrar_evidencia_fiscal, verificar_integridade_evidencias
@@ -752,7 +752,7 @@ class FiscalTests(TestCase):
         )
         self.assertEqual(
             payload["capacidade_tributaria"]["regime_normal"]["cst_suportados"],
-            ["00", "20", "40", "41", "50"],
+            ["00", "20", "40", "41", "50", "60"],
         )
         self.assertEqual(
             payload["capacidade_tributaria"]["simples_nacional"]["csosn_suportados"],
@@ -2167,14 +2167,81 @@ class FiscalTests(TestCase):
         self.assertIn("<ICMSSN102>", documento.xml_conteudo)
         self.assertNotIn("<ICMS00>", documento.xml_conteudo)
 
-    def test_preparacao_bloqueia_cst_ainda_nao_suportado(self):
+    def test_preparacao_icms60_gera_grupo_st_retido_sem_calculo_proprio(self):
         self.produto.cst_icms = "60"
-        self.produto.save(update_fields=["cst_icms"])
+        self.produto.aliquota_icms = None
+        self.produto.save(update_fields=["cst_icms", "aliquota_icms"])
 
-        with self.assertRaises(ValidationError) as contexto:
-            preparar_documento_venda(self.venda, self.user)
+        documento = preparar_documento_venda(self.venda, self.user)
 
-        self.assertIn("CST ICMS 60 ainda nao e suportado", " ".join(contexto.exception.messages))
+        self.assertIn("<ICMS60><orig>0</orig><CST>60</CST></ICMS60>", documento.xml_conteudo)
+        self.assertNotIn("<ICMS40>", documento.xml_conteudo)
+        self.assertNotIn("<vBCST>", documento.xml_conteudo.split("</det>")[0])
+
+    def test_nfce_usa_cfop_por_item_e_serializa_gtin_com_validacao(self):
+        self.produto.codigo_barras = "CODIGO-INTERNO"
+        self.produto.save(update_fields=["codigo_barras"])
+        self.parametrizacao_beneficio.cfop = "5405"
+        self.parametrizacao_beneficio.save(update_fields=["cfop"])
+        produto_5102 = Produto.objects.create(
+            codigo_barras="7894900705119",
+            nome="Produto sintético CFOP 5102",
+            categoria=self.categoria,
+            preco_custo=Decimal("5.00"),
+            preco_venda=Decimal("10.00"),
+            ncm="10063021",
+            origem_mercadoria="0",
+            cst_icms="00",
+            aliquota_icms=Decimal("18.00"),
+            cst_pis="06",
+            cst_cofins="06",
+            cst_ibs_cbs="000",
+            classificacao_tributaria_ibs_cbs="000001",
+        )
+        ItemVenda.objects.create(
+            venda=self.venda,
+            produto=produto_5102,
+            quantidade=Decimal("1.000"),
+            preco_unitario_venda=Decimal("10.00"),
+            total=Decimal("10.00"),
+            custo_unitario_no_momento=Decimal("5.00"),
+        )
+        ParametrizacaoBeneficioFiscalProduto.objects.create(
+            produto=produto_5102,
+            natureza_operacao=self.natureza,
+            situacao=SituacaoBeneficioFiscalICMS.SEM_BENEFICIO,
+            atualizado_por=self.user,
+        )
+        self.venda.total_bruto += Decimal("10.00")
+        self.venda.total_liquido += Decimal("10.00")
+        self.venda.save(update_fields=["total_bruto", "total_liquido"])
+        pagamento = self.venda.pagamentos.get()
+        pagamento.valor += Decimal("10.00")
+        pagamento.save(update_fields=["valor"])
+
+        documento = preparar_documento_venda(self.venda, self.user)
+
+        raiz = ET.fromstring(documento.xml_conteudo)
+        cfops = raiz.findall(f".//{{{NFE_NS}}}det/{{{NFE_NS}}}prod/{{{NFE_NS}}}CFOP")
+        eans = raiz.findall(f".//{{{NFE_NS}}}det/{{{NFE_NS}}}prod/{{{NFE_NS}}}cEAN")
+        self.assertEqual([item.text for item in cfops], ["5405", "5102"])
+        self.assertEqual([item.text for item in eans], ["SEM GTIN", "7894900705119"])
+
+    def test_nfce_tpag_por_filial_e_troco_usam_valor_informado(self):
+        pagamento = self.venda.pagamentos.select_related("forma_pagamento").get()
+        pagamento.valor_informado = Decimal("100.00")
+        pagamento.save(update_fields=["valor_informado"])
+        FormaPagamentoFilial.objects.create(
+            filial=self.filial,
+            forma_pagamento=pagamento.forma_pagamento,
+            codigo_fiscal_tpag="99",
+            descricao_fiscal_xpag="Dinheiro piloto",
+        )
+
+        documento = preparar_documento_venda(self.venda, self.user)
+
+        self.assertIn("<tPag>99</tPag><xPag>Dinheiro piloto</xPag><vPag>100.00</vPag>", documento.xml_conteudo)
+        self.assertIn("<vTroco>17.30</vTroco>", documento.xml_conteudo)
 
     def test_preparacao_bloqueia_csosn_ainda_nao_suportado(self):
         self.configuracao.crt = CodigoRegimeTributario.SIMPLES_NACIONAL
@@ -4425,7 +4492,7 @@ class FakeDFeDistributionAdapter:
             {"cnpj": cnpj, "ultimo_nsu": ultimo_nsu, "limite": limite}
         )
         chave = "35260712345678000199550010000001231000001234"
-        xml = f"""<?xml version="1.0"?><nfeProc xmlns="http://www.portalfiscal.inf.br/nfe"><NFe><infNFe Id="NFe{chave}"><ide><nNF>123</nNF><dhEmi>2026-07-25T10:30:00-03:00</dhEmi></ide><emit><CNPJ>12345678000199</CNPJ><xNome>Fornecedor DF-e</xNome></emit><dest><CNPJ>{cnpj}</CNPJ></dest><det nItem="1"><prod><cProd>1</cProd><xProd>Produto</xProd><qCom>1.000</qCom><vProd>10.00</vProd></prod></det><total><ICMSTot><vNF>10.00</vNF></ICMSTot></total></infNFe></NFe><protNFe><infProt><chNFe>{chave}</chNFe><cStat>100</cStat></infProt></protNFe></nfeProc>"""
+        xml = f"""<?xml version="1.0"?><nfeProc xmlns="http://www.portalfiscal.inf.br/nfe"><NFe><infNFe Id="NFe{chave}"><ide><nNF>123</nNF><dhEmi>2026-07-25T10:30:00-03:00</dhEmi></ide><emit><CNPJ>12345678000199</CNPJ><xNome>Fornecedor DF-e</xNome></emit><dest><CNPJ>{cnpj}</CNPJ></dest><det nItem="1"><prod><cProd>1</cProd><xProd>Produto</xProd><uCom>UN</uCom><qCom>1.000</qCom><vUnCom>10.00</vUnCom><vProd>10.00</vProd></prod></det><total><ICMSTot><vNF>10.00</vNF></ICMSTot></total></infNFe></NFe><protNFe><infProt><chNFe>{chave}</chNFe><cStat>100</cStat></infProt></protNFe></nfeProc>"""
         return {
             "contrato": "fiscal_dfe_distribution_v1",
             "ultimo_nsu": "15",
@@ -4459,7 +4526,7 @@ class DFeRecebidoTests(TestCase):
 
     def _xml(self):
         chave = "35260712345678000199550010000001231000001234"
-        return f'''<?xml version="1.0"?><nfeProc xmlns="http://www.portalfiscal.inf.br/nfe"><NFe><infNFe Id="NFe{chave}"><ide><nNF>123</nNF><dhEmi>2026-07-25T10:30:00-03:00</dhEmi></ide><emit><CNPJ>12345678000199</CNPJ><xNome>Fornecedor DF-e</xNome></emit><dest><CNPJ>98765432000110</CNPJ></dest><det nItem="1"><prod><cProd>1</cProd><xProd>Produto</xProd><qCom>1.000</qCom><vProd>10.00</vProd></prod></det><total><ICMSTot><vNF>10.00</vNF></ICMSTot></total></infNFe></NFe><protNFe><infProt><chNFe>{chave}</chNFe><cStat>100</cStat></infProt></protNFe></nfeProc>'''.encode()
+        return f'''<?xml version="1.0"?><nfeProc xmlns="http://www.portalfiscal.inf.br/nfe"><NFe><infNFe Id="NFe{chave}"><ide><nNF>123</nNF><dhEmi>2026-07-25T10:30:00-03:00</dhEmi></ide><emit><CNPJ>12345678000199</CNPJ><xNome>Fornecedor DF-e</xNome></emit><dest><CNPJ>98765432000110</CNPJ></dest><det nItem="1"><prod><cProd>1</cProd><xProd>Produto</xProd><uCom>UN</uCom><qCom>1.000</qCom><vUnCom>10.00</vUnCom><vProd>10.00</vProd></prod></det><total><ICMSTot><vNF>10.00</vNF></ICMSTot></total></infNFe></NFe><protNFe><infProt><chNFe>{chave}</chNFe><cStat>100</cStat></infProt></protNFe></nfeProc>'''.encode()
 
     def test_armazenar_dfe_nao_cria_entrada_ou_movimentacao(self):
         documento, criado = registrar_xml_dfe_recebido(self._xml(), usuario=self.usuario)

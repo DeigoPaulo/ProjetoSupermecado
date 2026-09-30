@@ -167,6 +167,19 @@ def finalizar_venda(*, caixa, usuario, itens, forma_pagamento=None, desconto=Dec
         total_pagamentos = sum((item["valor"] for item in pagamentos), Decimal("0.00"))
         if total_pagamentos != total_liquido:
             raise ValidationError("A soma dos pagamentos deve ser igual ao total da venda.")
+        pagamentos_com_troco = []
+        for item in pagamentos:
+            valor_informado = item.get("valor_informado")
+            valor_informado = item["valor"] if valor_informado is None else valor_informado
+            if valor_informado < item["valor"]:
+                raise ValidationError("O valor informado não pode ser menor que o valor aplicado.")
+            if valor_informado > item["valor"]:
+                if not item["forma_pagamento"].permite_troco:
+                    raise ValidationError("Somente uma forma configurada para troco pode exceder o valor aplicado.")
+                pagamentos_com_troco.append(item)
+            item["valor_informado"] = valor_informado
+        if len(pagamentos_com_troco) > 1:
+            raise ValidationError("Somente uma parcela pode gerar troco na mesma venda.")
 
         total_prazo = sum(
             (item["valor"] for item in pagamentos if item["forma_pagamento"].tipo in FORMAS_PRAZO),
@@ -188,6 +201,7 @@ def finalizar_venda(*, caixa, usuario, itens, forma_pagamento=None, desconto=Dec
                 venda=venda,
                 forma_pagamento=pagamento["forma_pagamento"],
                 valor=pagamento["valor"],
+                valor_informado=pagamento.get("valor_informado"),
                 status=pagamento.get("status", StatusPagamento.CONFIRMADO),
                 transacao_externa_id=pagamento.get("transacao_externa_id", ""),
                 nsu=pagamento.get("nsu", ""),

@@ -549,7 +549,9 @@ def _cart_items(cart):
 
 def _decimal_from_text(value):
     try:
-        return Decimal(str(value or "0").replace(".", "").replace(",", "."))
+        texto = str(value or "0").strip()
+        normalizado = texto.replace(".", "").replace(",", ".") if "," in texto else texto
+        return Decimal(normalizado)
     except InvalidOperation:
         return Decimal("0.00")
 
@@ -629,21 +631,31 @@ def _pagamentos_from_request(request, total_liquido, filial):
     if not pagamentos_lancados:
         raise ValidationError("Informe ao menos uma forma de pagamento.")
 
-    total_pago = sum((item["valor"] for item in pagamentos_lancados), Decimal("0.00"))
-    if total_pago < total_liquido:
+    total_informado = sum(
+        (item["valor"] for item in pagamentos_lancados), Decimal("0.00")
+    )
+    if total_informado < total_liquido:
         raise ValidationError("A soma dos pagamentos não pode ser menor que o total final.")
+    excesso = total_informado - total_liquido
+    candidatas_troco = [
+        item for item in pagamentos_lancados if item["forma_pagamento"].permite_troco
+    ]
+    if excesso > 0:
+        if not candidatas_troco:
+            raise ValidationError("Nenhuma forma informada permite troco ou valor acima do total.")
+        if len(candidatas_troco) > 1:
+            raise ValidationError("Somente uma parcela pode gerar troco na mesma venda.")
+        if candidatas_troco[0]["valor"] <= excesso:
+            raise ValidationError("O valor da parcela com troco não cobre o excesso informado.")
 
-    restante = total_liquido
     pagamentos = []
     for item in pagamentos_lancados:
-        if restante <= 0:
-            break
-        valor_registrado = min(item["valor"], restante)
         pagamento = item.copy()
-        pagamento["valor"] = valor_registrado
+        pagamento["valor_informado"] = item["valor"]
+        if excesso > 0 and item is candidatas_troco[0]:
+            pagamento["valor"] = item["valor"] - excesso
         pagamentos.append(pagamento)
-        restante -= valor_registrado
-    return pagamentos, total_pago
+    return pagamentos, total_informado
 
 
 def _forma_pagamento_pedido_por_pagamentos(pagamentos):
@@ -719,6 +731,9 @@ def pdv(request):
                     messages.error(request, " ".join(exc.messages))
                     return redirect("pdv:pdv")
             total_liquido = total - dados_venda["desconto"]
+            if total_liquido < 0:
+                messages.error(request, "Desconto não pode ser maior que o total da venda.")
+                return redirect("pdv:pdv")
             try:
                 pagamentos, total_pago = _pagamentos_from_request(request, total_liquido, dados_venda["caixa"].filial)
             except ValidationError as exc:
@@ -1287,7 +1302,15 @@ def recibo_venda(request, venda_id):
     itens = list(venda.itens.all())
     pagamentos = list(venda.pagamentos.all())
     quantidade_total = sum((item.quantidade for item in itens), Decimal("0"))
-    total_pago = sum((pagamento.valor for pagamento in pagamentos), Decimal("0"))
+    total_pago = sum(
+        (
+            pagamento.valor
+            if pagamento.valor_informado is None
+            else pagamento.valor_informado
+            for pagamento in pagamentos
+        ),
+        Decimal("0"),
+    )
     troco = max(Decimal("0"), total_pago - venda.total_liquido)
     return render(
         request,
@@ -1327,7 +1350,15 @@ def venda_impressao_desktop(request, venda_id):
         mensagem_impressao = "Configuração de cupom encontrada, mas sem impressora padrão definida. Informe a impressora em Sistema > Impressões."
     pagamentos = list(venda.pagamentos.all())
     itens = list(venda.itens.all())
-    total_pago = sum((pagamento.valor for pagamento in pagamentos), Decimal("0"))
+    total_pago = sum(
+        (
+            pagamento.valor
+            if pagamento.valor_informado is None
+            else pagamento.valor_informado
+            for pagamento in pagamentos
+        ),
+        Decimal("0"),
+    )
     troco = max(Decimal("0"), total_pago - venda.total_liquido)
     tem_dinheiro = any((pagamento.forma_pagamento.tipo or "").upper() == "DINHEIRO" for pagamento in pagamentos)
     abrir_gaveta = bool(not reimpressao and impressao and impressao.gaveta_automatica and impressao.abrir_gaveta_em_dinheiro and tem_dinheiro)
@@ -1411,7 +1442,12 @@ def venda_impressao_desktop(request, venda_id):
                 {
                     "forma": pagamento.forma_pagamento.nome,
                     "tipo": pagamento.forma_pagamento.tipo,
-                    "valor": _moeda_json(pagamento.valor),
+                    "valor": _moeda_json(
+                        pagamento.valor
+                        if pagamento.valor_informado is None
+                        else pagamento.valor_informado
+                    ),
+                    "valor_aplicado": _moeda_json(pagamento.valor),
                     "status": pagamento.status,
                     "transacao_externa_id": pagamento.transacao_externa_id,
                     "nsu": pagamento.nsu,

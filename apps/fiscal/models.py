@@ -398,6 +398,10 @@ class ParametrizacaoBeneficioFiscalProduto(models.Model):
         "Código de benefício fiscal (cBenef)", max_length=10, blank=True,
         help_text="Use o código oficial aplicável ou SEM CBENEF quando previsto no catálogo estadual.",
     )
+    cfop = models.CharField(
+        "CFOP específico", max_length=4, blank=True,
+        help_text="Se vazio, será utilizado o CFOP padrão da natureza.",
+    )
     fundamento_contabil = models.TextField(
         "Fundamento/orientação contábil", blank=True,
         help_text="Referência da orientação usada; não informe credenciais ou dados financeiros.",
@@ -434,6 +438,13 @@ class ParametrizacaoBeneficioFiscalProduto(models.Model):
 
     def clean(self):
         super().clean()
+        self.cfop = (self.cfop or "").replace(".", "").strip()
+        if self.cfop:
+            from .cfop import validar_cfop
+
+            pendencia = validar_cfop(self.cfop, direcao="SAIDA", modelo="NFCE")
+            if pendencia:
+                raise ValidationError({"cfop": pendencia})
         codigo = (self.codigo_beneficio_fiscal or "").strip().upper()
         self.codigo_beneficio_fiscal = codigo
         if self.situacao == SituacaoBeneficioFiscalICMS.INDEFINIDO and codigo:

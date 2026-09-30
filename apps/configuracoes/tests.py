@@ -1614,11 +1614,13 @@ class ConfiguracoesOperacionaisTests(TestCase):
         self.assertContains(lista, "PIX integrado")
         self.assertContains(lista, "PIX Caixa 01")
 
-        invalida = self.client.post(
+        atualizada = self.client.post(
             f"/configuracoes/formas-pagamento/{forma.pk}/editar/",
             {"nome": forma.nome, "tipo": "PIX", "permite_troco": "on", "ativo": "on"},
         )
-        self.assertContains(invalida, "Troco deve ser habilitado somente")
+        self.assertRedirects(atualizada, "/configuracoes/formas-pagamento/")
+        forma.refresh_from_db()
+        self.assertTrue(forma.permite_troco)
 
     def test_cadastra_terminal_pdv_no_painel_proprio(self):
         response = self.client.post(

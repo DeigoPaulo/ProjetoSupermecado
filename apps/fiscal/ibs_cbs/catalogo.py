@@ -1,4 +1,5 @@
 from dataclasses import dataclass
+from decimal import Decimal
 
 
 VERSAO_CATALOGO = "IT_2025_002_v1.60_2026-06-23"
@@ -43,6 +44,8 @@ class ClassificacaoIbsCbs:
     modelos: frozenset[str]
     suportada: bool
     causa_bloqueio: str = ""
+    reducao_aliquota_ibs: Decimal = Decimal("0.0000")
+    reducao_aliquota_cbs: Decimal = Decimal("0.0000")
 
 
 # O catalogo e intencionalmente minimo. Cada entrada foi confrontada com os dados
@@ -62,6 +65,33 @@ CLASSIFICACOES = {
         modelos=frozenset({"55"}),
         suportada=False,
         causa_bloqueio="regime automotivo especial nao implementado",
+    ),
+    ("200", "200003"): ClassificacaoIbsCbs(
+        cst="200",
+        cclass_trib="200003",
+        descricao="Alíquota reduzida a zero no recorte homologado",
+        modelos=frozenset({"55", "65"}),
+        suportada=True,
+        reducao_aliquota_ibs=Decimal("100.0000"),
+        reducao_aliquota_cbs=Decimal("100.0000"),
+    ),
+    ("200", "200014"): ClassificacaoIbsCbs(
+        cst="200",
+        cclass_trib="200014",
+        descricao="Alíquota reduzida a zero no recorte homologado",
+        modelos=frozenset({"55", "65"}),
+        suportada=True,
+        reducao_aliquota_ibs=Decimal("100.0000"),
+        reducao_aliquota_cbs=Decimal("100.0000"),
+    ),
+    ("200", "200034"): ClassificacaoIbsCbs(
+        cst="200",
+        cclass_trib="200034",
+        descricao="Redução de 60% das alíquotas no recorte homologado",
+        modelos=frozenset({"55", "65"}),
+        suportada=True,
+        reducao_aliquota_ibs=Decimal("60.0000"),
+        reducao_aliquota_cbs=Decimal("60.0000"),
     ),
 }
 

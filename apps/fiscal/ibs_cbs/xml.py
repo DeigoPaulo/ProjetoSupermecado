@@ -23,6 +23,14 @@ def _aliquota(valor):
     return f"{valor:.4f}"
 
 
+def _adicionar_reducao(parent, *, reducao, aliquota_efetiva, namespace):
+    if reducao <= 0:
+        return
+    grupo = ET.SubElement(parent, _tag(namespace, "gRed"))
+    _texto(grupo, namespace, "pRedAliq", _aliquota(reducao))
+    _texto(grupo, namespace, "pAliqEfet", _aliquota(aliquota_efetiva))
+
+
 def adicionar_grupo_item(imposto, calculo, *, namespace):
     ibs_cbs = ET.SubElement(imposto, _tag(namespace, "IBSCBS"))
     _texto(ibs_cbs, namespace, "CST", calculo.cst)
@@ -31,13 +39,31 @@ def adicionar_grupo_item(imposto, calculo, *, namespace):
     _texto(grupo, namespace, "vBC", _dinheiro(calculo.base))
     ibs_uf = ET.SubElement(grupo, _tag(namespace, "gIBSUF"))
     _texto(ibs_uf, namespace, "pIBSUF", _aliquota(calculo.aliquota_ibs_uf))
+    _adicionar_reducao(
+        ibs_uf,
+        reducao=calculo.reducao_aliquota_ibs,
+        aliquota_efetiva=calculo.aliquota_efetiva_ibs_uf,
+        namespace=namespace,
+    )
     _texto(ibs_uf, namespace, "vIBSUF", _dinheiro(calculo.valor_ibs_uf))
     ibs_mun = ET.SubElement(grupo, _tag(namespace, "gIBSMun"))
     _texto(ibs_mun, namespace, "pIBSMun", _aliquota(calculo.aliquota_ibs_municipio))
+    _adicionar_reducao(
+        ibs_mun,
+        reducao=calculo.reducao_aliquota_ibs,
+        aliquota_efetiva=calculo.aliquota_efetiva_ibs_municipio,
+        namespace=namespace,
+    )
     _texto(ibs_mun, namespace, "vIBSMun", _dinheiro(calculo.valor_ibs_municipio))
     _texto(grupo, namespace, "vIBS", _dinheiro(calculo.valor_ibs))
     cbs = ET.SubElement(grupo, _tag(namespace, "gCBS"))
     _texto(cbs, namespace, "pCBS", _aliquota(calculo.aliquota_cbs))
+    _adicionar_reducao(
+        cbs,
+        reducao=calculo.reducao_aliquota_cbs,
+        aliquota_efetiva=calculo.aliquota_efetiva_cbs,
+        namespace=namespace,
+    )
     _texto(cbs, namespace, "vCBS", _dinheiro(calculo.valor_cbs))
     return ibs_cbs
 

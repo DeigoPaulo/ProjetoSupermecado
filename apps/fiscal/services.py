@@ -12,6 +12,7 @@ from django.db.models import Q, Subquery
 from django.utils import timezone
 
 from apps.auditoria.models import LogAuditoria
+from apps.core_gtin import gtin_fiscal
 from apps.marketplace.documentos_destinatario import normalizar_documento_cliente
 from apps.vendas.models import StatusPagamento, TipoDocumentoConsumidor, Venda
 
@@ -239,6 +240,42 @@ def _codigo_pagamento(tipo):
     return "99"
 
 
+def _configuracoes_fiscais_pagamento(venda, pagamentos):
+    from apps.vendas.models import FormaPagamentoFilial
+
+    forma_ids = {pagamento.forma_pagamento_id for pagamento in pagamentos}
+    return {
+        configuracao.forma_pagamento_id: configuracao
+        for configuracao in FormaPagamentoFilial.objects.filter(
+            filial=venda.filial, forma_pagamento_id__in=forma_ids
+        )
+    }
+
+
+def _pagamento_fiscal_efetivo(pagamento, configuracoes):
+    configuracao = configuracoes.get(pagamento.forma_pagamento_id)
+    codigo = (getattr(configuracao, "codigo_fiscal_tpag", "") or "").strip()
+    descricao = (getattr(configuracao, "descricao_fiscal_xpag", "") or "").strip()
+    codigo = codigo or _codigo_pagamento(pagamento.forma_pagamento.tipo)
+    if codigo == "99" and not descricao:
+        raise ValidationError(
+            f"A forma {pagamento.forma_pagamento.nome} exige descrição xPag para o tPag 99."
+        )
+    if codigo != "99" and descricao:
+        raise ValidationError(
+            f"A forma {pagamento.forma_pagamento.nome} só pode usar xPag com tPag 99."
+        )
+    return codigo, descricao
+
+
+def _valor_fiscal_pagamento(pagamento):
+    valor = pagamento.valor if pagamento.valor_informado is None else pagamento.valor_informado
+    valor = Decimal(valor)
+    if not valor.is_finite() or valor <= 0:
+        raise ValidationError("Valor fiscal do pagamento deve ser numérico, finito e positivo.")
+    return valor
+
+
 PAGAMENTOS_ELETRONICOS_COM_VINCULO = {"03", "04", "10", "11", "17"}
 PAGAMENTOS_COM_BANDEIRA = {"03", "04", "10", "11"}
 
@@ -251,33 +288,32 @@ def validar_vinculos_pagamentos_xml(documento, inf_nfe):
     pagamentos = list(documento.venda.pagamentos.select_related(
         "forma_pagamento", "confirmacao_integracao", "venda",
     ).order_by("pk"))
-    possui_integracao = any(
-        item.find(f"{{{NFE_NS}}}card") is not None for item in parcelas_xml
-    ) or any(
-        p.tipo_integracao or p.confirmacao_integracao_id
-        or (documento.filial.uf == "GO" and _codigo_pagamento(p.forma_pagamento.tipo) in PAGAMENTOS_ELETRONICOS_COM_VINCULO)
-        for p in pagamentos
-    )
-    if not possui_integracao:
-        return
+    configuracoes = _configuracoes_fiscais_pagamento(documento.venda, pagamentos)
     if len(parcelas_xml) != len(pagamentos):
         raise ValidationError("Parcelas do XML divergem dos pagamentos confirmados no servidor.")
+    total_fiscal = Decimal("0.00")
     for parcela_xml, pagamento in zip(parcelas_xml, pagamentos):
         esperado = ET.Element(f"{{{NFE_NS}}}detPag")
-        codigo = _codigo_pagamento(pagamento.forma_pagamento.tipo)
+        codigo, descricao = _pagamento_fiscal_efetivo(pagamento, configuracoes)
         _adicionar_integracao_pagamento_nfce(
             esperado, pagamento, codigo, uf_emitente=documento.filial.uf,
         )
         card_esperado = esperado.find(f"{{{NFE_NS}}}card")
         card_xml = parcela_xml.find(f"{{{NFE_NS}}}card")
+        total_fiscal += _valor_fiscal_pagamento(pagamento)
         campos = lambda card: None if card is None else [(item.tag, item.text) for item in card]
         if (
             parcela_xml.findtext(f"{{{NFE_NS}}}tPag") != codigo
-            or parcela_xml.findtext(f"{{{NFE_NS}}}vPag") != _valor(pagamento.valor)
+            or parcela_xml.findtext(f"{{{NFE_NS}}}xPag") != (descricao or None)
+            or parcela_xml.findtext(f"{{{NFE_NS}}}vPag") != _valor(_valor_fiscal_pagamento(pagamento))
             or len(parcela_xml.findall(f"{{{NFE_NS}}}card")) != (0 if card_esperado is None else 1)
             or campos(card_xml) != campos(card_esperado)
         ):
             raise ValidationError("Vínculo fiscal do XML diverge da confirmação integrada do servidor.")
+    troco_esperado = max(total_fiscal - documento.venda.total_liquido, Decimal("0.00"))
+    troco_xml = inf_nfe.findtext(f"{{{NFE_NS}}}pag/{{{NFE_NS}}}vTroco")
+    if troco_xml != (_valor(troco_esperado) if troco_esperado else None):
+        raise ValidationError("Troco fiscal do XML diverge dos pagamentos confirmados no servidor.")
 
 
 def _adicionar_integracao_pagamento_nfce(
@@ -502,7 +538,12 @@ def _calcular_icms_produto(produto, valor_operacao):
 CSOSN_ICMS_SUPORTADOS = {"102", "103", "300", "400"}
 CST_ICMS_TRIBUTADOS_SUPORTADOS = {"00", "20"}
 CST_ICMS_NAO_TRIBUTADOS_SUPORTADOS = {"40", "41", "50"}
-CST_ICMS_SUPORTADOS = CST_ICMS_TRIBUTADOS_SUPORTADOS | CST_ICMS_NAO_TRIBUTADOS_SUPORTADOS
+CST_ICMS_ST_RETIDO_SUPORTADOS = {"60"}
+CST_ICMS_SUPORTADOS = (
+    CST_ICMS_TRIBUTADOS_SUPORTADOS
+    | CST_ICMS_NAO_TRIBUTADOS_SUPORTADOS
+    | CST_ICMS_ST_RETIDO_SUPORTADOS
+)
 
 
 def capacidade_tributaria_fiscal(configuracoes=None):
@@ -522,7 +563,10 @@ def capacidade_tributaria_fiscal(configuracoes=None):
             "recortes_emissivos_habilitados": [
                 "fiscal_ibs_cbs_go_crt3_standard_v1",
             ],
-            "emissao_xml_recorte": "GO CRT 3, modelos 55/65, CST 000 e cClassTrib 000001",
+            "emissao_xml_recorte": (
+                "GO CRT 3, modelos 55/65, 000/000001 e CST 200 nas "
+                "classificações 200003, 200014 e 200034"
+            ),
             "modo_seguro": "contrato normativo por cenário e falha fechada fora do catálogo",
             "bloqueio": (
                 "O suporte genérico permanece bloqueado; monofasia, regimes especiais e "
@@ -537,9 +581,11 @@ def capacidade_tributaria_fiscal(configuracoes=None):
                 "40": "ICMS40",
                 "41": "ICMS40",
                 "50": "ICMS40",
+                "60": "ICMS60",
             },
             "tributados": sorted(CST_ICMS_TRIBUTADOS_SUPORTADOS),
             "nao_tributados": sorted(CST_ICMS_NAO_TRIBUTADOS_SUPORTADOS),
+            "st_retido_anteriormente": sorted(CST_ICMS_ST_RETIDO_SUPORTADOS),
         },
         "simples_nacional": {
             "csosn_suportados": sorted(CSOSN_ICMS_SUPORTADOS),
@@ -570,6 +616,11 @@ def _icms_produto(imposto, produto, configuracao, valor_operacao):
         )
     if produto.cst_icms in CST_ICMS_NAO_TRIBUTADOS_SUPORTADOS:
         grupo = ET.SubElement(icms, f"{{{NFE_NS}}}ICMS40")
+        _texto(grupo, "orig", produto.origem_mercadoria)
+        _texto(grupo, "CST", produto.cst_icms)
+        return {"base": Decimal("0.00"), "valor_icms": Decimal("0.00"), "valor_fcp": Decimal("0.00")}
+    if produto.cst_icms in CST_ICMS_ST_RETIDO_SUPORTADOS:
+        grupo = ET.SubElement(icms, f"{{{NFE_NS}}}ICMS60")
         _texto(grupo, "orig", produto.origem_mercadoria)
         _texto(grupo, "CST", produto.cst_icms)
         return {"base": Decimal("0.00"), "valor_icms": Decimal("0.00"), "valor_fcp": Decimal("0.00")}
@@ -643,7 +694,9 @@ def filtro_pendencias_produto_fiscal(
             Q(reducao_base_icms__isnull=True) | Q(reducao_base_icms__lte=0)
         )
         pendente |= Q(reducao_base_icms__gt=0) & ~Q(cst_icms="20")
-    pendente |= Q(aliquota_icms__isnull=True) | Q(aliquota_icms__lt=0)
+    pendente |= ~Q(cst_icms__in=sorted(CST_ICMS_ST_RETIDO_SUPORTADOS)) & (
+        Q(aliquota_icms__isnull=True) | Q(aliquota_icms__lt=0)
+    )
 
     csts_contribuicao = (
         CST_CONTRIBUICAO_ALIQUOTA
@@ -913,6 +966,50 @@ def _adicionar_totais_icms(inf_nfe, *, base_icms, valor_icms, valor_fcp, valor_i
     _texto(icmstot, "vNF", _valor(total_nota))
     return total
 
+
+def _precarregar_parametrizacoes_fiscais(itens, natureza):
+    produto_ids = {item.produto_id for item in itens}
+    parametrizacoes = {
+        item.produto_id: item
+        for item in ParametrizacaoBeneficioFiscalProduto.objects.filter(
+            natureza_operacao=natureza,
+            produto_id__in=produto_ids,
+        )
+    }
+    for item in itens:
+        item.produto._parametrizacao_beneficio_fiscal_atual = parametrizacoes.get(
+            item.produto_id
+        )
+    return parametrizacoes
+
+
+def _cfop_efetivo_item(item, natureza, parametrizacoes):
+    parametrizacao = parametrizacoes.get(item.produto_id)
+    return (getattr(parametrizacao, "cfop", "") or natureza.cfop).strip()
+
+
+def _pendencias_cfop_itens(itens, natureza, parametrizacoes, *, uf_emitente):
+    erros = []
+    for item in itens:
+        cfop = _cfop_efetivo_item(item, natureza, parametrizacoes)
+        prefixo = f"Produto {item.produto.nome}:"
+        pendencia = validar_cfop(cfop, direcao="SAIDA", modelo="NFCE")
+        if pendencia:
+            erros.append(f"{prefixo} {pendencia}.")
+            continue
+        erros.extend(
+            f"{prefixo} {mensagem}"
+            for mensagem in pendencias_cenario_fiscal_go(
+                uf_emitente=uf_emitente,
+                modelo="65",
+                cfop=cfop,
+                finalidade="1",
+                destinatario_contribuinte=False,
+                possui_frete=False,
+            )
+        )
+    return erros
+
 def pendencias_produto_fiscal(
     produto,
     regimes_tributarios=None,
@@ -954,7 +1051,10 @@ def pendencias_produto_fiscal(
         pendencias.append("CST 20 exige percentual de reducao da base do ICMS")
     elif exige_normal and produto.cst_icms != "20" and produto.reducao_base_icms and produto.reducao_base_icms > 0:
         pendencias.append("Reducao de base exige CST ICMS compativel, como 20")
-    if produto.aliquota_icms is None or produto.aliquota_icms < 0:
+    if (
+        produto.cst_icms not in CST_ICMS_ST_RETIDO_SUPORTADOS
+        and (produto.aliquota_icms is None or produto.aliquota_icms < 0)
+    ):
         pendencias.append("Aliquota ICMS")
     pendencias.extend(_pendencias_contribuicoes_produto(produto))
     pendencias.extend(_pendencias_ibs_cbs_produto(produto, exigir_ibs_cbs))
@@ -981,13 +1081,10 @@ def gerar_xml_nfce(documento):
         raise ValidationError(pendencias_emitente)
     configuracao = venda.filial.configuracao_fiscal
     natureza = documento.natureza_operacao
-    erros_cenario = pendencias_cenario_fiscal_go(
-        uf_emitente=venda.filial.uf,
-        modelo="65",
-        cfop=getattr(natureza, "cfop", ""),
-        finalidade="1",
-        destinatario_contribuinte=False,
-        possui_frete=False,
+    itens_venda = list(venda.itens.select_related("produto"))
+    parametrizacoes = _precarregar_parametrizacoes_fiscais(itens_venda, natureza)
+    erros_cenario = _pendencias_cfop_itens(
+        itens_venda, natureza, parametrizacoes, uf_emitente=venda.filial.uf
     )
     if erros_cenario:
         raise ValidationError(erros_cenario)
@@ -1055,7 +1152,7 @@ def gerar_xml_nfce(documento):
         _texto(dest, "indIEDest", "9")
 
     itens_rateados = _ratear_desconto(
-        venda.itens.select_related("produto"),
+        itens_venda,
         venda.desconto,
         lambda item: item.quantidade * item.preco_unitario_venda,
     )
@@ -1075,7 +1172,8 @@ def gerar_xml_nfce(documento):
         det = ET.SubElement(inf_nfe, f"{{{NFE_NS}}}det", {"nItem": str(numero)})
         prod = ET.SubElement(det, f"{{{NFE_NS}}}prod")
         _texto(prod, "cProd", produto.codigo_interno or produto.codigo_barras or produto.pk)
-        _texto(prod, "cEAN", produto.codigo_barras or "SEM GTIN")
+        codigo_gtin = gtin_fiscal(produto.codigo_barras)
+        _texto(prod, "cEAN", codigo_gtin)
         _texto(prod, "xProd", produto.nome[:120])
         _texto(prod, "NCM", produto.ncm)
         if produto.cest:
@@ -1088,12 +1186,12 @@ def gerar_xml_nfce(documento):
         )
         if cbenef:
             _texto(prod, "cBenef", cbenef)
-        _texto(prod, "CFOP", natureza.cfop)
+        _texto(prod, "CFOP", _cfop_efetivo_item(item, natureza, parametrizacoes))
         _texto(prod, "uCom", produto.unidade)
         _texto(prod, "qCom", _valor(item.quantidade, casas=3))
         _texto(prod, "vUnCom", _valor(valor_unitario_fiscal, casas=10))
         _texto(prod, "vProd", _valor(composicao_ipi["valor_produto"]))
-        _texto(prod, "cEANTrib", produto.codigo_barras or "SEM GTIN")
+        _texto(prod, "cEANTrib", codigo_gtin)
         _texto(prod, "uTrib", produto.unidade)
         _texto(prod, "qTrib", _valor(item.quantidade, casas=3))
         _texto(prod, "vUnTrib", _valor(valor_unitario_fiscal, casas=10))
@@ -1154,15 +1252,29 @@ def gerar_xml_nfce(documento):
     _texto(transp, "modFrete", "9")
 
     pag = ET.SubElement(inf_nfe, f"{{{NFE_NS}}}pag")
-    for pagamento in venda.pagamentos.select_related("forma_pagamento", "confirmacao_integracao").order_by("pk"):
+    pagamentos = list(
+        venda.pagamentos.select_related("forma_pagamento", "confirmacao_integracao").order_by("pk")
+    )
+    configuracoes_pagamento = _configuracoes_fiscais_pagamento(venda, pagamentos)
+    total_pagamento_fiscal = Decimal("0.00")
+    for pagamento in pagamentos:
         det_pag = ET.SubElement(pag, f"{{{NFE_NS}}}detPag")
         _texto(det_pag, "indPag", "0")
-        codigo_pagamento = _codigo_pagamento(pagamento.forma_pagamento.tipo)
+        codigo_pagamento, descricao_pagamento = _pagamento_fiscal_efetivo(
+            pagamento, configuracoes_pagamento
+        )
         _texto(det_pag, "tPag", codigo_pagamento)
-        _texto(det_pag, "vPag", _valor(pagamento.valor))
+        if descricao_pagamento:
+            _texto(det_pag, "xPag", descricao_pagamento)
+        valor_pagamento_fiscal = _valor_fiscal_pagamento(pagamento)
+        total_pagamento_fiscal += valor_pagamento_fiscal
+        _texto(det_pag, "vPag", _valor(valor_pagamento_fiscal))
         _adicionar_integracao_pagamento_nfce(
             det_pag, pagamento, codigo_pagamento, uf_emitente=venda.filial.uf
         )
+    troco = total_pagamento_fiscal - venda.total_liquido
+    if troco > 0:
+        _texto(pag, "vTroco", _valor(troco))
 
     inf_adic = ET.SubElement(inf_nfe, f"{{{NFE_NS}}}infAdic")
     _texto(inf_adic, "infCpl", "XML local de preparacao. Assinatura e transmissao SEFAZ pendentes.")
@@ -1364,7 +1476,8 @@ def gerar_xml_nfe_pedido_online(documento):
         det = ET.SubElement(inf_nfe, f"{{{NFE_NS}}}det", {"nItem": str(numero)})
         prod = ET.SubElement(det, f"{{{NFE_NS}}}prod")
         _texto(prod, "cProd", produto.codigo_interno or produto.codigo_barras or produto.pk)
-        _texto(prod, "cEAN", produto.codigo_barras or "SEM GTIN")
+        codigo_gtin = gtin_fiscal(produto.codigo_barras)
+        _texto(prod, "cEAN", codigo_gtin)
         _texto(prod, "xProd", produto.nome[:120])
         _texto(prod, "NCM", produto.ncm)
         if produto.cest:
@@ -1382,7 +1495,7 @@ def gerar_xml_nfe_pedido_online(documento):
         _texto(prod, "qCom", _valor(item.quantidade, casas=3))
         _texto(prod, "vUnCom", _valor(valor_unitario_fiscal, casas=10))
         _texto(prod, "vProd", _valor(composicao_ipi["valor_produto"]))
-        _texto(prod, "cEANTrib", produto.codigo_barras or "SEM GTIN")
+        _texto(prod, "cEANTrib", codigo_gtin)
         _texto(prod, "uTrib", produto.unidade)
         _texto(prod, "qTrib", _valor(item.quantidade, casas=3))
         _texto(prod, "vUnTrib", _valor(valor_unitario_fiscal, casas=10))
@@ -1480,26 +1593,20 @@ def pendencias_preparacao_fiscal(venda, configuracao, natureza):
         erros.append("O certificado A1 da filial está vencido.")
     if not natureza:
         erros.append("Cadastre uma natureza de operação NFC-e ativa.")
-    else:
-        pendencia_cfop = validar_cfop(natureza.cfop, direcao="SAIDA", modelo="NFCE")
-        if pendencia_cfop:
-            erros.append(f"Natureza de operação: {pendencia_cfop}.")
-    erros.extend(
-        pendencias_cenario_fiscal_go(
-            uf_emitente=venda.filial.uf,
-            modelo="65",
-            cfop=getattr(natureza, "cfop", ""),
-            finalidade="1",
-            destinatario_contribuinte=False,
-            possui_frete=False,
-        )
-    )
 
     simples_nacional = _usa_csosn(configuracao)
     exigir_ibs_cbs = _ibs_cbs_obrigatorio(configuracao, venda.filial, "65")
     itens = list(venda.itens.select_related("produto"))
     if not itens:
         erros.append("A venda não possui itens para emissao fiscal.")
+    parametrizacoes = {}
+    if natureza:
+        parametrizacoes = _precarregar_parametrizacoes_fiscais(itens, natureza)
+        erros.extend(
+            _pendencias_cfop_itens(
+                itens, natureza, parametrizacoes, uf_emitente=venda.filial.uf
+            )
+        )
     for item in itens:
         produto = item.produto
         prefixo = f"Produto {produto.nome}:"
@@ -1528,7 +1635,10 @@ def pendencias_preparacao_fiscal(venda, configuracao, natureza):
             erros.append(f"{prefixo} CST 20 exige percentual de reducao da base do ICMS.")
         elif produto.cst_icms != "20" and produto.reducao_base_icms and produto.reducao_base_icms > 0:
             erros.append(f"{prefixo} reducao de base exige CST ICMS compativel, como 20.")
-        if produto.aliquota_icms is None or produto.aliquota_icms < 0:
+        if (
+            produto.cst_icms not in CST_ICMS_ST_RETIDO_SUPORTADOS
+            and (produto.aliquota_icms is None or produto.aliquota_icms < 0)
+        ):
             erros.append(f"{prefixo} informe a aliquota de ICMS, inclusive quando for zero.")
         erros.extend(f"{prefixo} {pendencia}." for pendencia in _pendencias_contribuicoes_produto(produto))
         erros.extend(

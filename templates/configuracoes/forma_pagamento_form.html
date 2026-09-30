@@ -31,6 +31,8 @@
       {% else %}
         <label class="form-field"><span>{{ form.filial.label }}</span>{{ form.filial }}{{ form.filial.errors }}</label>
         <label class="form-field"><span>{{ form.conta_movimento_padrao.label }}</span>{{ form.conta_movimento_padrao }}{{ form.conta_movimento_padrao.errors }}<small>Se ficar vazia, o sistema usa ou cria automaticamente a conta apropriada nesta filial.</small></label>
+        <label class="form-field"><span>{{ form.codigo_fiscal_tpag.label }}</span>{{ form.codigo_fiscal_tpag }}{{ form.codigo_fiscal_tpag.errors }}<small>{{ form.codigo_fiscal_tpag.help_text }}</small></label>
+        <label class="form-field"><span>{{ form.descricao_fiscal_xpag.label }}</span>{{ form.descricao_fiscal_xpag }}{{ form.descricao_fiscal_xpag.errors }}<small>{{ form.descricao_fiscal_xpag.help_text }}</small></label>
         <label class="toggle-field form-field-wide">{{ form.ativo }} <span>{{ form.ativo.label }}</span>{{ form.ativo.errors }}</label>
       {% endif %}
       <div class="form-note form-field-wide"><strong>Histórico preservado.</strong><span>Desativar impede novos pagamentos nesta filial sem alterar vendas antigas.</span></div>

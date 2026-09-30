@@ -98,6 +98,27 @@ class ContratoIbsCbsTests(SimpleTestCase):
         self.assertEqual(calculo.valor_ibs, Decimal("0.06"))
         self.assertEqual(calculo.valor_cbs, Decimal("0.52"))
 
+    def test_cst200_aplica_somente_reducoes_catalogadas(self):
+        cenarios = (
+            ("200003", Decimal("100.0000"), Decimal("0.0000"), Decimal("0.0000")),
+            ("200014", Decimal("100.0000"), Decimal("0.0000"), Decimal("0.0000")),
+            ("200034", Decimal("60.0000"), Decimal("0.0400"), Decimal("0.3600")),
+        )
+        for classificacao, reducao, ibs_efetivo, cbs_efetivo in cenarios:
+            with self.subTest(classificacao=classificacao):
+                calculo = calcular_ibs_cbs_padrao(
+                    valor_operacao=Decimal("21.38"),
+                    cst="200",
+                    cclass_trib=classificacao,
+                    modelo="65",
+                )
+                self.assertEqual(calculo.reducao_aliquota_ibs, reducao)
+                self.assertEqual(calculo.aliquota_efetiva_ibs_uf, ibs_efetivo)
+                self.assertEqual(calculo.aliquota_efetiva_cbs, cbs_efetivo)
+
+        with self.assertRaises(ClassificacaoIbsCbsInvalida):
+            validar_classificacao("200", "200999", "65")
+
     def test_modo_emissao_homologada_nao_libera_cenario_fora_do_recorte(self):
         configuracao = SimpleNamespace(
             modo_transicao_ibs_cbs=ModoTransicaoIbsCbs.EMISSAO_HOMOLOGADA,
@@ -181,6 +202,34 @@ class XmlIbsCbsTests(SimpleTestCase):
         self.assertEqual(item["ibs_uf_aliquota"], "0.1000")
         self.assertEqual(item["cbs_aliquota"], "0.9000")
         self.assertIsNotNone(nfe)
+
+    def test_xml_reducao_gera_gred_apenas_para_cst200(self):
+        imposto = ET.Element(f"{{{NFE_NS}}}imposto")
+        reduzido = calcular_ibs_cbs_padrao(
+            valor_operacao=Decimal("21.38"), cst="200", cclass_trib="200034", modelo="65"
+        )
+        grupo = adicionar_grupo_item(imposto, reduzido, namespace=NFE_NS)
+        self.assertEqual(
+            grupo.findtext(
+                f"{{{NFE_NS}}}gIBSCBS/{{{NFE_NS}}}gIBSUF/"
+                f"{{{NFE_NS}}}gRed/{{{NFE_NS}}}pAliqEfet"
+            ),
+            "0.0400",
+        )
+        self.assertEqual(
+            grupo.findtext(
+                f"{{{NFE_NS}}}gIBSCBS/{{{NFE_NS}}}gCBS/"
+                f"{{{NFE_NS}}}gRed/{{{NFE_NS}}}pAliqEfet"
+            ),
+            "0.3600",
+        )
+
+        imposto_integral = ET.Element(f"{{{NFE_NS}}}imposto")
+        integral = calcular_ibs_cbs_padrao(
+            valor_operacao=Decimal("21.38"), cst="000", cclass_trib="000001", modelo="65"
+        )
+        grupo_integral = adicionar_grupo_item(imposto_integral, integral, namespace=NFE_NS)
+        self.assertIsNone(grupo_integral.find(f".//{{{NFE_NS}}}gRed"))
 
     def test_reconciliacao_bloqueia_total_adulterado(self):
         _, inf_nfe = self._xml()

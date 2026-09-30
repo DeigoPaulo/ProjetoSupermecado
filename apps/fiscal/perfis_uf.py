@@ -78,6 +78,8 @@ def pendencias_endpoints_nfce(filial, configuracao):
 def parametrizacao_beneficio_produto(produto, natureza_operacao):
     if not natureza_operacao or not getattr(produto, "pk", None):
         return None
+    if hasattr(produto, "_parametrizacao_beneficio_fiscal_atual"):
+        return produto._parametrizacao_beneficio_fiscal_atual
     return produto.parametrizacoes_beneficio_fiscal.filter(natureza_operacao=natureza_operacao).first()
 
 

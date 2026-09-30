@@ -211,7 +211,7 @@
                   </span>
                 {% endif %}
               </td>
-              <td class="right">R$ {{ pagamento.valor|floatformat:2 }}</td>
+              <td class="right">R$ {% if pagamento.valor_informado is None %}{{ pagamento.valor|floatformat:2 }}{% else %}{{ pagamento.valor_informado|floatformat:2 }}{% endif %}</td>
             </tr>
           {% endfor %}
         </tbody>

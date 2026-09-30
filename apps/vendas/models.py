@@ -84,6 +84,14 @@ class FormaPagamentoFilial(models.Model):
         related_name="configuracoes_formas_pagamento_filial",
     )
     ativo = models.BooleanField(default=True)
+    codigo_fiscal_tpag = models.CharField(
+        "Código fiscal tPag", max_length=2, blank=True,
+        help_text="Se vazio, será usado o mapeamento fiscal padrão da forma de pagamento.",
+    )
+    descricao_fiscal_xpag = models.CharField(
+        "Descrição fiscal xPag", max_length=60, blank=True,
+        help_text="Obrigatória somente quando o código fiscal tPag for 99.",
+    )
     criado_em = models.DateTimeField(auto_now_add=True)
     atualizado_em = models.DateTimeField(auto_now=True)
 
@@ -93,11 +101,32 @@ class FormaPagamentoFilial(models.Model):
             models.UniqueConstraint(
                 fields=["filial", "forma_pagamento"],
                 name="vendas_forma_pagamento_filial_unica",
-            )
+            ),
+            models.CheckConstraint(
+                condition=(
+                    models.Q(codigo_fiscal_tpag="99")
+                    & ~models.Q(descricao_fiscal_xpag="")
+                )
+                | (
+                    ~models.Q(codigo_fiscal_tpag="99")
+                    & models.Q(descricao_fiscal_xpag="")
+                ),
+                name="vendas_tpag_xpag_coerentes",
+            ),
         ]
 
     def clean(self):
         super().clean()
+        self.codigo_fiscal_tpag = (self.codigo_fiscal_tpag or "").strip()
+        self.descricao_fiscal_xpag = (self.descricao_fiscal_xpag or "").strip()
+        if self.codigo_fiscal_tpag and not (
+            len(self.codigo_fiscal_tpag) == 2 and self.codigo_fiscal_tpag.isdigit()
+        ):
+            raise ValidationError({"codigo_fiscal_tpag": "Informe o tPag com 2 dígitos."})
+        if self.codigo_fiscal_tpag == "99" and not self.descricao_fiscal_xpag:
+            raise ValidationError({"descricao_fiscal_xpag": "Informe xPag quando tPag for 99."})
+        if self.codigo_fiscal_tpag != "99" and self.descricao_fiscal_xpag:
+            raise ValidationError({"descricao_fiscal_xpag": "xPag só pode ser informado quando tPag for 99."})
         if (
             self.conta_movimento_padrao_id
             and self.filial_id
@@ -212,6 +241,7 @@ class PagamentoVenda(models.Model):
     venda = models.ForeignKey(Venda, on_delete=models.PROTECT, related_name="pagamentos")
     forma_pagamento = models.ForeignKey(FormaPagamento, on_delete=models.PROTECT)
     valor = models.DecimalField(max_digits=12, decimal_places=2)
+    valor_informado = models.DecimalField(max_digits=12, decimal_places=2, null=True, blank=True)
     status = models.CharField(max_length=30, choices=StatusPagamento.choices, default=StatusPagamento.CONFIRMADO)
     transacao_externa_id = models.CharField(max_length=120, blank=True)
     nsu = models.CharField(max_length=60, blank=True)
@@ -230,6 +260,17 @@ class PagamentoVenda(models.Model):
     estorno_solicitado_em = models.DateTimeField(null=True, blank=True)
     estornado_em = models.DateTimeField(null=True, blank=True)
     data = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        constraints = [
+            models.CheckConstraint(
+                condition=(
+                    models.Q(valor_informado__isnull=True)
+                    | models.Q(valor_informado__gte=models.F("valor"))
+                ),
+                name="vendas_valor_informado_gte_aplicado",
+            )
+        ]
 
 class EstornoParcialPagamento(models.Model):
     pagamento = models.ForeignKey(PagamentoVenda, on_delete=models.PROTECT, related_name="estornos_parciais")

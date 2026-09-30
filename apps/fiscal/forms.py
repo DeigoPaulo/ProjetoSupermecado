@@ -327,7 +327,7 @@ class ParametrizacaoBeneficioFiscalProdutoForm(forms.ModelForm):
 
     class Meta:
         model = ParametrizacaoBeneficioFiscalProduto
-        fields = ["produto", "natureza_operacao", "situacao", "codigo_beneficio_fiscal", "fundamento_contabil"]
+        fields = ["produto", "natureza_operacao", "cfop", "situacao", "codigo_beneficio_fiscal", "fundamento_contabil"]
         widgets = {"fundamento_contabil": forms.Textarea(attrs={"rows": 3})}
 
     def clean(self):

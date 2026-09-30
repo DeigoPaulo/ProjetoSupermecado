@@ -165,7 +165,7 @@ class CompatibilidadeCnpjFase6Tests(SimpleTestCase):
           <NFe><infNFe Id="NFe{chave}"><ide><nNF>123</nNF><dhEmi>2026-09-17T10:00:00-03:00</dhEmi></ide>
           <emit><CNPJ>{self.cnpj.lower()}</CNPJ><xNome>Fornecedor Alfa</xNome></emit>
           <dest><CNPJ>{self.cnpj.lower()}</CNPJ></dest>
-          <det nItem="1"><prod><cProd>1</cProd><xProd>Produto</xProd><qCom>1</qCom><vProd>10.00</vProd></prod></det>
+          <det nItem="1"><prod><cProd>1</cProd><xProd>Produto</xProd><uCom>UN</uCom><qCom>1</qCom><vUnCom>10.00</vUnCom><vProd>10.00</vProd></prod></det>
           <total><ICMSTot><vNF>10.00</vNF></ICMSTot></total></infNFe></NFe>
           <protNFe><infProt><chNFe>{chave.lower()}</chNFe><cStat>100</cStat></infProt></protNFe>
         </nfeProc>'''.encode()

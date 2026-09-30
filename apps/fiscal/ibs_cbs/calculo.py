@@ -41,11 +41,16 @@ class CalculoIbsCbs:
     cclass_trib: str
     base: Decimal
     aliquota_ibs_uf: Decimal
+    reducao_aliquota_ibs: Decimal
+    aliquota_efetiva_ibs_uf: Decimal
     valor_ibs_uf: Decimal
     aliquota_ibs_municipio: Decimal
+    aliquota_efetiva_ibs_municipio: Decimal
     valor_ibs_municipio: Decimal
     valor_ibs: Decimal
     aliquota_cbs: Decimal
+    reducao_aliquota_cbs: Decimal
+    aliquota_efetiva_cbs: Decimal
     valor_cbs: Decimal
 
 
@@ -54,21 +59,33 @@ def calcular_ibs_cbs_padrao(*, valor_operacao, cst, cclass_trib, modelo):
     base = arredondar_monetario(valor_operacao)
     if base < 0:
         raise ValueError("Base IBS/CBS negativa no recorte fiscal padrao")
-    valor_ibs_uf = arredondar_monetario(base * ALIQUOTA_IBS_UF_2026 / Decimal("100"))
+    fator_ibs = Decimal("1") - classificacao.reducao_aliquota_ibs / Decimal("100")
+    fator_cbs = Decimal("1") - classificacao.reducao_aliquota_cbs / Decimal("100")
+    aliquota_efetiva_ibs_uf = (ALIQUOTA_IBS_UF_2026 * fator_ibs).quantize(Decimal("0.0001"))
+    aliquota_efetiva_ibs_municipio = (
+        ALIQUOTA_IBS_MUNICIPIO_2026 * fator_ibs
+    ).quantize(Decimal("0.0001"))
+    aliquota_efetiva_cbs = (ALIQUOTA_CBS_2026 * fator_cbs).quantize(Decimal("0.0001"))
+    valor_ibs_uf = arredondar_monetario(base * aliquota_efetiva_ibs_uf / Decimal("100"))
     valor_ibs_municipio = arredondar_monetario(
-        base * ALIQUOTA_IBS_MUNICIPIO_2026 / Decimal("100")
+        base * aliquota_efetiva_ibs_municipio / Decimal("100")
     )
-    valor_cbs = arredondar_monetario(base * ALIQUOTA_CBS_2026 / Decimal("100"))
+    valor_cbs = arredondar_monetario(base * aliquota_efetiva_cbs / Decimal("100"))
     return CalculoIbsCbs(
         cst=classificacao.cst,
         cclass_trib=classificacao.cclass_trib,
         base=base,
         aliquota_ibs_uf=ALIQUOTA_IBS_UF_2026,
+        reducao_aliquota_ibs=classificacao.reducao_aliquota_ibs,
+        aliquota_efetiva_ibs_uf=aliquota_efetiva_ibs_uf,
         valor_ibs_uf=valor_ibs_uf,
         aliquota_ibs_municipio=ALIQUOTA_IBS_MUNICIPIO_2026,
+        aliquota_efetiva_ibs_municipio=aliquota_efetiva_ibs_municipio,
         valor_ibs_municipio=valor_ibs_municipio,
         valor_ibs=arredondar_monetario(valor_ibs_uf + valor_ibs_municipio),
         aliquota_cbs=ALIQUOTA_CBS_2026,
+        reducao_aliquota_cbs=classificacao.reducao_aliquota_cbs,
+        aliquota_efetiva_cbs=aliquota_efetiva_cbs,
         valor_cbs=valor_cbs,
     )
 

@@ -62,9 +62,15 @@ CENARIOS_TRIBUTARIOS_GO = (
         "codigo": "icms_st_retido",
         "nome": "ICMS-ST proprio ou retido anteriormente",
         "modelos": ("55", "65"),
-        "status": BLOQUEADO,
-        "escopo_atual": "Grupos XML de ICMS-ST ainda nao implementados.",
-        "proxima_evidencia": "Calculo, campos por item, totalizadores, XML e testes.",
+        "status": PARCIAL,
+        "escopo_atual": (
+            "CST60/ICMS60 retido anteriormente no recorte homologado, sem cálculo "
+            "de nova ST e sem inventar bases ou valores de retenção anterior."
+        ),
+        "proxima_evidencia": (
+            "ICMS-ST próprio permanece bloqueado; exige MVA, base, alíquota, "
+            "totalizadores, contrato contábil e homologação específicos."
+        ),
     },
     {
         "codigo": "tributacao_monofasica",
