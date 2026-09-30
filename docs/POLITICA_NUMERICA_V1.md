@@ -25,6 +25,14 @@ O sistema nao infere fator pela descricao do item. Unidade desconhecida, fator i
 
 A conversao nao altera `vProd`, `vNF`, fatura, duplicatas ou conta a pagar. A composicao tributaria do custo, incluindo ICMS-ST, IPI, PIS/COFINS e IBS/CBS, permanece fora deste contrato ate validacao contabil especifica.
 
+### Cadastro assistido de embalagens
+
+Quando a identificacao do produto ou a conversao ainda nao estiver cadastrada, a pre-importacao apresenta a pendencia sem persistir o XML e sem movimentar estoque ou financeiro. O operador autorizado deve confirmar a unidade-base, a apresentacao e o fator; textos como `CX12` na descricao nunca geram fator automaticamente. A confirmacao reenvia o mesmo arquivo, confere seu SHA-256 e reaplica todas as decisoes e a importacao em uma unica transacao.
+
+O aprendizado usa os cadastros existentes: embalagem padrao em `Produto`, apresentacoes adicionais em `CodigoBarrasProduto` e codigo comercial do fornecedor em `ProdutoFornecedor`. CX, FD e PCT podem coexistir com fatores diferentes. Uma nova apresentacao nao substitui silenciosamente a embalagem padrao, e um novo codigo de barras preserva os codigos anteriores. NCM e CEST exibidos no assistente sao apenas referencias informadas pelo fornecedor na NF-e; nenhuma tributacao de entrada e copiada como regra de saida.
+
+Fatores podem ser corrigidos por usuario de Cadastros, com confirmacao explicita e `LogAuditoria`. A mudanca e estritamente prospectiva: novas NF-e usam o fator vigente, enquanto `ItemEntradaCompra`, estoque, custos e snapshots `purchase_xml_unit_conversion_v1` historicos nunca sao recalculados ou reescritos.
+
 ## Venda e CMV
 
 Cada item de venda e quantizado uma unica vez para centavos antes de compor o total da venda. Pagamentos, descontos e estornos permanecem em 2 casas. O snapshot de custo da venda preserva 6 casas para permitir o futuro calculo de CMV sem arredondar o custo unitario antes da multiplicacao.

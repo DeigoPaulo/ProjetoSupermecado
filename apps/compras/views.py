@@ -1,13 +1,14 @@
 import csv
+import json
 from urllib.parse import urlencode
 
 from django.contrib import messages
 from django.contrib.auth.decorators import login_required
 from django.contrib.auth.mixins import LoginRequiredMixin
-from django.core.exceptions import ValidationError
+from django.core.exceptions import PermissionDenied, ValidationError
 from django.db import transaction
 from django.db.models import Count, Q, Sum
-from django.http import HttpResponse
+from django.http import HttpResponse, JsonResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse, reverse_lazy
 from django.utils import timezone
@@ -75,6 +76,7 @@ from .services import (
     vincular_xml_a_pedido_manual,
 )
 from .services_xml import importar_xml_entrada
+from .services_xml_assistido import analisar_xml_entrada, aplicar_resolucoes_e_importar_xml
 
 
 FINANCEIRO_CHOICES = [
@@ -91,22 +93,53 @@ FINANCEIRO_CHOICES = [
 def importar_xml(request):
     form = ImportarXMLEntradaForm(request.POST or None, request.FILES or None)
     if request.method == "POST" and form.is_valid():
+        conteudo = form.cleaned_data["arquivo_xml"].read()
+        acao = request.POST.get("acao")
         try:
-            entrada = importar_xml_entrada(
-                form.cleaned_data["arquivo_xml"].read(),
-                usuario=request.user,
-                gerar_conta_financeira=form.cleaned_data["gerar_conta_financeira"],
-                ip=request.META.get("REMOTE_ADDR"),
-            )
+            if acao == "analisar":
+                return JsonResponse(analisar_xml_entrada(conteudo, usuario=request.user))
+            if acao == "confirmar":
+                try:
+                    decisoes = json.loads(request.POST.get("decisoes") or "[]")
+                except json.JSONDecodeError:
+                    raise ValidationError("As decisões da análise são inválidas.") from None
+                if not isinstance(decisoes, list):
+                    raise ValidationError("As decisões da análise são inválidas.")
+                entrada = aplicar_resolucoes_e_importar_xml(
+                    conteudo,
+                    hash_analisado=request.POST.get("hash_sha256"),
+                    decisoes=decisoes,
+                    usuario=request.user,
+                    gerar_conta_financeira=form.cleaned_data["gerar_conta_financeira"],
+                    ip=request.META.get("REMOTE_ADDR"),
+                )
+            else:
+                entrada = importar_xml_entrada(
+                    conteudo,
+                    usuario=request.user,
+                    gerar_conta_financeira=form.cleaned_data["gerar_conta_financeira"],
+                    ip=request.META.get("REMOTE_ADDR"),
+                )
+        except PermissionDenied as exc:
+            if acao in {"analisar", "confirmar"}:
+                return JsonResponse({"erro": str(exc)}, status=403)
+            raise
         except ValidationError as exc:
+            if acao in {"analisar", "confirmar"}:
+                return JsonResponse({"erro": " ".join(exc.messages)}, status=400)
             for mensagem in exc.messages:
                 form.add_error("arquivo_xml", mensagem)
         else:
+            if acao == "confirmar":
+                return JsonResponse({"redirect": reverse("compras:editar", kwargs={"pk": entrada.pk})})
             messages.success(
                 request,
                 "NF-e importada como rascunho. Revise todos os dados antes de finalizar.",
             )
             return redirect("compras:editar", pk=entrada.pk)
+    elif request.method == "POST" and request.POST.get("acao") in {"analisar", "confirmar"}:
+        erros = [mensagem for lista in form.errors.values() for mensagem in lista]
+        return JsonResponse({"erro": " ".join(erros)}, status=400)
     return render(request, "compras/entrada_importar_xml.html", {"form": form})
 
 

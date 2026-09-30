@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% load l10n %}
 
 {% block title %}Produto{% endblock %}
 
@@ -76,6 +77,11 @@
     <div class="form-section-heading"><div><span class="status status-success">Essencial</span><h2>Unidades e embalagens</h2></div><p>Defina a unidade base antes de cadastrar apresentações adicionais.</p></div>
     <div class="form-grid form-grid-inner">
       <label class="form-field"><span>Unidade base do estoque</span>{{ form.unidade }}{{ form.unidade.errors }}<small>Unidade usada no saldo e na venda.</small></label>
+      {% if object %}
+        <input type="hidden" name="unidade_compra_original" value="{{ form.initial.unidade_compra }}">
+        <input type="hidden" name="fator_conversao_compra_original" value="{{ form.initial.fator_conversao_compra|unlocalize }}">
+        <input type="hidden" name="confirmar_alteracao_fator" value="0" data-factor-confirmed>
+      {% endif %}
       <label class="form-field"><span>{{ form.unidade_compra.label }}</span>{{ form.unidade_compra }}{{ form.unidade_compra.errors }}</label>
       <label class="form-field"><span>{{ form.fator_conversao_compra.label }}</span>{{ form.fator_conversao_compra }}{{ form.fator_conversao_compra.errors }}<small>Ex.: caixa com 12 unidades = 12.</small></label>
       <label class="form-field"><span>{{ form.peso_liquido.label }}</span>{{ form.peso_liquido }}{{ form.peso_liquido.errors }}</label>
@@ -92,6 +98,7 @@
           {% for codigo_form in codigos_formset %}
             <div class="product-code-item{% if not codigo_form.instance.pk and not codigos_formset.is_bound %} is-formset-empty{% endif %}" data-formset-item>
               {{ codigo_form.id }}
+              {% if codigo_form.instance.pk %}<input type="hidden" name="codigos-{{ forloop.counter0 }}-fator_original" value="{{ codigo_form.initial.fator_conversao|unlocalize }}">{% endif %}
               <label class="form-field"><span>EAN / código</span>{{ codigo_form.codigo }}{{ codigo_form.codigo.errors }}</label>
               <label class="form-field"><span>Apresentação</span>{{ codigo_form.tipo }}{{ codigo_form.tipo.errors }}</label>
               <label class="form-field"><span>Quantidade na unidade base</span>{{ codigo_form.fator_conversao }}{{ codigo_form.fator_conversao.errors }}</label>
@@ -322,6 +329,34 @@
 {% endblock %}
 {% block extra_js %}
 <script>
+(function () {
+  const form = document.querySelector("[data-product-form]");
+  const confirmed = form && form.querySelector("[data-factor-confirmed]");
+  if (!form || !confirmed) return;
+  const standardFactor = form.querySelector('[name="fator_conversao_compra"]');
+  const standardUnit = form.querySelector('[name="unidade_compra"]');
+  const originalFactor = form.querySelector('[name="fator_conversao_compra_original"]');
+  const originalUnit = form.querySelector('[name="unidade_compra_original"]');
+  form.addEventListener("submit", function (event) {
+    const standardChanged = standardFactor && originalFactor && standardFactor.value !== originalFactor.value
+      || standardUnit && originalUnit && standardUnit.value !== originalUnit.value;
+    const codeChanged = Array.from(form.querySelectorAll('[name$="-fator_original"]')).some(function (original) {
+      const fieldName = original.name.replace("fator_original", "fator_conversao");
+      const current = form.querySelector(`[name="${fieldName}"]`);
+      return current && current.value !== original.value;
+    });
+    if (!standardChanged && !codeChanged || confirmed.value === "1") return;
+    event.preventDefault();
+    const accepted = window.confirm(
+      "Confirmar alteração do fator de embalagem?\n\n" +
+      "Somente operações futuras usarão esse novo fator. Entradas e snapshots anteriores permanecerão inalterados."
+    );
+    if (accepted) {
+      confirmed.value = "1";
+      form.requestSubmit(event.submitter || undefined);
+    }
+  });
+})();
 (function () {
   const custo = document.getElementById("id_preco_custo");
   const margem = document.getElementById("id_margem_desejada_percentual");

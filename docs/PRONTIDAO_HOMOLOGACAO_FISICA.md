@@ -97,6 +97,13 @@ Todos os itens abaixo permanecem **AGUARDANDO HOMOLOGAÇÃO**.
 - Windows limpo, servidor local, banco, Desktop PDV e periféricos.
 - Instalação sem dependência da máquina ou das ferramentas de desenvolvimento.
 
+### Importação de NF-e e embalagens
+
+- Importar NF-e com embalagem ainda não cadastrada, configurar o fator confirmado pelo operador e concluir a entrada como rascunho; importar a próxima NF-e da mesma embalagem e confirmar o reconhecimento automático.
+- Alterar um fator de embalagem de 12 para 15 com confirmação explícita e conferir que entradas e snapshots anteriores preservam 12, enquanto uma nova NF-e usa 15.
+- Validar CX, FD e PCT com códigos e fatores distintos, garantindo que uma apresentação adicional não substitui silenciosamente a embalagem padrão.
+- Confirmar que análise, vínculo, cadastro de produto e alteração de fator não movimentam estoque nem criam financeiro antes da finalização da entrada.
+
 ## Pendente de credencial real
 
 Os itens fiscais abaixo permanecem **AGUARDANDO HOMOLOGAÇÃO**:

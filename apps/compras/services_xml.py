@@ -13,7 +13,7 @@ from apps.auditoria.models import LogAuditoria
 from apps.empresas.models import Filial
 from apps.clientes.escopo import empresa_id_do_usuario
 from apps.fornecedores.models import Fornecedor
-from apps.produtos.models import CodigoBarrasProduto, Produto, ProdutoFornecedor
+from apps.produtos.models import CodigoBarrasProduto, Produto, ProdutoFornecedor, UnidadeMedida
 from apps.fiscal.chave_acesso import canonicalizar_chave_acesso_estrutural
 from apps.fiscal.estrategia_normalizacao_cnpj import canonicalizar_cnpj
 
@@ -33,6 +33,19 @@ LIMITE_XML_BYTES = 5 * 1024 * 1024
 CENTAVOS = Decimal("0.01")
 QUANTIDADE_TRES_CASAS = Decimal("0.001")
 COMPRIMENTOS_GTIN = {8, 12, 13, 14}
+STATUS_RESOLVIDO = "RESOLVIDO"
+STATUS_PRODUTO_NAO_ENCONTRADO = "PRODUTO_NAO_ENCONTRADO"
+STATUS_CONVERSAO_NAO_CONFIGURADA = "CONVERSAO_NAO_CONFIGURADA"
+STATUS_CONFLITO_IDENTIFICACAO = "CONFLITO_IDENTIFICACAO"
+STATUS_CONFLITO_FATOR = "CONFLITO_FATOR"
+STATUS_UNIDADE_INVALIDA = "UNIDADE_INVALIDA"
+STATUS_PRECISAO_INCOMPATIVEL = "PRECISAO_INCOMPATIVEL"
+
+
+class ErroAnaliseItem(ValidationError):
+    def __init__(self, status, mensagem):
+        self.status = status
+        super().__init__(mensagem)
 
 
 def _texto(elemento, caminho, *, obrigatorio=False, rotulo=None):
@@ -134,6 +147,8 @@ def ler_xml_nfe(conteudo):
             "ean": _texto(produto, caminho("cEAN")),
             "ean_tributavel": _texto(produto, caminho("cEANTrib")),
             "descricao": _texto(produto, caminho("xProd"), obrigatorio=True, rotulo="descrição do produto"),
+            "ncm_fornecedor": _texto(produto, caminho("NCM")),
+            "cest_fornecedor": _texto(produto, caminho("CEST")),
             "unidade_comercial": _texto(
                 produto, caminho("uCom"), obrigatorio=True, rotulo="unidade comercial"
             ).upper(),
@@ -346,7 +361,8 @@ def _localizar_produto(item, fornecedor):
         if campo == "ean":
             exatos = [codigo for codigo in codigos_encontrados if codigo.codigo == valor]
             if len(exatos) > 1:
-                raise ValidationError(
+                raise ErroAnaliseItem(
+                    STATUS_CONFLITO_IDENTIFICACAO,
                     f"Código comercial ambíguo no item {item['numero'] or '?'}: {valor}."
                 )
             codigo_comercial = exatos[0] if exatos else None
@@ -378,7 +394,8 @@ def _localizar_produto(item, fornecedor):
             f"{fonte} {codigo or '-'} -> {produto.nome}"
             for fonte, codigo, produto in evidencias
         )
-        raise ValidationError(
+        raise ErroAnaliseItem(
+            STATUS_CONFLITO_IDENTIFICACAO,
             f"Conflito na identificação do produto do item {item['numero'] or '?'}. {detalhes}."
         )
     if not produtos_por_id:
@@ -389,7 +406,8 @@ def _localizar_produto(item, fornecedor):
 def _quantidade_com_tres_casas(valor, *, numero_item, rotulo):
     quantizada = valor.quantize(QUANTIDADE_TRES_CASAS)
     if valor != quantizada:
-        raise ValidationError(
+        raise ErroAnaliseItem(
+            STATUS_PRECISAO_INCOMPATIVEL,
             f"Precisão incompatível no item {numero_item or '?'}: {rotulo} {valor} "
             "não pode ser representada exatamente com 3 casas decimais."
         )
@@ -398,27 +416,36 @@ def _quantidade_com_tres_casas(valor, *, numero_item, rotulo):
 
 def _converter_item_para_unidade_base(item, produto, codigo_comercial):
     unidade_documental = item["unidade_comercial"]
+    unidade_comparavel = "PCT" if unidade_documental == "PAC" else unidade_documental
     evidencias_fator = []
     if codigo_comercial is not None:
         evidencias_fator.append(("CODIGO_BARRAS_ADICIONAL", codigo_comercial.fator_conversao))
-    if unidade_documental == produto.unidade:
+    if unidade_comparavel == produto.unidade:
         evidencias_fator.append(("UNIDADE_BASE", Decimal("1.000")))
-    if unidade_documental == produto.unidade_compra:
+    if unidade_comparavel == produto.unidade_compra:
         evidencias_fator.append(("UNIDADE_COMPRA", produto.fator_conversao_compra))
 
     invalidas = [(fonte, fator) for fonte, fator in evidencias_fator if fator is None or fator <= 0]
     if invalidas:
-        raise ValidationError(
+        raise ErroAnaliseItem(
+            STATUS_CONFLITO_FATOR,
             f"Fator de conversão inválido para o item {item['numero'] or '?'}; corrija o cadastro."
         )
     fatores = {fator for _, fator in evidencias_fator}
     if len(fatores) > 1:
         detalhes = " e ".join(f"{fonte} informa fator {fator}" for fonte, fator in evidencias_fator)
-        raise ValidationError(
+        raise ErroAnaliseItem(
+            STATUS_CONFLITO_FATOR,
             f"Conversão de unidade ambígua para o item {item['numero'] or '?'}. {detalhes}."
         )
     if not evidencias_fator:
-        raise ValidationError(
+        status = (
+            STATUS_CONVERSAO_NAO_CONFIGURADA
+            if unidade_comparavel in UnidadeMedida.values
+            else STATUS_UNIDADE_INVALIDA
+        )
+        raise ErroAnaliseItem(
+            status,
             f"Unidade comercial {unidade_documental or '-'} desconhecida no item {item['numero'] or '?'}. "
             "Configure a unidade de compra ou um código de barras adicional com fator de conversão."
         )
@@ -465,8 +492,7 @@ def _converter_item_para_unidade_base(item, produto, codigo_comercial):
     }
 
 
-def importar_xml_entrada(conteudo, *, usuario, gerar_conta_financeira=True, ip=None):
-    dados = ler_xml_nfe(conteudo)
+def _resolver_contexto_importacao(dados, usuario):
     filiais = Filial.objects.filter(is_active=True).select_related("empresa")
     empresa_id = empresa_id_do_usuario(usuario)
     if empresa_id is not None:
@@ -492,6 +518,12 @@ def importar_xml_entrada(conteudo, *, usuario, gerar_conta_financeira=True, ip=N
         dados["emitente_cnpj"],
         "fornecedor",
     )
+    return filial, fornecedor
+
+
+def importar_xml_entrada(conteudo, *, usuario, gerar_conta_financeira=True, ip=None):
+    dados = ler_xml_nfe(conteudo)
+    filial, fornecedor = _resolver_contexto_importacao(dados, usuario)
 
     itens_resolvidos = []
     nao_encontrados = []

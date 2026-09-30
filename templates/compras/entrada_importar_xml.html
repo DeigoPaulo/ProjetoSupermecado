@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% load static %}
 
 {% block title %}Importar XML de entrada{% endblock %}
 
@@ -16,7 +17,7 @@
 </section>
 <ol class="purchase-import-steps" aria-label="Etapas da importação"><li><span>1</span><strong>Selecionar XML</strong><small>NF-e autorizada de até 5 MB</small></li><li><span>2</span><strong>Importar</strong><small>Validar fornecedor, filial e produtos</small></li><li><span>3</span><strong>Revisar rascunho</strong><small>Conferir itens, valores e parcelas</small></li><li><span>4</span><strong>Finalizar</strong><small>Somente então atualizar estoque e financeiro</small></li></ol>
 
-<form method="post" enctype="multipart/form-data" class="panel purchase-form">
+<form method="post" enctype="multipart/form-data" class="panel purchase-form" data-xml-assistant-form>
   {% csrf_token %}
   <section class="form-section purchase-section">
     <div class="form-section-header">
@@ -39,11 +40,23 @@
     </div>
   </section>
 
+  <section class="form-section purchase-section" data-xml-analysis hidden aria-live="polite">
+    <div class="form-section-header">
+      <h2>Conferência dos produtos e embalagens</h2>
+      <p data-xml-analysis-summary></p>
+    </div>
+    <div data-xml-items></div>
+    <div class="errorlist" data-xml-error hidden></div>
+  </section>
+
   <div class="form-actions purchase-actions">
     <a class="secondary-button" href="{% url 'compras:lista' %}">Cancelar</a>
-    <button class="primary-button" type="submit">
-      <i class="fa-solid fa-file-import"></i> Validar e criar rascunho
+    <button class="primary-button" type="submit" data-xml-submit>
+      <i class="fa-solid fa-magnifying-glass"></i> Analisar NF-e
     </button>
   </div>
 </form>
+{% endblock %}
+{% block extra_js %}
+<script src="{% static 'js/compras_importacao_xml.js' %}?v=20260930-1"></script>
 {% endblock %}

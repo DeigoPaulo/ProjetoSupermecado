@@ -12,6 +12,7 @@ from django.views.decorators.http import require_GET, require_POST
 from django.views.generic import CreateView, ListView, UpdateView
 
 from apps.accounts.permissions import CADASTROS, RoleRequiredMixin, role_required, supervisor_from_request
+from apps.auditoria.models import LogAuditoria
 from apps.configuracoes.models import ConfiguracaoImpressao, TipoDocumentoImpressao
 from apps.configuracoes.services import configuracao_impressao_para
 from apps.empresas.models import AcaoPinSupervisor
@@ -25,7 +26,7 @@ from .forms import (
     ProdutoImportCSVForm, ReajustePrecoForm, SetorBalancaForm, VersaoPrecoProdutoForm,
 )
 from .models import (
-    Categoria, ConfiguracaoBalancaProduto, Marca, Produto, ProdutoFornecedor, SetorBalanca,
+    Categoria, CodigoBarrasProduto, ConfiguracaoBalancaProduto, Marca, Produto, ProdutoFornecedor, SetorBalanca,
     StatusVersaoPreco, VersaoPrecoProduto,
 )
 from .services import (
@@ -102,6 +103,66 @@ class ProdutoListView(LoginRequiredMixin, RoleRequiredMixin, ListView):
 
 
 class ProdutoGaleriaMixin:
+    def _alteracoes_fator(self, form, codigos_formset):
+        if not self.object or not self.object.pk:
+            return []
+        produto_atual = Produto.all_objects.select_for_update().get(pk=self.object.pk)
+        alteracoes = []
+        fator_novo = form.cleaned_data["fator_conversao_compra"]
+        unidade_nova = form.cleaned_data["unidade_compra"]
+        if fator_novo != produto_atual.fator_conversao_compra or unidade_nova != produto_atual.unidade_compra:
+            fator_original = self.request.POST.get("fator_conversao_compra_original")
+            unidade_original = self.request.POST.get("unidade_compra_original")
+            if fator_original is None or unidade_original is None:
+                form.add_error(None, "Recarregue a página antes de alterar a embalagem padrão.")
+                return None
+            if (
+                str(produto_atual.fator_conversao_compra) != fator_original
+                or produto_atual.unidade_compra != unidade_original
+            ):
+                form.add_error(
+                    None,
+                    "A embalagem padrão foi alterada por outro usuário. Recarregue e revise os valores.",
+                )
+                return None
+            alteracoes.append({
+                "tipo": "padrao",
+                "codigo": produto_atual.codigo_barras,
+                "unidade_anterior": produto_atual.unidade_compra,
+                "unidade_nova": unidade_nova,
+                "fator_anterior": produto_atual.fator_conversao_compra,
+                "fator_novo": fator_novo,
+            })
+
+        for codigo_form in codigos_formset.forms:
+            codigo_id = codigo_form.cleaned_data.get("id")
+            if not codigo_id or codigo_form.cleaned_data.get("DELETE"):
+                continue
+            codigo_atual = CodigoBarrasProduto.objects.select_for_update().get(pk=codigo_id.pk)
+            fator_codigo_novo = codigo_form.cleaned_data["fator_conversao"]
+            if fator_codigo_novo == codigo_atual.fator_conversao:
+                continue
+            indice = codigo_form.prefix.rsplit("-", 1)[-1]
+            fator_codigo_original = self.request.POST.get(f"codigos-{indice}-fator_original")
+            if fator_codigo_original is None:
+                codigo_form.add_error("fator_conversao", "Recarregue a página antes de alterar este fator.")
+                return None
+            if str(codigo_atual.fator_conversao) != fator_codigo_original:
+                codigo_form.add_error(
+                    "fator_conversao",
+                    "Este fator foi alterado por outro usuário. Recarregue e revise o valor.",
+                )
+                return None
+            alteracoes.append({
+                "tipo": "codigo",
+                "codigo": codigo_atual.codigo,
+                "unidade_anterior": codigo_atual.get_tipo_display(),
+                "unidade_nova": codigo_form.cleaned_data["tipo"],
+                "fator_anterior": codigo_atual.fator_conversao,
+                "fator_novo": fator_codigo_novo,
+            })
+        return alteracoes
+
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
         if self.request.POST:
@@ -215,6 +276,15 @@ class ProdutoGaleriaMixin:
         ):
             return self.form_invalid(form)
         with transaction.atomic():
+            alteracoes_fator = self._alteracoes_fator(form, codigos_formset)
+            if alteracoes_fator is None:
+                return self.form_invalid(form)
+            if alteracoes_fator and self.request.POST.get("confirmar_alteracao_fator") != "1":
+                form.add_error(
+                    None,
+                    "Confirme a alteração de embalagem. Somente operações futuras usarão o novo fator.",
+                )
+                return self.form_invalid(form)
             self.object = form.save()
             galeria_formset.instance = self.object
             galeria_formset.save()
@@ -227,6 +297,22 @@ class ProdutoGaleriaMixin:
             if nutricao_informada:
                 nutricao_formset.instance = self.object
                 nutricao_formset.save()
+            for alteracao in alteracoes_fator:
+                LogAuditoria.objects.create(
+                    usuario=self.request.user,
+                    modulo="produtos",
+                    acao="ALTERACAO_FATOR_EMBALAGEM",
+                    descricao=(
+                        f"Produto {self.object.pk}; origem cadastro de produto; "
+                        f"embalagem {alteracao['tipo']} código {alteracao['codigo'] or '-'}; "
+                        f"unidade {alteracao['unidade_anterior']} -> {alteracao['unidade_nova']}; "
+                        f"fator {alteracao['fator_anterior']} -> {alteracao['fator_novo']}. "
+                        "Alteração prospectiva: entradas e snapshots históricos não foram modificados."
+                    ),
+                    objeto_tipo="Produto",
+                    objeto_id=str(self.object.pk),
+                    ip=self.request.META.get("REMOTE_ADDR"),
+                )
             empresas_publicadas = set()
             for estoque in self.object.estoques.select_related("filial__empresa").order_by("filial_id"):
                 empresa = estoque.filial.empresa

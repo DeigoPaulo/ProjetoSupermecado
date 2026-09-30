@@ -453,6 +453,9 @@ class ProdutoViewsTests(TestCase):
                 "unidade": "UN",
                 "unidade_compra": "CX",
                 "fator_conversao_compra": "12.000",
+                "unidade_compra_original": "UN",
+                "fator_conversao_compra_original": "1.000",
+                "confirmar_alteracao_fator": "1",
                 "peso_liquido": "10.500",
                 "peso_bruto": "11.000",
                 "preco_custo": "10.00",
@@ -489,6 +492,73 @@ class ProdutoViewsTests(TestCase):
         self.assertEqual(codigo.codigo, "17891234567897")
         self.assertEqual(codigo.fator_conversao, Decimal("12.000"))
         self.assertTrue(codigo.permite_venda)
+
+    def test_alteracao_de_fator_exige_confirmacao_e_gera_auditoria(self):
+        self.produto.unidade_compra = "CX"
+        self.produto.fator_conversao_compra = Decimal("12.000")
+        self.produto.save(update_fields=["unidade_compra", "fator_conversao_compra", "updated_at"])
+        codigo = CodigoBarrasProduto.objects.create(
+            produto=self.produto,
+            codigo="17891234567897",
+            tipo="CAIXA",
+            fator_conversao=Decimal("12.000"),
+            permite_venda=False,
+        )
+        dados = {
+            "codigo_barras": self.produto.codigo_barras,
+            "codigo_interno": self.produto.codigo_interno,
+            "nome": self.produto.nome,
+            "categoria": self.categoria.pk,
+            "unidade": "UN",
+            "unidade_compra": "CX",
+            "fator_conversao_compra": "15.000",
+            "unidade_compra_original": "CX",
+            "fator_conversao_compra_original": "12.000",
+            "peso_liquido": "",
+            "peso_bruto": "",
+            "preco_custo": "10.00",
+            "preco_venda": "15.00",
+            "estoque_minimo": "0",
+            "vendido_no_pdv": "on",
+            "ncm": "10063021",
+            "origem_mercadoria": "0",
+            "cst_icms": "00",
+            "aliquota_icms": "18.00",
+            "is_active": "on",
+            "galeria-TOTAL_FORMS": "0",
+            "galeria-INITIAL_FORMS": "0",
+            "galeria-MIN_NUM_FORMS": "0",
+            "galeria-MAX_NUM_FORMS": "1000",
+            "codigos-TOTAL_FORMS": "1",
+            "codigos-INITIAL_FORMS": "1",
+            "codigos-MIN_NUM_FORMS": "0",
+            "codigos-MAX_NUM_FORMS": "1000",
+            "codigos-0-id": codigo.pk,
+            "codigos-0-codigo": codigo.codigo,
+            "codigos-0-tipo": "CAIXA",
+            "codigos-0-fator_conversao": "15.000",
+            "codigos-0-fator_original": "12.000",
+            "codigos-0-is_active": "on",
+        }
+
+        recusada = self.client.post(f"/produtos/{self.produto.pk}/editar/", dados)
+        self.assertEqual(recusada.status_code, 200)
+        self.assertContains(recusada, "Somente operações futuras")
+        self.produto.refresh_from_db()
+        codigo.refresh_from_db()
+        self.assertEqual(self.produto.fator_conversao_compra, Decimal("12.000"))
+        self.assertEqual(codigo.fator_conversao, Decimal("12.000"))
+
+        dados["confirmar_alteracao_fator"] = "1"
+        confirmada = self.client.post(f"/produtos/{self.produto.pk}/editar/", dados)
+        self.assertRedirects(confirmada, "/produtos/")
+        self.produto.refresh_from_db()
+        codigo.refresh_from_db()
+        self.assertEqual(self.produto.fator_conversao_compra, Decimal("15.000"))
+        self.assertEqual(codigo.fator_conversao, Decimal("15.000"))
+        logs = LogAuditoria.objects.filter(acao="ALTERACAO_FATOR_EMBALAGEM", objeto_id=str(self.produto.pk))
+        self.assertEqual(logs.count(), 2)
+        self.assertTrue(all("snapshots históricos não foram modificados" in log.descricao for log in logs))
 
     def test_formulario_bloqueia_ean_adicional_repetido_em_outro_produto(self):
         CodigoBarrasProduto.objects.create(
@@ -1069,6 +1139,9 @@ class ProdutoViewsTests(TestCase):
                 "unidade": "KG",
                 "unidade_compra": "KG",
                 "fator_conversao_compra": "1.000",
+                "unidade_compra_original": "UN",
+                "fator_conversao_compra_original": "1.000",
+                "confirmar_alteracao_fator": "1",
                 "produto_pesavel": "on",
                 "preco_custo": "10.00",
                 "preco_venda": "15.00",

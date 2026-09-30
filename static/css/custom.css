@@ -3742,6 +3742,15 @@ button:disabled {
 .purchase-import-steps li > span { grid-row: 1 / 3; display: grid; width: 30px; height: 30px; place-items: center; border-radius: 50%; background: #0f766e; color: #fff; font-weight: 800; }
 .purchase-import-steps small { color: #64748b; }
 
+[data-xml-items] { display: grid; gap: 12px; }
+[data-xml-items] > article { margin: 0; border: 1px solid var(--border); background: #fff; }
+[data-xml-items] > article[data-status="RESOLVIDO"] { border-left: 4px solid #15803d; }
+[data-xml-items] > article:not([data-status="RESOLVIDO"]) { border-left: 4px solid #d97706; }
+[data-xml-items] details { margin-top: 12px; color: #475569; }
+[data-xml-items] details summary { cursor: pointer; font-weight: 700; }
+[data-xml-items] .checkbox-field { gap: 18px; flex-wrap: wrap; }
+[data-xml-error] { margin-top: 12px; }
+
 @media (max-width: 1500px) {
   .purchase-filters { grid-template-columns: minmax(210px, 1.4fr) repeat(3, minmax(140px, 0.8fr)); }
   .purchase-filter-search { grid-column: span 2; }
