@@ -293,7 +293,16 @@
     <tbody>
       {% for item in entrada.itens.all %}
         <tr>
-          <td>{{ item.produto }}</td>
+          <td>
+            {{ item.produto }}
+            {% if item.origem_xml_snapshot and item.origem_xml_snapshot.fator_conversao != "1.000" %}
+              <br><small>
+                Origem XML: {% if item.origem_xml_snapshot.qLote %}lote {{ item.origem_xml_snapshot.qLote }}{% else %}{{ item.origem_xml_snapshot.qCom }}{% endif %} {{ item.origem_xml_snapshot.uCom }} × fator {{ item.origem_xml_snapshot.fator_conversao }}<br>
+                Estoque: {{ item.origem_xml_snapshot.quantidade_base }} {{ item.origem_xml_snapshot.unidade_base }}<br>
+                Custo por {{ item.origem_xml_snapshot.unidade_base }}: R$ {{ item.custo_unitario|floatformat:6 }}
+              </small>
+            {% endif %}
+          </td>
           <td>{{ item.quantidade|quantidade_br }}</td>
           <td>R$ {{ item.custo_unitario|floatformat:2 }}</td>
           <td>R$ {{ item.total|floatformat:2 }}</td>

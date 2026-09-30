@@ -34,6 +34,10 @@ ambiente operacional. Os estados usados são:
 ### Estoque e compras
 
 - Pedido, recebimento, importação de XML, entrada em estoque e custos.
+- Conversão explícita da unidade comercial da NF-e para a unidade-base, inclusive códigos
+  de embalagem, custo-base, lotes e casamento com pedido.
+- Resolução de produto e fator em modo fail-closed, com evidência documental persistida no
+  contrato `purchase_xml_unit_conversion_v1`.
 - Lotes, validade, perdas, inventário e fechamento contábil do estoque.
 - Concorrência protegida na finalização de compras.
 

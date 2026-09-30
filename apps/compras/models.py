@@ -257,6 +257,12 @@ class ItemEntradaCompra(models.Model):
         blank=True,
         help_text="nItem preservado quando a entrada foi importada de NF-e.",
     )
+    origem_xml_snapshot = models.JSONField(
+        "Evidência da origem XML",
+        null=True,
+        blank=True,
+        help_text="Dados documentais e conversão de unidade aplicados na importação da NF-e.",
+    )
 
     class Meta:
         ordering = ["id"]

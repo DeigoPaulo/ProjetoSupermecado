@@ -1630,7 +1630,7 @@ class ImportacaoXMLEntradaTests(TestCase):
       <det nItem="1">
         <prod>
           <cProd>{codigo}</cProd><cEAN>{ean}</cEAN><xProd>Produto XML</xProd>
-          <qCom>3.000</qCom><vUnCom>5.50</vUnCom><vProd>16.50</vProd>
+          <uCom>UN</uCom><qCom>3.000</qCom><vUnCom>5.50</vUnCom><vProd>16.50</vProd>
           <cEANTrib>{ean}</cEANTrib>
         </prod>
       </det>

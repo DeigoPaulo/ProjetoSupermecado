@@ -13,7 +13,7 @@ from apps.auditoria.models import LogAuditoria
 from apps.empresas.models import Filial
 from apps.clientes.escopo import empresa_id_do_usuario
 from apps.fornecedores.models import Fornecedor
-from apps.produtos.models import Produto
+from apps.produtos.models import CodigoBarrasProduto, Produto, ProdutoFornecedor
 from apps.fiscal.chave_acesso import canonicalizar_chave_acesso_estrutural
 from apps.fiscal.estrategia_normalizacao_cnpj import canonicalizar_cnpj
 
@@ -31,6 +31,8 @@ from .services import avaliar_conferencia_entrada
 
 LIMITE_XML_BYTES = 5 * 1024 * 1024
 CENTAVOS = Decimal("0.01")
+QUANTIDADE_TRES_CASAS = Decimal("0.001")
+COMPRIMENTOS_GTIN = {8, 12, 13, 14}
 
 
 def _texto(elemento, caminho, *, obrigatorio=False, rotulo=None):
@@ -132,6 +134,15 @@ def ler_xml_nfe(conteudo):
             "ean": _texto(produto, caminho("cEAN")),
             "ean_tributavel": _texto(produto, caminho("cEANTrib")),
             "descricao": _texto(produto, caminho("xProd"), obrigatorio=True, rotulo="descrição do produto"),
+            "unidade_comercial": _texto(
+                produto, caminho("uCom"), obrigatorio=True, rotulo="unidade comercial"
+            ).upper(),
+            "quantidade_documental": quantidade,
+            "valor_unitario_comercial": _decimal(
+                _texto(produto, caminho("vUnCom"), obrigatorio=True, rotulo="valor unitário comercial"),
+                "valor unitário comercial",
+            ),
+            "valor_produto_documental": valor_total,
         }
         rastros = produto.findall(caminho("rastro"))
         if rastros:
@@ -282,26 +293,176 @@ def _registro_unico_por_cnpj(queryset, cnpj, rotulo):
     return encontrados[0]
 
 
-def _localizar_produto(item):
-    eans = {
-        codigo.strip()
-        for codigo in (item["ean"], item["ean_tributavel"])
-        if codigo and codigo.strip().upper() not in {"SEM GTIN", "SEM-GTIN"}
-    }
-    produto = Produto.all_objects.filter(codigo_barras__in=eans, is_active=True).first() if eans else None
-    if produto:
-        return produto
-
-    codigo = item["codigo"].strip()
-    candidatos = list(
-        Produto.all_objects.filter(
-            Q(codigo_interno__iexact=codigo) | Q(codigo_barras__iexact=codigo),
-            is_active=True,
-        )[:2]
+def _gtin_canonico(codigo):
+    codigo = (codigo or "").strip()
+    if not codigo.isdigit() or len(codigo) not in COMPRIMENTOS_GTIN:
+        return None
+    soma = sum(
+        int(digito) * (3 if indice % 2 == 0 else 1)
+        for indice, digito in enumerate(reversed(codigo[:-1]))
     )
-    if len(candidatos) == 1:
-        return candidatos[0]
-    return None
+    digito_esperado = (10 - (soma % 10)) % 10
+    if int(codigo[-1]) != digito_esperado:
+        return None
+    return codigo.zfill(14)
+
+
+def _representacoes_equivalentes_gtin(codigo):
+    codigo = (codigo or "").strip()
+    if not codigo or codigo.upper() in {"SEM GTIN", "SEM-GTIN"}:
+        return set()
+    canonico = _gtin_canonico(codigo)
+    representacoes = {codigo}
+    if canonico:
+        for comprimento in COMPRIMENTOS_GTIN:
+            candidato = canonico[-comprimento:]
+            if candidato.zfill(14) == canonico and _gtin_canonico(candidato) == canonico:
+                representacoes.add(candidato)
+    return representacoes
+
+
+def _objetos_por_codigo_gtin(queryset, atributo, codigo):
+    representacoes = _representacoes_equivalentes_gtin(codigo)
+    if not representacoes:
+        return []
+    return list(queryset.filter(**{f"{atributo}__in": representacoes}))
+
+
+def _localizar_produto(item, fornecedor):
+    produtos = Produto.all_objects.filter(is_active=True)
+    codigos_adicionais = (
+        CodigoBarrasProduto.objects.filter(is_active=True, produto__is_active=True).select_related("produto")
+    )
+    evidencias = []
+    codigo_comercial = None
+
+    for campo, rotulo in (("ean", "cEAN"), ("ean_tributavel", "cEANTrib")):
+        valor = (item[campo] or "").strip()
+        for produto in _objetos_por_codigo_gtin(produtos, "codigo_barras", valor):
+            evidencias.append((rotulo, valor, produto))
+        codigos_encontrados = _objetos_por_codigo_gtin(codigos_adicionais, "codigo", valor)
+        for codigo_adicional in codigos_encontrados:
+            evidencias.append((f"{rotulo} adicional", valor, codigo_adicional.produto))
+        if campo == "ean":
+            exatos = [codigo for codigo in codigos_encontrados if codigo.codigo == valor]
+            if len(exatos) > 1:
+                raise ValidationError(
+                    f"Código comercial ambíguo no item {item['numero'] or '?'}: {valor}."
+                )
+            codigo_comercial = exatos[0] if exatos else None
+
+    codigo_fornecedor = item["codigo"].strip()
+    candidatos_codigo = list(
+        Produto.all_objects.filter(
+            Q(codigo_interno__iexact=codigo_fornecedor) | Q(codigo_barras__iexact=codigo_fornecedor),
+            is_active=True,
+        )
+    )
+    evidencias.extend(("cProd", codigo_fornecedor, produto) for produto in candidatos_codigo)
+    vinculos_fornecedor = list(
+        ProdutoFornecedor.objects.filter(
+            fornecedor=fornecedor,
+            codigo_no_fornecedor__iexact=codigo_fornecedor,
+            is_active=True,
+            produto__is_active=True,
+        ).select_related("produto")
+    )
+    evidencias.extend(
+        ("cProd do fornecedor", codigo_fornecedor, vinculo.produto)
+        for vinculo in vinculos_fornecedor
+    )
+
+    produtos_por_id = {produto.pk: produto for _, _, produto in evidencias}
+    if len(produtos_por_id) > 1:
+        detalhes = ", ".join(
+            f"{fonte} {codigo or '-'} -> {produto.nome}"
+            for fonte, codigo, produto in evidencias
+        )
+        raise ValidationError(
+            f"Conflito na identificação do produto do item {item['numero'] or '?'}. {detalhes}."
+        )
+    if not produtos_por_id:
+        return None, None
+    return next(iter(produtos_por_id.values())), codigo_comercial
+
+
+def _quantidade_com_tres_casas(valor, *, numero_item, rotulo):
+    quantizada = valor.quantize(QUANTIDADE_TRES_CASAS)
+    if valor != quantizada:
+        raise ValidationError(
+            f"Precisão incompatível no item {numero_item or '?'}: {rotulo} {valor} "
+            "não pode ser representada exatamente com 3 casas decimais."
+        )
+    return quantizada
+
+
+def _converter_item_para_unidade_base(item, produto, codigo_comercial):
+    unidade_documental = item["unidade_comercial"]
+    evidencias_fator = []
+    if codigo_comercial is not None:
+        evidencias_fator.append(("CODIGO_BARRAS_ADICIONAL", codigo_comercial.fator_conversao))
+    if unidade_documental == produto.unidade:
+        evidencias_fator.append(("UNIDADE_BASE", Decimal("1.000")))
+    if unidade_documental == produto.unidade_compra:
+        evidencias_fator.append(("UNIDADE_COMPRA", produto.fator_conversao_compra))
+
+    invalidas = [(fonte, fator) for fonte, fator in evidencias_fator if fator is None or fator <= 0]
+    if invalidas:
+        raise ValidationError(
+            f"Fator de conversão inválido para o item {item['numero'] or '?'}; corrija o cadastro."
+        )
+    fatores = {fator for _, fator in evidencias_fator}
+    if len(fatores) > 1:
+        detalhes = " e ".join(f"{fonte} informa fator {fator}" for fonte, fator in evidencias_fator)
+        raise ValidationError(
+            f"Conversão de unidade ambígua para o item {item['numero'] or '?'}. {detalhes}."
+        )
+    if not evidencias_fator:
+        raise ValidationError(
+            f"Unidade comercial {unidade_documental or '-'} desconhecida no item {item['numero'] or '?'}. "
+            "Configure a unidade de compra ou um código de barras adicional com fator de conversão."
+        )
+
+    fator = evidencias_fator[0][1]
+    quantidade_base = _quantidade_com_tres_casas(
+        item["quantidade"] * fator,
+        numero_item=item["numero"],
+        rotulo="quantidade convertida",
+    )
+    quantidade_base_item = _quantidade_com_tres_casas(
+        item["quantidade_documental"] * fator,
+        numero_item=item["numero"],
+        rotulo="quantidade total convertida",
+    )
+    custo_base = quantizar_custo(item["total"] / quantidade_base)
+    fontes = [fonte for fonte, valor in evidencias_fator if valor == fator]
+    fonte_conversao = "+".join(fontes)
+    snapshot = {
+        "contrato": "purchase_xml_unit_conversion_v1",
+        "nItem": str(item["numero"]),
+        "cProd": item["codigo"],
+        "cEAN": item["ean"],
+        "cEANTrib": item["ean_tributavel"],
+        "uCom": unidade_documental,
+        "qCom": str(item["quantidade_documental"]),
+        "vUnCom": str(item["valor_unitario_comercial"]),
+        "vProd": str(item["valor_produto_documental"]),
+        "unidade_base": produto.unidade,
+        "fator_conversao": str(fator.quantize(QUANTIDADE_TRES_CASAS)),
+        "quantidade_base": str(quantidade_base),
+        "quantidade_base_item": str(quantidade_base_item),
+        "custo_unitario_base": str(custo_base),
+        "fonte_conversao": fonte_conversao,
+    }
+    if item["codigo_lote"]:
+        snapshot["qLote"] = str(item["quantidade"])
+
+    return {
+        **item,
+        "quantidade": quantidade_base,
+        "custo_unitario": custo_base,
+        "origem_xml_snapshot": snapshot,
+    }
 
 
 def importar_xml_entrada(conteudo, *, usuario, gerar_conta_financeira=True, ip=None):
@@ -335,14 +496,16 @@ def importar_xml_entrada(conteudo, *, usuario, gerar_conta_financeira=True, ip=N
     itens_resolvidos = []
     nao_encontrados = []
     for item in dados["itens"]:
-        produto = _localizar_produto(item)
+        produto, codigo_comercial = _localizar_produto(item, fornecedor)
         if produto is None:
             nao_encontrados.append(
                 f"item {item['numero'] or '?'}: {item['descricao']} "
                 f"(cProd {item['codigo']}, GTIN {item['ean'] or item['ean_tributavel'] or '-'})"
             )
         else:
-            itens_resolvidos.append((item, produto))
+            itens_resolvidos.append(
+                (_converter_item_para_unidade_base(item, produto, codigo_comercial), produto)
+            )
     if nao_encontrados:
         raise ValidationError(
             ["Nenhuma entrada foi criada. Cadastre ou corrija os produtos sem correspondencia:"] + nao_encontrados
@@ -418,6 +581,7 @@ def importar_xml_entrada(conteudo, *, usuario, gerar_conta_financeira=True, ip=N
                 fabricacao=item["fabricacao"],
                 validade=item["validade"],
                 numero_item_xml=item["numero"],
+                origem_xml_snapshot=item["origem_xml_snapshot"],
             )
             for item, produto in itens_resolvidos
         ])

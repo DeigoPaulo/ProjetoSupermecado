@@ -27,6 +27,15 @@
     <div class="purchase-items" data-purchase-items>{% for item_form in formset %}<div class="purchase-item-row{% if not item_form.instance.pk and not formset.is_bound and not item_form.has_changed %} is-formset-empty{% endif %}" data-formset-item>
       {% for hidden in item_form.hidden_fields %}{{ hidden }}{% endfor %}
       {% for field in item_form.visible_fields %}{% if field.name == "DELETE" %}<label class="purchase-delete-field">{{ field }}<span>Remover item ao salvar</span></label>{% else %}<label class="form-field"><span>{{ field.label }}</span>{{ field }}{% if field.errors %}<small class="field-error">{{ field.errors|striptags }}</small>{% endif %}</label>{% endif %}{% endfor %}
+      {% if item_form.instance.origem_xml_snapshot and item_form.instance.origem_xml_snapshot.fator_conversao != "1.000" %}
+        <div class="operation-notice purchase-xml-notice">
+          <i class="fa-solid fa-boxes-stacked"></i>
+          <div>
+            <strong>Origem XML: {% if item_form.instance.origem_xml_snapshot.qLote %}lote {{ item_form.instance.origem_xml_snapshot.qLote }}{% else %}{{ item_form.instance.origem_xml_snapshot.qCom }}{% endif %} {{ item_form.instance.origem_xml_snapshot.uCom }} × fator {{ item_form.instance.origem_xml_snapshot.fator_conversao }}</strong>
+            <span>Estoque: {{ item_form.instance.origem_xml_snapshot.quantidade_base }} {{ item_form.instance.origem_xml_snapshot.unidade_base }} · Custo por {{ item_form.instance.origem_xml_snapshot.unidade_base }}: R$ {{ item_form.instance.custo_unitario|floatformat:6 }} · Total: R$ {{ item_form.instance.total|floatformat:2 }}</span>
+          </div>
+        </div>
+      {% endif %}
     </div>{% endfor %}</div>
     <button class="secondary-button purchase-add-item" type="button" data-formset-reveal><i class="fa-solid fa-plus"></i> Adicionar item</button>
   </section>

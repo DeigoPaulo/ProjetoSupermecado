@@ -13,11 +13,17 @@
 
 ## Compra e conversao
 
-`Produto.fator_conversao_compra` informa quantas unidades base existem em uma unidade de compra, mas o fluxo atual de cotacao, pedido e entrada ainda recebe `quantidade` e `custo_unitario` na unidade base. O sistema nao aplica conversao silenciosa nesse fluxo.
+`Produto.fator_conversao_compra` informa quantas unidades base existem em uma unidade de compra. O fluxo manual de cotacao, pedido e entrada recebe `quantidade` e `custo_unitario` na unidade base e nao aplica uma segunda conversao.
 
-Para uma caixa com 12 unidades e custo total de R$ 10,00, o contrato atual exige registrar `12.000` unidades base e custo unitario interno `0.833333`. O total documental do item permanece R$ 10,00. Uma futura UX de conversao deve ser explicita e aplicada uma unica vez.
+Para uma caixa com 12 unidades e custo total de R$ 10,00, o contrato exige registrar `12.000` unidades base e custo unitario interno `0.833333`. O total documental do item permanece R$ 10,00. Na importacao XML, a conversao e explicita para o operador e aplicada uma unica vez.
 
-Na importacao de NF-e, `qCom` e `vProd` sao preservados como contrato documental. O custo unitario gerencial e derivado separadamente com 6 casas; o total do fornecedor permanece em centavos.
+Na importacao de NF-e, `qCom`, `uCom`, `vUnCom` e `vProd` sao preservados como contrato documental. Antes de criar `ItemEntradaCompra`, a quantidade documental e convertida para a unidade-base por fator explicito do codigo adicional da embalagem ou pelo cadastro de `unidade_compra`. O custo por unidade-base e `vProd / quantidade_base`, quantizado em 6 casas, enquanto o total documental permanece em centavos.
+
+O codigo comercial `cEAN` tem prioridade para identificar a embalagem. `cEANTrib`, o codigo principal do produto e o codigo do produto no fornecedor podem confirmar a identificacao, mas evidencias que apontem para produtos ou fatores diferentes bloqueiam toda a importacao. Equivalencia com zeros a esquerda so existe para GTIN numerico com comprimento e digito verificador validos, usando representacao canonica GTIN-14; codigo interno e SKU de fornecedor exigem correspondencia exata.
+
+O sistema nao infere fator pela descricao do item. Unidade desconhecida, fator invalido ou quantidade convertida que nao caiba exatamente em 3 casas tambem bloqueiam a importacao. Lotes usam o mesmo fator e pedidos continuam expressos na unidade-base. A evidencia documental e a conversao aplicada ficam no snapshot `purchase_xml_unit_conversion_v1` do item.
+
+A conversao nao altera `vProd`, `vNF`, fatura, duplicatas ou conta a pagar. A composicao tributaria do custo, incluindo ICMS-ST, IPI, PIS/COFINS e IBS/CBS, permanece fora deste contrato ate validacao contabil especifica.
 
 ## Venda e CMV
 
