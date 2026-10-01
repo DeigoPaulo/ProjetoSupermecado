@@ -2,7 +2,8 @@
 
 import base64
 
-from barcode.codex import Code128, code128
+from barcode import Code128
+from barcode.charsets import code128
 from barcode.writer import SVGWriter
 from django.core.exceptions import ValidationError
 
