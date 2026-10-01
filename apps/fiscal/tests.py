@@ -6,6 +6,7 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from unittest.mock import patch
 from decimal import Decimal
+from urllib.parse import parse_qs, urlsplit
 from xml.etree import ElementTree as ET
 
 from django.contrib.auth import get_user_model
@@ -64,9 +65,10 @@ from .certificados import abrir_certificado_a1, criptografar, salvar_certificado
 from .assinaturas import assinar_xml_documento, verificar_assinatura_xml
 from .auditoria_pacote_xsd import validar_xml_no_pacote_xsd
 from .focus_sefaz_adapter import FocusNFeSefazAdapter
-from .sefaz_direta.adapter import SefazDiretaAdapter
+from .sefaz_direta.adapter import SefazDiretaAdapter, SefazDiretaError, SERVICOS_GO
 from .validacoes import (
     diagnosticar_schemas_fiscais,
+    validar_paridade_qrcode_nfce,
     validar_xml_pre_transmissao,
     validar_xml_schema,
 )
@@ -3055,6 +3057,139 @@ class FiscalTests(TestCase):
         self.assertIn("<tpEmis>9</tpEmis>", corrigido.xml_conteudo)
         self.assertIn("<dhCont>", corrigido.xml_conteudo)
         self.assertIn("<xJust>", corrigido.xml_conteudo)
+
+    @override_settings(FISCAL_SEFAZ_ADAPTER="apps.fiscal.tests.FakeSefazRejectedAdapter")
+    def test_qrcode_v3_contingencia_rejeitada_reagendada_continua_assinado(self):
+        self._habilitar_nfce_go_teste()
+        self.configuracao.permite_contingencia_offline = True
+        self.configuracao.save(update_fields=["permite_contingencia_offline"])
+        documento = preparar_documento_venda(self.venda, self.user)
+        documento = ativar_contingencia_offline(documento, self.user, "Falha temporaria na SEFAZ")
+        rejeitado = transmitir_documento_sefaz(documento, self.user)
+        corrigido = reagendar_documento_fiscal(rejeitado, self.user, "Dados fiscais corrigidos")
+        self.assertEqual(corrigido.status, StatusDocumentoFiscal.PRONTO)
+        self.assertEqual(corrigido.chave_acesso[34], "9")
+        raiz = ET.fromstring(corrigido.xml_conteudo)
+        inf_nfe = raiz.find(f"{{{NFE_NS}}}infNFe")
+        validar_paridade_qrcode_nfce(corrigido, raiz, inf_nfe, corrigido.chave_acesso)
+        url = raiz.findtext(f"{{{NFE_NS}}}infNFeSupl/{{{NFE_NS}}}qrCode")
+        self.assertEqual(len(parse_qs(urlsplit(url).query)["p"][0].split("|")), 8)
+
+    def test_qrcode_v3_online_go_tem_tres_parametros(self):
+        self._habilitar_nfce_go_teste()
+        documento = preparar_documento_venda(self.venda, self.user)
+        raiz = ET.fromstring(documento.xml_conteudo)
+        inf_nfe = raiz.find(f"{{{NFE_NS}}}infNFe")
+        validar_paridade_qrcode_nfce(documento, raiz, inf_nfe, documento.chave_acesso)
+        url = raiz.findtext(f"{{{NFE_NS}}}infNFeSupl/{{{NFE_NS}}}qrCode")
+        self.assertEqual(len(parse_qs(urlsplit(url).query)["p"][0].split("|")), 3)
+
+    def test_qrcode_sp_preserva_query_configuravel_sem_relaxar_go(self):
+        self.assertEqual(self.filial.uf, "SP")
+        self.configuracao.url_qrcode_nfce = "https://nfce-homologacao.example.com/qrcode?canal=sp"
+        self.configuracao.save(update_fields=["url_qrcode_nfce"])
+        documento = preparar_documento_venda(self.venda, self.user)
+        validar_xml_pre_transmissao(documento, FakeSefazAdapter())
+        raiz = ET.fromstring(documento.xml_conteudo)
+        url = raiz.findtext(f"{{{NFE_NS}}}infNFeSupl/{{{NFE_NS}}}qrCode")
+        parametros = parse_qs(urlsplit(url).query)
+        self.assertEqual(parametros["canal"], ["sp"])
+        self.assertEqual(len(parametros["p"][0].split("|")), 3)
+
+    def test_qrcode_go_rejeita_parametro_adicional(self):
+        self._habilitar_nfce_go_teste()
+        documento = preparar_documento_venda(self.venda, self.user)
+        documento.xml_conteudo = documento.xml_conteudo.replace("?p=", "?extra=1&amp;p=", 1)
+        with self.assertRaisesMessage(ValidationError, "ambiente oficial"):
+            validar_xml_pre_transmissao(documento, FakeSefazAdapter())
+
+    def test_pre_transmissao_bloqueia_divergencias_de_ambiente_e_qrcode(self):
+        self._habilitar_nfce_go_teste()
+        documento = preparar_documento_venda(self.venda, self.user)
+        original = documento.xml_conteudo
+        adapter = FakeSefazAdapter()
+        validar_xml_pre_transmissao(documento, adapter)
+        cenarios = (
+            ("<tpAmb>2</tpAmb>", "<tpAmb>1</tpAmb>", "tpAmb"),
+            ("|3|2", "|3|1", "QR Code"),
+            ("nfewebhomolog.sefaz.go.gov.br", "nfeweb.sefaz.go.gov.br", "ambiente oficial"),
+        )
+        for antigo, novo, mensagem in cenarios:
+            with self.subTest(mensagem=mensagem):
+                documento.xml_conteudo = original.replace(antigo, novo, 1)
+                with self.assertRaisesMessage(ValidationError, mensagem):
+                    validar_xml_pre_transmissao(documento, adapter)
+        documento.xml_conteudo = original
+
+    def test_pre_transmissao_producao_bloqueia_qr_de_homologacao(self):
+        self._habilitar_nfce_go_teste()
+        endpoints = endpoints_nfce_uf("GO", AmbienteFiscal.PRODUCAO)
+        self.configuracao.ambiente = AmbienteFiscal.PRODUCAO
+        self.configuracao.url_qrcode_nfce = endpoints["qrcode"]
+        self.configuracao.url_consulta_nfce = endpoints["consulta"]
+        self.configuracao.save(update_fields=[
+            "ambiente", "url_qrcode_nfce", "url_consulta_nfce",
+        ])
+        documento = preparar_documento_venda(self.venda, self.user)
+        validar_xml_pre_transmissao(documento, FakeSefazAdapter())
+        self.assertIn("<tpAmb>1</tpAmb>", documento.xml_conteudo)
+        documento.xml_conteudo = documento.xml_conteudo.replace("|3|1", "|3|2", 1)
+        with self.assertRaisesMessage(ValidationError, "QR Code"):
+            validar_xml_pre_transmissao(documento, FakeSefazAdapter())
+
+    def test_documento_preparado_preserva_ambiente_apos_alterar_configuracao(self):
+        self._habilitar_nfce_go_teste()
+        documento = preparar_documento_venda(self.venda, self.user)
+        self.configuracao.ambiente = AmbienteFiscal.PRODUCAO
+        self.configuracao.save(update_fields=["ambiente"])
+        from .services import gerar_xml_nfce
+
+        regenerado = gerar_xml_nfce(documento)
+        self.assertIn("<tpAmb>2</tpAmb>", regenerado)
+        self.assertIn("nfewebhomolog.sefaz.go.gov.br", regenerado)
+        self.assertNotIn("nfeweb.sefaz.go.gov.br", regenerado)
+
+    def test_outra_empresa_e_filial_nao_alteram_ambiente_do_documento(self):
+        self._habilitar_nfce_go_teste()
+        documento = preparar_documento_venda(self.venda, self.user)
+        empresa_b = Empresa.objects.create(
+            razao_social="Empresa Fiscal B", nome_fantasia="Fiscal B", cnpj="11444777000161",
+        )
+        filiais = (
+            Filial.objects.create(empresa=self.empresa, nome="Loja A2", cnpj="11444777000242"),
+            Filial.objects.create(empresa=empresa_b, nome="Matriz B", cnpj=empresa_b.cnpj),
+        )
+        for filial in filiais:
+            configuracao = ConfiguracaoFiscal.objects.create(
+                filial=filial, ambiente=AmbienteFiscal.HOMOLOGACAO,
+            )
+            configuracao.ambiente = AmbienteFiscal.PRODUCAO
+            configuracao.save(update_fields=["ambiente"])
+
+        from .services import gerar_xml_nfce
+
+        regenerado = gerar_xml_nfce(documento)
+        self.assertEqual(documento.filial_id, self.filial.pk)
+        self.assertEqual(documento.ambiente, AmbienteFiscal.HOMOLOGACAO)
+        self.assertIn("<tpAmb>2</tpAmb>", regenerado)
+        self.assertIn("nfewebhomolog.sefaz.go.gov.br", regenerado)
+
+    def test_endpoint_soap_go_bloqueia_host_do_ambiente_oposto(self):
+        self._habilitar_nfce_go_teste()
+        for ambiente, oposto in (
+            (AmbienteFiscal.HOMOLOGACAO, AmbienteFiscal.PRODUCAO),
+            (AmbienteFiscal.PRODUCAO, AmbienteFiscal.HOMOLOGACAO),
+        ):
+            with self.subTest(ambiente=ambiente):
+                with self.settings(
+                    SEFAZ_DIRETA_ALLOW_PRODUCTION=True,
+                    SEFAZ_DIRETA_ENDPOINTS={"GO": {ambiente: {
+                        "autorizacao": SERVICOS_GO[oposto]["autorizacao"],
+                    }}},
+                ):
+                    adapter = SefazDiretaAdapter()
+                    with self.assertRaisesMessage(SefazDiretaError, "diverge do ambiente"):
+                        adapter._endpoint(self.venda, ambiente, "autorizacao")
 
     def test_contingencia_vencida_permanece_na_reconciliacao_com_alerta(self):
         self.configuracao.permite_contingencia_offline = True

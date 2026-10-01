@@ -46,7 +46,7 @@ from .ibs_cbs.xml import adicionar_grupo_item as adicionar_ibs_cbs_item
 from .ibs_cbs.xml import adicionar_totais as adicionar_totais_ibs_cbs
 from .validacoes import validar_xml_pre_transmissao
 from .qrcode_nfce import gerar_url_qrcode_nfce
-from .perfis_uf import codigo_beneficio_produto_operacao, pendencias_endpoints_nfce, pendencias_produto_por_uf
+from .perfis_uf import codigo_beneficio_produto_operacao, endpoints_nfce_uf, pendencias_endpoints_nfce, pendencias_produto_por_uf
 from .models import (
     AmbienteFiscal,
     CodigoRegimeTributario,
@@ -810,12 +810,12 @@ def _pendencias_emissao_ibs_cbs(configuracao, filial, modelo):
     ]
 
 
-def _ibs_cbs_obrigatorio(configuracao, filial, modelo, data_emissao=None):
+def _ibs_cbs_obrigatorio(configuracao, filial, modelo, data_emissao=None, *, ambiente=None):
     return emissao_ibs_cbs_obrigatoria(
         uf=filial.uf,
         crt=_crt_configuracao(configuracao),
         modelo=modelo,
-        ambiente=configuracao.ambiente,
+        ambiente=ambiente if ambiente is not None else configuracao.ambiente,
         data_emissao=data_emissao or timezone.localdate(),
     )
 
@@ -1105,6 +1105,7 @@ def gerar_xml_nfce(documento):
         venda.filial,
         "65",
         timezone.localtime(documento.criado_em).date(),
+        ambiente=documento.ambiente,
     )
     em_contingencia = documento_em_contingencia_offline(documento)
     tipo_emissao = "9" if em_contingencia else "1"
@@ -1128,7 +1129,7 @@ def gerar_xml_nfce(documento):
     _texto(ide, "tpImp", "4")
     _texto(ide, "tpEmis", tipo_emissao)
     _texto(ide, "cDV", chave_acesso[-1])
-    _texto(ide, "tpAmb", "2" if configuracao.ambiente == "HOMOLOGACAO" else "1")
+    _texto(ide, "tpAmb", "2" if documento.ambiente == AmbienteFiscal.HOMOLOGACAO else "1")
     _texto(ide, "finNFe", "1")
     _texto(ide, "indFinal", "1")
     _texto(ide, "indPres", "1")
@@ -1287,7 +1288,8 @@ def gerar_xml_nfce(documento):
 
     inf_supl = ET.SubElement(nfe, f"{{{NFE_NS}}}infNFeSupl")
     _texto(inf_supl, "qrCode", gerar_url_qrcode_nfce(documento, configuracao))
-    _texto(inf_supl, "urlChave", configuracao.url_consulta_nfce.strip())
+    endpoints = endpoints_nfce_uf(venda.filial.uf, documento.ambiente)
+    _texto(inf_supl, "urlChave", endpoints["consulta"] if endpoints else configuracao.url_consulta_nfce.strip())
 
     return ET.tostring(nfe, encoding="unicode", xml_declaration=True)
 
@@ -1388,6 +1390,7 @@ def gerar_xml_nfe_pedido_online(documento):
         pedido.filial,
         "55",
         timezone.localtime(documento.criado_em).date(),
+        ambiente=documento.ambiente,
     )
     destinatario = _dados_destinatario_nfe_pedido(pedido)
     em_svc = bool(
@@ -1416,7 +1419,7 @@ def gerar_xml_nfe_pedido_online(documento):
     _texto(ide, "tpImp", "1")
     _texto(ide, "tpEmis", tipo_emissao)
     _texto(ide, "cDV", chave_acesso[-1])
-    _texto(ide, "tpAmb", "2" if configuracao.ambiente == "HOMOLOGACAO" else "1")
+    _texto(ide, "tpAmb", "2" if documento.ambiente == AmbienteFiscal.HOMOLOGACAO else "1")
     _texto(ide, "finNFe", "1")
     _texto(ide, "indFinal", "1")
     _texto(ide, "indPres", "2" if pedido.canal == "LOJA_ONLINE" else "9")

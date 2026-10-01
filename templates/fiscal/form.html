@@ -14,8 +14,9 @@
 </header>
 
 <section class="panel">
-  <form method="post" enctype="multipart/form-data" class="form-grid">
+  <form method="post" enctype="multipart/form-data" class="form-grid"{% if form.confirmar_troca_ambiente %} id="configuracao-fiscal-form"{% endif %}>
     {% csrf_token %}
+    {% if form.confirmar_troca_ambiente %}{{ form.confirmar_troca_ambiente }}{% endif %}
     {% if form.non_field_errors %}<div class="form-note form-note-danger">{{ form.non_field_errors }}</div>{% endif %}
 
     {% if form.certificado_arquivo %}
@@ -144,5 +145,41 @@
       <a class="secondary-button" href="{% url 'fiscal:documentos' %}">Cancelar</a>
     </div>
   </form>
+  {% if form.confirmar_troca_ambiente %}
+    <dialog id="confirmar-ambiente-fiscal" aria-labelledby="confirmar-ambiente-titulo">
+      <h2 id="confirmar-ambiente-titulo">Confirmar ambiente fiscal</h2>
+      <p id="confirmar-ambiente-mensagem"></p>
+      <div class="form-actions">
+        <button type="button" class="secondary-button" id="cancelar-ambiente-fiscal">CANCELAR</button>
+        <button type="button" class="primary-button" id="continuar-ambiente-fiscal">CONTINUAR</button>
+      </div>
+    </dialog>
+    <script>
+      (() => {
+        const form = document.getElementById("configuracao-fiscal-form");
+        const ambiente = form.querySelector("[name='ambiente']");
+        const confirmado = form.querySelector("[name='confirmar_troca_ambiente']");
+        const inicial = "{{ form.ambiente_inicial|escapejs }}";
+        const dialogo = document.getElementById("confirmar-ambiente-fiscal");
+        if (!ambiente || !inicial) return;
+        ambiente.addEventListener("change", () => { confirmado.value = ""; });
+        form.addEventListener("submit", (event) => {
+          if (ambiente.value === inicial || confirmado.value === "on") return;
+          event.preventDefault();
+          const producao = ambiente.value === "PRODUCAO";
+          document.getElementById("confirmar-ambiente-mensagem").textContent = producao
+            ? "Você está alterando o ambiente fiscal para PRODUÇÃO. As próximas NFC-e poderão ser transmitidas à SEFAZ como documentos fiscais reais. Deseja realmente continuar?"
+            : "Você está alterando o ambiente fiscal para HOMOLOGAÇÃO. As próximas NFC-e serão preparadas para testes. Deseja realmente continuar?";
+          dialogo.showModal();
+        });
+        document.getElementById("cancelar-ambiente-fiscal").addEventListener("click", () => dialogo.close());
+        document.getElementById("continuar-ambiente-fiscal").addEventListener("click", () => {
+          confirmado.value = "on";
+          dialogo.close();
+          form.requestSubmit();
+        });
+      })();
+    </script>
+  {% endif %}
 </section>
 {% endblock %}

@@ -12,7 +12,8 @@ from .assinaturas import assinar_parametros_qrcode_nfce
 from .chave_acesso import normalizar_chave_acesso
 from apps.vendas.models import TipoDocumentoConsumidor
 
-from .models import AmbienteFiscal, StatusDocumentoFiscal
+from .models import AmbienteFiscal
+from .perfis_uf import endpoints_nfce_uf
 
 VERSAO_QRCODE_NFCE = "3"
 
@@ -51,7 +52,7 @@ def parametros_qrcode_nfce(documento, configuracao=None):
         raise ValidationError("A NFC-e precisa de uma chave de acesso valida para gerar o QR Code.")
     ambiente = "2" if documento.ambiente == AmbienteFiscal.HOMOLOGACAO else "1"
     parametros = [chave, VERSAO_QRCODE_NFCE, ambiente]
-    if documento.status == StatusDocumentoFiscal.CONTINGENCIA:
+    if chave[34] == "9":
         tipo_destino, destino = _destinatario(documento)
         parametros.extend([
             timezone.localtime(documento.criado_em).strftime("%d"),
@@ -66,9 +67,11 @@ def parametros_qrcode_nfce(documento, configuracao=None):
 
 def gerar_url_qrcode_nfce(documento, configuracao=None):
     configuracao = configuracao or documento.filial.configuracao_fiscal
-    if not configuracao.url_qrcode_nfce.strip():
+    endpoints = endpoints_nfce_uf(documento.filial.uf, documento.ambiente)
+    base = endpoints["qrcode"] if endpoints else configuracao.url_qrcode_nfce.strip()
+    if not base:
         raise ValidationError("Configure a URL oficial do QR Code NFC-e para está filial.")
-    return _url_com_parametro(configuracao.url_qrcode_nfce, parametros_qrcode_nfce(documento, configuracao))
+    return _url_com_parametro(base, parametros_qrcode_nfce(documento, configuracao))
 
 
 def obter_url_qrcode_nfce(documento):

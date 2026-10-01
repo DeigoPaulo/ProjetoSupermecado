@@ -27,6 +27,7 @@ class ConfiguracaoFiscalForm(forms.ModelForm):
     def __init__(self, *args, user=None, **kwargs):
         super().__init__(*args, **kwargs)
         self.user = user
+        self.ambiente_inicial = getattr(self.instance, "ambiente", None)
         self.provedor_inicial = getattr(self.instance, "provedor_emissao", "")
         self.perfil_fiscal = perfil_fiscal_uf(
             getattr(getattr(self.instance, "filial", None), "uf", "")
@@ -52,6 +53,9 @@ class ConfiguracaoFiscalForm(forms.ModelForm):
             "As evidências anteriores serão preservadas no canal original, mas não serão "
             "reaproveitadas no novo canal."
         ),
+    )
+    confirmar_troca_ambiente = forms.BooleanField(
+        required=False, widget=forms.HiddenInput
     )
 
     certificado_arquivo = forms.FileField(
@@ -120,6 +124,12 @@ class ConfiguracaoFiscalForm(forms.ModelForm):
 
     def clean(self):
         cleaned = super().clean()
+        if (
+            self.instance.pk
+            and cleaned.get("ambiente") != self.ambiente_inicial
+            and not cleaned.get("confirmar_troca_ambiente")
+        ):
+            self.add_error("ambiente", "Confirme explicitamente a troca de ambiente fiscal.")
         self.perfil_fiscal = aplicar_endpoints_nfce_uf(cleaned) or self.perfil_fiscal
         arquivo = cleaned.get("certificado_arquivo")
         senha = cleaned.get("certificado_senha")

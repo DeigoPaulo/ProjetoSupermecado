@@ -1,6 +1,11 @@
+from datetime import datetime, timezone
+from types import SimpleNamespace
+from unittest.mock import patch
+
 from django.contrib import admin
 from django.contrib.auth import get_user_model
 from django.core.exceptions import ValidationError
+from django.core.files.uploadedfile import SimpleUploadedFile
 from django.db import connection
 from django.test import TestCase, override_settings
 
@@ -64,6 +69,18 @@ class ProtecaoCSCTests(TestCase):
         dados.update(alteracoes)
         return dados
 
+    def _dados_troca_ambiente_com_a1(self, ambiente):
+        endpoints = endpoints_nfce_uf("GO", ambiente)
+        return self._dados(
+            ambiente=ambiente,
+            url_qrcode_nfce=endpoints["qrcode"],
+            url_consulta_nfce=endpoints["consulta"],
+            confirmar_troca_ambiente="on",
+            inscricao_estadual="987654321",
+            certificado_arquivo=SimpleUploadedFile("teste.pfx", b"certificado-sintetico"),
+            certificado_senha="senha-teste",
+        )
+
     def test_csc_e_criptografado_em_repouso_e_aberto_apenas_explicitamente(self):
         self.configuracao.refresh_from_db()
 
@@ -96,6 +113,97 @@ class ProtecaoCSCTests(TestCase):
         self.configuracao.refresh_from_db()
         self.assertEqual(bytes(self.configuracao.csc_token_criptografado), cifra_anterior)
         self.assertEqual(abrir_csc(self.configuracao), self.SEGREDO)
+
+    def test_troca_ambiente_exige_confirmacao_e_registra_auditoria_nos_dois_sentidos(self):
+        self.client.force_login(self.master)
+        url = f"/fiscal/configuracoes/{self.configuracao.pk}/editar/"
+        for novo_ambiente, anterior in (
+            (AmbienteFiscal.PRODUCAO, AmbienteFiscal.HOMOLOGACAO),
+            (AmbienteFiscal.HOMOLOGACAO, AmbienteFiscal.PRODUCAO),
+        ):
+            with self.subTest(novo_ambiente=novo_ambiente):
+                endpoints = endpoints_nfce_uf("GO", novo_ambiente)
+                dados = self._dados(
+                    ambiente=novo_ambiente,
+                    url_qrcode_nfce=endpoints["qrcode"],
+                    url_consulta_nfce=endpoints["consulta"],
+                )
+                sem_confirmacao = self.client.post(url, dados, REMOTE_ADDR="192.0.2.10")
+                self.assertEqual(sem_confirmacao.status_code, 200)
+                self.assertContains(sem_confirmacao, "Confirme explicitamente")
+                self.configuracao.refresh_from_db()
+                self.assertEqual(self.configuracao.ambiente, anterior)
+
+                resposta = self.client.post(
+                    url,
+                    {**dados, "confirmar_troca_ambiente": "on"},
+                    REMOTE_ADDR="192.0.2.10",
+                )
+                self.assertEqual(resposta.status_code, 302)
+                self.configuracao.refresh_from_db()
+                self.assertEqual(self.configuracao.ambiente, novo_ambiente)
+                log = LogAuditoria.objects.filter(acao="ALTERA_AMBIENTE_FISCAL").latest("pk")
+                self.assertEqual(log.usuario, self.master)
+                self.assertEqual(log.objeto_id, str(self.configuracao.pk))
+                self.assertEqual(log.ip, "192.0.2.10")
+                self.assertIn(anterior, log.descricao)
+                self.assertIn(novo_ambiente, log.descricao)
+
+    def test_certificado_invalido_nao_salva_troca_de_ambiente_em_nenhum_sentido(self):
+        self.client.force_login(self.master)
+        url = f"/fiscal/configuracoes/{self.configuracao.pk}/editar/"
+        for anterior, novo in (
+            (AmbienteFiscal.HOMOLOGACAO, AmbienteFiscal.PRODUCAO),
+            (AmbienteFiscal.PRODUCAO, AmbienteFiscal.HOMOLOGACAO),
+        ):
+            with self.subTest(anterior=anterior, novo=novo):
+                self.configuracao.ambiente = anterior
+                self.configuracao.save(update_fields=["ambiente"])
+                with patch(
+                    "apps.fiscal.certificados.load_key_and_certificates",
+                    side_effect=ValueError("A1 inválido"),
+                ):
+                    resposta = self.client.post(
+                        url, self._dados_troca_ambiente_com_a1(novo)
+                    )
+                self.assertEqual(resposta.status_code, 200)
+                self.assertContains(resposta, "Certificado A1 inválido ou senha incorreta")
+                self.configuracao.refresh_from_db()
+                self.assertEqual(self.configuracao.ambiente, anterior)
+                self.assertEqual(self.configuracao.inscricao_estadual, "123456789")
+                self.assertFalse(self.configuracao.certificado_configurado)
+                self.assertFalse(
+                    LogAuditoria.objects.filter(acao="ALTERA_AMBIENTE_FISCAL").exists()
+                )
+
+    def test_certificado_valido_salva_troca_e_auditoria_em_ambos_os_sentidos(self):
+        self.client.force_login(self.master)
+        url = f"/fiscal/configuracoes/{self.configuracao.pk}/editar/"
+        certificado = SimpleNamespace(
+            not_valid_after_utc=datetime(2030, 1, 1, tzinfo=timezone.utc)
+        )
+        for anterior, novo in (
+            (AmbienteFiscal.HOMOLOGACAO, AmbienteFiscal.PRODUCAO),
+            (AmbienteFiscal.PRODUCAO, AmbienteFiscal.HOMOLOGACAO),
+        ):
+            with self.subTest(anterior=anterior, novo=novo):
+                with patch(
+                    "apps.fiscal.certificados.load_key_and_certificates",
+                    return_value=(None, certificado, None),
+                ) as validar:
+                    resposta = self.client.post(
+                        url, self._dados_troca_ambiente_com_a1(novo)
+                    )
+                self.assertEqual(resposta.status_code, 302)
+                self.assertEqual(validar.call_count, 2)
+                self.configuracao.refresh_from_db()
+                self.assertEqual(self.configuracao.ambiente, novo)
+                self.assertEqual(self.configuracao.inscricao_estadual, "987654321")
+                self.assertTrue(self.configuracao.certificado_configurado)
+                log = LogAuditoria.objects.filter(acao="ALTERA_AMBIENTE_FISCAL").latest("pk")
+                self.assertEqual(log.objeto_id, str(self.configuracao.pk))
+                self.assertIn(anterior, log.descricao)
+                self.assertIn(novo, log.descricao)
 
     def test_rotacao_e_revogacao_sao_auditadas_sem_expor_token(self):
         self.client.force_login(self.master)

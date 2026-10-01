@@ -290,6 +290,7 @@ def _provar_qrcode_nfce():
             codigo_numerico="12345678",
         ),
         ambiente="HOMOLOGACAO",
+        filial=SimpleNamespace(uf="GO"),
         status="AUTORIZADO",
         criado_em=timezone.now(),
         valor_total=Decimal("82.70"),

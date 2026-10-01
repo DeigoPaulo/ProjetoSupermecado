@@ -5,6 +5,7 @@ from django.contrib import messages
 from django.contrib.auth.decorators import login_required
 from django.core.exceptions import PermissionDenied, ValidationError
 from django.core.paginator import Paginator
+from django.db import transaction
 from django.db.models import Q
 from django.http import HttpResponse, JsonResponse, StreamingHttpResponse
 from django.shortcuts import get_object_or_404, redirect, render
@@ -30,7 +31,7 @@ from .manifestacao_adapters import diagnostico_adaptador_manifestacao
 from .cce_adapters import diagnostico_adaptador_cce
 from .cadastro_adapters import diagnostico_adaptador_consulta_cadastro
 from .assinaturas import assinatura_local_disponivel
-from .certificados import revogar_csc, salvar_certificado_a1, salvar_csc
+from .certificados import _validade_certificado, revogar_csc, salvar_certificado_a1, salvar_csc
 from .diagnostico_cbenef import (
     iterar_diagnostico_cbenef,
     opcoes_diagnostico_cbenef,
@@ -1997,6 +1998,7 @@ def configuracao_form(request, pk=None):
         else None
     )
     provedor_anterior = configuracao.provedor_emissao if configuracao else ""
+    ambiente_anterior = configuracao.ambiente if configuracao else None
     evidencias_canal_anterior = (
         configuracao.evidencias_homologacao_canal.filter(canal=provedor_anterior).count()
         if configuracao else 0
@@ -2016,39 +2018,11 @@ def configuracao_form(request, pk=None):
             csc_ja_configurado = bool(configuracao and configuracao.csc_configurado)
             novo_csc = form.cleaned_data.get("csc_token")
             deve_revogar_csc = form.cleaned_data.get("revogar_csc")
-            configuracao = form.save()
             arquivo = form.cleaned_data.get("certificado_arquivo")
             senha = form.cleaned_data.get("certificado_senha")
-            if (
-                request.user.is_superuser
-                and provedor_anterior != configuracao.provedor_emissao
-            ):
-                if homologacao_anterior:
-                    HomologacaoFiscal.objects.filter(pk=homologacao_anterior.pk).update(
-                        status=StatusHomologacaoFiscal.PENDENTE,
-                        concluida_em=None,
-                        concluida_por=None,
-                    )
-                LogAuditoria.objects.create(
-                    usuario=request.user,
-                    modulo="fiscal",
-                    acao="ALTERA_CANAL_EMISSAO_FISCAL",
-                    descricao=(
-                        f"Canal técnico de emissão da filial {configuracao.filial} "
-                        f"alterado de {provedor_anterior or 'não definido'} para "
-                        f"{configuracao.get_provedor_emissao_display()}. "
-                        f"Foram preservadas {evidencias_canal_anterior} evidência(s) no "
-                        f"canal anterior; homologação anterior "
-                        f"{homologacao_anterior.get_status_display() if homologacao_anterior else 'não registrada'} "
-                        f"e reinicializada como pendente."
-                    ),
-                    objeto_tipo="ConfiguracaoFiscal",
-                    objeto_id=str(configuracao.pk),
-                    ip=request.META.get("REMOTE_ADDR"),
-                )
             if arquivo:
                 try:
-                    salvar_certificado_a1(configuracao, arquivo, senha)
+                    _validade_certificado(arquivo.read(), senha)
                 except ValidationError as exc:
                     form.add_error("certificado_arquivo", exc)
                     return render(
@@ -2056,28 +2030,74 @@ def configuracao_form(request, pk=None):
                         "fiscal/form.html",
                         {"form": form, "titulo": "Configuração fiscal"},
                     )
-            if request.user.is_superuser and novo_csc:
-                salvar_csc(configuracao, novo_csc)
-                LogAuditoria.objects.create(
-                    usuario=request.user,
-                    modulo="fiscal",
-                    acao="ROTACIONA_CSC_FISCAL" if csc_ja_configurado else "INCLUI_CSC_FISCAL",
-                    descricao=f"Token CSC da filial {configuracao.filial} protegido e atualizado.",
-                    objeto_tipo="ConfiguracaoFiscal",
-                    objeto_id=str(configuracao.pk),
-                    ip=request.META.get("REMOTE_ADDR"),
-                )
-            elif request.user.is_superuser and deve_revogar_csc and csc_ja_configurado:
-                revogar_csc(configuracao)
-                LogAuditoria.objects.create(
-                    usuario=request.user,
-                    modulo="fiscal",
-                    acao="REVOGA_CSC_FISCAL",
-                    descricao=f"Token CSC da filial {configuracao.filial} revogado.",
-                    objeto_tipo="ConfiguracaoFiscal",
-                    objeto_id=str(configuracao.pk),
-                    ip=request.META.get("REMOTE_ADDR"),
-                )
+                finally:
+                    arquivo.seek(0)
+            with transaction.atomic():
+                configuracao = form.save()
+                if ambiente_anterior and ambiente_anterior != configuracao.ambiente:
+                    LogAuditoria.objects.create(
+                        usuario=request.user,
+                        modulo="fiscal",
+                        acao="ALTERA_AMBIENTE_FISCAL",
+                        descricao=(
+                            f"Ambiente fiscal da filial {configuracao.filial} alterado de "
+                            f"{ambiente_anterior} para {configuracao.ambiente}."
+                        ),
+                        objeto_tipo="ConfiguracaoFiscal",
+                        objeto_id=str(configuracao.pk),
+                        ip=request.META.get("REMOTE_ADDR"),
+                    )
+                if (
+                    request.user.is_superuser
+                    and provedor_anterior != configuracao.provedor_emissao
+                ):
+                    if homologacao_anterior:
+                        HomologacaoFiscal.objects.filter(pk=homologacao_anterior.pk).update(
+                            status=StatusHomologacaoFiscal.PENDENTE,
+                            concluida_em=None,
+                            concluida_por=None,
+                        )
+                    LogAuditoria.objects.create(
+                        usuario=request.user,
+                        modulo="fiscal",
+                        acao="ALTERA_CANAL_EMISSAO_FISCAL",
+                        descricao=(
+                            f"Canal técnico de emissão da filial {configuracao.filial} "
+                            f"alterado de {provedor_anterior or 'não definido'} para "
+                            f"{configuracao.get_provedor_emissao_display()}. "
+                            f"Foram preservadas {evidencias_canal_anterior} evidência(s) no "
+                            f"canal anterior; homologação anterior "
+                            f"{homologacao_anterior.get_status_display() if homologacao_anterior else 'não registrada'} "
+                            f"e reinicializada como pendente."
+                        ),
+                        objeto_tipo="ConfiguracaoFiscal",
+                        objeto_id=str(configuracao.pk),
+                        ip=request.META.get("REMOTE_ADDR"),
+                    )
+                if arquivo:
+                    salvar_certificado_a1(configuracao, arquivo, senha)
+                if request.user.is_superuser and novo_csc:
+                    salvar_csc(configuracao, novo_csc)
+                    LogAuditoria.objects.create(
+                        usuario=request.user,
+                        modulo="fiscal",
+                        acao="ROTACIONA_CSC_FISCAL" if csc_ja_configurado else "INCLUI_CSC_FISCAL",
+                        descricao=f"Token CSC da filial {configuracao.filial} protegido e atualizado.",
+                        objeto_tipo="ConfiguracaoFiscal",
+                        objeto_id=str(configuracao.pk),
+                        ip=request.META.get("REMOTE_ADDR"),
+                    )
+                elif request.user.is_superuser and deve_revogar_csc and csc_ja_configurado:
+                    revogar_csc(configuracao)
+                    LogAuditoria.objects.create(
+                        usuario=request.user,
+                        modulo="fiscal",
+                        acao="REVOGA_CSC_FISCAL",
+                        descricao=f"Token CSC da filial {configuracao.filial} revogado.",
+                        objeto_tipo="ConfiguracaoFiscal",
+                        objeto_id=str(configuracao.pk),
+                        ip=request.META.get("REMOTE_ADDR"),
+                    )
             messages.success(request, "Configuração fiscal salva.")
             return redirect("fiscal:documentos")
     else:

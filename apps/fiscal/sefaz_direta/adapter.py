@@ -534,6 +534,14 @@ class SefazDiretaAdapter:
             raise SefazDiretaError(
                 "Endpoint da SEFAZ direta deve usar HTTPS em host oficial autorizado."
             )
+        if uf == "GO" or usa_svc:
+            host_esperado = urlparse(
+                (SERVICOS_SVC_RS if usa_svc else SERVICOS_GO)[ambiente][servico]
+            ).hostname
+            if parsed.hostname != host_esperado:
+                raise SefazDiretaError(
+                    "Endpoint da SEFAZ direta diverge do ambiente do documento."
+                )
         return endpoint
 
     @staticmethod

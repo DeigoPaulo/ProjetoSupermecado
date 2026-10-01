@@ -16,7 +16,7 @@ from .adapters import (
     normalizar_retorno_transmissao,
 )
 from .estrategia_normalizacao_cnpj import calcular_dv_cnpj
-from .models import TipoDocumentoFiscal
+from .models import AmbienteFiscal, TipoDocumentoFiscal
 from .services import _chave_acesso_documento
 from .validacoes import validar_xml_pre_transmissao
 
@@ -153,13 +153,14 @@ class ChaveAcessoCentralTests(SimpleTestCase):
         chave = construir_chave_acesso(**self.argumentos(cnpj))
         xml = (
             '<NFe xmlns="http://www.portalfiscal.inf.br/nfe">'
-            f'<infNFe Id="NFe{chave}"><ide><mod>55</mod><cDV>{chave[-1]}</cDV>'
+            f'<infNFe Id="NFe{chave}"><ide><mod>55</mod><tpAmb>2</tpAmb><cDV>{chave[-1]}</cDV>'
             f"</ide><emit><CNPJ>{cnpj}</CNPJ></emit></infNFe></NFe>"
         )
         documento = SimpleNamespace(
             chave_acesso=chave.lower(),
             xml_conteudo=xml,
             tipo_documento=TipoDocumentoFiscal.NFE,
+            ambiente=AmbienteFiscal.HOMOLOGACAO,
         )
         adapter = SimpleNamespace(valida_schema=True, assina_xml=True)
 

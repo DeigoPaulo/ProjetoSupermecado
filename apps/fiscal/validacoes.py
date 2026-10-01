@@ -1,13 +1,22 @@
 import hashlib
+import base64
+import binascii
 from datetime import date
 from pathlib import Path
+from urllib.parse import parse_qs, urlsplit, urlunsplit
 from xml.etree import ElementTree as ET
 
 from django.conf import settings
 from django.core.exceptions import ValidationError
 from lxml import etree
+from cryptography.exceptions import InvalidSignature
+from cryptography.hazmat.primitives import hashes
+from cryptography.hazmat.primitives.asymmetric import padding
+from cryptography.hazmat.primitives.serialization.pkcs12 import load_key_and_certificates
 
-from .models import TipoDocumentoFiscal
+from .models import AmbienteFiscal, TipoDocumentoFiscal
+from .certificados import abrir_certificado_a1
+from .perfis_uf import endpoints_nfce_uf
 from .chave_acesso import normalizar_chave_acesso, normalizar_cnpj_emitente
 from .ibs_cbs.contrato import emissao_ibs_cbs_obrigatoria
 from .ibs_cbs.validacao import validar_paridade_xml
@@ -82,6 +91,72 @@ def validar_xml_schema(documento):
         raise ValidationError(f"XML fiscal rejeitado pelo schema configurado: {detalhe}") from exc
     return {"valido": True, "arquivo": diagnostico["arquivo"], "sha256": diagnostico["sha256"]}
 
+
+def validar_paridade_ambiente(documento, inf_nfe):
+    ambiente = {AmbienteFiscal.HOMOLOGACAO: "2", AmbienteFiscal.PRODUCAO: "1"}.get(documento.ambiente)
+    ide = inf_nfe.find(f"{{{NFE_NS}}}ide")
+    if not ambiente or ide is None or ide.findtext(f"{{{NFE_NS}}}tpAmb") != ambiente:
+        raise ValidationError("Ambiente fiscal do XML (tpAmb) diverge do documento fiscal.")
+    return ambiente
+
+
+def validar_paridade_qrcode_nfce(documento, raiz, inf_nfe, chave):
+    ambiente = "2" if documento.ambiente == AmbienteFiscal.HOMOLOGACAO else "1"
+    ide = inf_nfe.find(f"{{{NFE_NS}}}ide")
+
+    tp_emis = ide.findtext(f"{{{NFE_NS}}}tpEmis")
+    if tp_emis not in {"1", "9"} or tp_emis != chave[34]:
+        raise ValidationError("Tipo de emissão (tpEmis) diverge da chave da NFC-e.")
+
+    supl = raiz.find(f"{{{NFE_NS}}}infNFeSupl")
+    url = supl.findtext(f"{{{NFE_NS}}}qrCode") if supl is not None else ""
+    url_chave = supl.findtext(f"{{{NFE_NS}}}urlChave") if supl is not None else ""
+    partes = urlsplit(url or "")
+    parametros_url = parse_qs(partes.query, keep_blank_values=True)
+    parametros = parametros_url.get("p", [""])
+    if partes.scheme != "https" or len(parametros) != 1:
+        raise ValidationError("QR Code NFC-e sem URL HTTPS ou parâmetro p válido.")
+    qr = parametros[0].split("|")
+    if qr[:3] != [chave, "3", ambiente]:
+        raise ValidationError("QR Code NFC-e diverge da chave, versão ou tpAmb do XML.")
+
+    endpoints = endpoints_nfce_uf(documento.filial.uf, documento.ambiente)
+    base = urlunsplit((partes.scheme, partes.netloc, partes.path, "", ""))
+    if endpoints and (
+        len(parametros_url) != 1
+        or base != endpoints["qrcode"]
+        or url_chave != endpoints["consulta"]
+    ):
+        raise ValidationError("URL do QR Code ou urlChave diverge do ambiente oficial da NFC-e GO.")
+
+    if tp_emis != "9":
+        if len(qr) != 3:
+            raise ValidationError("QR Code v3 online deve conter exatamente três parâmetros, sem assinatura.")
+        return
+
+    dest = inf_nfe.find(f"{{{NFE_NS}}}dest")
+    tipo_dest, id_dest = "", ""
+    if dest is not None:
+        for tag, tipo in (("CNPJ", "1"), ("CPF", "2"), ("idEstrangeiro", "3")):
+            valor = dest.findtext(f"{{{NFE_NS}}}{tag}")
+            if valor:
+                tipo_dest, id_dest = tipo, "" if tipo == "3" else valor
+                break
+    dia = (ide.findtext(f"{{{NFE_NS}}}dhEmi") or "")[8:10]
+    valor = inf_nfe.findtext(f"{{{NFE_NS}}}total/{{{NFE_NS}}}ICMSTot/{{{NFE_NS}}}vNF")
+    if len(qr) != 8 or qr[3:7] != [dia, valor, tipo_dest, id_dest] or not qr[7]:
+        raise ValidationError("QR Code v3 de contingência diverge do XML ou está sem assinatura.")
+
+    try:
+        conteudo, senha = abrir_certificado_a1(documento.filial.configuracao_fiscal)
+        _, certificado, _ = load_key_and_certificates(conteudo, senha.encode("utf-8") if senha else None)
+        assinatura = base64.b64decode(qr[7], validate=True)
+        certificado.public_key().verify(
+            assinatura, "|".join(qr[:7]).encode("utf-8"), padding.PKCS1v15(), hashes.SHA1()
+        )
+    except (AttributeError, ValueError, binascii.Error, InvalidSignature) as exc:
+        raise ValidationError("Assinatura do QR Code de contingência inválida para o A1 da filial.") from exc
+
 def validar_xml_pre_transmissao(documento, adapter):
     xml = documento.xml_conteudo or ""
     if "<!DOCTYPE" in xml.upper() or "<!ENTITY" in xml.upper():
@@ -111,6 +186,9 @@ def validar_xml_pre_transmissao(documento, adapter):
     modelo_esperado = "65" if documento.tipo_documento == TipoDocumentoFiscal.NFCE else "55"
     if modelo != modelo_esperado:
         raise ValidationError("Modelo fiscal do XML não corresponde ao documento.")
+    validar_paridade_ambiente(documento, inf_nfe)
+    if modelo == "65":
+        validar_paridade_qrcode_nfce(documento, raiz, inf_nfe, chave)
     if inf_nfe.findtext(f"{{{NFE_NS}}}ide/{{{NFE_NS}}}cDV") != chave[-1]:
         raise ValidationError("Digito verificador do XML não corresponde a chave de acesso.")
 
