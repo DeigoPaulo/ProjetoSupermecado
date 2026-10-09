@@ -143,7 +143,7 @@ class DeclaracaoComponente(models.TextChoices):
 
 
 class Produto(models.Model):
-    codigo_barras = models.CharField(max_length=80, unique=True)
+    codigo_barras = models.CharField(max_length=80, blank=True)
     codigo_interno = models.CharField(max_length=80, blank=True)
     nome = models.CharField(max_length=255)
     descricao = models.TextField(blank=True)
@@ -241,6 +241,11 @@ class Produto(models.Model):
     class Meta:
         ordering = ["nome"]
         constraints = [
+            models.UniqueConstraint(
+                fields=["codigo_barras"],
+                condition=~models.Q(codigo_barras=""),
+                name="produtos_ean_principal_unico_preenchido",
+            ),
             models.UniqueConstraint(
                 fields=["codigo_interno"],
                 condition=~models.Q(codigo_interno=""),

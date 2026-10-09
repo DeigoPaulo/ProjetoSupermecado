@@ -22,6 +22,7 @@
 </nav>
 <form method="post" enctype="multipart/form-data" class="form-grid panel product-form" data-product-form>
   {% csrf_token %}
+  {% if not object %}<input type="hidden" name="confirmar_sem_ean" value="0" data-no-ean-confirmed>{% endif %}
   {% if form.errors or codigos_formset.total_error_count or balanca_formset.total_error_count or fornecedores_formset.total_error_count or galeria_formset.total_error_count or nutricao_formset.total_error_count %}
     <section class="form-error-summary product-error-summary form-field-wide" role="alert" tabindex="-1" data-form-error-summary>
       <i class="fa-solid fa-circle-exclamation" aria-hidden="true"></i>
@@ -50,7 +51,7 @@
     <div class="form-section-heading"><div><span class="status status-success">Essencial</span><h2>Identificação</h2></div><p>Nome, código e classificação usados em todas as operações.</p></div>
     <div class="form-grid form-grid-inner">
       <label class="form-field"><span>{{ form.nome.label }}</span>{{ form.nome }}{{ form.nome.errors }}</label>
-      <label class="form-field"><span>EAN principal</span>{{ form.codigo_barras }}{{ form.codigo_barras.errors }}<small>Unidade base vendida normalmente.</small></label>
+      <label class="form-field"><span>EAN/GTIN principal <small>(opcional)</small></span>{{ form.codigo_barras }}{{ form.codigo_barras.errors }}<small>Informe o GTIN/EAN da embalagem. Se o produto não possuir GTIN, deixe vazio.</small></label>
       <label class="form-field">
         <span>{{ form.codigo_interno.label }}</span>
         {% if object %}
@@ -326,9 +327,116 @@
     <button class="primary-button" type="submit"><i class="fa-solid fa-floppy-disk"></i> Salvar produto <kbd>Ctrl+S</kbd></button>
   </div>
 </form>
+{% if not object %}
+<dialog data-no-ean-dialog aria-labelledby="no-ean-title">
+  <h2 id="no-ean-title">Produto sem EAN/GTIN</h2>
+  <p>Este produto será cadastrado sem código de barras. Ele poderá ser localizado pelo código interno e pelo nome, mas não terá identificação por EAN/GTIN. Deseja continuar?</p>
+  <div class="form-actions">
+    <button type="button" class="secondary-button" data-no-ean-back>Voltar e informar EAN</button>
+    <button type="button" class="primary-button" data-no-ean-accept>Cadastrar sem EAN</button>
+  </div>
+</dialog>
+{% endif %}
 {% endblock %}
 {% block extra_js %}
 <script>
+(function () {
+  const form = document.querySelector("[data-product-form]");
+  if (!form) return;
+  const ean = form.querySelector('[name="codigo_barras"]');
+  const confirmed = form.querySelector("[data-no-ean-confirmed]");
+  const dialog = document.querySelector("[data-no-ean-dialog]");
+  let submitter;
+
+  form.querySelectorAll("label.form-field").forEach((label) => {
+    const field = label.querySelector("input:not([type='hidden']), select, textarea");
+    const caption = label.querySelector(":scope > span");
+    if (!field || !caption || caption.querySelector("small")) return;
+    const marker = document.createElement("small");
+    marker.textContent = field.required ? " *" : " (opcional)";
+    caption.appendChild(marker);
+  });
+
+  let invalidTimer;
+  form.addEventListener("invalid", (event) => {
+    event.preventDefault();
+    if (invalidTimer) return;
+    invalidTimer = window.setTimeout(() => {
+      invalidTimer = null;
+      const invalidFields = Array.from(form.querySelectorAll("input:invalid, select:invalid, textarea:invalid"));
+      if (!invalidFields.length) return;
+      let summary = form.querySelector("[data-form-error-summary]");
+      if (!summary) {
+        summary = document.createElement("section");
+        summary.className = "form-error-summary product-error-summary form-field-wide";
+        summary.setAttribute("role", "alert");
+        summary.setAttribute("tabindex", "-1");
+        summary.setAttribute("data-form-error-summary", "");
+        form.insertBefore(summary, form.querySelector(".form-note"));
+      }
+      const list = document.createElement("ul");
+      invalidFields.forEach((field) => {
+        const label = field.closest("label.form-field");
+        const section = field.closest("[data-product-section]");
+        if (section) {
+          section.classList.add("has-section-error");
+          if (section.tagName === "DETAILS") section.open = true;
+        }
+        const message = field.validity.valueMissing ? "Este campo é obrigatório." : field.validationMessage;
+        if (label) {
+          label.classList.add("has-error");
+          field.setAttribute("aria-invalid", "true");
+          let inline = label.querySelector("[data-client-error]");
+          if (!inline) {
+            inline = document.createElement("small");
+            inline.className = "field-error";
+            inline.setAttribute("data-client-error", "");
+            label.appendChild(inline);
+          }
+          inline.textContent = message;
+        }
+        const item = document.createElement("li");
+        const link = document.createElement("a");
+        link.href = "#" + field.id;
+        link.textContent = (label && label.querySelector(":scope > span")?.textContent.trim() || field.name) + ": " + message;
+        item.appendChild(link);
+        list.appendChild(item);
+      });
+      summary.replaceChildren();
+      const heading = document.createElement("strong");
+      heading.textContent = "Não foi possível salvar o produto. Revise os campos destacados abaixo.";
+      summary.append(heading, list);
+      summary.scrollIntoView({ behavior: "smooth", block: "start" });
+      invalidFields[0].focus({ preventScroll: true });
+    }, 0);
+  }, true);
+  form.addEventListener("input", (event) => {
+    const field = event.target;
+    if (!field.validity?.valid) return;
+    field.removeAttribute("aria-invalid");
+    const label = field.closest("label.form-field");
+    label?.classList.remove("has-error");
+    label?.querySelector("[data-client-error]")?.remove();
+  });
+
+  if (!ean || !confirmed || !dialog) return;
+  form.addEventListener("submit", (event) => {
+    if (ean.value.trim() || confirmed.value === "1") return;
+    event.preventDefault();
+    submitter = event.submitter;
+    dialog.showModal();
+  });
+  dialog.querySelector("[data-no-ean-back]").addEventListener("click", () => {
+    dialog.close();
+    ean.focus();
+  });
+  dialog.querySelector("[data-no-ean-accept]").addEventListener("click", () => {
+    confirmed.value = "1";
+    dialog.close();
+    form.requestSubmit(submitter || undefined);
+  });
+  ean.addEventListener("input", () => { confirmed.value = "0"; });
+})();
 (function () {
   const form = document.querySelector("[data-product-form]");
   const confirmed = form && form.querySelector("[data-factor-confirmed]");
@@ -407,12 +515,20 @@
 
   form.querySelectorAll(".errorlist").forEach((errors) => {
     if (!errors.textContent.trim()) return;
+    const label = errors.closest("label.form-field");
+    if (label) {
+      label.classList.add("has-error");
+      label.querySelector("input:not([type='hidden']), select, textarea")?.setAttribute("aria-invalid", "true");
+    }
     const section = errors.closest("[data-product-section]");
     if (section) {
       section.classList.add("has-section-error");
       if (section.tagName === "DETAILS") section.open = true;
     }
   });
+  if (form.querySelector("[data-form-error-summary]")) {
+    window.setTimeout(() => form.querySelector("[data-form-error-summary]").scrollIntoView({ behavior: "smooth", block: "start" }), 0);
+  }
 
   form.querySelectorAll("[data-formset-reveal]").forEach((button) => {
     const container = button.closest("details, [data-product-section]");
@@ -438,7 +554,11 @@
 
   form.addEventListener("input", () => { dirty = true; });
   form.addEventListener("change", () => { dirty = true; });
-  form.addEventListener("submit", () => { submitting = true; dirty = false; });
+  form.addEventListener("submit", (event) => {
+    if (event.defaultPrevented) return;
+    submitting = true;
+    dirty = false;
+  });
   document.addEventListener("keydown", (event) => {
     if (!(event.ctrlKey || event.metaKey) || event.key.toLowerCase() !== "s") return;
     event.preventDefault();

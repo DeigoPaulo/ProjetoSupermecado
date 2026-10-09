@@ -1,18 +1,21 @@
 from decimal import Decimal
+import uuid
 
 from django.conf import settings
 from django.core.exceptions import ValidationError
 from django.db import models
+from django.utils import timezone
 from django.contrib.auth.hashers import check_password, make_password
 
 from apps.core_money import quantizar_moeda
-from apps.vendas.models import TipoDocumentoConsumidor
+from apps.vendas.models import StatusPagamento, TipoDocumentoConsumidor
 from apps.clientes.models import IndicadorInscricaoEstadual
 
 from .documentos_destinatario import normalizar_documento_cliente
 
 
 class CanalPedido(models.TextChoices):
+    PDV = "PDV", "PDV"
     LOJA_ONLINE = "LOJA_ONLINE", "Loja online"
     WHATSAPP = "WHATSAPP", "WhatsApp"
     TELEFONE = "TELEFONE", "Telefone"
@@ -37,6 +40,17 @@ class StatusPagamentoPedido(models.TextChoices):
     PENDENTE = "PENDENTE", "Pendente"
     PAGO = "PAGO", "Pago"
     ESTORNADO = "ESTORNADO", "Estornado"
+
+
+class OrigemRecebimentoPedido(models.TextChoices):
+    CAIXA_PDV = "CAIXA_PDV", "Caixa PDV"
+    ENTREGA = "ENTREGA", "Entrega"
+
+
+class StatusAcertoEntrega(models.TextChoices):
+    NAO_APLICA = "NAO_APLICA", "Não se aplica"
+    PENDENTE = "PENDENTE", "Pendente"
+    ACERTADO = "ACERTADO", "Acertado"
 
 
 class FormaPagamentoPedido(models.TextChoices):
@@ -177,6 +191,8 @@ class PedidoOnline(models.Model):
     usuario = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.PROTECT, related_name="pedidos_online_criados")
     criado_em = models.DateTimeField(auto_now_add=True)
     atualizado_em = models.DateTimeField(auto_now=True)
+    concluido_em = models.DateTimeField(null=True, blank=True)
+    idempotency_key = models.CharField(max_length=80, null=True, blank=True, unique=True)
 
     class Meta:
         ordering = ["-criado_em"]
@@ -280,6 +296,7 @@ class ItemPedidoOnline(models.Model):
     quantidade_separada = models.DecimalField(max_digits=12, decimal_places=3, default=0)
     preco_unitario = models.DecimalField(max_digits=10, decimal_places=2)
     total = models.DecimalField(max_digits=12, decimal_places=2, default=0)
+    custo_unitario_no_momento = models.DecimalField(max_digits=14, decimal_places=6, null=True, blank=True)
 
     class Meta:
         unique_together = ["pedido", "produto"]
@@ -299,3 +316,102 @@ class ItemPedidoOnline(models.Model):
 
     def __str__(self):
         return f"{self.produto} x {self.quantidade}"
+
+
+class DevolucaoPedido(models.Model):
+    pedido = models.OneToOneField(PedidoOnline, on_delete=models.PROTECT, related_name="devolucao")
+    usuario = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.PROTECT)
+    motivo = models.CharField(max_length=255)
+    valor_devolvido = models.DecimalField(max_digits=12, decimal_places=2)
+    produto_apto_venda = models.BooleanField(default=False)
+    devolvido_em = models.DateTimeField(default=timezone.now)
+
+    def __str__(self):
+        return f"Devolução do pedido #{self.pedido_id}"
+
+
+class PagamentoPedido(models.Model):
+    pedido = models.ForeignKey(PedidoOnline, on_delete=models.PROTECT, related_name="pagamentos")
+    forma_pagamento = models.ForeignKey("vendas.FormaPagamento", on_delete=models.PROTECT)
+    confirmacao_integracao = models.OneToOneField(
+        "vendas.ConfirmacaoPagamentoIntegrado", on_delete=models.PROTECT,
+        null=True, blank=True, related_name="pagamento_pedido",
+    )
+    valor = models.DecimalField(max_digits=12, decimal_places=2)
+    valor_informado = models.DecimalField(max_digits=12, decimal_places=2)
+    status = models.CharField(max_length=30, choices=StatusPagamento.choices, default=StatusPagamento.CONFIRMADO)
+    origem_recebimento = models.CharField(max_length=20, choices=OrigemRecebimentoPedido.choices)
+    caixa_recebimento = models.ForeignKey(
+        "pdv.Caixa", on_delete=models.PROTECT, null=True, blank=True, related_name="pagamentos_pedido"
+    )
+    usuario_recebimento = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.PROTECT, related_name="pagamentos_pedido_recebidos"
+    )
+    recebido_em = models.DateTimeField(auto_now_add=True)
+    transacao_externa_id = models.CharField(max_length=120, blank=True)
+    nsu = models.CharField(max_length=60, blank=True)
+    codigo_autorizacao = models.CharField(max_length=128, blank=True)
+    tipo_integracao = models.CharField(max_length=1, blank=True)
+    cnpj_instituicao_pagamento = models.CharField(max_length=14, blank=True)
+    bandeira_cartao = models.CharField(max_length=2, blank=True)
+    cnpj_beneficiario_pagamento = models.CharField(max_length=14, blank=True)
+    identificador_terminal_pagamento = models.CharField(max_length=40, blank=True)
+    mensagem_processadora = models.CharField(max_length=255, blank=True)
+    idempotency_key = models.CharField(max_length=80, unique=True, default=uuid.uuid4)
+    status_acerto = models.CharField(
+        max_length=12, choices=StatusAcertoEntrega.choices, default=StatusAcertoEntrega.NAO_APLICA
+    )
+    caixa_acerto = models.ForeignKey(
+        "pdv.Caixa", on_delete=models.PROTECT, null=True, blank=True, related_name="acertos_entrega"
+    )
+    usuario_acerto = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.PROTECT, null=True, blank=True,
+        related_name="acertos_entrega_registrados",
+    )
+    acertado_em = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        ordering = ["recebido_em", "id"]
+        constraints = [
+            models.CheckConstraint(condition=models.Q(valor__gt=0), name="pedido_pagamento_valor_positivo"),
+            models.CheckConstraint(
+                condition=models.Q(valor_informado__gte=models.F("valor")),
+                name="pedido_pagamento_informado_gte_aplicado",
+            ),
+            models.CheckConstraint(
+                condition=(
+                    models.Q(origem_recebimento=OrigemRecebimentoPedido.CAIXA_PDV, caixa_recebimento__isnull=False)
+                    | models.Q(origem_recebimento=OrigemRecebimentoPedido.ENTREGA, caixa_recebimento__isnull=True)
+                ),
+                name="pedido_pagamento_caixa_por_origem",
+            ),
+        ]
+
+    def clean(self):
+        tipo = (self.forma_pagamento.tipo or "").upper() if self.forma_pagamento_id else ""
+        if self.origem_recebimento == OrigemRecebimentoPedido.CAIXA_PDV:
+            if not self.caixa_recebimento_id or self.status_acerto != StatusAcertoEntrega.NAO_APLICA:
+                raise ValidationError("Pagamento no PDV exige caixa e não pode ter acerto de entrega.")
+        elif self.origem_recebimento == OrigemRecebimentoPedido.ENTREGA:
+            if self.caixa_recebimento_id:
+                raise ValidationError("Pagamento na entrega não pertence a caixa PDV.")
+            if tipo == "DINHEIRO" and self.status_acerto not in {
+                StatusAcertoEntrega.PENDENTE, StatusAcertoEntrega.ACERTADO
+            }:
+                raise ValidationError("Dinheiro recebido na entrega exige acerto.")
+            if tipo != "DINHEIRO" and self.status_acerto != StatusAcertoEntrega.NAO_APLICA:
+                raise ValidationError("Pagamento eletrônico na entrega não possui acerto de dinheiro.")
+        if self.caixa_recebimento_id and self.caixa_recebimento.filial_id != self.pedido.filial_id:
+            raise ValidationError({"caixa_recebimento": "O caixa pertence a outra filial."})
+        if self.caixa_acerto_id and self.caixa_acerto.filial_id != self.pedido.filial_id:
+            raise ValidationError({"caixa_acerto": "O caixa do acerto pertence a outra filial."})
+        if self.status_acerto == StatusAcertoEntrega.ACERTADO:
+            if not all((self.caixa_acerto_id, self.usuario_acerto_id, self.acertado_em)):
+                raise ValidationError("Acerto exige caixa, usuário e data.")
+        elif any((self.caixa_acerto_id, self.usuario_acerto_id, self.acertado_em)):
+            raise ValidationError("Dados de acerto só podem existir após a prestação de contas.")
+        if self.status_acerto == StatusAcertoEntrega.PENDENTE and (
+            self.origem_recebimento != OrigemRecebimentoPedido.ENTREGA
+            or self.forma_pagamento.tipo != "DINHEIRO"
+        ):
+            raise ValidationError("Somente dinheiro recebido na entrega pode ter acerto pendente.")

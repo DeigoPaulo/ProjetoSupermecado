@@ -43,6 +43,12 @@ class VendaServiceTests(TestCase):
         self.crediario = FormaPagamento.objects.create(nome="Crediario", tipo="CREDIARIO")
         self.cliente = Cliente.objects.create(empresa=self.empresa, nome="Cliente Teste", cpf_cnpj="123.456.789-00")
 
+    def habilitar_pix(self):
+        formas_pagamento_disponiveis(self.filial)
+        FormaPagamentoFilial.objects.filter(
+            filial=self.filial, forma_pagamento=self.pix,
+        ).update(ativo=True)
+
     def test_finalizacao_rejeita_cliente_de_outra_empresa(self):
         empresa_estrangeira = Empresa.objects.create(
             razao_social="Outro Mercado Ltda",
@@ -86,12 +92,12 @@ class VendaServiceTests(TestCase):
 
         disponiveis = formas_pagamento_disponiveis(self.filial)
 
-        self.assertIn(nova_forma, disponiveis)
+        self.assertNotIn(nova_forma, disponiveis)
         self.assertTrue(
             FormaPagamentoFilial.objects.filter(
                 filial=self.filial,
                 forma_pagamento=nova_forma,
-                ativo=True,
+                ativo=False,
             ).exists()
         )
     def test_finalizacao_rejeita_forma_desabilitada_na_filial(self):
@@ -143,6 +149,7 @@ class VendaServiceTests(TestCase):
             ).exists()
         )
     def test_finalizar_venda_com_pagamento_dividido_baixa_estoque(self):
+        self.habilitar_pix()
         self.estoque.custo_medio = Decimal("12.500000")
         self.estoque.save(update_fields=["custo_medio", "atualizado_em"])
         pix_configurado = ContaMovimentoFinanceiro.objects.create(
@@ -209,7 +216,44 @@ class VendaServiceTests(TestCase):
             Decimal("25.00"),
         )
 
+    def test_checkout_dinheiro_21_recebido_25_registra_somente_21(self):
+        from types import SimpleNamespace
+
+        from django.http import QueryDict
+
+        from apps.pdv.views import _pagamentos_from_request
+
+        self.produto.preco_venda = Decimal("21.00")
+        self.produto.save(update_fields=["preco_venda"])
+        post = QueryDict(mutable=True)
+        post.setlist("pagamento_forma", [str(self.dinheiro.pk)])
+        post.setlist("pagamento_valor", ["25.00"])
+        pagamentos, recebido = _pagamentos_from_request(
+            SimpleNamespace(POST=post), Decimal("21.00"), self.filial,
+        )
+        self.assertEqual(recebido, Decimal("25.00"))
+        self.assertEqual(pagamentos[0]["valor"], Decimal("21.00"))
+        self.assertEqual(pagamentos[0]["valor_informado"], Decimal("25.00"))
+
+        venda = finalizar_venda(
+            caixa=self.caixa,
+            usuario=self.usuario,
+            itens=[{"produto": self.produto, "quantidade": Decimal("1.000")}],
+            pagamentos=pagamentos,
+            preparar_fiscal=False,
+        )
+        pagamento = venda.pagamentos.get()
+        self.assertEqual(venda.total_liquido, Decimal("21.00"))
+        self.assertEqual(pagamento.valor, Decimal("21.00"))
+        self.assertEqual(pagamento.valor_informado, Decimal("25.00"))
+        self.assertEqual(pagamento.valor_informado - pagamento.valor, Decimal("4.00"))
+        self.assertEqual(
+            LancamentoFinanceiro.objects.get(pagamento_venda=pagamento).valor,
+            Decimal("21.00"),
+        )
+
     def test_forma_sem_troco_nao_pode_exceder_valor_aplicado(self):
+        self.habilitar_pix()
         with self.assertRaisesMessage(ValidationError, "Somente uma forma configurada para troco"):
             finalizar_venda(
                 caixa=self.caixa,
@@ -225,6 +269,7 @@ class VendaServiceTests(TestCase):
         self.assertFalse(Venda.objects.exists())
 
     def test_duas_parcelas_da_mesma_modalidade_permanecem_independentes(self):
+        self.habilitar_pix()
         venda = finalizar_venda(
             caixa=self.caixa,
             usuario=self.usuario,
@@ -350,6 +395,7 @@ class VendaServiceTests(TestCase):
         self.assertEqual(devolucao.itens.get().valor_total, Decimal("3.75"))
 
     def test_devolucao_parcial_rateia_estorno_financeiro_por_pagamento(self):
+        self.habilitar_pix()
         venda = finalizar_venda(
             caixa=self.caixa,
             usuario=self.usuario,
@@ -421,6 +467,7 @@ class VendaServiceTests(TestCase):
         self.assertEqual(self.estoque.quantidade_atual, Decimal("10.000"))
 
     def test_finalizar_venda_rejeita_pagamento_eletronico_pendente(self):
+        self.habilitar_pix()
         with self.assertRaisesMessage(ValidationError, "Todos os pagamentos devem estar confirmados"):
             finalizar_venda(
                 caixa=self.caixa,
@@ -441,6 +488,7 @@ class VendaServiceTests(TestCase):
         self.assertEqual(self.estoque.quantidade_atual, Decimal("10.000"))
 
     def test_pagamento_eletronico_confirmado_gera_autorizacao_simulada(self):
+        self.habilitar_pix()
         venda = finalizar_venda(
             caixa=self.caixa,
             usuario=self.usuario,
@@ -456,6 +504,7 @@ class VendaServiceTests(TestCase):
         self.assertIn("Autorização eletrônica simulada", pagamento.mensagem_processadora)
 
     def test_pagamento_eletronico_preserva_metadados_nao_integrados(self):
+        self.habilitar_pix()
         venda = finalizar_venda(
             caixa=self.caixa,
             usuario=self.usuario,
@@ -489,6 +538,7 @@ class VendaServiceTests(TestCase):
         self.assertEqual(pagamento.mensagem_processadora, "Aprovado pela operadora.")
 
     def test_pagamento_eletronico_rejeita_metadado_fiscal_malformado(self):
+        self.habilitar_pix()
         base = {
             "forma_pagamento": self.pix,
             "valor": Decimal("25.00"),
@@ -716,6 +766,7 @@ class VendaServiceTests(TestCase):
         self.assertFalse(ContaFinanceira.objects.exists())
 
     def test_cancelamento_de_venda_mista_estorna_local_e_aguarda_operadora(self):
+        self.habilitar_pix()
         venda = finalizar_venda(
             caixa=self.caixa,
             usuario=self.usuario,
@@ -751,6 +802,7 @@ class VendaServiceTests(TestCase):
         self.assertFalse(LancamentoFinanceiro.objects.filter(pagamento_venda=pix, origem="ESTORNO").exists())
 
     def test_confirmacao_de_estorno_eletronico_reverte_financeiro(self):
+        self.habilitar_pix()
         venda = finalizar_venda(
             caixa=self.caixa,
             usuario=self.usuario,

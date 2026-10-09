@@ -2136,7 +2136,7 @@ def serie_form(request, pk=None):
             return redirect("fiscal:documentos")
     else:
         form = SerieFiscalForm(instance=serie, user=request.user)
-    return render(request, "fiscal/form.html", {"form": form, "titulo": "Serie fiscal"})
+    return render(request, "fiscal/form.html", {"form": form, "titulo": "Numeração fiscal"})
 
 
 @login_required
@@ -2220,6 +2220,7 @@ def definir_natureza_padrao(request, pk):
 
 @login_required
 @role_required(*SISTEMA)
+@require_POST
 def preparar_venda(request, venda_id):
     venda = get_object_or_404(vendas_para_usuario(request.user), pk=venda_id)
     try:

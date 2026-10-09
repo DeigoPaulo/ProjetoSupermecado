@@ -7,7 +7,7 @@ from django.contrib.auth import get_user_model
 from django.contrib.auth.decorators import login_required
 from django.core.exceptions import PermissionDenied, ValidationError
 from django.core.paginator import Paginator
-from django.db.models import Count, DecimalField, ExpressionWrapper, F, Sum
+from django.db.models import Count, DecimalField, ExpressionWrapper, F, Q, Sum
 from django.db.models.functions import ExtractHour
 from django.http import HttpResponse
 from django.shortcuts import redirect, render
@@ -23,6 +23,7 @@ from apps.compras.services import criar_cotacao_reposicao
 from apps.empresas.models import Filial
 from apps.estoque.models import Estoque, MovimentacaoEstoque, PerdaEstoque, TipoMovimentacaoEstoque, TipoPerdaEstoque
 from apps.pdv.models import Caixa, Sangria, StatusCaixa, Suprimento
+from apps.marketplace.models import OrigemRecebimentoPedido, PagamentoPedido, StatusAcertoEntrega
 from apps.produtos.models import Produto
 from apps.vendas.models import (
     DevolucaoVenda,
@@ -303,6 +304,22 @@ def _resumo_caixas_por_operador(caixas_qs):
         .values("caixa__usuario_abertura_id")
         .annotate(total=Sum("valor"))
     }
+    pedidos_por_operador = {
+        item["caixa_recebimento__usuario_abertura_id"]: item["total"] or Decimal("0.00")
+        for item in PagamentoPedido.objects.filter(
+            caixa_recebimento__in=caixas_qs,
+            origem_recebimento=OrigemRecebimentoPedido.CAIXA_PDV,
+            status=StatusPagamento.CONFIRMADO,
+        ).values("caixa_recebimento__usuario_abertura_id").annotate(total=Sum("valor"))
+    }
+    acertos_por_operador = {
+        item["caixa_acerto__usuario_abertura_id"]: item["total"] or Decimal("0.00")
+        for item in PagamentoPedido.objects.filter(
+            caixa_acerto__in=caixas_qs,
+            status_acerto=StatusAcertoEntrega.ACERTADO,
+            status=StatusPagamento.CONFIRMADO,
+        ).values("caixa_acerto__usuario_abertura_id").annotate(total=Sum("valor"))
+    }
     resumo = []
     for item in caixas_qs.values("usuario_abertura_id", "usuario_abertura__username").annotate(
         caixas=Count("id"),
@@ -313,6 +330,8 @@ def _resumo_caixas_por_operador(caixas_qs):
         vendas = vendas_por_operador.get(item["usuario_abertura_id"], {})
         sangrias = sangrias_por_operador.get(item["usuario_abertura_id"], Decimal("0.00"))
         suprimentos = suprimentos_por_operador.get(item["usuario_abertura_id"], Decimal("0.00"))
+        pedidos = pedidos_por_operador.get(item["usuario_abertura_id"], Decimal("0.00"))
+        acertos = acertos_por_operador.get(item["usuario_abertura_id"], Decimal("0.00"))
         resumo.append({
             "operador_id": item["usuario_abertura_id"],
             "operador": item["usuario_abertura__username"] or "Sem operador",
@@ -323,9 +342,11 @@ def _resumo_caixas_por_operador(caixas_qs):
             "diferenca": (item["valor_conferido"] or 0) - (item["valor_declarado"] or 0),
             "vendas": vendas.get("vendas") or 0,
             "total_vendas": vendas.get("total_vendas") or 0,
+            "total_pedidos": pedidos,
+            "total_acertos_entrega": acertos,
             "sangrias": sangrias,
             "suprimentos": suprimentos,
-            "saldo_operacional": (vendas.get("total_vendas") or Decimal("0.00")) + suprimentos - sangrias,
+            "saldo_operacional": (vendas.get("total_vendas") or Decimal("0.00")) + pedidos + acertos + suprimentos - sangrias,
         })
     return resumo
 
@@ -345,15 +366,26 @@ def _entradas_caixa_por_forma(caixas_qs):
         .values("pagamento__forma_pagamento_id")
         .annotate(total=Sum("valor"))
     }
-    entradas = []
+    entradas = {}
     for item in pagamentos.values(
         "forma_pagamento_id", "forma_pagamento__nome"
     ).annotate(total=Sum("valor")).order_by("forma_pagamento__nome"):
         estornos = estornos_por_forma.get(item["forma_pagamento_id"], Decimal("0.00"))
         item["estornos"] = estornos
         item["total"] = (item["total"] or Decimal("0.00")) - estornos
-        entradas.append(item)
-    return entradas
+        entradas[item["forma_pagamento_id"]] = item
+    pedidos = PagamentoPedido.objects.filter(status=StatusPagamento.CONFIRMADO).filter(
+        Q(origem_recebimento=OrigemRecebimentoPedido.CAIXA_PDV, caixa_recebimento__in=caixas_qs)
+        | Q(origem_recebimento=OrigemRecebimentoPedido.ENTREGA, status_acerto=StatusAcertoEntrega.ACERTADO, caixa_acerto__in=caixas_qs)
+    )
+    for item in pedidos.values("forma_pagamento_id", "forma_pagamento__nome").annotate(total=Sum("valor")):
+        entrada = entradas.setdefault(item["forma_pagamento_id"], {
+            "forma_pagamento_id": item["forma_pagamento_id"],
+            "forma_pagamento__nome": item["forma_pagamento__nome"],
+            "estornos": Decimal("0.00"), "total": Decimal("0.00"),
+        })
+        entrada["total"] += item["total"]
+    return sorted(entradas.values(), key=lambda item: item["forma_pagamento__nome"])
 
 
 def _preparar_caixas_conferencia(caixas_qs):

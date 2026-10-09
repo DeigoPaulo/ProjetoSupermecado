@@ -12,6 +12,7 @@ from apps.estoque.models import (
     TipoMovimentacaoEstoque,
 )
 from apps.vendas.models import DevolucaoVenda, ItemVenda, StatusVenda, Venda
+from apps.marketplace.models import DevolucaoPedido, PedidoOnline, StatusPedido
 
 from .models import (
     GrupoDRE,
@@ -92,7 +93,9 @@ def _operacao_reconciliacao(*, tipo, identificador, filial_id, referencia, itens
         for movimento in movimentos
         if movimento.filial_id == filial_id
         and movimento.tipo == (
-            TipoMovimentacaoEstoque.VENDA if tipo == "VENDA" else TipoMovimentacaoEstoque.DEVOLUCAO
+            TipoMovimentacaoEstoque.VENDA if tipo == "VENDA" else
+            TipoMovimentacaoEstoque.SAIDA if tipo == "PEDIDO" else
+            TipoMovimentacaoEstoque.DEVOLUCAO
         )
     ]
     sem_custo_movimento = sum(1 for movimento in movimentos_validos if movimento.custo_total is None)
@@ -179,6 +182,12 @@ def _fechamento_dict(fechamento, data_esperada):
 
 def calcular_dre_gerencial(*, data_inicio, data_fim, filial_ids):
     filial_ids = tuple(sorted(set(filial_ids)))
+    pedidos_concluidos = list(
+        PedidoOnline.objects.filter(
+            filial_id__in=filial_ids, status=StatusPedido.CONCLUIDO,
+            concluido_em__date__range=(data_inicio, data_fim),
+        ).prefetch_related("itens__produto")
+    )
     vendas_periodo = list(
         Venda.objects.filter(
             filial_id__in=filial_ids,
@@ -209,6 +218,12 @@ def calcular_dre_gerencial(*, data_inicio, data_fim, filial_ids):
         .select_related("venda", "venda__filial")
         .prefetch_related("itens__item_venda__produto")
     )
+    devolucoes_pedido = list(
+        DevolucaoPedido.objects.filter(
+            pedido__filial_id__in=filial_ids,
+            devolvido_em__date__range=(data_inicio, data_fim),
+        ).select_related("pedido").prefetch_related("pedido__itens__produto")
+    )
 
     vendas_por_id = {
         venda.pk: venda
@@ -216,12 +231,18 @@ def calcular_dre_gerencial(*, data_inicio, data_fim, filial_ids):
     }
     itens_venda = _itens_por_venda(vendas_por_id)
 
-    receita_bruta = sum((venda.total_bruto for venda in vendas_periodo), ZERO)
-    descontos = sum((venda.desconto for venda in vendas_periodo), ZERO)
+    receita_bruta = sum((venda.total_bruto for venda in vendas_periodo), ZERO) + sum(
+        (pedido.subtotal + pedido.taxa_entrega for pedido in pedidos_concluidos), ZERO
+    )
+    descontos = sum((venda.desconto for venda in vendas_periodo), ZERO) + sum(
+        (pedido.desconto for pedido in pedidos_concluidos), ZERO
+    )
     cancelamentos = sum(
         (venda.total_liquido for venda in cancelamentos_estruturados + cancelamentos_legados), ZERO
     )
-    valor_devolucoes = sum((devolucao.valor_total for devolucao in devolucoes), ZERO)
+    valor_devolucoes = sum((devolucao.valor_total for devolucao in devolucoes), ZERO) + sum(
+        (devolucao.valor_devolvido for devolucao in devolucoes_pedido), ZERO
+    )
     receita_liquida = receita_bruta - descontos - cancelamentos - valor_devolucoes
 
     cmv_bruto = ZERO
@@ -239,6 +260,23 @@ def calcular_dre_gerencial(*, data_inicio, data_fim, filial_ids):
         cmv_bruto += custo
         itens_sem_snapshot_ids.update(item.pk for item in ausentes)
         itens_com_snapshot_ids.update(item.pk for item in itens if item.custo_unitario_no_momento is not None)
+        valor_sem_cobertura += descoberto
+        base_cobertura += sum((item.total for item in itens), ZERO)
+        for item in itens:
+            linha = produtos[item.produto_id]
+            linha["produto_id"] = item.produto_id
+            linha["produto"] = item.produto.nome
+            if item.custo_unitario_no_momento is not None:
+                linha["cmv_bruto"] += item.quantidade * item.custo_unitario_no_momento
+
+    for pedido in pedidos_concluidos:
+        itens = list(pedido.itens.all())
+        custo, ausentes, descoberto = _custo_itens(itens)
+        cmv_bruto += custo
+        itens_sem_snapshot_ids.update(("pedido", item.pk) for item in ausentes)
+        itens_com_snapshot_ids.update(
+            ("pedido", item.pk) for item in itens if item.custo_unitario_no_momento is not None
+        )
         valor_sem_cobertura += descoberto
         base_cobertura += sum((item.total for item in itens), ZERO)
         for item in itens:
@@ -285,6 +323,21 @@ def calcular_dre_gerencial(*, data_inicio, data_fim, filial_ids):
                     devolvido.quantidade * original.custo_unitario_no_momento
                 )
 
+    for devolucao in devolucoes_pedido:
+        itens = list(devolucao.pedido.itens.all())
+        custo, ausentes, descoberto = _custo_itens(itens)
+        cmv_devolucoes += custo
+        itens_sem_snapshot_ids.update(("pedido", item.pk) for item in ausentes)
+        itens_com_snapshot_ids.update(("pedido", item.pk) for item in itens if item.custo_unitario_no_momento is not None)
+        valor_sem_cobertura += descoberto
+        base_cobertura += sum((item.total for item in itens), ZERO)
+        for item in itens:
+            linha = produtos[item.produto_id]
+            linha["produto_id"] = item.produto_id
+            linha["produto"] = item.produto.nome
+            if item.custo_unitario_no_momento is not None:
+                linha["reversoes"] += item.quantidade * item.custo_unitario_no_momento
+
     cmv_liquido = cmv_bruto - cmv_cancelamentos - cmv_devolucoes
     itens_com_snapshot = len(itens_com_snapshot_ids)
     itens_sem_snapshot = len(itens_sem_snapshot_ids)
@@ -314,6 +367,7 @@ def calcular_dre_gerencial(*, data_inicio, data_fim, filial_ids):
         .exclude(conta_financeira__entrada_compra__isnull=False)
         .exclude(
             Q(pagamento_venda__isnull=False)
+            | Q(pagamento_pedido__isnull=False)
             | Q(conta_financeira__venda__isnull=False)
         )
     )
@@ -353,7 +407,8 @@ def calcular_dre_gerencial(*, data_inicio, data_fim, filial_ids):
 
     recebiveis_liquidados = list(
         RecebivelEletronico.objects.filter(
-            pagamento__venda__filial_id__in=filial_ids,
+            Q(pagamento__venda__filial_id__in=filial_ids)
+            | Q(pagamento_pedido__pedido__filial_id__in=filial_ids),
             data_liquidacao__range=(data_inicio, data_fim),
             valor_liquidado__isnull=False,
         ).prefetch_related("movimentos")
@@ -389,7 +444,8 @@ def calcular_dre_gerencial(*, data_inicio, data_fim, filial_ids):
         )
     chargebacks = sum(
         MovimentoRecebivelEletronico.objects.filter(
-            recebivel__pagamento__venda__filial_id__in=filial_ids,
+            Q(recebivel__pagamento__venda__filial_id__in=filial_ids)
+            | Q(recebivel__pagamento_pedido__pedido__filial_id__in=filial_ids),
             tipo=TipoMovimentoRecebivelEletronico.CHARGEBACK,
             data__range=(data_inicio, data_fim),
         ).values_list("valor", flat=True),
@@ -397,7 +453,8 @@ def calcular_dre_gerencial(*, data_inicio, data_fim, filial_ids):
     )
     taxas_previstas = sum(
         RecebivelEletronico.objects.filter(
-            pagamento__venda__filial_id__in=filial_ids,
+            Q(pagamento__venda__filial_id__in=filial_ids)
+            | Q(pagamento_pedido__pedido__filial_id__in=filial_ids),
             data_venda__range=(data_inicio, data_fim),
         ).values_list("taxa_prevista", flat=True),
         ZERO,
@@ -427,6 +484,10 @@ def calcular_dre_gerencial(*, data_inicio, data_fim, filial_ids):
         referencia = f"venda:{venda.pk}"
         referencias.append(referencia)
         operacoes_base.append(("VENDA", venda.pk, venda.filial_id, referencia, itens_venda[venda.pk], None))
+    for pedido in pedidos_concluidos:
+        referencia = f"pedido_online:{pedido.pk}"
+        referencias.append(referencia)
+        operacoes_base.append(("PEDIDO", pedido.pk, pedido.filial_id, referencia, list(pedido.itens.all()), None))
     for venda in cancelamentos_estruturados + cancelamentos_legados:
         referencia = f"cancelamento_venda:{venda.pk}"
         referencias.append(referencia)
@@ -440,6 +501,13 @@ def calcular_dre_gerencial(*, data_inicio, data_fim, filial_ids):
         operacoes_base.append(
             ("DEVOLUCAO", devolucao.pk, devolucao.venda.filial_id, referencia, originais, proporcoes)
         )
+    for devolucao in devolucoes_pedido:
+        referencia = f"devolucao_pedido:{devolucao.pedido_id}"
+        referencias.append(referencia)
+        operacoes_base.append((
+            "DEVOLUCAO", devolucao.pk, devolucao.pedido.filial_id,
+            referencia, list(devolucao.pedido.itens.all()), None,
+        ))
     movimentos_por_ref = _movimentos_por_referencia(referencias)
     operacoes = [
         _operacao_reconciliacao(

@@ -120,7 +120,7 @@ document.addEventListener("DOMContentLoaded", function () {
   {% if not pedido.documentos_fiscais.exists and pedido.status != "CANCELADO" %}
     <form method="post" action="{% url 'marketplace:acao' pedido.pk %}" class="form-actions form-confirm" data-msg="Preparar NF-e modelo 55 para este pedido online?">
       {% csrf_token %}<input type="hidden" name="acao" value="preparar_nfe">
-      <button class="secondary-button" type="submit"><i class="fa-solid fa-file-invoice"></i> Preparar NF-e</button>
+      <button class="secondary-button" type="submit" {% if pedido.tipo_entrega == "ENTREGA" and pagamento_posterior_pendente %}disabled{% endif %}><i class="fa-solid fa-file-invoice"></i> Preparar NF-e</button>
     </form>
   {% endif %}
 </section>
@@ -217,9 +217,16 @@ document.addEventListener("DOMContentLoaded", function () {
       {% if entrega_pendente %}<span class="action-help">Entrega pendente de calculo.</span>{% endif %}
     {% endif %}
     {% if pedido.status == "EM_SEPARACAO" %}<form method="post" action="{% url 'marketplace:acao' pedido.pk %}">{% csrf_token %}<input type="hidden" name="acao" value="avancar"><input type="hidden" name="destino" value="PRONTO"><button id="delivery-ready-button" class="primary-button" type="submit">Marcar como pronto <kbd>F3</kbd></button></form>{% endif %}
-    {% if pedido.status == "PRONTO" %}<form method="post" action="{% url 'marketplace:acao' pedido.pk %}">{% csrf_token %}<input type="hidden" name="acao" value="avancar"><input type="hidden" name="destino" value="{% if pedido.tipo_entrega == 'ENTREGA' %}SAIU_ENTREGA{% else %}CONCLUIDO{% endif %}"><button id="delivery-dispatch-button" class="primary-button" type="submit">{% if pedido.tipo_entrega == 'ENTREGA' %}Saiu para entrega <kbd>F4</kbd>{% else %}Concluir retirada{% endif %}</button></form>{% endif %}
+    {% if pedido.status == "PRONTO" %}
+      {% if pedido.tipo_entrega == "ENTREGA" %}<span class="action-help">Fiscal: {% if fiscal_saida == "AUTORIZADA" %}NF-e autorizada{% elif fiscal_saida == "ERRO" %}Erro / rejeitada{% else %}Pendente{% endif %}</span>{% endif %}
+      <form method="post" action="{% url 'marketplace:acao' pedido.pk %}">{% csrf_token %}<input type="hidden" name="acao" value="avancar"><input type="hidden" name="destino" value="{% if pedido.tipo_entrega == 'ENTREGA' %}SAIU_ENTREGA{% else %}CONCLUIDO{% endif %}"><button id="delivery-dispatch-button" class="primary-button" type="submit" {% if pedido.tipo_entrega == "ENTREGA" and pagamento_posterior_pendente or pedido.tipo_entrega == "ENTREGA" and fiscal_saida != "AUTORIZADA" %}disabled{% endif %}>{% if pedido.tipo_entrega == 'ENTREGA' %}Saiu para entrega <kbd>F4</kbd>{% else %}Concluir retirada{% endif %}</button></form>
+      {% if pedido.tipo_entrega == "ENTREGA" and pagamento_posterior_pendente %}<span class="action-help">Pagamento posterior ainda não possui configuração fiscal homologada.</span>{% elif pedido.tipo_entrega == "ENTREGA" and fiscal_saida != "AUTORIZADA" %}<span class="action-help">Não é possível liberar a entrega. A NF-e ainda não foi autorizada.</span>{% endif %}
+    {% endif %}
     {% if pedido.status == "SAIU_ENTREGA" %}<form method="post" action="{% url 'marketplace:acao' pedido.pk %}">{% csrf_token %}<input type="hidden" name="acao" value="avancar"><input type="hidden" name="destino" value="CONCLUIDO"><button id="delivery-complete-button" class="primary-button" type="submit">Confirmar entrega <kbd>F5</kbd></button></form>{% endif %}
-    <form method="post" action="{% url 'marketplace:acao' pedido.pk %}" class="form-confirm" data-msg="Cancelar o pedido e liberar a reserva de estoque?"><input type="hidden" name="acao" value="cancelar">{% csrf_token %}<button class="secondary-button" type="submit">Cancelar pedido</button></form>
+    {% if pedido.status == "RASCUNHO" or pedido.status == "EM_SEPARACAO" or pedido.status == "PRONTO" %}
+      {% if pedido.status_pagamento == "PAGO" or pedido.pagamentos.exists %}<span class="action-help">Pedido pago exige tratamento financeiro antes do cancelamento.</span>
+      {% else %}<form method="post" action="{% url 'marketplace:acao' pedido.pk %}">{% csrf_token %}<input type="hidden" name="acao" value="cancelar"><label class="form-field"><span>Motivo do cancelamento</span><input name="motivo" maxlength="255" required></label><button class="secondary-button danger-button" type="submit">Cancelar pedido</button></form>{% endif %}
+    {% elif pedido.status == "SAIU_ENTREGA" %}<span class="action-help">Registre o retorno físico antes de tratar recusa ou insucesso.</span>{% endif %}
   </div>
 </section>
 {% endif %}

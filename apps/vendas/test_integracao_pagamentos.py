@@ -14,13 +14,17 @@ from apps.fiscal.services import NFE_NS, _adicionar_integracao_pagamento_nfce, v
 from apps.pdv.models import Caixa
 from . import tests as vendas_tests
 from .integracao_pagamentos import confirmar_pagamento_no_servidor
-from .models import ConfirmacaoPagamentoIntegrado, FormaPagamento, PagamentoVenda, Venda
+from .models import ConfirmacaoPagamentoIntegrado, FormaPagamento, FormaPagamentoFilial, PagamentoVenda, Venda
 from .services import finalizar_venda, formas_pagamento_disponiveis
 from .test_support_integracao import confirmar_parcela_teste
 
 
 class ConfirmacaoIntegracaoTests(TestCase):
-    setUp = vendas_tests.VendaServiceTests.setUp
+    def setUp(self):
+        vendas_tests.VendaServiceTests.setUp(self)
+        FormaPagamentoFilial.objects.create(
+            filial=self.filial, forma_pagamento=self.pix, ativo=True,
+        )
 
     def confirmar(self, valor="25.00", **dados):
         return confirmar_parcela_teste(
@@ -43,13 +47,21 @@ class ConfirmacaoIntegracaoTests(TestCase):
         }
 
     def vales(self):
-        return [
+        vales = [
             FormaPagamento.objects.create(nome=tipo, tipo=tipo)
             for tipo in ("VALE_ALIMENTACAO", "VALE_REFEICAO")
         ]
+        FormaPagamentoFilial.objects.bulk_create([
+            FormaPagamentoFilial(filial=self.filial, forma_pagamento=vale, ativo=True)
+            for vale in vales
+        ])
+        return vales
 
     def test_jornada_vales_sozinhos_e_divididos_preserva_confirmacao_por_parcela(self):
         credito = FormaPagamento.objects.create(nome="Crédito", tipo="CREDITO")
+        FormaPagamentoFilial.objects.create(
+            filial=self.filial, forma_pagamento=credito, ativo=True,
+        )
         for vale in self.vales():
             for outra in (None, self.pix, self.dinheiro, credito):
                 with self.subTest(vale=vale.tipo, outra=getattr(outra, "tipo", None)):

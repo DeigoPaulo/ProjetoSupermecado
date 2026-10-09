@@ -20,6 +20,8 @@
 <section class="metrics-grid">
   <article class="metric"><span>Status</span><strong>{{ caixa.status }}</strong></article>
   <article class="metric"><span>Vendas</span><strong>R$ {{ resumo.total_vendas|floatformat:2 }}</strong></article>
+  <article class="metric"><span>Pedidos recebidos</span><strong>R$ {{ resumo.total_pedidos_recebidos_no_caixa|floatformat:2 }}</strong></article>
+  <article class="metric"><span>Acertos de entrega</span><strong>R$ {{ resumo.total_acertos_entrega|floatformat:2 }}</strong></article>
   <article class="metric"><span>Suprimentos</span><strong>R$ {{ resumo.total_suprimentos|floatformat:2 }}</strong></article>
   <article class="metric"><span>Esperado</span><strong>R$ {{ resumo.total_esperado|floatformat:2 }}</strong></article>
 </section>
@@ -30,6 +32,8 @@
     <dl class="summary-list">
       <dt>Valor inicial</dt><dd>R$ {{ caixa.valor_inicial|floatformat:2 }}</dd>
       <dt>Total de vendas</dt><dd>R$ {{ resumo.total_vendas|floatformat:2 }}</dd>
+      <dt>Pedidos recebidos no caixa</dt><dd>R$ {{ resumo.total_pedidos_recebidos_no_caixa|floatformat:2 }}</dd>
+      <dt>Acertos de entrega</dt><dd>R$ {{ resumo.total_acertos_entrega|floatformat:2 }}</dd>
       <dt>Suprimentos</dt><dd>R$ {{ resumo.total_suprimentos|floatformat:2 }}</dd>
       <dt>Sangrias</dt><dd>R$ {{ resumo.total_sangrias|floatformat:2 }}</dd>
       <dt>Valor esperado</dt><dd><strong>R$ {{ resumo.total_esperado|floatformat:2 }}</strong></dd>

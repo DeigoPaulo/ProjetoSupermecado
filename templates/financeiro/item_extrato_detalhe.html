@@ -29,8 +29,8 @@
 {% if item.movimentos_recebiveis.all %}
 <section class="panel table-panel">
   <div class="panel-header"><div><h2>Alocações de recebíveis</h2><p>Histórico auditável distribuído a partir desta movimentação externa.</p></div></div>
-  <div class="table-wrap"><table><thead><tr><th>Tipo</th><th>Recebível</th><th>Venda</th><th>Data</th><th>Valor</th><th>Origem</th></tr></thead><tbody>
-  {% for movimento in item.movimentos_recebiveis.all %}<tr><td>{{ movimento.get_tipo_display }}</td><td>#{{ movimento.recebivel_id }}</td><td>#{{ movimento.recebivel.pagamento.venda_id }}</td><td>{{ movimento.data|date:"d/m/Y" }}</td><td>R$ {{ movimento.valor|floatformat:2 }}</td><td>{% if movimento.automatico %}Automática{% else %}Manual{% endif %}</td></tr>{% endfor %}
+  <div class="table-wrap"><table><thead><tr><th>Tipo</th><th>Recebível</th><th>Origem</th><th>Data</th><th>Valor</th><th>Origem do vínculo</th></tr></thead><tbody>
+  {% for movimento in item.movimentos_recebiveis.all %}<tr><td>{{ movimento.get_tipo_display }}</td><td>#{{ movimento.recebivel_id }}</td><td>{% if movimento.recebivel.pagamento_id %}Venda #{{ movimento.recebivel.pagamento.venda_id }}{% else %}Pedido #{{ movimento.recebivel.pagamento_pedido.pedido_id }}{% endif %}</td><td>{{ movimento.data|date:"d/m/Y" }}</td><td>R$ {{ movimento.valor|floatformat:2 }}</td><td>{% if movimento.automatico %}Automática{% else %}Manual{% endif %}</td></tr>{% endfor %}
   </tbody></table></div>
 </section>
 {% endif %}
@@ -40,17 +40,17 @@
   <div class="panel-header">
     <div>
       <h2>Recebíveis eletrônicos candidatos</h2>
-      <p>Informe quanto deste depósito pertence a cada venda. O item será concluído somente quando todo o saldo estiver alocado.</p>
+      <p>Informe quanto deste depósito pertence a cada venda ou pedido. O item será concluído somente quando todo o saldo estiver alocado.</p>
     </div>
   </div>
-  <div class="table-wrap"><table><thead><tr><th>Previsto</th><th>Venda</th><th>Forma</th><th>NSU / autorização</th><th>Líquido previsto</th><th>Status</th><th>Valor a alocar</th></tr></thead><tbody>
+  <div class="table-wrap"><table><thead><tr><th>Previsto</th><th>Origem</th><th>Forma</th><th>NSU / autorização</th><th>Líquido previsto</th><th>Status</th><th>Valor a alocar</th></tr></thead><tbody>
   {% for candidato in recebiveis_candidatos %}
     {% with recebivel=candidato.objeto %}
     <tr>
       <td>{{ recebivel.data_prevista|date:"d/m/Y" }}</td>
-      <td>#{{ recebivel.pagamento.venda_id }}</td>
-      <td>{{ recebivel.pagamento.forma_pagamento }}</td>
-      <td>{{ recebivel.pagamento.nsu|default:recebivel.pagamento.transacao_externa_id|default:recebivel.pagamento.codigo_autorizacao|default:"-" }}</td>
+      <td>{% if recebivel.pagamento_id %}Venda #{{ recebivel.pagamento.venda_id }}{% else %}Pedido #{{ recebivel.pagamento_pedido.pedido_id }}{% endif %}</td>
+      <td>{% if recebivel.pagamento_id %}{{ recebivel.pagamento.forma_pagamento }}{% else %}{{ recebivel.pagamento_pedido.forma_pagamento }}{% endif %}</td>
+      <td>{% if recebivel.pagamento_id %}{{ recebivel.pagamento.nsu|default:recebivel.pagamento.transacao_externa_id|default:recebivel.pagamento.codigo_autorizacao|default:"-" }}{% else %}{{ recebivel.pagamento_pedido.nsu|default:recebivel.pagamento_pedido.transacao_externa_id|default:recebivel.pagamento_pedido.codigo_autorizacao|default:"-" }}{% endif %}</td>
       <td>R$ {{ recebivel.valor_liquido_previsto|floatformat:2 }}</td>
       <td>{{ recebivel.get_status_display }}</td>
       <td>{% if pode_conciliar %}<form class="inline-form" method="post" action="{% url 'financeiro:conciliar_item_recebivel' item.pk %}">{% csrf_token %}<input type="hidden" name="recebivel_id" value="{{ recebivel.pk }}"><input type="text" inputmode="decimal" name="valor_alocado" value="{{ candidato.valor_sugerido|floatformat:2 }}" aria-label="Valor a alocar no recebível {{ recebivel.pk }}" required><button class="primary-button" type="submit"><i class="fa-solid fa-link"></i> Alocar</button></form>{% else %}<small>Somente administrador/supervisor</small>{% endif %}</td>

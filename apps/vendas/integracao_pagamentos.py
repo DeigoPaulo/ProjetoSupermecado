@@ -94,7 +94,12 @@ def resolver_confirmacao_pagamento(pagamento, *, caixa):
         or confirmacao.valor != pagamento["valor"]
     ):
         raise ValidationError("Confirmação integrada não corresponde ao caixa, forma ou valor da parcela.")
-    if PagamentoVenda.objects.filter(confirmacao_integracao=confirmacao).exists():
+    from apps.marketplace.models import PagamentoPedido
+
+    if (
+        PagamentoVenda.objects.filter(confirmacao_integracao=confirmacao).exists()
+        or PagamentoPedido.objects.filter(confirmacao_integracao=confirmacao).exists()
+    ):
         raise ValidationError("Confirmação integrada já utilizada em outra parcela.")
     # Autorização e metadados vêm exclusivamente do registro do servidor.
     return {**pagamento, **confirmacao.dados, "confirmacao_integracao": confirmacao}

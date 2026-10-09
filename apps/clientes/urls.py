@@ -8,5 +8,6 @@ urlpatterns = [
     path("", views.ClienteListView.as_view(), name="lista"),
     path("busca.json", views.clientes_busca, name="clientes_busca"),
     path("novo/", views.ClienteCreateView.as_view(), name="novo"),
+    path("novo-pdv.json", views.criar_cliente_pdv, name="criar_cliente_pdv"),
     path("<int:pk>/editar/", views.ClienteUpdateView.as_view(), name="editar"),
 ]

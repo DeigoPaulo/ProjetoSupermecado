@@ -165,6 +165,20 @@ class Venda(models.Model):
         return f"Venda {self.id} - {self.total_liquido}"
 
 
+class CheckoutIntent(models.Model):
+    """Identidade persistente de uma finalizacao do PDV."""
+
+    chave = models.UUIDField(unique=True)
+    filial = models.ForeignKey("empresas.Filial", on_delete=models.PROTECT)
+    caixa = models.ForeignKey("pdv.Caixa", on_delete=models.PROTECT)
+    usuario = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.PROTECT)
+    terminal_identificador = models.CharField(max_length=120, blank=True)
+    assinatura_requisicao = models.CharField(max_length=64)
+    assinatura_carrinho = models.CharField(max_length=64)
+    venda = models.OneToOneField(Venda, on_delete=models.PROTECT, null=True, blank=True)
+    criado_em = models.DateTimeField(auto_now_add=True)
+
+
 class ItemVenda(models.Model):
     venda = models.ForeignKey(Venda, on_delete=models.PROTECT, related_name="itens")
     produto = models.ForeignKey("produtos.Produto", on_delete=models.PROTECT)

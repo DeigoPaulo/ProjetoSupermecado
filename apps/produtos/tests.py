@@ -49,7 +49,7 @@ class ProdutoViewsTests(TestCase):
         self.client.force_login(self.user)
         self.categoria = Categoria.objects.create(nome="Mercearia")
         self.produto = Produto.objects.create(
-            codigo_barras="7891234567890",
+            codigo_barras="7891234567895",
             nome="Arroz",
             categoria=self.categoria,
             preco_custo=Decimal("10.00"),
@@ -62,7 +62,7 @@ class ProdutoViewsTests(TestCase):
 
     def test_importacao_csv_atualiza_campos_fiscais_e_audita(self):
         conteudo = """codigo_barras;nome;categoria;preco_venda;ncm;origem_mercadoria;cst_icms;aliquota_icms;cst_pis;aliquota_pis;cst_cofins;aliquota_cofins;cst_ibs_cbs;classificacao_tributaria_ibs_cbs
-7891234567890;Arroz;Mercearia;15,00;10063021;0;40;0;06;;06;;000;000001
+7891234567895;Arroz;Mercearia;15,00;10063021;0;40;0;06;;06;;000;000001
 """
         arquivo = SimpleUploadedFile(
             "produtos-fiscais.csv",
@@ -93,7 +93,7 @@ class ProdutoViewsTests(TestCase):
 
     def test_importacao_csv_preserva_quatro_casas_na_reducao_icms(self):
         conteudo = """codigo_barras;nome;categoria;preco_venda;cst_icms;reducao_base_icms
-7891234567890;Arroz;Mercearia;15,00;20;41,6667
+7891234567895;Arroz;Mercearia;15,00;20;41,6667
 """
         arquivo = SimpleUploadedFile(
             "produtos-reducao-icms.csv",
@@ -113,7 +113,7 @@ class ProdutoViewsTests(TestCase):
 
     def test_importacao_csv_fiscal_preserva_dados_comerciais(self):
         conteudo = """codigo_barras;codigo_interno;nome;categoria;preco_venda;ncm;cst_icms;_modo_importacao
-7891234567890;ALTERADO;Nome alterado;Categoria indevida;999,99;10063022;40;fiscal
+7891234567895;ALTERADO;Nome alterado;Categoria indevida;999,99;10063022;40;fiscal
 """
         arquivo = SimpleUploadedFile(
             "produtos-fiscais.csv",
@@ -162,7 +162,7 @@ class ProdutoViewsTests(TestCase):
         self.produto.codigo_beneficio_fiscal = "GO821019"
         self.produto.save(update_fields=["codigo_beneficio_fiscal"])
         conteudo = """codigo_barras;nome;categoria;preco_venda;codigo_beneficio_fiscal
-7891234567890;Arroz alterado;Mercearia;99,00;GO123456
+7891234567895;Arroz alterado;Mercearia;99,00;GO123456
 """
         arquivo = SimpleUploadedFile(
             "produto-com-cbenef-legado.csv",
@@ -184,7 +184,7 @@ class ProdutoViewsTests(TestCase):
 
     def test_importacao_csv_rejeita_percentual_fiscal_invalido_sem_alterar_produto(self):
         conteudo = """codigo_barras;nome;categoria;preco_venda;aliquota_icms
-7891234567890;Arroz;Mercearia;15,00;120
+7891234567895;Arroz;Mercearia;15,00;120
 """
         arquivo = SimpleUploadedFile(
             "produto-invalido.csv",
@@ -206,7 +206,7 @@ class ProdutoViewsTests(TestCase):
         self.produto.descricao = "Descricao preservada"
         self.produto.save(update_fields=["descricao"])
         conteudo = """codigo_barras;nome;categoria;preco_venda
-7891234567890;Arroz atualizado;Mercearia;16.00
+7891234567895;Arroz atualizado;Mercearia;16.00
 """
         arquivo = SimpleUploadedFile(
             "produto-comercial.csv",
@@ -707,7 +707,7 @@ class ProdutoViewsTests(TestCase):
         resposta_png = self.client.post(
             "/produtos/novo/",
             {
-                "codigo_barras": "7890000000100",
+                "codigo_barras": "7890000000109",
                 "nome": "Produto com imagem",
                 "categoria": self.categoria.pk,
                 "unidade": "UN",
@@ -735,7 +735,7 @@ class ProdutoViewsTests(TestCase):
         )
 
         self.assertRedirects(resposta_png, "/produtos/")
-        self.assertTrue(Produto.objects.filter(codigo_barras="7890000000100", imagem__endswith=".png").exists())
+        self.assertTrue(Produto.objects.filter(codigo_barras="7890000000109", imagem__endswith=".png").exists())
 
         imagem_gif = SimpleUploadedFile("produto.gif", GIF_1X1, content_type="image/gif")
         resposta_gif = self.client.post(
@@ -1226,7 +1226,7 @@ class ProdutoViewsTests(TestCase):
     def test_formulario_e_snapshot_nao_escrevem_nem_publicam_cbenef_legado(self):
         form = ProdutoForm(
             data={
-                "codigo_barras": "7891234567005",
+                "codigo_barras": "7891234567000",
                 "nome": "Produto fiscal avançado",
                 "categoria": self.categoria.pk,
                 "unidade": "UN",
@@ -1270,7 +1270,7 @@ class ProdutoViewsTests(TestCase):
         for indice, reducao in enumerate(("41.6667", "41,6667"), start=1):
             with self.subTest(reducao=reducao):
                 form = ProdutoForm(data={
-                    "codigo_barras": f"789123456701{indice}",
+                    "codigo_barras": ("7891234567017", "7891234567024")[indice - 1],
                     "nome": f"Produto ICMS20 {indice}",
                     "categoria": self.categoria.pk,
                     "unidade": "UN",

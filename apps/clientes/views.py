@@ -4,7 +4,7 @@ from django.core.paginator import Paginator
 from django.db.models import Q
 from django.http import JsonResponse
 from django.urls import reverse_lazy
-from django.views.decorators.http import require_GET
+from django.views.decorators.http import require_GET, require_POST
 from django.views.generic import CreateView, ListView, UpdateView
 
 from apps.accounts.permissions import CLIENTES, RoleRequiredMixin, role_required
@@ -12,6 +12,16 @@ from apps.accounts.permissions import CLIENTES, RoleRequiredMixin, role_required
 from .escopo import clientes_para_usuario, empresa_id_do_usuario
 from .forms import ClienteForm
 from .models import Cliente
+
+
+def _tipo_documento_fiscal_cliente(cliente):
+    from apps.marketplace.documentos_destinatario import normalizar_documento_cliente
+    from apps.vendas.models import TipoDocumentoConsumidor
+
+    tipo, _ = normalizar_documento_cliente(
+        TipoDocumentoConsumidor.NAO_IDENTIFICADO, cliente.cpf_cnpj, inferir=True,
+    )
+    return tipo
 
 
 class ClienteListView(LoginRequiredMixin, RoleRequiredMixin, ListView):
@@ -70,6 +80,22 @@ class ClienteUpdateView(ClienteFormMixin, LoginRequiredMixin, RoleRequiredMixin,
 
 
 @role_required(*CLIENTES)
+@require_POST
+def criar_cliente_pdv(request):
+    from apps.pdv.views import _filial_entrega_pdv
+
+    filial = _filial_entrega_pdv(request)
+    form = ClienteForm(
+        request.POST, user=request.user,
+        empresa_id_contexto=filial.empresa_id if filial else None,
+    )
+    if not form.is_valid():
+        return JsonResponse({"errors": form.errors.get_json_data()}, status=400)
+    cliente = form.save()
+    return JsonResponse({"id": cliente.pk, "nome": cliente.nome, "telefone": cliente.telefone, "endereco": cliente.endereco_principal})
+
+
+@role_required(*CLIENTES)
 @require_GET
 def clientes_busca(request):
     termo = (request.GET.get("q") or request.GET.get("term") or "").strip()
@@ -87,9 +113,21 @@ def clientes_busca(request):
                     "text": f"{cliente.nome} | {cliente.cpf_cnpj or cliente.telefone or 'sem documento'}",
                     "nome": cliente.nome,
                     "cpf_cnpj": cliente.cpf_cnpj,
+                    "documento_fiscal_tipo": _tipo_documento_fiscal_cliente(cliente),
                     "telefone": cliente.telefone,
                     "email": cliente.email,
-                    "endereco": cliente.endereco,
+                    "endereco": cliente.endereco_principal,
+                    "endereco_legado": bool(cliente.endereco.strip() and not cliente.logradouro.strip()),
+                    "indicador_ie": cliente.indicador_ie,
+                    "inscricao_estadual": cliente.inscricao_estadual,
+                    "logradouro": cliente.logradouro,
+                    "numero": cliente.numero,
+                    "complemento": cliente.complemento,
+                    "bairro": cliente.bairro,
+                    "codigo_municipio_ibge": cliente.codigo_municipio_ibge,
+                    "municipio": cliente.municipio,
+                    "uf": cliente.uf,
+                    "cep": cliente.cep,
                 }
                 for cliente in pagina.object_list
             ],

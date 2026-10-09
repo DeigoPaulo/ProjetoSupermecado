@@ -10,7 +10,7 @@
   </div>
 </header>
 
-<form method="post" class="form-grid panel">
+<form method="post" class="form-grid panel cliente-form" data-cadastro-lookup-url="{% url 'empresas:consulta_cadastro' %}">
   {% csrf_token %}
   {% if form.empresa.is_hidden %}
     {{ form.empresa }}
@@ -50,8 +50,7 @@
 
   <section class="form-section">
     <div class="form-section-header">
-      <h2>Contato e endereço</h2>
-      <p>Informações para entrega, atendimento e relacionamento com o supermercado.</p>
+      <h2>Contato</h2>
     </div>
     <div class="form-grid">
       <div class="field">
@@ -64,31 +63,34 @@
         {{ form.email }}
         {{ form.email.errors }}
       </div>
-      <div class="field span-2">
-        {{ form.endereco.label_tag }}
-        {{ form.endereco }}
-        <span class="help-text">Em etapa futura este campo será apoiado por busca de CEP.</span>
-        {{ form.endereco.errors }}
-      </div>
     </div>
   </section>
 
-    <section class="form-section form-field-wide">
-      <h2>Dados fiscais para NF-e</h2>
-      <p class="form-help">Preencha estes campos quando o cliente puder receber NF-e modelo 55. Eles serão copiados para o pedido como um registro da operação.</p>
-      <div class="form-grid form-grid-inner">
-        <label class="form-field"><span>{{ form.indicador_ie.label }}</span>{{ form.indicador_ie }}{{ form.indicador_ie.errors }}</label>
-        <label class="form-field"><span>{{ form.inscricao_estadual.label }}</span>{{ form.inscricao_estadual }}{{ form.inscricao_estadual.errors }}</label>
-        <label class="form-field form-field-wide"><span>{{ form.logradouro.label }}</span>{{ form.logradouro }}{{ form.logradouro.errors }}</label>
-        <label class="form-field"><span>{{ form.numero.label }}</span>{{ form.numero }}{{ form.numero.errors }}</label>
-        <label class="form-field"><span>{{ form.complemento.label }}</span>{{ form.complemento }}{{ form.complemento.errors }}</label>
-        <label class="form-field"><span>{{ form.bairro.label }}</span>{{ form.bairro }}{{ form.bairro.errors }}</label>
-        <label class="form-field"><span>{{ form.codigo_municipio_ibge.label }}</span>{{ form.codigo_municipio_ibge }}{{ form.codigo_municipio_ibge.errors }}</label>
-        <label class="form-field"><span>{{ form.municipio.label }}</span>{{ form.municipio }}{{ form.municipio.errors }}</label>
-        <label class="form-field"><span>{{ form.uf.label }}</span>{{ form.uf }}{{ form.uf.errors }}</label>
-        <label class="form-field"><span>{{ form.cep.label }}</span>{{ form.cep }}{{ form.cep.errors }}</label>
-      </div>
-    </section>
+  <section class="form-section">
+    <div class="form-section-header"><h2>Endereço principal</h2></div>
+    {% if object.endereco and not object.logradouro %}<p class="help-text">Endereço legado cadastrado: {{ object.endereco }}</p>{% endif %}
+    <div class="form-grid">
+      <div class="field"><label for="{{ form.cep.id_for_label }}">CEP</label>{{ form.cep }}{{ form.cep.errors }}</div>
+      <div class="field"><button type="button" class="secondary-button" data-cadastro-lookup-button data-lookup-kind="cep">Consultar CEP</button></div>
+      <div class="field span-2">{{ form.logradouro.label_tag }}{{ form.logradouro }}{{ form.logradouro.errors }}</div>
+      <div class="field">{{ form.numero.label_tag }}{{ form.numero }}{{ form.numero.errors }}</div>
+      <div class="field">{{ form.complemento.label_tag }}{{ form.complemento }}{{ form.complemento.errors }}</div>
+      <div class="field">{{ form.bairro.label_tag }}{{ form.bairro }}{{ form.bairro.errors }}</div>
+      <div class="field">{{ form.municipio.label_tag }}{{ form.municipio }}{{ form.municipio.errors }}</div>
+      <div class="field">{{ form.uf.label_tag }}{{ form.uf }}{{ form.uf.errors }}</div>
+      {{ form.codigo_municipio_ibge.as_hidden }}
+      {% if form.codigo_municipio_ibge.errors %}<p class="field-error">Não foi possível validar o município. Consulte o CEP para obter o código IBGE.</p>{% endif %}
+      <p class="help-text" data-cadastro-lookup-feedback hidden></p>
+    </div>
+  </section>
+
+  <section class="form-section">
+    <div class="form-section-header"><h2>Dados fiscais</h2></div>
+    <div class="form-grid">
+      <div class="field">{{ form.indicador_ie.label_tag }}{{ form.indicador_ie }}{{ form.indicador_ie.errors }}</div>
+      <div class="field">{{ form.inscricao_estadual.label_tag }}{{ form.inscricao_estadual }}{{ form.inscricao_estadual.errors }}</div>
+    </div>
+  </section>
 
   {{ form.non_field_errors }}
   <div class="form-actions">

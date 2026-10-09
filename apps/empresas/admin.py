@@ -16,6 +16,13 @@ class FilialAdmin(admin.ModelAdmin):
     search_fields = ("nome", "empresa__nome_fantasia", "cnpj", "municipio", "codigo_municipio_ibge")
     list_filter = ("empresa", "uf", "is_active")
 
+    def save_model(self, request, obj, form, change):
+        super().save_model(request, obj, form, change)
+        if not change:
+            from apps.vendas.services import bootstrap_formas_pagamento_filial
+
+            bootstrap_formas_pagamento_filial(obj)
+
 
 @admin.register(EventoSincronizacao)
 class EventoSincronizacaoAdmin(admin.ModelAdmin):

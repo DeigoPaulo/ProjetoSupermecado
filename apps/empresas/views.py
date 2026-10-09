@@ -265,6 +265,9 @@ def _garantir_filial_matriz(empresa):
         uf=empresa.uf,
         is_active=empresa.is_active,
     )
+    from apps.vendas.services import bootstrap_formas_pagamento_filial
+
+    bootstrap_formas_pagamento_filial(filial)
     return filial, True
 
 def _registrar_cadastro_licenciado(request, objeto, acao):
@@ -453,9 +456,13 @@ def filial_form(request, pk=None):
     form = FilialForm(request.POST or None, instance=filial)
     form.fields["empresa"].queryset = _empresas_visiveis(request.user).order_by("nome_fantasia")
     if request.method == "POST" and form.is_valid():
-        filial_salva = form.save()
-        if filial is None:
-            _registrar_cadastro_licenciado(request, filial_salva, "filial_licenciada_criada")
+        with transaction.atomic():
+            filial_salva = form.save()
+            if filial is None:
+                from apps.vendas.services import bootstrap_formas_pagamento_filial
+
+                bootstrap_formas_pagamento_filial(filial_salva)
+                _registrar_cadastro_licenciado(request, filial_salva, "filial_licenciada_criada")
         messages.success(request, "Filial salva com sucesso.")
         return redirect("empresas:lista")
     return render(request, "empresas/filial_form.html", {"form": form, "filial": filial})

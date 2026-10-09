@@ -365,6 +365,7 @@ class LancamentoFinanceiro(models.Model):
     transferencia = models.ForeignKey(TransferenciaFinanceira, on_delete=models.PROTECT, null=True, blank=True, related_name="lancamentos")
     estorno_de = models.ForeignKey("self", on_delete=models.PROTECT, null=True, blank=True, related_name="estornos")
     pagamento_venda = models.ForeignKey("vendas.PagamentoVenda", on_delete=models.PROTECT, null=True, blank=True, related_name="lancamentos_financeiros")
+    pagamento_pedido = models.ForeignKey("marketplace.PagamentoPedido", on_delete=models.PROTECT, null=True, blank=True, related_name="lancamentos_financeiros")
     sangria = models.ForeignKey("pdv.Sangria", on_delete=models.PROTECT, null=True, blank=True, related_name="lancamentos_financeiros")
     suprimento = models.ForeignKey("pdv.Suprimento", on_delete=models.PROTECT, null=True, blank=True, related_name="lancamentos_financeiros")
     usuario = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.PROTECT, related_name="lancamentos_financeiros")
@@ -372,6 +373,12 @@ class LancamentoFinanceiro(models.Model):
 
     class Meta:
         ordering = ["-data", "-criado_em"]
+        constraints = [
+            models.CheckConstraint(
+                condition=models.Q(pagamento_venda__isnull=True) | models.Q(pagamento_pedido__isnull=True),
+                name="lancamento_uma_origem_pagamento",
+            ),
+        ]
         indexes = [
             models.Index(fields=["conta", "data"], name="financeiro_lanc_conta_data_idx"),
             models.Index(fields=["tipo", "data"], name="financeiro_lanc_tipo_data_idx"),
@@ -473,7 +480,12 @@ class RegraLiquidacaoEletronica(models.Model):
 
 class RecebivelEletronico(models.Model):
     pagamento = models.OneToOneField(
-        "vendas.PagamentoVenda", on_delete=models.PROTECT, related_name="recebivel_eletronico"
+        "vendas.PagamentoVenda", on_delete=models.PROTECT, null=True, blank=True,
+        related_name="recebivel_eletronico"
+    )
+    pagamento_pedido = models.OneToOneField(
+        "marketplace.PagamentoPedido", on_delete=models.PROTECT, null=True, blank=True,
+        related_name="recebivel_eletronico"
     )
     regra = models.ForeignKey(
         RegraLiquidacaoEletronica, on_delete=models.PROTECT, related_name="recebiveis"
@@ -495,6 +507,15 @@ class RecebivelEletronico(models.Model):
 
     class Meta:
         ordering = ["data_prevista", "id"]
+        constraints = [
+            models.CheckConstraint(
+                condition=(
+                    models.Q(pagamento__isnull=False, pagamento_pedido__isnull=True)
+                    | models.Q(pagamento__isnull=True, pagamento_pedido__isnull=False)
+                ),
+                name="recebivel_exatamente_uma_origem_pagamento",
+            ),
+        ]
         indexes = [
             models.Index(fields=["status", "data_prevista"], name="fin_receb_status_data_idx"),
         ]
@@ -504,7 +525,8 @@ class RecebivelEletronico(models.Model):
         return self.status == StatusRecebivelEletronico.PENDENTE and self.data_prevista < timezone.localdate()
 
     def __str__(self):
-        return f"Recebível do pagamento #{self.pagamento_id} - R$ {self.valor_liquido_previsto}"
+        pagamento_id = self.pagamento_id or self.pagamento_pedido_id
+        return f"Recebível do pagamento #{pagamento_id} - R$ {self.valor_liquido_previsto}"
 
 class ImportacaoExtratoFinanceiro(models.Model):
     conta = models.ForeignKey(ContaMovimentoFinanceiro, on_delete=models.PROTECT, related_name="importacoes_extrato")

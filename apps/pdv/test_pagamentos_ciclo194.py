@@ -5,7 +5,7 @@ from django.http import QueryDict
 from django.test import RequestFactory, TestCase
 
 from apps.empresas.models import Empresa, Filial
-from apps.vendas.models import FormaPagamento, StatusPagamento
+from apps.vendas.models import FormaPagamento, FormaPagamentoFilial, StatusPagamento
 
 from .views import _pagamentos_from_request
 
@@ -24,6 +24,9 @@ class PagamentosMistosCiclo194Tests(TestCase):
             nome="Dinheiro", tipo="DINHEIRO", permite_troco=True
         )
         self.debito = FormaPagamento.objects.create(nome="Débito", tipo="DEBITO")
+        FormaPagamentoFilial.objects.create(
+            filial=self.filial, forma_pagamento=self.debito, ativo=True,
+        )
 
     def _request(self, parcelas):
         dados = QueryDict(mutable=True)

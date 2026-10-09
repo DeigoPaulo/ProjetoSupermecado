@@ -1,8 +1,8 @@
 from decimal import Decimal
-from uuid import uuid4
+from uuid import UUID, uuid4
 
 from django.core.exceptions import ValidationError
-from django.db import transaction
+from django.db import IntegrityError, transaction
 from django.utils import timezone
 
 from apps.auditoria.models import LogAuditoria
@@ -10,7 +10,7 @@ from apps.core_money import quantizar_moeda
 from apps.estoque.models import TipoMovimentacaoEstoque, movimentar_estoque
 from apps.promocoes.services import preco_atual_produto
 
-from .models import DevolucaoVenda, EstornoParcialPagamento, FormaPagamento, FormaPagamentoFilial, ItemDevolucaoVenda, ItemPreVenda, ItemVenda, PagamentoVenda, PreVenda, StatusEstornoParcial, StatusPagamento, StatusPreVenda, StatusVenda, TipoDocumentoConsumidor, Venda
+from .models import CheckoutIntent, DevolucaoVenda, EstornoParcialPagamento, FormaPagamento, FormaPagamentoFilial, ItemDevolucaoVenda, ItemPreVenda, ItemVenda, PagamentoVenda, PreVenda, StatusEstornoParcial, StatusPagamento, StatusPreVenda, StatusVenda, TipoDocumentoConsumidor, Venda
 
 
 def calcular_item(produto, quantidade):
@@ -44,17 +44,44 @@ FORMAS_ELETRONICAS = {
     "VALE_REFEICAO",
 }
 
+FORMAS_PAGAMENTO_PADRAO = (
+    ("Dinheiro", "DINHEIRO", True),
+    ("Débito", "DEBITO", False),
+    ("Crédito", "CREDITO", False),
+    ("PIX", "PIX", False),
+    ("Vale Alimentação", "VALE_ALIMENTACAO", False),
+    ("Vale Refeição", "VALE_REFEICAO", False),
+)
+FORMAS_PAGAMENTO_CONFIGURACAO_OBRIGATORIA = {
+    "CARTAO", "DEBITO", "CREDITO", "PIX", "VALE_ALIMENTACAO", "VALE_REFEICAO",
+}
+
+
+def bootstrap_formas_pagamento_filial(filial):
+    """Cria somente tipos ausentes e vincula defaults seguros a uma filial nova."""
+    with transaction.atomic():
+        for nome, tipo, permite_troco in FORMAS_PAGAMENTO_PADRAO:
+            if not FormaPagamento.objects.filter(tipo=tipo).exists():
+                FormaPagamento.objects.create(
+                    nome=nome, tipo=tipo, ativo=True, permite_troco=permite_troco,
+                )
+        inicializar_formas_pagamento_filial(filial)
+
 
 def inicializar_formas_pagamento_filial(filial):
-    formas_ids = FormaPagamento.objects.values_list("id", flat=True)
+    formas = FormaPagamento.objects.values("id", "tipo")
     existentes = set(
         FormaPagamentoFilial.objects.filter(filial=filial).values_list("forma_pagamento_id", flat=True)
     )
     FormaPagamentoFilial.objects.bulk_create(
         [
-            FormaPagamentoFilial(filial=filial, forma_pagamento_id=forma_id, ativo=True)
-            for forma_id in formas_ids
-            if forma_id not in existentes
+            FormaPagamentoFilial(
+                filial=filial,
+                forma_pagamento_id=forma["id"],
+                ativo=forma["tipo"] not in FORMAS_PAGAMENTO_CONFIGURACAO_OBRIGATORIA,
+            )
+            for forma in formas
+            if forma["id"] not in existentes
         ],
         ignore_conflicts=True,
     )
@@ -72,6 +99,44 @@ def formas_pagamento_disponiveis(filial):
 
 def forma_pagamento_disponivel(filial, forma_pagamento_id):
     return formas_pagamento_disponiveis(filial).filter(pk=forma_pagamento_id).first()
+
+
+def finalizar_venda_idempotente(*, chave, assinatura_requisicao, assinatura_carrinho, terminal_identificador, caixa, usuario, **dados):
+    """Serializa o F9 pelo caixa e confirma a chave na mesma transacao da venda."""
+    try:
+        chave = UUID(str(chave))
+    except (TypeError, ValueError, AttributeError) as exc:
+        raise ValidationError("Chave de finalizacao invalida. Atualize o PDV.") from exc
+    from apps.pdv.models import Caixa
+
+    with transaction.atomic():
+        caixa = Caixa.objects.select_for_update().get(pk=caixa.pk)
+        try:
+            intent, _ = CheckoutIntent.objects.get_or_create(
+                chave=chave,
+                defaults={
+                    "filial": caixa.filial, "caixa": caixa, "usuario": usuario,
+                    "terminal_identificador": terminal_identificador,
+                    "assinatura_requisicao": assinatura_requisicao,
+                    "assinatura_carrinho": assinatura_carrinho,
+                },
+            )
+        except IntegrityError as exc:
+            raise ValidationError("Finalizacao simultanea em outro caixa. Consulte a venda antes de repetir.") from exc
+        if (
+            intent.filial_id != caixa.filial_id or intent.caixa_id != caixa.pk
+            or intent.usuario_id != usuario.pk
+            or intent.terminal_identificador != terminal_identificador
+            or intent.assinatura_requisicao != assinatura_requisicao
+            or intent.assinatura_carrinho != assinatura_carrinho
+        ):
+            raise ValidationError("Chave de finalizacao ja vinculada a outra tentativa.")
+        if intent.venda_id:
+            return intent.venda, False
+        venda = finalizar_venda(caixa=caixa, usuario=usuario, **dados)
+        intent.venda = venda
+        intent.save(update_fields=["venda"])
+        return venda, True
 
 def finalizar_venda(*, caixa, usuario, itens, forma_pagamento=None, desconto=Decimal("0.00"), cliente=None, pagamentos=None, vencimento_financeiro=None, preparar_fiscal=True, documento_consumidor_tipo=TipoDocumentoConsumidor.NAO_IDENTIFICADO, documento_consumidor=""):
     if not itens:

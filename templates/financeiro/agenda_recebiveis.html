@@ -53,7 +53,7 @@
   {% if permite_consolidado %}<label class="form-field"><span>Filial</span><select name="filial"><option value="">Todas</option>{% for filial in filiais_opcoes %}<option value="{{ filial.pk }}" {% if filial_id == filial.pk|stringformat:'s' %}selected{% endif %}>{{ filial }}</option>{% endfor %}</select></label>{% endif %}
   <label class="form-field"><span>Forma</span><select name="forma"><option value="">Todas</option>{% for forma in formas_opcoes %}<option value="{{ forma.pk }}" {% if forma_id == forma.pk|stringformat:'s' %}selected{% endif %}>{{ forma }}</option>{% endfor %}</select></label>
   <label class="form-field"><span>Status</span><select name="status"><option value="">Todos</option><option value="ATRASADO" {% if status == 'ATRASADO' %}selected{% endif %}>Atrasado</option>{% for valor, rotulo in status_opcoes %}<option value="{{ valor }}" {% if status == valor %}selected{% endif %}>{{ rotulo }}</option>{% endfor %}</select></label>
-  <label class="form-field"><span>Venda ou autorização</span><input type="search" name="q" value="{{ q }}" placeholder="Venda, NSU ou transação"></label>
+  <label class="form-field"><span>Venda, pedido ou autorização</span><input type="search" name="q" value="{{ q }}" placeholder="Venda, pedido, NSU ou transação"></label>
   <div class="form-actions"><button class="primary-button" type="submit"><i class="fa-solid fa-filter"></i> Filtrar</button><a class="secondary-button" href="{% url 'financeiro:agenda_recebiveis' %}">Limpar</a></div>
 </form>
 
@@ -61,15 +61,15 @@
   <div class="panel-header"><div><h2>Liquidações previstas</h2><p>Até 50 recebíveis por página.</p></div></div>
   <div class="table-wrap">
     <table>
-      <thead><tr><th>Previsto</th><th>Venda</th><th>Filial</th><th>Forma</th><th>NSU</th><th>Bruto</th><th>Taxa</th><th>Líquido previsto</th><th>Liquidação real</th><th>Status</th></tr></thead>
+      <thead><tr><th>Previsto</th><th>Origem</th><th>Filial</th><th>Forma</th><th>NSU</th><th>Bruto</th><th>Taxa</th><th>Líquido previsto</th><th>Liquidação real</th><th>Status</th></tr></thead>
       <tbody>
         {% for item in pagina %}
         <tr>
           <td><strong>{{ item.data_prevista|date:"d/m/Y" }}</strong><br><small>Venda em {{ item.data_venda|date:"d/m/Y" }}</small></td>
-          <td>#{{ item.pagamento.venda_id }}</td>
-          <td>{{ item.pagamento.venda.filial }}</td>
-          <td>{{ item.pagamento.forma_pagamento }}</td>
-          <td>{{ item.pagamento.nsu|default:"-" }}<br><small>{{ item.pagamento.codigo_autorizacao|default:"" }}</small></td>
+          <td>{% if item.pagamento_id %}Venda #{{ item.pagamento.venda_id }}{% else %}Pedido #{{ item.pagamento_pedido.pedido_id }}{% endif %}</td>
+          <td>{% if item.pagamento_id %}{{ item.pagamento.venda.filial }}{% else %}{{ item.pagamento_pedido.pedido.filial }}{% endif %}</td>
+          <td>{% if item.pagamento_id %}{{ item.pagamento.forma_pagamento }}{% else %}{{ item.pagamento_pedido.forma_pagamento }}{% endif %}</td>
+          <td>{% if item.pagamento_id %}{{ item.pagamento.nsu|default:"-" }}<br><small>{{ item.pagamento.codigo_autorizacao|default:"" }}</small>{% else %}{{ item.pagamento_pedido.nsu|default:"-" }}<br><small>{{ item.pagamento_pedido.codigo_autorizacao|default:"" }}</small>{% endif %}</td>
           <td>R$ {{ item.valor_bruto|floatformat:2 }}</td>
           <td>R$ {{ item.taxa_prevista|floatformat:2 }}</td>
           <td><strong>R$ {{ item.valor_liquido_previsto|floatformat:2 }}</strong></td>

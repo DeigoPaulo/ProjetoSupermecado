@@ -1373,6 +1373,16 @@ def _dados_destinatario_nfe_pedido(pedido):
     }
 
 
+def indicador_presenca_pedido(pedido):
+    from apps.marketplace.models import CanalPedido
+
+    if pedido.canal == CanalPedido.PDV:
+        return "1"
+    if pedido.canal == CanalPedido.LOJA_ONLINE:
+        return "2"
+    return "9"
+
+
 def gerar_xml_nfe_pedido_online(documento):
     if not documento.pedido_online:
         raise ValidationError("Documento fiscal sem pedido online vinculado.")
@@ -1422,7 +1432,7 @@ def gerar_xml_nfe_pedido_online(documento):
     _texto(ide, "tpAmb", "2" if documento.ambiente == AmbienteFiscal.HOMOLOGACAO else "1")
     _texto(ide, "finNFe", "1")
     _texto(ide, "indFinal", "1")
-    _texto(ide, "indPres", "2" if pedido.canal == "LOJA_ONLINE" else "9")
+    _texto(ide, "indPres", indicador_presenca_pedido(pedido))
     _texto(ide, "procEmi", "0")
     _texto(ide, "verProc", "SupermercadoERP-0.1")
     if em_svc:
@@ -1587,8 +1597,6 @@ def pendencias_preparacao_fiscal(venda, configuracao, natureza):
     erros.extend(pendencias_endereco_emitente_nfce(venda.filial))
     if not configuracao.inscricao_estadual.strip():
         erros.append("Informe a inscricao estadual da filial.")
-    if not configuracao.regime_tributario.strip():
-        erros.append("Informe o regime tributario da filial.")
     if _crt_configuracao(configuracao) not in CodigoRegimeTributario.values:
         erros.append("Informe o Código de Regime Tributário (CRT) da filial.")
     erros.extend(pendencias_endpoints_nfce(venda.filial, configuracao))

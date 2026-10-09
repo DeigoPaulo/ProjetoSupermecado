@@ -23,8 +23,11 @@ from apps.fiscal.services import preparar_documento_pedido_online
 from .adapters import MarketplaceAdapterError, diagnosticar_adaptador_marketplace, normalizar_payload_marketplace
 from .escopo import integracoes_para_usuario, pedidos_para_usuario, politicas_para_usuario
 from .forms import CalcularEntregaForm, FaixaTaxaEntregaFormSet, IntegracaoMarketplaceForm, ItemPedidoOnlineForm, PagamentoPedidoForm, PedidoOnlineForm, PoliticaEntregaForm
-from .models import CanalPedido, IntegracaoMarketplace, ItemPedidoOnline, PedidoOnline, PoliticaEntrega, StatusPagamentoPedido, StatusPedido, TipoEntrega
-from .services import alterar_status_pedido, calcular_entrega_pedido, calcular_taxa_entrega, cancelar_pedido, gerar_token_integracao, registrar_pagamento, reservar_pedido
+from .models import CanalPedido, IntegracaoMarketplace, ItemPedidoOnline, OrigemRecebimentoPedido, PagamentoPedido, PedidoOnline, PoliticaEntrega, StatusPagamentoPedido, StatusPedido, TipoEntrega
+from .services import acertar_dinheiro_entrega, alterar_status_pedido, calcular_entrega_pedido, calcular_taxa_entrega, cancelar_pedido, gerar_token_integracao, registrar_pagamento, registrar_parcelas_pedido, registrar_retorno_recusado, reservar_pedido, situacao_fiscal_saida
+from apps.pdv.models import Caixa, StatusCaixa
+from apps.vendas.models import StatusPagamento
+from apps.vendas.services import forma_pagamento_disponivel
 from apps.produtos.models import Produto
 
 
@@ -34,6 +37,7 @@ def pedidos(request):
     queryset = base_queryset
     termo = request.GET.get("q", "").strip()
     status = request.GET.get("status", "").strip()
+    canal = request.GET.get("canal", "").strip()
     if termo:
         filtro = Q(nome_cliente__icontains=termo) | Q(referencia_externa__icontains=termo)
         if termo.isdigit():
@@ -41,6 +45,8 @@ def pedidos(request):
         queryset = queryset.filter(filtro)
     if status:
         queryset = queryset.filter(status=status)
+    if canal in CanalPedido.values:
+        queryset = queryset.filter(canal=canal)
     resumo = queryset.aggregate(valor=Sum("total"))
     painel = {
         "rascunho": base_queryset.filter(status=StatusPedido.RASCUNHO).count(),
@@ -63,6 +69,7 @@ def pedidos(request):
             "pedidos": pedidos_lista,
             "page_obj": pagina,
             "status_opcoes": StatusPedido.choices,
+            "canal_opcoes": CanalPedido.choices,
             "valor_total": resumo["valor"] or 0,
             "painel": painel,
         },
@@ -107,6 +114,7 @@ def detalhe(request, pk):
     tem_politica_entrega = PoliticaEntrega.objects.filter(filial=pedido.filial, is_active=True).exists()
     entrega_pendente = pedido.tipo_entrega == TipoEntrega.ENTREGA and tem_politica_entrega and not pedido.regra_entrega_aplicada
     pode_iniciar_separacao = pedido.status == StatusPedido.RASCUNHO and pedido.itens.exists() and not entrega_pendente
+    fiscal_saida = situacao_fiscal_saida(pedido) if pedido.tipo_entrega == TipoEntrega.ENTREGA else None
     return render(
         request,
         "marketplace/pedido_detalhe.html",
@@ -119,6 +127,8 @@ def detalhe(request, pk):
             "tem_politica_entrega": tem_politica_entrega,
             "entrega_pendente": entrega_pendente,
             "pode_iniciar_separacao": pode_iniciar_separacao,
+            "fiscal_saida": fiscal_saida,
+            "pagamento_posterior_pendente": pedido.status_pagamento != StatusPagamentoPedido.PAGO,
             "origem_pdv": request.GET.get("origem") == "pdv",
         },
     )
@@ -226,7 +236,18 @@ def acao_pedido(request, pk):
         if acao == "reservar":
             reservar_pedido(pedido=pedido, usuario=request.user, ip=request.META.get("REMOTE_ADDR"))
         elif acao == "cancelar":
-            cancelar_pedido(pedido=pedido, usuario=request.user, ip=request.META.get("REMOTE_ADDR"))
+            cancelar_pedido(
+                pedido=pedido, usuario=request.user,
+                motivo=request.POST.get("motivo", ""), ip=request.META.get("REMOTE_ADDR"),
+            )
+        elif acao == "retorno_recusado":
+            registrar_retorno_recusado(
+                pedido=pedido, usuario=request.user,
+                motivo=request.POST.get("motivo", ""),
+                produto_apto_venda=request.POST.get("produto_apto_venda") == "on",
+                valor_devolvido_confirmado=request.POST.get("valor_devolvido_confirmado") == "on",
+                ip=request.META.get("REMOTE_ADDR"),
+            )
         elif acao == "avancar":
             alterar_status_pedido(pedido=pedido, destino=request.POST.get("destino"), usuario=request.user, ip=request.META.get("REMOTE_ADDR"))
         elif acao == "separacao":
@@ -243,7 +264,52 @@ def acao_pedido(request, pk):
             if not form.is_valid():
                 raise ValidationError("Verifique a forma e o valor do pagamento.")
             registrar_pagamento(pedido=pedido, usuario=request.user, ip=request.META.get("REMOTE_ADDR"), **form.cleaned_data)
+        elif acao == "pagamento_parcela":
+            if pedido.status != StatusPedido.SAIU_ENTREGA:
+                raise ValidationError("Confirme o recebimento na entrega somente após a saída do pedido.")
+            forma_id = str(request.POST.get("forma_pagamento_id") or "")
+            forma = forma_pagamento_disponivel(pedido.filial, forma_id) if forma_id.isdigit() else None
+            if not forma:
+                raise ValidationError("Selecione uma forma de pagamento ativa para esta filial.")
+            try:
+                valor = Decimal(str(request.POST.get("valor", "")).replace(",", "."))
+            except InvalidOperation as exc:
+                raise ValidationError("Informe um valor de pagamento válido.") from exc
+            chave = (request.POST.get("idempotency_key") or "").strip()
+            if not chave:
+                raise ValidationError("Atualize a página antes de registrar o pagamento.")
+            parcela = {
+                "forma_pagamento": forma, "valor": valor,
+                "valor_informado": valor, "idempotency_key": chave,
+            }
+            if (forma.tipo or "").upper() != "DINHEIRO":
+                for campo in ("transacao_externa_id", "nsu", "codigo_autorizacao"):
+                    parcela[campo] = (request.POST.get(campo) or "").strip()
+                parcela["status"] = StatusPagamento.CONFIRMADO
+                parcela["tipo_integracao"] = "2"
+            registrar_parcelas_pedido(
+                pedido=pedido, parcelas=[parcela], origem_recebimento=OrigemRecebimentoPedido.ENTREGA,
+                usuario=request.user, ip=request.META.get("REMOTE_ADDR"),
+            )
+        elif acao == "acerto_entrega":
+            pagamento_id = str(request.POST.get("pagamento_id") or "")
+            pagamento = get_object_or_404(
+                PagamentoPedido, pk=pagamento_id if pagamento_id.isdigit() else None, pedido=pedido
+            )
+            caixa_id = str(request.POST.get("caixa_id") or "")
+            caixa = Caixa.objects.filter(
+                pk=caixa_id if caixa_id.isdigit() else None, filial=pedido.filial,
+                usuario_abertura=request.user, status=StatusCaixa.ABERTO,
+            ).first()
+            if not caixa:
+                raise ValidationError("Selecione um caixa aberto por você nesta filial.")
+            acertar_dinheiro_entrega(
+                pagamento=pagamento, caixa=caixa, usuario=request.user,
+                ip=request.META.get("REMOTE_ADDR"),
+            )
         elif acao == "preparar_nfe":
+            if pedido.tipo_entrega == TipoEntrega.ENTREGA and pedido.status_pagamento != StatusPagamentoPedido.PAGO:
+                raise ValidationError("Pagamento posterior ainda não possui configuração fiscal homologada. Não prepare a NF-e deste pedido.")
             preparar_documento_pedido_online(pedido=pedido, usuario=request.user, ip=request.META.get("REMOTE_ADDR"))
         elif acao == "calcular_entrega":
             form = CalcularEntregaForm(request.POST)

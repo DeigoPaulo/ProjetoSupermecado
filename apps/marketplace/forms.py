@@ -6,6 +6,7 @@ from apps.core_forms import QuantidadeNumberInput, aplicar_select2
 from apps.produtos.models import Produto
 
 from .models import (
+    CanalPedido,
     FaixaTaxaEntrega,
     FormaPagamentoPedido,
     IntegracaoMarketplace,
@@ -15,6 +16,15 @@ from .models import (
     StatusPedido,
     TipoEntrega,
 )
+
+
+def _preselecionar_filial_permitida(form, user):
+    filiais = form.fields["filial"].queryset
+    perfil = getattr(user, "perfil_supermercado", None) if user else None
+    if perfil and perfil.is_active and perfil.filial_id and filiais.filter(pk=perfil.filial_id).exists():
+        form.fields["filial"].initial = perfil.filial_id
+    elif filiais.count() == 1:
+        form.fields["filial"].initial = filiais.first().pk
 
 
 class PedidoOnlineForm(forms.ModelForm):
@@ -37,9 +47,14 @@ class PedidoOnlineForm(forms.ModelForm):
 
     def __init__(self, *args, user=None, **kwargs):
         super().__init__(*args, **kwargs)
+        self.fields["canal"].choices = [
+            choice for choice in self.fields["canal"].choices
+            if choice[0] != CanalPedido.PDV
+        ]
         empresa_id = empresa_id_do_usuario(user) if user else None
         if empresa_id is not None:
             self.fields["filial"].queryset = self.fields["filial"].queryset.filter(empresa_id=empresa_id)
+        _preselecionar_filial_permitida(self, user)
         self.fields["cliente"].queryset = clientes_para_usuario(user, self.fields["cliente"].queryset)
         aplicar_select2(
             self,
@@ -106,6 +121,7 @@ class IntegracaoMarketplaceForm(forms.ModelForm):
         empresa_id = empresa_id_do_usuario(user) if user else None
         if empresa_id is not None:
             self.fields["filial"].queryset = self.fields["filial"].queryset.filter(empresa_id=empresa_id)
+        _preselecionar_filial_permitida(self, user)
         aplicar_select2(self, ["filial"], ajax_urls={"filial": "/empresas/filiais/busca.json"})
 
 
@@ -127,6 +143,7 @@ class PoliticaEntregaForm(forms.ModelForm):
         empresa_id = empresa_id_do_usuario(user) if user else None
         if empresa_id is not None:
             self.fields["filial"].queryset = self.fields["filial"].queryset.filter(empresa_id=empresa_id)
+        _preselecionar_filial_permitida(self, user)
         aplicar_select2(self, ["filial"])
 
 

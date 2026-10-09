@@ -7,6 +7,7 @@ from django.forms.models import BaseInlineFormSet
 from apps.clientes.escopo import empresa_id_do_usuario
 from apps.configuracoes.models import ModeloEtiqueta
 from apps.core_forms import PesoNumberInput, QuantidadeNumberInput, aplicar_select2
+from apps.core_gtin import gtin_valido
 from apps.fiscal.cest import validar_cest
 from apps.fornecedores.escopo import fornecedores_para_usuario
 
@@ -128,11 +129,20 @@ class ProdutoForm(forms.ModelForm):
 
     def clean_codigo_barras(self):
         codigo = (self.cleaned_data.get("codigo_barras") or "").strip()
+        if not codigo:
+            return ""
+        if not codigo.isascii() or not gtin_valido(codigo):
+            raise forms.ValidationError(
+                "EAN/GTIN inválido. Informe um código válido ou deixe o campo vazio se o produto não possuir GTIN."
+            )
+        principais = Produto.all_objects.filter(codigo_barras=codigo)
+        if self.instance.pk:
+            principais = principais.exclude(pk=self.instance.pk)
         adicionais = CodigoBarrasProduto.objects.filter(codigo=codigo)
         if self.instance.pk:
             adicionais = adicionais.exclude(produto=self.instance)
-        if codigo and adicionais.exists():
-            raise forms.ValidationError("Este código já está cadastrado como EAN adicional de outro produto.")
+        if principais.exists() or adicionais.exists():
+            raise forms.ValidationError("Este EAN/GTIN já está cadastrado em outro produto.")
         return codigo
 
     def clean_codigo_interno(self):

@@ -246,3 +246,52 @@ class SerieFiscalAmbienteTests(FiscalOriginFixtureMixin, TestCase):
         form = SerieFiscalForm(user=self.usuario)
 
         self.assertIn("ambiente", form.fields)
+
+    def test_tela_de_serie_exibe_ambiente_e_todos_os_campos(self):
+        self.client.force_login(self.usuario)
+        response = self.client.get("/fiscal/series/nova/")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "Numeração fiscal")
+        self.assertContains(response, "A numeração é separada por filial, tipo de documento e ambiente.")
+        for campo in ("filial", "tipo_documento", "ambiente", "serie", "proximo_numero", "ativo"):
+            self.assertContains(response, f'id="id_{campo}"')
+
+    def test_tela_de_serie_mostra_erro_do_ambiente_abaixo_do_campo(self):
+        self.client.force_login(self.usuario)
+        response = self.client.post("/fiscal/series/nova/", {
+            "filial": self.filial.pk,
+            "tipo_documento": TipoDocumentoFiscal.NFCE,
+            "serie": 90,
+            "proximo_numero": 1,
+            "ativo": "on",
+        })
+
+        self.assertEqual(response.status_code, 200)
+        self.assertIn("ambiente", response.context["form"].errors)
+        self.assertContains(response, 'name="ambiente"')
+        self.assertContains(response, 'class="form-field has-error"')
+        self.assertFalse(SerieFiscal.objects.filter(filial=self.filial, serie=90).exists())
+
+    def test_tela_cria_series_separadas_por_ambiente_e_exibe_duplicidade(self):
+        self.client.force_login(self.usuario)
+        dados = {
+            "filial": self.filial.pk,
+            "tipo_documento": TipoDocumentoFiscal.NFCE,
+            "serie": 90,
+            "proximo_numero": 1,
+            "ativo": "on",
+        }
+        for ambiente in (AmbienteFiscal.HOMOLOGACAO, AmbienteFiscal.PRODUCAO):
+            response = self.client.post("/fiscal/series/nova/", {**dados, "ambiente": ambiente})
+            self.assertEqual(response.status_code, 302)
+            self.assertTrue(SerieFiscal.objects.filter(
+                filial=self.filial, tipo_documento=TipoDocumentoFiscal.NFCE,
+                ambiente=ambiente, serie=90, proximo_numero=1,
+            ).exists())
+
+        response = self.client.post("/fiscal/series/nova/", {**dados, "ambiente": AmbienteFiscal.HOMOLOGACAO})
+        self.assertEqual(response.status_code, 200)
+        self.assertIn("__all__", response.context["form"].errors)
+        self.assertContains(response, 'class="form-note form-note-danger"')
+        self.assertEqual(SerieFiscal.objects.filter(filial=self.filial, serie=90).count(), 2)

@@ -149,7 +149,7 @@
                 <span class="status status-success"><i class="fa-solid fa-circle-check"></i> Pronta</span>
               {% else %}
                 <details class="fiscal-pending-details">
-                  <summary><span class="status status-danger"><i class="fa-solid fa-triangle-exclamation"></i> {{ venda.pendencias_fiscais|length }} pendencia{{ venda.pendencias_fiscais|length|pluralize }}</span></summary>
+                  <summary><span class="status status-danger"><i class="fa-solid fa-triangle-exclamation"></i> NFC-e pendente de preparação ({{ venda.pendencias_fiscais|length }} pendencia{{ venda.pendencias_fiscais|length|pluralize }})</span></summary>
                   <ul>{% for pendencia in venda.pendencias_fiscais %}<li>{{ pendencia }}</li>{% endfor %}</ul>
                 </details>
                 {% if venda.ultima_tentativa_fiscal %}

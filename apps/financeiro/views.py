@@ -39,6 +39,7 @@ from apps.fiscal.models import (
 from apps.fiscal.pacote_contabil import analisar_xml_nfe, data_competencia_documento
 from apps.estoque.models import Estoque, FechamentoEstoqueContabil
 from apps.vendas.models import PagamentoVenda, StatusVenda
+from apps.marketplace.models import OrigemRecebimentoPedido, PagamentoPedido, StatusAcertoEntrega
 
 from .forms import AlocacaoRecebivelForm, AmostraContabilForm, BaixaContaForm, CategoriaFinanceiraForm, CentroCustoForm, ContratoIntegracaoContabilForm, ContaContabilForm, ContaFinanceiraForm, ContaMovimentoFinanceiroForm, ImportacaoExtratoFinanceiroForm, RegraLiquidacaoEletronicaForm, TransferenciaFinanceiraForm
 from .adapters import carregar_adaptador_contabil, diagnosticar_adaptador_contabil, normalizar_retorno_exportacao
@@ -225,6 +226,7 @@ def _conciliacao_periodo(data_inicio, data_fim, filial_id=None, empresa_id=None)
         linhas[dia] = {
             "data": dia,
             "entradas_pdv": Decimal("0.00"),
+            "recebimentos_pedidos": Decimal("0.00"),
             "recebimentos_financeiros": Decimal("0.00"),
             "saidas_financeiras": Decimal("0.00"),
             "saldo_operacional": Decimal("0.00"),
@@ -247,6 +249,25 @@ def _conciliacao_periodo(data_inicio, data_fim, filial_id=None, empresa_id=None)
         if data in linhas:
             linhas[data]["entradas_pdv"] += pagamento.valor
 
+    pagamentos_pedido = PagamentoPedido.objects.select_related("pedido", "forma_pagamento").filter(
+        status="CONFIRMADO"
+    )
+    if filial_id:
+        pagamentos_pedido = pagamentos_pedido.filter(pedido__filial_id=filial_id)
+    elif empresa_id:
+        pagamentos_pedido = pagamentos_pedido.filter(pedido__filial__empresa_id=empresa_id)
+    for pagamento in pagamentos_pedido:
+        if pagamento.forma_pagamento.tipo in formas_prazo:
+            continue
+        if pagamento.origem_recebimento == OrigemRecebimentoPedido.ENTREGA and pagamento.forma_pagamento.tipo == "DINHEIRO":
+            if pagamento.status_acerto != StatusAcertoEntrega.ACERTADO:
+                continue
+            data = timezone.localtime(pagamento.acertado_em).date()
+        else:
+            data = timezone.localtime(pagamento.recebido_em).date()
+        if data in linhas:
+            linhas[data]["recebimentos_pedidos"] += pagamento.valor
+
     contas_baixadas = ContaFinanceira.objects.filter(
         status=StatusContaFinanceira.PAGA,
         data_pagamento__gte=data_inicio,
@@ -266,7 +287,10 @@ def _conciliacao_periodo(data_inicio, data_fim, filial_id=None, empresa_id=None)
             linhas[conta.data_pagamento]["saidas_financeiras"] += valor
 
     for linha in linhas.values():
-        linha["saldo_operacional"] = linha["entradas_pdv"] + linha["recebimentos_financeiros"] - linha["saidas_financeiras"]
+        linha["saldo_operacional"] = (
+            linha["entradas_pdv"] + linha["recebimentos_pedidos"]
+            + linha["recebimentos_financeiros"] - linha["saidas_financeiras"]
+        )
 
     return list(linhas.values())
 
@@ -863,10 +887,14 @@ def conciliacao(request):
         "permite_consolidado": permite_consolidado,
         "linhas": linhas,
         "total_entradas_pdv": sum((linha["entradas_pdv"] for linha in linhas), Decimal("0.00")),
+        "total_recebimentos_pedidos": sum((linha["recebimentos_pedidos"] for linha in linhas), Decimal("0.00")),
         "total_recebimentos_financeiros": sum((linha["recebimentos_financeiros"] for linha in linhas), Decimal("0.00")),
         "total_saidas_financeiras": sum((linha["saidas_financeiras"] for linha in linhas), Decimal("0.00")),
     }
-    context["saldo_operacional"] = context["total_entradas_pdv"] + context["total_recebimentos_financeiros"] - context["total_saidas_financeiras"]
+    context["saldo_operacional"] = (
+        context["total_entradas_pdv"] + context["total_recebimentos_pedidos"]
+        + context["total_recebimentos_financeiros"] - context["total_saidas_financeiras"]
+    )
     return render(request, "financeiro/conciliacao.html", context)
 
 
@@ -880,11 +908,12 @@ def conciliacao_csv(request):
     response["Content-Disposition"] = f'attachment; filename="conciliacao_{data_inicio}_{data_fim}.csv"'
     response.write("\ufeff")
     writer = csv.writer(response, delimiter=";")
-    writer.writerow(["Data", "Entradas PDV", "Recebimentos financeiros", "Saidas financeiras", "Saldo operacional"])
+    writer.writerow(["Data", "Entradas PDV", "Recebimentos de pedidos", "Recebimentos financeiros", "Saidas financeiras", "Saldo operacional"])
     for linha in linhas:
         writer.writerow([
             linha["data"].strftime("%d/%m/%Y"),
             str(linha["entradas_pdv"]).replace(".", ","),
+            str(linha["recebimentos_pedidos"]).replace(".", ","),
             str(linha["recebimentos_financeiros"]).replace(".", ","),
             str(linha["saidas_financeiras"]).replace(".", ","),
             str(linha["saldo_operacional"]).replace(".", ","),
@@ -2675,7 +2704,10 @@ def item_extrato_detalhe(request, pk):
     filiais, _, _, _ = _escopo_filiais_financeiro(request)
     item = get_object_or_404(
         ItemExtratoFinanceiro.objects.select_related("conta", "conta__filial", "importacao", "lancamento")
-        .prefetch_related("movimentos_recebiveis__recebivel__pagamento__forma_pagamento"),
+        .prefetch_related(
+            "movimentos_recebiveis__recebivel__pagamento__forma_pagamento",
+            "movimentos_recebiveis__recebivel__pagamento_pedido__forma_pagamento",
+        ),
         pk=pk,
         conta__filial__in=filiais,
     )
@@ -2746,7 +2778,10 @@ def conciliar_item_recebivel_view(request, pk):
     filiais, _, _, _ = _escopo_filiais_financeiro(request)
     item = get_object_or_404(ItemExtratoFinanceiro, pk=pk, conta__filial__in=filiais)
     recebivel = get_object_or_404(
-        RecebivelEletronico.objects.filter(pagamento__venda__filial__in=filiais),
+        RecebivelEletronico.objects.filter(
+            Q(pagamento__venda__filial__in=filiais)
+            | Q(pagamento_pedido__pedido__filial__in=filiais)
+        ),
         pk=request.POST.get("recebivel_id"),
     )
     form = AlocacaoRecebivelForm(request.POST)
@@ -2826,13 +2861,17 @@ def agenda_recebiveis(request):
     forma_id = (request.GET.get("forma") or "").strip()
     q = (request.GET.get("q") or "").strip()
     recebiveis = RecebivelEletronico.objects.select_related(
-        "pagamento__venda__filial__empresa", "pagamento__forma_pagamento", "regra"
+        "pagamento__venda__filial__empresa", "pagamento__forma_pagamento",
+        "pagamento_pedido__pedido__filial__empresa", "pagamento_pedido__forma_pagamento", "regra"
     ).filter(
-        pagamento__venda__filial__in=filiais,
+        Q(pagamento__venda__filial__in=filiais) | Q(pagamento_pedido__pedido__filial__in=filiais),
         data_prevista__range=(data_inicio, data_fim),
     )
     if filial_id:
-        recebiveis = recebiveis.filter(pagamento__venda__filial_id=filial_id)
+        recebiveis = recebiveis.filter(
+            Q(pagamento__venda__filial_id=filial_id)
+            | Q(pagamento_pedido__pedido__filial_id=filial_id)
+        )
     if status == "ATRASADO":
         recebiveis = recebiveis.filter(
             status=StatusRecebivelEletronico.PENDENTE,
@@ -2841,15 +2880,21 @@ def agenda_recebiveis(request):
     elif status in StatusRecebivelEletronico.values:
         recebiveis = recebiveis.filter(status=status)
     if forma_id.isdigit():
-        recebiveis = recebiveis.filter(pagamento__forma_pagamento_id=forma_id)
+        recebiveis = recebiveis.filter(
+            Q(pagamento__forma_pagamento_id=forma_id)
+            | Q(pagamento_pedido__forma_pagamento_id=forma_id)
+        )
     if q:
         busca = (
             Q(pagamento__nsu__icontains=q)
             | Q(pagamento__transacao_externa_id__icontains=q)
             | Q(pagamento__codigo_autorizacao__icontains=q)
+            | Q(pagamento_pedido__nsu__icontains=q)
+            | Q(pagamento_pedido__transacao_externa_id__icontains=q)
+            | Q(pagamento_pedido__codigo_autorizacao__icontains=q)
         )
         if q.isdigit():
-            busca |= Q(pagamento__venda_id=int(q))
+            busca |= Q(pagamento__venda_id=int(q)) | Q(pagamento_pedido__pedido_id=int(q))
         recebiveis = recebiveis.filter(busca)
 
     resumo = recebiveis.aggregate(
@@ -2865,6 +2910,14 @@ def agenda_recebiveis(request):
     eletronicos = ["PIX", "CARTAO", "DEBITO", "CREDITO", "VALE_ALIMENTACAO", "VALE_REFEICAO"]
     pagamentos_sem_regra = PagamentoVenda.objects.filter(
         venda__filial__in=filiais,
+        status=StatusPagamento.CONFIRMADO,
+        forma_pagamento__tipo__in=eletronicos,
+        recebivel_eletronico__isnull=True,
+    ).count()
+    from apps.marketplace.models import PagamentoPedido
+
+    pagamentos_sem_regra += PagamentoPedido.objects.filter(
+        pedido__filial__in=filiais,
         status=StatusPagamento.CONFIRMADO,
         forma_pagamento__tipo__in=eletronicos,
         recebivel_eletronico__isnull=True,
@@ -2900,13 +2953,17 @@ def agenda_recebiveis_csv(request):
     filiais, filial_id, _, _ = _escopo_filiais_financeiro(request)
     data_inicio, data_fim = _periodo_from_request(request)
     recebiveis = RecebivelEletronico.objects.select_related(
-        "pagamento__venda__filial", "pagamento__forma_pagamento"
+        "pagamento__venda__filial", "pagamento__forma_pagamento",
+        "pagamento_pedido__pedido__filial", "pagamento_pedido__forma_pagamento"
     ).filter(
-        pagamento__venda__filial__in=filiais,
+        Q(pagamento__venda__filial__in=filiais) | Q(pagamento_pedido__pedido__filial__in=filiais),
         data_prevista__range=(data_inicio, data_fim),
     )
     if filial_id:
-        recebiveis = recebiveis.filter(pagamento__venda__filial_id=filial_id)
+        recebiveis = recebiveis.filter(
+            Q(pagamento__venda__filial_id=filial_id)
+            | Q(pagamento_pedido__pedido__filial_id=filial_id)
+        )
     status = (request.GET.get("status") or "").strip()
     forma_id = (request.GET.get("forma") or "").strip()
     q = (request.GET.get("q") or "").strip()
@@ -2918,31 +2975,39 @@ def agenda_recebiveis_csv(request):
     elif status in StatusRecebivelEletronico.values:
         recebiveis = recebiveis.filter(status=status)
     if forma_id.isdigit():
-        recebiveis = recebiveis.filter(pagamento__forma_pagamento_id=forma_id)
+        recebiveis = recebiveis.filter(
+            Q(pagamento__forma_pagamento_id=forma_id)
+            | Q(pagamento_pedido__forma_pagamento_id=forma_id)
+        )
     if q:
         busca = (
             Q(pagamento__nsu__icontains=q)
             | Q(pagamento__transacao_externa_id__icontains=q)
             | Q(pagamento__codigo_autorizacao__icontains=q)
+            | Q(pagamento_pedido__nsu__icontains=q)
+            | Q(pagamento_pedido__transacao_externa_id__icontains=q)
+            | Q(pagamento_pedido__codigo_autorizacao__icontains=q)
         )
         if q.isdigit():
-            busca |= Q(pagamento__venda_id=int(q))
+            busca |= Q(pagamento__venda_id=int(q)) | Q(pagamento_pedido__pedido_id=int(q))
         recebiveis = recebiveis.filter(busca)
     response = HttpResponse(content_type="text/csv; charset=utf-8")
     response["Content-Disposition"] = f'attachment; filename="agenda_recebiveis_{data_inicio}_{data_fim}.csv"'
     response.write("﻿")
     writer = csv.writer(response, delimiter=";")
     writer.writerow([
-        "Venda", "Filial", "Forma", "NSU", "Data da venda", "Data prevista",
+        "Venda / Pedido", "Filial", "Forma", "NSU", "Data da venda", "Data prevista",
         "Valor bruto", "Taxa prevista", "Valor líquido previsto", "Data da liquidação",
         "Valor liquidado", "Diferença", "Referência da liquidação", "Status",
     ])
     for item in recebiveis.iterator():
+        pagamento = item.pagamento or item.pagamento_pedido
+        origem = pagamento.venda if item.pagamento_id else pagamento.pedido
         writer.writerow([
-            item.pagamento.venda_id,
-            item.pagamento.venda.filial,
-            item.pagamento.forma_pagamento,
-            item.pagamento.nsu,
+            (f"Venda #{origem.pk}" if item.pagamento_id else f"Pedido #{origem.pk}"),
+            origem.filial,
+            pagamento.forma_pagamento,
+            pagamento.nsu,
             item.data_venda.strftime("%d/%m/%Y"),
             item.data_prevista.strftime("%d/%m/%Y"),
             str(item.valor_bruto).replace(".", ","),

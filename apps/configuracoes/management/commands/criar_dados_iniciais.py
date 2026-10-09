@@ -5,6 +5,7 @@ from apps.configuracoes.services import criar_configuracoes_padrao
 from apps.empresas.models import Empresa, Filial
 from apps.produtos.models import Categoria, Marca
 from apps.vendas.models import FormaPagamento
+from apps.vendas.services import bootstrap_formas_pagamento_filial
 from apps.fiscal.politica_identidades_fiscais import avaliar_comando_dados_ficticios
 
 
@@ -28,7 +29,7 @@ class Command(BaseCommand):
                 "regime_tributario": "Simples Nacional",
             },
         )
-        Filial.objects.get_or_create(
+        filial, _ = Filial.objects.get_or_create(
             empresa=empresa,
             nome="Loja Matriz",
             defaults={
@@ -56,22 +57,9 @@ class Command(BaseCommand):
         for nome in ["Marca própria", "Sem marca", "Fornecedor local"]:
             Marca.all_objects.get_or_create(nome=nome)
 
-        formas = [
-            ("Dinheiro", "DINHEIRO", True, False),
-            ("Pix", "PIX", False, False),
-            ("Cartão de débito", "DEBITO", False, True),
-            ("Cartão de crédito", "CREDITO", False, True),
-            ("Crediario", "CREDIARIO", False, True),
-        ]
-        for nome, tipo, permite_troco, exige_autorizacao in formas:
-            FormaPagamento.objects.get_or_create(
-                nome=nome,
-                defaults={
-                    "tipo": tipo,
-                    "permite_troco": permite_troco,
-                    "exige_autorizacao": exige_autorizacao,
-                },
-            )
+        bootstrap_formas_pagamento_filial(filial)
+        if not FormaPagamento.objects.filter(tipo="CREDIARIO").exists():
+            FormaPagamento.objects.create(nome="Crediario", tipo="CREDIARIO", exige_autorizacao=True)
 
         criar_configuracoes_padrao()
 

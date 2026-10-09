@@ -6,6 +6,7 @@ from apps.empresas.models import Empresa, Filial
 from apps.financeiro.forms import ContaFinanceiraForm
 from apps.marketplace.forms import PedidoOnlineForm
 from apps.pdv.forms import FinalizarVendaForm, PreVendaForm
+from apps.pdv.models import Caixa
 
 from .models import Cliente
 
@@ -22,9 +23,50 @@ class ClienteViewsTests(TestCase):
 
         self.assertEqual(response.status_code, 200)
         self.assertContains(response, "Identificação")
-        self.assertContains(response, "Contato e endereço")
+        self.assertContains(response, "Endereço principal")
+        self.assertContains(response, "Dados fiscais")
+        self.assertNotContains(response, 'name="endereco"')
         self.assertContains(response, "Opcional para venda presencial avulsa.")
-        self.assertContains(response, "busca de CEP")
+        self.assertContains(response, "Consultar CEP")
+
+    def test_cliente_legado_preserva_endereco_ao_editar(self):
+        empresa = Empresa.objects.create(
+            razao_social="Cliente legado Ltda", nome_fantasia="Cliente legado", cnpj="12.345.678/0001-90",
+        )
+        self.cliente.empresa = empresa
+        self.cliente.endereco = "Rua Legada, 20"
+        self.cliente.save(update_fields=["empresa", "endereco"])
+
+        response = self.client.get(f"/clientes/{self.cliente.pk}/editar/")
+        self.assertContains(response, "Endereço legado cadastrado: Rua Legada, 20")
+        self.assertNotContains(response, 'name="endereco"')
+
+        response = self.client.post(f"/clientes/{self.cliente.pk}/editar/", {
+            "empresa": empresa.pk,
+            "nome": self.cliente.nome,
+            "cpf_cnpj": self.cliente.cpf_cnpj,
+            "is_active": "on",
+        })
+        self.assertEqual(response.status_code, 302)
+        self.cliente.refresh_from_db()
+        self.assertEqual(self.cliente.endereco, "Rua Legada, 20")
+
+    def test_busca_prioriza_endereco_estruturado_e_informa_documento(self):
+        self.cliente.endereco = "Rua Legada"
+        self.cliente.logradouro = "Rua Atual"
+        self.cliente.numero = "42"
+        self.cliente.bairro = "Centro"
+        self.cliente.municipio = "Goiânia"
+        self.cliente.uf = "GO"
+        self.cliente.cep = "74000-000"
+        self.cliente.codigo_municipio_ibge = "5208707"
+        self.cliente.save()
+
+        payload = self.client.get("/clientes/busca.json", {"q": "Teste"}).json()["results"][0]
+        self.assertIn("Rua Atual, 42", payload["endereco"])
+        self.assertNotIn("Rua Legada", payload["endereco"])
+        self.assertFalse(payload["endereco_legado"])
+        self.assertEqual(payload["documento_fiscal_tipo"], "CPF")
 
     def test_busca_json_retorna_cliente_para_select2(self):
         response = self.client.get("/clientes/busca.json", {"q": "Teste"})
@@ -100,6 +142,79 @@ class ClienteIsolamentoEmpresaTests(TestCase):
         self.assertRedirects(resposta, "/clientes/")
         cliente = Cliente.objects.get(nome="Cliente criado no caixa")
         self.assertEqual(cliente.empresa, self.empresa_a)
+
+    def test_cadastro_rapido_pdv_reutiliza_formulario_e_empresa_do_perfil(self):
+        self.client.force_login(self.usuario_a)
+
+        resposta = self.client.post("/clientes/novo-pdv.json", {
+            "nome": "Cliente do PDV", "cpf_cnpj": "", "telefone": "62999990000",
+            "email": "", "endereco": "Rua do Cliente, 10", "is_active": "on",
+        })
+
+        self.assertEqual(resposta.status_code, 200)
+        cliente = Cliente.objects.get(pk=resposta.json()["id"])
+        self.assertEqual(cliente.empresa, self.empresa_a)
+        self.assertEqual(resposta.json()["nome"], cliente.nome)
+
+    def test_cadastro_rapido_pdv_nao_aceita_empresa_de_outra_filial(self):
+        self.client.force_login(self.usuario_a)
+
+        resposta = self.client.post("/clientes/novo-pdv.json", {
+            "empresa": self.empresa_b.pk, "nome": "Cliente forjado",
+            "cpf_cnpj": "", "is_active": "on",
+        })
+
+        self.assertEqual(resposta.status_code, 400)
+        self.assertFalse(Cliente.objects.filter(nome="Cliente forjado").exists())
+
+    def test_cadastro_rapido_pdv_exige_empresa_explicita_para_superusuario(self):
+        self.client.force_login(self.super_admin)
+
+        resposta = self.client.post("/clientes/novo-pdv.json", {
+            "nome": "Cliente sem empresa", "cpf_cnpj": "", "is_active": "on",
+        })
+
+        self.assertEqual(resposta.status_code, 400)
+        self.assertIn("empresa", resposta.json()["errors"])
+        self.assertFalse(Cliente.objects.filter(nome="Cliente sem empresa").exists())
+
+    def test_superusuario_com_caixa_usa_empresa_operacional_sem_filial_artificial(self):
+        Caixa.objects.create(filial=self.filial_a, usuario_abertura=self.super_admin)
+        self.client.force_login(self.super_admin)
+
+        resposta = self.client.post("/clientes/novo-pdv.json", {
+            "nome": "Cliente do caixa A", "email": "caixa@example.com",
+            "logradouro": "Rua A", "numero": "12", "bairro": "Centro",
+            "municipio": "Goiânia", "codigo_municipio_ibge": "5208707",
+            "uf": "GO", "cep": "74000000", "is_active": "on",
+        })
+        self.assertEqual(resposta.status_code, 200, resposta.content)
+        cliente = Cliente.objects.get(pk=resposta.json()["id"])
+        self.assertEqual(cliente.empresa_id, self.empresa_a.pk)
+        self.assertEqual(cliente.email, "caixa@example.com")
+        self.assertEqual(cliente.logradouro, "Rua A")
+        self.assertFalse(hasattr(cliente, "filial_id"))
+
+        forjada = self.client.post("/clientes/novo-pdv.json", {
+            "empresa": self.empresa_b.pk, "nome": "Cliente de outra empresa", "is_active": "on",
+        })
+        self.assertEqual(forjada.status_code, 400)
+        self.assertFalse(Cliente.objects.filter(nome="Cliente de outra empresa").exists())
+
+    def test_cadastro_pdv_informa_bairro_ausente_sem_gravar_cliente(self):
+        Caixa.objects.create(filial=self.filial_a, usuario_abertura=self.super_admin)
+        self.client.force_login(self.super_admin)
+
+        resposta = self.client.post("/clientes/novo-pdv.json", {
+            "nome": "Cliente sem bairro", "logradouro": "Avenida de Teste",
+            "numero": "115", "municipio": "Goiânia",
+            "codigo_municipio_ibge": "5208707", "uf": "GO",
+            "cep": "74423-020", "is_active": "on",
+        })
+
+        self.assertEqual(resposta.status_code, 400)
+        self.assertIn("bairro", resposta.json()["errors"])
+        self.assertFalse(Cliente.objects.filter(nome="Cliente sem bairro").exists())
 
     def test_usuario_nao_consegue_forcar_empresa_de_outro_cliente(self):
         self.client.force_login(self.usuario_a)

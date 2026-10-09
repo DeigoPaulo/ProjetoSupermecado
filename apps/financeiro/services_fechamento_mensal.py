@@ -280,19 +280,20 @@ def _snapshot_contas(filiais, data_inicio, data_fim):
 def _snapshot_recebiveis(filiais, data_inicio, data_fim):
     posicao = list(
         RecebivelEletronico.objects.filter(
-            pagamento__venda__filial__in=filiais,
+            Q(pagamento__venda__filial__in=filiais) | Q(pagamento_pedido__pedido__filial__in=filiais),
             data_venda__lte=data_fim,
         ).order_by("pk")
     )
     pendentes = [item for item in posicao if not item.data_liquidacao or item.data_liquidacao > data_fim]
     liquidados_periodo = list(
         RecebivelEletronico.objects.filter(
-            pagamento__venda__filial__in=filiais,
+            Q(pagamento__venda__filial__in=filiais) | Q(pagamento_pedido__pedido__filial__in=filiais),
             data_liquidacao__range=(data_inicio, data_fim),
         ).order_by("pk")
     )
     movimentos = MovimentoRecebivelEletronico.objects.filter(
-        recebivel__pagamento__venda__filial__in=filiais,
+        Q(recebivel__pagamento__venda__filial__in=filiais)
+        | Q(recebivel__pagamento_pedido__pedido__filial__in=filiais),
         data__range=(data_inicio, data_fim),
     )
     antecipacoes = movimentos.filter(tipo=TipoMovimentoRecebivelEletronico.ANTECIPACAO)

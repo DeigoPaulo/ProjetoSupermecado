@@ -10,16 +10,16 @@ from apps.accounts.models import PerfilUsuario, TipoPerfil
 from apps.auditoria.models import LogAuditoria
 from apps.clientes.models import Cliente
 from apps.empresas.models import Empresa, Filial
-from apps.estoque.models import Estoque
+from apps.estoque.models import Estoque, TipoMovimentacaoEstoque, movimentar_estoque
 from apps.fiscal.models import AmbienteFiscal, ConfiguracaoFiscal, DocumentoFiscal, NaturezaOperacao, ParametrizacaoBeneficioFiscalProduto, ProvedorEmissaoFiscal, SerieFiscal, SituacaoBeneficioFiscalICMS, StatusDocumentoFiscal, TipoDocumentoFiscal
-from apps.fiscal.services import ativar_contingencia_svc, preparar_documento_pedido_online, transmitir_documento_sefaz
+from apps.fiscal.services import ativar_contingencia_svc, indicador_presenca_pedido, preparar_documento_pedido_online, transmitir_documento_sefaz
 from apps.fiscal.test_support_identidades_fiscais import obter_identidade_fiscal_teste
 from apps.produtos.models import Categoria, Produto
 from apps.vendas.models import TipoDocumentoConsumidor
 
 from .forms import PagamentoPedidoForm, PedidoOnlineForm
-from .models import FaixaTaxaEntrega, FormaPagamentoPedido, IntegracaoMarketplace, ItemPedidoOnline, PedidoOnline, PoliticaEntrega, StatusPagamentoPedido, StatusPedido, TipoEntrega
-from .services import alterar_status_pedido, calcular_entrega_pedido, cancelar_pedido, gerar_token_integracao, registrar_pagamento, reservar_pedido
+from .models import CanalPedido, FaixaTaxaEntrega, FormaPagamentoPedido, IntegracaoMarketplace, ItemPedidoOnline, PedidoOnline, PoliticaEntrega, StatusPagamentoPedido, StatusPedido, TipoEntrega
+from .services import alterar_status_pedido, calcular_entrega_pedido, cancelar_pedido, gerar_token_integracao, registrar_pagamento, reservar_pedido, situacao_fiscal_saida
 
 
 class FakeHTTPResponse:
@@ -103,14 +103,35 @@ class FluxoPedidoOnlineTests(TestCase):
             ]
         )
 
+    def _pronto_para_saida_teste(self):
+        self.pedido.tipo_entrega = TipoEntrega.ENTREGA
+        self.pedido.endereco_entrega = "Rua Teste, 1"
+        self.pedido.save(update_fields=["tipo_entrega", "endereco_entrega"])
+        reservar_pedido(pedido=self.pedido, usuario=self.usuario)
+        self.pedido.itens.update(quantidade_separada=Decimal("2"))
+        alterar_status_pedido(pedido=self.pedido, destino=StatusPedido.PRONTO, usuario=self.usuario)
+
+    def _documento_fiscal_teste(self, status=StatusDocumentoFiscal.EMITIDO):
+        return DocumentoFiscal.objects.create(
+            filial=self.filial, pedido_online=self.pedido, usuario=self.usuario,
+            tipo_documento=TipoDocumentoFiscal.NFE, status=status,
+            chave_acesso="1" * 44, protocolo="1234567890",
+        )
+
     def test_reserva_e_cancelamento_liberam_estoque(self):
         reservar_pedido(pedido=self.pedido, usuario=self.usuario)
         self.pedido.refresh_from_db()
         self.estoque.refresh_from_db()
         self.assertEqual(self.pedido.status, StatusPedido.EM_SEPARACAO)
         self.assertEqual(self.estoque.quantidade_reservada, Decimal("2"))
+        self.assertEqual(self.estoque.quantidade_disponivel, Decimal("8"))
+        with self.assertRaisesMessage(ValidationError, "Estoque insuficiente"):
+            movimentar_estoque(
+                produto=self.produto, filial=self.filial, tipo=TipoMovimentacaoEstoque.VENDA,
+                quantidade=Decimal("9"), usuario=self.usuario,
+            )
 
-        cancelar_pedido(pedido=self.pedido, usuario=self.usuario)
+        cancelar_pedido(pedido=self.pedido, usuario=self.usuario, motivo="Cliente desistiu")
         self.estoque.refresh_from_db()
         self.assertEqual(self.estoque.quantidade_reservada, Decimal("0"))
         self.assertTrue(LogAuditoria.objects.filter(modulo="marketplace", acao="CANCELAMENTO_PEDIDO").exists())
@@ -126,6 +147,79 @@ class FluxoPedidoOnlineTests(TestCase):
         self.assertEqual(self.estoque.quantidade_atual, Decimal("8"))
         self.assertEqual(self.estoque.quantidade_reservada, Decimal("0"))
         self.assertEqual(self.pedido.status, StatusPedido.CONCLUIDO)
+
+    def test_saida_entrega_converte_reserva_sem_dupla_baixa_na_conclusao(self):
+        self._pronto_para_saida_teste()
+        self._documento_fiscal_teste()
+        registrar_pagamento(pedido=self.pedido, forma_pagamento=FormaPagamentoPedido.PIX, valor_pago=Decimal("30"), usuario=self.usuario)
+
+        alterar_status_pedido(pedido=self.pedido, destino=StatusPedido.SAIU_ENTREGA, usuario=self.usuario)
+        self.estoque.refresh_from_db()
+        self.assertEqual(self.estoque.quantidade_atual, Decimal("8"))
+        self.assertEqual(self.estoque.quantidade_reservada, Decimal("0"))
+        with self.assertRaisesMessage(ValidationError, "retorno físico"):
+            cancelar_pedido(pedido=self.pedido, usuario=self.usuario, motivo="Cliente recusou")
+
+        with self.assertRaisesMessage(ValidationError, "Mudança de status"):
+            alterar_status_pedido(pedido=self.pedido, destino=StatusPedido.SAIU_ENTREGA, usuario=self.usuario)
+        alterar_status_pedido(pedido=self.pedido, destino=StatusPedido.CONCLUIDO, usuario=self.usuario)
+        self.estoque.refresh_from_db()
+        self.assertEqual(self.estoque.quantidade_atual, Decimal("8"))
+
+    def test_portao_fiscal_bloqueia_ausente_preparado_rejeitado_e_sem_protocolo(self):
+        self._pronto_para_saida_teste()
+        registrar_pagamento(pedido=self.pedido, forma_pagamento=FormaPagamentoPedido.PIX, valor_pago=Decimal("30"), usuario=self.usuario)
+        with self.assertRaisesMessage(ValidationError, "ainda não foi autorizada"):
+            alterar_status_pedido(pedido=self.pedido, destino=StatusPedido.SAIU_ENTREGA, usuario=self.usuario)
+        documento = self._documento_fiscal_teste(StatusDocumentoFiscal.PRONTO)
+        for status in (StatusDocumentoFiscal.PRONTO, StatusDocumentoFiscal.REJEITADO, StatusDocumentoFiscal.RASCUNHO):
+            documento.status = status
+            documento.save(update_fields=["status"])
+            with self.assertRaisesMessage(ValidationError, "ainda não foi autorizada"):
+                alterar_status_pedido(pedido=self.pedido, destino=StatusPedido.SAIU_ENTREGA, usuario=self.usuario)
+        documento.status = StatusDocumentoFiscal.PRONTO
+        documento.aguardando_consulta_sefaz = True
+        documento.save(update_fields=["status", "aguardando_consulta_sefaz"])
+        with self.assertRaisesMessage(ValidationError, "ainda não foi autorizada"):
+            alterar_status_pedido(pedido=self.pedido, destino=StatusPedido.SAIU_ENTREGA, usuario=self.usuario)
+        documento.status = StatusDocumentoFiscal.EMITIDO
+        documento.protocolo = ""
+        documento.save(update_fields=["status", "protocolo"])
+        self.assertEqual(situacao_fiscal_saida(self.pedido), "PENDENTE")
+        with self.assertRaisesMessage(ValidationError, "ainda não foi autorizada"):
+            alterar_status_pedido(pedido=self.pedido, destino=StatusPedido.SAIU_ENTREGA, usuario=self.usuario)
+        self.estoque.refresh_from_db()
+        self.assertEqual(self.estoque.quantidade_atual, Decimal("10"))
+        self.assertEqual(self.estoque.quantidade_reservada, Decimal("2"))
+
+    def test_autorizacao_de_outro_pedido_nao_libera_saida(self):
+        self._pronto_para_saida_teste()
+        registrar_pagamento(pedido=self.pedido, forma_pagamento=FormaPagamentoPedido.PIX, valor_pago=Decimal("30"), usuario=self.usuario)
+        outro = PedidoOnline.objects.create(filial=self.filial, nome_cliente="Outro", usuario=self.usuario)
+        DocumentoFiscal.objects.create(
+            filial=self.filial, pedido_online=outro, usuario=self.usuario,
+            tipo_documento=TipoDocumentoFiscal.NFE, status=StatusDocumentoFiscal.EMITIDO,
+            chave_acesso="2" * 44, protocolo="outro-protocolo",
+        )
+        with self.assertRaisesMessage(ValidationError, "ainda não foi autorizada"):
+            alterar_status_pedido(pedido=self.pedido, destino=StatusPedido.SAIU_ENTREGA, usuario=self.usuario)
+
+    def test_pagamento_posterior_nao_libera_saida_mesmo_com_documento_marcado_emitido(self):
+        self._pronto_para_saida_teste()
+        self._documento_fiscal_teste()
+        with self.assertRaisesMessage(ValidationError, "Pagamento posterior"):
+            alterar_status_pedido(pedido=self.pedido, destino=StatusPedido.SAIU_ENTREGA, usuario=self.usuario)
+        self.estoque.refresh_from_db()
+        self.assertEqual(self.estoque.quantidade_atual, Decimal("10"))
+        self.assertEqual(self.estoque.quantidade_reservada, Decimal("2"))
+
+    def test_cancelamento_exige_motivo_sem_liberar_reserva(self):
+        reservar_pedido(pedido=self.pedido, usuario=self.usuario)
+        with self.assertRaisesMessage(ValidationError, "motivo"):
+            cancelar_pedido(pedido=self.pedido, usuario=self.usuario, motivo=" ")
+        self.estoque.refresh_from_db()
+        self.assertEqual(self.estoque.quantidade_reservada, Decimal("2"))
+        self.assertEqual(PedidoOnline.objects.get(pk=self.pedido.pk).status, StatusPedido.EM_SEPARACAO)
 
     def test_formulario_copia_snapshot_fiscal_do_cliente_sem_vinculo_mutavel(self):
         cliente = Cliente.objects.create(
@@ -318,11 +412,12 @@ class FluxoPedidoOnlineTests(TestCase):
         self.assertEqual(self.pedido.forma_pagamento, FormaPagamentoPedido.CARTAO_DEBITO_ENTREGA)
         self.assertEqual(self.pedido.referencia_pagamento, "NSU-ENTREGA-0001")
 
-    def test_cancelamento_de_pedido_pago_registra_estorno(self):
+    def test_cancelamento_de_pedido_pago_exige_tratamento_financeiro(self):
         registrar_pagamento(pedido=self.pedido, forma_pagamento=FormaPagamentoPedido.PIX, valor_pago=Decimal("30"), usuario=self.usuario)
-        cancelar_pedido(pedido=self.pedido, usuario=self.usuario)
+        with self.assertRaisesMessage(ValidationError, "estorno financeiro"):
+            cancelar_pedido(pedido=self.pedido, usuario=self.usuario, motivo="Cliente desistiu")
         self.pedido.refresh_from_db()
-        self.assertEqual(self.pedido.status_pagamento, StatusPagamentoPedido.ESTORNADO)
+        self.assertEqual(self.pedido.status_pagamento, StatusPagamentoPedido.PAGO)
 
     def test_reserva_insuficiente_reverte_operacao(self):
         self.pedido.itens.update(quantidade=Decimal("20"), total=Decimal("300"))
@@ -340,6 +435,46 @@ class FluxoPedidoOnlineTests(TestCase):
         self.assertContains(resposta, "Separação")
         self.assertContains(resposta, "Pagamento")
         self.assertContains(resposta, "order-progress")
+
+    def test_canais_sao_independentes_da_entrega_e_filtro_reconhece_pdv(self):
+        self.client.force_login(self.usuario)
+        self.pedido.canal = CanalPedido.PDV
+        self.pedido.tipo_entrega = TipoEntrega.ENTREGA
+        self.pedido.endereco_entrega = "Rua da Entrega, 10"
+        self.pedido.save(update_fields=["canal", "tipo_entrega", "endereco_entrega"])
+        for canal in (CanalPedido.LOJA_ONLINE, CanalPedido.TELEFONE, CanalPedido.WHATSAPP, CanalPedido.MARKETPLACE):
+            PedidoOnline.objects.create(
+                filial=self.filial, usuario=self.usuario, nome_cliente=f"Cliente {canal}",
+                canal=canal, tipo_entrega=TipoEntrega.RETIRADA,
+            )
+        pagina = self.client.get("/pedidos-online/", {"canal": CanalPedido.PDV})
+        self.assertContains(pagina, "Cliente Online")
+        self.assertContains(pagina, '<option value="PDV" selected>', html=False)
+        self.assertNotContains(pagina, "Cliente LOJA_ONLINE")
+        detalhe = self.client.get(f"/pedidos-online/{self.pedido.pk}/")
+        self.assertContains(detalhe, "PDV")
+        self.assertEqual(self.pedido.get_canal_display(), "PDV")
+        self.assertEqual(PedidoOnline.objects.exclude(pk=self.pedido.pk).count(), 4)
+
+    def test_formulario_interno_nao_permite_falsificar_origem_pdv(self):
+        form = PedidoOnlineForm(data={"canal": CanalPedido.PDV}, user=self.usuario)
+        self.assertNotIn(CanalPedido.PDV, [value for value, _ in form.fields["canal"].choices])
+        self.assertIn("canal", form.errors)
+
+    def test_presenca_depende_da_origem_nao_do_tipo_entrega(self):
+        self.pedido.tipo_entrega = TipoEntrega.ENTREGA
+        for canal, indicador in (
+            (CanalPedido.PDV, "1"),
+            (CanalPedido.LOJA_ONLINE, "2"),
+            (CanalPedido.TELEFONE, "9"),
+            (CanalPedido.WHATSAPP, "9"),
+            (CanalPedido.MARKETPLACE, "9"),
+        ):
+            self.pedido.canal = canal
+            self.assertEqual(indicador_presenca_pedido(self.pedido), indicador)
+            self.pedido.tipo_entrega = TipoEntrega.RETIRADA
+            self.assertEqual(indicador_presenca_pedido(self.pedido), indicador)
+            self.pedido.tipo_entrega = TipoEntrega.ENTREGA
 
     def test_forms_marketplace_exibem_secoes_operacionais(self):
         self.client.force_login(self.usuario)
@@ -476,6 +611,7 @@ class FluxoPedidoOnlineTests(TestCase):
         integracao = IntegracaoMarketplace.objects.create(nome="Parceiro", filial=self.filial, usuario=self.usuario, token_prefixo="temporario", token_hash="temporario")
         token = gerar_token_integracao(integracao)
         payload = {
+            "canal": "PDV",
             "referencia_externa": "EXT-100",
             "nome_cliente": "Maria Online",
             "documento_cliente_tipo": "CPF",
@@ -500,6 +636,7 @@ class FluxoPedidoOnlineTests(TestCase):
         pedido = PedidoOnline.objects.get(pk=pedido_id)
         self.assertEqual(pedido.total, Decimal("29.00"))
         self.assertEqual(pedido.integracao, integracao)
+        self.assertEqual(pedido.canal, CanalPedido.MARKETPLACE)
         self.assertEqual(pedido.documento_cliente_tipo, TipoDocumentoConsumidor.CPF)
         self.assertEqual(pedido.documento_cliente, "12345678909")
         self.assertEqual(pedido.destinatario_logradouro, "Rua da API")
@@ -644,6 +781,7 @@ class FluxoPedidoOnlineTests(TestCase):
         self.assertEqual(documento.numero, 200)
         self.assertEqual(documento.pedido_online, self.pedido)
         self.assertIn("<mod>55</mod>", documento.xml_conteudo)
+        self.assertIn("<indPres>2</indPres>", documento.xml_conteudo)
         self.assertEqual(documento.chave_acesso[6:20], cnpj_emitente)
         self.assertIn(f"<CNPJ>{cnpj_emitente}</CNPJ>", documento.xml_conteudo)
         self.assertIn(f"<CNPJ>{cnpj_destinatario}</CNPJ>", documento.xml_conteudo)
@@ -663,6 +801,38 @@ class FluxoPedidoOnlineTests(TestCase):
         self.assertIn("<vICMS>5.40</vICMS>", documento.xml_conteudo)
         self.assertIn("<vNF>30.00</vNF>", documento.xml_conteudo)
         self.assertEqual(DocumentoFiscal.objects.filter(pedido_online=self.pedido).count(), 1)
+
+        self.pedido.tipo_entrega = TipoEntrega.ENTREGA
+        self.pedido.endereco_entrega = "Rua do Consumidor, 100"
+        self.pedido.save(update_fields=["tipo_entrega", "endereco_entrega"])
+        pedido_pdv = PedidoOnline.objects.create(
+            filial=self.filial, usuario=self.usuario, nome_cliente=self.pedido.nome_cliente,
+            canal=CanalPedido.PDV, tipo_entrega=TipoEntrega.ENTREGA,
+            endereco_entrega=self.pedido.endereco_entrega,
+            documento_cliente_tipo=self.pedido.documento_cliente_tipo,
+            documento_cliente=self.pedido.documento_cliente,
+            destinatario_indicador_ie=self.pedido.destinatario_indicador_ie,
+            destinatario_logradouro=self.pedido.destinatario_logradouro,
+            destinatario_numero=self.pedido.destinatario_numero,
+            destinatario_bairro=self.pedido.destinatario_bairro,
+            destinatario_codigo_municipio_ibge=self.pedido.destinatario_codigo_municipio_ibge,
+            destinatario_municipio=self.pedido.destinatario_municipio,
+            destinatario_uf=self.pedido.destinatario_uf,
+            destinatario_cep=self.pedido.destinatario_cep,
+            telefone=self.pedido.telefone,
+            status_pagamento=StatusPagamentoPedido.PAGO,
+            forma_pagamento=FormaPagamentoPedido.GATEWAY,
+            valor_pago=self.pedido.valor_pago,
+            subtotal=self.pedido.subtotal,
+            total=self.pedido.total,
+        )
+        ItemPedidoOnline.objects.create(
+            pedido=pedido_pdv, produto=self.produto, quantidade=Decimal("2"),
+            preco_unitario=Decimal("15"),
+        )
+        documento_pdv = preparar_documento_pedido_online(pedido_pdv, self.usuario)
+        self.assertIn("<indPres>1</indPres>", documento_pdv.xml_conteudo)
+        self.assertEqual(pedido_pdv.tipo_entrega, self.pedido.tipo_entrega)
 
     @override_settings(SEFAZ_DIRETA_SVC_ENABLED=True)
     def test_master_prepara_nfe_go_para_svc_rs_com_nova_chave_e_xml(self):

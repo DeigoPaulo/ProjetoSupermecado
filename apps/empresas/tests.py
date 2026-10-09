@@ -111,6 +111,15 @@ class EmpresasViewsTests(TestCase):
         self.assertEqual(matriz.logradouro, "Avenida Central")
         self.assertEqual(matriz.municipio, "Goiânia")
         self.assertTrue(matriz.is_active)
+        from apps.vendas.models import FormaPagamento, FormaPagamentoFilial
+
+        self.assertEqual(FormaPagamento.objects.filter(tipo="DINHEIRO").count(), 1)
+        self.assertEqual(
+            set(FormaPagamentoFilial.objects.filter(filial=matriz, ativo=True).values_list(
+                "forma_pagamento__tipo", flat=True,
+            )),
+            {"DINHEIRO"},
+        )
         self.assertTrue(
             LogAuditoria.objects.filter(
                 acao="filial_matriz_criada_automaticamente",

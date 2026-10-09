@@ -47,6 +47,7 @@
 
 <section class="metrics-grid">
   <article class="metric"><span>Entradas PDV</span><strong>R$ {{ total_entradas_pdv|floatformat:2 }}</strong></article>
+  <article class="metric"><span>Recebimentos de pedidos</span><strong>R$ {{ total_recebimentos_pedidos|floatformat:2 }}</strong></article>
   <article class="metric"><span>Recebimentos financeiros</span><strong>R$ {{ total_recebimentos_financeiros|floatformat:2 }}</strong></article>
   <article class="metric"><span>Saídas financeiras</span><strong>R$ {{ total_saidas_financeiras|floatformat:2 }}</strong></article>
   <article class="metric"><span>Saldo operacional</span><strong>R$ {{ saldo_operacional|floatformat:2 }}</strong></article>
@@ -59,6 +60,7 @@
         <tr>
           <th>Data</th>
           <th>Entradas PDV</th>
+          <th>Recebimentos de pedidos</th>
           <th>Recebimentos financeiros</th>
           <th>Saídas financeiras</th>
           <th>Saldo operacional</th>
@@ -69,12 +71,13 @@
           <tr>
             <td>{{ linha.data|date:"d/m/Y" }}</td>
             <td>R$ {{ linha.entradas_pdv|floatformat:2 }}</td>
+            <td>R$ {{ linha.recebimentos_pedidos|floatformat:2 }}</td>
             <td>R$ {{ linha.recebimentos_financeiros|floatformat:2 }}</td>
             <td>R$ {{ linha.saidas_financeiras|floatformat:2 }}</td>
             <td><strong>R$ {{ linha.saldo_operacional|floatformat:2 }}</strong></td>
           </tr>
         {% empty %}
-          <tr><td colspan="5" class="empty">Nenhum movimento no período.</td></tr>
+          <tr><td colspan="6" class="empty">Nenhum movimento no período.</td></tr>
         {% endfor %}
       </tbody>
     </table>

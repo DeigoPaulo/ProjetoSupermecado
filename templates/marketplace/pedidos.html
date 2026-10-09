@@ -28,6 +28,10 @@
     <option value="">Todos os status</option>
     {% for valor, rotulo in status_opcoes %}<option value="{{ valor }}" {% if request.GET.status == valor %}selected{% endif %}>{{ rotulo }}</option>{% endfor %}
   </select>
+  <select name="canal" aria-label="Canal do pedido">
+    <option value="">Todos os canais</option>
+    {% for valor, rotulo in canal_opcoes %}<option value="{{ valor }}" {% if request.GET.canal == valor %}selected{% endif %}>{{ rotulo }}</option>{% endfor %}
+  </select>
   <button type="submit">Filtrar</button>
 </form>
 

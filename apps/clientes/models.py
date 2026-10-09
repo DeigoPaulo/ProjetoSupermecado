@@ -93,4 +93,17 @@ class Cliente(models.Model):
     def __str__(self):
         return self.nome
 
+    @property
+    def endereco_principal(self):
+        if self.logradouro.strip():
+            partes = [", ".join(parte for parte in (self.logradouro.strip(), self.numero.strip()) if parte)]
+            partes.extend(parte.strip() for parte in (self.complemento, self.bairro) if parte.strip())
+            cidade = "/".join(parte.strip() for parte in (self.municipio, self.uf) if parte.strip())
+            if cidade:
+                partes.append(cidade)
+            if self.cep.strip():
+                partes.append(f"CEP {self.cep.strip()}")
+            return " - ".join(partes)
+        return self.endereco.strip()
+
 # Create your models here.

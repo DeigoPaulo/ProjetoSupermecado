@@ -2270,8 +2270,23 @@ class FiscalTests(TestCase):
         raiz = ET.fromstring(documento.xml_conteudo)
         cfops = raiz.findall(f".//{{{NFE_NS}}}det/{{{NFE_NS}}}prod/{{{NFE_NS}}}CFOP")
         eans = raiz.findall(f".//{{{NFE_NS}}}det/{{{NFE_NS}}}prod/{{{NFE_NS}}}cEAN")
+        eans_tributaveis = raiz.findall(f".//{{{NFE_NS}}}det/{{{NFE_NS}}}prod/{{{NFE_NS}}}cEANTrib")
         self.assertEqual([item.text for item in cfops], ["5405", "5102"])
         self.assertEqual([item.text for item in eans], ["SEM GTIN", "7894900705119"])
+        self.assertEqual([item.text for item in eans_tributaveis], ["SEM GTIN", "7894900705119"])
+
+    def test_nfce_sem_ean_preserva_codigo_interno_e_serializa_sem_gtin(self):
+        self.produto.codigo_barras = ""
+        self.produto.codigo_interno = "SEM-EAN-01"
+        self.produto.save(update_fields=["codigo_barras", "codigo_interno"])
+
+        documento = preparar_documento_venda(self.venda, self.user)
+
+        raiz = ET.fromstring(documento.xml_conteudo)
+        produto_xml = raiz.find(f".//{{{NFE_NS}}}det/{{{NFE_NS}}}prod")
+        self.assertEqual(produto_xml.find(f"{{{NFE_NS}}}cProd").text, "SEM-EAN-01")
+        self.assertEqual(produto_xml.find(f"{{{NFE_NS}}}cEAN").text, "SEM GTIN")
+        self.assertEqual(produto_xml.find(f"{{{NFE_NS}}}cEANTrib").text, "SEM GTIN")
 
     def test_nfce_tpag_por_filial_e_troco_usam_valor_informado(self):
         pagamento = self.venda.pagamentos.select_related("forma_pagamento").get()
@@ -2442,6 +2457,26 @@ class FiscalTests(TestCase):
         self.assertContains(response, "Tentativa automática em")
         self.assertContains(response, "1 pendencia")
 
+    def test_tela_fiscal_exibe_pendencia_de_preparacao_e_motivos_atuais(self):
+        self._habilitar_nfce_go_teste()
+        self.natureza.padrao = True
+        self.natureza.save(update_fields=["padrao"])
+        self.configuracao.regime_tributario = ""
+        self.configuracao.save(update_fields=["regime_tributario", "atualizado_em"])
+        self.produto.cst_icms = ""
+        self.produto.aliquota_icms = None
+        self.produto.save(update_fields=["cst_icms", "aliquota_icms"])
+        self.parametrizacao_beneficio.delete()
+
+        response = self.client.get("/fiscal/")
+
+        self.assertContains(response, "NFC-e pendente de preparação")
+        self.assertContains(response, "informe CST ICMS com 2 digitos")
+        self.assertContains(response, "informe a aliquota de ICMS")
+        self.assertContains(response, "defina se há benefício fiscal")
+        self.assertNotContains(response, "Informe o regime tributario da filial.")
+        self.assertFalse(DocumentoFiscal.objects.filter(venda=self.venda).exists())
+
     def test_cancelar_documento_pronto(self):
         documento = preparar_documento_venda(self.venda, self.user)
 
@@ -2534,6 +2569,56 @@ class FiscalTests(TestCase):
 
         self.assertEqual(response.status_code, 302)
         self.assertTrue(DocumentoFiscal.objects.filter(venda=self.venda, status=StatusDocumentoFiscal.PRONTO).exists())
+
+    def test_rota_preparar_venda_recusa_get_sem_consumir_numero(self):
+        serie = SerieFiscal.objects.get(filial=self.filial, ambiente=self.configuracao.ambiente)
+        numero_inicial = serie.proximo_numero
+
+        response = self.client.get(f"/fiscal/vendas/{self.venda.pk}/preparar/")
+
+        self.assertEqual(response.status_code, 405)
+        self.assertFalse(DocumentoFiscal.objects.filter(venda=self.venda).exists())
+        serie.refresh_from_db()
+        self.assertEqual(serie.proximo_numero, numero_inicial)
+
+    def test_rota_preparar_venda_exige_csrf(self):
+        client = Client(enforce_csrf_checks=True, HTTP_HOST="localhost")
+        client.force_login(self.user)
+        url = f"/fiscal/vendas/{self.venda.pk}/preparar/"
+
+        response = client.post(url)
+        self.assertEqual(response.status_code, 403)
+        self.assertFalse(DocumentoFiscal.objects.filter(venda=self.venda).exists())
+
+        self.assertEqual(client.get("/fiscal/").status_code, 200)
+        response = client.post(url, HTTP_X_CSRFTOKEN=client.cookies["csrftoken"].value)
+        self.assertEqual(response.status_code, 302)
+        self.assertEqual(DocumentoFiscal.objects.filter(venda=self.venda).count(), 1)
+
+    def test_rota_preparar_venda_repetida_nao_duplica_documento_ou_numero(self):
+        serie = SerieFiscal.objects.get(filial=self.filial, ambiente=self.configuracao.ambiente)
+        numero_inicial = serie.proximo_numero
+        url = f"/fiscal/vendas/{self.venda.pk}/preparar/"
+
+        self.assertEqual(self.client.post(url).status_code, 302)
+        self.assertEqual(self.client.post(url).status_code, 302)
+
+        documentos = list(DocumentoFiscal.objects.filter(venda=self.venda))
+        self.assertEqual(len(documentos), 1)
+        self.assertEqual(documentos[0].numero, numero_inicial)
+        serie.refresh_from_db()
+        self.assertEqual(serie.proximo_numero, numero_inicial + 1)
+
+    def test_nfce_usa_crt_valido_sem_descricao_contabil(self):
+        self.configuracao.regime_tributario = ""
+        self.configuracao.save(update_fields=["regime_tributario", "atualizado_em"])
+
+        documento = preparar_documento_venda(self.venda, self.user)
+
+        raiz = ET.fromstring(documento.xml_conteudo)
+        self.assertEqual(raiz.find(f".//{{{NFE_NS}}}emit/{{{NFE_NS}}}CRT").text, "3")
+        self.configuracao.refresh_from_db()
+        self.assertEqual(self.configuracao.regime_tributario, "")
 
     @override_settings(FISCAL_AUTO_TRANSMIT_ENABLED=False)
     def test_fila_fiscal_desligada_nao_transmite_documento(self):
@@ -4106,7 +4191,7 @@ class FiscalTests(TestCase):
         response_natureza = self.client.get(f"/fiscal/naturezas/{natureza.pk}/editar/")
 
         self.assertEqual(response_serie.status_code, 200)
-        self.assertContains(response_serie, "Numeracao fiscal")
+        self.assertContains(response_serie, "Numeração fiscal")
         self.assertContains(response_serie, "O número é reservado")
         self.assertEqual(response_natureza.status_code, 200)
         self.assertContains(response_natureza, "Operação fiscal")

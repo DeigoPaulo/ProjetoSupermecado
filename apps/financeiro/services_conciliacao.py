@@ -141,10 +141,15 @@ def _candidatos(item, conta):
         item_extrato__isnull=True,
     )
     referencia = item["referencia_externa"]
+    if not referencia:
+        return candidatos
     por_referencia = candidatos.filter(
         Q(pagamento_venda__nsu=referencia)
         | Q(pagamento_venda__transacao_externa_id=referencia)
         | Q(pagamento_venda__codigo_autorizacao=referencia)
+        | Q(pagamento_pedido__nsu=referencia)
+        | Q(pagamento_pedido__transacao_externa_id=referencia)
+        | Q(pagamento_pedido__codigo_autorizacao=referencia)
     )
     if por_referencia.exists():
         return por_referencia

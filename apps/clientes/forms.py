@@ -26,38 +26,48 @@ class ClienteForm(forms.ModelForm):
     class Meta:
         model = Cliente
         fields = [
-            "empresa", "nome", "cpf_cnpj", "telefone", "email", "endereco",
+            "empresa", "nome", "cpf_cnpj", "telefone", "email",
             "indicador_ie", "inscricao_estadual", "logradouro", "numero",
             "complemento", "bairro", "codigo_municipio_ibge", "municipio", "uf", "cep",
             "is_active",
         ]
         labels = {
             "cpf_cnpj": "CPF/CNPJ",
-            "endereco": "Endereço",
             "is_active": "Ativo",
         }
         widgets = {
             "nome": forms.TextInput(attrs={"class": "no-upper"}),
             "cpf_cnpj": forms.TextInput(attrs={"class": "mask-cpf-cnpj"}),
             "telefone": forms.TextInput(attrs={"class": "mask-phone"}),
-            "endereco": forms.Textarea(attrs={"rows": 3}),
             "cep": forms.TextInput(attrs={"class": "mask-cep"}),
         }
 
-    def __init__(self, *args, user=None, **kwargs):
+    def __init__(self, *args, user=None, empresa_id_contexto=None, **kwargs):
         self.user = user
+        self.empresa_id_contexto = empresa_id_contexto
         super().__init__(*args, **kwargs)
         self.fields["empresa"].queryset = Empresa.objects.filter(is_active=True).order_by("nome_fantasia")
         self.fields["empresa"].required = True
         empresa_id = empresa_id_do_usuario(user) if user else None
-        if empresa_id is not None:
-            self.fields["empresa"].queryset = self.fields["empresa"].queryset.filter(pk=empresa_id)
-            self.fields["empresa"].initial = empresa_id or None
+        empresa_fixa = empresa_id_contexto if empresa_id_contexto is not None else empresa_id
+        if empresa_fixa is not None:
+            self.fields["empresa"].queryset = self.fields["empresa"].queryset.filter(pk=empresa_fixa)
+            self.fields["empresa"].initial = empresa_fixa or None
             self.fields["empresa"].required = False
             self.fields["empresa"].widget = forms.HiddenInput()
 
     def clean_empresa(self):
         empresa = self.cleaned_data.get("empresa")
+        if self.empresa_id_contexto is not None:
+            empresa_usuario = empresa_id_do_usuario(self.user)
+            if empresa_usuario is not None and empresa_usuario != self.empresa_id_contexto:
+                raise ValidationError("Empresa do cliente não corresponde ao usuário autenticado.")
+            if empresa and empresa.pk != self.empresa_id_contexto:
+                raise ValidationError("Empresa do cliente não corresponde ao contexto operacional.")
+            empresa_contexto = Empresa.objects.filter(pk=self.empresa_id_contexto, is_active=True).first()
+            if not empresa_contexto:
+                raise ValidationError("Empresa do contexto operacional não está ativa.")
+            return empresa_contexto
         if not self.user or self.user.is_superuser:
             return empresa
         empresa_id = empresa_id_do_usuario(self.user)

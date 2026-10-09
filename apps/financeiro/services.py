@@ -54,7 +54,7 @@ def _publicar_lancamento_sincronizacao(lancamento):
     )
 
 
-def registrar_lancamento(*, conta, tipo, descricao, valor, data, usuario, origem, conta_financeira=None, centro_custo=None, conta_contabil=None, transferencia=None, estorno_de=None, pagamento_venda=None, sangria=None, suprimento=None):
+def registrar_lancamento(*, conta, tipo, descricao, valor, data, usuario, origem, conta_financeira=None, centro_custo=None, conta_contabil=None, transferencia=None, estorno_de=None, pagamento_venda=None, pagamento_pedido=None, sangria=None, suprimento=None):
     validar_competencia_aberta(
         filial=conta.filial,
         data_operacao=data,
@@ -77,6 +77,7 @@ def registrar_lancamento(*, conta, tipo, descricao, valor, data, usuario, origem
         transferencia=transferencia,
         estorno_de=estorno_de,
         pagamento_venda=pagamento_venda,
+        pagamento_pedido=pagamento_pedido,
         sangria=sangria,
         suprimento=suprimento,
         usuario=usuario,
@@ -186,6 +187,7 @@ def estornar_lancamento(*, lancamento, usuario, motivo, data=None, ip=None):
         transferencia=lancamento.transferencia,
         estorno_de=lancamento,
         pagamento_venda=lancamento.pagamento_venda,
+        pagamento_pedido=lancamento.pagamento_pedido,
         sangria=lancamento.sangria,
         suprimento=lancamento.suprimento,
     )

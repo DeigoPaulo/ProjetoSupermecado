@@ -3,6 +3,7 @@ from decimal import Decimal, ROUND_HALF_UP
 
 from django.core.exceptions import ValidationError
 from django.db import transaction
+from django.db.models import Q
 from django.utils import timezone
 
 from apps.auditoria.models import LogAuditoria
@@ -79,7 +80,64 @@ def gerar_recebivel_pagamento(pagamento):
     return recebivel, True
 
 
+@transaction.atomic
+def registrar_reflexo_pagamento_pedido(pagamento, *, acerto=False):
+    from apps.marketplace.models import OrigemRecebimentoPedido, StatusAcertoEntrega
+    from apps.vendas.services import _conta_movimento_para_pagamento
+    from .models import LancamentoFinanceiro, TipoLancamentoFinanceiro
+    from .services import registrar_lancamento
+
+    if pagamento.status != StatusPagamento.CONFIRMADO:
+        return
+    tipo = (pagamento.forma_pagamento.tipo or "").upper()
+    dinheiro_entrega = (
+        pagamento.origem_recebimento == OrigemRecebimentoPedido.ENTREGA and tipo == "DINHEIRO"
+    )
+    if dinheiro_entrega and (
+        not acerto or pagamento.status_acerto != StatusAcertoEntrega.ACERTADO
+    ):
+        return
+    if not dinheiro_entrega and acerto:
+        return
+    if tipo in TIPOS_ELETRONICOS:
+        regra = RegraLiquidacaoEletronica.objects.filter(
+            filial=pagamento.pedido.filial, forma_pagamento=pagamento.forma_pagamento, ativa=True
+        ).first()
+        if regra and not RecebivelEletronico.objects.filter(pagamento_pedido=pagamento).exists():
+            bruto = _moeda(pagamento.valor)
+            taxa = _moeda(bruto * regra.taxa_percentual / Decimal("100") + regra.taxa_fixa)
+            if taxa < bruto:
+                data_recebimento = timezone.localtime(pagamento.recebido_em).date()
+                RecebivelEletronico.objects.create(
+                    pagamento_pedido=pagamento, regra=regra, data_venda=data_recebimento,
+                    data_prevista=data_recebimento + timedelta(days=regra.prazo_dias),
+                    valor_bruto=bruto, taxa_prevista=taxa, valor_liquido_previsto=bruto - taxa,
+                    observacao="Recebível do pedido de entrega.",
+                )
+    if LancamentoFinanceiro.objects.filter(pagamento_pedido=pagamento).exists():
+        return
+    conta = _conta_movimento_para_pagamento(pagamento.pedido.filial, pagamento.forma_pagamento)
+    if not conta:
+        raise ValidationError("A forma de pagamento não possui conta de movimento configurada.")
+    data = (
+        timezone.localtime(pagamento.acertado_em).date()
+        if acerto else timezone.localtime(pagamento.recebido_em).date()
+    )
+    registrar_lancamento(
+        conta=conta, tipo=TipoLancamentoFinanceiro.ENTRADA,
+        descricao=(
+            f"Acerto de entrega #{pagamento.pedido_id}"
+            if acerto else f"Recebimento pedido #{pagamento.pedido_id} - {pagamento.forma_pagamento.nome}"
+        ),
+        valor=pagamento.valor, data=data,
+        usuario=pagamento.usuario_acerto if acerto else pagamento.usuario_recebimento,
+        origem="ACERTO_ENTREGA" if acerto else "PAGAMENTO_PEDIDO",
+        pagamento_pedido=pagamento,
+    )
+
+
 def sincronizar_recebiveis(*, filiais):
+    from apps.marketplace.models import PagamentoPedido
     pagamentos = (
         PagamentoVenda.objects.filter(
             venda__filial__in=filiais,
@@ -98,10 +156,22 @@ def sincronizar_recebiveis(*, filiais):
             criados += 1
         elif recebivel is None:
             sem_regra += 1
+    pagamentos_pedido = PagamentoPedido.objects.filter(
+        pedido__filial__in=filiais,
+        status=StatusPagamento.CONFIRMADO,
+        forma_pagamento__tipo__in=TIPOS_ELETRONICOS,
+        recebivel_eletronico__isnull=True,
+    ).select_related("pedido__filial", "forma_pagamento")
+    for pagamento in pagamentos_pedido.iterator():
+        registrar_reflexo_pagamento_pedido(pagamento)
+        if RecebivelEletronico.objects.filter(pagamento_pedido=pagamento).exists():
+            criados += 1
+        else:
+            sem_regra += 1
     return {"criados": criados, "sem_regra": sem_regra}
 
 def _referencias_pagamento(recebivel):
-    pagamento = recebivel.pagamento
+    pagamento = recebivel.pagamento or recebivel.pagamento_pedido
     return {
         str(valor).strip()
         for valor in (
@@ -117,11 +187,14 @@ def candidatos_recebivel_item(item, *, somente_referencia=False):
     """Retorna candidatos conservadores dentro da filial e conta do extrato."""
     queryset = (
         RecebivelEletronico.objects.select_related(
-            "pagamento__venda__filial", "pagamento__forma_pagamento", "regra"
+            "pagamento__venda__filial", "pagamento__forma_pagamento",
+            "pagamento_pedido__pedido__filial", "pagamento_pedido__forma_pagamento", "regra"
         )
         .filter(
-            pagamento__venda__filial=item.conta.filial,
-            pagamento__lancamentos_financeiros__conta=item.conta,
+            Q(pagamento__venda__filial=item.conta.filial,
+              pagamento__lancamentos_financeiros__conta=item.conta)
+            | Q(pagamento_pedido__pedido__filial=item.conta.filial,
+                pagamento_pedido__lancamentos_financeiros__conta=item.conta),
         )
         .distinct()
     )
@@ -164,14 +237,19 @@ def conciliar_recebivel_com_item(
     item = ItemExtratoFinanceiro.objects.select_for_update().select_related("conta").get(pk=item.pk)
     recebivel = (
         RecebivelEletronico.objects.select_for_update()
-        .select_related("pagamento__venda__filial", "pagamento__forma_pagamento")
+        .select_related(
+            "pagamento__venda__filial", "pagamento__forma_pagamento",
+            "pagamento_pedido__pedido__filial", "pagamento_pedido__forma_pagamento"
+        )
         .get(pk=recebivel.pk)
     )
     if item.status == StatusItemExtratoFinanceiro.CONCILIADO or item.lancamento_id:
         raise ValidationError("Este item do extrato já foi conciliado.")
-    if recebivel.pagamento.venda.filial_id != item.conta.filial_id:
+    pagamento = recebivel.pagamento or recebivel.pagamento_pedido
+    filial_id = pagamento.venda.filial_id if recebivel.pagamento_id else pagamento.pedido.filial_id
+    if filial_id != item.conta.filial_id:
         raise ValidationError("O recebível e o extrato pertencem a filiais diferentes.")
-    if not recebivel.pagamento.lancamentos_financeiros.filter(conta=item.conta).exists():
+    if not pagamento.lancamentos_financeiros.filter(conta=item.conta).exists():
         raise ValidationError("O recebível não pertence à conta de movimento deste extrato.")
 
     valor_ja_alocado = _moeda(item.valor_alocado_recebiveis)

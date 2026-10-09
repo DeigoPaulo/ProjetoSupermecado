@@ -260,6 +260,9 @@ class ProdutoGaleriaMixin:
         return ProdutoFornecedor.objects.filter(fornecedor__in=fornecedores).select_related("fornecedor")
 
     def form_valid(self, form):
+        if self.object is None and not form.cleaned_data["codigo_barras"] and self.request.POST.get("confirmar_sem_ean") != "1":
+            form.add_error(None, "Confirme o cadastro sem EAN/GTIN antes de salvar.")
+            return self.form_invalid(form)
         context = self.get_context_data(form=form)
         galeria_formset = context["galeria_formset"]
         codigos_formset = context["codigos_formset"]
