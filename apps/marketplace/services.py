@@ -168,6 +168,9 @@ def alterar_status_pedido(*, pedido, destino, usuario, ip=None):
     }
     if destino not in permitidos.get(pedido.status, set()):
         raise ValidationError("Mudança de status não permitida para este pedido.")
+    if (pedido.tipo_entrega == TipoEntrega.ENTREGA and pedido.status == StatusPedido.PRONTO
+            and destino == StatusPedido.CONCLUIDO):
+        raise ValidationError("Pedidos de entrega precisam ser despachados antes da conclusão.")
     if destino == StatusPedido.PRONTO and pedido.itens.exclude(quantidade_separada=models.F("quantidade")).exists():
         raise ValidationError("Conclua a separação de todos os itens antes de marcar o pedido como pronto.")
     if destino == StatusPedido.CONCLUIDO and pedido.status_pagamento != StatusPagamentoPedido.PAGO:
@@ -179,7 +182,10 @@ def alterar_status_pedido(*, pedido, destino, usuario, ip=None):
             raise ValidationError("Pagamento posterior ainda não possui configuração fiscal homologada. Não é possível liberar a entrega.")
         if situacao_fiscal_saida(pedido, bloquear=True) != "AUTORIZADA":
             raise ValidationError("Não é possível liberar a entrega. A NF-e ainda não foi autorizada.")
-    if destino == StatusPedido.SAIU_ENTREGA or (destino == StatusPedido.CONCLUIDO and pedido.estoque_reservado):
+    if destino == StatusPedido.SAIU_ENTREGA or (
+        destino == StatusPedido.CONCLUIDO and pedido.tipo_entrega == TipoEntrega.RETIRADA
+        and pedido.estoque_reservado
+    ):
         for item in pedido.itens.select_related("produto"):
             movimentar_estoque(produto=item.produto, filial=pedido.filial, tipo=TipoMovimentacaoEstoque.LIBERACAO_RESERVA, quantidade=item.quantidade, usuario=usuario, motivo=f"Baixa do pedido online {pedido.pk}", referencia=f"pedido_online:{pedido.pk}")
             movimentar_estoque(produto=item.produto, filial=pedido.filial, tipo=TipoMovimentacaoEstoque.SAIDA, quantidade=item.quantidade, usuario=usuario, motivo=f"Saida do pedido online {pedido.pk}", referencia=f"pedido_online:{pedido.pk}", custo_unitario=item.custo_unitario_no_momento)

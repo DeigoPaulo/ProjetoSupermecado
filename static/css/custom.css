@@ -2468,6 +2468,7 @@ dialog[data-no-ean-dialog] .form-actions {
 }
 
 .pdv-checkout-header h2 { margin: 0; font-size: 21px; line-height: 1.2; }
+.pdv-checkout-header #pdv-checkout-context { margin-left: auto; margin-right: 14px; color: #536783; font-size: 13px; font-weight: 700; }
 .pdv-checkout-close { width: 38px; height: 38px; border: 0; background: #eef3fa; color: #18355f; border-radius: 6px; cursor: pointer; }
 .pdv-checkout-body { padding: 24px; }
 .pdv-checkout-body section { text-align: center; }
@@ -2484,6 +2485,10 @@ dialog[data-no-ean-dialog] .form-actions {
 .pdv-checkout-summary span { color: #536783; font-size: 13px; font-weight: 700; text-transform: uppercase; }
 .pdv-checkout-summary strong { font-size: 20px; font-variant-numeric: tabular-nums; }
 .pdv-checkout-summary .pdv-checkout-due strong { color: #0756d9; }
+#pdv-checkout-installments, #pdv-checkout-review { display: grid; gap: 6px; margin-top: 14px; text-align: left; font-size: 15px; }
+#pdv-checkout-installments[hidden] { display: none; }
+#pdv-checkout-installments div, #pdv-checkout-review div { padding: 7px 10px; border-bottom: 1px solid #dce5f2; }
+#pdv-checkout-review strong { text-align: right; }
 .pdv-checkout-choices { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
 .pdv-checkout-choices-three { grid-template-columns: repeat(3, minmax(0, 1fr)); }
 .pdv-checkout-document-actions { display: flex; flex-wrap: wrap; }

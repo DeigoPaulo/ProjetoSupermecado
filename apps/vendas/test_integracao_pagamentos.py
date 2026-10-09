@@ -409,7 +409,10 @@ class ConfirmacaoConcorrenciaTests(TransactionTestCase):
         confirmacao = confirmar_parcela_teste(
             caixa=self.caixa, forma_pagamento=self.pix, valor=Decimal("25"),
         )
-        list(formas_pagamento_disponiveis(self.filial))
+        formas_pagamento_disponiveis(self.filial)
+        FormaPagamentoFilial.objects.filter(
+            filial=self.filial, forma_pagamento=self.pix,
+        ).update(ativo=True)
         barreira = Barrier(2)
 
         def vender():

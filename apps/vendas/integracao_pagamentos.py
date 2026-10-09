@@ -110,8 +110,16 @@ def validar_origem_integracao_fiscal(pagamento):
     if not pagamento.confirmacao_integracao_id:
         raise ValidationError("Pagamento integrado exige confirmação confiável no servidor.")
     confirmacao = pagamento.confirmacao_integracao
+    from apps.marketplace.models import PagamentoPedido
+
+    caixa_id = (
+        pagamento.caixa_recebimento_id
+        if isinstance(pagamento, PagamentoPedido)
+        else pagamento.venda.caixa_id
+    )
     if (
-        confirmacao.caixa_id != pagamento.venda.caixa_id
+        not caixa_id
+        or confirmacao.caixa_id != caixa_id
         or confirmacao.forma_pagamento_id != pagamento.forma_pagamento_id
         or confirmacao.tipo_forma != pagamento.forma_pagamento.tipo
         or confirmacao.valor != pagamento.valor

@@ -10,7 +10,7 @@ from apps.accounts.models import PerfilUsuario, TipoPerfil
 from apps.auditoria.models import LogAuditoria
 from apps.clientes.models import Cliente
 from apps.empresas.models import Empresa, Filial
-from apps.estoque.models import Estoque, TipoMovimentacaoEstoque, movimentar_estoque
+from apps.estoque.models import Estoque, MovimentacaoEstoque, TipoMovimentacaoEstoque, movimentar_estoque
 from apps.fiscal.models import AmbienteFiscal, ConfiguracaoFiscal, DocumentoFiscal, NaturezaOperacao, ParametrizacaoBeneficioFiscalProduto, ProvedorEmissaoFiscal, SerieFiscal, SituacaoBeneficioFiscalICMS, StatusDocumentoFiscal, TipoDocumentoFiscal
 from apps.fiscal.services import ativar_contingencia_svc, indicador_presenca_pedido, preparar_documento_pedido_online, transmitir_documento_sefaz
 from apps.fiscal.test_support_identidades_fiscais import obter_identidade_fiscal_teste
@@ -137,6 +137,8 @@ class FluxoPedidoOnlineTests(TestCase):
         self.assertTrue(LogAuditoria.objects.filter(modulo="marketplace", acao="CANCELAMENTO_PEDIDO").exists())
 
     def test_conclusao_consume_estoque_reservado(self):
+        self.pedido.tipo_entrega = TipoEntrega.RETIRADA
+        self.pedido.save(update_fields=["tipo_entrega"])
         reservar_pedido(pedido=self.pedido, usuario=self.usuario)
         self.pedido.itens.update(quantidade_separada=Decimal("2"))
         alterar_status_pedido(pedido=self.pedido, destino=StatusPedido.PRONTO, usuario=self.usuario)
@@ -147,6 +149,41 @@ class FluxoPedidoOnlineTests(TestCase):
         self.assertEqual(self.estoque.quantidade_atual, Decimal("8"))
         self.assertEqual(self.estoque.quantidade_reservada, Decimal("0"))
         self.assertEqual(self.pedido.status, StatusPedido.CONCLUIDO)
+        self.assertEqual(MovimentacaoEstoque.objects.filter(
+            referencia=f"pedido_online:{self.pedido.pk}", tipo=TipoMovimentacaoEstoque.SAIDA,
+        ).count(), 1)
+
+    def test_entrega_pronta_nao_conclui_direto_nem_move_estoque(self):
+        self._pronto_para_saida_teste()
+        registrar_pagamento(pedido=self.pedido, forma_pagamento=FormaPagamentoPedido.PIX, valor_pago=Decimal("30"), usuario=self.usuario)
+        with self.assertRaisesMessage(ValidationError, "precisam ser despachados"):
+            alterar_status_pedido(pedido=self.pedido, destino=StatusPedido.CONCLUIDO, usuario=self.usuario)
+        self.pedido.refresh_from_db()
+        self.estoque.refresh_from_db()
+        self.assertEqual(self.pedido.status, StatusPedido.PRONTO)
+        self.assertEqual(self.estoque.quantidade_atual, Decimal("10"))
+        self.assertEqual(self.estoque.quantidade_reservada, Decimal("2"))
+        self.assertFalse(MovimentacaoEstoque.objects.filter(
+            referencia=f"pedido_online:{self.pedido.pk}", tipo=TipoMovimentacaoEstoque.SAIDA,
+        ).exists())
+
+    def test_post_nao_contorna_despacho_da_entrega(self):
+        self._pronto_para_saida_teste()
+        registrar_pagamento(pedido=self.pedido, forma_pagamento=FormaPagamentoPedido.PIX, valor_pago=Decimal("30"), usuario=self.usuario)
+        self.client.force_login(self.usuario)
+        from django.urls import reverse
+        resposta = self.client.post(reverse("marketplace:acao", args=[self.pedido.pk]), {
+            "acao": "avancar", "destino": StatusPedido.CONCLUIDO,
+        })
+        self.assertEqual(resposta.status_code, 302)
+        self.pedido.refresh_from_db()
+        self.estoque.refresh_from_db()
+        self.assertEqual(self.pedido.status, StatusPedido.PRONTO)
+        self.assertEqual(self.estoque.quantidade_atual, Decimal("10"))
+        self.assertEqual(self.estoque.quantidade_reservada, Decimal("2"))
+        self.assertFalse(MovimentacaoEstoque.objects.filter(
+            referencia=f"pedido_online:{self.pedido.pk}", tipo=TipoMovimentacaoEstoque.SAIDA,
+        ).exists())
 
     def test_saida_entrega_converte_reserva_sem_dupla_baixa_na_conclusao(self):
         self._pronto_para_saida_teste()
@@ -165,6 +202,9 @@ class FluxoPedidoOnlineTests(TestCase):
         alterar_status_pedido(pedido=self.pedido, destino=StatusPedido.CONCLUIDO, usuario=self.usuario)
         self.estoque.refresh_from_db()
         self.assertEqual(self.estoque.quantidade_atual, Decimal("8"))
+        self.assertEqual(MovimentacaoEstoque.objects.filter(
+            referencia=f"pedido_online:{self.pedido.pk}", tipo=TipoMovimentacaoEstoque.SAIDA,
+        ).count(), 1)
 
     def test_portao_fiscal_bloqueia_ausente_preparado_rejeitado_e_sem_protocolo(self):
         self._pronto_para_saida_teste()
@@ -820,9 +860,6 @@ class FluxoPedidoOnlineTests(TestCase):
             destinatario_uf=self.pedido.destinatario_uf,
             destinatario_cep=self.pedido.destinatario_cep,
             telefone=self.pedido.telefone,
-            status_pagamento=StatusPagamentoPedido.PAGO,
-            forma_pagamento=FormaPagamentoPedido.GATEWAY,
-            valor_pago=self.pedido.valor_pago,
             subtotal=self.pedido.subtotal,
             total=self.pedido.total,
         )
@@ -830,6 +867,21 @@ class FluxoPedidoOnlineTests(TestCase):
             pedido=pedido_pdv, produto=self.produto, quantidade=Decimal("2"),
             preco_unitario=Decimal("15"),
         )
+        from apps.marketplace.models import OrigemRecebimentoPedido, PagamentoPedido
+        from apps.pdv.models import Caixa
+        from apps.vendas.models import FormaPagamento, FormaPagamentoFilial
+
+        dinheiro = FormaPagamento.objects.create(nome="Dinheiro pedido", tipo="DINHEIRO")
+        FormaPagamentoFilial.objects.create(filial=self.filial, forma_pagamento=dinheiro)
+        caixa = Caixa.objects.create(filial=self.filial, usuario_abertura=self.usuario)
+        PagamentoPedido.objects.create(
+            pedido=pedido_pdv, forma_pagamento=dinheiro, valor=pedido_pdv.total,
+            valor_informado=pedido_pdv.total, origem_recebimento=OrigemRecebimentoPedido.CAIXA_PDV,
+            caixa_recebimento=caixa, usuario_recebimento=self.usuario,
+        )
+        pedido_pdv.status_pagamento = StatusPagamentoPedido.PAGO
+        pedido_pdv.valor_pago = pedido_pdv.total
+        pedido_pdv.save(update_fields=["status_pagamento", "valor_pago"])
         documento_pdv = preparar_documento_pedido_online(pedido_pdv, self.usuario)
         self.assertIn("<indPres>1</indPres>", documento_pdv.xml_conteudo)
         self.assertEqual(pedido_pdv.tipo_entrega, self.pedido.tipo_entrega)

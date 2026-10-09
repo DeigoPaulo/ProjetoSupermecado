@@ -241,14 +241,14 @@ def _codigo_pagamento(tipo):
     return "99"
 
 
-def _configuracoes_fiscais_pagamento(venda, pagamentos):
+def _configuracoes_fiscais_pagamento(origem, pagamentos):
     from apps.vendas.models import FormaPagamentoFilial
 
     forma_ids = {pagamento.forma_pagamento_id for pagamento in pagamentos}
     return {
         configuracao.forma_pagamento_id: configuracao
         for configuracao in FormaPagamentoFilial.objects.filter(
-            filial=venda.filial, forma_pagamento_id__in=forma_ids
+            filial=origem.filial, forma_pagamento_id__in=forma_ids
         )
     }
 
@@ -282,6 +282,20 @@ PAGAMENTOS_COM_BANDEIRA = {"03", "04", "10", "11"}
 
 def validar_vinculos_pagamentos_xml(documento, inf_nfe):
     """Revalida XML já preparado, antes de qualquer envio por Focus/SEFAZ."""
+    if (
+        documento.tipo_documento == TipoDocumentoFiscal.NFE
+        and isinstance(documento, DocumentoFiscal)
+        and documento.pedido_online_id
+    ):
+        pedido = documento.pedido_online
+        pagamentos = _pagamentos_fiscais_pedido(pedido)
+        if pagamentos is not None:
+            esperado = ET.Element(f"{{{NFE_NS}}}pag")
+            _adicionar_pagamentos_pedido_xml(esperado, pedido, pagamentos)
+            atual = inf_nfe.find(f"{{{NFE_NS}}}pag")
+            if atual is None or ET.tostring(atual) != ET.tostring(esperado):
+                raise ValidationError("Parcelas do XML divergem dos pagamentos confirmados no servidor.")
+        return
     if documento.tipo_documento != TipoDocumentoFiscal.NFCE or not documento.venda_id:
         return
     parcelas_xml = inf_nfe.findall(f"{{{NFE_NS}}}pag/{{{NFE_NS}}}detPag")
@@ -323,7 +337,8 @@ def validar_vinculos_pagamentos_xml(documento, inf_nfe):
 
 
 def _adicionar_integracao_pagamento_nfce(
-    det_pag, pagamento, codigo_pagamento, *, uf_emitente
+    det_pag, pagamento, codigo_pagamento, *, uf_emitente,
+    ocultar_autorizacao_manual=False,
 ):
     from apps.vendas.integracao_pagamentos import validar_origem_integracao_fiscal
 
@@ -341,6 +356,8 @@ def _adicionar_integracao_pagamento_nfce(
         raise ValidationError(f"CNPJ do pagamento eletrônico inválido: {exc}") from exc
     bandeira = str(pagamento.bandeira_cartao or "").strip()
     autorizacao = str(pagamento.codigo_autorizacao or "").strip()
+    if ocultar_autorizacao_manual and not pagamento.confirmacao_integracao_id:
+        autorizacao = ""
     terminal = str(pagamento.identificador_terminal_pagamento or "").strip()
     possui_dados = any(
         (
@@ -414,6 +431,72 @@ def _adicionar_integracao_pagamento_nfce(
         _texto(card, "CNPJReceb", cnpj_beneficiario)
     if terminal:
         _texto(card, "idTermPag", terminal)
+
+
+def _pagamentos_fiscais_pedido(pedido):
+    from apps.marketplace.models import CanalPedido, StatusPagamentoPedido
+    from apps.vendas.models import FormaPagamentoFilial
+    from apps.vendas.services import FORMAS_ELETRONICAS
+
+    pagamentos = list(pedido.pagamentos.select_related(
+        "forma_pagamento", "confirmacao_integracao", "caixa_recebimento",
+    ).order_by("recebido_em", "pk"))
+    if not pagamentos and pedido.canal != CanalPedido.PDV:
+        return None  # Contrato legado dos canais externos, sem parcelas estruturadas.
+    if pedido.status_pagamento != StatusPagamentoPedido.PAGO:
+        raise ValidationError("Pagamento posterior ainda não possui configuração fiscal homologada.")
+    confirmados = [p for p in pagamentos if p.status == StatusPagamento.CONFIRMADO]
+    if not confirmados:
+        raise ValidationError("Pedido PDV pago exige ao menos uma parcela confirmada.")
+    total_aplicado = sum((p.valor for p in confirmados), Decimal("0.00"))
+    if total_aplicado.quantize(Decimal("0.01")) != pedido.total.quantize(Decimal("0.01")):
+        raise ValidationError("Parcelas confirmadas divergem do total do pedido.")
+    for pagamento in confirmados:
+        if pagamento.pedido_id != pedido.pk:
+            raise ValidationError("Parcela pertence a outro pedido.")
+        if not pagamento.forma_pagamento.ativo or not FormaPagamentoFilial.objects.filter(
+            filial=pedido.filial, forma_pagamento=pagamento.forma_pagamento, ativo=True,
+        ).exists():
+            raise ValidationError("Forma de pagamento indisponível para a filial do pedido.")
+        if pagamento.caixa_recebimento_id and pagamento.caixa_recebimento.filial_id != pedido.filial_id:
+            raise ValidationError("Caixa da parcela pertence a outra filial.")
+        tipo = (pagamento.forma_pagamento.tipo or "").upper()
+        if tipo not in FORMAS_ELETRONICAS | {"DINHEIRO"}:
+            raise ValidationError("Forma de pagamento não suportada para pedido na entrega.")
+        if pagamento.valor_informado > pagamento.valor and not pagamento.forma_pagamento.permite_troco:
+            raise ValidationError("Esta forma de pagamento não permite troco.")
+        if tipo in FORMAS_ELETRONICAS:
+            if not all((pagamento.transacao_externa_id, pagamento.nsu, pagamento.codigo_autorizacao)):
+                raise ValidationError("Pagamento eletrônico exige transação, NSU e autorização.")
+            if pagamento.tipo_integracao == "1" and not pagamento.confirmacao_integracao_id:
+                raise ValidationError("Pagamento integrado exige confirmação confiável no servidor.")
+        elif pagamento.confirmacao_integracao_id or pagamento.tipo_integracao:
+            raise ValidationError("Dados de integração em forma de pagamento incompatível.")
+    return confirmados
+
+
+def _adicionar_pagamentos_pedido_xml(pag, pedido, pagamentos):
+    configuracoes = _configuracoes_fiscais_pagamento(pedido, pagamentos)
+    total_fiscal = Decimal("0.00")
+    for pagamento in pagamentos:
+        det_pag = ET.SubElement(pag, f"{{{NFE_NS}}}detPag")
+        _texto(det_pag, "indPag", "0")
+        codigo, descricao = _pagamento_fiscal_efetivo(pagamento, configuracoes)
+        _texto(det_pag, "tPag", codigo)
+        if descricao:
+            _texto(det_pag, "xPag", descricao)
+        valor = _valor_fiscal_pagamento(pagamento)
+        total_fiscal += valor
+        _texto(det_pag, "vPag", _valor(valor))
+        _adicionar_integracao_pagamento_nfce(
+            det_pag, pagamento, codigo, uf_emitente=pedido.filial.uf,
+            ocultar_autorizacao_manual=True,
+        )
+    troco = total_fiscal - pedido.total
+    if troco < 0:
+        raise ValidationError("Pagamentos fiscais não cobrem o total do pedido.")
+    if troco:
+        _texto(pag, "vTroco", _valor(troco))
 
 
 def _crt_configuracao(configuracao):
@@ -1575,10 +1658,14 @@ def gerar_xml_nfe_pedido_online(documento):
     transp = ET.SubElement(inf_nfe, f"{{{NFE_NS}}}transp")
     _texto(transp, "modFrete", "9")
     pag = ET.SubElement(inf_nfe, f"{{{NFE_NS}}}pag")
-    det_pag = ET.SubElement(pag, f"{{{NFE_NS}}}detPag")
-    _texto(det_pag, "indPag", "0")
-    _texto(det_pag, "tPag", _codigo_pagamento(pedido.forma_pagamento))
-    _texto(det_pag, "vPag", _valor(pedido.valor_pago or pedido.total))
+    pagamentos = _pagamentos_fiscais_pedido(pedido)
+    if pagamentos is None:
+        det_pag = ET.SubElement(pag, f"{{{NFE_NS}}}detPag")
+        _texto(det_pag, "indPag", "0")
+        _texto(det_pag, "tPag", _codigo_pagamento(pedido.forma_pagamento))
+        _texto(det_pag, "vPag", _valor(pedido.valor_pago or pedido.total))
+    else:
+        _adicionar_pagamentos_pedido_xml(pag, pedido, pagamentos)
     inf_adic = ET.SubElement(inf_nfe, f"{{{NFE_NS}}}infAdic")
     complemento = f"Pedido online {pedido.pk}. {pedido.endereco_entrega}".strip()
     _texto(inf_adic, "infCpl", complemento[:500] or "XML local de NF-e para pedido online.")
@@ -1868,6 +1955,7 @@ def preparar_documento_pedido_online(pedido, usuario, natureza_operacao=None, ip
         .select_related("filial__empresa")
         .get(pk=pedido.pk)
     )
+    _pagamentos_fiscais_pedido(pedido)
     documento_existente = pedido.documentos_fiscais.exclude(status=StatusDocumentoFiscal.CANCELADO).first()
     if documento_existente:
         raise ValidationError(f"O pedido online {pedido.id} ja possui documento fiscal em andamento.")

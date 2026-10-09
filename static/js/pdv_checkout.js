@@ -7,7 +7,7 @@
   var template = document.getElementById("pdv-payment-row-template");
   if (!shell || !form || !rows || !template) return;
 
-  var states = ["CPF_ESCOLHA", "DOCUMENTO_CAPTURA", "FORMA_PAGAMENTO", "CAIXA_FECHADO", "FORMAS_INDISPONIVEIS", "DINHEIRO", "ELETRONICO_INDISPONIVEL", "OUTROS", "CREDIARIO", "OUTRO_VALOR", "PROCESSANDO", "CONCLUIDO"];
+  var states = ["CPF_ESCOLHA", "DOCUMENTO_CAPTURA", "FORMA_PAGAMENTO", "RESUMO", "CAIXA_FECHADO", "FORMAS_INDISPONIVEIS", "DINHEIRO", "ELETRONICO_INDISPONIVEL", "OUTROS", "CREDIARIO", "OUTRO_VALOR", "PROCESSANDO", "CONCLUIDO"];
   var state = "CPF_ESCOLHA";
   var documentType = "NAO";
   var previousFocus = null;
@@ -17,6 +17,7 @@
   var currentMethod = null;
   var totalCents = 0;
   var payments = [];
+  var paymentContext = { type: "VENDA_PDV" };
   var methods = Array.prototype.map.call(rows.querySelector("select[name='pagamento_forma']").options, function (option) {
     return { id: option.value, type: (option.dataset.paymentType || "").toUpperCase(), name: option.textContent.trim() };
   }).filter(function (method) { return method.id; });
@@ -86,6 +87,27 @@
     summary.hidden = ["CPF_ESCOLHA", "DOCUMENTO_CAPTURA", "CAIXA_FECHADO", "FORMAS_INDISPONIVEIS", "CONCLUIDO"].indexOf(state) !== -1;
     document.getElementById("pdv-checkout-method-title").textContent = payments.length
       ? "Como deseja pagar o restante?" : "Como deseja pagar?";
+    var installments = document.getElementById("pdv-checkout-installments");
+    installments.replaceChildren();
+    payments.forEach(function (payment, index) {
+      var line = document.createElement("div");
+      line.textContent = (index + 1) + ". " + payment.method.name + " — " + money(payment.cents);
+      installments.appendChild(line);
+    });
+    installments.hidden = !payments.length || state !== "FORMA_PAGAMENTO";
+    document.getElementById("pdv-checkout-remove-payment").hidden = !payments.length || state !== "FORMA_PAGAMENTO";
+    var review = document.getElementById("pdv-checkout-review");
+    review.replaceChildren();
+    payments.forEach(function (payment) {
+      var line = document.createElement("div");
+      line.textContent = payment.method.name + " — " + money(payment.cents);
+      review.appendChild(line);
+    });
+    if (payments.length && paidCents() > totalCents) {
+      var change = document.createElement("strong");
+      change.textContent = "Troco " + money(paidCents() - totalCents);
+      review.appendChild(change);
+    }
   }
 
   function transition(next) {
@@ -95,7 +117,12 @@
     choiceBurst = 0;
     state = next;
     shell.querySelector(".pdv-checkout-close").hidden = next === "PROCESSANDO" || next === "CONCLUIDO";
-    document.getElementById("pdv-checkout-title").textContent = next === "CONCLUIDO" ? "Caixa livre" : "Finalizar venda";
+    var delivery = paymentContext.type === "PEDIDO_ENTREGA";
+    document.getElementById("pdv-checkout-title").textContent = delivery ? "Pagamento da entrega" : (next === "CONCLUIDO" ? "Caixa livre" : "Finalizar venda");
+    document.getElementById("pdv-checkout-context").hidden = !delivery;
+    document.getElementById("pdv-checkout-processing-title").textContent = delivery ? "Criando pedido e confirmando pagamento..." : "Finalizando venda...";
+    document.getElementById("pdv-checkout-processing-note").textContent = delivery ? "Aguarde a confirmação. Não crie outro pedido." : "Aguarde a confirmação. Não inicie outra venda.";
+    document.getElementById("pdv-checkout-completed-title").textContent = delivery ? "Pagamento do pedido confirmado" : "Venda concluída";
     shell.querySelectorAll("[data-checkout-panel]").forEach(function (panel) {
       panel.hidden = panel.dataset.checkoutPanel !== next;
     });
@@ -105,6 +132,7 @@
       CPF_ESCOLHA: "[data-checkout-document='NAO']",
       DOCUMENTO_CAPTURA: "#pdv-checkout-document-input",
       FORMA_PAGAMENTO: "#pdv-checkout-methods button",
+      RESUMO: "#pdv-checkout-submit",
       CAIXA_FECHADO: "#pdv-checkout-closed-no",
       FORMAS_INDISPONIVEIS: "#pdv-checkout-no-methods-close",
       DINHEIRO: "#pdv-checkout-cash",
@@ -241,6 +269,7 @@
       makeMethodButton({ id: configured ? configured.id : "", type: display.type, name: display.name }, main);
     });
     methods.filter(function (method) {
+      if (paymentContext.type === "PEDIDO_ENTREGA" && electronic.indexOf(method.type) === -1 && method.type !== "DINHEIRO") return false;
       return ["DINHEIRO", "DEBITO", "CREDITO", "PIX"].indexOf(method.type) === -1;
     }).forEach(function (method) { makeMethodButton(method, other); });
     if (other.children.length) {
@@ -260,6 +289,7 @@
       cashInput.value = "";
       error("pdv-checkout-cash-error", "");
       transition("DINHEIRO");
+      updateChange();
     } else if (credit.indexOf(method.type) !== -1) {
       transition("CREDIARIO");
     } else {
@@ -285,14 +315,57 @@
     syncRows();
     if (remainingCents() > 0) {
       transition("FORMA_PAGAMENTO");
+    } else if (paymentContext.type === "PEDIDO_ENTREGA") {
+      transition("RESUMO");
     } else {
-      submitSale();
+      submitPayment();
     }
   }
 
   function updateChange() {
     var entered = parseMoney(cashInput.value);
     document.getElementById("pdv-checkout-change").textContent = money(Math.max((entered || 0) - remainingCents(), 0));
+  }
+
+  function resetPaymentWizardState() {
+    captureSequence += 1;
+    capturePending = false;
+    if (choiceTimer) clearTimeout(choiceTimer);
+    choiceTimer = null;
+    choiceBurst = 0;
+    lastChoiceKeyAt = 0;
+    state = "CPF_ESCOLHA";
+    documentType = "NAO";
+    currentMethod = null;
+    totalCents = 0;
+    payments = [];
+    paymentContext = { type: "VENDA_PDV" };
+    requestSnapshot = null;
+    automaticPrintRequested = false;
+    previousFocus = null;
+    cashInput.value = "";
+    otherInput.value = "";
+    documentInput.value = "";
+    document.getElementById("pdv-checkout-change").textContent = money(0);
+    document.getElementById("pdv-checkout-other-title").textContent = "Outra forma";
+    document.getElementById("pdv-checkout-finished-change").hidden = true;
+    document.getElementById("pdv-checkout-finished-change-value").textContent = money(0);
+    document.getElementById("pdv-checkout-sale-id").textContent = "";
+    var receipt = document.getElementById("pdv-checkout-receipt");
+    receipt.href = "#";
+    receipt.dataset.desktopPrintUrl = "";
+    captureStatus.textContent = "";
+    captureStatus.hidden = true;
+    captureButton.hidden = true;
+    manualButton.hidden = true;
+    retryButton.hidden = true;
+    shell.querySelectorAll(".pdv-checkout-error").forEach(function (node) { node.textContent = ""; });
+    if (originalClient) {
+      client.innerHTML = originalClient.innerHTML;
+      client.value = originalClient.value;
+    }
+    if (originalDueDate) dueDate.value = originalDueDate.value;
+    syncRows();
   }
 
   function confirmCash() {
@@ -336,7 +409,7 @@
 
   function responseMessage(page) {
     var field = page.querySelector(".message.error, .errorlist, .messages .message");
-    return field ? field.textContent.trim() : "Não foi possível confirmar a venda. Confira os dados e tente novamente.";
+    return field ? field.textContent.trim() : "Não foi possível confirmar o pagamento. Confira os dados e tente novamente.";
   }
 
   function requestAutomaticPrint() {
@@ -351,11 +424,23 @@
     inFlight = true;
     retryButton.hidden = true;
     transition("PROCESSANDO");
-    fetch(form.getAttribute("action") || window.location.pathname, {
+    var targetForm = paymentContext.type === "PEDIDO_ENTREGA" ? paymentContext.form : form;
+    fetch(targetForm.getAttribute("action") || window.location.pathname, {
       method: "POST", body: requestSnapshot, credentials: "same-origin"
     }).then(function (response) {
       return response.text().then(function (html) { return { response: response, html: html }; });
     }).then(function (result) {
+      if (paymentContext.type === "PEDIDO_ENTREGA") {
+        var target = new URL(result.response.url, window.location.href);
+        if (result.response.ok && result.response.redirected && target.pathname === window.location.pathname && target.searchParams.has("delivery")) {
+          window.location.assign(target.href);
+          return;
+        }
+        requestSnapshot = null;
+        transition(remainingCents() === 0 ? "RESUMO" : "FORMA_PAGAMENTO");
+        globalError.textContent = responseMessage(new DOMParser().parseFromString(result.html, "text/html"));
+        return;
+      }
       var page = new DOMParser().parseFromString(result.html, "text/html");
       var completed = page.getElementById("pdv-post-sale-modal");
       if (completed && result.response.ok) {
@@ -390,13 +475,32 @@
       transition("FORMA_PAGAMENTO");
       globalError.textContent = responseMessage(page);
     }).catch(function () {
-      globalError.textContent = "Sem resposta do servidor. Verifique a venda usando a mesma chave antes de continuar.";
+      globalError.textContent = paymentContext.type === "PEDIDO_ENTREGA"
+        ? "Sem resposta do servidor. Verifique o pedido usando a mesma chave antes de continuar."
+        : "Sem resposta do servidor. Verifique a venda usando a mesma chave antes de continuar.";
       retryButton.hidden = false;
     }).finally(function () { inFlight = false; });
   }
 
-  function submitSale() {
+  function submitPayment() {
     if (inFlight || requestSnapshot) return;
+    if (paymentContext.type === "PEDIDO_ENTREGA") {
+      var keyField = paymentContext.form.querySelector('input[name="idempotency_key"]');
+      var caixa = form.querySelector('input[name="caixa"]');
+      if (!keyField || !keyField.value || !caixa || !caixa.value) {
+        globalError.textContent = "Caixa ou chave da entrega indisponível. Volte e confira o pedido.";
+        return;
+      }
+      requestSnapshot = new FormData(paymentContext.form);
+      requestSnapshot.set("caixa", caixa.value);
+      payments.forEach(function (payment, index) {
+        requestSnapshot.append("pagamento_forma", payment.method.id);
+        requestSnapshot.append("pagamento_valor", (payment.cents / 100).toFixed(2));
+        requestSnapshot.append("pagamento_idempotency_key", keyField.value + ":" + index);
+      });
+      sendSnapshot();
+      return;
+    }
     if (!form.querySelector('input[name="checkout_idempotency_key"]').value) {
       globalError.textContent = "Atualize o PDV para iniciar uma nova venda.";
       transition("FORMA_PAGAMENTO");
@@ -408,30 +512,28 @@
 
   function close() {
     if (state === "PROCESSANDO" || state === "CONCLUIDO") return;
-    captureSequence += 1;
-    capturePending = false;
-    if (choiceTimer) clearTimeout(choiceTimer);
-    choiceTimer = null;
-    choiceBurst = 0;
-    payments = [];
-    requestSnapshot = null;
-    automaticPrintRequested = false;
-    syncRows();
     shell.hidden = true;
     shell.setAttribute("aria-hidden", "true");
-    if (window.pdvRestoreFocus) window.pdvRestoreFocus(true);
+    if (paymentContext.type === "PEDIDO_ENTREGA" && paymentContext.onCancel) paymentContext.onCancel();
+    else if (window.pdvRestoreFocus) window.pdvRestoreFocus(true);
     else if (previousFocus) previousFocus.focus();
+    resetPaymentWizardState();
   }
 
   function back() {
     if (["CPF_ESCOLHA", "CAIXA_FECHADO", "FORMAS_INDISPONIVEIS"].indexOf(state) !== -1) close();
     else if (state === "DOCUMENTO_CAPTURA") { captureSequence += 1; capturePending = false; transition("CPF_ESCOLHA"); }
-    else if (state === "FORMA_PAGAMENTO") transition(payments.length ? "CPF_ESCOLHA" : (documentType === "NAO" ? "CPF_ESCOLHA" : "DOCUMENTO_CAPTURA"));
+    else if (state === "RESUMO") transition("FORMA_PAGAMENTO");
+    else if (state === "FORMA_PAGAMENTO") {
+      if (paymentContext.type === "PEDIDO_ENTREGA") close();
+      else transition(payments.length ? "CPF_ESCOLHA" : (documentType === "NAO" ? "CPF_ESCOLHA" : "DOCUMENTO_CAPTURA"));
+    }
     else if (["DINHEIRO", "ELETRONICO_INDISPONIVEL", "OUTROS", "CREDIARIO", "OUTRO_VALOR"].indexOf(state) !== -1) transition("FORMA_PAGAMENTO");
   }
 
   function open() {
     if (!shell.hidden || inFlight) return;
+    resetPaymentWizardState();
     if (!form.querySelector('input[name="caixa"]')) {
       previousFocus = document.activeElement;
       shell.hidden = false;
@@ -462,19 +564,26 @@
     if (!totalCents) return;
     var discountInput = form.querySelector('input[name="desconto"]');
     if (discountInput) discountInput.disabled = false;
-    if (originalClient) {
-      client.innerHTML = originalClient.innerHTML;
-      client.value = originalClient.value;
-    }
-    if (originalDueDate) dueDate.value = originalDueDate.value;
     previousFocus = document.activeElement;
-    payments = [];
-    requestSnapshot = null;
-    syncRows();
     renderMethods();
     shell.hidden = false;
     shell.setAttribute("aria-hidden", "false");
     transition(!methods.length ? "FORMAS_INDISPONIVEIS" : "CPF_ESCOLHA");
+  }
+
+  function openDelivery(config) {
+    if (!shell.hidden || inFlight || !config || !config.form) return false;
+    var total = parseMoney(config.total);
+    if (total === null || total <= 0) return false;
+    resetPaymentWizardState();
+    paymentContext = { type: "PEDIDO_ENTREGA", form: config.form, onCancel: config.onCancel };
+    totalCents = total;
+    previousFocus = document.activeElement;
+    renderMethods();
+    shell.hidden = false;
+    shell.setAttribute("aria-hidden", "false");
+    transition(!methods.length ? "FORMAS_INDISPONIVEIS" : "FORMA_PAGAMENTO");
+    return true;
   }
 
   function captureDocument() {
@@ -531,6 +640,11 @@
   document.getElementById("pdv-checkout-cash-confirm").addEventListener("click", confirmCash);
   document.getElementById("pdv-checkout-credit-confirm").addEventListener("click", confirmCredit);
   document.getElementById("pdv-checkout-other-confirm").addEventListener("click", confirmOther);
+  document.getElementById("pdv-checkout-remove-payment").addEventListener("click", function () {
+    if (payments.length) { payments.pop(); syncRows(); renderSummary(); }
+  });
+  document.getElementById("pdv-checkout-submit").addEventListener("click", submitPayment);
+  document.getElementById("pdv-checkout-review-back").addEventListener("click", function () { transition("FORMA_PAGAMENTO"); });
   document.getElementById("pdv-checkout-new-sale").addEventListener("click", function () { window.location.assign(window.location.pathname); });
   document.getElementById("pdv-checkout-receipt").addEventListener("click", function (event) {
     if (!window.pdvPrintSale) return;
@@ -565,6 +679,10 @@
       return;
     }
     if (key === "Escape") { event.preventDefault(); event.stopImmediatePropagation(); back(); return; }
+    if (key === "Delete" && ["FORMA_PAGAMENTO", "RESUMO"].indexOf(state) !== -1 && payments.length) {
+      event.preventDefault(); event.stopImmediatePropagation();
+      payments.pop(); syncRows(); transition("FORMA_PAGAMENTO"); return;
+    }
     if (key === "F9") { event.preventDefault(); event.stopImmediatePropagation(); return; }
     if (["CPF_ESCOLHA", "CAIXA_FECHADO", "FORMA_PAGAMENTO", "OUTROS"].indexOf(state) !== -1 &&
         key.length === 1 && !event.ctrlKey && !event.altKey && !event.metaKey) {
@@ -606,6 +724,9 @@
         return;
       }
     }
+    if (event.ctrlKey && key === "Enter" && state === "RESUMO") {
+      event.preventDefault(); event.stopImmediatePropagation(); submitPayment(); return;
+    }
     if (key === "Enter") {
       if (state === "DOCUMENTO_CAPTURA" && !documentManual.hidden && document.activeElement === documentInput) { event.preventDefault(); confirmDocument(); }
       else if (state === "DINHEIRO") { event.preventDefault(); confirmCash(); }
@@ -621,5 +742,5 @@
     }
   }, true);
 
-  window.pdvSaleCheckout = { open: open, state: function () { return state; } };
+  window.pdvSaleCheckout = { open: open, openDelivery: openDelivery, state: function () { return state; } };
 })();

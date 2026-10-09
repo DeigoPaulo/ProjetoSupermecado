@@ -1523,6 +1523,20 @@ document.addEventListener("DOMContentLoaded", function () {
     }
 
     function abrirPagamentos(mode) {
+      if (mode === "delivery") {
+        if (!window.pdvSaleCheckout || !window.pdvSaleCheckout.openDelivery) return false;
+        return window.pdvSaleCheckout.openDelivery({
+          form: deliveryForm,
+          total: deliveryQuote && deliveryQuote.total,
+          onCancel: function () {
+            var modal = document.getElementById("pdv-modal-delivery");
+            modal.classList.add("is-open");
+            modal.setAttribute("aria-hidden", "false");
+            mostrarEtapaEntrega(2);
+            if (deliveryContinue) deliveryContinue.focus();
+          }
+        });
+      }
       if (mode !== "delivery" && window.pdvSaleCheckout) {
         window.pdvSaleCheckout.open();
         return;
@@ -1837,7 +1851,14 @@ document.addEventListener("DOMContentLoaded", function () {
         var modo = deliveryForm.querySelector('input[name="modo_pagamento"]:checked');
         if (modo && modo.value === "PAGAR_AGORA") {
           fecharModalPdv(false);
-          abrirPagamentos("delivery");
+          if (!abrirPagamentos("delivery")) {
+            var modal = document.getElementById("pdv-modal-delivery");
+            modal.classList.add("is-open");
+            modal.setAttribute("aria-hidden", "false");
+            mostrarEtapaEntrega(2);
+            var feedback = document.getElementById("pdv-delivery-quote-feedback");
+            if (feedback) feedback.textContent = "Não foi possível abrir o pagamento. Confira o total e o caixa.";
+          }
           deliveryContinuing = false;
           deliveryContinue.disabled = false;
         } else {
@@ -3091,6 +3112,8 @@ document.addEventListener("DOMContentLoaded", function () {
     }
     document.addEventListener("keydown", function (event) {
       var key = event.key;
+      var activeCheckout = document.getElementById("pdv-checkout");
+      if (activeCheckout && !activeCheckout.hidden) return;
       if (postSaleModal && postSaleModal.classList.contains("is-open")) {
         if (key === "F10") {
           event.preventDefault();

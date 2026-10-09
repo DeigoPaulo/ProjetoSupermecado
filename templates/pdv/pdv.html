@@ -316,10 +316,11 @@
             <p class="pdv-payment-feedback" id="pdv-payment-feedback" aria-live="polite"></p>
           </div>
         </div>
-        <div class="pdv-checkout" id="pdv-checkout" role="dialog" aria-modal="true" aria-labelledby="pdv-checkout-title" aria-hidden="true" hidden>
+        <div class="pdv-checkout" id="pdv-checkout" data-payment-context="VENDA_PDV" role="dialog" aria-modal="true" aria-labelledby="pdv-checkout-title" aria-hidden="true" hidden>
           <div class="pdv-checkout-dialog" tabindex="-1">
             <header class="pdv-checkout-header">
               <h2 id="pdv-checkout-title">Finalizar venda</h2>
+              <span id="pdv-checkout-context" hidden>Novo pedido</span>
               <button type="button" class="pdv-checkout-close" data-checkout-back aria-label="Voltar ou fechar" title="Voltar ou fechar"><i class="fa-solid fa-xmark"></i></button>
             </header>
             <div class="pdv-checkout-body">
@@ -355,6 +356,14 @@
               <section data-checkout-panel="FORMA_PAGAMENTO" hidden>
                 <h3 id="pdv-checkout-method-title">Como deseja pagar?</h3>
                 <div class="pdv-checkout-choices pdv-checkout-methods" id="pdv-checkout-methods"></div>
+                <div id="pdv-checkout-installments" hidden></div>
+                <button type="button" class="pdv-checkout-secondary" id="pdv-checkout-remove-payment" hidden>Remover última parcela <kbd>Del</kbd></button>
+              </section>
+              <section data-checkout-panel="RESUMO" hidden>
+                <h3>Conferir pagamento</h3>
+                <div id="pdv-checkout-review"></div>
+                <button type="button" class="pdv-checkout-primary" id="pdv-checkout-submit">Confirmar pagamento <kbd>Ctrl+Enter</kbd></button>
+                <button type="button" class="pdv-checkout-secondary" id="pdv-checkout-review-back">Alterar parcelas <kbd>Esc</kbd></button>
               </section>
               <section data-checkout-panel="CAIXA_FECHADO" hidden>
                 <span class="pdv-checkout-state-icon"><i class="fa-solid fa-lock"></i></span>
@@ -408,13 +417,13 @@
               </section>
               <section data-checkout-panel="PROCESSANDO" hidden>
                 <span class="pdv-checkout-state-icon"><i class="fa-solid fa-spinner fa-spin"></i></span>
-                <h3>Finalizando venda...</h3>
-                <p>Aguarde a confirmação. Não inicie outra venda.</p>
+                <h3 id="pdv-checkout-processing-title">Finalizando venda...</h3>
+                <p id="pdv-checkout-processing-note">Aguarde a confirmação. Não inicie outra venda.</p>
                 <button type="button" class="pdv-checkout-secondary" id="pdv-checkout-retry" hidden>Verificar novamente</button>
               </section>
               <section data-checkout-panel="CONCLUIDO" hidden>
                 <span class="pdv-checkout-state-icon is-success"><i class="fa-solid fa-circle-check"></i></span>
-                <h3>Venda concluída</h3>
+                <h3 id="pdv-checkout-completed-title">Venda concluída</h3>
                 <p class="pdv-checkout-sale-id" id="pdv-checkout-sale-id"></p>
                 <strong class="pdv-checkout-finished-total" data-checkout-total>R$ 0,00</strong>
                 <p class="pdv-checkout-finished-change" id="pdv-checkout-finished-change" hidden>Troco <strong id="pdv-checkout-finished-change-value">R$ 0,00</strong></p>
@@ -980,5 +989,5 @@
 </section>
 {% endblock %}
 {% block extra_js %}
-  <script src="{% static 'js/pdv_checkout.js' %}?v=20261006-6"></script>
+  <script src="{% static 'js/pdv_checkout.js' %}?v=20261009-1"></script>
 {% endblock %}

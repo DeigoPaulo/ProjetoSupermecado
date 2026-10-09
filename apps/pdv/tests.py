@@ -15,7 +15,7 @@ from apps.auditoria.models import LogAuditoria
 from apps.configuracoes.models import ConfiguracaoImpressao, TipoDocumentoImpressao
 from apps.clientes.models import Cliente
 from apps.empresas.models import Empresa, Filial
-from apps.estoque.models import Estoque
+from apps.estoque.models import Estoque, MovimentacaoEstoque, TipoMovimentacaoEstoque
 from apps.financeiro.models import ContaMovimentoFinanceiro, LancamentoFinanceiro, TipoContaMovimento, TipoLancamentoFinanceiro
 from apps.marketplace.models import CanalPedido, FaixaTaxaEntrega, FormaPagamentoPedido, ItemPedidoOnline, PagamentoPedido, PedidoOnline, PoliticaEntrega, StatusPagamentoPedido, StatusPedido, TipoEntrega
 from apps.fiscal.chave_acesso import construir_chave_acesso
@@ -2824,6 +2824,92 @@ class PdvEntregaTests(TestCase):
         self.assertContains(resposta, "Ctrl+E")
         self.assertContains(resposta, "Shift+E")
         self.assertNotContains(resposta, 'id="pdv-delivery-question"')
+
+    def test_entrega_e_venda_compartilham_wizard_sem_compartilhar_persistencia(self):
+        self.client.force_login(self.operador)
+        resposta = self.client.get("/pdv/")
+        javascript = (Path(__file__).resolve().parents[2] / "static" / "js" / "pdv_checkout.js").read_text(encoding="utf-8")
+        self.assertContains(resposta, 'data-payment-context="VENDA_PDV"')
+        self.assertContains(resposta, 'data-checkout-panel="RESUMO"')
+        self.assertIn('type: "PEDIDO_ENTREGA"', javascript)
+        self.assertIn('new FormData(paymentContext.form)', javascript)
+        self.assertIn('keyField.value + ":" + index', javascript)
+        self.assertIn('paymentContext.type === "PEDIDO_ENTREGA"', javascript)
+
+    def test_wizard_reseta_pagamentos_e_troco_entre_contextos(self):
+        javascript = (Path(__file__).resolve().parents[2] / "static" / "js" / "pdv_checkout.js").read_text(encoding="utf-8")
+        reset = javascript.split("function resetPaymentWizardState() {", 1)[1].split("\n  }", 1)[0]
+        for trecho in (
+            'payments = [];', 'currentMethod = null;', 'totalCents = 0;',
+            'cashInput.value = "";', 'otherInput.value = "";',
+            'requestSnapshot = null;', 'paymentContext = { type: "VENDA_PDV" };',
+            'document.getElementById("pdv-checkout-change").textContent = money(0);',
+        ):
+            self.assertIn(trecho, reset)
+        for abertura in ("function open() {", "function openDelivery(config) {"):
+            self.assertIn("resetPaymentWizardState();", javascript.split(abertura, 1)[1].split("\n  }", 1)[0])
+        dinheiro = javascript.split('method.type === "DINHEIRO"', 1)[1].split("else if", 1)[0]
+        self.assertIn('cashInput.value = "";', dinheiro)
+        self.assertIn("updateChange();", dinheiro)
+
+    def test_entrega_pagar_agora_dividida_e_retry_nao_criam_venda_nem_baixam_estoque(self):
+        dinheiro = FormaPagamento.objects.create(nome="Dinheiro dividido", tipo="DINHEIRO", permite_troco=True)
+        self.client.force_login(self.operador)
+        session = self.client.session
+        session["pdv_cart"] = {str(self.produto.id): "1"}
+        session.save()
+        dados = {
+            "action": "create_delivery", "idempotency_key": "entrega-dividida-wizard",
+            "modo_pagamento": "PAGAR_AGORA", "documento_cliente_tipo": "NAO_IDENTIFICADO",
+            "caixa": str(self.caixa.pk), "pagamento_forma": [str(dinheiro.pk), str(dinheiro.pk)],
+            "pagamento_valor": ["5.00", "10.00"],
+            "pagamento_idempotency_key": ["entrega-dividida-wizard:0", "entrega-dividida-wizard:1"],
+            "cliente": "", "nome_cliente": "Cliente dividido", "telefone": "11999999999",
+            "endereco_entrega": "Rua das Flores, 100", "bairro_entrega": "", "observacoes": "",
+        }
+        resposta = self.client.post("/pdv/", dados)
+        self.assertEqual(resposta.status_code, 302)
+        pedido = PedidoOnline.objects.get(idempotency_key=dados["idempotency_key"])
+        self.assertEqual(pedido.status_pagamento, StatusPagamentoPedido.PAGO)
+        self.assertEqual(pedido.pagamentos.count(), 2)
+        self.assertEqual(sum((p.valor for p in pedido.pagamentos.all()), Decimal("0")), pedido.total)
+        self.assertTrue(all(p.caixa_recebimento_id == self.caixa.pk for p in pedido.pagamentos.all()))
+        self.assertFalse(Venda.objects.exists())
+        self.assertFalse(PagamentoVenda.objects.exists())
+        estoque = Estoque.objects.get(produto=self.produto, filial=self.filial)
+        self.assertEqual(estoque.quantidade_atual, Decimal("10"))
+        self.assertEqual(estoque.quantidade_reservada, Decimal("1"))
+        self.assertFalse(MovimentacaoEstoque.objects.filter(
+            referencia=f"pedido_online:{pedido.pk}", tipo=TipoMovimentacaoEstoque.SAIDA,
+        ).exists())
+        self.client.post("/pdv/", dados)
+        self.assertEqual(PedidoOnline.objects.count(), 1)
+        self.assertEqual(PagamentoPedido.objects.count(), 2)
+
+    def test_entrega_pagar_agora_bloqueia_soma_incompleta_e_caixa_de_outra_filial(self):
+        dinheiro = FormaPagamento.objects.create(nome="Dinheiro validado", tipo="DINHEIRO", permite_troco=True)
+        self.client.force_login(self.operador)
+        session = self.client.session
+        session["pdv_cart"] = {str(self.produto.id): "1"}
+        session.save()
+        dados = {
+            "action": "create_delivery", "idempotency_key": "entrega-invalida-wizard",
+            "modo_pagamento": "PAGAR_AGORA", "documento_cliente_tipo": "NAO_IDENTIFICADO",
+            "caixa": str(self.caixa.pk), "pagamento_forma": str(dinheiro.pk),
+            "pagamento_valor": "10.00", "cliente": "", "nome_cliente": "Cliente validado",
+            "telefone": "11999999999", "endereco_entrega": "Rua das Flores, 100",
+            "bairro_entrega": "", "observacoes": "",
+        }
+        resposta = self.client.post("/pdv/", dados)
+        self.assertContains(resposta, "A soma dos pagamentos não pode ser menor", status_code=200)
+        self.assertFalse(PedidoOnline.objects.exists())
+        dados["pagamento_valor"] = "15.00"
+        outra = Filial.objects.create(empresa=self.filial.empresa, nome="Outra filial")
+        dados["caixa"] = str(Caixa.objects.create(filial=outra, usuario_abertura=self.operador).pk)
+        resposta = self.client.post("/pdv/", dados)
+        self.assertContains(resposta, "O pagamento no caixa exige um caixa aberto", status_code=200)
+        self.assertFalse(PedidoOnline.objects.exists())
+        self.assertFalse(PagamentoPedido.objects.exists())
 
     def test_entrega_paga_no_caixa_fica_confirmada_no_pedido(self):
         caixa = self.caixa
